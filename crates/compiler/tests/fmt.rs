@@ -77,27 +77,50 @@ fn copy_dir(src: &Path, dst: &Path) {
     }
 }
 
-/// Every authored JSON document in this repository: the DSL fixtures, the
-/// compiler's campaign fixtures, and the render fixtures. Deliberately NOT
-/// `crates/compiler/data/` — those are harvested game registries with their own
-/// generator contract (`tools/extract-*.py`, `data/PROVENANCE.md`), not content
-/// anyone authors by hand.
-fn authored_roots() -> Vec<PathBuf> {
-    let root = common::repo_root();
-    vec![
-        root.join("crates/dsl/fixtures"),
-        root.join("crates/compiler/tests/fixtures"),
-    ]
-    .into_iter()
-    .filter(|p| p.exists())
-    .collect()
-}
-
+/// Every JSON document this repository holds, **derived** — `git ls-files`,
+/// minus the one exemption.
+///
+/// This used to name two roots by hand while its doc comment claimed to be
+/// "every authored JSON document in this repository". It was not: it saw 240 of
+/// the 335 files git tracks, and 50 of the 95 it never opened were out of
+/// canonical form. That is the same enumeration-somebody-remembered shape the CI
+/// sweep had, one layer down and wearing a truthful-sounding sentence — and it
+/// is why there is now ONE derivation rather than two lists that can disagree.
+/// `tools/check-json-canonical.py` is its sibling and takes its population the
+/// same way.
+///
+/// `crates/compiler/tests/golden/` is excluded for the reason
+/// `view::scene::golden_scene_matches` gives: those bytes are pinned to emitter
+/// output, and `every_golden_is_emitter_output` closes the directory so nothing
+/// authored can hide there.
+///
+/// Fails loudly if git cannot answer. A fallback to a hand-written list here
+/// would reintroduce exactly the defect above, at the moment nobody is looking.
 fn all_authored_files() -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    for root in authored_roots() {
-        files.extend(fmt::discover(&root).unwrap());
-    }
+    let root = common::repo_root();
+    let out = Command::new("git")
+        .args([
+            "-C",
+            &root.to_string_lossy(),
+            "ls-files",
+            "-z",
+            "--",
+            "*.json",
+        ])
+        .output()
+        .expect("run `git ls-files` — this sweep derives its corpus and never lists it");
+    assert!(
+        out.status.success(),
+        "`git ls-files` exited {:?}: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut files: Vec<PathBuf> = String::from_utf8(out.stdout)
+        .unwrap()
+        .split('\0')
+        .filter(|p| !p.is_empty() && !p.starts_with("crates/compiler/tests/golden/"))
+        .map(|p| root.join(p))
+        .collect();
     files.sort();
     files
 }

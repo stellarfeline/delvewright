@@ -158,6 +158,30 @@ fn respell_as_checkpoint(quests: &mut serde_json::Value, anchor: Option<&str>) {
     }
 }
 
+/// Move the fixture's one respawn-point effect out of `obj/slay`'s bundle and
+/// into the LAST objective's, so its reign covers no further forced walk.
+fn arm_at_last_beat(quests: &mut serde_json::Value) {
+    let mut taken: Option<serde_json::Value> = None;
+    for q in quests["content"]["quests"].as_array_mut().unwrap() {
+        let Some(map) = q["on_objective_complete"].as_object_mut() else {
+            continue;
+        };
+        for (_, effs) in map.iter_mut() {
+            let list = effs.as_array_mut().unwrap();
+            if let Some(i) = list
+                .iter()
+                .position(|e| e["type"] == "set-checkpoint" || e["type"] == "bonfire")
+            {
+                taken = Some(list.remove(i));
+            }
+        }
+    }
+    let taken = taken.expect("the fixture carries exactly one respawn-point effect");
+    let quest = quests["content"]["quests"].as_array_mut().unwrap();
+    let last = quest.last_mut().unwrap();
+    last["on_objective_complete"]["obj/shrine"] = serde_json::json!([taken]);
+}
+
 fn ledger(out: &BuildOutput) -> serde_json::Value {
     serde_json::from_slice(
         out.get("validation/respawn-safety.json")
@@ -217,11 +241,20 @@ fn a_plain_set_checkpoint_is_examined_by_the_same_proof() {
 
 /// …and the demand on it is the same demand. Move that checkpoint onto the cell
 /// a wave is seated at and the build fails, exactly as a bonfire there would.
+///
+/// The seat is armed at the campaign's LAST beat, and that is load-bearing rather
+/// than incidental: a respawn point is credited when the campaign's own forced
+/// path already walks the party into that force **inside the seat's own reign**
+/// (spec-0044 §6), and this keep's remaining walk routes back through the guard
+/// room. Arming the seat after the last of those walks leaves the geometry with
+/// nothing to answer it — which is the state this test is about, and the reign
+/// bound's own red side.
 #[test]
 fn a_set_checkpoint_on_a_seated_wave_is_dw0478() {
     let tmp = TempCampaign::new("unsafe");
     campaign_with(tmp.path(), |q| {
         respell_as_checkpoint(q, Some("anchor/keeper-stand"));
+        arm_at_last_beat(q);
     });
     let err = build(tmp.path()).expect_err("a respawn cell inside a perception radius is a red");
     let BuildFailure::Diagnostic { code, message } = err else {

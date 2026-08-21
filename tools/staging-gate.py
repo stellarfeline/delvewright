@@ -63,7 +63,36 @@ section with their justification, and their COUNT is in the headline, because
 rule 4 makes each one a standing risk item at every staging review. `--strict`
 fails on them too, for a reviewer who wants the absolute floor.
 
-That escape is the only one. There is no "skip", no "known-red", no threshold.
+The second non-red is not an escape at all — it is a different subject. A
+**pre-detail blockout** (a site-plan campaign whose only geometry is the
+derived massing; spec-0049) is staged for a walk that judges scale, pacing,
+route legibility and silhouette — a build that does not claim to be finished,
+and whose own artifact chain says so: the campaign's placement authority is
+the site plan, the build's manifest was compiled from it, and no detail-plan
+document exists in either. On such a subject a row whose class **measures
+zero everywhere it could be declared** — zero binding AND zero precondition,
+both counted, never asserted — is `OUT-OF-STAGE`: the walk cannot exercise
+the class because this build contains none of its objects, and the build does
+not pretend to be the build that could. Those rows are printed in their own
+section, their count is in the headline, the admission token carries their
+ids, and the boot banner names them — the owner is told what this session is
+not protected from, per class, exactly as rule 4 demands. `--strict` fails on
+them too. The moment the campaign leaves the blockout stage (a detail-plan
+document exists), every one of these rows is adjudicated as red again: the
+verdict is a statement about one stage, re-derived at every staging, never a
+standing exemption.
+
+What the mechanism demands, and why the defect it exists to catch cannot
+supply it: "this build has no combat" is proven by two measured zeros over
+the campaign's own declared design plus the compiler-written record that the
+world is derived massing. A build whose combat *went missing* fails at least
+one of the three — declared objects make the binding non-zero (BOUND or
+UNBOUND), a declared precondition surface makes the precondition non-zero
+(UNBOUND), a declared-but-unemitted combat artifact is MISSING-CHECK, and a
+detailed or areas-placed campaign cannot present the blockout record at all.
+No operator flag, row field or disposition reaches this verdict.
+
+That is all. There is no "skip", no "known-red", no threshold.
 A finding whose general form was never built is a red, and an honest red list is
 this tool's deliverable — never a reason to backfill a weak diagnostic so a row
 goes green.
@@ -124,7 +153,7 @@ RED_VERDICTS = (
     "UNBOUND",
     "INAPPLICABLE",
 )
-EXEMPT_VERDICTS = ("DECLARED-UNCOVERABLE",)
+EXEMPT_VERDICTS = ("DECLARED-UNCOVERABLE", "OUT-OF-STAGE")
 PASS_VERDICTS = ("BOUND",)
 
 VALID_DISPOSITIONS = ("no-machine-form", "owner-ruled")
@@ -227,6 +256,12 @@ class Subject:
         "quests.json",
         "dialogue.json",
         "world-edits.json",
+        # The map-pipeline stage documents (spec-0049/spec-0050). Probes may
+        # quantify over them, and the pre-detail determination reads them.
+        "geometry-brief.json",
+        "layout-graph.json",
+        "site-plan.json",
+        "detail-plan.json",
     )
 
     def __init__(self, campaign: pathlib.Path, build: pathlib.Path) -> None:
@@ -252,6 +287,42 @@ class Subject:
     @property
     def has_source(self) -> bool:
         return bool(self.stages)
+
+    @property
+    def pre_detail(self) -> bool:
+        """Is this subject a pre-detail blockout — a site-plan campaign whose
+        only geometry is the derived massing (spec-0049), staged for the walk
+        that is that campaign's first gate?
+
+        Measured from the object twice, by instruments with unrelated failure
+        modes, and any disagreement is NOT a blockout (fail closed):
+
+        - the campaign SOURCE places by site plan (`site-plan.json` is a stage
+          document; DW0839 makes the two placement authorities exclusive) and
+          carries no detail-stage document;
+        - the BUILD's own manifest — written by the compiler, not by whoever
+          runs this gate — lists `site-plan.json` among the inputs the world
+          was compiled from, and no `detail-plan.json`.
+
+        The determination is re-derived at every staging. The day a campaign
+        gains a detail-plan document (spec-0050), this returns False and every
+        OUT-OF-STAGE row on it reverts to red — the verdict is about a stage,
+        never about a campaign.
+        """
+        if "site-plan.json" not in self.stages:
+            return False
+        if (self.campaign / "detail-plan.json").is_file():
+            return False
+        m = self.build / "manifest.json"
+        if not m.is_file():
+            return False
+        try:
+            inputs = json.loads(m.read_text(encoding="utf-8")).get("inputs")
+        except (OSError, json.JSONDecodeError):
+            return False
+        if not isinstance(inputs, dict):
+            return False
+        return "site-plan.json" in inputs and "detail-plan.json" not in inputs
 
     def artifact(self, rel: str) -> object | None:
         p = self.build / "validation" / rel
@@ -405,6 +476,28 @@ def probe(binding: dict, subj: Subject) -> tuple[int | None, str]:
     return None, f"unknown binding kind `{kind}`"
 
 
+def probe_is_self_measuring(binding: dict) -> bool:
+    """Does a zero from this probe answer the precondition question by itself?
+
+    The two kinds of zero (see `adjudicate`) differ in whether objects could
+    exist that the probe does not see. A `dsl` probe whose predicate selects
+    objects purely by IDENTITY — `eq`/`in`/`prefix`, nothing else — counts the
+    object class itself, so its zero means zero objects of the class anywhere
+    in the declared design: there is nothing left for a precondition probe to
+    find. A predicate carrying `has`/`has_any` keys on a DECLARATION that can
+    be narrower than its carriers (the island's floor gate counted `tier`,
+    not actors), and `artifact`/`out` probes count derived output one step
+    from any declaration — for those, which kind of zero it is must be
+    measured by `applies_when`, never inferred.
+    """
+    if binding.get("kind") != "dsl":
+        return False
+    m = binding.get("match") or {}
+    if not m:
+        return False
+    return not (m.get("has") or m.get("has_any"))
+
+
 # ---------------------------------------------------------------------------
 # Carrier existence
 # ---------------------------------------------------------------------------
@@ -548,9 +641,44 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
             )
             return out
 
-    count, detail = probe(row["binding"], subj)
+    binding = row["binding"]
+    count, detail = probe(binding, subj)
     out["detail"] = detail
     if count is None:
+        # An artifact this build did not emit is "I could not look" — except
+        # when the row also declares a precondition probe, which CAN look: a
+        # zero precondition explains the absence (the compiler emits these
+        # ledgers only over objects that exist), while a non-zero one is the
+        # loud version of the same verdict — the campaign declares the class
+        # and the build lost its ledger. Any other None stays MISSING-CHECK:
+        # a present-but-unreadable artifact is format rot, not absence.
+        aw = row.get("applies_when")
+        if (
+            binding.get("kind") == "artifact"
+            and not subj.artifact_exists(binding["file"])
+            and aw is not None
+        ):
+            pre, pre_detail = probe(aw, subj)
+            if pre is None:
+                out["verdict"] = "MISSING-CHECK"
+                out["detail"] = f"`applies_when` probe could not run: {pre_detail}"
+                return out
+            out["precondition"] = pre
+            if pre > 0:
+                out["verdict"] = "MISSING-CHECK"
+                out["detail"] = (
+                    f"{detail}, yet {pre_detail} exist that the artifact should "
+                    "cover — the campaign declares the class and the build "
+                    "emitted no ledger for it"
+                )
+                return out
+            out["binding"] = 0
+            out["verdict"] = "OUT-OF-STAGE" if subj.pre_detail else "INAPPLICABLE"
+            out["detail"] = (
+                f"{detail}; the defect class needs {pre_detail}, and this "
+                "campaign declares none — nothing here can exercise the class"
+            )
+            return out
         out["verdict"] = "MISSING-CHECK"
         return out
     out["binding"] = count
@@ -576,6 +704,23 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
     # is not protected on — that is a fact for the round summary, not a pass.
     aw = row.get("applies_when")
     if aw is None:
+        # No declared precondition probe. For an identity-shaped binding the
+        # probe measures its own precondition — its zero counts the object
+        # class itself (`probe_is_self_measuring`) — and on a pre-detail
+        # blockout that measured double zero is OUT-OF-STAGE. Everywhere
+        # else, and for every declaration- or derivation-shaped probe, the
+        # gate keeps refusing to guess.
+        if subj.pre_detail and probe_is_self_measuring(row["binding"]):
+            out["precondition"] = 0
+            out["verdict"] = "OUT-OF-STAGE"
+            out["detail"] = (
+                f"{detail}; the probe selects the object class by identity, so "
+                "its zero is the class measuring zero across the declared "
+                "design of a pre-detail blockout — this walk cannot exercise "
+                "the class, and this build does not claim to be the build "
+                "that could"
+            )
+            return out
         out["verdict"] = "UNBOUND"
         out["detail"] = (
             f"{detail} — and the row declares no `applies_when` probe, so which "
@@ -589,7 +734,7 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
         return out
     out["precondition"] = pre
     if pre == 0:
-        out["verdict"] = "INAPPLICABLE"
+        out["verdict"] = "OUT-OF-STAGE" if subj.pre_detail else "INAPPLICABLE"
         out["detail"] = (
             f"{detail}; the defect class needs {pre_detail}, and this campaign "
             "declares none — nothing here can exercise the class"
@@ -627,6 +772,12 @@ def load_ledger(path: pathlib.Path) -> dict:
                 "a carrier with no binding count is the vacuity this gate exists "
                 "to expose, so it may not be declared"
             )
+        if r.get("applies_when") is not None and r.get("applies_when") == r.get("binding"):
+            raise ValueError(
+                f"{path}: row `{r['id']}` declares its own binding probe as its "
+                "own precondition — an exemption a row can grant itself is not "
+                "a gate, so it may not be declared"
+            )
     return doc
 
 
@@ -651,6 +802,13 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
     L.append(f"- Ledger: {len(results)} finding(s), {doc.get('ledger_version', '?')}")
     versions = ", ".join(f"{k} {v}" for k, v in sorted(subj.stage_versions.items()))
     L.append(f"- Declared dsl_version: {versions or '(none — no source)'}")
+    stage = (
+        "pre-detail blockout (site-plan placement authority; the only geometry "
+        "is the derived massing — spec-0049)"
+        if subj.pre_detail
+        else "assembled (this build claims its content is complete)"
+    )
+    L.append(f"- Subject stage: {stage}")
     L.append("")
     L.append("## Verdict")
     L.append("")
@@ -664,6 +822,12 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
         f"- `DECLARED-UNCOVERABLE`: {n_unc} "
         "(justified; each is a standing risk item at this staging review)"
     )
+    n_oos = len(by["OUT-OF-STAGE"])
+    L.append(
+        f"- `OUT-OF-STAGE`: {n_oos} "
+        "(measured double zero on a pre-detail blockout; each is a class this "
+        "walk cannot exercise, re-adjudicated at every staging)"
+    )
     L.append(f"- `BOUND`: {len(by['BOUND'])}")
     L.append("")
 
@@ -675,7 +839,7 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
     L.append("|---|----|---------|--------------|-------|-------|---------|")
     for r in results:
         binds = "—" if r["binding"] is None else str(r["binding"])
-        if r["verdict"] == "INAPPLICABLE":
+        if r["verdict"] in ("INAPPLICABLE", "OUT-OF-STAGE"):
             binds = f"0 / pre {r['precondition']}"
         rnd = "" if r["round"] is None else f"r{r['round']}"
         L.append(
@@ -709,6 +873,25 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
         )
         L.append("")
         for r in inap:
+            L.append(f"- **{r['id']}** — {r['finding']} — _{r['detail']}_")
+        L.append("")
+
+    oos = by["OUT-OF-STAGE"]
+    if oos:
+        L.append("## Out of stage — classes this blockout walk cannot exercise")
+        L.append("")
+        L.append(
+            "This build is a pre-detail blockout: its placement authority is "
+            "the site plan and its only geometry is the derived massing, so "
+            "the walk it is staged for judges scale, pacing, routes and "
+            "silhouette. Each row below measured ZERO objects of its class "
+            "across the whole declared design (binding and precondition both "
+            "counted). The owner's walk is not protected from these classes "
+            "and cannot meet them; every one is re-adjudicated — as a red — "
+            "the moment this campaign leaves the blockout stage."
+        )
+        L.append("")
+        for r in oos:
             L.append(f"- **{r['id']}** — {r['finding']} — _{r['detail']}_")
         L.append("")
 
@@ -763,6 +946,7 @@ def write_admission(
     the gate green on some tree, then serve another.
     """
     reds = [r for r in results if r["verdict"] in RED_VERDICTS]
+    oos = [r for r in results if r["verdict"] == "OUT-OF-STAGE"]
     doc = {
         "schema": 1,
         "campaign": subj.name,
@@ -771,6 +955,12 @@ def write_admission(
         "findings_total": len(results),
         "red_count": len(reds),
         "reds": [{"id": r["id"], "verdict": r["verdict"]} for r in reds],
+        # A pre-detail blockout's admission names, per class, what the walk
+        # cannot exercise — the boot banner reads these, so the session's
+        # scope is announced rather than remembered.
+        "pre_detail": subj.pre_detail,
+        "out_of_stage_count": len(oos),
+        "out_of_stage": [r["id"] for r in oos],
         "overridden": override is not None,
         "override": override,
     }
@@ -972,9 +1162,16 @@ def main() -> int:
         )
         return 2
     write_admission(admit_path, subj, results, fingerprint, ledger_digest, None)
+    n_oos = sum(1 for r in results if r["verdict"] == "OUT-OF-STAGE")
+    oos_note = (
+        f" ({n_oos} class(es) OUT-OF-STAGE on this pre-detail blockout — named "
+        "in the token and announced at boot)"
+        if n_oos
+        else ""
+    )
     print(
         f"staging-gate: {subj.name} is stageable — all {len(results)} findings carry a "
-        f"live, binding check or a justified exemption; admitted -> {admit_path}",
+        f"live, binding check or a justified exemption{oos_note}; admitted -> {admit_path}",
         file=sys.stderr,
     )
     return 0

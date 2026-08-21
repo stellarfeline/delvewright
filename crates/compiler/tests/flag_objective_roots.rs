@@ -55,6 +55,7 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     })
     .expect("campaign parses")
 }

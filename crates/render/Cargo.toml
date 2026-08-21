@@ -15,8 +15,16 @@
 # The root workspace's rationale for this profile applies verbatim (see
 # /Cargo.toml): a separate workspace does not inherit it, and an `opt-level = 0`
 # `delve-render` reads as a hang rather than as a wrong profile.
+#
+# `debug` is here on the same argument and on its own measurement, because a
+# separate workspace does not inherit that either: cold `cargo test --offline
+# --manifest-path crates/render/Cargo.toml --no-run` costs 731.0s CPU at cargo's
+# default full DWARF and 597.4s here (-18.3%), with `target/` 3.10 -> 2.16 GiB.
+# Two jobs build this crate under a dev profile — the `rust` job's render steps
+# and `gpu-probe` — and both are where that lands.
 [profile.dev]
 opt-level = 1
+debug = "line-tables-only"
 
 [package]
 name = "delvewright-render"

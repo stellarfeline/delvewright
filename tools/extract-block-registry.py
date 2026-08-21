@@ -102,7 +102,7 @@ def main(argv: list[str]) -> int:
         )
         return 2
 
-    out.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+    out.write_text(json.dumps(registry, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
     print(f"{out}: {len(registry)} blocks")
     return 0
 

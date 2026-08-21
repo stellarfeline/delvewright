@@ -66,7 +66,13 @@ fn version_line() {
     // a version names one surface, and a campaign at 0.13.0 states its space as
     // a graph with no way to embed it, which is exactly the state the ordering
     // wants reachable.
-    assert!(s.contains("dsl 0.14.0"), "{s}");
+    // 0.15.0 (spec-0050) adds one document and no field: `detail-plan.json`,
+    // which piece stands in which of the plan's places. It has no coordinate, no
+    // region, no extent, no datum, no seam and no offset — absent fields, not
+    // optional ones — so a part is structurally unable to move the box the whole
+    // gave it, and the only path from a binding to placed bytes is the compiler
+    // computing the frame from the site plan inside `Plan::build`.
+    assert!(s.contains("dsl 0.15.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

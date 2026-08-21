@@ -87,6 +87,7 @@ fn campaign(cast_one: &str, cast_two: &str) -> Campaign {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     })
     .expect("fixture must parse")
 }
@@ -192,6 +193,7 @@ fn branchy(cast_one: &str, cast_two: &str) -> Campaign {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     })
     .expect("fixture must parse")
 }
@@ -357,6 +359,7 @@ fn pre_07_campaign_without_a_ledger_warns_dw0465() {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     })
     .unwrap();
     let diags = cast::check_cast(&c);
@@ -462,4 +465,143 @@ fn a_repeated_bark_pool_is_not_stale() {
         !codes(&campaign(FULL_ONE, two)).contains(&"DW0467".to_string()),
         "a carried-forward bark pool must not be flagged as stale"
     );
+}
+
+// ---------------------------------------------------------------------------
+// DW0846: a clause no runtime state can select (the ladder solver's refusal)
+// ---------------------------------------------------------------------------
+
+/// A gated branch listed BEFORE an ungated fallback of the same quest is dead:
+/// the fallback always passes and, being later, always overrides. This is the
+/// per-branch ordering rule ("fallback first, branches after") hardened from a
+/// doc line into a refusal.
+#[test]
+fn a_branch_listed_before_its_ungated_fallback_is_dead() {
+    let two = r#"{
+      "npc/keeper": [
+        { "at": "anchor/keeper-stand", "doing": "standing the watch with you",
+          "dialogue": "dlg/after", "requires_flags": ["flag/wait"] },
+        { "at": "anchor/keeper-stand", "doing": "watching you go",
+          "dialogue": { "barks": ["Go on, then."] } }
+      ],
+      "npc/scout":  { "at": "anchor/exit", "doing": "waving you through", "dialogue": "dlg/scout-later" }
+    }"#;
+    let diags = cast::check_cast(&campaign(FULL_ONE, two));
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0846")
+        .expect("the shadowed branch must be refused");
+    assert!(
+        d.message.contains("placement 0") && d.message.contains("fallback FIRST"),
+        "the message names the dead placement and the reorder prescription: {}",
+        d.message
+    );
+}
+
+/// The same entry with the fallback FIRST is the documented shape and is clean:
+/// the branch is selectable (its flag on), and the fallback is selectable (the
+/// branch's flag off).
+#[test]
+fn fallback_first_then_branches_is_alive() {
+    let two = r#"{
+      "npc/keeper": [
+        { "at": "anchor/keeper-stand", "doing": "watching you go",
+          "dialogue": { "barks": ["Go on, then."] } },
+        { "at": "anchor/keeper-stand", "doing": "standing the watch with you",
+          "dialogue": "dlg/after", "requires_flags": ["flag/wait"] }
+      ],
+      "npc/scout":  { "at": "anchor/exit", "doing": "waving you through", "dialogue": "dlg/scout-later" }
+    }"#;
+    assert!(
+        !codes(&campaign(FULL_ONE, two)).contains(&"DW0846".to_string()),
+        "fallback-first is the documented per-branch shape and must be clean"
+    );
+}
+
+/// The state axis: a clause whose numeric gate is ENTAILED by a later sibling's
+/// (`at-least 500` before `at-least 400`) is dead — every value that selects it
+/// also selects the later clause, which overrides. A flag pin cannot even see
+/// this case; the solver's `DatumSet` arithmetic is what catches it.
+#[test]
+fn a_clause_entailed_by_a_later_siblings_state_gate_is_dead() {
+    let two = r#"{
+      "npc/keeper": [
+        { "at": "anchor/keeper-stand", "doing": "counting a high toll",
+          "dialogue": "dlg/after",
+          "requires_state": [ { "state": "state/patience", "op": "at-least", "value": 500 } ] },
+        { "at": "anchor/keeper-stand", "doing": "counting a low toll",
+          "dialogue": { "barks": ["Nearly there."] },
+          "requires_state": [ { "state": "state/patience", "op": "at-least", "value": 400 } ] }
+      ],
+      "npc/scout":  { "at": "anchor/exit", "doing": "waving you through", "dialogue": "dlg/scout-later" }
+    }"#;
+    assert!(
+        codes(&campaign(FULL_ONE, two)).contains(&"DW0846".to_string()),
+        "an entailed state gate must be refused as dead"
+    );
+}
+
+/// Disjoint state windows are both selectable and clean — the check is
+/// reachability of each clause, never a stylistic limit on how many there are.
+#[test]
+fn disjoint_state_windows_are_alive() {
+    let two = r#"{
+      "npc/keeper": [
+        { "at": "anchor/keeper-stand", "doing": "counting a low toll",
+          "dialogue": { "barks": ["Nearly there."] },
+          "requires_state": [ { "state": "state/patience", "op": "at-most", "value": 399 } ] },
+        { "at": "anchor/keeper-stand", "doing": "counting a high toll",
+          "dialogue": "dlg/after",
+          "requires_state": [ { "state": "state/patience", "op": "at-least", "value": 400 } ] }
+      ],
+      "npc/scout":  { "at": "anchor/exit", "doing": "waving you through", "dialogue": "dlg/scout-later" }
+    }"#;
+    assert!(
+        !codes(&campaign(FULL_ONE, two)).contains(&"DW0846".to_string()),
+        "disjoint windows are each selectable and must be clean"
+    );
+}
+
+/// A clause whose OWN gate is self-contradictory is `DW0847`'s finding at the
+/// gate site, not a second report here — one defect, one code.
+#[test]
+fn a_self_contradictory_clause_is_not_double_reported_as_dead() {
+    let two = r#"{
+      "npc/keeper": [
+        { "at": "anchor/keeper-stand", "doing": "watching you go",
+          "dialogue": { "barks": ["Go on, then."] } },
+        { "at": "anchor/keeper-stand", "doing": "counting an impossible toll",
+          "dialogue": "dlg/after",
+          "requires_state": [
+            { "state": "state/patience", "op": "at-least", "value": 5 },
+            { "state": "state/patience", "op": "at-most", "value": 3 }
+          ] }
+      ],
+      "npc/scout":  { "at": "anchor/exit", "doing": "waving you through", "dialogue": "dlg/scout-later" }
+    }"#;
+    assert!(
+        !codes(&campaign(FULL_ONE, two)).contains(&"DW0846".to_string()),
+        "a contradictory gate is DW0847's finding at its own site"
+    );
+}
+
+/// The solver itself, at the emitter's contract: every live clause yields a
+/// drive that its own model scores as selecting that clause — the guarantee the
+/// generated `cast_ladder_<npc>` assert rests on.
+#[test]
+fn every_live_clause_has_a_drive_its_model_confirms() {
+    let c = campaign(FULL_ONE, FULL_TWO);
+    let casts = cast::npc_casts(&c);
+    let mut proved = 0usize;
+    for cast_ in casts.values() {
+        for n in 0..cast_.by_quest.len() {
+            let drive = cast::distinguishing_drive(cast_, n).expect("live ledger");
+            assert_eq!(
+                cast::eval_ladder(cast_, &drive.begun, &drive.flags, &drive.datums),
+                cast_.by_quest[n].scene,
+            );
+            proved += 1;
+        }
+    }
+    assert_eq!(proved, 4, "two NPCs x two quests of clauses were solved");
 }

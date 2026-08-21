@@ -1,8 +1,5 @@
 {
-  "dsl_version": "0.12.0",
   "campaign_id": "gallery",
-  "kind": "l10n",
-  "lang": "zh-cn",
   "content": {
     "actor.hall-moth.name": "厅中之蛾",
     "actor.rafter-spider.name": "梁上之蛛",
@@ -105,5 +102,8 @@
     "world.boundary.message": "厅到此为止。",
     "world.outro": "厅中每一只展柜都已读过。",
     "world.title": "陈列厅"
-  }
+  },
+  "dsl_version": "0.12.0",
+  "kind": "l10n",
+  "lang": "zh-cn"
 }

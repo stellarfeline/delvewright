@@ -69,6 +69,14 @@
  * on its own; it exports no step, reorders none, and changes nothing the bot
  * walks, so a v0.14 path is walked exactly as a v0.13 one is.
  *
+ * **v0.15** adds one document and no step: a detail plan, which piece stands in
+ * which of the plan's places. It carries no coordinate — the frame is computed
+ * from the site plan's own box — and it exports no step, reorders none, and
+ * changes nothing the bot walks, so a v0.15 path is walked exactly as a v0.14
+ * one is. What it changes is what the bot walks THROUGH: a detailed place is a
+ * building rather than a shell, and the critical path across it is the same
+ * path, which is the property stage 6 exists to preserve.
+ *
  * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
  * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
  * enforces that in CI: an allowlist that lags the ceiling refuses a v0.9.0
@@ -88,6 +96,7 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.12.0",
   "0.13.0",
   "0.14.0",
+  "0.15.0",
 ] as const;
 
 /**
@@ -103,6 +112,14 @@ export const SUPPORTED_DSL_VERSIONS = [
  * * `2` — every objective-bearing step names the `obj/<id>` it proves, and
  *   completion is proved by the anchored per-objective marker channel
  *   (`markers.ts`).
+ * * `3` — a `reach` step carries `completion`, the volume the datapack actually
+ *   adjudicates in. The walk goal is derived from that and no longer from the
+ *   authored `radius`, which the datapack had stopped reading at DSL v0.3 without
+ *   telling anyone. Required in both directions, which is what makes it a format
+ *   change rather than an addition: a format-2 artifact cannot tell a current bot
+ *   where the objective completes, and this bot refuses the field's absence rather
+ *   than falling back to a completion model of its own — that fallback is the
+ *   defect.
  *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */

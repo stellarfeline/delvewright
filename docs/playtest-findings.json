@@ -1,5 +1,4 @@
 {
-  "ledger_version": "2026-08-11",
   "_readme": [
     "The findings ledger: every defect reported after playing a build, on ANY campaign, from the first M2 dress rehearsal (2026-07-30) onward.",
     "Read by tools/staging-gate.py, which refuses to stage a build while any row's general form is not a live, binding check on THAT build.",
@@ -11,994 +10,2068 @@
   ],
   "findings": [
     {
-      "id": "hv-01",
-      "campaign": "hollow-vigil",
-      "round": 1,
-      "finding": "a reach-anchor's completion volume was a point sphere too tight for a human standing on the altar cell, so arriving did not complete the objective",
-      "triage": "capability",
-      "general_form": "reach completion is a region a body can occupy, not a point (closed by construction at dsl 0.3: +/-1 block); nothing re-asserts it on a build",
-      "carrier": null
-    },
-    {
-      "id": "hv-02",
-      "campaign": "hollow-vigil",
-      "round": 1,
-      "finding": "an entity CustomName rendered as literal JSON to players, including in death messages",
-      "triage": "capability",
-      "general_form": "every player-visible authored string reaches the built tree inside a text component, never as raw JSON or a bare literal",
-      "carrier": {"kind": "dw", "code": "DW0185"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "narrate"}}}
-    },
-    {
-      "id": "hv-03",
-      "campaign": "hollow-vigil",
-      "round": 1,
-      "finding": "interact affordances were invisible points with no hardware a player could see or aim at",
-      "triage": "capability",
-      "general_form": "a compiler-owned interact affordance has visible hardware at its cell",
-      "carrier": {"kind": "dw", "code": "DW0420"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "interact"}}}
-    },
-    {
-      "id": "hv-04",
-      "campaign": "hollow-vigil",
-      "round": 1,
-      "finding": "objectives had no lifecycle feedback: nothing on screen said an objective had activated, completed, or that the delve had ended",
-      "triage": "capability",
-      "general_form": "every objective emits activation/completion presentation (title + hint + sound)",
-      "carrier": {"kind": "packtest", "template": "verb_flag_gate"},
-      "binding": {"kind": "out", "glob": "packtest-datapack/**/verb_flag_gate.mcfunction"}
-    },
-    {
-      "id": "hv-05",
-      "campaign": "hollow-vigil",
-      "round": 1,
-      "finding": "a gate room did not actually seal: the close-gate region left a walkable way through",
-      "triage": "capability",
-      "general_form": "a sealed gate's region is impassable in the navigation model the completability proof uses",
-      "carrier": {"kind": "dw", "code": "DW0306"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["close-gate", "open-gate"]}}}
-    },
-    {
-      "id": "hv-06",
-      "campaign": "hollow-vigil",
-      "round": 1,
-      "finding": "wave mobs were unarmed, so a boss fight was no fight",
-      "triage": "capability",
-      "general_form": "an armed species gets its default equipment, and the generated kill test asserts the effective main hand",
-      "carrier": {"kind": "packtest", "template": "verb_kill"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "wave/"}}}
-    },
-    {
-      "id": "hv-07",
-      "campaign": "hollow-vigil",
-      "round": 2,
-      "finding": "two dialogue option labels overflowed the fixed-width dialog button and vanilla scrolled them",
-      "triage": "capability",
-      "general_form": "an option label -- English source or any sidecar rendition -- renders within the 146 usable font px of the button",
-      "carrier": {"kind": "dw", "code": "DW0331"},
-      "binding": {"kind": "dsl", "files": ["dialogue.json"], "match": {"has": ["label"]}}
-    },
-    {
-      "id": "hv-08",
-      "campaign": "hollow-vigil",
-      "round": "cherry-2026-08-05",
-      "finding": "hostile bodies chased into a daylit yard burned to death in under twenty seconds under a pinned noon, ending the fight before the party reached it",
-      "triage": "capability",
-      "general_form": "a body vanilla burns in daylight is not staged for a fight the sun can reach",
-      "carrier": {"kind": "dw", "code": "DW0496"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "actor/"}}}
-    },
-    {
-      "id": "hv-09",
-      "campaign": "hollow-vigil",
-      "round": "cherry-2026-08-05",
-      "finding": "the quest key became unobtainable after the first wave on a build whose bot ladder was fully green: the wave countdown decremented only on player-kill credits, so deaths from other causes were uncredited",
-      "triage": "capability",
-      "general_form": "a wave's liveness is measured by census over its own tag, never by kill credits, and the harness requires the objective it gates",
-      "carrier": {"kind": "packtest", "template": "wave_census"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "wave/"}}}
-    },
-    {
-      "id": "hv-10",
-      "campaign": "hollow-vigil",
-      "round": "cherry-2026-08-05",
-      "finding": "a valley staged as a cherry grove held a handful of malformed trees and bare rock in every other direction; the render-shot acceptance proxy passed it",
-      "triage": "content",
-      "general_form": "a generator's scatter reaches a quantity floor over its whole declared domain, asserted as a number rather than by eye",
-      "carrier": null,
-      "note": "The quantity-binding generator test cited for this fix is not in this engine tree: no cherry/grove/density generator or assertion exists under prefabs/ or crates/. Whatever closed the instance did not leave a check here, so the class is open for the next campaign that scatters anything."
-    },
-    {
-      "id": "pre-01",
-      "campaign": "nobodys-cave",
-      "round": null,
-      "finding": "a spawn-wave that no kill objective named validated and compiled clean but never spawned at runtime; only human play exposed it",
-      "triage": "capability",
-      "general_form": "a spawn-wave whose anchor resolves in no assembled area is a dangling spawn and fails the build",
-      "carrier": {"kind": "dw", "code": "DW0310"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "wave/"}}}
-    },
-    {
-      "id": "pre-02",
-      "campaign": "nobodys-cave",
-      "round": null,
-      "finding": "a single-layer sand or gravel floor fell into the void when the structure was placed, dropping the player through the map",
-      "triage": "capability",
-      "general_form": "a placed gravity block with no support at placement time is refused, and prefab generators assert the same invariant",
-      "carrier": {"kind": "dw", "code": "DW0313"},
-      "binding": {"kind": "dsl", "files": ["world-edits.json"], "match": {"prefix": {"id": "batch/"}}}
-    },
-    {
-      "id": "isl-01",
-      "campaign": "nobodys-cave-island",
-      "round": 3,
-      "finding": "the zh-cn localization read as machine translation rather than as each speaker's voice",
-      "triage": "content",
-      "general_form": "none: translation register is a judgement no compiler makes",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "Translation register and voice are aesthetic judgements. The nearest machine forms cover DRIFT, not quality: DW0187/DW0188 catch a sidecar row translated from English the campaign no longer holds, and DW0180/DW0181 catch coverage gaps. A phrase-blacklist prose lint was measured on this project at ROC-AUC 0.501 -- indistinguishable from chance -- and was deliberately kept out of every gate. This row is a standing content-QC item for the owner at every staging."
-    },
-    {
-      "id": "isl-02",
-      "campaign": "nobodys-cave-island",
-      "round": 3,
-      "finding": "a required item was issued per class rather than to the whole party, so players without that class could not complete the objective that consumed it",
-      "triage": "capability",
-      "general_form": "an objective gated on an item is completable by every player who must complete it, whatever class they picked",
-      "carrier": null
-    },
-    {
-      "id": "isl-03",
-      "campaign": "nobodys-cave-island",
-      "round": 3,
-      "finding": "NPC bodies stood on the interaction marker the party had to click, so the click landed on the body",
-      "triage": "capability",
-      "general_form": "an NPC or actor body does not stand on, or immediately in front of, an interaction affordance the party has to click",
-      "carrier": {"kind": "dw", "code": "DW0359"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "actor/"}}}
-    },
-    {
-      "id": "isl-04",
-      "campaign": "nobodys-cave-island",
-      "round": 3,
-      "finding": "a live-AI body staged for a scripted beat dug itself into the ground and despawned within seconds at human pace",
-      "triage": "capability",
-      "general_form": "a staged body is a NoAI puppet until an unleash beat gives it real AI; nothing on stage is live-AI by accident",
-      "carrier": {"kind": "packtest", "template": "v06_unleash"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "actor/"}}}
-    },
-    {
-      "id": "isl-05",
-      "campaign": "nobodys-cave-island",
-      "round": 3,
-      "finding": "an item presented as granting night vision was a renamed water bottle and granted nothing",
-      "triage": "capability",
-      "general_form": "a potion-bearing kit item declares contents the pinned registry can actually pour",
-      "carrier": {"kind": "dw", "code": "DW0487"},
-      "binding": {"kind": "dsl", "files": ["classes.json"], "match": {"has": ["contents"]}}
-    },
-    {
-      "id": "isl-06",
-      "campaign": "nobodys-cave-island",
-      "round": 3,
-      "finding": "NPC bodies were summoned clipped into block geometry at cell corners",
-      "triage": "capability",
-      "general_form": "a body is never inside solid block geometry at the anchor it is summoned on or at any tick of a walked leg",
-      "carrier": {"kind": "dw", "code": "DW0450"},
-      "binding": {"kind": "dsl", "files": ["npcs.json"], "match": {"prefix": {"id": "npc/"}}}
-    },
-    {
-      "id": "isl-07",
-      "campaign": "nobodys-cave-island",
-      "round": 3,
-      "finding": "the ocean sat below the shoreline the map was built for, so the sea did not meet the beach",
-      "triage": "capability",
-      "general_form": "in an ocean-horizon world every placed piece that declares a waterline lands it at sea level",
-      "carrier": {"kind": "dw", "code": "DW0344"},
-      "binding": {"kind": "dsl", "files": ["world.json"], "match": {"prefix": {"id": "area/"}}}
-    },
-    {
-      "id": "isl-08",
-      "campaign": "nobodys-cave-island",
-      "round": 3,
-      "finding": "singleplayer had no entry point at all: a first join landed nowhere the delve had prepared",
-      "triage": "capability",
-      "general_form": "the assembled world resolves an entry anchor, and first-join placement is datapack-owned rather than left to the server's spawn logic",
-      "carrier": {"kind": "dw", "code": "DW0345"},
-      "binding": {"kind": "dsl", "files": ["world.json"], "match": {"prefix": {"id": "area/"}}}
-    },
-    {
-      "id": "isl-09",
-      "campaign": "nobodys-cave-island",
-      "round": 4,
-      "finding": "cutscene cameras could not aim at a subject or cut between shots",
-      "triage": "capability",
-      "general_form": "a cutscene shot can aim (look_at) and a cutscene can cut; the emitted camera is proven not to clip and not to sweep faster than the angular budget",
-      "carrier": {"kind": "dw", "code": "DW0347"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "cutscene"}}}
-    },
-    {
-      "id": "isl-10",
-      "campaign": "nobodys-cave-island",
-      "round": 4,
-      "finding": "a stealth failure clock kept running while a cutscene held the player, so the player was punished for watching",
-      "triage": "capability",
-      "general_form": "a cutscene is pure observation: no failure clock advances while the camera holds the party",
-      "carrier": {"kind": "packtest", "template": "v06_cutscene_freeze"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "cutscene"}}}
-    },
-    {
-      "id": "isl-11",
-      "campaign": "nobodys-cave-island",
-      "round": 4,
-      "finding": "strikes on a large staged body did not register as hits on the objective",
-      "triage": "capability",
-      "general_form": "every cell of a multi-cell body shares one hitbox tag, so a strike anywhere on it registers",
-      "carrier": {"kind": "packtest", "template": "v06_shared_hitbox"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"on": ["strike", "strike-npc"]}}}
-    },
-    {
-      "id": "isl-12",
-      "campaign": "nobodys-cave-island",
-      "round": 4,
-      "finding": "the generated landscape contained sheared half-trees where the terrain writer cut through prefab vegetation",
-      "triage": "capability",
-      "general_form": "a generator never leaves a structural feature half-written: it regrows or removes it whole",
-      "carrier": {"kind": "invariant", "test": "assert_greenfield_corridor_clear"},
-      "binding": {"kind": "out", "glob": "**/*.nbt"}
-    },
-    {
-      "id": "isl-13",
-      "campaign": "nobodys-cave-island",
-      "round": 4,
-      "finding": "on-screen text overran its box and was cut off",
-      "triage": "capability",
-      "general_form": "an on-screen narrate string -- English source or any sidecar rendition -- renders within the screen width, measured against real font metrics",
-      "carrier": {"kind": "dw", "code": "DW0330"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "narrate"}}}
-    },
-    {
-      "id": "isl-14",
-      "campaign": "nobodys-cave-island",
-      "round": 4,
-      "finding": "an item the fiction said was taken had to be clicked instead of picked up",
-      "triage": "capability",
-      "general_form": "taking a thing is a collect objective over a real container, not an interact on a marker",
-      "carrier": {"kind": "packtest", "template": "verb_collect"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "collect"}}}
-    },
-    {
-      "id": "isl-15",
-      "campaign": "nobodys-cave-island",
-      "round": 4,
-      "finding": "narrative prose was delivered as on-screen subtitles where it belonged in chat",
-      "triage": "content",
-      "general_form": "none: which channel a line belongs in is an authoring judgement",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "Channel choice (title / subtitle / actionbar / chat) is a presentation judgement about pacing and emphasis. The machine can only measure the consequence -- DW0330 catches a line too wide for the box it was put in -- never whether the box was the right one. Standing content-QC item."
-    },
-    {
-      "id": "isl-16",
-      "campaign": "nobodys-cave-island",
-      "round": 4,
-      "finding": "an ending banner used block art where a plain fullscreen title was wanted",
-      "triage": "content",
-      "general_form": "none: art direction is an authoring judgement",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "Whether an ending is a plain title or a piece of art is art direction. The machine bounds the consequence only: DW0328 refuses art-styled strings outside the renderable character set and DW0330 bounds the width. Standing content-QC item."
-    },
-    {
-      "id": "isl-17",
-      "campaign": "nobodys-cave-island",
-      "round": 4,
-      "finding": "an undead wave burned in daylight instead of fighting",
-      "triage": "capability",
-      "general_form": "a body vanilla burns in daylight is not staged for a fight the sun can reach; the remedy is equipment, never a clock",
-      "carrier": {"kind": "dw", "code": "DW0496"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "wave/"}}}
-    },
-    {
-      "id": "isl-18",
-      "campaign": "nobodys-cave-island",
-      "round": 5,
-      "finding": "a right-click interaction placed on the cell an NPC stood in soft-locked that NPC's dialogue",
-      "triage": "capability",
-      "general_form": "a use trigger is never anchored where an NPC stands; one cell holds one interaction hitbox",
-      "carrier": {"kind": "dw", "code": "DW0350"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "trigger/"}}}
-    },
-    {
-      "id": "isl-19",
-      "campaign": "nobodys-cave-island",
-      "round": 5,
-      "finding": "a stealth beat demanded the player crouch, which the fiction never asked for",
-      "triage": "content",
-      "general_form": "a stealth judge's per-player test reads where the body is and nothing else; any other selector argument is a demand the fiction never made",
-      "carrier": {
-        "kind": "dw",
-        "code": "DW0852"
-      },
       "binding": {
-        "kind": "artifact",
-        "file": "stealth-judge.json",
-        "path": "examined"
-      },
-      "applies_when": {
-        "kind": "dsl",
         "files": [
           "quests.json"
         ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "reach-anchor"
+          }
+        }
+      },
+      "campaign": "hollow-vigil",
+      "carrier": {
+        "code": "DW0850",
+        "kind": "dw"
+      },
+      "finding": "a reach-anchor's completion volume was a point sphere too tight for a human standing on the altar cell, so arriving did not complete the objective",
+      "general_form": "a reach objective's completion volume contains a cell a body can stand in, and the footing the route proof delivers the party to is inside that volume; the emitted volume, the volume critical-path.json hands the bot and the volume the proof judges are one authority (compiler::reach::reach_completion), so no two of them can disagree",
+      "id": "hv-01",
+      "note": "Closed as a property, not as the reported volume. Widening v0.3+ to a 3x3x3 cube fixed the sphere that had been reported and left the same defect reachable by a different number: nav::SNAP_RADIUS is 3, so a reach whose only footing lies further out than the completion volume reaches routes green (DW0311), exports green (DW0314) and never fires. DW0850 refuses both. The v0.3+ half-extent is now the authored radius with a floor of 1 rather than the fixed 1 that repair left behind, so the gap survives only where an author writes a radius below the snap radius.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "narrate"
+          }
+        }
+      },
+      "campaign": "hollow-vigil",
+      "carrier": {
+        "code": "DW0185",
+        "kind": "dw"
+      },
+      "finding": "an entity CustomName rendered as literal JSON to players, including in death messages",
+      "general_form": "every player-visible authored string reaches the built tree inside a text component, never as raw JSON or a bare literal",
+      "id": "hv-02",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
+      "campaign": "hollow-vigil",
+      "carrier": {
+        "code": "DW0420",
+        "kind": "dw"
+      },
+      "finding": "interact affordances were invisible points with no hardware a player could see or aim at",
+      "general_form": "a compiler-owned interact affordance has visible hardware at its cell",
+      "id": "hv-03",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "requires_flags"
+          ]
+        }
+      },
+      "binding": {
+        "glob": "packtest-datapack/**/verb_flag_gate.mcfunction",
+        "kind": "out"
+      },
+      "campaign": "hollow-vigil",
+      "carrier": {
+        "kind": "packtest",
+        "template": "verb_flag_gate"
+      },
+      "finding": "objectives had no lifecycle feedback: nothing on screen said an objective had activated, completed, or that the delve had ended",
+      "general_form": "every objective emits activation/completion presentation (title + hint + sound)",
+      "id": "hv-04",
+      "note": "applies_when added 2026-08-21: the verb_flag_gate template is emitted for flag-gated objectives (`requires_flags`). Flag-gated objectives declared with no emitted template = UNBOUND; none declared = the class measures zero.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "close-gate",
+              "open-gate"
+            ]
+          }
+        }
+      },
+      "campaign": "hollow-vigil",
+      "carrier": {
+        "code": "DW0306",
+        "kind": "dw"
+      },
+      "finding": "a gate room did not actually seal: the close-gate region left a walkable way through",
+      "general_form": "a sealed gate's region is impassable in the navigation model the completability proof uses",
+      "id": "hv-05",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "campaign": "hollow-vigil",
+      "carrier": {
+        "kind": "packtest",
+        "template": "verb_kill"
+      },
+      "finding": "wave mobs were unarmed, so a boss fight was no fight",
+      "general_form": "an armed species gets its default equipment, and the generated kill test asserts the effective main hand",
+      "id": "hv-06",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "label"
+          ]
+        }
+      },
+      "campaign": "hollow-vigil",
+      "carrier": {
+        "code": "DW0331",
+        "kind": "dw"
+      },
+      "finding": "two dialogue option labels overflowed the fixed-width dialog button and vanilla scrolled them",
+      "general_form": "an option label -- English source or any sidecar rendition -- renders within the 146 usable font px of the button",
+      "id": "hv-07",
+      "round": 2,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "campaign": "hollow-vigil",
+      "carrier": {
+        "code": "DW0496",
+        "kind": "dw"
+      },
+      "finding": "hostile bodies chased into a daylit yard burned to death in under twenty seconds under a pinned noon, ending the fight before the party reached it",
+      "general_form": "a body vanilla burns in daylight is not staged for a fight the sun can reach",
+      "id": "hv-08",
+      "round": "cherry-2026-08-05",
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "campaign": "hollow-vigil",
+      "carrier": {
+        "kind": "packtest",
+        "template": "wave_census"
+      },
+      "finding": "the quest key became unobtainable after the first wave on a build whose bot ladder was fully green: the wave countdown decremented only on player-kill credits, so deaths from other causes were uncredited",
+      "general_form": "a wave's liveness is measured by census over its own tag, never by kill credits, and the harness requires the objective it gates",
+      "id": "hv-09",
+      "round": "cherry-2026-08-05",
+      "triage": "capability"
+    },
+    {
+      "campaign": "hollow-vigil",
+      "carrier": null,
+      "finding": "a valley staged as a cherry grove held a handful of malformed trees and bare rock in every other direction; the render-shot acceptance proxy passed it",
+      "general_form": "a generator's scatter reaches a quantity floor over its whole declared domain, asserted as a number rather than by eye",
+      "id": "hv-10",
+      "note": "The quantity-binding generator test cited for this fix is not in this engine tree: no cherry/grove/density generator or assertion exists under prefabs/ or crates/. Whatever closed the instance did not leave a check here, so the class is open for the next campaign that scatters anything.",
+      "round": "cherry-2026-08-05",
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave",
+      "carrier": {
+        "code": "DW0310",
+        "kind": "dw"
+      },
+      "finding": "a spawn-wave that no kill objective named validated and compiled clean but never spawned at runtime; only human play exposed it",
+      "general_form": "a spawn-wave whose anchor resolves in no assembled area is a dangling spawn and fails the build",
+      "id": "pre-01",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world-edits.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "batch/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave",
+      "carrier": {
+        "code": "DW0313",
+        "kind": "dw"
+      },
+      "finding": "a single-layer sand or gravel floor fell into the void when the structure was placed, dropping the player through the map",
+      "general_form": "a placed gravity block with no support at placement time is refused, and prefab generators assert the same invariant",
+      "id": "pre-02",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the zh-cn localization read as machine translation rather than as each speaker's voice",
+      "general_form": "none: translation register is a judgement no compiler makes",
+      "id": "isl-01",
+      "justification": "Translation register and voice are aesthetic judgements. The nearest machine forms cover DRIFT, not quality: DW0187/DW0188 catch a sidecar row translated from English the campaign no longer holds, and DW0180/DW0181 catch coverage gaps. A phrase-blacklist prose lint was measured on this project at ROC-AUC 0.501 -- indistinguishable from chance -- and was deliberately kept out of every gate. This row is a standing content-QC item for the owner at every staging.",
+      "round": 3,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "requires_item"
+          ]
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0849",
+        "kind": "dw"
+      },
+      "finding": "a required item was issued per class rather than to the whole party, so players without that class could not complete the objective that consumed it",
+      "general_form": "an objective gated on a HELD item is completable by a solo player of every class: the item has a class-blind supply somewhere in the campaign (a give-item at any effect root, a collect, a loot container, a wave drop), or it is in every class kit",
+      "id": "isl-02",
+      "note": "The capability half (a kit item's and a give-item's carrier, spec-0018, DSL v0.6) had landed; what had no check was whether the item a gate demands can be brought at all. Quantified over EVERY class for the reason DW0476 states about the flask: a solo player of any class is a supported party.",
+      "round": 3,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0359",
+        "kind": "dw"
+      },
+      "finding": "NPC bodies stood on the interaction marker the party had to click, so the click landed on the body",
+      "general_form": "an NPC or actor body does not stand on, or immediately in front of, an interaction affordance the party has to click",
+      "id": "isl-03",
+      "round": 3,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "kind": "packtest",
+        "template": "v06_unleash"
+      },
+      "finding": "a live-AI body staged for a scripted beat dug itself into the ground and despawned within seconds at human pace",
+      "general_form": "a staged body is a NoAI puppet until an unleash beat gives it real AI; nothing on stage is live-AI by accident",
+      "id": "isl-04",
+      "round": 3,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "classes.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "contents"
+          ]
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0487",
+        "kind": "dw"
+      },
+      "finding": "an item presented as granting night vision was a renamed water bottle and granted nothing",
+      "general_form": "a potion-bearing kit item declares contents the pinned registry can actually pour",
+      "id": "isl-05",
+      "round": 3,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "npc/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0450",
+        "kind": "dw"
+      },
+      "finding": "NPC bodies were summoned clipped into block geometry at cell corners",
+      "general_form": "a body is never inside solid block geometry at the anchor it is summoned on or at any tick of a walked leg",
+      "id": "isl-06",
+      "round": 3,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0344",
+        "kind": "dw"
+      },
+      "finding": "the ocean sat below the shoreline the map was built for, so the sea did not meet the beach",
+      "general_form": "in an ocean-horizon world every placed piece that declares a waterline lands it at sea level",
+      "id": "isl-07",
+      "round": 3,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0345",
+        "kind": "dw"
+      },
+      "finding": "singleplayer had no entry point at all: a first join landed nowhere the delve had prepared",
+      "general_form": "the assembled world resolves an entry anchor, and first-join placement is datapack-owned rather than left to the server's spawn logic",
+      "id": "isl-08",
+      "round": 3,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "cutscene"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0347",
+        "kind": "dw"
+      },
+      "finding": "cutscene cameras could not aim at a subject or cut between shots",
+      "general_form": "a cutscene shot can aim (look_at) and a cutscene can cut; the emitted camera is proven not to clip and not to sweep faster than the angular budget",
+      "id": "isl-09",
+      "round": 4,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "cutscene"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "kind": "packtest",
+        "template": "v06_cutscene_freeze"
+      },
+      "finding": "a stealth failure clock kept running while a cutscene held the player, so the player was punished for watching",
+      "general_form": "a cutscene is pure observation: no failure clock advances while the camera holds the party",
+      "id": "isl-10",
+      "round": 4,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "on": [
+              "strike",
+              "strike-npc"
+            ]
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "kind": "packtest",
+        "template": "v06_shared_hitbox"
+      },
+      "finding": "strikes on a large staged body did not register as hits on the objective",
+      "general_form": "every cell of a multi-cell body shares one hitbox tag, so a strike anywhere on it registers",
+      "id": "isl-11",
+      "round": 4,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "glob": "**/*.nbt",
+        "kind": "out"
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "kind": "invariant",
+        "test": "assert_greenfield_corridor_clear"
+      },
+      "finding": "the generated landscape contained sheared half-trees where the terrain writer cut through prefab vegetation",
+      "general_form": "a generator never leaves a structural feature half-written: it regrows or removes it whole",
+      "id": "isl-12",
+      "note": "applies_when added 2026-08-21: generator invariants examine prefab bytes, which reach a build only through areas[] placement today (a derived blockout places no .nbt). Areas declared with zero .nbt in the build = UNBOUND; no area = the class measures zero. Re-point at detail pieces when spec-0050 lands them.",
+      "round": 4,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "narrate"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0330",
+        "kind": "dw"
+      },
+      "finding": "on-screen text overran its box and was cut off",
+      "general_form": "an on-screen narrate string -- English source or any sidecar rendition -- renders within the screen width, measured against real font metrics",
+      "id": "isl-13",
+      "round": 4,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "collect"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "kind": "packtest",
+        "template": "verb_collect"
+      },
+      "finding": "an item the fiction said was taken had to be clicked instead of picked up",
+      "general_form": "taking a thing is a collect objective over a real container, not an interact on a marker",
+      "id": "isl-14",
+      "round": 4,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "narrative prose was delivered as on-screen subtitles where it belonged in chat",
+      "general_form": "none: which channel a line belongs in is an authoring judgement",
+      "id": "isl-15",
+      "justification": "Channel choice (title / subtitle / actionbar / chat) is a presentation judgement about pacing and emphasis. The machine can only measure the consequence -- DW0330 catches a line too wide for the box it was put in -- never whether the box was the right one. Standing content-QC item.",
+      "round": 4,
+      "triage": "content"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "an ending banner used block art where a plain fullscreen title was wanted",
+      "general_form": "none: art direction is an authoring judgement",
+      "id": "isl-16",
+      "justification": "Whether an ending is a plain title or a piece of art is art direction. The machine bounds the consequence only: DW0328 refuses art-styled strings outside the renderable character set and DW0330 bounds the width. Standing content-QC item.",
+      "round": 4,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0496",
+        "kind": "dw"
+      },
+      "finding": "an undead wave burned in daylight instead of fighting",
+      "general_form": "a body vanilla burns in daylight is not staged for a fight the sun can reach; the remedy is equipment, never a clock",
+      "id": "isl-17",
+      "round": 4,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "trigger/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0350",
+        "kind": "dw"
+      },
+      "finding": "a right-click interaction placed on the cell an NPC stood in soft-locked that NPC's dialogue",
+      "general_form": "a use trigger is never anchored where an NPC stands; one cell holds one interaction hitbox",
+      "id": "isl-18",
+      "round": 5,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
         "match": {
           "eq": {
             "type": "begin-stealth"
           }
         }
       },
-      "note": "Closed by construction at v0.6 and promised in the emitter's own doc comment, which is a doc line. DW0852 is the invocation: every build of a campaign that declares a stealth beat audits its FINAL emitted function list and ships the count. The rule is an allowlist of the six position arguments, never a denylist of the demands somebody has already thought of, and it is scoped to the per-player judge rather than the dispatcher \u2014 whose cutscene skip freezes the grace clock instead of asking the player for anything."
-    },
-    {
-      "id": "isl-20",
+      "binding": {
+        "file": "stealth-judge.json",
+        "kind": "artifact",
+        "path": "examined"
+      },
       "campaign": "nobodys-cave-island",
-      "round": 5,
-      "finding": "a body teleported to its destination instead of walking there",
-      "triage": "capability",
-      "general_form": "a body that changes place between beats either walks or is declared to appear; a discontinuous materialization with no move in between is reported",
-      "carrier": {"kind": "dw", "code": "DW0351"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["spawn-npc", "despawn-npc"]}}}
-    },
-    {
-      "id": "isl-21",
-      "campaign": "nobodys-cave-island",
-      "round": 5,
-      "finding": "a climactic beat was over in seven seconds and read as nothing having happened",
-      "triage": "content",
-      "general_form": "none: beat duration is a pacing judgement",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "How long a beat should last is pacing, and the owner has ruled explicitly (round 16) that any duration ceiling is a ceiling and never a target -- one beat's correct pause is zero. The machine can only prove a pause is not forced dead air the player cannot skip, never that a beat is long enough to land. Standing content-QC item."
-    },
-    {
-      "id": "isl-22",
-      "campaign": "nobodys-cave-island",
-      "round": 7,
-      "finding": "clicks aimed at an affordance landed on a different entity standing beside it",
-      "triage": "capability",
-      "general_form": "two bodies the party has to click never stand close enough that the crosshair cannot tell them apart",
-      "carrier": {"kind": "dw", "code": "DW0489"},
-      "binding": {"kind": "dsl", "files": ["npcs.json"], "match": {"prefix": {"id": "npc/"}}}
-    },
-    {
-      "id": "isl-23",
-      "campaign": "nobodys-cave-island",
-      "round": 7,
-      "finding": "striking a body that the fiction invited the party to strike produced no response at all",
-      "triage": "capability",
-      "general_form": "a body the content invites a strike on carries a strike trigger, and a click trigger is never anchored where a player cannot reach it",
-      "carrier": {"kind": "dw", "code": "DW0426"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "trigger/"}}}
-    },
-    {
-      "id": "isl-24",
-      "campaign": "nobodys-cave-island",
-      "round": 7,
-      "finding": "a cinematic was staged from inside the structure it was filming, so the shot showed the inside of a wall",
-      "triage": "capability",
-      "general_form": "a camera dolly does not clip solid geometry on either the authored or the eased path",
-      "carrier": {"kind": "dw", "code": "DW0308"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "cutscene"}}}
-    },
-    {
-      "id": "isl-25",
-      "campaign": "nobodys-cave-island",
-      "round": 7,
-      "finding": "an open landscape read as three walled rooms rather than one continuous space",
-      "triage": "content",
-      "general_form": "none: whether a space reads as open is a perceptual judgement",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "How a space reads to a person standing in it is perception, not geometry. The machine proves the space is traversable (DW0311/DW0452) and survivable one step off the proven ground (DW0322); it cannot prove it feels open. The render/world-edit review loop (spec-0015/spec-0017) is the human instrument for this, and it is a staging step, not a gate. Standing content-QC item."
-    },
-    {
-      "id": "isl-26",
-      "campaign": "nobodys-cave-island",
-      "round": 7,
-      "finding": "a mountain massif read as a rectangular slab",
-      "triage": "content",
-      "general_form": "none: landform silhouette is a perceptual judgement",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "Same class as isl-25: silhouette quality is perceptual. Covered by the render review loop as a staging step, not by any gate. Standing content-QC item."
-    },
-    {
-      "id": "isl-27",
-      "campaign": "nobodys-cave-island",
-      "round": 8,
-      "finding": "the seam between two assembled areas read as a wall across the beach",
-      "triage": "content",
-      "general_form": "none: seam legibility is a perceptual judgement",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "Same class as isl-25/isl-26. The machine proves the seam is walkable; whether it reads as continuous ground is perceptual and belongs to render review. Standing content-QC item."
-    },
-    {
-      "id": "isl-28",
-      "campaign": "nobodys-cave-island",
-      "round": 8,
-      "finding": "two visually identical hearths answered a strike differently, so the same action meant two things",
-      "triage": "content",
-      "general_form": "identical scene hardware answers identically; a second copy of an affordance is not silently inert",
-      "carrier": {"kind": "dw", "code": "DW0426"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "trigger/"}}}
-    },
-    {
-      "id": "isl-29",
-      "campaign": "nobodys-cave-island",
-      "round": 8,
-      "finding": "a staged body walked through stone that an earlier effect in its own timeline had sealed",
-      "triage": "capability",
-      "general_form": "a staged walk is routed against the seals its own timeline has already closed",
-      "carrier": {"kind": "dw", "code": "DW0410"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["move-npc", "move-actor"]}}}
-    },
-    {
-      "id": "isl-30",
-      "campaign": "nobodys-cave-island",
-      "round": 8,
-      "finding": "a hunt the fiction presented as a real threat was a scripted patrol that could not react",
-      "triage": "content",
-      "general_form": "a body the content bills as a threat is unleashed into real AI, and a campaign that stages fighters without declaring difficulty is reported",
-      "carrier": {"kind": "dw", "code": "DW0469"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "actor/"}}}
-    },
-    {
-      "id": "isl-31",
-      "campaign": "nobodys-cave-island",
-      "round": 11,
-      "finding": "a flock meant to be penned was scattered across the whole cavern",
-      "triage": "content",
-      "general_form": "none: where a flock belongs is a design statement the campaign makes, not a fact the compiler can derive",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "A herd's placement is authored intent. The compiler proves each body is standable, clear of geometry and inside its own room's footprint (DW0312/DW0450); it has no way to know the content wanted them in a pen rather than spread out. The machine-checkable half of this class is isl-38's keep-clear envelope. Standing content-QC item."
-    },
-    {
-      "id": "isl-32",
-      "campaign": "nobodys-cave-island",
-      "round": 11,
-      "finding": "a large body stood inside the mountain wall it was staged against",
-      "triage": "capability",
-      "general_form": "a placed body is checked against block collision volumes, not only a walked one",
-      "carrier": {"kind": "dw", "code": "DW0450"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "actor/"}}}
-    },
-    {
-      "id": "isl-33",
-      "campaign": "nobodys-cave-island",
-      "round": 12,
-      "finding": "a collect objective could not fill the room's own container or name its item, so the compiler stamped a chest of its own beside the barrels the fiction described",
-      "triage": "capability",
-      "general_form": "a collect objective adopts a declared container that must resolve to a real fillable container in the assembled world, and no two fills claim one anchor",
-      "carrier": {"kind": "dw", "code": "DW0438"},
-      "requires": {"file": "quests.json", "min_dsl_version": "0.8.0"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"has": ["container"]}}
-    },
-    {
-      "id": "isl-34",
-      "campaign": "nobodys-cave-island",
-      "round": 12,
-      "finding": "a scene object answered a left-click with a hint but ignored a right-click, so half the players got no answer at all",
-      "triage": "capability",
-      "general_form": "an interaction body is bound to the clickable SHAPE of the object at its anchor, not to a single cell, and co-located click triggers merge onto one hitbox rather than racing the ray pick",
-      "carrier": null
-    },
-    {
-      "id": "isl-35",
-      "campaign": "nobodys-cave-island",
-      "round": 12,
-      "finding": "NPCs offered premise questions from the opening scene after the finale had already played",
-      "triage": "capability",
-      "general_form": "every quest declares where its live cast is and what they offer, and the declaration is proven against the replayed effect history",
-      "carrier": {"kind": "dw", "code": "DW0460"},
-      "requires": {"file": "quests.json", "min_dsl_version": "0.7.0"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"has": ["cast"]}}
-    },
-    {
-      "id": "isl-36",
-      "campaign": "nobodys-cave-island",
-      "round": 12,
-      "finding": "a beat that can fail the player armed before its own prompt could be read",
-      "triage": "capability",
-      "general_form": "a failure clock arms only after the prompt that explains it can have been read",
-      "carrier": null
-    },
-    {
-      "id": "isl-37",
-      "campaign": "nobodys-cave-island",
-      "round": 12,
-      "finding": "three differently-named endings played the same closing text",
-      "triage": "capability",
-      "general_form": "each declared branch reaches an ending that some playthrough realizes, and its exclusive content does not leak into the others",
-      "carrier": {"kind": "dw", "code": "DW0484"},
-      "requires": {"file": "quest-plan.json", "min_dsl_version": "0.8.0"},
-      "binding": {"kind": "dsl", "files": ["quest-plan.json"], "match": {"prefix": {"id": "branch/"}}}
-    },
-    {
-      "id": "isl-38",
-      "campaign": "nobodys-cave-island",
-      "round": 12,
-      "finding": "a terrain edit buried a third of a room the content needed walkable",
-      "triage": "capability",
-      "general_form": "an edit batch may not write into a declared keep-clear envelope, and every post-batch cell a proven route uses stays standable",
-      "carrier": {"kind": "dw", "code": "DW0314"},
-      "binding": {"kind": "dsl", "files": ["world-edits.json"], "match": {"prefix": {"id": "batch/"}}}
-    },
-    {
-      "id": "isl-39",
-      "campaign": "nobodys-cave-island",
-      "round": 12,
-      "finding": "the English prose carried generated-text tics, chiefly negation pivots",
-      "triage": "content",
-      "general_form": "none: prose lint was measured on this project at chance",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "A phrase-blacklist detector for these tics was measured on this project's own corpus at ROC-AUC 0.501 -- indistinguishable from chance -- and was deliberately kept out of every gate rather than shipped as a check that would fire on good prose as often as bad. Prose remains a human read at every staging."
-    },
-    {
-      "id": "isl-40",
-      "campaign": "nobodys-cave-island",
-      "round": 12,
-      "finding": "dusk read as daylight to bodies that burn in it, so a night encounter fought the sun",
-      "triage": "capability",
-      "general_form": "a body vanilla burns in daylight is not staged for a fight the sun can reach",
-      "carrier": {"kind": "dw", "code": "DW0496"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "wave/"}}}
-    },
-    {
-      "id": "isl-41",
-      "campaign": "nobodys-cave-island",
-      "round": 12,
-      "finding": "an item requirement was satisfied by carrying the item in a pocket rather than holding it, so a beat about brandishing something worked with it stowed",
-      "triage": "capability",
-      "general_form": "requires_item means held in the main hand, and an interaction that can refuse a click explains the refusal",
-      "carrier": {"kind": "dw", "code": "DW0437"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"has": ["requires_item"]}}
-    },
-    {
-      "id": "isl-42",
-      "campaign": "nobodys-cave-island",
-      "round": 13,
-      "finding": "class picks changed nothing about the delve that followed",
-      "triage": "content",
-      "general_form": "none: whether a choice is meaningful is a design judgement",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "Whether a class pick changes the experience is a design judgement about consequence, not a structural fact. The nearest machine forms bound the failure it can cause (isl-02, an unsatisfiable per-class gate) and the divergence it should cause (DW0480-DW0485, declared branches). A campaign may legitimately offer flavour-only picks. Standing content-QC item."
-    },
-    {
-      "id": "isl-43",
-      "campaign": "nobodys-cave-island",
-      "round": 13,
-      "finding": "a declared story branch was half-built and reached no ending",
-      "triage": "capability",
-      "general_form": "every declared branch is realizable by some playthrough and reaches an ending",
-      "carrier": {"kind": "dw", "code": "DW0482"},
-      "requires": {"file": "quest-plan.json", "min_dsl_version": "0.8.0"},
-      "binding": {"kind": "dsl", "files": ["quest-plan.json"], "match": {"prefix": {"id": "branch/"}}}
-    },
-    {
-      "id": "isl-44",
-      "campaign": "nobodys-cave-island",
-      "round": 13,
-      "finding": "scatter debris sat on top of the stair treads instead of being embedded in them",
-      "triage": "capability",
-      "general_form": "a generator embeds scatter into the surface it decorates rather than stacking on it, and never onto a proven route's treads",
-      "carrier": {"kind": "invariant", "test": "assert_distress_never_stacks"},
-      "binding": {"kind": "out", "glob": "**/*.nbt"}
-    },
-    {
-      "id": "isl-45",
-      "campaign": "nobodys-cave-island",
-      "round": 13,
-      "finding": "an objective made the party double back over ground they had already crossed for no story reason",
-      "triage": "content",
-      "general_form": "none: whether a walk is worth making is a design judgement",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "The compiler measures route length and proves retry cost (DW0379) but cannot know whether a walk earns itself. Backtracking is a legitimate design device -- the souls shortcut loop is built from it. Standing content-QC item."
-    },
-    {
-      "id": "isl-46",
-      "campaign": "nobodys-cave-island",
-      "round": 13,
-      "finding": "a body that should have held its position after a scripted escape wandered off it",
-      "triage": "capability",
-      "general_form": "where a body is after each beat is declared and proven against the replayed effect history",
-      "carrier": {"kind": "dw", "code": "DW0461"},
-      "requires": {"file": "quests.json", "min_dsl_version": "0.7.0"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"has": ["cast"]}}
-    },
-    {
-      "id": "isl-47",
-      "campaign": "nobodys-cave-island",
-      "round": 13,
-      "finding": "the ending faded to black where the fiction called for a departure the party could watch",
-      "triage": "content",
-      "general_form": "none: how an ending is staged is an authoring judgement",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "What an ending should show is authoring. The machine proves the shot is filmable (DW0308 clip, DW0347 sweep, DW0724 eye cell) once it is written. Standing content-QC item."
-    },
-    {
-      "id": "isl-48",
-      "campaign": "nobodys-cave-island",
-      "round": 13,
-      "finding": "a request that a hostile species patrol declared routes could not be honoured for that species",
-      "triage": "capability",
-      "general_form": "the constraint is stated to the author rather than discovered: patrol NBT is raider-family only",
-      "carrier": null,
-      "disposition": "owner-ruled",
-      "justification": "Owner-ruled not a defect: lane patrols are Raider NBT and the compiler refuses them on any other species (DW0382), which is the constraint being reported to the author at authoring time rather than found in play. Reported back to the owner in round 14 and not contested. Carried as a ruled row so that a future campaign asking the same question finds the answer here instead of re-asking it."
-    },
-    {
-      "id": "isl-49",
-      "campaign": "nobodys-cave-island",
-      "round": 14,
-      "finding": "twenty-seven dialogue option labels overran the button they were drawn on and scrolled",
-      "triage": "capability",
-      "general_form": "an option label -- English source or any sidecar rendition -- renders within the 146 usable font px of the button",
-      "carrier": {"kind": "dw", "code": "DW0331"},
-      "binding": {"kind": "dsl", "files": ["dialogue.json"], "match": {"has": ["label"]}}
-    },
-    {
-      "id": "isl-50",
-      "campaign": "nobodys-cave-island",
-      "round": 15,
-      "finding": "a stealth beat held the player in roughly ten seconds of forced dead air before it armed",
-      "triage": "content",
-      "general_form": "none: a pause is a pacing judgement, and the owner has ruled that the ceiling is never a target",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "Owner ruling (round 16, corrected same day): the reading-pause ceiling governs places where a reading pause exists and is never a target -- the correct value for this beat was zero. A machine form would have to know which pauses are reading pauses, which is the judgement itself. Standing content-QC item."
-    },
-    {
-      "id": "isl-51",
-      "campaign": "nobodys-cave-island",
-      "round": 15,
-      "finding": "on one branch a body vanished for about ten seconds and then walked back, because one shared walk driver inherited an origin another branch had left it at",
-      "triage": "capability",
-      "general_form": "a walk starts where ITS branch left the body; one content-keyed walk driver reached from occurrences with different origins is reported",
-      "carrier": {"kind": "dw", "code": "DW0488"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["move-npc", "move-actor"]}}}
-    },
-    {
-      "id": "isl-52",
-      "campaign": "nobodys-cave-island",
-      "round": 15,
-      "finding": "granted night vision expired and flickered part-way through the ending cutscene it was granted for",
-      "triage": "capability",
-      "general_form": "a granted sight effect outlasts any authored camera it can overlap, plus vanilla's wind-down, so it can never begin ramping down on screen",
-      "carrier": {"kind": "packtest", "template": "v06_night_vision"},
-      "binding": {"kind": "dsl", "files": ["world.json"], "match": {"has": ["mitigation"]}}
-    },
-    {
-      "id": "isl-53",
-      "campaign": "nobodys-cave-island",
-      "round": 16,
-      "finding": "only one of four identical barrels held the item the objective wanted, and nothing told the party which",
-      "triage": "capability",
-      "general_form": "an objective's target is distinguishable from identical scenery, or every copy satisfies it",
-      "carrier": null
-    },
-    {
-      "id": "isl-54",
-      "campaign": "nobodys-cave-island",
-      "round": 16,
-      "finding": "one branch ended with its closing cutscene and the other simply stopped",
-      "triage": "capability",
-      "general_form": "completing one objective may not land the party in a different area on a branch than on the exported path",
-      "carrier": {"kind": "dw", "code": "DW0494"},
-      "requires": {"file": "quest-plan.json", "min_dsl_version": "0.8.0"},
-      "binding": {"kind": "dsl", "files": ["quest-plan.json"], "match": {"prefix": {"id": "branch/"}}}
-    },
-    {
-      "id": "isl-55",
-      "campaign": "nobodys-cave-island",
-      "round": 16,
-      "finding": "an optional side encounter gated the mainline, so skipping it soft-locked the delve",
-      "triage": "capability",
-      "general_form": "the button that completes a mainline objective is not already on screen at an earlier point of the participation-minimal walk",
-      "carrier": {"kind": "dw", "code": "DW0205"},
-      "binding": {"kind": "dsl", "files": ["dialogue.json"], "match": {"has": ["label"]}}
-    },
-    {
-      "id": "isl-56",
-      "campaign": "nobodys-cave-island",
-      "round": 16,
-      "finding": "hostile bodies meant to fight the party by the shore ran out to sea instead",
-      "triage": "content",
-      "general_form": "none: where a live-AI body chooses to go is vanilla's pathing, not the compiler's",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "Once a body is unleashed its movement belongs to vanilla AI. The compiler seats it (DW0312/DW0387) and the bot ladder measures whether the fight happens (combat-plan floor gate); neither can predict a mob's target selection. This is exactly the class the bot playthrough exists to catch empirically. Standing content-QC item, with the bot run as its partial machine backstop."
-    },
-    {
-      "id": "isl-57",
-      "campaign": "nobodys-cave-island",
-      "round": "staging-2026-08-06",
-      "finding": "a herded animal crossed a shut fence gate a player character could not walk through, and appeared to climb a stone wall",
-      "triage": "capability",
-      "general_form": "a walked leg's route contains no move the body walking it cannot make, per locomotion class",
-      "carrier": {"kind": "artifact", "file": "traversal-gate.json", "path": "legs"},
-      "binding": {"kind": "artifact", "file": "traversal-gate.json", "path": "rules.gate_use.cells"}
-    },
-    {
-      "id": "isl-58",
-      "campaign": "nobodys-cave-island",
-      "round": "staging-2026-08-06",
-      "finding": "the route planner renders a one-block step-up as a vertical translation in place, so a body reads as levitating rather than hopping",
-      "triage": "capability",
-      "general_form": "a walked leg's rendered motion matches the move it models; a step-up is animated as a step",
-      "carrier": null
-    },
-    {
-      "id": "isl-59",
-      "campaign": "nobodys-cave-island",
-      "round": "staging-2026-08-06",
-      "finding": "a pool draw seated the same anchor-bearing prefab twice, so anchor names stopped picking out one place in the world",
-      "triage": "capability",
-      "general_form": "a pool draw that seats one anchor-bearing prefab more than once is reported at the pool, not discovered one blocked placement at a time",
-      "carrier": {"kind": "dw", "code": "DW0498"},
-      "binding": {"kind": "dsl", "files": ["world.json"], "match": {"has": ["prefab_pool"]}}
-    },
-    {
-      "id": "isl-60",
-      "campaign": "nobodys-cave-island",
-      "round": "post-release-2026-08-06",
-      "finding": "the shipped release notes advertised a player count and a playtime that the delve did not have, and a host-facing instruction named a version that was no longer current",
-      "triage": "capability",
-      "general_form": "release notes are rendered from the storybook, and a release refuses when storybook and campaign disagree",
-      "carrier": {"kind": "tool", "script": "check-storybook-version.py"},
-      "binding": {"kind": "campaign", "glob": "README*.md"}
-    },
-    {
-      "id": "bell-01",
-      "campaign": "the-drowned-bell",
-      "round": 1,
-      "finding": "a rest-and-save mechanic was implemented as a plain arrive objective, so the campfire the fiction offered could not be rested at",
-      "triage": "capability",
-      "general_form": "resting is a first-class bonfire verb with rest/save semantics, and a campaign that places one is held to the recovery kit it implies",
-      "carrier": {"kind": "dw", "code": "DW0476"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "bonfire"}}},
-      "applies_when": {"kind": "dsl", "files": ["classes.json"], "match": {"has": ["flask"]}},
-      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {set-checkpoint, bonfire}` — a claim that a campaign with a plain checkpoint could carry the flask obligation. It cannot: DW0476 binds a bonfire to the recovery item a REST spends, and a `set-checkpoint` has no rest, no dialog and no `on_rest`. The precondition is now the souls recovery surface itself — a declared \"flask\": true kit entry, a different object class in a different stage file from the binding one — so all three verdicts stay meaningful: flask + bonfire = BOUND; a flask nothing refills = UNBOUND, correctly; neither = INAPPLICABLE, the honest reading of a campaign that is not a souls campaign. nobodys-cave-island declares no flask and no bonfire and is INAPPLICABLE — still a red, still a defect class her session on it is not protected from."
-    },
-    {
-      "id": "bell-02",
-      "campaign": "the-drowned-bell",
-      "round": 2,
-      "finding": "stairs throughout the built scenes faced against the climb they carried",
-      "triage": "capability",
-      "general_form": "a stair block on a proven route faces the climb it carries",
-      "carrier": {"kind": "dw", "code": "DW0430"},
-      "binding": {"kind": "artifact", "file": "traversal-gate.json", "path": "route_cells"}
-    },
-    {
-      "id": "bell-03",
-      "campaign": "the-drowned-bell",
-      "round": 2,
-      "finding": "reachable containers throughout the map were empty",
-      "triage": "capability",
-      "general_form": "a declared loot fill resolves to a real fillable container with enough slots, and no two fills claim one anchor",
-      "carrier": {"kind": "dw", "code": "DW0431"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "loot/"}}}
-    },
-    {
-      "id": "bell-04",
-      "campaign": "the-drowned-bell",
-      "round": 2,
-      "finding": "an encounter billed as an elite was trivially weak, and the compiler had no way to express its durability at all",
-      "triage": "capability",
-      "general_form": "a billed encounter's declared effective HP is bounded against the best kit the party can field, and anything billed elite or boss that the floor gate cannot measure is reported",
-      "carrier": {"kind": "dw", "code": "DW0477"},
-      "binding": {"kind": "artifact", "file": "combat-plan.json", "path": "floor_gate.examined"}
-    },
-    {
-      "id": "bell-05",
-      "campaign": "the-drowned-bell",
-      "round": 2,
-      "finding": "an encounter killed a full-health player in two hits",
-      "triage": "capability",
-      "general_form": "a campaign with mandatory combat — a wave the party must kill OR a hostile it turns loose on them — is held to the whole spec-0023 winnability pass, sustain included; and no unavoidable scripted hit on that path one-shots a full-health player (DW0473)",
-      "carrier": {"kind": "dw", "code": "DW0474"},
-      "binding": {"kind": "artifact", "file": "combat-plan.json", "path": "fights.total"},
-      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "actor/"}}},
-      "note": "carrier + binding corrected 2026-08-11 (staging-gate UNBOUND audit), and the engine fixed with them. The row named DW0473 while probing combat-plan.json:encounters, which quantify over DIFFERENT collections — DW0473 walks unconditional `damage-players` bundles, `encounters` is `kill`-a-wave steps. Worse, the whole spec-0023 pass (DW0470-DW0475) was gated on `has_encounters`, the VERB, so a delve whose combat is entirely actors ran none of it: nobodys-cave-island unleashes three wardens, bills one elite, ships zero `kill` objectives, and reported `encounters: 0` for twenty-two owner rounds with nothing saying that was a coverage fact rather than a content fact. `combat::mandatory_fights` is now the object class — every fight of either shape — the pass is gated on it, DW0474 quantifies over it, and combat-plan.json publishes it as `fights`. Island binding 0 -> 3."
-    },
-    {
-      "id": "bell-06",
-      "campaign": "the-drowned-bell",
-      "round": 2,
-      "finding": "a portcullis cycled too slowly to read as a hazard to time",
-      "triage": "content",
-      "general_form": "a timed gate is a timing read, not a coin flip: enough entry phases clear the span",
-      "carrier": {"kind": "dw", "code": "DW0378"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "timed-gate/"}}},
-      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"has_any": ["open_ticks", "closed_ticks", "salvos"]}},
-      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {close-gate, open-gate}` — a claim that having any gate means the campaign could carry a timing-window defect. It cannot: close-gate/open-gate are one-shot permanent state changes fired by a quest beat, with no clock and so no window to be a coin flip. That precondition demanded CONTENT (add a portcullis) rather than COVERAGE, and would hold every campaign without one red forever. The precondition is now the object class that can carry a timing read: anything driven by a repeating clock the party must cross — a timed-gate's open_ticks/closed_ticks, or a volley payload's salvos. A campaign with a volley and no timed gate is then UNBOUND, correctly. nobodys-cave-island declares neither and is INAPPLICABLE — still a red, still named to the owner as a class this build is not protected from."
-    },
-    {
-      "id": "bell-07",
-      "campaign": "the-drowned-bell",
-      "round": "2026-08-02",
-      "finding": "a shortcut's unlock affordance shipped as an invisible interaction body with no hardware, and the delve soft-locked with the gate sealed and nothing to press",
-      "triage": "capability",
-      "general_form": "a compiler-owned interact affordance has visible hardware, and that hardware is retired only by the machinery that owns it",
-      "carrier": {"kind": "dw", "code": "DW0420"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "interact"}}}
-    },
-    {
-      "id": "bell-08",
-      "campaign": "the-drowned-bell",
-      "round": 4,
-      "finding": "rest points sat inside the aggro geometry of the bodies the party was resting from",
-      "triage": "capability",
-      "general_form": "every respawn point — a bonfire and a plain set-checkpoint alike — is outside the aggro range of every hostile force that can be in the world while it governs, marching drift included",
-      "carrier": {"kind": "dw", "code": "DW0478"},
-      "binding": {"kind": "artifact", "file": "respawn-safety.json", "path": "pairs"},
-      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["set-checkpoint", "bonfire"]}}},
-      "note": "binding corrected and the engine widened 2026-08-11 (staging-gate UNBOUND audit). nav::check_bonfire_safe_zone quantified over plan.bonfires() — the verb — so a campaign that spells its respawn points `set-checkpoint` was examined ZERO times and reported green, while the catalog row for the same code had said \"a rest checkpoint\" all along. A bonfire and a set-checkpoint are siblings of one sum type, resolve to one CheckpointPlan distinguished only by `rest`, and deliver a dead player by the identical vanilla spawnpoint: the hazard belongs to the CELL. The proof now quantifies over every CheckpointPlan; a plain checkpoint, being monotonic, is measured only against forces that can exist while it still governs (a bonfire never stops governing and is unchanged); and validation/respawn-safety.json publishes the pair count. Island binding 0 -> 8 pairs over 3 respawn points and 6 hostile forces, SIX of which are live violations — see the round summary."
-    },
-    {
-      "id": "bell-09",
-      "campaign": "the-drowned-bell",
-      "round": 5,
-      "finding": "the road home from the finale was as long and as dangerous as the road out",
-      "triage": "capability",
-      "general_form": "retry and return cost from a rest point to the beat it respawns into is bounded",
-      "carrier": {"kind": "dw", "code": "DW0379"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["set-checkpoint", "bonfire"]}}}
-    },
-    {
-      "id": "bell-10",
-      "campaign": "the-drowned-bell",
-      "round": 5,
-      "finding": "undefeated elite and ambush bodies did not refresh across rest or death, so a party could chip them down over repeated attempts",
-      "triage": "capability",
-      "general_form": "an undefeated wave or hostile actor is re-seated by every rest and every respawn at a rest point, and a boss-tier wave may not declare rest respawning at all",
-      "carrier": {"kind": "dw", "code": "DW0499"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "wave/"}}}
-    },
-    {
-      "id": "bell-11",
-      "campaign": "the-drowned-bell",
-      "round": 6,
-      "finding": "a barred shortcut door answered a press from the wrong side with nothing at all",
-      "triage": "capability",
-      "general_form": "a click a campaign arms lands on a body the player can actually reach: the compiler owns the clickable SHAPE of the object at an anchor (a seal's shell, a shortcut door's sealed side, an NPC's hitbox, a region's shell), and a click anchored where nothing is clickable is refused",
-      "carrier": {"kind": "dw", "code": "DW0426"},
-      "binding": {"kind": "artifact", "file": "press-bodies.json", "path": "examined"},
-      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "trigger/"}}},
-      "note": "carrier corrected 2026-08-11 (staging-gate UNBOUND audit). It named DW0425, which quantifies over shortcuts[] — the verb the finding happened to arrive on — so it bound zero on every campaign that declares no shortcut, including the one being staged. DW0425 is the narrow corner (the compiler refuses to GUESS a side); the object-class form of \"a press answered with nothing at all\" is DW0426 + pressable::body_at, which quantifies over every strike/use trigger at any anchor kind and is the check that would have caught the original instance. DW0425 remains live and tested in its own right. Island binding 0 -> 1."
-    },
-    {
-      "id": "bell-12",
-      "campaign": "the-drowned-bell",
-      "round": 6,
-      "finding": "an NPC's skin rendered as a different person entirely from the one the fiction described",
-      "triage": "capability",
-      "general_form": "a declared skin texture is baked and served, and a mannequin declaring a texture id without a source file is refused",
-      "carrier": {"kind": "dw", "code": "DW0309"},
-      "binding": {"kind": "dsl", "files": ["npcs.json"], "match": {"has": ["skin"]}}
-    },
-    {
-      "id": "bell-13",
-      "campaign": "the-drowned-bell",
-      "round": 6,
-      "finding": "an on-screen prompt told the party to return to one place while the objective it described completed somewhere else",
-      "triage": "capability",
-      "general_form": "an objective's prompt names the place and the act that actually complete it",
-      "carrier": null
-    },
-    {
-      "id": "bell-14",
-      "campaign": "the-drowned-bell",
-      "round": 6,
-      "finding": "a defence wave gave the party no guidance to where the attackers were, so the fight could not be found",
-      "triage": "capability",
-      "general_form": "a mandatory encounter is discoverable from the objective that requires it",
-      "carrier": null
-    },
-    {
-      "id": "bell-15",
-      "campaign": "the-drowned-bell",
-      "round": 6,
-      "finding": "the delve's overall difficulty was an order of magnitude below what the design called for",
-      "triage": "content",
-      "general_form": "none: how hard a delve should be is the design's own statement",
-      "carrier": null,
-      "disposition": "no-machine-form",
-      "justification": "Absolute difficulty is a design target, not a derivable fact. The machine bounds the floor and the ceiling around it -- DW0472 time-to-kill, DW0473 one-shot deaths, DW0470/DW0471 winnability, and the bot's inverted floor gate for anything billed elite or boss -- but the band between them is the designer's. Standing content-QC item."
-    },
-    {
-      "id": "bell-16",
-      "campaign": "the-drowned-bell",
-      "round": 6,
-      "finding": "a ruling that recovery items become real healing potions was never adopted in the campaign's content",
-      "triage": "content",
-      "general_form": "a kit item that presents as a potion declares contents the pinned registry can pour",
-      "carrier": {"kind": "dw", "code": "DW0487"},
-      "binding": {"kind": "dsl", "files": ["classes.json"], "match": {"has": ["contents"]}}
-    },
-    {
-      "id": "bell-17",
-      "campaign": "the-drowned-bell",
-      "round": "2026-08-03",
-      "finding": "a hazard built on redstone signal transmission did not fire reliably in play, and the parts of its kill zone it did not cover made escaping it luck rather than a decision",
-      "triage": "capability",
-      "general_form": "a hazard is command-driven, never redstone-signalled, and a volley blankets every standable cell of its declared kill zone so no cell is safe by accident",
-      "carrier": {"kind": "dw", "code": "DW0442"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "volley"}}},
-      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "trap/"}}}
-    },
-    {
-      "id": "tm-01",
-      "campaign": "tide-mill",
-      "round": "2026-08-04",
-      "finding": "dying at a hazard respawned the party at the campaign entrance rather than the checkpoint that was armed, and because an inter-area transport had already fired there was no route back -- a hard soft-lock",
-      "triage": "capability",
-      "general_form": "from every respawn seat, under every quest state that can hold while it governs, a route back to the remaining required path exists -- including the one-way drop, where a player can reach and die somewhere the seat cannot reach at all",
-      "carrier": {"kind": "dw", "code": "DW0525"},
-      "requires": {"file": "quests.json", "min_dsl_version": "0.10.0"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["set-checkpoint", "bonfire"]}}},
-      "note": "DW0315 is NOT the carrier: it re-roots reachability AT the checkpoint cell, which assumes the checkpoint governs the death -- and that assumption is exactly what this finding falsified (an inter-area transport had already fired, so the party respawned at the campaign entrance). DW0525 is the rule that asks the question without that premise, and it is scoped to campaigns declaring stakes (dsl 0.10)."
-    },
-    {
-      "id": "tm-02",
-      "campaign": "tide-mill",
-      "round": "2026-08-04",
-      "finding": "an interior room in an ocean-horizon world sat one block under sea level and its whole walk plane flooded a minute after boot, while the compiler modelled it dry",
-      "triage": "capability",
-      "general_form": "the ambient sea is part of the assembled model: a walk plane the compiler proves standable is not one the sea will be standing over",
       "carrier": {
-        "kind": "dw",
-        "code": "DW0851"
+        "code": "DW0852",
+        "kind": "dw"
+      },
+      "finding": "a stealth beat demanded the player crouch, which the fiction never asked for",
+      "general_form": "a stealth judge's per-player test reads where the body is and nothing else; any other selector argument is a demand the fiction never made",
+      "id": "isl-19",
+      "note": "Closed by construction at v0.6 and promised in the emitter's own doc comment, which is a doc line. DW0852 is the invocation: every build of a campaign that declares a stealth beat audits its FINAL emitted function list and ships the count. The rule is an allowlist of the six position arguments, never a denylist of the demands somebody has already thought of, and it is scoped to the per-player judge rather than the dispatcher — whose cutscene skip freezes the grace clock instead of asking the player for anything.",
+      "round": 5,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "spawn-npc",
+              "despawn-npc"
+            ]
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0351",
+        "kind": "dw"
+      },
+      "finding": "a body teleported to its destination instead of walking there",
+      "general_form": "a body that changes place between beats either walks or is declared to appear; a discontinuous materialization with no move in between is reported",
+      "id": "isl-20",
+      "round": 5,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a climactic beat was over in seven seconds and read as nothing having happened",
+      "general_form": "none: beat duration is a pacing judgement",
+      "id": "isl-21",
+      "justification": "How long a beat should last is pacing, and the owner has ruled explicitly (round 16) that any duration ceiling is a ceiling and never a target -- one beat's correct pause is zero. The machine can only prove a pause is not forced dead air the player cannot skip, never that a beat is long enough to land. Standing content-QC item.",
+      "round": 5,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "npc/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0489",
+        "kind": "dw"
+      },
+      "finding": "clicks aimed at an affordance landed on a different entity standing beside it",
+      "general_form": "two bodies the party has to click never stand close enough that the crosshair cannot tell them apart",
+      "id": "isl-22",
+      "round": 7,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "trigger/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0426",
+        "kind": "dw"
+      },
+      "finding": "striking a body that the fiction invited the party to strike produced no response at all",
+      "general_form": "a body the content invites a strike on carries a strike trigger, and a click trigger is never anchored where a player cannot reach it",
+      "id": "isl-23",
+      "round": 7,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "cutscene"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0308",
+        "kind": "dw"
+      },
+      "finding": "a cinematic was staged from inside the structure it was filming, so the shot showed the inside of a wall",
+      "general_form": "a camera dolly does not clip solid geometry on either the authored or the eased path",
+      "id": "isl-24",
+      "round": 7,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "an open landscape read as three walled rooms rather than one continuous space",
+      "general_form": "none: whether a space reads as open is a perceptual judgement",
+      "id": "isl-25",
+      "justification": "How a space reads to a person standing in it is perception, not geometry. The machine proves the space is traversable (DW0311/DW0452) and survivable one step off the proven ground (DW0322); it cannot prove it feels open. The render/world-edit review loop (spec-0015/spec-0017) is the human instrument for this, and it is a staging step, not a gate. Standing content-QC item.",
+      "round": 7,
+      "triage": "content"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a mountain massif read as a rectangular slab",
+      "general_form": "none: landform silhouette is a perceptual judgement",
+      "id": "isl-26",
+      "justification": "Same class as isl-25: silhouette quality is perceptual. Covered by the render review loop as a staging step, not by any gate. Standing content-QC item.",
+      "round": 7,
+      "triage": "content"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the seam between two assembled areas read as a wall across the beach",
+      "general_form": "none: seam legibility is a perceptual judgement",
+      "id": "isl-27",
+      "justification": "Same class as isl-25/isl-26. The machine proves the seam is walkable; whether it reads as continuous ground is perceptual and belongs to render review. Standing content-QC item.",
+      "round": 8,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "trigger/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0426",
+        "kind": "dw"
+      },
+      "finding": "two visually identical hearths answered a strike differently, so the same action meant two things",
+      "general_form": "identical scene hardware answers identically; a second copy of an affordance is not silently inert",
+      "id": "isl-28",
+      "round": 8,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "move-npc",
+              "move-actor"
+            ]
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0410",
+        "kind": "dw"
+      },
+      "finding": "a staged body walked through stone that an earlier effect in its own timeline had sealed",
+      "general_form": "a staged walk is routed against the seals its own timeline has already closed",
+      "id": "isl-29",
+      "round": 8,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0469",
+        "kind": "dw"
+      },
+      "finding": "a hunt the fiction presented as a real threat was a scripted patrol that could not react",
+      "general_form": "a body the content bills as a threat is unleashed into real AI, and a campaign that stages fighters without declaring difficulty is reported",
+      "id": "isl-30",
+      "round": 8,
+      "triage": "content"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a flock meant to be penned was scattered across the whole cavern",
+      "general_form": "none: where a flock belongs is a design statement the campaign makes, not a fact the compiler can derive",
+      "id": "isl-31",
+      "justification": "A herd's placement is authored intent. The compiler proves each body is standable, clear of geometry and inside its own room's footprint (DW0312/DW0450); it has no way to know the content wanted them in a pen rather than spread out. The machine-checkable half of this class is isl-38's keep-clear envelope. Standing content-QC item.",
+      "round": 11,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0450",
+        "kind": "dw"
+      },
+      "finding": "a large body stood inside the mountain wall it was staged against",
+      "general_form": "a placed body is checked against block collision volumes, not only a walked one",
+      "id": "isl-32",
+      "round": 11,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "collect"
+          }
+        }
       },
       "binding": {
+        "files": [
+          "quests.json"
+        ],
         "kind": "dsl",
+        "match": {
+          "has": [
+            "container"
+          ]
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0438",
+        "kind": "dw"
+      },
+      "finding": "a collect objective could not fill the room's own container or name its item, so the compiler stamped a chest of its own beside the barrels the fiction described",
+      "general_form": "a collect objective adopts a declared container that must resolve to a real fillable container in the assembled world, and no two fills claim one anchor",
+      "id": "isl-33",
+      "note": "applies_when added 2026-08-21: the carriers of a `container` declaration are collect objectives. Collects declared with none carrying a container = UNBOUND; no collect anywhere = the class measures zero.",
+      "requires": {
+        "file": "quests.json",
+        "min_dsl_version": "0.8.0"
+      },
+      "round": 12,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "close-gate"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0429",
+        "kind": "dw"
+      },
+      "finding": "a scene object answered a left-click with a hint but ignored a right-click, so half the players got no answer at all",
+      "general_form": "a sealed body the party presses answers the press, and a left-click reply does not discharge it: pressing a thing is a right-click, so a strike-only answer leaves half the party told nothing. One rule over the whole sealed class (a close-gate seal and a shortcut door alike), read from plan::press_answer_sites",
+      "id": "isl-34",
+      "note": "Closed by pointing at a check that landed since, and verified rather than assumed: this campaign's boulder IS a close-gate seal at anchor/boulder carrying only a strike trigger and no sealed_hint, and validating its own quests document raises DW0429 x1 today, reported as grandfathered by the obligation fence because the stage declares 0.8.0. Raised to 0.11.0 the refusal names anchor/boulder itself. The hitbox half of the same beat (an interaction body is the SHAPE of the object at its anchor, and co-located triggers ride one hitbox rather than racing the ray pick) is carried by compiler::pressable with DW0422 and DW0426. Residual, named rather than folded away: DW0429 quantifies over the SEALED class, so a non-sealed scene object that answers a strike and not a use is not covered by it.",
+      "requires": {
+        "file": "quests.json",
+        "min_dsl_version": "0.11.0"
+      },
+      "round": 12,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "cast"
+          ]
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0460",
+        "kind": "dw"
+      },
+      "finding": "NPCs offered premise questions from the opening scene after the finale had already played",
+      "general_form": "every quest declares where its live cast is and what they offer, and the declaration is proven against the replayed effect history",
+      "id": "isl-35",
+      "requires": {
+        "file": "quests.json",
+        "min_dsl_version": "0.7.0"
+      },
+      "round": 12,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "finding": "a beat that can fail the player armed before its own prompt could be read",
+      "general_form": "a failure clock arms only after the prompt that explains it can have been read",
+      "id": "isl-36",
+      "round": 12,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quest-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "branch/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0484",
+        "kind": "dw"
+      },
+      "finding": "three differently-named endings played the same closing text",
+      "general_form": "each declared branch reaches an ending that some playthrough realizes, and its exclusive content does not leak into the others",
+      "id": "isl-37",
+      "requires": {
+        "file": "quest-plan.json",
+        "min_dsl_version": "0.8.0"
+      },
+      "round": 12,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world-edits.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "batch/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0314",
+        "kind": "dw"
+      },
+      "finding": "a terrain edit buried a third of a room the content needed walkable",
+      "general_form": "an edit batch may not write into a declared keep-clear envelope, and every post-batch cell a proven route uses stays standable",
+      "id": "isl-38",
+      "round": 12,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the English prose carried generated-text tics, chiefly negation pivots",
+      "general_form": "none: prose lint was measured on this project at chance",
+      "id": "isl-39",
+      "justification": "A phrase-blacklist detector for these tics was measured on this project's own corpus at ROC-AUC 0.501 -- indistinguishable from chance -- and was deliberately kept out of every gate rather than shipped as a check that would fire on good prose as often as bad. Prose remains a human read at every staging.",
+      "round": 12,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0496",
+        "kind": "dw"
+      },
+      "finding": "dusk read as daylight to bodies that burn in it, so a night encounter fought the sun",
+      "general_form": "a body vanilla burns in daylight is not staged for a fight the sun can reach",
+      "id": "isl-40",
+      "round": 12,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "requires_item"
+          ]
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0437",
+        "kind": "dw"
+      },
+      "finding": "an item requirement was satisfied by carrying the item in a pocket rather than holding it, so a beat about brandishing something worked with it stowed",
+      "general_form": "requires_item means held in the main hand, and an interaction that can refuse a click explains the refusal",
+      "id": "isl-41",
+      "note": "applies_when added 2026-08-21: `requires_item` is an interact-objective declaration (schema: the interact variant carries it). Interacts declared with none requiring an item = UNBOUND; no interact = the class measures zero.",
+      "round": 12,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "class picks changed nothing about the delve that followed",
+      "general_form": "none: whether a choice is meaningful is a design judgement",
+      "id": "isl-42",
+      "justification": "Whether a class pick changes the experience is a design judgement about consequence, not a structural fact. The nearest machine forms bound the failure it can cause (isl-02, an unsatisfiable per-class gate) and the divergence it should cause (DW0480-DW0485, declared branches). A campaign may legitimately offer flavour-only picks. Standing content-QC item.",
+      "round": 13,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quest-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "branch/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0482",
+        "kind": "dw"
+      },
+      "finding": "a declared story branch was half-built and reached no ending",
+      "general_form": "every declared branch is realizable by some playthrough and reaches an ending",
+      "id": "isl-43",
+      "requires": {
+        "file": "quest-plan.json",
+        "min_dsl_version": "0.8.0"
+      },
+      "round": 13,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
         "files": [
           "world.json"
         ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "glob": "**/*.nbt",
+        "kind": "out"
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "kind": "invariant",
+        "test": "assert_distress_never_stacks"
+      },
+      "finding": "scatter debris sat on top of the stair treads instead of being embedded in them",
+      "general_form": "a generator embeds scatter into the surface it decorates rather than stacking on it, and never onto a proven route's treads",
+      "id": "isl-44",
+      "note": "applies_when added 2026-08-21: same carriers as isl-12 — scatter reaches a build only through placed prefab bytes. Re-point at detail pieces when spec-0050 lands them.",
+      "round": 13,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "an objective made the party double back over ground they had already crossed for no story reason",
+      "general_form": "none: whether a walk is worth making is a design judgement",
+      "id": "isl-45",
+      "justification": "The compiler measures route length and proves retry cost (DW0379) but cannot know whether a walk earns itself. Backtracking is a legitimate design device -- the souls shortcut loop is built from it. Standing content-QC item.",
+      "round": 13,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "cast"
+          ]
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0461",
+        "kind": "dw"
+      },
+      "finding": "a body that should have held its position after a scripted escape wandered off it",
+      "general_form": "where a body is after each beat is declared and proven against the replayed effect history",
+      "id": "isl-46",
+      "requires": {
+        "file": "quests.json",
+        "min_dsl_version": "0.7.0"
+      },
+      "round": 13,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the ending faded to black where the fiction called for a departure the party could watch",
+      "general_form": "none: how an ending is staged is an authoring judgement",
+      "id": "isl-47",
+      "justification": "What an ending should show is authoring. The machine proves the shot is filmable (DW0308 clip, DW0347 sweep, DW0724 eye cell) once it is written. Standing content-QC item.",
+      "round": 13,
+      "triage": "content"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "owner-ruled",
+      "finding": "a request that a hostile species patrol declared routes could not be honoured for that species",
+      "general_form": "the constraint is stated to the author rather than discovered: patrol NBT is raider-family only",
+      "id": "isl-48",
+      "justification": "Owner-ruled not a defect: lane patrols are Raider NBT and the compiler refuses them on any other species (DW0382), which is the constraint being reported to the author at authoring time rather than found in play. Reported back to the owner in round 14 and not contested. Carried as a ruled row so that a future campaign asking the same question finds the answer here instead of re-asking it.",
+      "round": 13,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "label"
+          ]
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0331",
+        "kind": "dw"
+      },
+      "finding": "twenty-seven dialogue option labels overran the button they were drawn on and scrolled",
+      "general_form": "an option label -- English source or any sidecar rendition -- renders within the 146 usable font px of the button",
+      "id": "isl-49",
+      "round": 14,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "a stealth beat held the player in roughly ten seconds of forced dead air before it armed",
+      "general_form": "none: a pause is a pacing judgement, and the owner has ruled that the ceiling is never a target",
+      "id": "isl-50",
+      "justification": "Owner ruling (round 16, corrected same day): the reading-pause ceiling governs places where a reading pause exists and is never a target -- the correct value for this beat was zero. A machine form would have to know which pauses are reading pauses, which is the judgement itself. Standing content-QC item.",
+      "round": 15,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "move-npc",
+              "move-actor"
+            ]
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0488",
+        "kind": "dw"
+      },
+      "finding": "on one branch a body vanished for about ten seconds and then walked back, because one shared walk driver inherited an origin another branch had left it at",
+      "general_form": "a walk starts where ITS branch left the body; one content-keyed walk driver reached from occurrences with different origins is reported",
+      "id": "isl-51",
+      "round": 15,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "cutscene"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "mitigation"
+          ]
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "kind": "packtest",
+        "template": "v06_night_vision"
+      },
+      "finding": "granted night vision expired and flickered part-way through the ending cutscene it was granted for",
+      "general_form": "a granted sight effect outlasts any authored camera it can overlap, plus vanilla's wind-down, so it can never begin ramping down on screen",
+      "id": "isl-52",
+      "note": "applies_when added 2026-08-21: the class is a granted sight effect outlasting an authored camera, so its carriers are cutscenes. Cutscenes with no `mitigation` declared = UNBOUND; no cutscene = the class measures zero.",
+      "round": 15,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "finding": "only one of four identical barrels held the item the objective wanted, and nothing told the party which",
+      "general_form": "an objective's target is distinguishable from identical scenery, or every copy satisfies it",
+      "id": "isl-53",
+      "round": 16,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quest-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "branch/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0494",
+        "kind": "dw"
+      },
+      "finding": "one branch ended with its closing cutscene and the other simply stopped",
+      "general_form": "completing one objective may not land the party in a different area on a branch than on the exported path",
+      "id": "isl-54",
+      "requires": {
+        "file": "quest-plan.json",
+        "min_dsl_version": "0.8.0"
+      },
+      "round": 16,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "label"
+          ]
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0205",
+        "kind": "dw"
+      },
+      "finding": "an optional side encounter gated the mainline, so skipping it soft-locked the delve",
+      "general_form": "the button that completes a mainline objective is not already on screen at an earlier point of the participation-minimal walk",
+      "id": "isl-55",
+      "round": 16,
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "hostile bodies meant to fight the party by the shore ran out to sea instead",
+      "general_form": "none: where a live-AI body chooses to go is vanilla's pathing, not the compiler's",
+      "id": "isl-56",
+      "justification": "Once a body is unleashed its movement belongs to vanilla AI. The compiler seats it (DW0312/DW0387) and the bot ladder measures whether the fight happens (combat-plan floor gate); neither can predict a mob's target selection. This is exactly the class the bot playthrough exists to catch empirically. Standing content-QC item, with the bot run as its partial machine backstop.",
+      "round": 16,
+      "triage": "content"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "move-npc",
+              "move-actor"
+            ]
+          }
+        }
+      },
+      "binding": {
+        "file": "traversal-gate.json",
+        "kind": "artifact",
+        "path": "rules.gate_use.cells"
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "file": "traversal-gate.json",
+        "kind": "artifact",
+        "path": "legs"
+      },
+      "finding": "a herded animal crossed a shut fence gate a player character could not walk through, and appeared to climb a stone wall",
+      "general_form": "a walked leg's route contains no move the body walking it cannot make, per locomotion class",
+      "id": "isl-57",
+      "note": "applies_when added 2026-08-21: same carriers as bell-02 — a legs count is a derivation of declared walks, so which kind of zero its zero is must be measured against move-npc/move-actor.",
+      "round": "staging-2026-08-06",
+      "triage": "capability"
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "carrier": null,
+      "finding": "the route planner renders a one-block step-up as a vertical translation in place, so a body reads as levitating rather than hopping",
+      "general_form": "a walked leg's rendered motion matches the move it models; a step-up is animated as a step",
+      "id": "isl-58",
+      "round": "staging-2026-08-06",
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "prefab_pool"
+          ]
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW0498",
+        "kind": "dw"
+      },
+      "finding": "a pool draw seated the same anchor-bearing prefab twice, so anchor names stopped picking out one place in the world",
+      "general_form": "a pool draw that seats one anchor-bearing prefab more than once is reported at the pool, not discovered one blocked placement at a time",
+      "id": "isl-59",
+      "note": "applies_when added 2026-08-21: a pool draw exists only under areas[] placement; a site-plan campaign structurally has none (DW0839). Areas declared with no prefab_pool = UNBOUND; no area = the class measures zero.",
+      "round": "staging-2026-08-06",
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "glob": "README*.md",
+        "kind": "campaign"
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "kind": "tool",
+        "script": "check-storybook-version.py"
+      },
+      "finding": "the shipped release notes advertised a player count and a playtime that the delve did not have, and a host-facing instruction named a version that was no longer current",
+      "general_form": "release notes are rendered from the storybook, and a release refuses when storybook and campaign disagree",
+      "id": "isl-60",
+      "round": "post-release-2026-08-06",
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "classes.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "flask"
+          ]
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "bonfire"
+          }
+        }
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0476",
+        "kind": "dw"
+      },
+      "finding": "a rest-and-save mechanic was implemented as a plain arrive objective, so the campfire the fiction offered could not be rested at",
+      "general_form": "resting is a first-class bonfire verb with rest/save semantics, and a campaign that places one is held to the recovery kit it implies",
+      "id": "bell-01",
+      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {set-checkpoint, bonfire}` — a claim that a campaign with a plain checkpoint could carry the flask obligation. It cannot: DW0476 binds a bonfire to the recovery item a REST spends, and a `set-checkpoint` has no rest, no dialog and no `on_rest`. The precondition is now the souls recovery surface itself — a declared \"flask\": true kit entry, a different object class in a different stage file from the binding one — so all three verdicts stay meaningful: flask + bonfire = BOUND; a flask nothing refills = UNBOUND, correctly; neither = INAPPLICABLE, the honest reading of a campaign that is not a souls campaign. nobodys-cave-island declares no flask and no bonfire and is INAPPLICABLE — still a red, still a defect class her session on it is not protected from.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "move-npc",
+              "move-actor"
+            ]
+          }
+        }
+      },
+      "binding": {
+        "file": "traversal-gate.json",
+        "kind": "artifact",
+        "path": "route_cells"
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0430",
+        "kind": "dw"
+      },
+      "finding": "stairs throughout the built scenes faced against the climb they carried",
+      "general_form": "a stair block on a proven route faces the climb it carries",
+      "id": "bell-02",
+      "note": "applies_when added 2026-08-21: route_cells counts cells of walked legs, whose declaring class is move-npc/move-actor. Walks declared with zero route cells = UNBOUND (legs escaped the gate); no walk = the class measures zero.",
+      "round": 2,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "loot/"
+          }
+        }
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0431",
+        "kind": "dw"
+      },
+      "finding": "reachable containers throughout the map were empty",
+      "general_form": "a declared loot fill resolves to a real fillable container with enough slots, and no two fills claim one anchor",
+      "id": "bell-03",
+      "round": 2,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "spawn-wave",
+              "spawn-actor"
+            ]
+          }
+        }
+      },
+      "binding": {
+        "file": "combat-plan.json",
+        "kind": "artifact",
+        "path": "floor_gate.examined"
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0477",
+        "kind": "dw"
+      },
+      "finding": "an encounter billed as an elite was trivially weak, and the compiler had no way to express its durability at all",
+      "general_form": "a billed encounter's declared effective HP is bounded against the best kit the party can field, and anything billed elite or boss that the floor gate cannot measure is reported",
+      "id": "bell-04",
+      "note": "applies_when added 2026-08-21: the floor gate examines staged fights, declared by spawn-wave/spawn-actor. Fights declared with combat-plan.json unemitted = MISSING-CHECK (the ledger went missing); none declared = the class measures zero.",
+      "round": 2,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "binding": {
+        "file": "combat-plan.json",
+        "kind": "artifact",
+        "path": "fights.total"
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0474",
+        "kind": "dw"
+      },
+      "finding": "an encounter killed a full-health player in two hits",
+      "general_form": "a campaign with mandatory combat — a wave the party must kill OR a hostile it turns loose on them — is held to the whole spec-0023 winnability pass, sustain included; and no unavoidable scripted hit on that path one-shots a full-health player (DW0473)",
+      "id": "bell-05",
+      "note": "carrier + binding corrected 2026-08-11 (staging-gate UNBOUND audit), and the engine fixed with them. The row named DW0473 while probing combat-plan.json:encounters, which quantify over DIFFERENT collections — DW0473 walks unconditional `damage-players` bundles, `encounters` is `kill`-a-wave steps. Worse, the whole spec-0023 pass (DW0470-DW0475) was gated on `has_encounters`, the VERB, so a delve whose combat is entirely actors ran none of it: nobodys-cave-island unleashes three wardens, bills one elite, ships zero `kill` objectives, and reported `encounters: 0` for twenty-two owner rounds with nothing saying that was a coverage fact rather than a content fact. `combat::mandatory_fights` is now the object class — every fight of either shape — the pass is gated on it, DW0474 quantifies over it, and combat-plan.json publishes it as `fights`. Island binding 0 -> 3.",
+      "round": 2,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has_any": [
+            "open_ticks",
+            "closed_ticks",
+            "salvos"
+          ]
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "timed-gate/"
+          }
+        }
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0378",
+        "kind": "dw"
+      },
+      "finding": "a portcullis cycled too slowly to read as a hazard to time",
+      "general_form": "a timed gate is a timing read, not a coin flip: enough entry phases clear the span",
+      "id": "bell-06",
+      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {close-gate, open-gate}` — a claim that having any gate means the campaign could carry a timing-window defect. It cannot: close-gate/open-gate are one-shot permanent state changes fired by a quest beat, with no clock and so no window to be a coin flip. That precondition demanded CONTENT (add a portcullis) rather than COVERAGE, and would hold every campaign without one red forever. The precondition is now the object class that can carry a timing read: anything driven by a repeating clock the party must cross — a timed-gate's open_ticks/closed_ticks, or a volley payload's salvos. A campaign with a volley and no timed gate is then UNBOUND, correctly. nobodys-cave-island declares neither and is INAPPLICABLE — still a red, still named to the owner as a class this build is not protected from.",
+      "round": 2,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0420",
+        "kind": "dw"
+      },
+      "finding": "a shortcut's unlock affordance shipped as an invisible interaction body with no hardware, and the delve soft-locked with the gate sealed and nothing to press",
+      "general_form": "a compiler-owned interact affordance has visible hardware, and that hardware is retired only by the machinery that owns it",
+      "id": "bell-07",
+      "round": "2026-08-02",
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "set-checkpoint",
+              "bonfire"
+            ]
+          }
+        }
+      },
+      "binding": {
+        "file": "respawn-safety.json",
+        "kind": "artifact",
+        "path": "pairs"
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0478",
+        "kind": "dw"
+      },
+      "finding": "rest points sat inside the aggro geometry of the bodies the party was resting from",
+      "general_form": "every respawn point — a bonfire and a plain set-checkpoint alike — is outside the aggro range of every hostile force that can be in the world while it governs, marching drift included",
+      "id": "bell-08",
+      "note": "binding corrected and the engine widened 2026-08-11 (staging-gate UNBOUND audit). nav::check_bonfire_safe_zone quantified over plan.bonfires() — the verb — so a campaign that spells its respawn points `set-checkpoint` was examined ZERO times and reported green, while the catalog row for the same code had said \"a rest checkpoint\" all along. A bonfire and a set-checkpoint are siblings of one sum type, resolve to one CheckpointPlan distinguished only by `rest`, and deliver a dead player by the identical vanilla spawnpoint: the hazard belongs to the CELL. The proof now quantifies over every CheckpointPlan; a plain checkpoint, being monotonic, is measured only against forces that can exist while it still governs (a bonfire never stops governing and is unchanged); and validation/respawn-safety.json publishes the pair count. Island binding 0 -> 8 pairs over 3 respawn points and 6 hostile forces, SIX of which are live violations — see the round summary.",
+      "round": 4,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "set-checkpoint",
+              "bonfire"
+            ]
+          }
+        }
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0379",
+        "kind": "dw"
+      },
+      "finding": "the road home from the finale was as long and as dangerous as the road out",
+      "general_form": "retry and return cost from a rest point to the beat it respawns into is bounded",
+      "id": "bell-09",
+      "round": 5,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0499",
+        "kind": "dw"
+      },
+      "finding": "undefeated elite and ambush bodies did not refresh across rest or death, so a party could chip them down over repeated attempts",
+      "general_form": "an undefeated wave or hostile actor is re-seated by every rest and every respawn at a rest point, and a boss-tier wave may not declare rest respawning at all",
+      "id": "bell-10",
+      "round": 5,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "trigger/"
+          }
+        }
+      },
+      "binding": {
+        "file": "press-bodies.json",
+        "kind": "artifact",
+        "path": "examined"
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0426",
+        "kind": "dw"
+      },
+      "finding": "a barred shortcut door answered a press from the wrong side with nothing at all",
+      "general_form": "a click a campaign arms lands on a body the player can actually reach: the compiler owns the clickable SHAPE of the object at an anchor (a seal's shell, a shortcut door's sealed side, an NPC's hitbox, a region's shell), and a click anchored where nothing is clickable is refused",
+      "id": "bell-11",
+      "note": "carrier corrected 2026-08-11 (staging-gate UNBOUND audit). It named DW0425, which quantifies over shortcuts[] — the verb the finding happened to arrive on — so it bound zero on every campaign that declares no shortcut, including the one being staged. DW0425 is the narrow corner (the compiler refuses to GUESS a side); the object-class form of \"a press answered with nothing at all\" is DW0426 + pressable::body_at, which quantifies over every strike/use trigger at any anchor kind and is the check that would have caught the original instance. DW0425 remains live and tested in its own right. Island binding 0 -> 1.",
+      "round": 6,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "skin"
+          ]
+        }
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0309",
+        "kind": "dw"
+      },
+      "finding": "an NPC's skin rendered as a different person entirely from the one the fiction described",
+      "general_form": "a declared skin texture is baked and served, and a mannequin declaring a texture id without a source file is refused",
+      "id": "bell-12",
+      "round": 6,
+      "triage": "capability"
+    },
+    {
+      "campaign": "the-drowned-bell",
+      "carrier": null,
+      "finding": "an on-screen prompt told the party to return to one place while the objective it described completed somewhere else",
+      "general_form": "an objective's prompt names the place and the act that actually complete it",
+      "id": "bell-13",
+      "round": 6,
+      "triage": "capability"
+    },
+    {
+      "campaign": "the-drowned-bell",
+      "carrier": null,
+      "finding": "a defence wave gave the party no guidance to where the attackers were, so the fight could not be found",
+      "general_form": "a mandatory encounter is discoverable from the objective that requires it",
+      "id": "bell-14",
+      "round": 6,
+      "triage": "capability"
+    },
+    {
+      "campaign": "the-drowned-bell",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "the delve's overall difficulty was an order of magnitude below what the design called for",
+      "general_form": "none: how hard a delve should be is the design's own statement",
+      "id": "bell-15",
+      "justification": "Absolute difficulty is a design target, not a derivable fact. The machine bounds the floor and the ceiling around it -- DW0472 time-to-kill, DW0473 one-shot deaths, DW0470/DW0471 winnability, and the bot's inverted floor gate for anything billed elite or boss -- but the band between them is the designer's. Standing content-QC item.",
+      "round": 6,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "classes.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "contents"
+          ]
+        }
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0487",
+        "kind": "dw"
+      },
+      "finding": "a ruling that recovery items become real healing potions was never adopted in the campaign's content",
+      "general_form": "a kit item that presents as a potion declares contents the pinned registry can pour",
+      "id": "bell-16",
+      "round": 6,
+      "triage": "content"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "trap/"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "volley"
+          }
+        }
+      },
+      "campaign": "the-drowned-bell",
+      "carrier": {
+        "code": "DW0442",
+        "kind": "dw"
+      },
+      "finding": "a hazard built on redstone signal transmission did not fire reliably in play, and the parts of its kill zone it did not cover made escaping it luck rather than a decision",
+      "general_form": "a hazard is command-driven, never redstone-signalled, and a volley blankets every standable cell of its declared kill zone so no cell is safe by accident",
+      "id": "bell-17",
+      "round": "2026-08-03",
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "set-checkpoint",
+              "bonfire"
+            ]
+          }
+        }
+      },
+      "campaign": "tide-mill",
+      "carrier": {
+        "code": "DW0525",
+        "kind": "dw"
+      },
+      "finding": "dying at a hazard respawned the party at the campaign entrance rather than the checkpoint that was armed, and because an inter-area transport had already fired there was no route back -- a hard soft-lock",
+      "general_form": "from every respawn seat, under every quest state that can hold while it governs, a route back to the remaining required path exists -- including the one-way drop, where a player can reach and die somewhere the seat cannot reach at all",
+      "id": "tm-01",
+      "note": "DW0315 is NOT the carrier: it re-roots reachability AT the checkpoint cell, which assumes the checkpoint governs the death -- and that assumption is exactly what this finding falsified (an inter-area transport had already fired, so the party respawned at the campaign entrance). DW0525 is the rule that asks the question without that premise, and it is scoped to campaigns declaring stakes (dsl 0.10).",
+      "requires": {
+        "file": "quests.json",
+        "min_dsl_version": "0.10.0"
+      },
+      "round": "2026-08-04",
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
         "match": {
           "eq": {
             "horizon": "ocean"
           }
         }
       },
-      "note": "The verdict is the HEAD cell, not the feet. A body wading at the waterline is walking where the game agrees it can walk, and refusing that reds the released nobodys-cave-island's west bank \u2014 26 reachable cells at exactly sea level, every one the campaign has at or below the waterline, none head-deep. Those cells are counted as `walk_cells_wading` in `validation/sea-seepage.json` rather than judged, so the shoreline stays a number a reader can act on. Still open, for a later round with a campaign that shows it: a walk plane at exactly sea level INSIDE a room reads the same as a shore and is not refused."
-    },
-    {
-      "id": "tm-03",
       "campaign": "tide-mill",
+      "carrier": {
+        "code": "DW0851",
+        "kind": "dw"
+      },
+      "finding": "an interior room in an ocean-horizon world sat one block under sea level and its whole walk plane flooded a minute after boot, while the compiler modelled it dry",
+      "general_form": "the ambient sea is part of the assembled model: a walk plane the compiler proves standable is not one the sea will be standing over",
+      "id": "tm-02",
+      "note": "The verdict is the HEAD cell, not the feet. A body wading at the waterline is walking where the game agrees it can walk, and refusing that reds the released nobodys-cave-island's west bank — 26 reachable cells at exactly sea level, every one the campaign has at or below the waterline, none head-deep. Those cells are counted as `walk_cells_wading` in `validation/sea-seepage.json` rather than judged, so the shoreline stays a number a reader can act on. Still open, for a later round with a campaign that shows it: a walk plane at exactly sea level INSIDE a room reads the same as a shore and is not refused.",
       "round": "2026-08-04",
-      "finding": "a shipped hosting readme hardcoded a server difficulty the delve was not designed for",
-      "triage": "capability",
-      "general_form": "the shipped server configuration is emitted from the campaign's declared difficulty, never hand-written beside it",
-      "carrier": {"kind": "packtest", "template": "declared_difficulty"},
-      "binding": {"kind": "out", "glob": "packtest-datapack/**/declared_difficulty.mcfunction"}
+      "triage": "capability"
     },
     {
-      "id": "isl-61",
+      "binding": {
+        "glob": "packtest-datapack/**/declared_difficulty.mcfunction",
+        "kind": "out"
+      },
+      "campaign": "tide-mill",
+      "carrier": {
+        "kind": "packtest",
+        "template": "declared_difficulty"
+      },
+      "finding": "a shipped hosting readme hardcoded a server difficulty the delve was not designed for",
+      "general_form": "the shipped server configuration is emitted from the campaign's declared difficulty, never hand-written beside it",
+      "id": "tm-03",
+      "round": "2026-08-04",
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "horizon": "ocean"
+          }
+        }
+      },
       "campaign": "nobodys-cave-island",
-      "round": "post-release-2026-08-14",
+      "carrier": {
+        "code": "DW0344",
+        "kind": "dw"
+      },
       "finding": "an admission step read a shipped prefab document, edited one part of it and wrote it back through a type that modelled fewer fields than the document has, so the ocean-datum declaration the released island pieces carry could be deleted with nothing failing and the invariant that reads it silently examining nothing",
-      "triage": "capability",
       "general_form": "an admission step may change only the paths it declares it writes, at the depth it really writes them; and a check keyed off an optional metadata field reports how many objects it examined, so losing the field is a refusal (DW0344's zero binding) rather than a silence",
-      "carrier": {"kind": "dw", "code": "DW0344"},
-      "binding": {"kind": "dsl", "files": ["world.json"], "match": {"eq": {"horizon": "ocean"}}}
+      "id": "isl-61",
+      "round": "post-release-2026-08-14",
+      "triage": "capability"
     }
-  ]
+  ],
+  "ledger_version": "2026-08-11"
 }

@@ -39,7 +39,9 @@ and emit an entry only when at least one number is non-zero:
 stat: spec-0023 §2 requires the kit's healing to be non-zero, and "is this item
 food" is `minecraft:food`'s presence — Mojang's data, not a curated list.
 
-then `json.dumps(indent=2, sort_keys=True) + "\n"`.
+then `json.dumps(indent=2, sort_keys=True, ensure_ascii=False) + "\n"` — `delvec
+fmt` canonical form, because the output is a tracked file inside the
+canonical-form sweep (`tools/check-json-canonical.py`).
 
 **Only `add_value` modifiers are summed.** 1.21.11 vanilla expresses every base
 weapon/armour stat as `add_value`; a `add_multiplied_*` operation would need the
@@ -116,7 +118,7 @@ def main(argv: list[str]) -> int:
         if any(v != 0.0 for v in stats.values()):
             out[f"minecraft:{item_id}"] = stats
 
-    out_path.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n")
+    out_path.write_text(json.dumps(out, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
     sys.stderr.write(f"wrote {len(out)} combat/sustain items -> {out_path}\n")
     return 0
 

@@ -31,6 +31,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     }
 }
 
@@ -237,6 +238,7 @@ fn check_two_quest(despawn: &str) -> Vec<delvewright_dsl::Diagnostic> {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     })
 }
 

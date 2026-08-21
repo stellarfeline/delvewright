@@ -4,5 +4,9 @@
       "trigger": "minecraft:entity_hurt_player"
     }
   },
-  "requirements": [["hurt"]]
+  "requirements": [
+    [
+      "hurt"
+    ]
+  ]
 }

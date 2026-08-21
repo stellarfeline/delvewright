@@ -1,385 +1,385 @@
 {
- "name": "probe-causeway-bend",
- "start": "ward",
- "params": {},
- "palette": {
-  "stone": "minecraft:stone_bricks"
- },
- "rules": {
-  "ward": [
-   {
-    "weight": 1,
-    "body": {
-     "op": "split",
-     "axis": "z",
-     "sizes": [
+  "name": "probe-causeway-bend",
+  "palette": {
+    "stone": "minecraft:stone_bricks"
+  },
+  "params": {},
+  "rules": {
+    "bend": [
       {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 10
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "relative",
-       "weight": {
-        "expr": "int",
-        "value": 1
-       }
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "axis": "y",
+              "children": [
+                {
+                  "material": {
+                    "role": "stone"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "op": "void"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "axis": "y",
+              "children": [
+                {
+                  "material": {
+                    "role": "stone"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "op": "void"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "axis": "y",
+              "children": [
+                {
+                  "material": {
+                    "role": "stone"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "op": "void"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 5
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
       }
-     ],
-     "children": [
+    ],
+    "north": [
       {
-       "op": "call",
-       "symbol": "south"
-      },
-      {
-       "op": "call",
-       "symbol": "bend"
-      },
-      {
-       "op": "call",
-       "symbol": "north"
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "op": "void"
+            },
+            {
+              "op": "void"
+            },
+            {
+              "axis": "y",
+              "children": [
+                {
+                  "material": {
+                    "role": "stone"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "op": "void"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 5
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
       }
-     ]
-    }
-   }
-  ],
-  "south": [
-   {
-    "weight": 1,
-    "body": {
-     "op": "split",
-     "axis": "x",
-     "sizes": [
+    ],
+    "south": [
       {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 4
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 5
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 4
-       }
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "axis": "y",
+              "children": [
+                {
+                  "material": {
+                    "role": "stone"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "op": "void"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "op": "void"
+            },
+            {
+              "op": "void"
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 5
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
       }
-     ],
-     "children": [
+    ],
+    "ward": [
       {
-       "op": "void"
-      },
-      {
-       "op": "split",
-       "axis": "y",
-       "sizes": [
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 1
-         }
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "south"
+            },
+            {
+              "op": "call",
+              "symbol": "bend"
+            },
+            {
+              "op": "call",
+              "symbol": "north"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 10
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
         },
-        {
-         "size": "relative",
-         "weight": {
-          "expr": "int",
-          "value": 1
-         }
-        }
-       ],
-       "children": [
-        {
-         "op": "fill",
-         "material": {
-          "role": "stone"
-         }
-        },
-        {
-         "op": "void"
-        }
-       ]
-      },
-      {
-       "op": "void"
-      },
-      {
-       "op": "void"
-      },
-      {
-       "op": "void"
+        "weight": 1
       }
-     ]
-    }
-   }
-  ],
-  "bend": [
-   {
-    "weight": 1,
-    "body": {
-     "op": "split",
-     "axis": "x",
-     "sizes": [
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 4
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 5
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 4
-       }
-      }
-     ],
-     "children": [
-      {
-       "op": "void"
-      },
-      {
-       "op": "split",
-       "axis": "y",
-       "sizes": [
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 1
-         }
-        },
-        {
-         "size": "relative",
-         "weight": {
-          "expr": "int",
-          "value": 1
-         }
-        }
-       ],
-       "children": [
-        {
-         "op": "fill",
-         "material": {
-          "role": "stone"
-         }
-        },
-        {
-         "op": "void"
-        }
-       ]
-      },
-      {
-       "op": "split",
-       "axis": "y",
-       "sizes": [
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 1
-         }
-        },
-        {
-         "size": "relative",
-         "weight": {
-          "expr": "int",
-          "value": 1
-         }
-        }
-       ],
-       "children": [
-        {
-         "op": "fill",
-         "material": {
-          "role": "stone"
-         }
-        },
-        {
-         "op": "void"
-        }
-       ]
-      },
-      {
-       "op": "split",
-       "axis": "y",
-       "sizes": [
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 1
-         }
-        },
-        {
-         "size": "relative",
-         "weight": {
-          "expr": "int",
-          "value": 1
-         }
-        }
-       ],
-       "children": [
-        {
-         "op": "fill",
-         "material": {
-          "role": "stone"
-         }
-        },
-        {
-         "op": "void"
-        }
-       ]
-      },
-      {
-       "op": "void"
-      }
-     ]
-    }
-   }
-  ],
-  "north": [
-   {
-    "weight": 1,
-    "body": {
-     "op": "split",
-     "axis": "x",
-     "sizes": [
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 4
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 5
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 4
-       }
-      }
-     ],
-     "children": [
-      {
-       "op": "void"
-      },
-      {
-       "op": "void"
-      },
-      {
-       "op": "void"
-      },
-      {
-       "op": "split",
-       "axis": "y",
-       "sizes": [
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 1
-         }
-        },
-        {
-         "size": "relative",
-         "weight": {
-          "expr": "int",
-          "value": 1
-         }
-        }
-       ],
-       "children": [
-        {
-         "op": "fill",
-         "material": {
-          "role": "stone"
-         }
-        },
-        {
-         "op": "void"
-        }
-       ]
-      },
-      {
-       "op": "void"
-      }
-     ]
-    }
-   }
-  ]
- }
+    ]
+  },
+  "start": "ward"
 }

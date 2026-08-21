@@ -116,6 +116,7 @@ fn an_unauthored_seal_is_refused_by_the_same_rule() {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     };
     let c = parse_campaign(&raw).expect("campaign parses");
     let diags = diagnostics(&c);

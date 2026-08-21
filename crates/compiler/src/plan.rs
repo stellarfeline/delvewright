@@ -27,6 +27,7 @@ use delvewright_dsl::{
 };
 
 use crate::flow::objectives_in_order;
+use crate::reach::{ReachCompletion, reach_completion};
 use crate::registry::{AnchorMeta, PrefabRegistry};
 use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
 use delvewright_dsl::DwCode;
@@ -840,7 +841,7 @@ impl PiecePlacement {
 /// `pos + rotation(offset + local)`, the whole zone rotated about the piece
 /// origin. That identity is what lets a tiled zone be rotated at all, and it is
 /// the same arithmetic [`Rotation::bbox`] already uses.
-fn placed_templates(
+pub(crate) fn placed_templates(
     meta: &delvewright_dsl::prefab::PrefabMeta,
     pos: [i32; 3],
     rotation: Rotation,
@@ -939,94 +940,6 @@ pub struct OptionPlan {
     pub sets_checkpoints: Vec<(String, Vec<QuestEffect>)>,
     /// Deferred NPCs this option summons (DSL v0.6 dialogue `spawn-npc`), in order.
     pub spawns_npcs: Vec<String>,
-}
-
-/// **The volume a `reach-anchor` objective actually completes in** — the ONE
-/// authority on that question, read by the datapack line that adjudicates it and
-/// exported to the harness that has to walk into it.
-///
-/// It exists because those two readers had drifted. `radius` is authored, and
-/// from DSL v0.3 the datapack stopped reading it: the M2 repair for a completion
-/// sphere too tight to stand in replaced the sphere with a fixed ±1 cube, so a
-/// `radius: 3` reach adjudicated on a 3×3×3 box. Nothing told the harness, which
-/// went on deriving its walk goal from the authored number and aiming at
-/// `radius - 1` blocks — **outside** the box for every `radius` of 3 or more. The
-/// bot then stopped three blocks out, the objective never fired, and the step
-/// hung on its completion wait. It survived because a `GoalNear` usually
-/// overshoots inward, which makes the failure intermittent, and an intermittent
-/// failure is an under-specified test.
-///
-/// The repair is not a second constant. `radius` is an authored value and the
-/// v0.3 fix needed a **floor** on the completion volume, not a replacement for
-/// it: the cube's half-extent is `max(1, radius)`, so hv-01's "too tight to stand
-/// in" stays closed at every radius and the author's number means what it says
-/// again. And because the volume is computed here and nowhere else, the line that
-/// adjudicates it and the artifact that describes it cannot say different things.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReachCompletion {
-    /// Pre-v0.3: `distance=..radius` about the anchor's block corner. Kept so
-    /// v0.2 campaigns emit byte-identically.
-    Sphere {
-        /// The anchor cell the distance is measured from.
-        pos: [i32; 3],
-        /// The authored radius, in blocks.
-        radius: u32,
-    },
-    /// v0.3+: an axis-aligned block region, inclusive corners.
-    Cube {
-        /// Lowest corner.
-        lo: [i32; 3],
-        /// Highest corner.
-        hi: [i32; 3],
-    },
-}
-
-/// The completion volume for one `reach-anchor`, given the resolved anchor cell,
-/// the authored radius and whether the campaign compiles under v0.3+.
-pub fn reach_completion(pos: [i32; 3], radius: u32, v03: bool) -> ReachCompletion {
-    if !v03 {
-        return ReachCompletion::Sphere { pos, radius };
-    }
-    // The FLOOR, not a replacement: never tighter than the ±1 that closed hv-01,
-    // never narrower than what the author asked for.
-    let h = radius.max(1) as i32;
-    ReachCompletion::Cube {
-        lo: [pos[0] - h, pos[1] - h, pos[2] - h],
-        hi: [pos[0] + h, pos[1] + h, pos[2] + h],
-    }
-}
-
-impl ReachCompletion {
-    /// The `@s[...]` selector arguments the tick line adjudicates with.
-    pub fn selector_args(&self) -> String {
-        match self {
-            ReachCompletion::Sphere { pos, radius } => {
-                format!("x={},y={},z={},distance=..{radius}", pos[0], pos[1], pos[2])
-            }
-            ReachCompletion::Cube { lo, hi } => format!(
-                "x={},dx={},y={},dy={},z={},dz={}",
-                lo[0],
-                hi[0] - lo[0],
-                lo[1],
-                hi[1] - lo[1],
-                lo[2],
-                hi[2] - lo[2]
-            ),
-        }
-    }
-
-    /// The same volume as `critical-path.json` carries it, so the harness walks
-    /// into the region the server is testing rather than into its own idea of one.
-    pub fn to_json(&self) -> serde_json::Value {
-        match self {
-            ReachCompletion::Sphere { pos, radius } => {
-                serde_json::json!({ "kind": "sphere", "pos": pos, "radius": radius })
-            }
-            ReachCompletion::Cube { lo, hi } => {
-                serde_json::json!({ "kind": "cube", "lo": lo, "hi": hi })
-            }
-        }
-    }
 }
 
 /// A critical-path step (mirrors the amended `critical-path.json` shape).
@@ -2052,9 +1965,32 @@ impl<'a> Plan<'a> {
         let mut blockout_reads = delvewright_dsl::metrics::Reads::new();
         let blockout = match crate::blockout::derive_with(campaign, &mut blockout_reads, perturb) {
             None => None,
-            Some((placement, derived)) => {
+            Some((mut placement, derived)) => {
                 for (name, resolved) in derived.anchors() {
                     anchors.insert((placement.area_id.clone(), name.to_string()), resolved);
+                }
+                // ---- the detail plan's pieces (spec-0050 §1) ----
+                //
+                // **The second tooth, and it is in the same door as the first.**
+                // A `details[]` row carries no coordinate, no extent and no
+                // offset; where its piece goes is `Frame::of` over the plan's
+                // own resolved box, computed here. There is no flag and no
+                // second entry point, so a part that wanted a different box
+                // would have to have built a `Plan` some other way, and there is
+                // none.
+                //
+                // The anchors go in AFTER the derived ones on purpose: the
+                // derivation names `anchor/node-…` at the massing's own footing,
+                // and where a piece stands there the piece's anchor is the
+                // truth. Overwriting is what keeps the campaign's stage-3
+                // vocabulary working without a quest edit.
+                let detailing = crate::detail::place(campaign, prefabs);
+                placement.pieces.extend(detailing.pieces);
+                for (name, pos, facing) in detailing.anchors {
+                    anchors.insert(
+                        (placement.area_id.clone(), name),
+                        ResolvedAnchor::Point { pos, facing },
+                    );
                 }
                 areas.push(placement);
                 Some(derived)
@@ -2676,59 +2612,6 @@ impl<'a> Plan<'a> {
                     .min()
             })
             .collect()
-    }
-
-    /// The earliest critical-path step at which each hostile force can be in the
-    /// world, keyed by wave id and actor id.
-    ///
-    /// Read off the campaign's own staging beats — `spawn-wave` and
-    /// `spawn-actor` — through the one effect walk, so a new root or a new
-    /// nesting site cannot leave a body invisible here. A force no beat stages,
-    /// or one staged from a root with no step of its own (a trigger, a trap
-    /// payload, a death bundle), reports **0**: the conservative answer is "it
-    /// could be there from the start", and a proof that guessed later would be a
-    /// proof that looked away.
-    ///
-    /// `unleash-actor` is deliberately NOT an onset. It does not put a body in
-    /// the world — it replaces an already-summoned puppet with a real-AI twin, and
-    /// an unleash of something never spawned is a no-op ([`crate::combat`]'s
-    /// "unleash or nothing" rule states the same fact from the other side).
-    /// Counting it moved `nobodys-cave-island`'s warden onto step 0 because a
-    /// proximity trigger unleashes it, and reported a body five quests in the
-    /// future as standing two blocks from the party's respawn.
-    pub fn hostile_onsets(&self) -> BTreeMap<String, usize> {
-        let mut out: BTreeMap<String, usize> = BTreeMap::new();
-        let mut note = |id: &str, step: usize| {
-            let slot = out.entry(id.to_string()).or_insert(step);
-            *slot = (*slot).min(step);
-        };
-        delvewright_dsl::for_each_campaign_effect(self.campaign, &mut |_, site, eff| {
-            let step = match site {
-                delvewright_dsl::EffectSite::Objective { objective, .. } => self
-                    .objective_steps
-                    .get(objective.as_str())
-                    .copied()
-                    .unwrap_or(0),
-                delvewright_dsl::EffectSite::QuestComplete { quest } => self
-                    .campaign
-                    .quests
-                    .content
-                    .quests
-                    .iter()
-                    .find(|q| q.id.as_str() == quest)
-                    .map_or(0, |q| quest_complete_step(q, &self.objective_steps)),
-                // Roots with no beat of their own: proximity, a sprung trap, a
-                // death, a shortcut bar lifting, a shop purchase, a dialogue
-                // respawn hook. Rooted at 0, conservatively.
-                _ => 0,
-            };
-            match eff {
-                QuestEffect::SpawnWave { wave, .. } => note(wave.as_str(), step),
-                QuestEffect::SpawnActor { actor, .. } => note(actor.as_str(), step),
-                _ => {}
-            }
-        });
-        out
     }
 
     /// Translate a [`Self::critical_path`] index into the index the SAME step
@@ -3526,7 +3409,7 @@ pub(crate) fn point_any(
 /// The `critical_path` step index at which a quest's `on_complete` fires: its
 /// last objective's step (max over the quest's objectives). `0` if the quest has
 /// no positioned objective (degenerate; conservative — proves the whole path).
-fn quest_complete_step(quest: &Quest, obj_step: &BTreeMap<String, usize>) -> usize {
+pub(crate) fn quest_complete_step(quest: &Quest, obj_step: &BTreeMap<String, usize>) -> usize {
     quest
         .objectives
         .iter()

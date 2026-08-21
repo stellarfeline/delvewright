@@ -35,24 +35,24 @@
     "branch; the content repo's own `zone-audit.yml` runs the same sweep there."
   ],
   "content_sha": "f28f15394eef6813a88122137e3050b1da28c6f9",
+  "off_pin": [
+    {
+      "branch": "campaign/bell-r2",
+      "campaign": "the-drowned-bell-r2",
+      "note": "The remake in progress. Its eight zone programs are the artifact of record for its geometry and they are gated on that branch by the content repo's zone-audit workflow. They become this repo's obligation at the re-pin that follows the owner's acceptance, at which point this entry moves to on_pin and its count is checked against the tree.",
+      "zone_programs": 8
+    }
+  ],
   "on_pin": [
     {
       "campaign": "hollow-vigil",
-      "zone_programs": 0,
-      "note": "A prefab-and-jigsaw campaign. Its geometry comes from the .nbt library, not from the grammar back end, so it declares no zone program."
+      "note": "A prefab-and-jigsaw campaign. Its geometry comes from the .nbt library, not from the grammar back end, so it declares no zone program.",
+      "zone_programs": 0
     },
     {
       "campaign": "nobodys-cave-island",
-      "zone_programs": 0,
-      "note": "Predates the grammar back end (ADR-0018); its world is authored as prefabs and world edits, so it declares no zone program."
-    }
-  ],
-  "off_pin": [
-    {
-      "campaign": "the-drowned-bell-r2",
-      "zone_programs": 8,
-      "branch": "campaign/bell-r2",
-      "note": "The remake in progress. Its eight zone programs are the artifact of record for its geometry and they are gated on that branch by the content repo's zone-audit workflow. They become this repo's obligation at the re-pin that follows the owner's acceptance, at which point this entry moves to on_pin and its count is checked against the tree."
+      "note": "Predates the grammar back end (ADR-0018); its world is authored as prefabs and world edits, so it declares no zone program.",
+      "zone_programs": 0
     }
   ]
 }

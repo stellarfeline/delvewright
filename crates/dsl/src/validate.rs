@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, is_v11, is_v12, is_v13, is_v14,
+    is_v10, is_v11, is_v12, is_v13, is_v14, is_v15,
 };
 use crate::ids::is_kebab;
 use crate::metrics::Metrics;
@@ -54,6 +54,10 @@ pub fn validate_campaign_with(
     // loop inside is empty for a campaign that declares no datum and no
     // comparison, and the version fence itself lives in `reserved_v10`.
     state_checks(c, &mut d);
+    // A gate that contradicts itself can never open (`DW0847`). Unconditional
+    // and over the whole closed consumer set — an ungated site contributes no
+    // terms and cannot contradict.
+    gate_contradiction_checks(c, &mut d);
     // DSL v0.10 (spec-0031): the status-effect verbs. Unconditional for the same
     // reason `state_checks` is — every walk inside is empty for a campaign that
     // declares neither verb, and the version fence lives in `reserved_v10`. The
@@ -71,6 +75,13 @@ pub fn validate_campaign_with(
     prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
+    // `DW0849`: an item gate no class can bring. Unconditional, like its
+    // neighbours — the walk is empty for a campaign with no `requires_item`, and
+    // the rule judges a contradiction between two authored documents (a quest's
+    // item gate against the class kits), so it is `EveryVersion` and has no
+    // fence to live in. Bound HERE rather than to a step someone runs, because
+    // this is the function every `delvec` subcommand's validation stage calls.
+    item_gate_class_checks(c, &mut d);
     // DSL v0.3: the new stage-5 verbs, waves and flags. Gated on the quests
     // stage's version so a v0.2 campaign is unaffected (its uses of these verbs
     // are still rejected as reserved by `reserved`, above).
@@ -675,6 +686,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 .iter()
                 .map(|e| (Stage::SitePlan, e.stage, e.dsl_version.as_str())),
         )
+        .chain(
+            c.detail_plan
+                .iter()
+                .map(|e| (Stage::DetailPlan, e.stage, e.dsl_version.as_str())),
+        )
         .collect();
     for (expected, actual, version) in stages {
         if actual != expected {
@@ -736,6 +752,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
         c.site_plan
             .iter()
             .map(|e| (Stage::SitePlan, &e.campaign_id)),
+    )
+    .chain(
+        c.detail_plan
+            .iter()
+            .map(|e| (Stage::DetailPlan, &e.campaign_id)),
     )
     .collect();
     let canonical = c.world.campaign_id.as_str();
@@ -1528,6 +1549,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v12(c, d);
     reserved_v13(c, d);
     reserved_v14(c, d);
+    reserved_v15(c, d);
     press_answer_checks(c, d);
     press_obligation_checks(c, d);
 }
@@ -1608,6 +1630,32 @@ fn reserved_v14(c: &Campaign, d: &mut Vec<Diagnostic>) {
              `{version}` — raise this document's own `dsl_version` to 0.14.0, or delete the \
              file. It is the geometric embedding of the layout graph, and a campaign at 0.13.0 \
              states its space as a graph and has nowhere to put the embedding: that is the \
+             ordering, and it is why the two are separate versions rather than one."
+        ),
+    ));
+}
+
+/// The spec-0050 detail plan exists only at `dsl_version` 0.15.0.
+///
+/// A whole DOCUMENT is fenced, on the same terms as the three map-pipeline
+/// documents below it: an older campaign has no `detail-plan.json`, so there is
+/// nothing on it to grandfather and nothing it could have been judged against.
+fn reserved_v15(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let Some(version) = c.detail_plan.as_ref().map(|e| e.dsl_version.as_str()) else {
+        return;
+    };
+    if is_v15(version) {
+        return;
+    }
+    d.push(Diagnostic::error(
+        codes::RESERVED,
+        Stage::DetailPlan.name(),
+        "/dsl_version",
+        format!(
+            "a `detail-plan` document requires dsl_version 0.15.0 and this one declares \
+             `{version}` — raise this document's own `dsl_version` to 0.15.0, or delete the \
+             file. It states which piece fills which of the site plan's places, and a campaign \
+             at 0.14.0 has the whole map and no way to detail a part of it: that is the \
              ordering, and it is why the two are separate versions rather than one."
         ),
     ));
@@ -1940,6 +1988,198 @@ fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// (`plan::press_answer_trigger_id`). Stated here because the *reservation* is a
 /// DSL-level fact even though today's only user is in the compiler.
 const RESERVED_TRIGGER_PREFIX: &str = "dw-";
+
+/// Normalise an authored item id to its namespaced form, so `stripped_oak_log`
+/// and `minecraft:stripped_oak_log` are the same item to every comparison here.
+/// Same rule [`crate::stages::is_potion_bearing_item`] applies to its own list.
+fn ns_item(id: &str) -> String {
+    if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    }
+}
+
+/// Every item this campaign can put into the hands of a player **whatever class
+/// they picked** — the class-blind half of the provenance question `DW0849`
+/// asks.
+///
+/// The five ways an item enters a player's inventory are the class kit
+/// ([`crate::stages::Class::kit`], which is class-BOUND and therefore
+/// deliberately absent here) and these four. They are gathered from the closed
+/// enumerations rather than from a walk of the sites this function's author
+/// happened to remember: effects come through
+/// [`crate::stages::for_each_campaign_effect`], which is
+/// [`crate::effects::for_each_effect_root`] underneath — the same eight roots
+/// emission lowers from, and the one `tools/check-effect-roots.py` holds closed.
+///
+/// A trap's `dispense` payload is **not** a source, and the exclusion is about
+/// the object rather than about effort: a dispenser fires its stack at the party
+/// as a hazard. Being shot with a thing is not being handed it, and a campaign
+/// whose only supply of a required item is a trap firing it has a defect this
+/// check should name rather than excuse.
+fn class_blind_item_sources(c: &Campaign) -> BTreeSet<String> {
+    let mut src: BTreeSet<String> = BTreeSet::new();
+    let quests = &c.quests.content;
+
+    // A `give-item` anywhere. Deliberately unconditional on its flag gate and on
+    // its position in the quest DAG: a gated grant is still a way the item can
+    // be had, and treating one as no source at all would red campaigns that are
+    // fine. The direction of the approximation is chosen — this check refuses
+    // only where NOTHING class-blind supplies the item.
+    crate::stages::for_each_campaign_effect(c, &mut |_path, _site, eff| {
+        if let Some(item) = eff.give_item() {
+            src.insert(ns_item(item));
+        }
+    });
+
+    for q in &quests.quests {
+        for o in &q.objectives {
+            // A `collect` is provisioned into a container the compiler fills or
+            // adopts, or dropped by a wave — every one of those is open to
+            // whoever walks up to it.
+            if let Objective::Collect { item, .. } = o {
+                src.insert(ns_item(item));
+            }
+        }
+    }
+
+    for l in &quests.loot {
+        for it in &l.items {
+            src.insert(ns_item(&it.item));
+        }
+    }
+
+    for w in &quests.waves {
+        for m in &w.mobs {
+            for drop in &m.drops {
+                match (drop.item(), drop.slot()) {
+                    (Some(item), _) => {
+                        src.insert(ns_item(item));
+                    }
+                    // A worn piece drops the item the same mob's `equipment`
+                    // declares in that slot (`DW0490` already refuses a slot the
+                    // equipment leaves empty, so this lookup is total on a
+                    // campaign that got that far).
+                    (None, Some(slot)) => {
+                        if let Some(eq) = m.equipment.as_ref().and_then(|e| e.filled(slot)) {
+                            src.insert(ns_item(eq.item()));
+                        }
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+    }
+
+    src
+}
+
+/// `DW0849`: **an item gate a class cannot bring.**
+///
+/// ## The finding this is the general form of
+///
+/// A required item was issued through one class's kit rather than to the party,
+/// so a player who picked any other class arrived at the objective that consumed
+/// it and could do nothing. The instance was repaired by moving the item; the
+/// class of defect — *completability that depends on which class was picked* —
+/// had no check, and a campaign is free to reintroduce it at every new item
+/// gate.
+///
+/// ## Why this is a property of the object class, not of `interact`
+///
+/// The object is an **item gate**: a place where an objective completes only for
+/// a player who holds a named thing. Today the DSL has exactly one such site
+/// ([`Objective::Interact::requires_item`]) — a shop's price is a
+/// [`crate::stages::StateCompare`] over a datum and not an item at all, and no
+/// verb removes an item from an inventory. So the enumeration is one arm wide
+/// today and is written as an enumeration anyway, because the second site is
+/// where a rule keyed to the first verb leaves the next author with no surface.
+///
+/// ## The quantifier, and why it is `for all` rather than `there exists`
+///
+/// A delve is played by one to four players who each pick one class, so **a solo
+/// player of any class is a supported party**. An item only one class can bring
+/// is therefore an objective some real party is assembled unable to finish, and
+/// it finds out at the thing it cannot press. This is exactly the reasoning
+/// [`codes::BONFIRE_NO_FLASK`] already states for the flask: one class without it
+/// is as broken as none.
+///
+/// ## The direction the approximation runs
+///
+/// [`class_blind_item_sources`] is deliberately generous — a flag-gated
+/// `give-item` late in the DAG counts as a source. The refusal therefore fires
+/// only where the item has **no** class-blind supply anywhere in the campaign,
+/// which is the shape the finding had and the shape a typo has. Making it
+/// stricter would need the reachability model, which does not model items at
+/// all; making it stricter *without* that model would red correct campaigns,
+/// and a check that reds correct work is how a check gets weakened.
+fn item_gate_class_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let classes = &c.classes.content.classes;
+    if classes.is_empty() {
+        // The schema requires 1..4, so this is unreachable on a parsed campaign;
+        // returning rather than dividing by an empty quantifier keeps the "for
+        // all classes" reading honest instead of vacuously true.
+        return;
+    }
+    let blind = class_blind_item_sources(c);
+
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            let Objective::Interact {
+                id, requires_item, ..
+            } = o
+            else {
+                continue;
+            };
+            let Some(raw) = requires_item.as_deref() else {
+                continue;
+            };
+            let item = ns_item(raw);
+            if blind.contains(&item) {
+                continue;
+            }
+            let cannot: Vec<&str> = classes
+                .iter()
+                .filter(|cl| !cl.kit.iter().any(|k| ns_item(&k.item) == item))
+                .map(|cl| cl.id.as_str())
+                .collect();
+            if cannot.is_empty() {
+                continue;
+            }
+            let supply = if cannot.len() == classes.len() {
+                "nothing in this campaign supplies it at all".to_string()
+            } else {
+                format!(
+                    "its only supply is another class's kit, so {} cannot bring it: {}",
+                    if cannot.len() == 1 {
+                        "one class"
+                    } else {
+                        "those classes"
+                    },
+                    cannot.join(", ")
+                )
+            };
+            d.push(Diagnostic::error(
+                codes::ITEM_GATE_UNBRINGABLE,
+                "quests",
+                format!("/content/quests/{i}/objectives/{j}/requires_item"),
+                format!(
+                    "objective `{}` completes only for a player HOLDING `{raw}`, and {supply}. A \
+                     delve is played by one to four players who each pick one class, so a solo \
+                     player of any class is a party this campaign must be finishable by — and \
+                     this one is assembled unable to finish, which it learns standing at the \
+                     thing it cannot press. Three ways to supply it, and any one is enough: put \
+                     the item in a `collect` objective or a `loot` container on the way to this \
+                     gate; hand it out with a `give-item` effect (its default `carrier` is `all` \
+                     — every party member); or add it to EVERY class kit rather than one. Do not \
+                     drop `requires_item` to silence this — presenting the item is the beat.",
+                    id.as_str()
+                ),
+            ));
+        }
+    }
+}
 
 /// DSL v0.10 reserved-feature gating (spec-0031). **Two surfaces land in this
 /// version**, and this is the one fence for both:
@@ -2326,6 +2566,46 @@ fn check_one_status_effect(
             ),
         ));
     }
+}
+
+/// `DW0847`: a gate whose own terms contradict each other can never open, so
+/// the thing carrying it is authored content that provably never happens — an
+/// objective that never activates, an effect that never fires, a dialogue
+/// option that never shows, a cast clause that never governs.
+///
+/// One rule over [`for_each_gate`](crate::gate::for_each_gate)'s closed
+/// consumer set, because satisfiability is a property of the **gate** and a
+/// check written beside the first verb that needed it would leave the other
+/// six classes with no surface (CLAUDE.md: a capability belongs to the object
+/// class it acts on). The arithmetic is [`crate::gate::Gate::contradiction`],
+/// the same [`crate::gate::DatumSet`] the compiler's cast-ladder solver picks
+/// drive values from — one authority, so "can this open" and "at what value"
+/// can never disagree.
+fn gate_contradiction_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::gate::for_each_gate(c, &mut |site, gate| {
+        let Some(contra) = gate.contradiction() else {
+            return;
+        };
+        let what = match contra {
+            crate::gate::GateContradiction::Flag(f) => {
+                format!("flag `{f}` is both required and forbidden, so the gate is never satisfied")
+            }
+            crate::gate::GateContradiction::Datum(s) => format!(
+                "no value of `{s}` satisfies every `requires_state` term that reads it, so the \
+                 gate is never satisfied"
+            ),
+        };
+        d.push(Diagnostic::error(
+            codes::GATE_NEVER_OPENS,
+            site.consumer.stage(),
+            site.path.clone(),
+            format!(
+                "this {}'s gate contradicts itself: {what}. Whatever it guards can never happen — \
+                 fix the gate, or delete the thing it makes unreachable",
+                site.consumer.label()
+            ),
+        ));
+    });
 }
 
 fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {

@@ -29,6 +29,7 @@ fn raw_with(world: Option<&str>, classes: Option<&str>, quests: Option<&str>) ->
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     }
 }
 
