@@ -57,7 +57,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-__all__ = ["Row", "read", "body_rows", "orphans", "cells"]
+__all__ = ["Row", "read", "body_rows", "orphans", "cells", "rows_matching"]
 
 #: A GFM delimiter cell: hyphens, optionally colon-anchored at either end.
 DELIMITER_CELL = re.compile(r"^:?-+:?$")
@@ -154,6 +154,27 @@ def read(text: str) -> tuple[list[Row], list[tuple[int, str]]]:
             detached.append((i + 1, line))
         i += 1
     return rows, detached
+
+
+def rows_matching(
+    text: str, pattern: re.Pattern[str]
+) -> tuple[list[Row], list[tuple[int, str]]]:
+    """`(rows a table contains, rows nothing contains)`, both matching `pattern`.
+
+    This is the shape every adopting gate wants, and the reason the orphan half
+    is filtered by the caller's own pattern rather than reported wholesale: a
+    gate should red about the rows IT reads, not about every pipe character in a
+    765 KB reference page. `pattern` is applied to the stripped line, so an
+    existing row regex can be passed unchanged.
+
+    A non-empty second element means the document says something its reader
+    cannot see, which is always a finding and never a filter.
+    """
+    rows, detached = read(text)
+    return (
+        [r for r in rows if pattern.match(r.line.strip())],
+        [(n, line) for n, line in detached if pattern.match(line)],
+    )
 
 
 def body_rows(text: str) -> list[Row]:
