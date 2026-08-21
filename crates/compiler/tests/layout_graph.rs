@@ -1,7 +1,7 @@
 //! **What invokes the layout graph's analysis-tier proofs** (spec-0049 §3.3).
 //!
 //! The rules themselves are `delvewright_dsl::layout::analyze` and are tested
-//! against hand-drawn maps in `crates/dsl/tests/v14_layout_graph.rs`. What that
+//! against hand-drawn maps in `crates/dsl/tests/v13_layout_graph.rs`. What that
 //! file cannot show is the half CLAUDE.md calls UNRUN: a check can be correct in
 //! every reviewable way and still protect nothing, because the obligation to run
 //! it lives in a doc line.
@@ -23,7 +23,7 @@ mod common;
 /// hand; the fault is stated in the comment above it, not computed.
 const STRANDED: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.14.0",
+  "dsl_version": "0.13.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [

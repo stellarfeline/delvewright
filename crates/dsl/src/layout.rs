@@ -70,7 +70,7 @@ use crate::stages::Objective;
 /// `every_version`: the rule judges what the document SAYS — a duplicate id, an
 /// endpoint naming no place, a self-loop, an `entry` that is not a node. Its
 /// verdict is a function of the campaign alone, and there is no field below
-/// `dsl_version` 0.14.0 in which to write any of it.
+/// `dsl_version` 0.13.0 in which to write any of it.
 pub const DW_GRAPH_MALFORMED: DwCode = DwCode::every_version("DW0814");
 
 /// `DW0816`: a node the closure never reaches.

@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, is_v11, is_v12, is_v14,
+    is_v10, is_v11, is_v12, is_v13,
 };
 use crate::ids::is_kebab;
 use crate::metrics::Metrics;
@@ -109,11 +109,11 @@ pub fn validate_campaign_with(
         let blocks = ItemBackedBlockRegistry::new(items);
         world_edits_checks(c, &blocks, &mut d);
     }
-    // spec-0049 (DSL v0.14): the map-pipeline documents. Bound to the EVENT it
+    // spec-0049 (DSL v0.13): the map-pipeline documents. Bound to the EVENT it
     // guards rather than to a step someone runs — a campaign directory holding a
     // `layout-graph.json` has no path to a verdict that does not come through
     // here, because this is the function every `delvec` subcommand's validation
-    // stage calls. The version fence is `reserved_v14`, below, and the reads
+    // stage calls. The version fence is `reserved_v13`, below, and the reads
     // ledger is what gives `DW0813` its document-side binding: every building
     // metric these checks rest a verdict on records that it did.
     if c.geometry_brief.is_some() || c.layout_graph.is_some() {
@@ -1408,7 +1408,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v10(c, d);
     reserved_v11(c, d);
     reserved_v12(c, d);
-    reserved_v14(c, d);
+    reserved_v13(c, d);
     press_answer_checks(c, d);
     press_obligation_checks(c, d);
 }
@@ -1429,7 +1429,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// `DW0548`, `DW0549`), because a campaign below 0.12.0 cannot reach them: it
 /// cannot stage an `open-way` at all, and a piece whose way nothing opens is
 /// content rather than a defect (spec-0042 §2.5).
-/// The spec-0049 map-pipeline documents exist only at `dsl_version` 0.14.0.
+/// The spec-0049 map-pipeline documents exist only at `dsl_version` 0.13.0.
 ///
 /// A whole DOCUMENT is fenced here rather than a field, which is the only shape
 /// the fence has for a stage that did not exist: an older campaign has no
@@ -1438,7 +1438,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// surface used below the version that introduced it, and it names the document
 /// rather than a path inside it, because raising one field's version would not
 /// make the file legal.
-fn reserved_v14(c: &Campaign, d: &mut Vec<Diagnostic>) {
+fn reserved_v13(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (stage, version) in [
         (
             Stage::GeometryBrief,
@@ -1450,7 +1450,7 @@ fn reserved_v14(c: &Campaign, d: &mut Vec<Diagnostic>) {
         ),
     ] {
         let Some(version) = version else { continue };
-        if is_v14(version) {
+        if is_v13(version) {
             continue;
         }
         d.push(Diagnostic::error(
@@ -1458,8 +1458,8 @@ fn reserved_v14(c: &Campaign, d: &mut Vec<Diagnostic>) {
             stage.name(),
             "/dsl_version",
             format!(
-                "a `{name}` document requires dsl_version 0.14.0 and this one declares \
-                 `{version}` — raise this document's own `dsl_version` to 0.14.0, or delete the \
+                "a `{name}` document requires dsl_version 0.13.0 and this one declares \
+                 `{version}` — raise this document's own `dsl_version` to 0.13.0, or delete the \
                  file. It is a document of the map pipeline, which states a campaign's space \
                  before any coordinate exists; no earlier version has anywhere to put it.",
                 name = stage.name(),

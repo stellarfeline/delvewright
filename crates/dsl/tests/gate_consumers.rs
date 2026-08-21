@@ -87,7 +87,7 @@ fn gate_sites() -> Vec<(Site, BTreeSet<String>)> {
     // subject is that no gate-declaring object escapes: it walked seven stages by
     // name, so an eighth document declaring `requires_flags` without
     // `requires_state` would have been invisible to the one check whose whole
-    // job is that no such object exists. Two such documents landed at 0.14.0.
+    // job is that no such object exists. Two such documents landed at 0.13.0.
     for stage in Stage::ALL {
         let schema = delvewright_dsl::stage_schema(stage);
         if let Some(defs) = schema.get("$defs").and_then(Value::as_object) {

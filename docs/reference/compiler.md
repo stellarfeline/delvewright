@@ -10,9 +10,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.14.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.13.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.14.0`** (additive supersets; `0.2.0` output stays
+  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.13.0`** (additive supersets; `0.2.0` output stays
   byte-identical across the later versions). This line is not prose: it is bound
   by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
   (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS` minus
@@ -23,20 +23,22 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   stage document declaring it is `DW0102`, naming the versions the build
   accepts. Reserving is how a number an approved spec has allocated stops being
   free, since a skipped number cannot be filled afterwards (the ledger is
-  append-only) and an unheld number is one a second change takes. `0.13.0` is
-  reserved for spec-0026's horizon library as `("0.13.0",
-  "HORIZON_LIBRARY_SINCE")`; the change that lands the surface defines that
-  constant and deletes the row in the same edit. A reservation may sit **below**
-  the newest implemented version, and does: two changes were in flight and the
-  lower number was the one that had not landed, so `0.14.0` was appended past a
-  number still held. Nothing about the hold weakens — `is_supported_version`
-  still refuses `0.13.0` — and the ordinal comparison that used to assert
-  reservations sit above everything implemented was a proxy for that refusal,
-  replaced by the refusal itself. Held against every branch by
-  `tools/check-version-ledger-uniqueness.py`, which also refuses a number a
-  branch adds without a hand-written name — `is_v14` is computed from `0.14.0`
-  and so cannot disagree with a second branch's claim on it, while
-  `LAYOUT_GRAPH_SINCE` can.
+  append-only) and an unheld number is one a second change takes. **The list is
+  empty today**, which does not retire the mechanism: a row belongs there for a
+  surface whose change is *in flight*, because a row in this tree is the only
+  claim a row can make. A number held for a surface with no scheduled work is a
+  different thing — it stands in front of the live line on behalf of a road that
+  may not be taken, and it made the ledger's own invariant (a reservation sits
+  above everything implemented) unsatisfiable for the change that came next. That
+  premise was removed rather than the invariant weakened, and a surface that lost
+  its number takes a fresh one when it lands. The protection a standing row
+  approximates lives where it can see the competing claim: the allocation scan
+  over **every remote ref**, run before a round is dispatched.
+  `tools/check-version-ledger-uniqueness.py` is that instrument's automatic half
+  and diffs against `origin/main` alone, which is exactly why the scan exists; it
+  also refuses a number a branch adds without a hand-written name — `is_v13` is
+  computed from `0.13.0` and so cannot disagree with a second branch's claim on
+  it, while `LAYOUT_GRAPH_SINCE` can.
 - v0.6 amends spec-0010's mitigation hierarchy: the night-vision mitigation is now
   the stage-1 `areas[].mitigation` **declaration** (emitting a real clocked
   `effect give`), not a class-kit display-name heuristic.
@@ -570,7 +572,7 @@ from l10n (no stage-7 string is player-visible).
 | Seeding | Every seeded verb streams from `stream_seed(campaign_seed, "edits/<batch-id>/<edit-index>")` — renaming a batch (or moving an edit) deliberately reseeds it; nothing else does (ADR-0006). |
 | Emission | The replay lowers to a `world_edits` function (x-run-coalesced `fill`/`setblock`), called from `setup_finish` after the socket seals and before the relight fixtures — the exact model order, and the reason `DW0352` exists (`trap_setup` runs later). `setup` additionally forceloads every batch's write AABB (an edit may write outside the piece bboxes — a leaning canopy, a stamped fragment — and a `setblock` on an unloaded chunk silently fails); those chunks then follow the **forceload lifecycle** below. `world-edits.json` is hashed into `manifest.json` inputs. |
 
-### The map pipeline — `geometry-brief` and `layout-graph` (optional; v0.14, spec-0049)
+### The map pipeline — `geometry-brief` and `layout-graph` (optional; v0.13, spec-0049)
 
 Two documents that state a campaign's **space before any coordinate exists**.
 Both are optional files in the campaign directory, named rather than numbered
@@ -3178,7 +3180,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.14.0}`). `0.13.0` is in the ledger and refused: it is **reserved** for the stage-1 horizon library, and a number held for a surface in flight is one no other change may take. |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.13.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
@@ -4873,7 +4875,7 @@ The table itself, its two halves and its export are §10.
 Stage-3 of the map pipeline: the campaign's space checked as an object of its
 own, **cheaply, before geometry exists to make it expensive**. Every code is
 `every_version` for the same reason `DW0812` is — there is no field below
-`dsl_version` 0.14.0 in which to write any of it, so no campaign can go red on a
+`dsl_version` 0.13.0 in which to write any of it, so no campaign can go red on a
 document it did not change.
 
 Two tiers, and which one a rule is in is decided by what it asks. Referential

@@ -47,7 +47,7 @@ pub use envelope::{
     Campaign, Envelope, LAYOUT_GRAPH_SINCE, OPEN_WAY_SINCE, RESERVED_DSL_VERSIONS, RawCampaign,
     SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage, accepted_versions, check_campaign,
     is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09, is_v10, is_v11,
-    is_v12, is_v14, minor_ordinal, parse_campaign, reserved_for,
+    is_v12, is_v13, minor_ordinal, parse_campaign, reserved_for,
 };
 pub use fence::Fenced;
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};

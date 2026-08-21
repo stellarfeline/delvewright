@@ -12,7 +12,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.14.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.13.0";
 
 /// The `dsl_version` that introduces the **`open-way`** effect (spec-0042 §2.4):
 /// a campaign opening a placed piece's contingent way, with the geometry, the
@@ -29,12 +29,18 @@ pub const OPEN_WAY_SINCE: &str = "0.12.0";
 /// The `dsl_version` at which a campaign may carry the spec-0049 map-pipeline
 /// documents: `geometry-brief.json` and `layout-graph.json`.
 ///
-/// The **hand-written name** for `0.14.0`, and the reason it is written rather
-/// than derived is the reason [`RESERVED_DSL_VERSIONS`] gives: `is_v14` follows
-/// from the number, so two branches claiming `0.14.0` would produce the same
+/// The **hand-written name** for `0.13.0`, and the reason it is written rather
+/// than derived is the reason [`RESERVED_DSL_VERSIONS`] gives: `is_v13` follows
+/// from the number, so two branches claiming `0.13.0` would produce the same
 /// anchor and the uniqueness gate would read one claim where there are two. A
 /// name an author chose cannot agree by accident.
-pub const LAYOUT_GRAPH_SINCE: &str = "0.14.0";
+///
+/// This number was previously **reserved** for a surface with no scheduled work,
+/// and the row was cancelled rather than renumbered: a campaign built on a site
+/// plan cannot reach that surface at all, because spec-0049 §6 makes a campaign
+/// carry `areas[]` or a site plan and never both. The number was therefore being
+/// held in front of the live line on behalf of a road that is not being taken.
+pub const LAYOUT_GRAPH_SINCE: &str = "0.13.0";
 
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
@@ -93,7 +99,7 @@ pub const LAYOUT_GRAPH_SINCE: &str = "0.14.0";
 /// through one set of rules.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
     "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
-    "0.12.0", "0.13.0", "0.14.0",
+    "0.12.0", "0.13.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -113,17 +119,35 @@ pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
 /// why `tools/check-version-ledger-uniqueness.py` requires every version a
 /// branch **adds** to carry a hand-written name — a reservation row here, or a
 /// `*_SINCE` constant when the surface lands.
-pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[
-    // spec-0026: the stage-1 horizon library. Its branch had claimed `0.12.0`
-    // and lost it to `open-way` when the two were adjudicated; the replacement
-    // was never allocated, so the number that surface will define sat free for
-    // any author to take — the precise state this list exists to make
-    // impossible. Reserved rather than skipped, because the append-only rule
-    // means a skipped number can never be filled afterwards. The implementing
-    // change defines `HORIZON_LIBRARY_SINCE` and deletes this row in the same
-    // edit.
-    ("0.13.0", "HORIZON_LIBRARY_SINCE"),
-];
+///
+/// # The list is empty, and what that does and does not mean
+///
+/// It does not mean the mechanism is retired. A reservation still holds a number
+/// the moment one is genuinely owed, and every rule above still applies to it.
+///
+/// What it means is narrower and worth stating, because the alternative reading
+/// is that nothing is protecting the next free number. A row belongs here for a
+/// surface whose change is **in flight** — that is what "sibling" means, and it
+/// is the whole of what a row can do, since a row is a claim in THIS tree and a
+/// competing claim lives in a tree this crate cannot see. The last row was held
+/// for a surface with no scheduled work, which is a different thing: it stood in
+/// front of the live line on behalf of a road that may not be taken, and it made
+/// the ledger's own ordinal invariant unsatisfiable for the change that came
+/// next. Removing it is not a relaxation — the invariant it broke is asserted
+/// again below, unchanged.
+///
+/// The protection a standing row was approximating lives where it can actually
+/// see the other claim: the **allocation scan over every remote ref**, run
+/// before a round is dispatched, which is the only instrument that reads a
+/// number claimed on a branch that has not merged. `tools/check-version-ledger-
+/// uniqueness.py` is the same instrument's automatic half, and it diffs against
+/// `origin/main` alone — which is precisely why the scan exists and why the
+/// number a round will consume is handed to it rather than chosen by it.
+///
+/// A surface that lost its number to an adjudication takes a **fresh** one when
+/// it lands. Renumbering a standing reservation upward instead works exactly
+/// once and becomes a treadmill the moment two rows are pending.
+pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[];
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -184,7 +208,6 @@ fn ordinal(version: &str) -> u32 {
         "0.11.0" => 11,
         "0.12.0" => 12,
         "0.13.0" => 13,
-        "0.14.0" => 14,
         _ => 0,
     }
 }
@@ -387,7 +410,7 @@ pub fn is_v12(version: &str) -> bool {
     ordinal(version) >= 12
 }
 
-/// True if `version` enables the DSL v0.14 surface (spec-0049,
+/// True if `version` enables the DSL v0.13 surface (spec-0049,
 /// [`LAYOUT_GRAPH_SINCE`]): the two **map-pipeline stage documents**, and
 /// nothing else.
 ///
@@ -403,14 +426,8 @@ pub fn is_v12(version: &str) -> bool {
 /// field on any existing type for an older document to be judged against. Every
 /// check the two documents owe is reached only through the documents themselves,
 /// so a campaign without them binds zero of them and says so.
-///
-/// **`0.13.0` is skipped by this surface and is not free**: it is reserved for
-/// the stage-1 horizon library, whose own change defines
-/// `HORIZON_LIBRARY_SINCE`. That is the two-branches-in-flight state the ledger
-/// exists to make visible, and it is why the reservation sits *below* the latest
-/// implemented version rather than above it — see the ledger tests.
-pub fn is_v14(version: &str) -> bool {
-    ordinal(version) >= 14
+pub fn is_v13(version: &str) -> bool {
+    ordinal(version) >= 13
 }
 
 /// Which stage a document belongs to.
@@ -431,12 +448,12 @@ pub enum Stage {
     Dialogue,
     /// Stage 7 (optional; DSL v0.6, spec-0017): the map-editor edit script.
     WorldEdits,
-    /// The whole map's written brief, reduced to numbers (optional; DSL v0.14,
+    /// The whole map's written brief, reduced to numbers (optional; DSL v0.13,
     /// spec-0049 §4.2). Named, never renumbered into the 1..7 sequence: it is a
     /// different pipeline's document and the two orderings are unrelated.
     GeometryBrief,
     /// The campaign's space as a graph, before any coordinate exists (optional;
-    /// DSL v0.14, spec-0049 §3).
+    /// DSL v0.13, spec-0049 §3).
     LayoutGraph,
 }
 
@@ -511,9 +528,9 @@ pub struct Campaign {
     /// `None` = no `world-edits.json` in the campaign directory — byte-identical
     /// to a campaign from before the stage existed.
     pub world_edits: Option<Envelope<WorldEditsContent>>,
-    /// The whole map's brief as numbers (optional; DSL v0.14, spec-0049 §4.2).
+    /// The whole map's brief as numbers (optional; DSL v0.13, spec-0049 §4.2).
     pub geometry_brief: Option<Envelope<GeometryBriefContent>>,
-    /// The campaign's space as a graph (optional; DSL v0.14, spec-0049 §3).
+    /// The campaign's space as a graph (optional; DSL v0.13, spec-0049 §3).
     pub layout_graph: Option<Envelope<LayoutGraphContent>>,
 }
 
@@ -691,33 +708,10 @@ pub fn check_campaign(raw: &RawCampaign) -> Vec<Diagnostic> {
 mod version_ledger_tests {
     use super::*;
 
-    /// A reservation is **in the ledger and not accepted**.
-    ///
-    /// # The ordering claim this used to make, and why it could not survive
-    ///
-    /// It also asserted that a reservation *sits above everything implemented*,
-    /// on the reasoning that below the latest it would shadow a landed surface.
-    /// That claim describes a ledger only ever extended by one branch at a time,
-    /// and it fails the moment two are in flight and the **lower** number is the
-    /// one still unlanded: `0.13.0` is held for the stage-1 horizon library while
-    /// `0.14.0` lands spec-0049's map-pipeline documents. Appending `0.14.0` is
-    /// the append-only rule working — a skipped number can never be filled
-    /// afterwards, so `0.13.0` had to be *reserved* rather than jumped — and the
-    /// ordering assertion then refuses the exact arrangement the reservation
-    /// mechanism exists to produce. One gate's prescription was the other's
-    /// refusal (CLAUDE.md), so the defect belonged to the pair and is repaired
-    /// here rather than worked around at the call site.
-    ///
-    /// What it is replaced by is the property the ordering claim was a proxy
-    /// for, asserted directly: a reserved number is **refused**, so no document
-    /// can declare it and no surface can be silently enabled by it; and it is
-    /// never the latest implemented version, so it cannot shadow one. The
-    /// remaining half — that no *landed* surface names a reserved number — is
-    /// held from outside by `tools/check-version-ledger-uniqueness.py`'s rule 1,
-    /// which reads the reservation rows and the `*_SINCE` constants through one
-    /// parser and reds when a number carries two hand-written names. That is a
-    /// stronger instrument than an ordinal comparison, because it sees the other
-    /// branch's claim and this test cannot.
+    /// A reservation is **in the ledger and not accepted**, and it sits above
+    /// everything implemented. Below the latest it would shadow a landed
+    /// surface; outside the ledger it would not be held at all, because a
+    /// number outside the ledger is a number the next author finds free.
     #[test]
     fn a_reservation_is_in_the_ledger_held_and_refused() {
         assert!(is_supported_version(SUPPORTED_DSL_VERSION));
@@ -762,11 +756,9 @@ mod version_ledger_tests {
                 "{version} is reserved for {anchor} yet this crate accepts it; a \
                  campaign declaring it would be built with that surface dropped"
             );
-            assert_ne!(
-                minor_ordinal(version),
-                minor_ordinal(SUPPORTED_DSL_VERSION),
-                "reserved {version} ({anchor}) IS the latest implemented version — a number \
-                 cannot both name a landed surface and be held for one that has not landed"
+            assert!(
+                minor_ordinal(version) > minor_ordinal(SUPPORTED_DSL_VERSION),
+                "reserved {version} ({anchor}) is not newer than {SUPPORTED_DSL_VERSION}"
             );
         }
 

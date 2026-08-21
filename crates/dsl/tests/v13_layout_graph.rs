@@ -1,4 +1,4 @@
-//! DSL v0.14 (spec-0049 §3): the layout graph and the geometry brief.
+//! DSL v0.13 (spec-0049 §3): the layout graph and the geometry brief.
 //!
 //! # How these tests are kept falsifiable
 //!
@@ -51,7 +51,7 @@ use serde_json::{Value, json};
 ///   both beat-bound places.
 const GREEN: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.14.0",
+  "dsl_version": "0.13.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -83,7 +83,7 @@ const GREEN: &str = r#"{
 
 const BRIEF: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.14.0",
+  "dsl_version": "0.13.0",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -195,14 +195,14 @@ fn the_binding_ledger_counts_what_the_document_holds() {
 // The version fence
 // ---------------------------------------------------------------------------
 
-/// Both documents exist only at 0.14.0, and the refusal names the document
+/// Both documents exist only at 0.13.0, and the refusal names the document
 /// rather than a field inside it.
 #[test]
 fn dw0141_a_map_document_below_its_version() {
     let old = graph_with(|v| v["dsl_version"] = json!("0.12.0"));
     assert!(validate(Some(old)).contains(&"DW0141".to_string()));
 
-    let old_brief = BRIEF.replace("0.14.0", "0.12.0");
+    let old_brief = BRIEF.replace("0.13.0", "0.12.0");
     let got = codes_of(&campaign(Some(GREEN.to_string()), Some(old_brief)));
     assert!(got.contains(&"DW0141".to_string()));
 }
