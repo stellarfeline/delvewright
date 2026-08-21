@@ -564,17 +564,20 @@ spelling for any of them, and the only path from a `details[]` row to placed
 bytes runs through the compiler computing the frame from the site plan inside
 `Plan::build` — the one constructor every world-reaching verb goes through. That
 is the same tooth the blockout's is: inversion is not forbidden, it is
-uncompilable. The escalation path a part that wants different traversal takes is
+uncompilable. The escalation path a part that wants different *space* takes is
 a **site-plan revision**, which moves the plan hash, which re-opens the walk gate
-(`DW0841`), which re-runs the whole's walk. The cost is stated, not hidden.
+(`DW0841`), which re-runs the whole's walk; a part that wants different
+*traversal* revises the **layout graph** and pays the identical cost through the
+other half of the walk record's freshness key. The cost is stated, not hidden.
 
 **The frame** a piece must exactly fill is the box's play space grown one course
 downward — the walk plane's own floor. Everything else the derivation writes
 around a box is structure and stays whole-owned: every vertical party plane,
-every wall, every unshared shell face, every seam frame, every derived stair in
-an unbound host and every bar in a vertical-plane seam. Where boxes stack, the
-horizontal party plane **is** the upper box's floor course and belongs to the
-upper piece. In the derivation this is one rule rather than six exemptions: a
+every wall, every unshared shell face, every seam frame in a vertical plane,
+every derived stair in an unbound host and every bar in a vertical-plane seam.
+Where boxes stack, the horizontal party plane **is** the upper box's floor
+course and belongs to the upper piece — a seam frame lying in that course goes
+with it. In the derivation this is one rule rather than six exemptions: a
 bound frame is a hole in what the whole writes, so the floor accent, the interior
 clear, the ceiling of the box underneath, a hosted stair and a bar in the box's
 own floor course all stop by the same subtraction, and everything outside the
