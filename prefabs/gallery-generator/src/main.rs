@@ -1601,7 +1601,6 @@ fn write_shard(out: &Path) {
     println!("{SHARD_ID}: fragment source written");
 }
 
-
 // ---------------------------------------------------------------------------
 // The DETAIL piece (spec-0050): the yard the site-plan overlay's exit box holds
 // ---------------------------------------------------------------------------
@@ -1647,9 +1646,8 @@ fn build_yard() -> Structure {
         for y in 0..sy {
             for z in 0..sz {
                 let plinth = y == 1 && (3..=4).contains(&x) && (3..=4).contains(&z);
-                let post = (1..=2).contains(&y)
-                    && (x == 0 || x == sx - 1)
-                    && (z == 0 || z == sz - 1);
+                let post =
+                    (1..=2).contains(&y) && (x == 0 || x == sx - 1) && (z == 0 || z == sz - 1);
                 let name = if y == 0 {
                     "minecraft:polished_andesite"
                 } else if plinth {
