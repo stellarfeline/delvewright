@@ -2,14 +2,21 @@
   "added": [],
   "changed": [
     "easy.en:creator-datapack/layout.json",
+    "easy.en:validation/watch-ledger.json",
     "hard.en:creator-datapack/layout.json",
+    "hard.en:validation/watch-ledger.json",
     "ocean-horizon.en:creator-datapack/layout.json",
+    "ocean-horizon.en:validation/watch-ledger.json",
     "primary.en:creator-datapack/layout.json",
+    "primary.en:validation/watch-ledger.json",
     "primary.zh-cn:creator-datapack/layout.json",
-    "void-horizon.en:creator-datapack/layout.json"
+    "primary.zh-cn:validation/watch-ledger.json",
+    "void-horizon.en:creator-datapack/layout.json",
+    "void-horizon.en:validation/watch-ledger.json"
   ],
   "classes": {
-    "creator overlay": 6
+    "creator overlay": 6,
+    "validation ledger": 6
   },
   "removed": []
 }

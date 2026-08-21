@@ -260,3 +260,37 @@ def test_every_probe_names_a_code_and_a_unit():
         )
         found += 1
     assert found > 0, "zero probes examined — this assertion bound to nothing"
+
+
+def test_a_zero_compiler_binding_reds_rather_than_being_printed(tmp_path):
+    """A verdict nothing acts on is not a gate.
+
+    `read_build_ledgers` has always documented itself as *the caller reds on the
+    ones the gallery writes*, and `--build-out`'s own help text says a zero
+    binding is a red. Neither was true: the list was computed, printed in the
+    summary line and written into the report, and `main` returned 0 regardless.
+    That is worse than an absent check, because the printed count reads as a
+    check that ran — a build whose watch ledger had stopped binding to anything
+    would have said so on stdout and merged green.
+    """
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    (out / "validation" / "bound.json").write_text(json.dumps({"examined": 4}))
+    (out / "validation" / "stalled.json").write_text(json.dumps({"examined": 0}))
+
+    ledgers, zeroes = mod.read_build_ledgers(out)
+    assert len(ledgers) == 2, "both ledgers were read"
+    assert zeroes == ["stalled.json: `examined` is 0"], (
+        "the zero is named rather than counted, so the reader knows WHICH proof "
+        f"stopped binding: {zeroes}"
+    )
+
+    # …and the gate is wired to that list. The source is read rather than
+    # `main()` driven end to end, because reaching this branch needs a real
+    # schema export, a real gallery walk and a real build tree — and a test that
+    # needs all three to prove one `return 1` is a test nobody keeps green.
+    src = (REPO / "tools" / "check-gallery-coverage.py").read_text()
+    assert "if zero_bindings:" in src, "the list must gate, not merely print"
+    body = src.split("if zero_bindings:", 1)[1].split("\n    return 0", 1)[0]
+    assert "return 1" in body, "a zero binding must fail the run"

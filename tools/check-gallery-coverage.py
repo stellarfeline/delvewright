@@ -347,6 +347,31 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    if zero_bindings:
+        # `read_build_ledgers` has always said "the caller reds on the ones the
+        # gallery writes", and the caller did not: the list was computed,
+        # printed in the summary line, written into the report — and never
+        # gated. A verdict nothing acts on is the UNRUN shape wearing a
+        # measurement's clothes, and it is worse than an absent check, because
+        # the printed count reads as a check that ran. Every ledger the gallery
+        # emits binds today (7 of 7 non-zero), so this reds on drift and on
+        # nothing else.
+        print(
+            "\nThese compiler-stated bindings are ZERO on a campaign that "
+            "declares everything, so each is a proof that has stopped reaching "
+            "what the gallery plainly writes — vacuous, not a pass:",
+            file=sys.stderr,
+        )
+        for z in zero_bindings:
+            print(f"  {z}", file=sys.stderr)
+        print(
+            "\nFix the check that stopped binding. A ledger whose count is "
+            "honestly zero here means the gallery no longer writes that "
+            "machinery, which is itself the finding.",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -361,9 +386,9 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
     because the gallery declares everything: a zero there means the proof stopped
     reaching what the document plainly writes.
 
-    So the zeroes are reported by name rather than counted, and the caller reds on
-    the ones the gallery writes. `effect-roots.json` is the sharpest of them: the
-    gallery binds all eight roots, where the largest shipped campaign binds three.
+    So the zeroes are reported by name, and the caller reds on them.
+    `effect-roots.json` is the sharpest of them: the gallery binds all eight
+    roots, where the largest shipped campaign binds three.
     """
     vdir = out / "validation"
     if not vdir.is_dir():
