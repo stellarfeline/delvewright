@@ -103,7 +103,12 @@ use crate::registry::PrefabRegistry;
 
 /// Player eye height above the standing cell's floor (vanilla: 1.62 blocks). The
 /// first-person camera sits here so a render frames exactly what the player sees.
-pub const EYE_HEIGHT: f64 = 1.62;
+///
+/// The metrics table (spec-0049 §2) is the one definition. A camera that framed
+/// a different eye from the one the navigation model proves standability for
+/// would be photographing a body that is not the player's, and before the table
+/// there was nothing that could have gone red about it.
+pub use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT as EYE_HEIGHT;
 
 /// First-person field of view, degrees (vanilla default ~70°).
 pub const POV_FOV_DEG: f64 = 70.0;

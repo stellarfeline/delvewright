@@ -55,6 +55,16 @@ flate2 = "1"
 # dependency: schem's are a subset of the ones above.
 delvewright-schem = { path = "../schem" }
 
+# The metrics standard (spec-0049 §2) — one definition of the player's own
+# geometry for the whole workspace. This crate's eye height used to be a literal
+# whose doc comment said it was "the same 1.62 the compiler's player-POV cameras
+# stand at", which is an intention rather than a binding: a review render that
+# framed a different eye from the one the navigation model proves standability
+# for would be photographing a body nobody plays, and nothing anywhere could have
+# gone red about it. Adds no new external dependency and no new resolution reach
+# — `delvewright-dsl` is already under both `delvewright-schem` and `delvec`.
+delvewright-dsl = { path = "../dsl" }
+
 # The CPU render surface lives in `delvec` (ADR-0021 §1): the structure reader,
 # the prefab-metadata projection and the shared `DW072x`/`DW079x` catalog are
 # ONE definition, and this crate names it rather than keeping a second copy on

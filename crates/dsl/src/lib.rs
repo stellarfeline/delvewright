@@ -27,6 +27,7 @@ pub mod gate;
 pub mod ids;
 pub mod l10n;
 pub mod mclang;
+pub mod metrics;
 pub mod prefab;
 pub mod registry;
 pub mod schema;

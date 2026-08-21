@@ -107,6 +107,11 @@ enum Command {
         #[arg(long)]
         stage: String,
     },
+    /// Export the metrics standard as JSON (spec-0049 §2) — the player half
+    /// (facts of the pinned game) and the building half (this project's
+    /// standards, each with its calibration state), on stdout; the table's
+    /// self-consistency verdict and its binding counts on stderr.
+    Metrics,
     /// Draft-render one frame of the assembled world + a scene manifest
     /// (spec-0015: the visual authoring loop). Stops after placement +
     /// assembly — it never emits a datapack.
@@ -250,6 +255,7 @@ fn main() -> ExitCode {
         }
         Command::Fmt { paths, check } => run_fmt(paths, *check, cli.json),
         Command::Schema { stage } => run_schema(stage),
+        Command::Metrics => run_metrics(cli.json),
         Command::Snapshot {
             campaign_dir,
             camera,
@@ -2191,6 +2197,87 @@ fn run_schema(stage: &str) -> ExitCode {
     }
     ExitCode::SUCCESS
 }
+
+/// Export the metrics standard (spec-0049 §2 — pipeline stage 0).
+///
+/// The table on stdout, so a tool outside the engine reads the JSON and never a
+/// copy; the verdicts on stderr, so a shell pipeline gets clean JSON.
+///
+/// Three things are stated on stderr every run, and each is stated whether or
+/// not it found anything, because a count only means something when the run that
+/// found nothing prints it too:
+///
+/// 1. **What the table holds** — entries per half, and how many building entries
+///    the metrics gym has not walked.
+/// 2. **What the self-check bound to** — invariants evaluated and building
+///    entries read. A run that evaluated zero invariants would be a vacuous pass
+///    and is refused as an internal error, not reported as green.
+/// 3. **`DW0813`**, when any verdict above rested on an uncalibrated standard.
+///    This is the code's live binding at this version: no *document* reads a
+///    building metric until the layout-graph and site-plan stages land, and the
+///    table proving itself consistent is a real verdict resting on real seeds.
+///
+/// An inconsistent table exits `EXIT_INTERNAL` rather than raising a diagnostic.
+/// A diagnostic is addressed to an author, and there is no author here — the
+/// table is engine data, so a table that contradicts itself is a defect in
+/// `dsl::metrics` and the person who has to act on it is whoever is holding the
+/// compiler.
+fn run_metrics(json: bool) -> ExitCode {
+    use delvewright_dsl::metrics::{Metrics, export};
+
+    let table = Metrics::table();
+    let check = table.self_check();
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&export(&table)).expect("the metrics table serializes")
+    );
+
+    let uncalibrated = table.building.values().filter(|e| !e.calibrated).count();
+    eprintln!(
+        "metrics: version {v}, {p} player metric(s), {b} building metric(s), {uncalibrated} of \
+         them not yet walked by the metrics gym.",
+        v = table.metrics_version,
+        p = table.player.len(),
+        b = table.building.len(),
+    );
+    eprintln!(
+        "metrics self-check binding: {i} invariant(s) over {e} building entries; {r} entry(ies) \
+         read, {pr} of them provisional.",
+        i = check.binding.invariants,
+        e = check.binding.entries,
+        r = check.binding.reads.read,
+        pr = check.binding.reads.provisional,
+    );
+
+    if check.binding.invariants == 0 || check.binding.reads.read == 0 {
+        eprintln!(
+            "{EXIT_INTERNAL_PREFIX} the metrics self-check bound to nothing, so its green says \
+             nothing about the table. A check that examined no entry is vacuous, not a pass."
+        );
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+
+    if !check.failures.is_empty() {
+        for f in &check.failures {
+            eprintln!("{EXIT_INTERNAL_PREFIX} the metrics table contradicts itself: {f}.");
+        }
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+
+    if let Some(d) = table.notice(&check.reads, "metrics") {
+        if json {
+            println!("{}", serde_json::json!(d));
+        } else {
+            eprintln!("{} [warning] {}: {}", d.code, d.stage, d.message);
+        }
+    }
+
+    ExitCode::SUCCESS
+}
+
+/// What an internal error says before it says what went wrong.
+const EXIT_INTERNAL_PREFIX: &str = "internal error:";
 
 /// Print a `DW03xx` build/solver diagnostic (exit 3), honoring `--json`. Mirrors
 /// the spec-0002 one-object-per-line JSON shape used for validation diagnostics.
