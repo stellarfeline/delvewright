@@ -29,9 +29,9 @@ pub fn valid_raw() -> RawCampaign {
         quests: read_valid("quests.json"),
         dialogue: read_valid("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
-    geometry_brief: None,
-    layout_graph: None,
 }
 
 /// The self-describing invalid-fixture format: an expected diagnostic code plus
@@ -75,8 +75,6 @@ pub fn apply(fixture: &InvalidFixture) -> RawCampaign {
         }
     }
     raw
-    geometry_brief: None,
-    layout_graph: None,
 }
 
 /// Load every invalid fixture (sorted by filename for determinism).

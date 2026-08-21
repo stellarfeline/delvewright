@@ -58,19 +58,10 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gallery_units import Binder, Enumerator  # noqa: E402
+from gallery_units import Binder, Enumerator, stage_files  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 GALLERY = REPO / "gallery"
-STAGE_FILES = {
-    "world": "world.json",
-    "npcs": "npcs.json",
-    "classes": "classes.json",
-    "quest-plan": "quest-plan.json",
-    "quests": "quests.json",
-    "dialogue": "dialogue.json",
-    "world-edits": "world-edits.json",
-}
 
 
 def die(msg: str) -> "None":
@@ -106,9 +97,9 @@ def schema_export(delvec: Path) -> dict:
     return json.loads(r.stdout)
 
 
-def load_stage_docs(campaign: Path) -> dict[str, dict]:
+def load_stage_docs(campaign: Path, export: dict) -> dict[str, dict]:
     out: dict[str, dict] = {}
-    for stage, fn in STAGE_FILES.items():
+    for stage, fn in stage_files(export).items():
         p = campaign / fn
         if p.is_file():
             out[stage] = json.loads(p.read_text())
@@ -200,7 +191,7 @@ def main() -> int:
             "matching it."
         )
 
-    primary_docs = load_stage_docs(GALLERY)
+    primary_docs = load_stage_docs(GALLERY, export)
     if not primary_docs:
         die(f"the gallery at `{GALLERY}` holds no stage documents")
     docs_walked = len(primary_docs)
@@ -227,7 +218,7 @@ def main() -> int:
                 )
             dest = tmp / od.name
             materialise(GALLERY, od, dest)
-            ov = bind(enumerator, export, load_stage_docs(dest), f"overlay:{od.name}")
+            ov = bind(enumerator, export, load_stage_docs(dest, export), f"overlay:{od.name}")
             for unit in declared:
                 if unit not in units:
                     die(f"overlay `{od.name}` declares `{unit}`, which is not a unit")

@@ -55,6 +55,15 @@
  * step, reorder none, and change nothing the bot walks: a v0.11 path is walked
  * exactly as a v0.10 one is.
  *
+ * **v0.14** adds two campaign documents and no step: a geometry brief, which is
+ * the whole map's written brief reduced to named numbers, and a layout graph,
+ * which states the campaign's space as places and the connections between them
+ * before any coordinate exists. Both are compile-time claims the compiler proves
+ * on its own; neither exports a step, reorders one, or changes anything the bot
+ * walks, so a v0.14 path is walked exactly as a v0.12 one is. (0.13.0 is not in
+ * the list because the compiler does not accept it either — the number is held
+ * for a surface that has not landed.)
+ *
  * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
  * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
  * enforces that in CI: an allowlist that lags the ceiling refuses a v0.9.0
@@ -72,6 +81,7 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.10.0",
   "0.11.0",
   "0.12.0",
+  "0.14.0",
 ] as const;
 
 /**

@@ -44,9 +44,9 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
-    geometry_brief: None,
-    layout_graph: None,
 }
 
 /// `damage-players` (with a curated `damage_type`) validates clean under 0.6.0.

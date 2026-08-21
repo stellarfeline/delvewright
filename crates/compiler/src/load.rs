@@ -21,6 +21,19 @@ pub const STAGE_FILES: [&str; 6] = [
 /// pre-stage-7 campaign, so its absence is never an error.
 pub const WORLD_EDITS_FILE: &str = "world-edits.json";
 
+/// The optional map-pipeline documents (spec-0049), on the same terms as the
+/// edit script: absent is never an error, and present is hashed into the
+/// manifest inputs like any other stage document.
+///
+/// **A site plan is not here yet**, and that is the ordering being structural
+/// rather than prose: there is no `site-plan.json` filename for a loader to
+/// find, so a campaign cannot author an embedding before the graph the
+/// embedding is of exists (spec-0049 §7).
+pub const GEOMETRY_BRIEF_FILE: &str = "geometry-brief.json";
+
+/// The layout graph's filename (spec-0049 §3) — see [`GEOMETRY_BRIEF_FILE`].
+pub const LAYOUT_GRAPH_FILE: &str = "layout-graph.json";
+
 /// A loaded campaign directory: the parsed-ready [`RawCampaign`] plus the exact
 /// raw file contents (by filename) for deterministic input hashing.
 pub struct LoadedCampaign {
@@ -60,6 +73,16 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     } else {
         None
     };
+    let geometry_brief = if dir.join(GEOMETRY_BRIEF_FILE).is_file() {
+        Some(read(GEOMETRY_BRIEF_FILE)?)
+    } else {
+        None
+    };
+    let layout_graph = if dir.join(LAYOUT_GRAPH_FILE).is_file() {
+        Some(read(LAYOUT_GRAPH_FILE)?)
+    } else {
+        None
+    };
     let l10n = load_l10n_dir(&dir.join("l10n"))?;
     // i18n v2 (spec-0029): every sidecar is a build input of **every** build, not
     // just of a `--lang` bake — the delve now ships each declared language's lang
@@ -77,8 +100,8 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
             quests,
             dialogue,
             world_edits,
-            geometry_brief: None,
-            layout_graph: None,
+            geometry_brief,
+            layout_graph,
         },
         inputs,
         l10n,

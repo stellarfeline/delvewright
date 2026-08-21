@@ -53,9 +53,9 @@ fn raw(quests: String) -> RawCampaign {
         quests,
         dialogue: hw("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
-    geometry_brief: None,
-    layout_graph: None,
 }
 
 /// The canonical well-formed volume: an anchor-centred box and a wording.

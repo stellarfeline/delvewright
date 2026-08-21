@@ -41,9 +41,9 @@ fn campaign_with(quests: String) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
-    geometry_brief: None,
-    layout_graph: None,
 }
 
 const GATED: &str = r#", "requires_item": "minecraft:iron_sword", "missing_item_hint": "The bar will not shift with bare hands.""#;

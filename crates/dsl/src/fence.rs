@@ -221,12 +221,18 @@ mod tests {
             quest_plan: garbage.clone(),
             quests: garbage.clone(),
             dialogue: garbage.clone(),
-            world_edits: Some(garbage),
-            geometry_brief: None,
-            layout_graph: None,
+            world_edits: Some(garbage.clone()),
+            geometry_brief: Some(garbage.clone()),
+            layout_graph: Some(garbage),
         })
         .expect_err("unparseable stages cannot produce a campaign");
-        assert_eq!(diags.len(), 7, "one schema failure per stage document");
+        assert_eq!(
+            diags.len(),
+            crate::envelope::Stage::ALL.len(),
+            "one schema failure per stage document, and the count comes from the stage \
+             enumeration rather than from a number somebody typed — a stage added without a \
+             parse arm would otherwise pass here silently"
+        );
         assert!(diags.iter().all(|d| d.binds == Binds::EveryVersion));
         let f = Fenced::structural(diags.clone());
         assert_eq!(f.reported().len(), diags.len());

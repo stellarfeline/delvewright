@@ -425,9 +425,9 @@ impl Edge {
     #[must_use]
     pub fn gating(&self) -> Option<&EdgeGating> {
         match self {
-            Edge::Walk { gating, .. }
-            | Edge::Stair { gating, .. }
-            | Edge::Drop { gating, .. } => gating.as_ref(),
+            Edge::Walk { gating, .. } | Edge::Stair { gating, .. } | Edge::Drop { gating, .. } => {
+                gating.as_ref()
+            }
             Edge::Barred { gating, .. } => Some(gating),
             Edge::Vision { .. } => None,
         }
@@ -523,13 +523,11 @@ impl Closure {
                 let backward = e.direction() != Some(Direction::AToB);
                 if forward && c.reached.contains(a) && !c.reached.contains(b) {
                     c.reached.insert(b.to_string());
-                    c.obtained_when
-                        .insert(b.to_string(), c.obtained.clone());
+                    c.obtained_when.insert(b.to_string(), c.obtained.clone());
                 }
                 if backward && c.reached.contains(b) && !c.reached.contains(a) {
                     c.reached.insert(a.to_string());
-                    c.obtained_when
-                        .insert(a.to_string(), c.obtained.clone());
+                    c.obtained_when.insert(a.to_string(), c.obtained.clone());
                 }
             }
             // (c): every beat bound to a reached node hands over what it grants.
@@ -671,10 +669,16 @@ pub struct LayoutBinding {
     pub one_way_edges: usize,
     /// Connections that demand something before a body may pass.
     pub gated_edges: usize,
-    /// Places whose quest beat is declared — what `DW0817`'s spine obligation
-    /// rests on, and the number whose **zero** is the *graph before mission*
-    /// case.
+    /// Quest beats bound to a place.
     pub beats: usize,
+    /// Of those, beats on the **mandatory quest spine** — the number `DW0817`'s
+    /// obligation to visit them actually quantifies over.
+    ///
+    /// It is carried separately because `beats` is not the binding: a graph can
+    /// declare a dozen beats and still ask `DW0817` to check nothing, if none of
+    /// their quests is one the finale depends on. A zero here is the *graph
+    /// before mission* case and is reported as a finding.
+    pub spine_beats: usize,
     /// Steps of the authored critical path — what `DW0817` and `DW0822`
     /// examine.
     pub path_steps: usize,
@@ -702,6 +706,12 @@ impl LayoutBinding {
         b.nodes = graph.nodes.len();
         b.edges = graph.edges.len();
         b.beats = graph.beats.len();
+        let spine = mandatory_quests(c);
+        b.spine_beats = graph
+            .beats
+            .iter()
+            .filter(|beat| spine.contains(beat.quest.0.as_str()))
+            .count();
         b.path_steps = graph.critical_path.len().saturating_sub(1);
         b.metric_refs = graph.nodes.len();
         for e in &graph.edges {
@@ -726,8 +736,9 @@ impl LayoutBinding {
     pub fn line(&self) -> String {
         format!(
             "layout-graph binding: {n} node(s), {e} edge(s) ({t} traversal, {ow} one-way, \
-             {s} shortcut, {g} gated), {b} beat(s), {p} critical-path step(s), {m} metrics \
-             reference(s); geometry-brief binding: {f} fact(s).",
+             {s} shortcut, {g} gated), {b} beat(s) of which {sb} on the mandatory spine, \
+             {p} critical-path step(s), {m} metrics reference(s); geometry-brief binding: \
+             {f} fact(s).",
             n = self.nodes,
             e = self.edges,
             t = self.traversal_edges,
@@ -735,6 +746,7 @@ impl LayoutBinding {
             s = self.shortcut_edges,
             g = self.gated_edges,
             b = self.beats,
+            sb = self.spine_beats,
             p = self.path_steps,
             m = self.metric_refs,
             f = self.brief_facts,
@@ -924,9 +936,7 @@ fn wellformed(graph: &LayoutGraphContent, known: &BTreeSet<&str>, d: &mut Vec<Di
                 DW_GRAPH_MALFORMED,
                 "layout-graph",
                 format!("/content/critical_path/{i}"),
-                format!(
-                    "the critical path steps through `{node}`, which is not a declared place."
-                ),
+                format!("the critical path steps through `{node}`, which is not a declared place."),
             ));
         }
     }
@@ -1068,7 +1078,10 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
                 d.push(Diagnostic::error(
                     DW_GRAPH_MISSION,
                     "quests",
-                    format!("/content/quests/{qi}/objectives/{oi}", qi = quest_index(c, q)),
+                    format!(
+                        "/content/quests/{qi}/objectives/{oi}",
+                        qi = quest_index(c, q)
+                    ),
                     format!(
                         "objective `{o}` of quest `{q}` happens somewhere and the layout graph \
                          does not say where. Every objective is place-bound — a body has to be \
@@ -1374,25 +1387,13 @@ fn critical_path(
             );
         }
     }
-    // Stated whether or not anything was found: a zero here is the *graph before
-    // mission* case, and CLAUDE.md's standing rule is that a binding of zero is a
-    // finding rather than quietly a pass.
-    if required == 0 {
-        d.push(Diagnostic::warning(
-            DW_CRITICAL_PATH,
-            "layout-graph",
-            "/content/beats",
-            format!(
-                "the critical path was checked over {steps} step(s) against a ZERO beat binding: \
-                 this graph declares {b} beat(s), none of them on the mandatory quest spine, so \
-                 the spine half of this check examined nothing. A critical path over an unbound \
-                 graph is a route through nothing. That is legal — a graph may be authored before \
-                 the mission is — and it is stated rather than passed over, because a green that \
-                 bound to nothing is not a pass.",
-                b = graph.beats.len(),
-            ),
-        ));
-    }
+    // The binding is STATED, not raised. `delvec analyze` exits 2 on any reported
+    // diagnostic, warning or error alike, so a "this bound to nothing" line here
+    // would turn a green analyze red — a count is not a fault. It lives in
+    // [`LayoutBinding`] instead, which every run prints and which flags the zero
+    // as a finding, and `steps` and `required` are quoted in the faults above so
+    // a red says what it examined.
+    let _ = (steps, required);
 }
 
 /// Everything the places visited so far have granted.

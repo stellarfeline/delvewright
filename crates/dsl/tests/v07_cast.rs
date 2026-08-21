@@ -46,9 +46,9 @@ fn campaign_with(quests: String) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
-    geometry_brief: None,
-    layout_graph: None,
 }
 
 /// A `cast` ledger validates clean under `dsl_version 0.7.0`.

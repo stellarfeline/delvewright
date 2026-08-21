@@ -23,9 +23,9 @@ fn campaign_with(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: dialogue.to_string(),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
-    geometry_brief: None,
-    layout_graph: None,
 }
 
 fn valid_npcs_v04() -> String {
