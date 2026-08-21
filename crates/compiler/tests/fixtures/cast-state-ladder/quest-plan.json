@@ -1,0 +1,34 @@
+{
+  "campaign_id": "cast-ledger",
+  "content": {
+    "finale": "quest/leave",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [],
+        "goal": "Get the Keeper to open the door.",
+        "id": "quest/ask",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      },
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [
+          "quest/ask"
+        ],
+        "goal": "Walk out through the open door.",
+        "id": "quest/leave",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.7.0",
+  "stage": "quest-plan"
+}

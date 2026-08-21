@@ -873,4 +873,18 @@ pub mod codes {
     /// the version gate belongs; fencing this code as well would only stop
     /// rejecting a bad document, which is the direction [`Binds`] warns about.
     pub const TRAVERSAL_UNPROVABLE: DwCode = DwCode::every_version("DW0455");
+
+    /// A gate contradicts itself, so it can NEVER open: a flag on both its
+    /// `requires_flags` and `forbids_flags`, or `requires_state` terms on one
+    /// datum that no integer satisfies (`at-least 5` with `at-most 3`, two
+    /// different `equals`). The thing carrying it — objective, effect, trigger,
+    /// trap, dialogue option, cast placement, shop offer — is authored content
+    /// that provably never happens, which is a defect in what the document
+    /// SAYS, not a stylistic lint. One rule over the whole closed consumer set
+    /// ([`crate::gate::for_each_gate`]), because satisfiability is a property
+    /// of the gate, never of the verb that first needed the question answered.
+    ///
+    /// Error tier, validation (exit 1). [`Binds::EveryVersion`]: it judges an
+    /// authored contradiction, a function of the campaign alone.
+    pub const GATE_NEVER_OPENS: DwCode = DwCode::every_version("DW0847");
 }
