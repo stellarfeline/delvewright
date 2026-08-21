@@ -47,7 +47,9 @@
       "triage": "capability",
       "general_form": "every objective emits activation/completion presentation (title + hint + sound)",
       "carrier": {"kind": "packtest", "template": "verb_flag_gate"},
-      "binding": {"kind": "out", "glob": "packtest-datapack/**/verb_flag_gate.mcfunction"}
+      "binding": {"kind": "out", "glob": "packtest-datapack/**/verb_flag_gate.mcfunction"},
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"has": ["requires_flags"]}},
+      "note": "applies_when added 2026-08-21: the verb_flag_gate template is emitted for flag-gated objectives (`requires_flags`). Flag-gated objectives declared with no emitted template = UNBOUND; none declared = the class measures zero."
     },
     {
       "id": "hv-05",
@@ -247,7 +249,9 @@
       "triage": "capability",
       "general_form": "a generator never leaves a structural feature half-written: it regrows or removes it whole",
       "carrier": {"kind": "invariant", "test": "assert_greenfield_corridor_clear"},
-      "binding": {"kind": "out", "glob": "**/*.nbt"}
+      "binding": {"kind": "out", "glob": "**/*.nbt"},
+      "applies_when": {"kind": "dsl", "files": ["world.json"], "match": {"prefix": {"id": "area/"}}},
+      "note": "applies_when added 2026-08-21: generator invariants examine prefab bytes, which reach a build only through areas[] placement today (a derived blockout places no .nbt). Areas declared with zero .nbt in the build = UNBOUND; no area = the class measures zero. Re-point at detail pieces when spec-0050 lands them."
     },
     {
       "id": "isl-13",
@@ -464,7 +468,9 @@
       "general_form": "a collect objective adopts a declared container that must resolve to a real fillable container in the assembled world, and no two fills claim one anchor",
       "carrier": {"kind": "dw", "code": "DW0438"},
       "requires": {"file": "quests.json", "min_dsl_version": "0.8.0"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"has": ["container"]}}
+      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"has": ["container"]}},
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "collect"}}},
+      "note": "applies_when added 2026-08-21: the carriers of a `container` declaration are collect objectives. Collects declared with none carrying a container = UNBOUND; no collect anywhere = the class measures zero."
     },
     {
       "id": "isl-34",
@@ -545,7 +551,9 @@
       "triage": "capability",
       "general_form": "requires_item means held in the main hand, and an interaction that can refuse a click explains the refusal",
       "carrier": {"kind": "dw", "code": "DW0437"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"has": ["requires_item"]}}
+      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"has": ["requires_item"]}},
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "interact"}}},
+      "note": "applies_when added 2026-08-21: `requires_item` is an interact-objective declaration (schema: the interact variant carries it). Interacts declared with none requiring an item = UNBOUND; no interact = the class measures zero."
     },
     {
       "id": "isl-42",
@@ -577,7 +585,9 @@
       "triage": "capability",
       "general_form": "a generator embeds scatter into the surface it decorates rather than stacking on it, and never onto a proven route's treads",
       "carrier": {"kind": "invariant", "test": "assert_distress_never_stacks"},
-      "binding": {"kind": "out", "glob": "**/*.nbt"}
+      "binding": {"kind": "out", "glob": "**/*.nbt"},
+      "applies_when": {"kind": "dsl", "files": ["world.json"], "match": {"prefix": {"id": "area/"}}},
+      "note": "applies_when added 2026-08-21: same carriers as isl-12 — scatter reaches a build only through placed prefab bytes. Re-point at detail pieces when spec-0050 lands them."
     },
     {
       "id": "isl-45",
@@ -662,7 +672,9 @@
       "triage": "capability",
       "general_form": "a granted sight effect outlasts any authored camera it can overlap, plus vanilla's wind-down, so it can never begin ramping down on screen",
       "carrier": {"kind": "packtest", "template": "v06_night_vision"},
-      "binding": {"kind": "dsl", "files": ["world.json"], "match": {"has": ["mitigation"]}}
+      "binding": {"kind": "dsl", "files": ["world.json"], "match": {"has": ["mitigation"]}},
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "cutscene"}}},
+      "note": "applies_when added 2026-08-21: the class is a granted sight effect outlasting an authored camera, so its carriers are cutscenes. Cutscenes with no `mitigation` declared = UNBOUND; no cutscene = the class measures zero."
     },
     {
       "id": "isl-53",
@@ -713,7 +725,9 @@
       "triage": "capability",
       "general_form": "a walked leg's route contains no move the body walking it cannot make, per locomotion class",
       "carrier": {"kind": "artifact", "file": "traversal-gate.json", "path": "legs"},
-      "binding": {"kind": "artifact", "file": "traversal-gate.json", "path": "rules.gate_use.cells"}
+      "binding": {"kind": "artifact", "file": "traversal-gate.json", "path": "rules.gate_use.cells"},
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["move-npc", "move-actor"]}}},
+      "note": "applies_when added 2026-08-21: same carriers as bell-02 — a legs count is a derivation of declared walks, so which kind of zero its zero is must be measured against move-npc/move-actor."
     },
     {
       "id": "isl-58",
@@ -732,7 +746,9 @@
       "triage": "capability",
       "general_form": "a pool draw that seats one anchor-bearing prefab more than once is reported at the pool, not discovered one blocked placement at a time",
       "carrier": {"kind": "dw", "code": "DW0498"},
-      "binding": {"kind": "dsl", "files": ["world.json"], "match": {"has": ["prefab_pool"]}}
+      "binding": {"kind": "dsl", "files": ["world.json"], "match": {"has": ["prefab_pool"]}},
+      "applies_when": {"kind": "dsl", "files": ["world.json"], "match": {"prefix": {"id": "area/"}}},
+      "note": "applies_when added 2026-08-21: a pool draw exists only under areas[] placement; a site-plan campaign structurally has none (DW0839). Areas declared with no prefab_pool = UNBOUND; no area = the class measures zero."
     },
     {
       "id": "isl-60",
@@ -764,7 +780,9 @@
       "triage": "capability",
       "general_form": "a stair block on a proven route faces the climb it carries",
       "carrier": {"kind": "dw", "code": "DW0430"},
-      "binding": {"kind": "artifact", "file": "traversal-gate.json", "path": "route_cells"}
+      "binding": {"kind": "artifact", "file": "traversal-gate.json", "path": "route_cells"},
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["move-npc", "move-actor"]}}},
+      "note": "applies_when added 2026-08-21: route_cells counts cells of walked legs, whose declaring class is move-npc/move-actor. Walks declared with zero route cells = UNBOUND (legs escaped the gate); no walk = the class measures zero."
     },
     {
       "id": "bell-03",
@@ -784,7 +802,9 @@
       "triage": "capability",
       "general_form": "a billed encounter's declared effective HP is bounded against the best kit the party can field, and anything billed elite or boss that the floor gate cannot measure is reported",
       "carrier": {"kind": "dw", "code": "DW0477"},
-      "binding": {"kind": "artifact", "file": "combat-plan.json", "path": "floor_gate.examined"}
+      "binding": {"kind": "artifact", "file": "combat-plan.json", "path": "floor_gate.examined"},
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["spawn-wave", "spawn-actor"]}}},
+      "note": "applies_when added 2026-08-21: the floor gate examines staged fights, declared by spawn-wave/spawn-actor. Fights declared with combat-plan.json unemitted = MISSING-CHECK (the ledger went missing); none declared = the class measures zero."
     },
     {
       "id": "bell-05",

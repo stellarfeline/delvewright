@@ -186,13 +186,56 @@ is not a gate; and "this build cannot exercise the class" is exactly what the
 round summary must say rather than fold away. The `applies_when` probe names
 *which* zero a zero is; it never changes the verdict.
 
-**The one permitted non-red** is rule 2's own escape, no wider: a row may close
+**The first permitted non-red** is rule 2's own escape, no wider: a row may close
 `DECLARED-UNCOVERABLE` with a `disposition` (`no-machine-form` / `owner-ruled`)
 **and** a substantive justification. Sixteen island rows qualify and every one is
 a judgement — prose register, pacing, whether a space reads as open. A bare
 label buys nothing; the gate checks the justification is there and says
 something. Their count is in the headline because rule 4 makes each a standing
 risk item at that staging review.
+
+**The second permitted non-red is not an escape — it is a different subject.**
+`OUT-OF-STAGE` exists because the map pipeline (spec-0049) made staging a
+series of events over a growing artifact: the whole-map blockout is walked
+before any content exists, and on that walk the zero-binding verdicts redded
+precisely *because* no content exists — no green state, and the remedy each
+red named (author the content) is the one thing the pipeline's ordering
+forbids doing first. When one gate's prescription is another gate's refusal,
+the defect belongs to the pair; this verdict is the pair's repair, and it is
+determined by the object, never declared by the operator:
+
+- the subject is a **pre-detail blockout** — its campaign places by site plan
+  (`site-plan.json`; DW0839 makes the placement authorities exclusive), the
+  build's **compiler-written manifest** lists the site plan among its inputs,
+  and no `detail-plan.json` exists in campaign or manifest; any disagreement
+  is not a blockout (fail closed);
+- the row's class **measures zero twice**: the binding probe counted zero, and
+  the precondition counted zero — via `applies_when` where declared, or by the
+  probe's own shape where its predicate selects the object class by identity
+  (`eq`/`in`/`prefix` only — such a zero *is* the class measuring zero). A
+  `has`/`has_any`, `artifact` or `out` probe can be narrower than its carriers
+  (the floor gate counted `tier`, not actors), so its zero without a declared
+  `applies_when` stays `UNBOUND`, blockout or not.
+
+What the opt-out demands, the defect cannot supply: *a build whose combat went
+missing* fails at least one measurement — declared objects make the binding
+non-zero, a declared precondition surface (a flask nothing refills) reds
+`UNBOUND`, a declared-but-unemitted validation ledger reds `MISSING-CHECK`,
+and an assembled or detailed campaign cannot present the blockout record at
+all. `OUT-OF-STAGE` rows are counted in the headline, listed in their own
+section, named by id in the admission token, and announced by the boot banner
+— the owner is told, per class, what her walk is not protected from, which is
+rule 4's obligation kept rather than folded away. The moment the campaign
+gains a detail-plan document, every one of these rows is adjudicated red
+again: the verdict is a statement about one staging of one stage, never a
+standing exemption. `--strict` fails on these rows too.
+
+One consequence, stated because it is measured rather than hidden: an
+unemitted validation artifact whose row declares an `applies_when` that
+measures zero now reads `INAPPLICABLE` on an assembled campaign (still red)
+instead of `MISSING-CHECK` — "the compiler emits this ledger over zero
+objects" is a different fact from "the check no longer exists", and the remedy
+differs.
 
 ### The gate is wired to the staging EVENT, not to a doc line
 
