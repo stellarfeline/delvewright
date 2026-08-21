@@ -95,9 +95,16 @@ pub const DW_METRIC_PROVISIONAL: DwCode = DwCode::every_version("DW0813");
 // ---------------------------------------------------------------------------
 
 /// The table's own revision. Bumped whenever the exported JSON changes by a
-/// single byte, which `crates/dsl/tests/metrics.rs` enforces against a committed
-/// digest: a consumer that pins a version is pinning values, and values that
-/// move under a fixed version are the drift the pin was bought to prevent.
+/// single byte **from a version that has merged**, which
+/// `crates/dsl/tests/metrics.rs` enforces against a committed digest: a consumer
+/// that pins a version is pinning values, and values that move under a fixed
+/// version are the drift the pin was bought to prevent.
+///
+/// The qualifier is a scope, not an escape hatch, and the difference is worth
+/// the sentence: the harm exists only where something could already have pinned
+/// the number, so a branch still authoring the version it introduces has nothing
+/// to break. It is also not a claim anybody makes about their own change —
+/// whether a version has merged is a fact of `origin/main`.
 ///
 /// It is deliberately **not** a version ledger in the sense
 /// `tools/check-version-ledger-uniqueness.py` guards. That gate compares the
@@ -690,10 +697,15 @@ impl Metrics {
                 player(
                     MetricValue::Flag(false),
                     "none",
-                    Provenance::EngineConstant,
+                    Provenance::VanillaRule,
                     "Water and lava are impassable to every proof in this engine and are \
                      never floor either: a body cannot stand on a fluid surface, so the \
-                     two sets are disjoint and both gate standability.",
+                     two sets are disjoint and both gate standability. Marked as a rule \
+                     rather than an engine constant deliberately — the navigation model \
+                     encodes this as the SHAPE of its occupancy sets and not as a shared \
+                     `const`, so there is no single definition for this row to be, and \
+                     claiming otherwise would be the overclaim the provenance field \
+                     exists to prevent.",
                 ),
             ),
             (
