@@ -93,6 +93,7 @@ fn parse_hw(quests: &str, edits: Option<&str>) -> Campaign {
         world_edits: edits.map(str::to_string),
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
     })
     .expect("campaign parses")
 }

@@ -128,6 +128,7 @@ fn fresh_inventory(dir: &Path) -> BTreeMap<String, String> {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
     })
     .expect("fixture parses");
     delvewright_dsl::l10n_inventory(&campaign)

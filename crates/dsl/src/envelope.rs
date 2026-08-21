@@ -6,13 +6,14 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::ids::CampaignId;
 use crate::layout::{GeometryBriefContent, LayoutGraphContent};
+use crate::siteplan::SitePlanContent;
 use crate::stages::{
     ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
     WorldEditsContent,
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.13.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.14.0";
 
 /// The `dsl_version` that introduces the **`open-way`** effect (spec-0042 §2.4):
 /// a campaign opening a placed piece's contingent way, with the geometry, the
@@ -42,6 +43,22 @@ pub const OPEN_WAY_SINCE: &str = "0.12.0";
 /// held in front of the live line on behalf of a road that is not being taken.
 pub const LAYOUT_GRAPH_SINCE: &str = "0.13.0";
 
+/// The `dsl_version` at which a campaign may carry the spec-0049 **site plan**:
+/// `site-plan.json`, the geometric embedding of the layout graph and the whole
+/// map's design of record.
+///
+/// The **hand-written name** for `0.14.0`, written rather than derived for the
+/// reason [`RESERVED_DSL_VERSIONS`] gives: `is_v14` follows from the number, so
+/// two branches claiming `0.14.0` would produce the same anchor and the
+/// uniqueness gate would read one claim where there are two. A name an author
+/// chose cannot agree by accident.
+///
+/// It is a version of its own rather than a field added at
+/// [`LAYOUT_GRAPH_SINCE`], because a version names one surface: a campaign
+/// declaring 0.13.0 states its space as a graph and has no way to embed it,
+/// which is exactly the state the ordering wants reachable.
+pub const SITE_PLAN_SINCE: &str = "0.14.0";
+
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
 /// (spec-0008) adds dialogue state, props, narration, live-threat tuning, NPC
@@ -70,7 +87,11 @@ pub const LAYOUT_GRAPH_SINCE: &str = "0.13.0";
 /// lift the one obligation of the version, `DW0429`; v0.12 (spec-0042) adds the
 /// **`open-way`** effect — a campaign opening a placed piece's contingent way,
 /// whose geometry, block and sign are read from that piece's exported metadata
-/// and are unauthorable on the effect.
+/// and are unauthorable on the effect; v0.13 (spec-0049) adds the two
+/// map-pipeline documents — a `geometry-brief` of named numbers and a
+/// `layout-graph` stating the campaign's space as places and connections before
+/// any coordinate exists; v0.14 (spec-0049) adds the `site-plan`, the geometric
+/// embedding of that graph and the whole map's design of record.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 ///
@@ -99,7 +120,7 @@ pub const LAYOUT_GRAPH_SINCE: &str = "0.13.0";
 /// through one set of rules.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
     "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
-    "0.12.0", "0.13.0",
+    "0.12.0", "0.13.0", "0.14.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -208,6 +229,7 @@ fn ordinal(version: &str) -> u32 {
         "0.11.0" => 11,
         "0.12.0" => 12,
         "0.13.0" => 13,
+        "0.14.0" => 14,
         _ => 0,
     }
 }
@@ -430,6 +452,28 @@ pub fn is_v13(version: &str) -> bool {
     ordinal(version) >= 13
 }
 
+/// True if `version` enables the DSL v0.14 surface (spec-0049 §4,
+/// [`SITE_PLAN_SINCE`]): the **site plan**, and nothing else.
+///
+/// `site-plan.json` is the geometric embedding of the layout graph — the
+/// region, the datums, a box per place, a seam per connection, the mass the
+/// whole itself owns, and the guarded comparisons that hold all of it to the
+/// geometry brief's written numbers. It is the whole map's design of record.
+///
+/// Purely additive, and additive in the same strong sense v0.13 is: the document
+/// is an optional file in a campaign directory, so a campaign that ships none
+/// parses, validates and emits exactly as it did — there is no new field on any
+/// existing type for an older document to be judged against. Every obligation
+/// the plan owes is reached only through the plan itself, so a campaign without
+/// one binds zero of them and says so.
+///
+/// The one thing a plan is not free to do is arrive alone: it validates only
+/// against a layout graph and a geometry brief (`DW0824`), which is the ordering
+/// made uncompilable rather than advised.
+pub fn is_v14(version: &str) -> bool {
+    ordinal(version) >= 14
+}
+
 /// Which stage a document belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -455,6 +499,9 @@ pub enum Stage {
     /// The campaign's space as a graph, before any coordinate exists (optional;
     /// DSL v0.13, spec-0049 §3).
     LayoutGraph,
+    /// The geometric embedding of that graph — the whole map's design of record
+    /// (optional; DSL v0.14, spec-0049 §4).
+    SitePlan,
 }
 
 impl Stage {
@@ -471,6 +518,7 @@ impl Stage {
             Stage::WorldEdits => "world-edits",
             Stage::GeometryBrief => "geometry-brief",
             Stage::LayoutGraph => "layout-graph",
+            Stage::SitePlan => "site-plan",
         }
     }
 
@@ -481,7 +529,7 @@ impl Stage {
     /// seven stages by name, so a schema object declaring part of the gate in an
     /// eighth would have been invisible to the check whose whole subject is that
     /// no such object exists. Anything that means "over the stages" reads this.
-    pub const ALL: [Stage; 9] = [
+    pub const ALL: [Stage; 10] = [
         Stage::World,
         Stage::Npcs,
         Stage::Classes,
@@ -491,6 +539,7 @@ impl Stage {
         Stage::WorldEdits,
         Stage::GeometryBrief,
         Stage::LayoutGraph,
+        Stage::SitePlan,
     ];
 }
 
@@ -532,6 +581,8 @@ pub struct Campaign {
     pub geometry_brief: Option<Envelope<GeometryBriefContent>>,
     /// The campaign's space as a graph (optional; DSL v0.13, spec-0049 §3).
     pub layout_graph: Option<Envelope<LayoutGraphContent>>,
+    /// The geometric embedding of that graph (optional; DSL v0.14, spec-0049 §4).
+    pub site_plan: Option<Envelope<SitePlanContent>>,
 }
 
 /// The stage documents as raw JSON strings (compiler input): six required, the
@@ -557,6 +608,8 @@ pub struct RawCampaign {
     pub geometry_brief: Option<String>,
     /// `layout-graph.json` (optional; spec-0049 §3).
     pub layout_graph: Option<String>,
+    /// `site-plan.json` (optional; spec-0049 §4).
+    pub site_plan: Option<String>,
 }
 
 fn parse_stage<T: for<'de> Deserialize<'de>>(
@@ -632,6 +685,12 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         parse_stage(src, Stage::LayoutGraph, &mut parsed, &mut diags);
         layout_graph = parsed.map(Some);
     }
+    let mut site_plan: Result<Option<Envelope<SitePlanContent>>, ()> = Ok(None);
+    if let Some(src) = &raw.site_plan {
+        let mut parsed = Err(());
+        parse_stage(src, Stage::SitePlan, &mut parsed, &mut diags);
+        site_plan = parsed.map(Some);
+    }
 
     match (
         world,
@@ -643,6 +702,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         world_edits,
         geometry_brief,
         layout_graph,
+        site_plan,
     ) {
         (
             Ok(world),
@@ -654,6 +714,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
             Ok(world_edits),
             Ok(geometry_brief),
             Ok(layout_graph),
+            Ok(site_plan),
         ) => {
             let mut campaign = Campaign {
                 world,
@@ -665,6 +726,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
                 world_edits,
                 geometry_brief,
                 layout_graph,
+                site_plan,
             };
             // spec-0016 §3: expand the `ambush` sugar into real environment
             // triggers, ONCE, at the DSL boundary. Every downstream consumer —

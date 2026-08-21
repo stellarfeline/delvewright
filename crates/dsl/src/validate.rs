@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, is_v11, is_v12, is_v13,
+    is_v10, is_v11, is_v12, is_v13, is_v14,
 };
 use crate::ids::is_kebab;
 use crate::metrics::Metrics;
@@ -116,10 +116,24 @@ pub fn validate_campaign_with(
     // stage calls. The version fence is `reserved_v13`, below, and the reads
     // ledger is what gives `DW0813` its document-side binding: every building
     // metric these checks rest a verdict on records that it did.
-    if c.geometry_brief.is_some() || c.layout_graph.is_some() {
+    if c.geometry_brief.is_some() || c.layout_graph.is_some() || c.site_plan.is_some() {
+        // ONE run-scoped ledger across stages 2, 3 and 4. That is what closes
+        // the residual `dsl::metrics` names in its own module docs: a check
+        // cannot rest a verdict on an uncalibrated standard without the notice
+        // seeing it, because there is no second ledger for a read to go into.
         let mut reads = crate::metrics::Reads::new();
         crate::layout::check(c, &mut reads, &mut d);
-        if let Some(notice) = Metrics::table().notice(&reads, "layout-graph") {
+        crate::siteplan::check(c, &mut reads, &mut d);
+        // The notice names the newest document present, because that is the one
+        // whose checks read the most of the provisional half.
+        let stage = if c.site_plan.is_some() {
+            "site-plan"
+        } else if c.layout_graph.is_some() {
+            "layout-graph"
+        } else {
+            "geometry-brief"
+        };
+        if let Some(notice) = Metrics::table().notice(&reads, stage) {
             d.push(notice);
         }
     }
@@ -569,6 +583,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 .iter()
                 .map(|e| (Stage::LayoutGraph, e.stage, e.dsl_version.as_str())),
         )
+        .chain(
+            c.site_plan
+                .iter()
+                .map(|e| (Stage::SitePlan, e.stage, e.dsl_version.as_str())),
+        )
         .collect();
     for (expected, actual, version) in stages {
         if actual != expected {
@@ -625,6 +644,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
         c.layout_graph
             .iter()
             .map(|e| (Stage::LayoutGraph, &e.campaign_id)),
+    )
+    .chain(
+        c.site_plan
+            .iter()
+            .map(|e| (Stage::SitePlan, &e.campaign_id)),
     )
     .collect();
     let canonical = c.world.campaign_id.as_str();
@@ -1409,6 +1433,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v11(c, d);
     reserved_v12(c, d);
     reserved_v13(c, d);
+    reserved_v14(c, d);
     press_answer_checks(c, d);
     press_obligation_checks(c, d);
 }
@@ -1466,6 +1491,32 @@ fn reserved_v13(c: &Campaign, d: &mut Vec<Diagnostic>) {
             ),
         ));
     }
+}
+
+/// The spec-0049 site plan exists only at `dsl_version` 0.14.0.
+///
+/// A whole DOCUMENT is fenced, on the same terms as its two siblings one version
+/// below: an older campaign has no `site-plan.json`, so there is nothing on it
+/// to grandfather and nothing it could have been judged against.
+fn reserved_v14(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let Some(version) = c.site_plan.as_ref().map(|e| e.dsl_version.as_str()) else {
+        return;
+    };
+    if is_v14(version) {
+        return;
+    }
+    d.push(Diagnostic::error(
+        codes::RESERVED,
+        Stage::SitePlan.name(),
+        "/dsl_version",
+        format!(
+            "a `site-plan` document requires dsl_version 0.14.0 and this one declares \
+             `{version}` — raise this document's own `dsl_version` to 0.14.0, or delete the \
+             file. It is the geometric embedding of the layout graph, and a campaign at 0.13.0 \
+             states its space as a graph and has nowhere to put the embedding: that is the \
+             ordering, and it is why the two are separate versions rather than one."
+        ),
+    ));
 }
 
 fn reserved_v12(c: &Campaign, d: &mut Vec<Diagnostic>) {

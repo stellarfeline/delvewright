@@ -24,15 +24,19 @@ pub const WORLD_EDITS_FILE: &str = "world-edits.json";
 /// The optional map-pipeline documents (spec-0049), on the same terms as the
 /// edit script: absent is never an error, and present is hashed into the
 /// manifest inputs like any other stage document.
-///
-/// **A site plan is not here yet**, and that is the ordering being structural
-/// rather than prose: there is no `site-plan.json` filename for a loader to
-/// find, so a campaign cannot author an embedding before the graph the
-/// embedding is of exists (spec-0049 §7).
 pub const GEOMETRY_BRIEF_FILE: &str = "geometry-brief.json";
 
 /// The layout graph's filename (spec-0049 §3) — see [`GEOMETRY_BRIEF_FILE`].
 pub const LAYOUT_GRAPH_FILE: &str = "layout-graph.json";
+
+/// The site plan's filename (spec-0049 §4) — see [`GEOMETRY_BRIEF_FILE`].
+///
+/// The loader finds it like any other stage document, and the ordering it sits
+/// under is enforced where it can name what is missing: a plan with no layout
+/// graph or no geometry brief beside it is `DW0824`, by name, at validation.
+/// Refusing to LOAD the file would have said the same thing in a message about
+/// a path, to an author who had just written it.
+pub const SITE_PLAN_FILE: &str = "site-plan.json";
 
 /// A loaded campaign directory: the parsed-ready [`RawCampaign`] plus the exact
 /// raw file contents (by filename) for deterministic input hashing.
@@ -83,6 +87,11 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     } else {
         None
     };
+    let site_plan = if dir.join(SITE_PLAN_FILE).is_file() {
+        Some(read(SITE_PLAN_FILE)?)
+    } else {
+        None
+    };
     let l10n = load_l10n_dir(&dir.join("l10n"))?;
     // i18n v2 (spec-0029): every sidecar is a build input of **every** build, not
     // just of a `--lang` bake — the delve now ships each declared language's lang
@@ -102,6 +111,7 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
             world_edits,
             geometry_brief,
             layout_graph,
+            site_plan,
         },
         inputs,
         l10n,

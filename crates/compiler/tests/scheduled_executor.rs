@@ -271,6 +271,7 @@ fn build_scheduled_hello_world() -> BuildOutput {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     build_campaign(&campaign, &BTreeMap::new())

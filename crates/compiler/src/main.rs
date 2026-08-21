@@ -2317,11 +2317,33 @@ fn print_build_error(code: DwCode, message: &str, json: bool) {
 /// stderr, not stdout: `--json` reserves stdout for one diagnostic object per
 /// line, and this is not a diagnostic — nothing here is wrong.
 fn report_layout_binding(campaign: &delvewright_dsl::Campaign) {
-    if campaign.layout_graph.is_none() && campaign.geometry_brief.is_none() {
+    if campaign.layout_graph.is_none()
+        && campaign.geometry_brief.is_none()
+        && campaign.site_plan.is_none()
+    {
         return;
     }
     let b = delvewright_dsl::LayoutBinding::of(campaign);
     eprintln!("{}", b.line());
+    if campaign.site_plan.is_some() {
+        eprintln!("{}", b.plan_line());
+        if b.plan.views == 0 {
+            eprintln!(
+                "site-plan binding 0: this plan names no view, so the walk has no declared \
+                 vantage to judge the silhouette from and the render beside the reference sheet \
+                 has nothing to frame. The plan still builds; what is missing is the picture the \
+                 whole was supposed to be looked at in."
+            );
+        }
+        if b.plan.volumes == 0 {
+            eprintln!(
+                "site-plan binding 0: this plan declares no whole-owned volume, so the check \
+                 that keeps the whole's mass out of the places examined nothing. A map made \
+                 only of rooms is a legitimate map; a map with a mountain in it that forgot to \
+                 say so is not, and nothing else would notice."
+            );
+        }
+    }
     if campaign.layout_graph.is_some() && b.traversal_edges == 0 {
         eprintln!(
             "layout-graph binding 0: this graph declares no traversal connection at all, so \

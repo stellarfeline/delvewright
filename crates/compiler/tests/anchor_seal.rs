@@ -71,6 +71,7 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
     })
     .expect("campaign parses")
 }
@@ -447,6 +448,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
     })
     .expect("campaign parses")
 }

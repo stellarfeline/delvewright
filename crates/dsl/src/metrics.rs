@@ -1023,13 +1023,21 @@ impl Metrics {
         }
     }
 
-    /// Resolve a name a document wrote to its building entry.
+    /// Resolve a name a **document** wrote to its building entry.
     ///
-    /// This is the **only** path from a name to an entry, and it is what makes
-    /// the table the single authority rather than a suggestion: a name it does
-    /// not define cannot be resolved, so it cannot compile, so no check
-    /// downstream ever meets one. A second lookup written beside this one would
-    /// be a second authority, which is why the map itself is private.
+    /// This is the **only** path from an authored name to an entry, and it is
+    /// what makes the table the single authority rather than a suggestion: a
+    /// name it does not define cannot be resolved, so it cannot compile, so no
+    /// check downstream ever meets one.
+    ///
+    /// The other half of that guarantee is that no key string is spelled outside
+    /// this module. The entries no document names — the kit grid, the designed-
+    /// drop cap — are reached through the accessors below rather than by looking
+    /// the key up in [`Metrics::building`], which is public so that a *reporter*
+    /// can walk the whole table (`delvec metrics` counts it; the tests iterate
+    /// it). Reporting is not resolution: a caller that walks every entry cannot
+    /// name a wrong one, and a caller that wants ONE entry has an accessor and
+    /// therefore no reason to type a key.
     ///
     /// # Errors
     ///
@@ -1044,6 +1052,36 @@ impl Metrics {
                 named: named.to_string(),
                 defined: self.names_of(kind),
             })
+    }
+
+    /// The kit grid — the quantum a site-plan box's footprint is a multiple of,
+    /// and the datum convention that fixes what a declared floor `y` means.
+    ///
+    /// One of the entries **no document names**: an author writes a number, not
+    /// the word `grid`, so it has no place in [`Metrics::resolve`]'s naming
+    /// vocabulary and would need a [`MetricKind`] whose prefix is the empty
+    /// string — which would make `names_of` return the whole table. An accessor
+    /// instead, so the key string still lives here and nowhere else.
+    ///
+    /// `None` only if the table stopped defining it, which
+    /// [`Metrics::self_check`] reports as an internal error.
+    #[must_use]
+    pub fn grid(&self, reads: &mut Reads) -> Option<Grid> {
+        match self.building.get("grid")?.value(reads) {
+            MetricValue::Grid(g) => Some(*g),
+            _ => None,
+        }
+    }
+
+    /// The deepest fall a **designed** one-way drop may declare, in blocks — a
+    /// policy cap, deliberately tighter than the survivability fact in the
+    /// player half. See [`Metrics::grid`] for why this is an accessor.
+    #[must_use]
+    pub fn max_designed_drop_blocks(&self, reads: &mut Reads) -> Option<u32> {
+        match self.building.get("drop.max-designed-rise")?.value(reads) {
+            MetricValue::Count(n) => Some(*n),
+            _ => None,
+        }
     }
 
     /// Every name defined for a kind, in table order.
@@ -1132,15 +1170,15 @@ impl Metrics {
             }
         }
 
-        let quantum = match self.building.get("grid").map(|e| e.value(&mut reads)) {
-            Some(MetricValue::Grid(g)) => {
+        let quantum = match self.grid(&mut reads) {
+            Some(g) => {
                 checked += 1;
                 if g.quantum == 0 {
                     failures.push("the kit grid's quantum is zero".to_string());
                 }
                 g.quantum
             }
-            _ => {
+            None => {
                 failures.push("the table defines no kit `grid`".to_string());
                 1
             }
@@ -1226,16 +1264,14 @@ impl Metrics {
 
         // The policy cap is deliberately tighter than the physical one. A cap
         // that reached the survivability ceiling would not be a policy.
-        if let Some(entry) = self.building.get("drop.max-designed-rise") {
+        if let Some(n) = self.max_designed_drop_blocks(&mut reads) {
             checked += 1;
-            if let MetricValue::Count(n) = entry.value(&mut reads) {
-                let physical = unarmoured_survivable_fall_blocks();
-                if f64::from(*n) >= physical {
-                    failures.push(format!(
-                        "`drop.max-designed-rise` is {n} blocks, at or past the unarmoured \
-                         survivable fall of {physical}, so it is not a policy cap at all"
-                    ));
-                }
+            let physical = unarmoured_survivable_fall_blocks();
+            if f64::from(n) >= physical {
+                failures.push(format!(
+                    "`drop.max-designed-rise` is {n} blocks, at or past the unarmoured \
+                     survivable fall of {physical}, so it is not a policy cap at all"
+                ));
             }
         }
 
