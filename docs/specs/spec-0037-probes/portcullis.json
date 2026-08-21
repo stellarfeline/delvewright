@@ -1,76 +1,76 @@
 {
- "name": "probe-portcullis",
- "start": "grid",
- "params": {},
- "palette": {
-  "bars": "minecraft:iron_bars"
- },
- "rules": {
-  "grid": [
-   {
-    "weight": 1,
-    "body": {
-     "op": "split",
-     "axis": "x",
-     "sizes": [
+  "name": "probe-portcullis",
+  "palette": {
+    "bars": "minecraft:iron_bars"
+  },
+  "params": {},
+  "rules": {
+    "grid": [
       {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 2
-       }
-      }
-     ],
-     "children": [
-      {
-       "op": "fill",
-       "material": {
-        "role": "bars"
-       }
-      },
-      {
-       "op": "split",
-       "axis": "y",
-       "sizes": [
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 2
-         }
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "material": {
+                "role": "bars"
+              },
+              "op": "fill"
+            },
+            {
+              "axis": "y",
+              "children": [
+                {
+                  "op": "void"
+                },
+                {
+                  "material": {
+                    "role": "bars"
+                  },
+                  "op": "fill"
+                }
+              ],
+              "op": "split",
+              "repeat": true,
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 2
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                }
+              ]
+            }
+          ],
+          "op": "split",
+          "repeat": true,
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 2
+              },
+              "size": "absolute"
+            }
+          ]
         },
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 1
-         }
-        }
-       ],
-       "children": [
-        {
-         "op": "void"
-        },
-        {
-         "op": "fill",
-         "material": {
-          "role": "bars"
-         }
-        }
-       ],
-       "repeat": true
+        "weight": 1
       }
-     ],
-     "repeat": true
-    }
-   }
-  ]
- }
+    ]
+  },
+  "start": "grid"
 }

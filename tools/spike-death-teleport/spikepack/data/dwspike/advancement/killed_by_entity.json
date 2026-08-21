@@ -4,5 +4,9 @@
       "trigger": "minecraft:entity_killed_player"
     }
   },
-  "requirements": [["killed"]]
+  "requirements": [
+    [
+      "killed"
+    ]
+  ]
 }

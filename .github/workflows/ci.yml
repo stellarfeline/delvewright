@@ -156,27 +156,19 @@ jobs:
       # a new one is advisory until branch protection is edited — which is the
       # shape CLAUDE.md rejects. As a step it gates from the moment it merges.
       #
-      # The roots are named explicitly rather than `.`: `crates/compiler/data/`
-      # and `crates/dsl/data/` are harvested game registries with their own
-      # generator contract, and `campaigns/` is a pinned checkout of another
-      # repository (its own CI is where its files are gated). `fmt` exits 1 if
-      # these paths ever match zero files (DW0774), so a renamed fixture
-      # directory reds here instead of turning this into a green no-op.
-      #
-      # `crates/compiler/tests/golden/` is deliberately NOT swept, for the reason
-      # `delvewright_dsl::fmt::BUILD_OUTPUT_MARKER` already gives about build
-      # output: those files are RECORDINGS of what an emitter writes, byte-compared
-      # by their tests, and one of them is another program's schema in that
-      # program's key order — canonicalising it would break the byte-identity
-      # contract it exists to record. The omission is BOUND rather than trusted:
-      # `view::scene::every_golden_is_emitter_output` refuses any file under that
-      # directory which no test pins to emitter output, so an authored fixture
-      # cannot escape this sweep by being dropped there.
-      - name: authored JSON is in canonical form (delvec fmt --check)
-        run: |
-          cargo run --locked -q -p delvec --bin delvec -- fmt --check \
-            crates/dsl/fixtures \
-            crates/compiler/tests/fixtures
+      # The swept set is DERIVED, never listed. This step used to name two roots
+      # by hand — `crates/dsl/fixtures` and `crates/compiler/tests/fixtures` —
+      # which is the enumeration-somebody-remembered shape this repository
+      # refuses elsewhere by name. It examined 240 of the 335 JSON files git
+      # tracks, and 50 of the 95 it never looked at were not canonical, including
+      # every one of `gallery/`'s — whose own spec asserts in writing that gallery
+      # JSON is inside this sweep. Nothing was red, because nothing looked.
+      # `tools/check-json-canonical.py` takes its population from `git ls-files`
+      # instead, so a directory of authored JSON added next month is swept the
+      # moment it is committed with nothing here to edit, and it states its
+      # binding count against that population on every run.
+      - name: every JSON document this repository holds is canonical
+        run: python3 tools/check-json-canonical.py
       # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
       # is a ONE-WAY DOOR — a version can never be reused and a name never freed
       # — so the packaging contract is proven on every push from a tree nobody

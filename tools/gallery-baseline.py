@@ -71,6 +71,31 @@ def die(msg: str) -> None:
     raise SystemExit(1)
 
 
+def write_canonical(path: Path, obj) -> None:
+    """Write one baseline file in `delvec fmt` canonical form.
+
+    `ensure_ascii=False` is the load-bearing argument and it is why this is a
+    function rather than four call sites. Python's default escapes every
+    non-ASCII character, so an em-dash inside a warning pointer landed in
+    `warnings.json` as `\\u2014` — and that single habit was the ONLY reason any
+    of `gallery/baseline/` was outside canonical form, which in turn was the only
+    reason anyone could argue that a generated artifact needs an exemption from
+    `tools/check-json-canonical.py`. A generated file that is already canonical
+    needs no exemption, and cannot be used as cover by a file that merely never
+    was (CLAUDE.md: an opt-out must be secured by a property the defect cannot
+    supply — so the better move is to leave no opt-out to secure).
+
+    The header does not hash `baseline/` (see `header`), so making these bytes
+    canonical moves no header field and is not a determinism finding to anyone
+    reading the diff afterwards. The three sibling files were already canonical;
+    only `warnings.json` carried non-ASCII at all.
+    """
+    path.write_text(
+        json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def tree_hash(root: Path, skip: set[str]) -> str:
     """A deterministic hash of a source tree: relative path AND content, in path order.
 
@@ -309,15 +334,11 @@ def main() -> int:
             else {}
         )
         BASELINE.mkdir(parents=True, exist_ok=True)
-        (BASELINE / "header.json").write_text(json.dumps(hdr, indent=2, sort_keys=True) + "\n")
-        (BASELINE / "manifests.json").write_text(
-            json.dumps(manifests, indent=2, sort_keys=True) + "\n"
-        )
-        (BASELINE / "warnings.json").write_text(
-            json.dumps(warnings, indent=2, sort_keys=True) + "\n"
-        )
+        write_canonical(BASELINE / "header.json", hdr)
+        write_canonical(BASELINE / "manifests.json", manifests)
+        write_canonical(BASELINE / "warnings.json", warnings)
         delta = compute_delta(old, manifests)
-        (BASELINE / "delta.json").write_text(json.dumps(delta, indent=2, sort_keys=True) + "\n")
+        write_canonical(BASELINE / "delta.json", delta)
         # The noise-commit guard, and the qualifiers matter. An empty delta means
         # emission did not move; that is only a noise commit if the HEADER did not
         # move either. A change to what the header covers — a new delvec, a

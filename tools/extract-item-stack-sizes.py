@@ -28,7 +28,9 @@ Expected SHA-256 of that source (pinned in PROVENANCE.md):
 ## Transform
 
 `{"minecraft:" + id: components["minecraft:max_stack_size"]}` over every item,
-then `json.dumps(indent=2, sort_keys=True) + "\n"`. Every 1.21.11 item declares
+then `json.dumps(indent=2, sort_keys=True, ensure_ascii=False) + "\n"` — `delvec
+fmt` canonical form, because the output is a tracked file inside the
+canonical-form sweep (`tools/check-json-canonical.py`). Every 1.21.11 item declares
 the component explicitly, so nothing is defaulted or inferred here — a missing
 one is an error, not a silent 64.
 
@@ -79,7 +81,7 @@ def main(argv: list[str]) -> int:
             "  Refusing to default them — the cap must come from Mojang's data.\n"
         )
         return 1
-    out = json.dumps(sizes, indent=2, sort_keys=True) + "\n"
+    out = json.dumps(sizes, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     out_path.write_text(out, encoding="utf-8")
     sys.stderr.write(f"wrote {len(sizes)} item stack sizes to {out_path}\n")
     return 0
