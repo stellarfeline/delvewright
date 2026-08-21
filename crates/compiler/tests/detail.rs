@@ -1525,6 +1525,47 @@ fn the_bot_is_handed_the_same_path_with_one_cell_moved_inside_the_detailed_place
     }
 }
 
+/// **Both binding lines reach a reader** — the builder's and the observer's.
+///
+/// `blockout::Binding::line()` had no production caller at all until stage 6:
+/// the battery's count was printed and the derivation's was not, so a build
+/// stated what was examined and never what was built. A line that is correct,
+/// reviewable and reaches nobody is the UNRUN shape at its smallest, and the
+/// repair is not a doc line — it is this assertion, over the process.
+#[test]
+fn a_build_states_what_it_built_as_well_as_what_it_examined() {
+    let tmp = tempdir("binding-lines");
+    let d = detailed(&tmp, &["node/exit"]);
+    let out = delvec(&[
+        "--prefabs",
+        d.prefabs.to_str().unwrap(),
+        "build",
+        d.campaign.to_str().unwrap(),
+        "--out",
+        tmp.join("out").to_str().unwrap(),
+    ]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{err}");
+    assert!(
+        err.contains("blockout binding:"),
+        "the DERIVATION states what it bound to: {err}"
+    );
+    assert!(
+        err.contains("(1 detailed, so 4 massed by the derivation)"),
+        "and the split is the number stage 6 made load-bearing — a reader who \
+         cannot see it cannot tell a fully detailed map from one binding nothing: \
+         {err}"
+    );
+    assert!(
+        err.contains("blockout battery binding:"),
+        "and the OBSERVER states what it examined: {err}"
+    );
+    assert!(
+        err.contains("detail binding:"),
+        "as does the detail gate: {err}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------

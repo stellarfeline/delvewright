@@ -245,6 +245,12 @@ pub struct Binding {
 
 impl Binding {
     /// One line, for stderr and for the round summary.
+    ///
+    /// Printed by `crate::emit::build_with_warnings`, beside the battery's, on
+    /// every build of a site-plan campaign. It had no caller at all until stage 6
+    /// — the observer's count was stated and the builder's was not — which is the
+    /// UNRUN shape at the smallest scale: a line that is correct, reviewable, and
+    /// reaches nobody.
     #[must_use]
     pub fn line(&self) -> String {
         format!(

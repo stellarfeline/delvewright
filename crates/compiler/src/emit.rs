@@ -528,6 +528,13 @@ pub fn build_with_warnings(
         if let Some(h) = crate::detail::Hashes::of(plan.campaign) {
             eprintln!("{}", h.line());
         }
+        // What the DERIVATION bound to, beside what its observer did. Printing
+        // only the battery's line stated what was examined and never what was
+        // built — and at stage 6 the difference is the whole reading: `detailed`
+        // is how much of this map is a building and how much is still massing.
+        if let Some(b) = &plan.blockout {
+            eprintln!("{}", b.binding.line());
+        }
         if let Some(battery) = crate::blockout::check(plan, &blocks) {
             eprintln!("{}", battery.binding.line());
             if let Some((code, refusal)) = battery.refusal() {
