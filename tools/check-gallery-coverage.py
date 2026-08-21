@@ -160,6 +160,112 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
     return r.returncode, [c for c in codes if c]
 
 
+# The probe contract has exactly two kinds and no third (§3). They are named
+# here so that every site — this tool, its tests, the report — spells them once.
+EXEMPTION = "exemption"
+DEMONSTRATION = "demonstration"
+
+
+def probe_kind(name: str, manifest: dict) -> tuple[str, str, list[str], str]:
+    """What a probe manifest DECLARES: its kind, code, claimed units and reason.
+
+    This is a function rather than six lines inside `main` because the contract
+    had **two authorities and they drifted**. When the demonstration kind landed
+    here, `tools/tests/test_gallery_coverage.py` went on asserting that every
+    probe claims at least one unit — a rule this tool had stopped implementing —
+    and the red that produced was the test, not the gallery. A test that DRIVES
+    this function cannot restate the contract wrongly, because there is nothing
+    left to restate.
+
+    The kind follows from what the manifest claims: units means **exemption**,
+    no units means **refusal demonstration**. That is a choice the author makes
+    by writing an empty list, which is the shape CLAUDE.md warns about — an
+    opt-out with several kinds is only as strong as the weakest. What answers it
+    is not this function but `probe_discharges`: the weaker kind grants NOTHING,
+    so the disjunction's weak branch buys an author no coverage. See there.
+    """
+    code = manifest.get("code") or ""
+    if not code.startswith("DW"):
+        die(
+            f"probe `{name}` must name the `DW` code it is refused with "
+            f"(got {code!r}). An exemption is only as good as the diagnostic it "
+            "names, and a demonstration is only the re-run of a named refusal."
+        )
+    why = manifest.get("why") or ""
+    if not why:
+        die(
+            f"probe `{name}` carries no `why`. A probe is the clearest thing a "
+            "creator can read to learn what this engine checks, and one that "
+            "cannot say what it tries renders an empty row in the index."
+        )
+    claimed = manifest.get("units") or []
+    return (EXEMPTION if claimed else DEMONSTRATION), code, claimed, why
+
+
+def assert_refused(name: str, kind: str, code: str, rc: int, codes: list[str]) -> None:
+    """The obligation BOTH kinds carry: refused, and refused with the code named.
+
+    This is the vacuity-mode-6 hardening and it is where it lives for every
+    probe. The defect the coverage gate exists to catch is a unit nothing has
+    ever written; an unwritten unit produces silence, never a refusal, so it
+    cannot supply what either kind of probe is asked for here.
+    """
+    if rc == 0:
+        die(
+            f"probe `{name}` was ACCEPTED by `delvec validate`. A probe is a "
+            "refusal's whole proof: it must be refused. "
+            + (
+                "An accepted exemption probe proves its units are writable — "
+                "which makes it a missing element, not an exemption."
+                if kind == EXEMPTION
+                else "An accepted demonstration proves the engine no longer "
+                f"refuses what `{code}` says it refuses."
+            )
+        )
+    if code not in codes:
+        die(
+            f"probe `{name}` was refused, but not with `{code}` "
+            f"(got {sorted(set(codes)) or 'no machine-readable code'}). A probe "
+            "refused for an unrelated reason proves nothing about the rule it "
+            "names."
+        )
+
+
+def probe_discharges(
+    name: str, kind: str, code: str, claimed: list[str], why: str, units: dict, bound: dict
+) -> dict[str, dict]:
+    """What this probe takes OFF the coverage requirement — the discharge half.
+
+    **A demonstration discharges nothing**, and that single fact is what makes
+    the author's choice of kind safe rather than an escape hatch. Some rules are
+    about a *combination* of surfaces each of which is perfectly writable
+    (`DW0839`), so there is no unit for such a probe to exempt; the alternative
+    would be to force it to claim a unit the domain already binds, which the
+    `already binds` refusal below correctly forbids.
+
+    The verdict only ever subtracts this function's return value, so an author
+    who empties `units` moves a unit from *discharged* back to *unaccounted* —
+    never the other way. The two refusals below exist to keep a CLAIM honest,
+    not to guard coverage: a claim on a non-unit subtracts nothing from the unit
+    set anyway, and a claim on an already-bound unit subtracts something already
+    accounted for. Dropping such a claim is therefore the honest repair, and it
+    buys the author no coverage in either case.
+    """
+    if kind == DEMONSTRATION:
+        return {}
+    out: dict[str, dict] = {}
+    for unit in claimed:
+        if unit not in units:
+            die(f"probe `{name}` claims `{unit}`, which is not a unit")
+        if unit in bound:
+            die(
+                f"probe `{name}` claims `{unit}`, which the domain already "
+                "binds. A unit that is written and compiles needs no exemption."
+            )
+        out[unit] = {"probe": name, "code": code, "why": why}
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--delvec", help="the delvec whose schema export defines the units")
@@ -266,46 +372,16 @@ def main() -> int:
             if not manifest_path.is_file():
                 die(f"probe `{pd.name}` has no `probe.json`")
             manifest = json.loads(manifest_path.read_text())
-            code = manifest.get("code")
-            claimed = manifest.get("units") or []
-            if not code:
-                die(f"probe `{pd.name}` must name the `code` it is refused with")
+            kind, code, claimed, why = probe_kind(pd.name, manifest)
             dest = tmp / pd.name
             materialise(GALLERY, pd, dest)
             rc, codes = run_probe(delvec, dest, prefabs)
-            if rc == 0:
-                die(
-                    f"probe `{pd.name}` was ACCEPTED by `delvec validate`. A probe "
-                    "is an exemption's whole proof: it must be refused, and a "
-                    f"probe the compiler accepts proves `{claimed[0]}` is writable "
-                    "— which makes it a missing element, not an exemption."
-                )
-            if code not in codes:
-                die(
-                    f"probe `{pd.name}` was refused, but not with `{code}` "
-                    f"(got {sorted(set(codes)) or 'no machine-readable code'}). An "
-                    "exemption is only as good as the code it names — a probe "
-                    "refused for an unrelated reason proves nothing about this unit."
-                )
-            if not claimed:
-                demonstrations[pd.name] = {
-                    "code": code,
-                    "why": manifest.get("why", ""),
-                }
-            for unit in claimed:
-                if unit not in units:
-                    die(f"probe `{pd.name}` claims `{unit}`, which is not a unit")
-                if unit in bound:
-                    die(
-                        f"probe `{pd.name}` claims `{unit}`, which the domain "
-                        "already binds. A unit that is written and compiles needs "
-                        "no exemption."
-                    )
-                refusal[unit] = {
-                    "probe": pd.name,
-                    "code": code,
-                    "why": manifest.get("why", ""),
-                }
+            assert_refused(pd.name, kind, code, rc, codes)
+            if kind == DEMONSTRATION:
+                demonstrations[pd.name] = {"code": code, "why": why}
+            refusal.update(
+                probe_discharges(pd.name, kind, code, claimed, why, units, bound)
+            )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
