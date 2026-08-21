@@ -1501,6 +1501,16 @@ pub fn build_with_warnings(
     if let Some(ledger) = &gate_seal_ledger {
         put_json(&mut out, "validation/gate-seal.json", ledger);
     }
+    // The way gate's binding ledger (`compiler::ways`, spec-0042 AC11,
+    // playtest-methodology.md rule 1): every contingent way the placed world
+    // stages, what opens it and at which quest-DAG point — or that nothing does,
+    // with the cell count standing behind it — plus how many required elements
+    // the reachability half examined. A campaign whose world stages no way emits
+    // no file, so a file that exists and reports zero ways is a finding rather
+    // than an absence.
+    if let Some(gate) = &plan.way_gate {
+        put_json(&mut out, "validation/ways.json", &gate.to_json());
+    }
     // The lethal-volume proofs' binding ledger (`compiler::lethal`,
     // playtest-methodology.md rule 1): how many volumes were declared, how many
     // resolved to a box on the solved layout, how many world cells they close, and
@@ -5107,11 +5117,13 @@ fn declared_states(c: &delvewright_dsl::Campaign) -> &[delvewright_dsl::StateDec
 ///
 /// Every verb that writes a region at runtime goes through here — `fill-region`
 /// (author's box, author's block), `clear-region` (author's box, air),
-/// `close-gate` (the gate anchor's box and its declared block) and `open-gate`
+/// `close-gate` (the gate anchor's box and its declared block), `open-gate`
 /// (the gate anchor's box, air, `replace`-filtered to the gate block so an opened
-/// threshold never scrubs anything that drifted into it). The `replace` filter is
-/// the only difference between the four, which is why it is a parameter here
-/// rather than four spellings of `fill` in four match arms.
+/// threshold never scrubs anything that drifted into it) and `open-way` (a placed
+/// piece's exported way: its own cells, its own block for a `laid` one and air for
+/// a `cleared` one). The `replace` filter is the only difference between them,
+/// which is why it is a parameter here rather than five spellings of `fill` in
+/// five match arms.
 fn fill_region_command(region: ([i32; 3], [i32; 3]), block: &str, only: Option<&str>) -> String {
     let (from, to) = region;
     let filter = match only {
@@ -5284,6 +5296,26 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 && let Some(region) = plan.zone_box(zone)
             {
                 body.push(fill_region_command(region, block.unwrap_or(AIR), None));
+            }
+        }
+        // The same region write, over a box the PIECE declares (spec-0042 §2.4).
+        // One `fill` per box of the way, in the metadata's own order, with the
+        // block the metadata carries for a `laid` way and air for a `cleared`
+        // one. Nothing here consults the effect for geometry, a block or a
+        // direction, because the effect carries none of the three: an
+        // unresolvable reference is `DW0547` long before emission, so a way that
+        // reaches here has exactly one staged answer.
+        QuestEffect::OpenWay { .. } => {
+            if let Some((piece, name)) = eff.way_write()
+                && let Ok(way) = plan.ways.resolve(piece.as_str(), name)
+            {
+                let block = match way.sign {
+                    crate::ways::Sign::Laid => way.block.as_str(),
+                    crate::ways::Sign::Cleared => AIR,
+                };
+                for region in &way.boxes {
+                    body.push(fill_region_command(*region, block, None));
+                }
             }
         }
         QuestEffect::DespawnNpc { npc, .. } => {

@@ -606,7 +606,14 @@ pub fn entity_dims(entity: &str) -> (f64, f64) {
         "skeleton" | "stray" | "wither_skeleton" => (0.6, 1.99),
         "creeper" | "enderman" => (0.6, 1.9),
         "allay" | "vex" => (0.35, 0.6),
-        "armor_stand" | "player" | "mannequin" => (0.6, 1.8),
+        // The player's own row reads the metrics table, so the body every proof
+        // in this engine routes is the body `delvec metrics` publishes. The mobs
+        // around it stay literals: they are not the player, and a metrics table
+        // that enumerated the 1.21.11 mob roster would be a registry dump.
+        "armor_stand" | "player" | "mannequin" => (
+            delvewright_dsl::metrics::PLAYER_WIDTH,
+            delvewright_dsl::metrics::PLAYER_HEIGHT,
+        ),
         _ => (0.6, 1.95),
     }
 }
@@ -944,23 +951,18 @@ pub struct World {
     built: Vec<BuiltPiece>,
 }
 
-/// The largest rise, in sixteenths of a block, a walker crosses **without
-/// jumping** — vanilla's player `maxUpStep` is 0.6 blocks, and 9/16 = 0.5625 is
-/// the largest sixteenth under it (10/16 = 0.625 already needs a jump). A rise
-/// within this budget needs no headroom above the *source* cell: the player walks
-/// straight up onto a slab or a path edge.
-const MAX_AUTO_STEP_16: i64 = 9;
-
-/// The largest rise a walker can reach **by jumping**, in sixteenths. A vanilla
-/// player's jump apex is ≈1.2522 blocks, so a surface 20/16 = 1.25 up is
-/// reachable and 21/16 = 1.3125 is not. This is the bound that makes the
-/// **1.5-block** slab-to-full-block step-up — which the old full-cube model
-/// happily "proved" as an ordinary `+1` step — the impossible move it is.
-const MAX_JUMP_RISE_16: i64 = 20;
-
-/// A full block's height in sixteenths (mirrors
-/// [`crate::assembled::FULL_HEIGHT_16`] in nav's `i64` step arithmetic).
-const FULL_16: i64 = 16;
+/// The step rule's three constants, taken from the metrics table (spec-0049 §2)
+/// rather than declared here.
+///
+/// The direction of the import is what the single-authority obligation means
+/// concretely: the exported player metrics ARE these constants at compile time,
+/// not a second table that agrees with them, so `delvec metrics` cannot describe
+/// a walker this model does not route. Their derivations are on the definitions
+/// (`dsl::metrics::MAX_AUTO_STEP_16` is vanilla's 0.6-block `maxUpStep` rounded
+/// down to a sixteenth; `MAX_JUMP_RISE_16` is the ≈1.2522-block apex), and they
+/// stay private to this module because the step rule is this module's, while the
+/// numbers are the table's.
+use delvewright_dsl::metrics::{FULL_16, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16};
 
 impl World {
     /// Build the occupancy model from the plan's placed pieces and the structure
@@ -10971,6 +10973,33 @@ mod tests {
         // slab stairs are not treated like lumpy ground.
         assert!(step_cost_16(64 * 16, 64 * 16 + 8) < up);
         assert!(step_cost_16(64 * 16, 64 * 16 + 8) > flat);
+    }
+
+    /// The weight's own derivation, executable at last.
+    ///
+    /// `ELEV_WEIGHT`'s doc comment argued from a jump arc of ≈12 airborne ticks
+    /// against ≈4.6 ticks of flat walking per block, and both of those numbers
+    /// lived in prose, so the arithmetic could not go red if either moved. They
+    /// are entries of the metrics table now, and this asserts the relationship
+    /// rather than executing it: the weight is a TUNED number an owner playtest
+    /// settled (round 8), so deriving it at run time would let an edit to a
+    /// physics fact silently move every route in every campaign. Asserting it
+    /// makes the same edit a red that says which decision has to be re-taken.
+    #[test]
+    fn the_elevation_weight_is_the_integer_under_its_jump_arc() {
+        use delvewright_dsl::metrics::{JUMP_AIRBORNE_TICKS, walk_ticks_per_block};
+        let blocks_of_walking_per_block_of_climb = JUMP_AIRBORNE_TICKS / walk_ticks_per_block();
+        assert!(
+            (blocks_of_walking_per_block_of_climb - 2.59).abs() < 0.01,
+            "a block of climb costs about 2.5 blocks of walking time; got {blocks_of_walking_per_block_of_climb}"
+        );
+        assert_eq!(
+            ELEV_WEIGHT,
+            blocks_of_walking_per_block_of_climb.floor() as u32,
+            "the weight is deliberately the integer UNDER the physical figure — \
+             overpaying for flatness is what would distort routes on legitimately \
+             sloped terrain"
+        );
     }
 
     /// The island defect in miniature: a straight lane with one 1-block bump, and

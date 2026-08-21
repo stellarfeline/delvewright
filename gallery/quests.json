@@ -930,7 +930,30 @@
           },
           {
             "after": [
-              "obj/clear-the-muster"
+              "obj/take-the-bone"
+            ],
+            "anchor": "anchor/loft",
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "subject": "anchor/loft",
+              "text": "They climb the flight they put back and come out over the hall.",
+              "verb": "arrives"
+            },
+            "hint": "Up the flight, once its treads are back.",
+            "id": "obj/climb-the-loft",
+            "radius": 2,
+            "requires_flags": [
+              "flag/muster-cleared"
+            ],
+            "stealth": false,
+            "title": "Climb to the mezzanine",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/climb-the-loft"
             ],
             "anchor": "anchor/exit",
             "happening": {
@@ -1850,6 +1873,26 @@
               ],
               "type": "despawn-npc"
             }
+          ],
+          "obj/take-the-bone": [
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "piece": "prefab/gallery-hall",
+              "requires_flags": [
+                "flag/muster-cleared"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/labels-read",
+                  "value": 0
+                }
+              ],
+              "type": "open-way",
+              "way": "broken-flight"
+            }
           ]
         },
         "trigger": {
@@ -2418,6 +2461,6 @@
       }
     ]
   },
-  "dsl_version": "0.11.0",
+  "dsl_version": "0.12.0",
   "stage": "quests"
 }

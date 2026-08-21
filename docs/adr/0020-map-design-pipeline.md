@@ -1,6 +1,6 @@
 # ADR-0020: The spatial contract — declared spaces and edges, checked against the emitted bytes
 
-- **Status**: Proposed
+- **Status**: Superseded by ADR-0022
 - **Date**: 2026-08-12 (amended three times same day against the prototype's
   evidence rounds; step 1 — the declaration surface — dispatched after round 3)
 - **Source**: the map-design pipeline needs restructuring, or gameplay and scenery

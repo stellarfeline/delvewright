@@ -6,9 +6,9 @@ played, released or staged.
 
 It exists so that a new authoring surface meets something built to receive it. A
 surface no campaign exercises is a surface nothing has ever compiled end to end,
-and that is not a hypothetical: of the DSL's **801 declared surface units**, the
+and that is not a hypothetical: of the DSL's **807 declared surface units**, the
 whole authored corpus — four campaigns and twenty-eight fixtures — writes 527.
-The gallery binds **every one of them**: 795 written, 6 proven refused by a
+The gallery binds **every one of them**: 801 written, 6 proven refused by a
 probe the engine really rejects, and none left over.
 
 Four of those turned out not to work the first time anything reached them: an
@@ -40,7 +40,8 @@ order a player would:
 | `baseline/` | the committed emission index and the expected-warnings ledger |
 
 The hall itself is generated, not committed: one 31 × 8 × 31 stone room split by
-a barred wall, with three doors in it. Beside it the generator emits a small
+a barred wall, with three doors in it and a mezzanine in the far half whose
+stair is missing its treads. Beside it the generator emits a small
 **annex tileset** — four 7 × 6 × 7 boxes and a pool — plus a 3-cube **shard**
 that exists only to be stamped by `fragment`. The annex is deliberately plain:
 its job is the ASSEMBLY, and a tileset with interesting rooms would make the
@@ -157,8 +158,9 @@ The consequence is that `Locomotion::ground` cannot be written on a ground mob a
 all: binding one needs a body whose derived class differs *and* a route that makes
 the claim non-inert. That is a question for the spec, which assumes any legal
 combination is expressible by some overlay — these four may need geometry (a
-climb, a wall to fly over) rather than a declaration. The hall has no vertical
-route, so they are reported unaccounted rather than papered over.
+climb, a wall to fly over) rather than a declaration. The hall's one vertical
+route is the mezzanine's broken flight, and no body walks it — the climb is a
+player's, so it settles nothing about a declared locomotion.
 
 None of the three was found by reading code. Each was found by trying to write the
 surface down.
@@ -217,6 +219,61 @@ the seal's axis, one cell under the ceiling, on the tile's centre column; a
 lantern hung there is a camera inside a block. The generator asserts those cells
 are clear on every run (`ANNEX_SEAM_EYE_CELLS`), which is strictly weaker than the
 diagnostic would be, because it can only speak for these four tiles.
+
+## The broken flight, and what a way costs to declare
+
+The far half of the hall carries a **mezzanine**: a solid dais three courses
+tall, with a stair up to it whose two tread courses are not there. It is the
+only floor in the piece a body cannot walk onto, and a campaign puts the treads
+back:
+
+```json
+{ "type": "open-way", "piece": "prefab/gallery-hall", "way": "broken-flight" }
+```
+
+That is the whole effect. **There is no region on it, no block and no
+direction** — all three come from the piece's own `spatial_contract`, so the
+beat and the building cannot disagree about what a way is. What the campaign
+decides is *when*: this one fires when the party takes the muster's bone, and
+the objective that asks them to stand on the mezzanine comes after it.
+
+Three things are worth reading, because each is a place the claim could have
+been empty instead of proved.
+
+**The severance is proved on the bytes that ship, not asserted.** A way is an
+opt-out from "reachable as built", and stranding supplies severance for free —
+so the generator runs its own walk over the blocks it is about to write, twice:
+once as shipped and once with the tread cells filled. The mezzanine must be
+unreachable in the first and reachable in the second, or nothing is written at
+all. It prints both counts (`390 stance(s) reachable shut, 406 laid`), so a
+claim that stopped binding says so rather than going quiet.
+
+**The way lives on the traversal edge, not on the effect.** `broken-flight` is
+a field of the `stair` edge from `far-hall` to `loft` in the piece's contract,
+confined to that edge's own transit volume. An unconfined way region would be a
+licence to write anything anywhere at delve time, which is why the generator
+asserts the tread cells lie inside the flight's `via` box before it exports
+them.
+
+**The three gate fields are not decoration.** The effect carries
+`requires_flags`, `forbids_flags` and `requires_state`, and all three reach the
+emitted command:
+
+```
+execute if score #party dw.f_muster_cleared matches 1
+        unless score #party dw.f_hall_sealed matches 1
+        if score #party dw.s_labels_read matches 0.. run fill 19 65 22 20 65 22 minecraft:stone_bricks
+```
+
+Each is a condition that holds wherever this beat can fire — the flag the
+objective itself required, the flag the quest sets only afterwards, a count
+that starts at zero and never falls. A gate that could be false here would be a
+gate the completability proof credits and the delve does not honour, because
+forcedness is decided at the effect's ROOT and not by its conditions.
+
+The build publishes the ledger at `validation/ways.json`: one way staged across
+one piece of four, four cells behind it, opened by a forced beat at critical-path
+step 6, and twelve required elements examined against it.
 
 ## The barrier pocket
 
