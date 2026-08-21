@@ -47,6 +47,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gallery_domain  # noqa: E402
+from gallery_domain import build_id, overlays  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 GALLERY = REPO / "gallery"
 BASELINE = GALLERY / "baseline"
@@ -110,24 +114,9 @@ def declared_languages() -> list[str]:
     return list(world["content"].get("languages") or [])
 
 
-def overlays() -> list[str]:
-    d = GALLERY / "overlays"
-    return sorted(p.name for p in d.iterdir() if p.is_dir()) if d.is_dir() else []
-
-
 def materialise(overlay: str | None, dest: Path) -> None:
-    shutil.copytree(GALLERY, dest, dirs_exist_ok=True)
-    for junk in ("baseline", "overlays", "probes"):
-        shutil.rmtree(dest / junk, ignore_errors=True)
-    if overlay:
-        src = GALLERY / "overlays" / overlay
-        for f in src.iterdir():
-            if f.name == "overlay.json":
-                continue
-            if f.is_dir():
-                shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
-            else:
-                shutil.copy2(f, dest / f.name)
+    """One point of the domain as a campaign directory — `gallery_domain` decides what that means."""
+    gallery_domain.materialise(dest, GALLERY / "overlays" / overlay if overlay else None)
 
 
 def build_one(delvec: Path, prefabs: Path, overlay: str | None, lang: str, work: Path):
@@ -163,10 +152,6 @@ def build_one(delvec: Path, prefabs: Path, overlay: str | None, lang: str, work:
                 f"  {stripped[:200]}"
             )
     return manifest, rows
-
-
-def build_id(overlay: str | None, lang: str) -> str:
-    return f"{overlay or 'primary'}.{lang}"
 
 
 def coverage_counts(delvec: Path) -> dict:

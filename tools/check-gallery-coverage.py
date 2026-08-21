@@ -70,6 +70,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gallery_domain  # noqa: E402
 from gallery_units import Binder, Enumerator, stage_files  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -119,20 +120,20 @@ def load_stage_docs(campaign: Path, export: dict) -> dict[str, dict]:
 
 
 def materialise(base: Path, overlay: Path, dest: Path) -> None:
-    """A build of the domain: the primary, with the overlay's files on top.
+    """A build of the domain: the primary, with the overlay's or probe's files on top.
 
     An overlay is a **parameter point of the one gallery**, never a second
     gallery (§3): it ships only the stage files it changes, so a drift in the
     primary reaches it automatically and it cannot quietly become a fork.
+
+    What a point IS lives in `gallery_domain`, which is also what
+    `tools/gallery-baseline.py` builds and what `tools/gallery-build.py` writes
+    to disk. This tool used to answer that question itself and answered it
+    slightly differently, so the tree it validated was not the tree anything
+    compiled — a divergence nothing could have reported.
     """
-    shutil.copytree(base, dest, dirs_exist_ok=True)
-    for src in overlay.iterdir():
-        if src.name in ("overlay.json", "probe.json"):
-            continue
-        if src.is_dir():
-            shutil.copytree(src, dest / src.name, dirs_exist_ok=True)
-        else:
-            shutil.copy2(src, dest / src.name)
+    assert base == GALLERY, f"the domain has one source and it is `{GALLERY}`, not `{base}`"
+    gallery_domain.materialise(dest, overlay)
 
 
 def bind(enumerator: Enumerator, export: dict, docs: dict[str, dict], label: str):
