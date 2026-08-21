@@ -75,6 +75,8 @@ fn campaign_with_world(world: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// v0.6 horizon + boundary validate clean under `dsl_version 0.6.0`.
@@ -156,6 +158,8 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// A 0.6.0 quests document: an `open-gate` effect gated on a flag the same

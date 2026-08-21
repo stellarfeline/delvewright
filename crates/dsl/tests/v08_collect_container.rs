@@ -51,6 +51,8 @@ fn campaign_with(quests: String) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// The whole surface at once: adopt the prefab's container, name the item, pad

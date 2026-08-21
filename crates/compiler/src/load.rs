@@ -77,6 +77,8 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
             quests,
             dialogue,
             world_edits,
+            geometry_brief: None,
+            layout_graph: None,
         },
         inputs,
         l10n,

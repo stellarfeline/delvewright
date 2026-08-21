@@ -492,6 +492,8 @@ fn fixture_with_actors() -> delvewright_dsl::Campaign {
         quests: serde_json::to_string(&quests).expect("quests re-serialize"),
         dialogue: read("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
     .expect("the patched keep-trial parses")
 }

@@ -72,6 +72,8 @@ fn raw_with_dialogue(dialogue: String) -> RawCampaign {
         dialogue,
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 fn with_tooltip(version: &str) -> RawCampaign {
@@ -82,6 +84,8 @@ fn with_tooltip(version: &str) -> RawCampaign {
         ),
         version,
     ))
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 #[test]

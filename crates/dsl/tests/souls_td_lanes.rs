@@ -68,6 +68,8 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 fn diags_for(quests: &str) -> Vec<delvewright_dsl::Diagnostic> {

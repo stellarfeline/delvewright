@@ -4150,6 +4150,47 @@ fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// - `collect` / `interact` anchors resolve against the quest's single-prefab
 ///   area (`DW0142`, reused; pool-area anchors are resolved by the compiler,
 ///   as for `reach-anchor`).
+/// **The one inventory of flags this campaign produces.**
+///
+/// A `FlagId` has no declaration list — the set of flags is exactly those some
+/// `set-flag` effect produces — so every rule that asks "does this flag exist?"
+/// has to reconstruct that set, and a rule that reconstructs it differently is
+/// asking a different question under the same name. This function is the answer
+/// all of them read: `DW0172`'s unknown-flag refusals over objectives, effects,
+/// triggers, traps, dialogue options and cast placements, and `DW0818`'s over a
+/// layout-graph edge's gating.
+///
+/// Both halves matter and neither is optional. A `set-flag`/`spawn-wave`
+/// produces its flag from anywhere it can fire — every effect root, at every
+/// nesting depth — so the quest-side scan is
+/// [`crate::stages::for_each_campaign_effect`], which inherits both axes rather
+/// than listing either. It used to name four of the five roots, and a `set-flag`
+/// in a dialogue option's `set-checkpoint` `on_respawn` bundle really is emitted
+/// (into `cp_on_respawn_<i>`): the flag it produced looked never-produced
+/// everywhere else. The dialogue-side scan is separate because a
+/// `DialogueEffect::SetFlag` is a flat outcome of a conversation, in the
+/// dialogue vocabulary, which the root walk neither reaches nor should.
+pub fn produced_flags(c: &Campaign) -> BTreeSet<&str> {
+    let mut flags: BTreeSet<&str> = BTreeSet::new();
+    crate::stages::for_each_campaign_effect(c, &mut |_path, _site, e| {
+        if let Some(f) = e.set_flag() {
+            flags.insert(f.as_str());
+        }
+    });
+    for tree in &c.dialogue.content.dialogues {
+        for node in &tree.nodes {
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    if let Some(f) = eff.set_flag() {
+                        flags.insert(f.as_str());
+                    }
+                }
+            }
+        }
+    }
+    flags
+}
+
 fn v03_checks(
     c: &Campaign,
     items: &dyn ItemRegistry,
@@ -4203,43 +4244,15 @@ fn v03_checks(
         }
     }
 
-    // Flags declared by `set-flag`; waves spawned by `spawn-wave` (first pass —
-    // needed before the reference checks below).
-    let mut declared_flags: BTreeSet<&str> = BTreeSet::new();
+    // Flags declared by `set-flag` (the one producer inventory —
+    // [`produced_flags`]); waves spawned by `spawn-wave`.
+    let declared_flags: BTreeSet<&str> = produced_flags(c);
     let mut spawned_waves: BTreeSet<&str> = BTreeSet::new();
-    // A `set-flag`/`spawn-wave` produces its flag/wave from anywhere it can fire —
-    // every root, at every nesting depth — so the producer scan is
-    // `for_each_campaign_effect`, which inherits both axes rather than listing
-    // either. It used to name four of the five roots: a `set-flag` in a dialogue
-    // option's `set-checkpoint` `on_respawn` bundle really is emitted (into
-    // `cp_on_respawn_<i>`) and this inventory could not see it, so the flag it
-    // produced looked never-produced everywhere else (`DW0172`).
     crate::stages::for_each_campaign_effect(c, &mut |_path, _site, e| {
-        if let Some(f) = e.set_flag() {
-            declared_flags.insert(f.as_str());
-        }
         if let Some(w) = e.spawn_wave() {
             spawned_waves.insert(w.as_str());
         }
     });
-    // v0.4: flags may also come from dialogue `set-flag` effects. NOT a root — a
-    // `DialogueEffect::SetFlag` is a flat outcome of a conversation, in the
-    // dialogue vocabulary, and the root walk above neither reaches it nor should.
-    // What the root walk DOES reach in this stage is the `set-checkpoint`
-    // `on_respawn` bundle nested inside a dialogue effect, which is quest-effect
-    // vocabulary. Empty for v0.2/v0.3 campaigns, so their flag resolution is
-    // unchanged.
-    for tree in &c.dialogue.content.dialogues {
-        for node in &tree.nodes {
-            for opt in &node.options {
-                for eff in &opt.effects {
-                    if let Some(f) = eff.set_flag() {
-                        declared_flags.insert(f.as_str());
-                    }
-                }
-            }
-        }
-    }
 
     // area id -> its single-prefab anchor set (pool areas deferred to compiler).
     let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();

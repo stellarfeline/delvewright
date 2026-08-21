@@ -42,6 +42,8 @@ impl AnchorRegistry for ForceDark<'_> {
 
 fn hello_world_raw() -> RawCampaign {
     load_campaign_dir(&common::hello_world_dir()).unwrap().raw
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// spec-0010: `analyze_campaign` no longer emits `DW0210`, even when every bound

@@ -43,6 +43,8 @@ fn campaign_with_world(world: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// v0.5 time/weather/lighting validate clean under `dsl_version 0.5.0`.

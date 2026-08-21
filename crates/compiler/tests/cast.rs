@@ -84,6 +84,8 @@ fn campaign(cast_one: &str, cast_two: &str) -> Campaign {
         quests: quests(cast_one, cast_two),
         dialogue: DIALOGUE.to_string(),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
     .expect("fixture must parse")
 }
@@ -186,6 +188,8 @@ fn branchy(cast_one: &str, cast_two: &str) -> Campaign {
         quests: quests(cast_one, cast_two),
         dialogue,
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
     .expect("fixture must parse")
 }
@@ -348,6 +352,8 @@ fn pre_07_campaign_without_a_ledger_warns_dw0465() {
         quests: hw("quests.json"),
         dialogue: hw("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
     .unwrap();
     let diags = cast::check_cast(&c);

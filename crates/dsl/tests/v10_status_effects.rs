@@ -35,6 +35,8 @@ fn campaign_with(quests: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// A quests document whose single objective-completion bundle is `effects`.

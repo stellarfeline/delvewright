@@ -76,6 +76,8 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// The full v0.6 actor surface validates clean under `dsl_version 0.6.0`.

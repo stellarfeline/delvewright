@@ -98,6 +98,8 @@ fn diags(plan_doc: String, quests_doc: String, dialogue_doc: &str) -> Vec<Diagno
         quests: quests_doc,
         dialogue: dialogue_doc.to_string(),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
 }
 

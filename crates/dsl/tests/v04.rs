@@ -24,6 +24,8 @@ fn campaign_with(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
         dialogue: dialogue.to_string(),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 fn valid_npcs_v04() -> String {
@@ -399,6 +401,8 @@ fn talk_to_targets_despawned_npc_is_dw0195() {
         quests: QUESTS_DESPAWNED_REF.to_string(),
         dialogue: DIALOGUE_TWO_OBJECTIVES.to_string(),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     };
     let diags = check_campaign(&raw);
     assert!(

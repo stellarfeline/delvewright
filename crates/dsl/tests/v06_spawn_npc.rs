@@ -164,10 +164,14 @@ fn campaign(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
         dialogue: dialogue.to_string(),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 fn base() -> RawCampaign {
     campaign(NPCS, QUESTS, DIALOGUE)
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// A deferred NPC with a `spawn-npc` in a prerequisite quest validates clean.

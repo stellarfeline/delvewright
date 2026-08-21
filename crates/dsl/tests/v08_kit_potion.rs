@@ -41,6 +41,8 @@ fn campaign(classes: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// Every code raised for a classes doc.

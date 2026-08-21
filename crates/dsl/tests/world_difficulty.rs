@@ -34,6 +34,8 @@ fn raw_with(world: Option<&str>, quests: Option<&str>) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// hello-world's world stage at `version` with a declared `difficulty`.

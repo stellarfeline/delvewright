@@ -52,14 +52,20 @@ fn campaign(version: &str, loot: &str, actors: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 fn with_loot(version: &str, loot: &str) -> RawCampaign {
     campaign(version, loot, "")
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 fn with_actor(version: &str, actor: &str) -> RawCampaign {
     campaign(version, "", actor)
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 const VALID_LOOT: &str = r#"{

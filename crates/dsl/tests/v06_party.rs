@@ -27,6 +27,8 @@ fn raw_with(world: Option<&str>, classes: Option<&str>, quests: Option<&str>) ->
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// hello-world's world stage at 0.6.0 with a declared `min_players`.

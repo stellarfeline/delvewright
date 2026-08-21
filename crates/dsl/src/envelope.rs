@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{Diagnostic, codes};
 use crate::ids::CampaignId;
+use crate::layout::{GeometryBriefContent, LayoutGraphContent};
 use crate::stages::{
     ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
     WorldEditsContent,
@@ -350,6 +351,13 @@ pub enum Stage {
     Dialogue,
     /// Stage 7 (optional; DSL v0.6, spec-0017): the map-editor edit script.
     WorldEdits,
+    /// The whole map's written brief, reduced to numbers (optional; DSL v0.14,
+    /// spec-0049 §4.2). Named, never renumbered into the 1..7 sequence: it is a
+    /// different pipeline's document and the two orderings are unrelated.
+    GeometryBrief,
+    /// The campaign's space as a graph, before any coordinate exists (optional;
+    /// DSL v0.14, spec-0049 §3).
+    LayoutGraph,
 }
 
 impl Stage {
@@ -364,8 +372,29 @@ impl Stage {
             Stage::Quests => "quests",
             Stage::Dialogue => "dialogue",
             Stage::WorldEdits => "world-edits",
+            Stage::GeometryBrief => "geometry-brief",
+            Stage::LayoutGraph => "layout-graph",
         }
     }
+
+    /// **Every stage, in document order.** The one enumeration.
+    ///
+    /// Hand-written stage lists are how a new document escapes a gate that was
+    /// written before it existed: `crates/dsl/tests/gate_consumers.rs` walked
+    /// seven stages by name, so a schema object declaring part of the gate in an
+    /// eighth would have been invisible to the check whose whole subject is that
+    /// no such object exists. Anything that means "over the stages" reads this.
+    pub const ALL: [Stage; 9] = [
+        Stage::World,
+        Stage::Npcs,
+        Stage::Classes,
+        Stage::QuestPlan,
+        Stage::Quests,
+        Stage::Dialogue,
+        Stage::WorldEdits,
+        Stage::GeometryBrief,
+        Stage::LayoutGraph,
+    ];
 }
 
 /// A stage document: `{ dsl_version, campaign_id, stage, content }`.
@@ -402,6 +431,10 @@ pub struct Campaign {
     /// `None` = no `world-edits.json` in the campaign directory — byte-identical
     /// to a campaign from before the stage existed.
     pub world_edits: Option<Envelope<WorldEditsContent>>,
+    /// The whole map's brief as numbers (optional; DSL v0.14, spec-0049 §4.2).
+    pub geometry_brief: Option<Envelope<GeometryBriefContent>>,
+    /// The campaign's space as a graph (optional; DSL v0.14, spec-0049 §3).
+    pub layout_graph: Option<Envelope<LayoutGraphContent>>,
 }
 
 /// The stage documents as raw JSON strings (compiler input): six required, the
@@ -423,6 +456,10 @@ pub struct RawCampaign {
     /// `world-edits.json` (optional stage 7, spec-0017); `None` when the
     /// campaign directory ships none.
     pub world_edits: Option<String>,
+    /// `geometry-brief.json` (optional; spec-0049 §4.2).
+    pub geometry_brief: Option<String>,
+    /// `layout-graph.json` (optional; spec-0049 §3).
+    pub layout_graph: Option<String>,
 }
 
 fn parse_stage<T: for<'de> Deserialize<'de>>(
@@ -483,6 +520,21 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         parse_stage(src, Stage::WorldEdits, &mut parsed, &mut diags);
         world_edits = parsed.map(Some);
     }
+    // The spec-0049 map-pipeline documents, on the same terms: absent = `None`
+    // and a campaign that ships neither is byte-identical to one from before
+    // they existed; present = parsed, validated and hashed like any other stage.
+    let mut geometry_brief: Result<Option<Envelope<GeometryBriefContent>>, ()> = Ok(None);
+    if let Some(src) = &raw.geometry_brief {
+        let mut parsed = Err(());
+        parse_stage(src, Stage::GeometryBrief, &mut parsed, &mut diags);
+        geometry_brief = parsed.map(Some);
+    }
+    let mut layout_graph: Result<Option<Envelope<LayoutGraphContent>>, ()> = Ok(None);
+    if let Some(src) = &raw.layout_graph {
+        let mut parsed = Err(());
+        parse_stage(src, Stage::LayoutGraph, &mut parsed, &mut diags);
+        layout_graph = parsed.map(Some);
+    }
 
     match (
         world,
@@ -492,6 +544,8 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         quests,
         dialogue,
         world_edits,
+        geometry_brief,
+        layout_graph,
     ) {
         (
             Ok(world),
@@ -501,6 +555,8 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
             Ok(quests),
             Ok(dialogue),
             Ok(world_edits),
+            Ok(geometry_brief),
+            Ok(layout_graph),
         ) => {
             let mut campaign = Campaign {
                 world,
@@ -510,6 +566,8 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
                 quests,
                 dialogue,
                 world_edits,
+                geometry_brief,
+                layout_graph,
             };
             // spec-0016 §3: expand the `ambush` sugar into real environment
             // triggers, ONCE, at the DSL boundary. Every downstream consumer —

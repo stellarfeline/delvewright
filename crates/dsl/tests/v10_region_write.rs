@@ -57,6 +57,8 @@ fn raw(quests: String) -> RawCampaign {
         dialogue: hw("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// The `obj/talk` bundle of the parsed fixture — the list every case here writes

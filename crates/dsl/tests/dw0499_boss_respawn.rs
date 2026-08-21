@@ -99,6 +99,8 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// **Red case.** A `tier: boss` wave declaring `respawns_on_rest: true` is

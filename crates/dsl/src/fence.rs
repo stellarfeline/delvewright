@@ -222,6 +222,8 @@ mod tests {
             quests: garbage.clone(),
             dialogue: garbage.clone(),
             world_edits: Some(garbage),
+            geometry_brief: None,
+            layout_graph: None,
         })
         .expect_err("unparseable stages cannot produce a campaign");
         assert_eq!(diags.len(), 7, "one schema failure per stage document");

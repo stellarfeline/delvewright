@@ -50,6 +50,8 @@ fn campaign_with_traps(version: &str, traps: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// A well-formed dart trap bound to a provided anchor with an in-registry payload.

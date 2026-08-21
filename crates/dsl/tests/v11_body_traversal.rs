@@ -57,6 +57,8 @@ fn raw(npcs_doc: String, quests_doc: String) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 fn codes(raw: &RawCampaign) -> Vec<String> {

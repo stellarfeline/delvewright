@@ -69,6 +69,8 @@ fn classes_with_flask() -> String {
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     campaign_with(quests, &classes_with_flask())
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 fn campaign_with(quests: &str, classes: &str) -> RawCampaign {
@@ -81,6 +83,8 @@ fn campaign_with(quests: &str, classes: &str) -> RawCampaign {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     }
+    geometry_brief: None,
+    layout_graph: None,
 }
 
 /// The whole spec-0016 §1 surface validates clean under 0.6.0.
