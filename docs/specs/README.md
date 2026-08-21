@@ -50,11 +50,12 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0037](spec-0037-named-partitions.md) | Named partitions — what the citadel concept asks of the grammar | Proposed |
 | [spec-0038](spec-0038-standing-fluid.md) | Standing fluid — declared bodies, and the flood level as runtime state | Proposed |
 | [spec-0039](spec-0039-gallery-campaign.md) | The gallery campaign — every declared DSL surface, bound in one artifact | Accepted |
-| [spec-0040](spec-0040-map-composition.md) | Map composition — how a whole map gets its appearance | Accepted |
+| [spec-0040](spec-0040-map-composition.md) | Map composition — how a whole map gets its appearance | Superseded (ADR-0022) |
 | [spec-0041](spec-0041-instanced-claims-and-exterior-transit.md) | Instanced claims, and the climb that leaves the piece | Proposed |
 | [spec-0042](spec-0042-a-way-that-content-opens.md) | A way that content opens — contingent edges, both signs, and the effect that opens them | Accepted |
 | [spec-0043](spec-0043-an-open-space-carries-its-shadow.md) | An open space carries its shadow — the sky demand re-bound to the computed partition | Proposed |
 | [spec-0044](spec-0044-a-respawn-that-resets-the-scene.md) | A respawn that resets the scene — the safe-zone proof measures the world the reset leaves | Accepted |
 | [spec-0046](spec-0046-an-entry-is-a-role-not-a-spelling.md) | An entry is a role, not a spelling — the entry point moves from the anchor's name to a declared role | Accepted |
 | [spec-0047](spec-0047-the-kind-belongs-to-the-cell.md) | The kind belongs to the cell — the out-of-walk classification re-bound to the blocks' own partition | Accepted |
-| [spec-0048](spec-0048-a-generated-shore-declares-its-waterline.md) | A generated shore declares its waterline — a program-level datum, verified at export, through to `waterline_y` | Proposed |
+| [spec-0048](spec-0048-a-generated-shore-declares-its-waterline.md) | A generated shore declares its waterline — a program-level datum, verified at export, through to `waterline_y` | Accepted |
+| [spec-0049](spec-0049-a-whole-map-is-walked-before-any-part-is-detailed.md) | A whole map is walked before any part is detailed — the vertical slice to a derived blockout | Proposed |
