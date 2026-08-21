@@ -1,0 +1,328 @@
+# THE PIN REGISTRY — every literal in this repo that decides which version of an
+# external thing gets fetched, with the policy that says whether it may drift.
+#
+# `tools/check-pins.py` reads this file. It discovers pins by SHAPE across every
+# file kind that can execute or be resolved from, so an entry is not how a pin
+# becomes visible — a pin is visible whether or not anyone registers it, and an
+# unregistered one is a red. What the entry adds is the DECISION: what this pin
+# is, and on what terms it is allowed to sit still.
+#
+# The reason lives here rather than in a comment beside the value because a
+# comment is not read by anything. A pin that has rotted and a pin that is frozen
+# on purpose look identical in a diff; only a machine-checked policy tells them
+# apart.
+#
+# POLICIES
+#   release   — names a commit a v<semver> tag points at. Verified online against
+#               the tags of the repo it names. A released delve reproduces through
+#               its own pinned engine, so such a pin must never move and drift is
+#               not a finding.
+#   track     — names a commit of a repository this project builds. Must be an
+#               ancestor of that repo's default branch, must carry `reviewed`
+#               (the upstream revision it was last judged against), and must name
+#               `judged_by`, the file whose CI job runs its online check. If any
+#               commit touching the sources the site BUILDS out of the pinned
+#               checkout landed after `reviewed`, the pin has not been looked at
+#               since its instrument changed, and that is a red.
+#   immutable — a content-addressed name for third-party bytes: an image digest,
+#               a jar checksum, a commit of a third-party repository. Currency is
+#               a supply-chain question with a different owner; this gate does not
+#               pretend to answer it, and says so rather than passing silently.
+#   floating  — a ref that moves on purpose. Registered so that the number of
+#               deliberately-unfrozen refs is visible instead of habitual.
+#
+# `builds` is the package names the site file builds out of the pinned checkout.
+# It is not a watch list an author writes: the online check derives the watched
+# source directories from those packages in the upstream tree, and the offline
+# check reds if a `cargo build … -p <pkg>` in a site is missing from `builds`.
+
+# ---------------------------------------------------------------------------
+# Our own history
+# ---------------------------------------------------------------------------
+
+[[pin]]
+id = "content-repo"
+value = "f28f15394eef6813a88122137e3050b1da28c6f9"
+sites = ["versions.toml"]
+repo = "stellarfeline/delvewright-campaigns"
+policy = "track"
+judged_by = ".github/workflows/ci.yml"
+reviewed = "b2ad117d897280550cb10ca756a75a78a0a19f46"
+builds = []
+why = """
+The content commit every reproducible build resolves the prefab library and
+campaign sources from (versions.toml [content], spec-0007). Nothing is BUILT out
+of this checkout — the engine is built from this tree and the content arrives as
+data — so no source directory is watched and drift is reported rather than red.
+The re-pin convention and the zone-inventory restatement that goes with it are
+enforced separately by validation/check-versions.sh and
+.github/content-zone-corpus.json.
+"""
+
+# ---------------------------------------------------------------------------
+# Third-party bytes
+# ---------------------------------------------------------------------------
+
+[[pin]]
+id = "nucleation-rev"
+value = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf"
+sites = ["crates/render/Cargo.toml", "versions.toml"]
+policy = "immutable"
+why = """
+Nucleation (MIT), the per-prefab headless renderer, pinned by git rev because no
+crates.io release carries its `rendering` feature (versions.toml [render]). Its
+currency is deliberately NOT checked here: judging it would mean a full clone of
+a third-party repository inside a required job, which is the reach
+tools/check-workspace-git-deps.py exists to keep out of required jobs. It
+renders validation artifacts and decides no verdict, so its drift changes no
+gate's answer.
+"""
+
+[[pin]]
+id = "base-image"
+value = "sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de"
+sites = [
+    ".github/workflows/infra-images.yml",
+    "docs/experiments/m2-jigsaw-seed-stability/Dockerfile",
+    "tools/spike-area-effect-arrow/run.sh",
+    "tools/spike-block-settling/run.sh",
+    "tools/spike-death-teleport/run.sh",
+    "tools/spike-fluid-plane/run.sh",
+    "tools/spike-jump-arc/run.sh",
+    "validation/Dockerfile.delve",
+    "validation/Dockerfile.toolserver",
+    "versions.toml",
+]
+policy = "immutable"
+why = """
+itzg/minecraft-server, and the byte-for-byte GHCR mirror of it that every server
+image is built FROM (versions.toml [images.base]). One digest in ten files, and
+validation/check-versions.sh is what keeps them equal.
+"""
+
+[[pin]]
+id = "toolserver-image"
+value = "sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b"
+sites = ["validation/compose.yaml", "versions.toml"]
+policy = "immutable"
+why = """
+The pre-baked Fabric + PackTest validation image (versions.toml
+[images.toolserver]). Republished only through infra-images.yml, at which point
+this digest is restated here and in versions.toml together.
+"""
+
+[[pin]]
+id = "server-jar"
+value = "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+sha256 of the pinned Minecraft 1.21.11 server jar. The bootstrap cache refuses
+any download whose bytes are not this (versions.toml [minecraft]). Moving it is
+moving the pinned Minecraft version, which is ADR-0009's long-term constant.
+"""
+
+[[pin]]
+id = "server-jar-sha1"
+value = "64bb6d763bed0a9f1d632ec347938594144943ed"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+The sha1 piston-meta publishes for the same jar, and the object id inside its
+download URL. Recorded beside the sha256 so the URL and the checksum cannot be
+edited apart.
+"""
+
+[[pin]]
+id = "fabric-api-jar"
+value = "c98467cbbaf4d197377266795ae015f4130d65b6"
+sites = ["validation/Dockerfile.toolserver", "versions.toml"]
+policy = "immutable"
+why = "sha1 of the Fabric API jar PackTest needs (versions.toml [fabric])."
+
+[[pin]]
+id = "packtest-jar"
+value = "7c9f83f1673209abb1d5262dd69583e61c85cbd2"
+sites = ["validation/Dockerfile.toolserver", "versions.toml"]
+policy = "immutable"
+why = "sha1 of the PackTest jar (versions.toml [packtest], ADR-0005)."
+
+[[pin]]
+id = "deepslate-bundle"
+value = "0d9496f187600b479bb83d015e49eccbf70997c5886f0c70b101ca4595bb2c46"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+sha256 of the committed deepslate bundle the prefab review page ships inside
+itself. It pins BYTES rather than a version string, so a hand-edited bundle is a
+red (versions.toml [render]).
+"""
+
+# --- misode/mcmeta data dumps, from which generated tables are extracted ------
+# Each names one retrieval of one file at the pinned Minecraft version. The
+# extractor refuses bytes that do not match, so these are what make a
+# regenerated table reproducible.
+
+[[pin]]
+id = "mcmeta-commit"
+value = "c976eb3b2cfcb9f205171527dec46b266afa3ac9"
+sites = ["tools/extract-block-defaults.py", "tools/extract-block-registry.py"]
+policy = "immutable"
+why = "The misode/mcmeta commit the pinned block summaries were retrieved from."
+
+[[pin]]
+id = "mcmeta-blocks"
+value = "178a12096f59f863758a6c685e5eb6de38721b376a30a30383e171d0799f3ee7"
+sites = ["tools/extract-block-defaults.py", "tools/extract-block-registry.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta `blocks/data.min.json` both block extractors read."
+
+[[pin]]
+id = "mcmeta-item-components"
+value = "51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4"
+sites = [
+    "tools/extract-item-combat-stats.py",
+    "tools/extract-item-stack-sizes.py",
+]
+policy = "immutable"
+why = "sha256 of the mcmeta `item_components/data.min.json`."
+
+[[pin]]
+id = "mcmeta-damage-types"
+value = "0ce7edc377446ecddfd1c3b74b32e2dc3b248edc4035275134fb821e98a6c7ad"
+sites = ["tools/extract-damage-types.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta damage-type summary."
+
+[[pin]]
+id = "mcmeta-damage-type-tags"
+value = "794ce6343293660b5f32d6a78f7a374623bb785d18dfc5ce3cbdeb3093b0161d"
+sites = ["tools/extract-damage-types.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta damage-type TAG summary."
+
+[[pin]]
+id = "mcmeta-entity-tags"
+value = "5523f45b7ddb178cd9f8bbe998458cc070910a74bc6c551a37b9279f5d73f844"
+sites = ["tools/extract-entity-tags.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta entity-type TAG summary."
+
+[[pin]]
+id = "mcmeta-sound-registry"
+value = "7efb184902cfef62b431bc9826ebcbcde2c23746e5624326ffcf922e15cf28f9"
+sites = ["tools/extract-sound-registry.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta registries summary the sound table is derived from."
+
+[[pin]]
+id = "mcmeta-block-tags"
+value = "ff73a0c7f08cb8276a48daa39c104a34d79f0aebd872b37de9c9dc137d49082f"
+sites = ["tools/extract-block-classification.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta block-tag summary."
+
+[[pin]]
+id = "mcmeta-recipes"
+value = "811e914cf45fc801146103442811285342327a6bb2f46641a58120a131e31918"
+sites = ["tools/extract-block-classification.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta recipe summary."
+
+# ---------------------------------------------------------------------------
+# Refs that move on purpose
+# ---------------------------------------------------------------------------
+# Third-party actions are held at their MAJOR tag, which the publisher advances.
+# That is a deliberate trade — patch fixes arrive without a PR, and the trust
+# boundary is the publisher rather than a digest. It is registered so the trade
+# is a visible count instead of an unexamined habit: eight refs, all first-party
+# GitHub or Docker, none reaching a repository this project builds.
+
+[[pin]]
+id = "action-checkout"
+value = "actions/checkout@v4"
+sites = [
+    ".github/actions/checkout-content/action.yml",
+    ".github/workflows/ci.yml",
+    ".github/workflows/engine-release.yml",
+    ".github/workflows/gpu-probe.yml",
+    ".github/workflows/infra-images.yml",
+    ".github/workflows/release.yml",
+]
+policy = "floating"
+why = "GitHub's own checkout action, held at its major tag."
+
+[[pin]]
+id = "action-rust-cache"
+value = "Swatinem/rust-cache@v2"
+sites = [
+    ".github/workflows/ci.yml",
+    ".github/workflows/engine-release.yml",
+    ".github/workflows/gpu-probe.yml",
+    ".github/workflows/release.yml",
+]
+policy = "floating"
+why = "Cargo cache action, held at its major tag. Affects build time, not output."
+
+[[pin]]
+id = "action-setup-node"
+value = "actions/setup-node@v4"
+sites = [".github/workflows/ci.yml", ".github/workflows/release.yml"]
+policy = "floating"
+why = "GitHub's Node toolchain action, held at its major tag."
+
+[[pin]]
+id = "action-setup-python"
+value = "actions/setup-python@v5"
+sites = [".github/workflows/ci.yml"]
+policy = "floating"
+why = "GitHub's Python toolchain action, held at its major tag."
+
+[[pin]]
+id = "action-upload-artifact"
+value = "actions/upload-artifact@v4"
+sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml"]
+policy = "floating"
+why = "GitHub's artifact upload action, held at its major tag."
+
+[[pin]]
+id = "action-download-artifact"
+value = "actions/download-artifact@v4"
+sites = [".github/workflows/engine-release.yml"]
+policy = "floating"
+why = "GitHub's artifact download action, held at its major tag."
+
+[[pin]]
+id = "action-lychee"
+value = "lycheeverse/lychee-action@v2"
+sites = [".github/workflows/ci.yml"]
+policy = "floating"
+why = "Link checker, held at its major tag; runs --offline so it fetches nothing."
+
+[[pin]]
+id = "action-docker-qemu"
+value = "docker/setup-qemu-action@v3"
+sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+policy = "floating"
+why = "arm64 emulation for the multi-arch build (ADR-0010), held at its major tag."
+
+[[pin]]
+id = "action-docker-buildx"
+value = "docker/setup-buildx-action@v3"
+sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+policy = "floating"
+why = "buildx setup, held at its major tag."
+
+[[pin]]
+id = "action-docker-login"
+value = "docker/login-action@v3"
+sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+policy = "floating"
+why = "GHCR login, held at its major tag."
+
+[[pin]]
+id = "action-docker-build-push"
+value = "docker/build-push-action@v6"
+sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+policy = "floating"
+why = "Image build/push, held at its major tag."
