@@ -104,6 +104,10 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib import mdtable  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # The words a status may be. Descriptive, not prescriptive — see the docstring.
@@ -184,16 +188,29 @@ def document_status(path: Path) -> tuple[int, str, str | None] | None:
     return None
 
 
-def index_rows(path: Path, row_re: re.Pattern) -> list[tuple[int, str, str, str]]:
-    """(line number, number, link target, status cell) per body row."""
+def index_rows(
+    path: Path, row_re: re.Pattern
+) -> tuple[list[tuple[int, str, str, str]], list[tuple[int, str]]]:
+    """(line number, number, link target, status cell) per body row, and the
+    index rows no table contains.
+
+    An index is navigation: its whole value is that a reader opens the page and
+    finds the document. A blank line ends a pipe table, so a row under one
+    renders as a paragraph of literal pipe characters — present for a gate
+    matching a regex against lines, absent for everyone the index is for. The
+    table is therefore read by `tools/lib/mdtable.py`, and a detached row is a
+    finding rather than a silently accepted entry.
+    """
     rows: list[tuple[int, str, str, str]] = []
-    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        m = row_re.match(line)
-        if not m:
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        rows.append((n, m.group(1), m.group(2), strip_markup(cells[-1]) if cells else ""))
-    return rows
+    in_table, detached = mdtable.rows_matching(
+        path.read_text(encoding="utf-8"), row_re
+    )
+    for row in in_table:
+        m = row_re.match(row.line.strip())
+        rows.append(
+            (row.lineno, m.group(1), m.group(2), strip_markup(row.cells[-1]) if row.cells else "")
+        )
+    return rows, detached
 
 
 def check_series(spec: dict) -> tuple[list[str], str]:
@@ -214,7 +231,15 @@ def check_series(spec: dict) -> tuple[list[str], str]:
             if m:
                 documents[m.group(1)] = p
 
-    rows = index_rows(index, spec["row"])
+    rows, detached = index_rows(index, spec["row"])
+    for lineno, line in detached:
+        findings.append(
+            f"{name}: {spec['index']}:{lineno} is an index row that no table "
+            f"contains — a blank line above it ended the table, so a reader "
+            f"opening the index sees a paragraph of literal pipe characters "
+            f"where this entry should be:\n    {line[:100]}\n    Delete the "
+            f"blank line above it so the row rejoins the index table."
+        )
     compared = 0
 
     for n, num, target, cell in rows:
