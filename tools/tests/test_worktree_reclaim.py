@@ -587,49 +587,199 @@ def make_target(path):
     return t
 
 
-def test_target_directories_are_left_alone_when_space_is_fine(fx, tmp_path):
-    wt = fx.worktree("wt-open", "inflight")
-    make_target(wt)
-    out = sweep(
-        fx,
-        fake_gh(tmp_path, [{"number": 18, "state": "OPEN", "headRefName": "inflight", "title": "t"}]),
-        "--free-below",
-        "0.0001",
-    )
-    assert (wt / "target").exists()
-    assert "target/" not in out or "Not touched" in out
+def backdate(path, hours):
+    """Age everything under `path`, deepest first so no parent is re-touched."""
+    old = time.time() - hours * 3600
+    for dirpath, dirnames, filenames in os.walk(path, topdown=False):
+        for name in filenames + dirnames:
+            os.utime(os.path.join(dirpath, name), (old, old))
+    os.utime(path, (old, old))
 
 
-def test_disk_pressure_removes_only_rebuildable_output(fx, tmp_path):
+OPEN = [{"number": 18, "state": "OPEN", "headRefName": "inflight", "title": "t"}]
+
+
+def test_free_space_no_longer_decides_whether_build_output_is_waste(fx, tmp_path):
+    """The defect this replaced, driven in BOTH directions on one tree.
+
+    Build output is waste when nothing will build in it again, which is not a
+    fact about how full the disk is. The old gate asked the disk, so nineteen
+    dead trees held a hundred gibibytes with two hundred and fifty-eight free
+    and the valve never opened. These two sweeps differ ONLY in the target's
+    age; the free-space threshold is pinned at a value that makes pressure
+    structurally impossible in both.
+    """
     wt = fx.worktree("wt-open", "inflight")
     t = make_target(wt)
-    out = sweep(
-        fx,
-        fake_gh(tmp_path, [{"number": 19, "state": "OPEN", "headRefName": "inflight", "title": "t"}]),
-        "--free-below",
-        "999999",
-        "--apply",
-        "--targets-only",
-    )
-    assert "disk-pressure mode" in out
+    bindir = fake_gh(tmp_path, OPEN)
+
+    # fresh -> kept, and kept for a LIVENESS reason rather than for space
+    out = sweep(fx, bindir, "--free-below", "0.0001")
+    v, why = verdict_for(out, t)
+    assert v == "KEEP"
+    assert "still live" in why
+    assert "ALARM" not in out, "0.0001 GiB must not trip the alarm"
+
+    # idle -> reclaimed, at the same impossible-to-trip threshold
+    backdate(t, 200)
+    v, why = verdict_for(sweep(fx, bindir, "--free-below", "0.0001"), t)
+    assert v == "RECLAIM"
+    assert "IDLE" in why and "200h" in why
+
+
+def test_targets_only_removes_idle_output_and_never_the_worktree(fx, tmp_path):
+    wt = fx.worktree("wt-open", "inflight")
+    t = make_target(wt)
+    backdate(t, 200)
+    sweep(fx, fake_gh(tmp_path, OPEN), "--apply", "--targets-only")
     assert not t.exists()
     assert wt.exists(), "--targets-only must never touch a worktree"
     assert (wt / "README").exists()
 
 
-def test_disk_pressure_spares_a_leased_tree(fx, tmp_path):
+def test_a_build_in_flight_holds_its_output_against_every_other_key(fx, tmp_path):
+    """The un-forgeable key at this layer, driven both ways on one tree.
+
+    The tree is idle by every timestamp and its branch is not even open — the
+    only thing standing between it and deletion is a live `flock`, which is
+    exactly the thing a running build has and a dead one cannot fake.
+    """
+    import fcntl
+
     wt = fx.worktree("wt-open", "inflight")
     t = make_target(wt)
+    (t / "debug" / ".cargo-lock").write_bytes(b"")
+    backdate(t, 200)
+    bindir = fake_gh(tmp_path, OPEN)
+
+    fd = os.open(str(t / "debug" / ".cargo-lock"), os.O_RDWR)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        v, why = verdict_for(sweep(fx, bindir), t)
+        assert v == "KEEP"
+        assert "BUILD IN FLIGHT" in why
+        sweep(fx, bindir, "--apply", "--targets-only")
+        assert t.exists(), "a build in flight must keep its own output"
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+    # the one key removed -> the same tree turns RECLAIM
+    v, why = verdict_for(sweep(fx, bindir), t)
+    assert v == "RECLAIM"
+    assert "IDLE" in why
+
+
+def test_an_unopenable_build_lock_counts_as_held(fx, tmp_path):
+    """Absence of the answer is never permission — the rule the authority obeys
+    one layer up, applied to the kernel's answer at this one."""
+    wt = fx.worktree("wt-open", "inflight")
+    t = make_target(wt)
+    lock = t / "debug" / ".cargo-lock"
+    lock.write_bytes(b"")
+    backdate(t, 200)
+    os.chmod(lock, 0o000)
+    try:
+        v, why = verdict_for(sweep(fx, fake_gh(tmp_path, OPEN)), t)
+        assert v == "KEEP"
+        assert "could not be opened" in why and "HELD" in why
+    finally:
+        os.chmod(lock, 0o644)
+
+
+def test_landed_work_gives_up_its_output_with_no_idle_window_at_all(fx, tmp_path):
+    """The strong arm needs no threshold: the work is on the remote.
+
+    The target here is brand new — well inside the idle window — so IDLE cannot
+    be what decides it, and the mirror case pins that down: the identical tree
+    with an OPEN request instead of a MERGED one is kept.
+    """
+    wt = fx.worktree("wt-landed", "landed")
+    t = make_target(wt)
+    (wt / "scratch-note.txt").write_text("dirty\n", encoding="utf-8")  # tree must be KEPT
+
+    v, why = verdict_for(sweep(fx, fake_gh(tmp_path, MERGED)), t)
+    assert v == "RECLAIM"
+    # The number comes from the fixture rather than being written out, so this
+    # assertion carries no identifier a reader could mistake for a real one.
+    assert "LANDED" in why and str(MERGED[0]["number"]) in why
+
+    other = fx.worktree("wt-open", "inflight")
+    t2 = make_target(other)
+    v2, why2 = verdict_for(sweep(fx, fake_gh(tmp_path, OPEN)), t2)
+    assert v2 == "KEEP"
+    assert "still live" in why2
+
+
+def test_build_output_is_judged_on_liveness_while_the_tree_is_judged_on_git(fx, tmp_path):
+    """One tree, two ladders, opposite verdicts — and the work survives.
+
+    A dirty tree is never deleted, by any path, for any reason. Its `target/` is
+    not git state at all, so the same tree can legitimately give up its build
+    output while keeping every byte a deletion could destroy.
+    """
+    wt = fx.worktree("wt-dirty-idle", "landed")
+    t = make_target(wt)
+    backdate(t, 200)
+    (wt / "untracked-work.txt").write_text("precious\n", encoding="utf-8")
+
+    out = sweep(fx, fake_gh(tmp_path, MERGED), "--apply")
+    assert verdict_for(out, wt)[0] == "KEEP"
+    assert "DIRTY" in verdict_for(out, wt)[1]
+    assert not t.exists(), "idle build output goes"
+    assert wt.exists() and (wt / "untracked-work.txt").read_text() == "precious\n"
+
+
+def test_a_leased_tree_keeps_its_build_output(fx, tmp_path):
+    wt = fx.worktree("wt-open", "inflight")
+    t = make_target(wt)
+    backdate(t, 200)
     lease(fx, wt, "--holder", "worker-b")
-    sweep(
-        fx,
-        fake_gh(tmp_path, [{"number": 20, "state": "OPEN", "headRefName": "inflight", "title": "t"}]),
-        "--free-below",
-        "999999",
-        "--apply",
-        "--targets-only",
-    )
+    out = sweep(fx, fake_gh(tmp_path, OPEN), "--apply", "--targets-only")
     assert t.exists(), "a claimed tree keeps its build output; a rebuild is not free"
+    assert "LEASED by worker-b" in verdict_for(out, t)[1], "the row must say WHICH key held it"
+
+
+def test_a_lease_covers_the_scratch_directory_beside_the_tree(fx, tmp_path):
+    """A dispatch gets a tree and a scratch directory beside it, and a live
+    worker's scratch is never touched. Build output in scratch belongs to no
+    worktree, so without this it would be judged with no lease to find."""
+    wt = fx.worktree("wt-open", "inflight")
+    beside = wt.parent / "scratch"
+    beside.mkdir()
+    scratch_target = make_target(beside)
+    backdate(scratch_target, 200)
+    lease(fx, wt, "--holder", "worker-c")
+    out = sweep(fx, fake_gh(tmp_path, OPEN), "--apply", "--targets-only")
+    assert scratch_target.exists(), "a claimed worker's scratch build output must survive"
+    assert "scratch directory beside a claimed tree" in verdict_for(out, scratch_target)[1]
+
+
+def test_one_target_directory_is_counted_once_however_many_roots_reach_it(fx, tmp_path):
+    """The scan roots overlap by construction: each repository plus the parent
+    of every worktree, and a worktree's parent is routinely inside another root.
+    A live run reported 52 targets where there were 36, duplicated sixteen rows,
+    listed one three times, and inflated the reclaimable count from 11 to 13."""
+    wt = fx.worktree("wt-open", "inflight")
+    t = make_target(wt)
+    backdate(t, 200)
+    # --scan-dir names a root that already reaches this target by another path.
+    out = sweep(fx, fake_gh(tmp_path, OPEN), "--scan-dir", str(fx.scratch),
+                "--scan-dir", str(fx.root))
+    rows = [ln for ln in out.splitlines() if ln.strip().endswith(str(t))]
+    assert len(rows) == 1, f"counted {len(rows)} times:\n{out}"
+    assert "1 target/ director(y|ies) examined" in out
+
+
+def test_the_main_checkout_is_never_stripped_because_it_is_the_clone_donor(fx, tmp_path):
+    """`tools/worktree-new.sh` clones a new worktree's `target/` from the main
+    checkout. Deleting it frees none of the blocks a clone shares with it and
+    makes the next dispatch pay for a cold compile."""
+    t = make_target(fx.repo)
+    backdate(t, 5000)
+    out = sweep(fx, fake_gh(tmp_path, MERGED), "--apply")
+    assert t.exists()
+    assert "donor" in verdict_for(out, t)[1]
 
 
 def test_a_directory_named_target_without_cargos_signature_is_not_touched(fx, tmp_path):
