@@ -226,6 +226,24 @@ fn is_runtime_holder(h: &str) -> bool {
         // TD templates drive (like the move drivers above); each initializes it
         // explicitly on entry.
         || h.starts_with("#lane_")
+        // The census ANSWER holders. `wave_census_<wave>` — an emitted campaign
+        // function, not a template — sets all three to 0 and then counts into
+        // them, so they are pack-owned runtime state by the same reading as the
+        // move drivers above, and no template can suffix a name the body owns.
+        // Listed here only once there is a census template per wave; with one
+        // template they were unshared by accident, which is not the same as being
+        // scratch. The safety is stronger than `#lane_`'s, not weaker: the reset
+        // is performed by the very call whose answer is read, inside one atomic
+        // template, and every ASSERTION reads a per-wave copy (`#wcn_<n>_<wave>`)
+        // that is ordinary per-test scratch and still judged as such.
+        || h.starts_with("#wcen_")
+        // The party-unique kit latches. `class_apply_<class>` — again an emitted
+        // campaign function — is what sets `#kit_<class>_<k>`; a template only
+        // ever RESETS it, which is the residue rule, and every template that
+        // drives an apply must. Same reading as the census answers above, and the
+        // same reason it surfaced now: with one template driving one class it was
+        // unshared by accident.
+        || h.starts_with("#kit_")
 }
 
 /// Root cause of the round-6 island flake (`v06_spawn_idempotent` expected 1,
@@ -235,15 +253,35 @@ fn is_runtime_holder(h: &str) -> bool {
 /// the idempotence test's spawns no-op'd against that pupless twin. The
 /// contract now: every actor template clears the actor tag on entry (own init)
 /// and leaves no actor entity behind (no poison for a sibling).
+///
+/// Swept over EVERY actor template the suite emits, not a fixed list of four
+/// names: the spawn/idempotence/unleash templates are now written per declared
+/// actor (`DW0811`'s `actor` claim), so a list of names would go quietly out of
+/// date the moment a fixture declares a second actor — which is the same defect
+/// one layer out.
 #[test]
 fn actor_templates_clear_on_entry_and_leave_no_residue() {
     let out = build_actor_hello_world();
-    for t in [
-        "v06_spawn_despawn",
-        "v06_spawn_idempotent",
-        "v06_unleash",
-        "v06_move_actor",
-    ] {
+    let names: Vec<String> = out
+        .keys()
+        .filter_map(|k| {
+            k.strip_prefix("packtest-datapack/data/hello-world/test/")?
+                .strip_suffix(".mcfunction")
+                .map(str::to_string)
+        })
+        .filter(|t| {
+            t.starts_with("v06_spawn_despawn")
+                || t.starts_with("v06_spawn_idempotent")
+                || t.starts_with("v06_unleash")
+                || t.starts_with("v06_move_actor")
+        })
+        .collect();
+    assert_eq!(
+        names.len(),
+        4,
+        "the fixture's one actor gets one of each actor template: {names:?}"
+    );
+    for t in &names {
         let body = String::from_utf8(
             out[&format!("packtest-datapack/data/hello-world/test/{t}.mcfunction")].clone(),
         )
@@ -271,11 +309,11 @@ fn actor_templates_clear_on_entry_and_leave_no_residue() {
     // The unleash test's residue was the poison: its final kill must come AFTER
     // the twin assert (the assertion itself is untouched).
     let unleash = String::from_utf8(
-        out["packtest-datapack/data/hello-world/test/v06_unleash.mcfunction"].clone(),
+        out["packtest-datapack/data/hello-world/test/v06_unleash_giant.mcfunction"].clone(),
     )
     .unwrap();
     let twin_assert = unleash
-        .find("assert score #twin_unl dw.sys matches 1")
+        .find("assert score #twin_unl_giant dw.sys matches 1")
         .expect("twin assert survives");
     assert!(
         unleash.rfind("kill @e[tag=dw_actor_giant]").unwrap() > twin_assert,
@@ -470,7 +508,9 @@ fn packtest_templates_are_interleaving_independent() {
         );
     }
 
-    // The actor family (the round-6 island flake) must really be in scope.
+    // The actor family (the round-6 island flake) must really be in scope. Named
+    // by PREFIX: the spawn/idempotence/unleash templates are per declared actor
+    // (`DW0811`'s `actor` claim), so the suffix is the actor's own id.
     for t in [
         "v06_spawn_despawn",
         "v06_spawn_idempotent",
@@ -483,9 +523,8 @@ fn packtest_templates_are_interleaving_independent() {
                 .find(|(s, _)| *s == "hello-world+actors")
                 .map(|(_, out)| out)
                 .expect("actor suite present")
-                .contains_key(&format!(
-                    "packtest-datapack/data/hello-world/test/{t}.mcfunction"
-                )),
+                .keys()
+                .any(|k| k.starts_with(&format!("packtest-datapack/data/hello-world/test/{t}"))),
             "actor template {t} emitted"
         );
     }

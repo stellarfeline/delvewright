@@ -13,6 +13,31 @@
 # world behind. Automate the pitfall out of existence: force the teardown, then
 # assert the volume list is clean and fail loudly if it is not.
 #
+# ## Networks are the third class, and they only bite the creator
+#
+# The teardown used to prove containers and volumes and say so — "verified clean
+# (containers + volumes)" — which is `CLAUDE.md`'s own tell for a rule written
+# against the cases its author had met: it carefully qualified two of the three
+# things a compose project holds. `docker compose down` normally takes the
+# network with it, but this script force-removes containers AFTER that `down`
+# (which is the whole point of the previous paragraph), and a project whose
+# `down` did not fully succeed leaves `<project>_default` behind with nothing
+# reporting it.
+#
+# They accumulate silently, and CI never sees it: a runner is fresh every job.
+# The creator's machine is not, and Docker's default address pool is finite —
+# 29 leaked networks from four different rounds exhausted it, and the failure
+# lands nowhere near the cause: `all predefined address pools have been fully
+# subnetted`, on the tenth project of a sweep, reported as a PackTest failure.
+# That is the unbounded-set-nobody-owns shape this project has already paid for
+# once on disk, and it makes `CLAUDE.md`'s "every validation must be runnable on
+# the creator's own machine" quietly false after enough runs.
+#
+# So the network is removed and PROVEN gone with the rest, by the same scoping
+# rule: the compose project label, plus the `<project>_` name prefix compose
+# stamps. Never a bare match, and the built-in `bridge`/`host`/`none` carry
+# neither and cannot be selected.
+#
 # It also fixes the defect that motivated the project scoping (island round 13): a
 # `docker compose -p <proj> … down -v` leaves `<proj>_server-data` behind whenever an
 # EXITED container of that project still holds it, and the stale volume carries the
@@ -91,6 +116,13 @@ project_volumes() {
   } | sort -u
 }
 
+project_networks() {
+  {
+    docker network ls -q --filter "label=$label" 2>/dev/null || true
+    docker network ls --format '{{.Name}}' 2>/dev/null | grep -E "^${project}_" || true
+  } | sort -u
+}
+
 # The one hard seal left on a shared host: whatever the project label says, a
 # container publishing host 25565 is an OWNER-FACING session (owner-play.yaml or
 # tools/playtest-server.sh) and a human may be inside it. Refuse rather than
@@ -137,19 +169,29 @@ if [ -n "$volumes" ]; then
   # shellcheck disable=SC2086
   docker volume rm -f $volumes >/dev/null 2>&1 || true
 fi
+# Networks last: a network cannot be removed while a container is still attached,
+# so this has to follow the container removal above rather than ride on `down`.
+networks="$(project_networks)"
+if [ -n "$networks" ]; then
+  # shellcheck disable=SC2086  # deliberate word splitting: one id/name per argument
+  docker network rm $networks >/dev/null 2>&1 || true
+fi
 
 # GUARD: prove it, never assume it. A surviving container is reported too: it is
 # the reason a volume survives.
 remaining_c="$(project_containers)"
 remaining_v="$(project_volumes)"
-if [ -n "$remaining_c" ] || [ -n "$remaining_v" ]; then
+remaining_n="$(project_networks)"
+if [ -n "$remaining_c" ] || [ -n "$remaining_v" ] || [ -n "$remaining_n" ]; then
   echo "fresh-volumes: FAILED — project '$project' is not clean, next run is NOT fresh:" >&2
   # shellcheck disable=SC2086  # deliberate word splitting: one line per id
   if [ -n "$remaining_c" ]; then printf '  container %s\n' $remaining_c >&2; fi
   # shellcheck disable=SC2086
   if [ -n "$remaining_v" ]; then printf '  volume    %s\n' $remaining_v >&2; fi
+  # shellcheck disable=SC2086
+  if [ -n "$remaining_n" ]; then printf '  network   %s\n' $remaining_n >&2; fi
   echo "  a surviving container holds its world volume open; stop it and retry" >&2
   echo "  (a stale world persists scoreboard state — completed objectives stay completed)." >&2
   exit 1
 fi
-echo "fresh-volumes: project '$project' verified clean (containers + volumes)"
+echo "fresh-volumes: project '$project' verified clean (containers + volumes + networks)"

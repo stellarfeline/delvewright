@@ -102,11 +102,35 @@ way one layer out: the worker does not crash, it measures zero. Every dangling
 link the reverse-reference scan meets is therefore reported as a finding in its
 own right, at every run, whether or not this tool ever touched it.
 
+## Build output is a different question, and it used to be asked of the disk
+
+A `target/` directory holds no work. It is a regenerable cache, and it says so
+itself: `CACHEDIR.TAG`, which cargo writes and which this tool already requires
+before touching anything, is the filesystem's standard marker for exactly that.
+A directory holding work a deletion would destroy cannot produce one.
+
+So the loss is bounded at "a worker pays for a rebuild", and the key that opens
+it must be the matching question: is anything going to build here again? For a
+long time the key was instead FREE DISK SPACE, which asks whether the machine is
+about to fall over. It never opened — nineteen dead trees held a hundred
+gibibytes with two hundred and fifty-eight free, and the accumulation was found
+by a hand sweep. Lowering the threshold would only move the date.
+
+`decide_target` replaces it. The un-forgeable key at the top is the kernel's:
+cargo holds an exclusive `flock` on `<target>/<profile>/.cargo-lock` for the
+whole of a build, and a running build cannot present its own lock as free. Below
+that sit the same liveness keys the tree ladder uses, then the event that makes
+output waste — the branch's pull request has LANDED — and last a stated idle
+window for trees the remote holds no verdict on. Full argument, including which
+arm of that disjunction is the weak one and why it is acceptable, is in
+`decide_target`'s own docstring.
+
 ## Binding counts
 
 Every run states how many repositories it enumerated, how many worktrees it
-examined, how many symlinks the reverse-reference scan resolved, how many trees
-it reclaimed and the reason for each one it kept. A run that examined nothing is
+examined, how many symlinks the reverse-reference scan resolved, how many
+`target/` directories it judged, how many trees it reclaimed and the reason for
+each one it kept. A run that examined nothing is
 a FINDING, not a pass: enumerating zero worktrees is what `git worktree list`
 answers, confidently, when it is run against the wrong repository — which is why
 nothing in this file ever changes directory, and every git call is `git -C`.
@@ -117,6 +141,7 @@ Deterministic, stdlib-only python3. Read-only unless `--apply` is given.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import shutil
@@ -147,10 +172,17 @@ PRUNE_DIRS = {
 # is for a worker that nests one.
 SCAN_DEPTH = 5
 
-# Free-space floor, in gibibytes, below which the run widens to `target/`
-# directories. Chosen so the widening happens well before the failure it exists
-# to prevent: at zero free space the shell cannot open its own output file.
+# Free-space floor, in gibibytes. This is an ALARM, not a gate: below it the run
+# additionally lists the build output it is protecting, so an operator in real
+# trouble can see what is being held and by which rung. It does not decide
+# whether anything is reclaimed — see `decide_target` for why it never should
+# have.
 DEFAULT_PRESSURE_GIB = 25
+
+# How long build output must have gone untouched before it is reclaimed on the
+# weak arm of `decide_target`. Only reached by a tree whose work has NOT landed,
+# and only after the kernel has said no build holds the directory's lock.
+DEFAULT_TARGET_IDLE_HOURS = 72
 
 LEASE_FILE = "dw-lease.json"
 
@@ -704,8 +736,223 @@ def is_cargo_target(path: Path) -> bool:
         return False
 
 
+def build_in_flight(target: Path) -> tuple[bool, str]:
+    """Is a cargo build running in this target directory RIGHT NOW?
+
+    Cargo holds an exclusive `flock` on `<target>/<profile>/.cargo-lock` for the
+    duration of a build. That lock is held by the KERNEL on behalf of a live
+    process, which is what makes it the right key here and what distinguishes
+    this from the beliefs the rest of this file refuses: quiet can be faked by a
+    live agent between two tool calls, and an mtime can be faked by anything,
+    but a running build cannot present its own lock as free.
+
+    A lock that cannot be opened or tested is reported as HELD. Absence of the
+    answer is never permission — the same rule the pull-request authority obeys
+    one layer up.
+    """
+    candidates = sorted(target.glob("*/.cargo-lock"))
+    root_lock = target / ".cargo-lock"
+    if root_lock.is_file():
+        candidates.append(root_lock)
+    for lock in candidates:
+        try:
+            fd = os.open(str(lock), os.O_RDWR)
+        except OSError as exc:
+            return True, f"the build lock {lock} could not be opened ({exc}) — treated as HELD"
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            return True, f"a cargo build holds {lock}"
+        finally:
+            os.close(fd)
+    return False, ""
+
+
+def build_idle_hours(path: Path, window_hours: float) -> float | None:
+    """Hours since anything under `path` was last modified. `None` if unknowable.
+
+    The walk EXITS at the first entry newer than the window's cutoff, so a live
+    target answers in milliseconds and only a genuinely cold one pays for the
+    full traversal. The consequence, stated because it would otherwise be a
+    silently wrong number: when the answer is below the window it is the age of
+    the first recent entry found, not of the newest one. That is enough to
+    decide the verdict and is not enough to print as "last built"; the caller
+    words it accordingly.
+    """
+    now = time.time()
+    cutoff = now - window_hours * 3600
+    newest = 0.0
+    saw_anything = False
+    try:
+        for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
+            for name in dirnames + filenames:
+                try:
+                    st = os.lstat(os.path.join(dirpath, name))
+                except OSError:
+                    continue
+                saw_anything = True
+                if st.st_mtime > cutoff:
+                    return max(0.0, (now - st.st_mtime) / 3600)
+                newest = max(newest, st.st_mtime)
+    except OSError:
+        return None
+    if not saw_anything:
+        return None
+    return max(0.0, (now - newest) / 3600)
+
+
+class TargetDir:
+    """One cargo `target/` directory and the verdict on its build output."""
+
+    def __init__(self, path: Path, tree: Worktree | None):
+        self.path = path
+        self.tree = tree
+        self.size_kib = 0
+        self.idle_hours: float | None = None
+        self.verdict = "KEEP"
+        self.reason = "not evaluated"
+
+
+def decide_target(
+    td: TargetDir,
+    *,
+    idle_window: float,
+    protected: list[tuple[Path, str]],
+    authority: Authority | None,
+) -> None:
+    """When may rebuildable build output be deleted?
+
+    ## Why this is not the worktree ladder, and not the disk either
+
+    The worktree ladder above protects work that a deletion would destroy
+    forever. `target/` holds none: it is, by the definition of the marker this
+    tool already requires before touching anything, a REGENERABLE CACHE.
+    `CACHEDIR.TAG` is written by cargo and says exactly that, and a directory
+    holding real work cannot produce one. So the loss here is bounded at "a
+    worker pays for a rebuild", never "a worker loses what it wrote".
+
+    Because the loss is different in kind, the key must be different in kind
+    too — and the key it USED to have was free disk space. That is the defect.
+    A capacity threshold answers "is the machine about to fall over", which is
+    not a fact about whether this output is waste; nineteen dead trees sat on
+    a hundred gibibytes with two hundred and fifty-eight free, so the valve
+    never opened, and the accumulation was found by hand. Lowering the number
+    would only move the day it happens again.
+
+    The event that makes build output waste is that NOTHING IS GOING TO BUILD
+    HERE AGAIN, so that is what each rung asks about.
+
+    ## The rungs
+
+      1. A build is in flight. The kernel says so, and a live build cannot say
+         otherwise. Absolute.
+      2. The tree is leased, something links into it, or it is this program's
+         own — the same three liveness keys as the ladder above, unchanged.
+      3. LANDED: the remote holds a MERGED or CLOSED pull request for the
+         branch. No threshold, no timer: the work is on the remote and this
+         output rebuilds from it. This is the rung the disk gate should always
+         have been.
+      4. IDLE: nothing under it has been touched for `idle_window` hours.
+
+    ## The disjunction, named because CLAUDE.md requires it to be
+
+    Rungs 3 and 4 are alternatives, so the effective obligation is their
+    disjunction and is only as strong as rung 4, the weaker. Two things keep
+    that honest. Which arm applies is decided BY THE OBJECT — whether the
+    remote holds a terminal pull-request state for this branch — and never
+    chosen by whoever runs the tool. And rung 4 is reached only after the
+    kernel has already said no build holds the lock, so the case it can get
+    wrong is "an agent that has not compiled for three days and never took a
+    lease", whose whole cost is one rebuild that this tool names in its output.
+
+    A tree that reaches neither rung is KEPT, with the reason said out loud.
+    """
+    # The reason travels with the path. A protected row that says only "this run
+    # is protecting it" tells a reader nothing about WHICH key held it, and a
+    # gate a creator cannot read has met half its obligation.
+    for path, why in protected:
+        if is_within(td.path, path):
+            td.verdict = "KEEP"
+            td.reason = why
+            return
+
+    held, why = build_in_flight(td.path)
+    if held:
+        td.verdict = "KEEP"
+        td.reason = f"BUILD IN FLIGHT — {why}"
+        return
+
+    if td.tree is not None:
+        if td.tree.lease:
+            td.verdict = "KEEP"
+            td.reason = f"LEASED by {td.tree.lease.get('holder', '?')}"
+            return
+        if td.tree.inbound:
+            td.verdict = "KEEP"
+            td.reason = f"LINK TARGET — {len(td.tree.inbound)} live reference(s) point into its tree"
+            return
+
+    td.idle_hours = build_idle_hours(td.path, idle_window)
+
+    # Rung 3 is asked only when rung 4 has not already answered, so a cold tree
+    # costs no network round trip. The reason printed still names the rung that
+    # decided it.
+    if td.idle_hours is not None and td.idle_hours >= idle_window:
+        td.verdict = "RECLAIM"
+        td.reason = f"IDLE — nothing under it modified for {td.idle_hours:.0f}h (window {idle_window:.0f}h), and no build holds its lock"
+        return
+
+    # What the remote said, kept apart from what it could not be asked. The two
+    # are different facts and the row must not print one as the other: "the work
+    # has not landed" is a claim about the remote, and it is unearned whenever
+    # there was no branch to ask about or the query failed.
+    landing = "the work has not landed"
+    if td.tree is None or not td.tree.branch:
+        landing = "no branch, so the remote holds no verdict about it"
+    elif authority is None:
+        landing = "no pull-request authority was available for its repository"
+    else:
+        pr, pr_error = authority.for_branch(td.tree.branch)
+        if pr_error:
+            landing = f"the remote could not be asked ({pr_error})"
+        elif pr is not None and pr.get("state") in {"MERGED", "CLOSED"}:
+            td.verdict = "RECLAIM"
+            td.reason = (
+                f"LANDED — pull request #{pr.get('number')} is {pr.get('state')} on the remote, "
+                "so this output rebuilds from what the remote already holds"
+            )
+            return
+        elif pr is not None:
+            landing = f"pull request #{pr.get('number')} is {pr.get('state')}"
+
+    if td.idle_hours is None:
+        td.verdict = "KEEP"
+        td.reason = "its idle time could not be measured, and absence of the answer is not permission"
+        return
+    td.verdict = "KEEP"
+    td.reason = (
+        f"still live — a file modified {td.idle_hours:.1f}h ago is inside the "
+        f"{idle_window:.0f}h window, and {landing}"
+    )
+
+
 def find_targets(roots: list[Path], depth: int = SCAN_DEPTH) -> list[Path]:
+    """Every cargo target directory under `roots`, each named ONCE.
+
+    The roots OVERLAP by construction — the scan is given each repository plus
+    the parent of every worktree, and a worktree's parent is routinely inside
+    another root. Deduplicating the ROOTS is not enough, because two distinct
+    roots legitimately reach the same directory. Measured on the run that found
+    it: 52 directories reported where there were 36, sixteen rows duplicated,
+    one listed three times, and the reclaimable count inflated from 11 to 13.
+
+    A count that double-counts is not a smaller error than a count that misses.
+    It is the same error — a number that reads as coverage and is not — and it
+    inflates in the direction that makes a sweep look more thorough than it was.
+    """
     found: list[Path] = []
+    found_set: set[Path] = set()
     seen: set[Path] = set()
     for root in roots:
         root = real(root)
@@ -721,7 +968,10 @@ def find_targets(roots: list[Path], depth: int = SCAN_DEPTH) -> list[Path]:
             for d in list(dirnames):
                 p = here / d
                 if is_cargo_target(p):
-                    found.append(p)
+                    rp = real(p)
+                    if rp not in found_set:
+                        found_set.add(rp)
+                        found.append(rp)
             dirnames[:] = [
                 d for d in dirnames if d not in PRUNE_DIRS and not (here / d).is_symlink()
             ]
@@ -849,7 +1099,7 @@ def render(
     pressure: bool,
     free: float,
     threshold: float,
-    targets: list[tuple[Path, int]],
+    tdirs: list[TargetDir],
     out,
 ) -> int:
     examined = sum(len(rs.trees) for rs in sweeps)
@@ -860,7 +1110,7 @@ def render(
     print(
         f"  mode: {'APPLY (destructive)' if apply else 'dry run (default — nothing is deleted)'}"
         f"   free space: {free:.1f} GiB"
-        f"{'  — BELOW ' + str(threshold) + ' GiB, disk-pressure mode' if pressure else ''}",
+        f"{'  — BELOW ' + str(threshold) + ' GiB, ALARM (not a gate)' if pressure else ''}",
         file=out,
     )
 
@@ -928,21 +1178,40 @@ def render(
             file=out,
         )
 
-    if targets:
-        total = sum(k for _, k in targets) / (1024**2)
-        print(f"\n  cargo target/ directories outside live trees: {len(targets)}, {total:.1f} GiB", file=out)
-        for p, k in targets:
-            print(f"    {k / (1024**2):.1f} GiB  {p}", file=out)
-        if not pressure:
+    t_reclaim = [t for t in tdirs if t.verdict == "RECLAIM"]
+    if tdirs:
+        freeable = sum(t.size_kib for t in t_reclaim) / (1024**2)
+        print(
+            f"\n  cargo build output: {len(tdirs)} target/ director(y|ies) examined, "
+            f"{len(t_reclaim)} reclaimable (~{freeable:.1f} GiB by du; df is the instrument "
+            "that will say what was actually freed)",
+            file=out,
+        )
+        for td in tdirs:
+            size = f"{td.size_kib / (1024**2):>5.1f} GiB" if td.size_kib else "    (unsized)"
+            print(f"    {td.verdict:<7} {size}  {td.path}", file=out)
+            print(f"            {td.reason}", file=out)
+        if not t_reclaim:
             print(
-                f"    Rebuildable output. Not touched: free space is above {threshold} GiB.",
+                "    BINDING ZERO — every target/ examined was held by a rung above the\n"
+                "    reclaim one. That is a pass only if the reasons above are liveness\n"
+                "    reasons; if they are all 'could not be measured', this run proved nothing.",
                 file=out,
             )
+    if pressure:
+        print(
+            f"\n  FREE SPACE BELOW {threshold} GiB. The rows above are listed with their sizes so\n"
+            "  a tree being protected can be released deliberately — by ending its lease, or\n"
+            "  by naming it with --tree. Free space has never decided whether output is waste\n"
+            "  and does not decide it here.",
+            file=out,
+        )
 
     print(
         f"\n  binding: {len(sweeps)} repositor(y|ies) enumerated, {examined} worktree(s) examined, "
         f"{index.examined} symlink(s) resolved across {len(index.roots)} scan root(s), "
-        f"{reclaimed} reclaimable, {kept} kept",
+        f"{len(tdirs)} target/ director(y|ies) judged, "
+        f"{reclaimed} tree(s) reclaimable, {kept} kept, {len(t_reclaim)} target(s) reclaimable",
         file=out,
     )
     if examined == 0:
@@ -986,7 +1255,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--scan-dir", action="append", default=[], metavar="DIR",
                     help="extra directory to include in the reverse-reference and target scans")
     ap.add_argument("--free-below", type=float, default=DEFAULT_PRESSURE_GIB, metavar="GIB",
-                    help=f"disk-pressure threshold in GiB (default {DEFAULT_PRESSURE_GIB})")
+                    help=f"free-space ALARM in GiB (default {DEFAULT_PRESSURE_GIB}). Widens the "
+                         "report; it does not decide whether anything is reclaimed")
+    ap.add_argument("--target-idle-hours", type=float, default=DEFAULT_TARGET_IDLE_HOURS,
+                    metavar="H",
+                    help=f"how long build output must be untouched before the weak arm of the "
+                         f"target ladder reclaims it (default {DEFAULT_TARGET_IDLE_HOURS}). The "
+                         "strong arm — the branch's pull request has landed — needs no window")
     ap.add_argument("--targets-only", action="store_true",
                     help="do not touch worktrees; only rebuildable cargo target/ output")
     ap.add_argument("--repo", action="append", default=[], metavar="PATH",
@@ -1032,25 +1307,74 @@ def main(argv: list[str] | None = None) -> int:
     free = free_gib(repos[0][1] if repos else Path.cwd())
     pressure = free < args.free_below
 
-    # `target/` directories are only ever considered inside trees this run is
-    # not protecting: never the tree running this program, never a leased tree,
-    # never one something links into. Rebuildable output is cheap to lose, but
-    # not free — it costs a live worker a rebuild.
-    protected: list[Path] = []
+    # `target/` directories are judged on EVERY run, because whether build output
+    # is waste is a fact about the tree that produced it and never a fact about
+    # how full the disk is. `decide_target` holds that argument in full.
+    protected: list[tuple[Path, str]] = []
     for rs in sweeps:
         for wt in rs.trees:
-            if wt.verdict != "RECLAIM" and (wt.lease or wt.inbound or wt.path in {real(REPO), real(Path.cwd())}):
-                protected.append(wt.path)
+            if wt.verdict == "RECLAIM":
+                continue
+            if wt.lease:
+                held = f"LEASED by {wt.lease.get('holder', '?')}"
+                protected.append((wt.path, held))
+                # A dispatch is given a tree AND a scratch directory beside it,
+                # and a live worker's scratch is never touched — that rule is
+                # older than this file. The target scan reaches a worker's whole
+                # area (it walks each tree's PARENT), so a build output sitting
+                # in scratch would otherwise be judged with no lease to find,
+                # because it belongs to no worktree. The lease covers both.
+                sibling = wt.path.parent / "scratch"
+                if sibling.is_dir():
+                    protected.append((sibling, f"{held} — the scratch directory beside a claimed tree"))
+            elif wt.inbound:
+                protected.append((
+                    wt.path,
+                    f"LINK TARGET — {len(wt.inbound)} live reference(s) point into its tree",
+                ))
+            elif wt.path in {real(REPO), real(Path.cwd())}:
+                protected.append((wt.path, "this program is running in its tree"))
+    # The main checkout of each repository is protected too, and for a reason
+    # this tool did not previously have: it is the DONOR a new worktree clones
+    # its build output from (`tools/worktree-new.sh`). Deleting it does not free
+    # the blocks a clone shares with it, and it makes the next dispatch pay for a
+    # cold compile — the exact cost this whole round exists to remove.
+    donor = "the main checkout, which is the donor tools/worktree-new.sh clones from"
+    protected.extend((real(p), donor) for _, p in repos)
+    protected.extend((real(rs.main), donor) for rs in sweeps if rs.main)
     target_roots = [p for _, p in repos] + [
         wt.path.parent for rs in sweeps for wt in rs.trees if wt.exists
     ] + [real(d) for d in args.scan_dir]
-    targets: list[tuple[Path, int]] = []
-    if pressure or args.targets_only:
-        for t in find_targets(target_roots):
-            if any(is_within(t, p) for p in protected):
-                continue
-            targets.append((t, dir_kib(t)))
-        targets.sort(key=lambda kv: -kv[1])
+
+    tree_of: list[tuple[Path, Worktree, RepoSweep]] = [
+        (wt.path, wt, rs) for rs in sweeps for wt in rs.trees if wt.exists
+    ]
+    # `--after-merge` and `--tree` narrow to one tree and return before the
+    # target ladder is ever consulted, so scanning for build output there is
+    # work whose result is discarded — and it is not cheap work: it walks every
+    # target directory on the machine and `du`s the reclaimable ones. A merge is
+    # the one moment this tool runs while someone is waiting for it.
+    narrowed = bool(args.after_merge or args.tree)
+    tdirs: list[TargetDir] = []
+    for t in ([] if narrowed else find_targets(target_roots)):
+        owner = next(((wt, rs) for path, wt, rs in tree_of if is_within(t, path)), None)
+        td = TargetDir(t, owner[0] if owner else None)
+        decide_target(
+            td,
+            idle_window=args.target_idle_hours,
+            protected=protected,
+            authority=(owner[1].authority if owner else None),
+        )
+        tdirs.append(td)
+    # `du` is slow and is only ever a REPORTING figure here — every space claim
+    # this tool makes about what it freed comes from `df`. So it is spent on the
+    # rows that will actually be acted on, plus, under the free-space alarm, on
+    # the rows being protected, which is precisely what an operator in trouble
+    # needs to see.
+    for td in tdirs:
+        if td.verdict == "RECLAIM" or pressure:
+            td.size_kib = dir_kib(td.path)
+    tdirs.sort(key=lambda t: (t.verdict != "RECLAIM", -t.size_kib, str(t.path)))
 
     # --tree / --after-merge narrow the sweep to one tree. The proof is
     # unchanged; --tree additionally accepts the operator's naming in place of
@@ -1101,7 +1425,7 @@ def main(argv: list[str] | None = None) -> int:
         pressure=pressure,
         free=free,
         threshold=args.free_below,
-        targets=targets,
+        tdirs=tdirs,
         out=out,
     )
 
@@ -1121,14 +1445,30 @@ def main(argv: list[str] | None = None) -> int:
         if acted == 0:
             print("    nothing was reclaimable this run", file=out)
 
-    if targets and (pressure or args.targets_only):
-        print("\n  disk pressure — removing rebuildable cargo output:", file=out)
-        for p, k in targets:
+    # A target inside a tree that was just removed went with it; reporting it as
+    # a failed deletion would be a red about work that succeeded.
+    doomed = [td for td in tdirs if td.verdict == "RECLAIM" and td.path.exists()]
+    if doomed:
+        # df before and after, because `du` cannot say what a deletion actually
+        # gives back: it counts a cloned block once per file that names it. The
+        # two figures DISAGREEING is a finding worth printing, not noise — a du
+        # far above the df recovery means the output was sharing blocks with a
+        # tree that still holds them.
+        before = free_gib(doomed[0].path.parent)
+        print("\n  removing rebuildable cargo output whose tree will not build again:", file=out)
+        for td in doomed:
             try:
-                shutil.rmtree(p)
-                print(f"    freed {k / (1024**2):.1f} GiB  {p}", file=out)
+                shutil.rmtree(td.path)
+                print(f"    removed {td.path}\n            {td.reason}", file=out)
             except OSError as exc:
-                print(f"    FAILED {p} — {exc}", file=out)
+                print(f"    FAILED {td.path} — {exc}", file=out)
+        after = free_gib(doomed[0].path.parent)
+        du_total = sum(td.size_kib for td in doomed) / (1024**2)
+        print(
+            f"    df recovered {after - before:.2f} GiB (du had said {du_total:.2f} GiB). "
+            "df is the instrument;\n    a large gap means those blocks were shared with a tree that still holds them.",
+            file=out,
+        )
 
     # A deletion that broke a link must be visible in the run that caused it,
     # not hours later as a worker measuring zero.

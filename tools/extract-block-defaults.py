@@ -106,7 +106,7 @@ def main(argv: list[str]) -> int:
         )
         return 2
 
-    out.write_text(json.dumps(defaults, indent=2, sort_keys=True) + "\n")
+    out.write_text(json.dumps(defaults, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
     with_properties = sum(1 for d in defaults.values() if d)
     print(f"{out}: {len(defaults)} blocks, {with_properties} of them with properties")
     return 0

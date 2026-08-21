@@ -1,0 +1,138 @@
+{
+  "campaign_id": "cast-ledger",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "barring the door with his body"
+          },
+          "npc/sleeper": {
+            "at": "anchor/exit",
+            "dialogue": {
+              "barks": [
+                "...mm. Not my watch.",
+                "...tell the captain I never left.",
+                "...mm."
+              ]
+            },
+            "doing": "wine-drowned sleep against the wall"
+          }
+        },
+        "happening": {
+          "subject": "npc/keeper",
+          "text": "The party asks the keeper about the door.",
+          "verb": "learns"
+        },
+        "id": "quest/ask",
+        "objectives": [
+          {
+            "happening": {
+              "subject": "npc/keeper",
+              "text": "The keeper explains what the door keeps.",
+              "verb": "learns"
+            },
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [
+          {
+            "anchor": "anchor/door",
+            "happening": {
+              "subject": "anchor/door",
+              "text": "The keeper stands aside and the door opens.",
+              "verb": "opens"
+            },
+            "type": "open-gate"
+          },
+          {
+            "amount": 500,
+            "state": "state/patience",
+            "type": "add-state"
+          }
+        ],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": "dlg/farewell",
+              "doing": "standing aside, watching you go"
+            },
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": {
+                "barks": [
+                  "Go, before the watch turns again."
+                ]
+              },
+              "doing": "hurrying you through the doorway",
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/patience",
+                  "value": 500
+                }
+              ]
+            }
+          ],
+          "npc/sleeper": {
+            "at": "anchor/exit",
+            "dialogue": "none",
+            "doing": "dead asleep, past waking"
+          }
+        },
+        "happening": {
+          "subject": "npc/keeper",
+          "text": "The party takes its leave of the keeper.",
+          "verb": "departs"
+        },
+        "id": "quest/leave",
+        "objectives": [
+          {
+            "anchor": "anchor/exit",
+            "happening": {
+              "subject": "anchor/exit",
+              "text": "The party reaches the doorway out.",
+              "verb": "arrives"
+            },
+            "id": "obj/exit",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "The party walks out onto the moor.",
+              "verb": "departs"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "quest": "quest/ask",
+          "type": "quest-complete"
+        }
+      }
+    ],
+    "state": [
+      {
+        "id": "state/patience",
+        "initial": 0,
+        "note": "How long the keeper has watched you dither. Two clauses of one quest differ ONLY by a comparison against it - the case a flag pin cannot distinguish.",
+        "scope": "party"
+      }
+    ]
+  },
+  "dsl_version": "0.10.0",
+  "stage": "quests"
+}

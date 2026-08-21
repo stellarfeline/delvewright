@@ -57,5 +57,42 @@ exclude = ["crates/render"]
 # Determinism (ADR-0006) is unaffected and this is measured, not assumed: all
 # three profiles emit byte-identical output over the island's 594 files.
 # Full method + phase breakdown: docs/notes/build-profile-measurements.md.
+#
+# `debug` is the profile's other key, and cargo's default for it is full DWARF.
+# That default is expensive here for a reason particular to this workspace:
+# `cargo test --workspace` builds 216 test executables, and complete debuginfo —
+# every local variable of every function — is emitted and linked once for each of
+# them, describing state nothing in this repository reads. There is no debugger in
+# the toolchain: `lldb`, `gdb`, `dwarfdump`, `addr2line` and `dsymutil` appear in
+# no script or job, and `std::backtrace`, `#[track_caller]` and `RUST_BACKTRACE`
+# appear zero times across all seven crates' `src/` and `tests/`.
+#
+# `line-tables-only` keeps what a failing test needs, and that is measured rather
+# than asserted: a panicking test under `RUST_BACKTRACE=full` prints 46 frames of
+# which 45 carry a `file:line` under BOTH settings, and those 45 source locations
+# are byte-identical. What it gives up is variable inspection under a debugger,
+# which `CARGO_PROFILE_DEV_DEBUG=full cargo build` hands back for a session that
+# wants it. Cold `cargo test --workspace --no-run`, two runs per condition, CPU
+# (user+sys) rather than wall clock because repeats spread 1-2% in CPU and 7-20%
+# in wall on a machine carrying other work:
+#
+#   debug  full (cargo default)   862.8s CPU · target/ 5.58 GiB
+#   debug  "line-tables-only"     714.5s CPU · target/ 4.57 GiB   -17.2% · -18%
+#   debug  0                      662.4s CPU · target/ 3.61 GiB
+#
+# `debug = 0` is measured and refused: the further 7.0% it buys is paid for with
+# the `file:line` above, which is the only thing this debuginfo is for.
+#
+# `incremental` is deliberately NOT set, and that is measured too. It reads as the
+# obvious next saving — a cold build is 38.5s CPU cheaper without it and `target/`
+# 43% smaller — but a cold build is not the population. One function added to
+# `crates/compiler` and rebuilt costs 60.8s CPU with incremental and 265.7s
+# without, so the cold saving is repaid after 0.19 rebuilds and every rebuild
+# after that is a loss; this profile exists for the edit-compile-run loop. Nor
+# would it reach CI, where the cold builds actually are: all 12 jobs across the
+# five workflows that compile under a dev profile run `Swatinem/rust-cache` before
+# their first build, and it exports `CARGO_INCREMENTAL=0` unconditionally — an
+# environment variable that overrides this key in both directions.
 [profile.dev]
 opt-level = 1
+debug = "line-tables-only"

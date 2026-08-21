@@ -207,13 +207,26 @@ design.
 
 ## Running a second campaign through `packtest`
 
+**A change to PackTest emission is verified with `packtest-all.sh`, not with this
+section.** The gate runs many projects, and picking one — or several — is how a
+round covers a strict subset of it and reports green:
+
+```sh
+cargo build --bin delvec
+EULA=TRUE validation/packtest-all.sh          # every project the gate runs
+validation/packtest-matrix.py                 # …and what those are, read from ci.yml
+```
+
+The rest of this section is why the surface has the shape it does; it is not a
+list to work down by hand.
+
 The generated PackTest suite is per-campaign: `delvec` emits a template only for a
-campaign that uses the feature it proves. hello-world — one quest, one NPC — cannot
-carry a dialogue-root **swap**, so spec-0020's cast-ledger templates (`cast_root_swap`,
+campaign that uses the feature it proves. hello-world — one quest, one NPC —
+declares no cast ledger, so spec-0020's cast-ledger templates (`cast_ladder_<npc>`,
 `cast_bark_cycle`, `cast_none_silent`) simply do not exist in its output. It has no
 `interact` objective either, so the `interact` templates (`verb_interact` and
 `verb_interact_held`, the held-vs-carried proof) are likewise absent — CI therefore
-runs `crates/dsl/fixtures/valid/keep-trial` as a third pass. It has no bonfire and
+runs `crates/dsl/fixtures/valid/keep-trial` as its own pass. It has no bonfire and
 no wave, and no lane anywhere in the repo's tier-2 set, so the whole souls retry
 loop (`souls_bonfire_rest`/`_reseat`/`_options`, `souls_reseat_stationed`,
 `wave_census`) and the whole TD-lane family (`souls_td_patrol_nbt`,
@@ -221,8 +234,7 @@ loop (`souls_bonfire_rest`/`_reseat`/`_options`, `souls_reseat_stationed`,
 `souls_td_aggro_edge`) were emitted and never executed — including the codec-trap
 test, whose entire reason to exist is that a wrong `patrol_target` key is
 invisible to every static proof. `crates/compiler/tests/fixtures/souls-bonfire`
-and `crates/compiler/tests/fixtures/souls-td-lanes` are the fourth and fifth
-passes. They are two fixtures and not one because `DW0478` forbids a bonfire
+and `crates/compiler/tests/fixtures/souls-td-lanes` are two more. They are two fixtures and not one because `DW0478` forbids a bonfire
 inside a hostile's aggro range, and the lane fixture's corridor tileset has no
 cell more than 16 blocks off its own lane.
 
