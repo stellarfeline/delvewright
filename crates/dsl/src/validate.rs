@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, is_v11,
+    is_v10, is_v11, is_v12,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -1372,8 +1372,46 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v09(c, d);
     reserved_v10(c, d);
     reserved_v11(c, d);
+    reserved_v12(c, d);
     press_answer_checks(c, d);
     press_obligation_checks(c, d);
+}
+
+/// DSL v0.12 reserved-feature gating (spec-0042): the **`open-way`** effect.
+///
+/// One verb and one stage — the effect is written in stage-5 bundles at every
+/// nesting depth, so the fence reads the `quests` document's own `dsl_version`
+/// and rides [`crate::stages::for_each_campaign_effect`], the closed effect
+/// enumeration. A hand-written walk over the roots this function's author
+/// happened to remember is how a fence comes to be narrower than the surface it
+/// fences; this one is exactly as total as the verb.
+///
+/// **No requirement half.** Nothing obliges a campaign to open a way, and a
+/// campaign that opens none emits what it always emitted — no fill, no region
+/// event, no ways ledger. The obligations this surface does carry belong to the
+/// *piece* and are raised by the compiler at every version (`DW0547`,
+/// `DW0548`, `DW0549`), because a campaign below 0.12.0 cannot reach them: it
+/// cannot stage an `open-way` at all, and a piece whose way nothing opens is
+/// content rather than a defect (spec-0042 §2.5).
+fn reserved_v12(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if is_v12(c.quests.dsl_version.as_str()) {
+        return;
+    }
+    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(verb) = eff.v12_effect() else {
+            return;
+        };
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            path.to_string(),
+            format!(
+                "the `{verb}` effect (DSL v0.12, spec-0042: a campaign opening a placed piece's \
+                 contingent way) requires dsl_version 0.12.0 — raise this stage's `dsl_version` \
+                 to 0.12.0, or remove the effect"
+            ),
+        ));
+    });
 }
 
 /// DSL v0.11 reserved-feature gating. **Two surfaces land in this version**, and

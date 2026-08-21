@@ -171,6 +171,10 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("QuestEffect", "text", Inventoried),
     ("QuestEffect", "then_floor", Reference),
     ("QuestEffect", "type", Machine),
+    // spec-0042: the way's region name, as the carrying piece's
+    // `spatial_contract` exports it. A name in the piece's vocabulary that an
+    // `open-way` quotes back — a reference like `anchor`, never prose.
+    ("QuestEffect", "way", Reference),
     ("RegionShape", "blocks", Reference),
     ("RegionShape", "kind", Machine),
     (

@@ -31,7 +31,9 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
+import warnings
 from pathlib import Path
 
 import pytest
@@ -43,14 +45,25 @@ GRAMMAR = "crates/grammar/src/version.rs"
 DSL = "crates/dsl/src/envelope.rs"
 
 
-@pytest.fixture
-def checker():
+def load_checker():
     """The gate, loaded fresh so `ROOT` can be pointed at a fixture repo."""
     spec = importlib.util.spec_from_file_location("cvlu", CHECKER)
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(mod)
     return mod
+
+
+@pytest.fixture
+def checker():
+    return load_checker()
+
+
+# `LEDGERS` is the gate's own row per version ledger — the single authority over
+# what a ledger IS, and the reason adding a third is one row rather than a new
+# script. The live groups at the foot of this file enumerate from it rather than
+# naming a ledger, so a third one is driven the day its row lands.
+LEDGER_NAMES = [row["name"] for row in load_checker().LEDGERS]
 
 
 def run(args: list[str], cwd: Path, input: str = "") -> str:
@@ -589,33 +602,275 @@ def test_a_dsl_reservation_whose_surface_landed_is_red(checker, tmp_path, capsys
     assert "delete the RESERVED_DSL_VERSIONS row" in err
 
 
-def test_the_live_dsl_ledger_reserves_what_a_spec_has_taken(checker, tmp_path, monkeypatch):
-    """Not a fixture: the real `crates/dsl/src/envelope.rs` on this branch.
+# --- the live ledgers: the rules, held against the real files ---------------
+#
+# Every group above drives a synthetic ledger, and a rule that only ever meets a
+# fixture is the UNRUN shape wearing a fixture's clothes. This group reads the
+# REAL files, and reads EVERY one of them: the population comes from
+# `checker.LEDGERS`, the script's own single authority over what a ledger is, so
+# a third ledger is covered the day its row lands rather than the day someone
+# remembers this file. Keying the live check to one ledger by name is the
+# bespoke-field shape one layer out — and the ledger it happened to name is the
+# one whose reservation list is empty.
+#
+# They are read through the gate's OWN extractors rather than a second set of
+# regexes. A private copy of the reader answers a different question: it agrees
+# with the gate only while both are maintained, and on the day the source shape
+# drifts it is the copy that decides the verdict — which is the whole failure the
+# `ShapeDrift` guards exist to make loud.
+#
+# What may NOT be asserted here is that a ledger reserves something.
+#
+# A reservation is born when a sibling change takes a number and dies in the edit
+# that defines the constant it names, so an EMPTY list is the ordinary end of a
+# reservation's life — a fact about what is in flight, never an invariant of the
+# ledger. Demanding one reds exactly the change that correctly closes the last
+# reservation, and the fix an author then reaches for is to invent a reservation
+# for a number nothing has taken: manufacturing the artifact the gate asked for,
+# which is the vacuity a gate exists to catch rather than a repair.
+#
+# It would also buy rule 6 nothing while it held. Rule 6's population is the
+# versions a BRANCH ADDS against `--base`, which no state of the tree can supply:
+# on a tree carrying a reservation the gate reports `0 added version(s) examined
+# for a name` exactly as it does without one. Rule 6 is a property of a diff, so
+# it is driven below by a diff — a base derived from the real file — and rule 5,
+# whose population IS a property of the tree, is held against the real
+# reservation rows.
+#
+# So emptiness is REPORTED, never demanded, and what is asserted is the
+# complement: every number in every ledger names a surface.
 
-    The gate is only worth its rules if the ledger it guards actually uses them,
-    and a reservation list that is empty in the tree while every test drives a
-    synthetic one is the UNRUN shape wearing a fixture's clothes.
+
+def live_source(ledger) -> str:
+    """One real ledger file, as it stands in this checkout."""
+    return (REPO / ledger["path"]).read_text(encoding="utf-8")
+
+
+def live_side(checker, ledger):
+    """The gate's own reading of one real ledger file in this checkout."""
+    return checker.read_ledger(ledger, live_source(ledger), "this checkout")
+
+
+def summary_for(out: str, name: str) -> str:
+    """The one ledger's slice of the gate's binding-count line."""
+    return out.split(f"{name}: ", 1)[1].split(";", 1)[0].split(", diffed against", 1)[0]
+
+
+def test_every_live_ledger_names_a_surface_for_every_number(checker):
+    """Rule 3 and rule 5, held against the real ledgers rather than a fixture.
+
+    The binding is stated per ledger, and a ledger that reserves nothing is
+    named in a warning rather than passing silently — a zero binding is a
+    finding, and the one thing it must never be is invisible.
     """
-    import re
+    bindings = []
+    unheld = []
+    numbers = 0
+    for ledger in checker.LEDGERS:
+        name = ledger["name"]
+        side = live_side(checker, ledger)
 
-    source = (REPO / DSL).read_text(encoding="utf-8")
-    rows = re.findall(
-        r'\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)',
-        re.search(
-            r"pub const RESERVED_DSL_VERSIONS: &\[\(&str, &str\)\] = &\[(.*?)\];",
-            source,
-            re.DOTALL,
-        ).group(1),
-    )
-    assert rows, "the live dsl ledger reserves nothing — rule 5 and rule 6 bind to nothing here"
-    versions = re.findall(
-        r'"([^"]+)"',
-        re.search(
-            r"pub const SUPPORTED_DSL_VERSIONS: &\[&str\] =\s*&\[(.*?)\];", source, re.DOTALL
-        ).group(1),
-    )
-    for version, anchor in rows:
-        assert version in versions, (
-            f"{version} is reserved for {anchor} and is not in the ledger — a number "
-            f"outside the ledger is a number the next author finds free"
+        assert len(side.versions) >= 2, (
+            f"{name}: {ledger['path']} parsed to {side.versions} — a live ledger names the "
+            f"founding version and at least one fenced surface, so this is the extraction "
+            f"drifting, not a ledger with nothing in it"
         )
+        assert side.anchors, (
+            f"{name}: not one version in {ledger['path']} could be traced to a fence anchor "
+            f"via {ledger['claim_pattern']!r} — the rules below would examine nothing"
+        )
+
+        # Rule 3, on the real file: a number past the founding one that nothing
+        # claims names nothing, and a number that names nothing is a number a
+        # second change can take.
+        for version in side.versions[1:]:
+            assert side.claims.get(version), (
+                f"{name}: {version} is in the ledger and no fence anchor claims it — give it "
+                f"the anchor that introduces its surface, or reserve it for the anchor that "
+                f"will"
+            )
+
+        # Rule 5, on the real file, plus the containment that makes a
+        # reservation worth holding at all.
+        for version, anchor in sorted(side.reserved.items()):
+            assert version in side.versions, (
+                f"{name}: {version} is reserved for {anchor} and is not in the ledger — a "
+                f"number outside the ledger is a number the next author finds free"
+            )
+            assert anchor not in side.defined_anchor_names, (
+                f"{name}: {version} is reserved for {anchor}, and {anchor} is defined in the "
+                f"same file — the surface has landed, so the reservation refuses a version "
+                f"this engine can honour"
+            )
+
+        numbers += len(side.versions) - 1
+        if not side.reserved:
+            unheld.append(name)
+        # Which of rule 6's two forms of a hand-written name this ledger's newest
+        # entry carries, and so which one the demonstration below drives on it.
+        # Decided by the ledger, never chosen: a ledger topped by a landed
+        # surface names its newest number with a constant, one topped by a
+        # reservation names it with a row. Stated rather than demanded — both
+        # ledgers topping out the same way is a legitimate state, and a test that
+        # refused it would be gating the roadmap again.
+        newest = side.versions[-1]
+        form = "a reservation row" if newest in side.reserved else "a `*_SINCE` constant"
+        bindings.append(
+            f"{name}: {len(side.versions)} versions, {len(side.versions) - 1} claimed, "
+            f"{len(side.anchors)} anchors, {len(side.reserved)} reserved, newest {newest} "
+            f"named by {form}"
+        )
+
+    assert numbers > 0, f"every live ledger examined zero numbers: {bindings}"
+    print("live ledgers examined — " + "; ".join(bindings))
+
+    if unheld:
+        warnings.warn(
+            f"rule 5 examined zero reservation rows on {', '.join(unheld)}. That is the "
+            f"ordinary state of a ledger whose every number has landed, and it is a FINDING "
+            f"only if some surface in flight has taken a number this ledger does not hold — "
+            f"which is a question about the roadmap and cannot be settled from the file. "
+            f"Binding — " + "; ".join(bindings),
+            stacklevel=2,
+        )
+
+
+def one_version_younger(checker, ledger, source: str) -> tuple[str, str]:
+    """The newest version, and the same ledger as it stood before that version.
+
+    A coherent prior state, cut with the gate's own patterns rather than a
+    hand-written slice: the number leaves the list, and so does everything that
+    claimed it — either form of its hand-written name, and on the campaign ledger
+    the `ordinal` arm and the `is_vNN` predicate a derived anchor is computed
+    from. Leave any behind and the base still claims the number, which is rule
+    1's or rule 2's finding rather than rule 6's.
+    """
+    versions = checker.versions_of(ledger, source)
+    newest = versions[-1]
+    block = re.search(
+        checker.LIST_RE_TEMPLATE.format(const=ledger["list_const"]), source, re.DOTALL
+    )
+    kept = ", ".join(f'"{v}"' for v in versions[:-1])
+    prior = (
+        source[: block.start()]
+        + f"pub const {ledger['list_const']}: &[&str] = &[{kept}];"
+        + source[block.end() :]
+    )
+    prior = without_the_name_of(checker, ledger, newest, prior)
+    arms = checker.DSL_ORDINAL_ARM_RE.findall(prior)
+    by_ordinal = {int(n): pred for pred, n in checker.DSL_PREDICATE_RE.findall(prior)}
+    for version, n in arms:
+        if version != newest:
+            continue
+        prior = re.sub(rf'\s*"{re.escape(version)}"\s*=>\s*{n}\s*,', "", prior)
+        if int(n) in by_ordinal:
+            prior = re.sub(
+                rf"pub fn {by_ordinal[int(n)]}\(version: &str\) -> bool "
+                rf"\{{\s*ordinal\(version\) >= {n}\s*\}}",
+                "",
+                prior,
+            )
+    return newest, prior
+
+
+def without_the_reservation_of(checker, ledger, version: str, source: str) -> str:
+    """The same source with `version`'s reservation row gone, every other kept.
+
+    Rebuilt from the gate's own row grammar rather than sliced by hand, and it
+    returns the source untouched when the version holds no row — so the other
+    ledger's live reservation survives being asked about a number it does not
+    hold.
+    """
+    pattern = checker.RESERVED_LIST_RE_TEMPLATE.format(const=ledger["reserved_const"])
+    block = re.search(pattern, source, re.DOTALL)
+    if not block:
+        return source
+    rows = checker.RESERVED_ROW_RE.findall(block.group(1))
+    kept = [(v, anchor) for v, anchor in rows if v != version]
+    if len(kept) == len(rows):
+        return source
+    body = ", ".join(f'("{v}", "{anchor}")' for v, anchor in kept)
+    return (
+        source[: block.start()]
+        + f"pub const {ledger['reserved_const']}: &[(&str, &str)] = &[{body}];"
+        + source[block.end() :]
+    )
+
+
+def without_the_name_of(checker, ledger, version: str, source: str) -> str:
+    """The same source with every HAND-WRITTEN name of `version` gone.
+
+    Rule 6 accepts TWO, and they are alternatives rather than stages: a
+    `*_SINCE` constant when the surface lands in the same change, and a
+    reservation row when a sibling change will land it. A helper that knew only
+    the constant read a version named by a row as UNNAMED — the shape of a hook
+    written onto one variant of a sum type and not its sibling, and it fired the
+    first time a ledger's newest entry was a reservation, which is a state the
+    reservation mechanism creates by design.
+
+    What is deliberately LEFT is the derived `is_vNN`, because that is precisely
+    the claim rule 6 refuses from a number a branch has just added.
+    """
+    for name, at in checker.SINCE_CONST_RE.findall(source):
+        if at == version:
+            source = re.sub(rf'pub const {name}: &str = "{re.escape(at)}";\n', "", source)
+    return without_the_reservation_of(checker, ledger, version, source)
+
+
+@pytest.mark.parametrize("name", LEDGER_NAMES)
+def test_rule_six_reads_the_real_ledger_shape(checker, tmp_path, capsys, monkeypatch, name):
+    """Rule 6, driven against the real files rather than a fixture of them.
+
+    Rule 6's population is a property of a DIFF, so nothing about the state of a
+    ledger can make it bind — a tree carrying a reservation reports `0 added
+    version(s) examined for a name` exactly as one without. What can bind it is a
+    diff, and the one available without a network or a deep clone is the real
+    file against itself one version younger.
+
+    That is worth more than a synthetic diff for a second reason. Every fixture
+    above is written in the shape the real ledgers have, and that shape is an
+    assertion nothing checks — while the shape is precisely what the gate reads,
+    and it has moved before: `rustfmt` broke the version list after the `=` the
+    first time it outgrew one line. Here the real file IS the checkout, so a
+    drift in it is a red rather than a fixture agreeing with a copy of itself.
+
+    Rule 6 accepts two forms of a hand-written name, and which one a ledger
+    exercises here is decided by its own newest entry rather than chosen: a
+    ledger topped by a landed surface drives the `*_SINCE` constant, one topped
+    by a reservation drives the row. Which form each carries is stated by the
+    binding line of the test above — not printed here, where `capsys` would eat
+    it.
+    """
+    ledger = next(row for row in checker.LEDGERS if row["name"] == name)
+    real = {row["path"]: live_source(row) for row in checker.LEDGERS}
+    here = real[ledger["path"]]
+    newest, prior = one_version_younger(checker, ledger, here)
+
+    scenario(tmp_path, {**real, ledger["path"]: prior}, real)
+    assert go(checker, tmp_path, monkeypatch) == 0
+    out = capsys.readouterr().out
+    versions = checker.versions_of(ledger, here)
+    summary = summary_for(out, name)
+    assert f"{len(versions)} versions here ({len(versions) - 1} at origin/main)" in summary
+    assert "1 added version(s) examined for a name" in summary
+
+    # A green half alone is one-directional: it cannot separate a rule that
+    # fires from a rule that is absent. So the same pair runs again with the
+    # number's hand-written NAME taken away, in whichever of rule 6's two forms
+    # this ledger's newest entry carries it. The number stays in the list, and
+    # whatever derived anchor it has stays with it — which is exactly the claim
+    # rule 6 refuses from a version a branch has just added.
+    stripped = without_the_name_of(checker, ledger, newest, here)
+    assert stripped != here, (
+        f"{name}: {newest} is the newest entry and nothing hand-written NAMES it — not a "
+        f"`*_SINCE` constant and not a {ledger['reserved_const']} row — so stripping its "
+        f"name is a no-op and this half of the demonstration would pass by accident"
+    )
+    scenario(tmp_path, {**real, ledger["path"]: prior}, {**real, ledger["path"]: stripped})
+    assert go(checker, tmp_path, monkeypatch) == 1
+    err = capsys.readouterr().err
+    assert f"{name}: version {newest} is added by this branch and nothing NAMES it" in err
+    left = checker.read_ledger(ledger, stripped, "the stripped checkout")
+    claim = sorted(left.derived.get(newest, set()))
+    assert f"Its only claim is {claim or ['(nothing)']}" in err
+    assert f"{ledger['reserved_const']} row" in err

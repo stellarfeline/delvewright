@@ -45,18 +45,20 @@ use serde_json::Value;
 /// visible in the diff that does it.
 ///
 /// **Re-derived, not adjusted to fit** (spec-0032, merging after spec-0031's
-/// three rounds). The count is `5 + 25 + 1 + 1 + 1 + 1 + 1`, and the 25 gatable
+/// three rounds). The count is `5 + 26 + 1 + 1 + 1 + 1 + 1`, and the 26 gatable
 /// effect verbs are, in the order the schema declares them: `open-gate`,
 /// `close-gate`, `give-item`, `set-flag`, `set-state`, `add-state`, `drop-stake`,
 /// `clear-state`, `spawn-wave`, `narrate`, `set-block`, `fill-region`,
 /// `clear-region`, `despawn-npc`, `move-npc`, `cutscene`, `set-time`,
 /// `set-weather`, `play-sound`, `damage-players`, `volley`, `collapse`,
-/// `give-effect`, `clear-effect`, `teleport`.
+/// `give-effect`, `clear-effect`, `teleport`, `open-way`.
 ///
 /// Ledger of the moves: 28 (spec-0031 §1, the gate's third field) → 30
 /// (`fill-region` / `clear-region`) → 33 (`give-effect` / `clear-effect` /
 /// `teleport`) → **35** (spec-0032's `drop-stake`, and the **seventh gate
-/// consumer**, `ShopOffer`).
+/// consumer**, `ShopOffer`) → **36** (spec-0042's `open-way`: a gatable verb
+/// and no new consumer — a way is an object the campaign opens, and *may this
+/// happen yet?* is the question the gate has always answered).
 ///
 /// The consumer is the interesting half of this step. A shop's price is *"may
 /// this happen yet?"*, which is the question the gate already answers for six
@@ -65,7 +67,7 @@ use serde_json::Value;
 /// than in a `price` field nothing else could reuse. Generality decided at the
 /// first site: a second consumer with a bespoke comparison would have cost a
 /// `dsl_version` bump and an adoption round on every live campaign.
-const GATE_SITES: usize = 35;
+const GATE_SITES: usize = 36;
 
 /// The gate's fields, as they are spelled in the schema. Every site must declare
 /// all of them.
