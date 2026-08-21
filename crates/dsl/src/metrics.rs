@@ -256,7 +256,14 @@ pub struct SizeClass {
     /// Least interior clearance, in cells.
     pub min_clearance: u32,
     /// Nominal blocks of route a body walks crossing a place of this class —
-    /// the pacing projection's per-leg length (spec-0049 `DW0822`).
+    /// the per-leg length the pacing projection sums over a critical path
+    /// (spec-0049 §3.3).
+    ///
+    /// The code that reads it is not named here on purpose: a `DW` number in a
+    /// source comment is a code as far as `tools/check-dw-codes.py` is
+    /// concerned, and one whose check lands two rounds from now has no catalog
+    /// row to match, so naming it early reds the docs job on a rule nothing has
+    /// written yet.
     pub nominal_traverse_blocks: u32,
 }
 
