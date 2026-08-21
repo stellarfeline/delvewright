@@ -1,6 +1,6 @@
 # spec-0049: A whole map is walked before any part is detailed — the vertical slice to a derived blockout
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Ground**: this spec executes §2 of the map-pipeline research record
   (`docs/research/how-a-large-level-is-actually-built.md`, the plan of record),
   covering pipeline stages 0, 3, 4 and 5 — the thin vertical slice its §2.10
