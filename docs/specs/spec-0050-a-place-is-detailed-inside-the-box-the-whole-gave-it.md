@@ -1,6 +1,6 @@
 # spec-0050: A place is detailed inside the box the whole gave it — stage 6 of the map pipeline
 
-- **Status**: Draft
+- **Status**: Accepted
 - **Ground**: this spec is the successor spec-0049 names in its non-goals: it
   designs pipeline stage 6 (per-place detail programs, allocation handing,
   traversal equivalence against the blockout) and records the disposition of
@@ -9,13 +9,8 @@
   siteplan.rs`, the map-scale battery, the five-place fixture the bot walks
   end to end). Nothing here revisits ADR-0022; where this design departs from
   the research record's stage-6 prose, the departure is recorded in §10.
-- **DSL**: stage 6 adds one campaign stage document, so it lands at the next
-  `dsl_version`. The number is deliberately not stated here: it is handed to
-  the implementation round by the dispatching planner's allocation scan, per
-  standing practice. (spec-0049 stated 0.13.0 and the slice landed its two
-  stages at 0.13.0 and 0.14.0 — a stated number in a design document is a
-  copy, and this document declines to hold one.) Below, "the detail version"
-  names it.
+- **DSL**: stage 6 adds one campaign stage document, at `dsl_version`
+  **0.15.0** — per-stage fenced in the settled shape (§13).
 - **Grammar**: no new grammar-program surface. The detail unit uses the
   contract vocabulary as it stands (`1.7.0`); the reserved `1.6.0` surface is
   not consumed. No grammar-ledger movement.
@@ -37,8 +32,8 @@ step is the existing export/admission loop, and every gate below reads piece
 metadata and bytes, indifferent to provenance.
 
 The binding is a new campaign stage document, **`detail-plan.json`** (stage
-name `detail-plan`), standard envelope, existing only at `dsl_version` ≥ the
-detail version:
+name `detail-plan`), standard envelope, existing only at `dsl_version` ≥
+0.15.0:
 
 - **`palette`** (optional) — role → paint: the whole's material vocabulary,
   handed into every allocation (§4). Style surface; no gate reads it (§10.4).
@@ -68,12 +63,19 @@ and "fully detailed".
 "findings", findings[]}`. This spec lands its gate and the hashes it needs:
 every build of a site-plan campaign prints `site_plan_sha256` (over the
 plan's canonical bytes, so a reformat is not a re-walk) and
-`blockout_sha256` (over the derived massing bytes in deterministic order),
-naming the engine revision beside them.
+`blockout_sha256` (over the massing the walk judged — the derivation with
+**nothing bound**, in deterministic order: a hash over the massing as
+written would move on the first binding, and the drift warning below would
+fire on every detailed campaign), naming the engine revision beside them.
+The revision is stamped into the binary at compile time
+(`DELVEC_ENGINE_REVISION`); an unstamped binary prints `unstamped` rather
+than claiming one, because a run-time reading would need a `.git` a
+published crate does not carry, and what the engine must never do is claim
+a revision it does not have.
 
 | Code | Rule |
 |---|---|
-| `DW0841` | **Detail without a passed walk of this plan.** A campaign carrying a `detail-plan` document refuses at validation unless `walk-record.json` exists, its `verdict` is `"passed"`, and its `site_plan_sha256` equals the current plan's. Missing, `"findings"`, and stale are each named — a stale record's refusal prints both hashes. The same refusal guards `delvec allocation` (§4), so the two events that begin detail work — obtaining an allocation, compiling a binding — are both bound; there is no third entry point, because no other verb reads a `detail-plan`. Binding: the record checked and the hash compared, stated. |
+| `DW0841` | **Detail without a passed walk of this plan.** A campaign carrying a `detail-plan` document refuses at validation unless `walk-record.json` exists, its `verdict` is `"passed"`, and its `site_plan_sha256` equals the current plan's. Missing, unparseable, `"findings"`, and stale are each named — a stale record's refusal prints both hashes. The same refusal guards `delvec allocation` (§4), so the two events that begin detail work — obtaining an allocation, compiling a binding — are both bound; there is no third entry point, because no other verb reads a `detail-plan`. Binding: the record checked and the hash compared, stated. |
 
 A `blockout_sha256` mismatch alone — same plan, different massing bytes — is
 a **warning naming both hashes and both engine revisions**, not a refusal.
@@ -105,11 +107,13 @@ Stage 6 splits that fabric on one convention:
   plane is the plan's — the handing states the datum in piece-local
   coordinates, and the seam-rise proofs hold it (§7). Where boxes stack, the
   horizontal party plane *is* the upper box's floor course and belongs to
-  the upper piece; the derivation writes it only while the upper box is
+  the upper piece — a seam frame lying in that course goes with it, like the
+  rest of its floor; the derivation writes it only while the upper box is
   unbound.
 - **Every vertical party plane, every unshared shell face, every seam
-  frame, every derived stair in an unbound host, and every bar in a
-  vertical-plane seam stays whole-owned**, derived exactly as at stage 5,
+  frame in a vertical plane, every derived stair in an unbound host, and
+  every bar in a vertical-plane seam stays whole-owned**, derived exactly
+  as at stage 5,
   whether or not the boxes beside it are detailed. Interior wall treatment
   is lining inside the box — the piece dresses its side of the wall from
   within its own frame; the party plane is structure, and the whole's.
@@ -117,7 +121,15 @@ Stage 6 splits that fabric on one convention:
   no stair massing there: the climb is the piece's to build, and the bytes
   battery proves it was built (§7).
 - The plan's blockout `lighting` fixture pass applies to derived interiors
-  only; a bound place lights itself and the existing relight gate judges it.
+  only; a bound place lights itself — its cells go to the undeclared-darkness
+  measurement, so a dark detailed place is a finding, never a silence.
+
+In the derivation the split is one rule rather than a list: **a bound frame
+is a hole in what the whole writes**. The floor accent, the interior clear,
+the ceiling of the box stacked underneath, a hosted stair and a bar in the
+box's own floor course are all writes that land inside that frame, so all
+five stop by the same subtraction — and everything outside the frame is
+written exactly as before. A list of exemptions is a list the sixth escapes.
 
 The piece is placed at the frame, exactly:
 
@@ -126,7 +138,7 @@ The piece is placed at the frame, exactly:
 | `DW0842` | **The binding does not bind.** A `detail-plan` in a campaign with no site plan (the limiting case, naming the missing document); a `place` naming no layout-graph node; two `details[]` rows for one place; a `piece` the prefab library does not hold; an `anchors` key that is not a name this place owes (§6); an `anchors` value naming no anchor of the piece. Validation tier. Binding: details resolved, stated against the plan's box count. |
 | `DW0843` | **The piece is not the shape of its allocation.** The piece's structure size differs on any axis from the handed frame — the refusal prints both extents, and *undersize refuses exactly as oversize does*: the box is the footprint, and a smaller building means a smaller box, which is a site-plan edit and a re-walk, taken visibly. Also under this code: a bound piece declaring no spatial contract — the equivalence instrument (§7) would have nothing to read, so a contractless piece cannot be a detail piece. Validation tier, metadata only. Binding: pieces measured. |
 | `DW0844` | **The piece's openings are not the plan's seams.** Both directions, from metadata, before any bytes assemble: a seam this box must answer with no aligned face opening of a compatible class, and a face opening of the piece answering no seam — the discovered-seam refusal at the earliest tier. Alignment means the face's opening cells answer the seam's allocated cells across the plane (for a seam in the piece's own floor course, *at* those cells); compatibility is determined by the object, per the table below. Binding: seams required and faces examined, both stated. |
-| `DW0845` | **An owed anchor has no standing.** An owed name (§6) left unbound by `anchors`, or bound to a piece anchor whose `resolves_to` is an element a body cannot be at — a `no_body` region, a bar, a way region. Validation tier. Binding: owed names per bound place, stated. |
+| `DW0845` | **An owed anchor has no standing.** An owed name (§6) left unbound by `anchors`; bound to a piece anchor that declares no cell (a region answers a gate, and a gate region is never owed by a place); or bound to one the piece's own contract resolves anywhere but play space — a `no_body` region, a bar, a transit or way volume. Validation tier. Binding: owed names per bound place, stated. |
 
 The class-compatibility table `DW0844` judges with, keyed to the geometry
 rather than chosen by anyone:
@@ -184,7 +196,7 @@ A site-plan campaign's quest layer names `synthesized_anchors` — and those
 names were bound to nodes at stage 3, before any detail existed, so
 detailing a place must never force a quest edit. The names a place owes are
 exactly the synthesized names whose bearer is its box: its `anchor/node-…`;
-`anchor/entry` when it is the entry node; each `anchor/unlock-…` whose
+the entry anchor (`spawn`) when it is the entry node; each `anchor/unlock-…` whose
 `opens_from` side it is. Gate regions (`anchor/seam-…`) over vertical party
 planes are never owed — they are whole fabric — and one over a bound upper
 box's floor course resolves to the seam's allocated cells as ever, which
@@ -257,10 +269,13 @@ check. What "equivalent" means, exhaustively:
    path a part that *wants* different traversal takes is the one ADR-0022
    names: a site-plan revision, which moves the plan hash, which re-opens
    `DW0841`, which re-runs the whole's walk. The cost is stated, not hidden.
-4. **The content repo's campaign audit** extends its stage-order sweep by
-   one step: a `detail-plan` present without a passing walk record for the
-   current plan reds the campaign on every push — the same event-bound
-   shape as spec-0049 §7's audit row.
+4. **The content repo's campaign audit** owes the same gate on every push:
+   a `detail-plan` present without a passing walk record for the current
+   plan reds the campaign — the same event-bound shape as spec-0049 §7's
+   audit row. **That binding lives in the content repository and is still
+   owed**: it lands with the engine-pin bump that first lets a campaign
+   there carry a `detail-plan` (§13's adoption rule), and until it does,
+   the two engine-side entry points above are the bound gates.
 
 ## 9. Stage 7, discharged — a finding, not a further spec
 
@@ -341,9 +356,9 @@ answer is a first-class surface or a refused feature, decided on that brief.
 
 ## 13. Version discipline
 
-- **`dsl_version`**: one bump (the detail version), handed at implementation
-  dispatch. Per-stage fence in the settled shape: a campaign below it
-  cannot carry a `detail-plan`, and no document below it moves by a byte.
+- **`dsl_version`**: one bump, to **0.15.0**. Per-stage fence in the settled
+  shape: a campaign below it cannot carry a `detail-plan`, and no document
+  below it moves by a byte.
 - **Adoption**: no released campaign carries a site plan, so no released
   artifact is touched. Every in-development site-plan campaign adopts per
   the standing rule — for the campaign in flight, the obligation lands
@@ -366,9 +381,9 @@ answer is a first-class surface or a refused feature, decided on that brief.
 - The mechanic's demo row: a two-place site plan, one place bound, walked
   beside its massing twin — queued in `docs/demo-levels.md` by the
   implementation PR, per the standing rule.
-- `docs/reference/compiler.md` gains the `detail-plan` stage table, the six
-  DW rows and the `DW0821` severity change; `docs/reference/tools.md` gains
-  `delvec allocation`; the prefab-procedure and skill workflows gain the
+- `docs/reference/compiler.md` carries the `detail-plan` stage table, the six
+  DW rows and the `DW0821` severity change; `docs/reference/tools.md` carries
+  `delvec allocation`; the prefab-procedure and skill workflows carry the
   handing step — same PRs as the surfaces, per the tooling-sync rule.
 
 ## 15. Order of work
@@ -395,8 +410,11 @@ Machine-checkable; each names its verdict's instrument.
 
 1. Every build of a site-plan campaign prints `site_plan_sha256` and
    `blockout_sha256` with the engine revision; two builds print identical
-   hashes; a plan edit changes the first and a metrics-value change alone
-   changes only the second.
+   hashes; a plan edit moves both, and edits outside the plan document —
+   stage 1, the layout graph — move neither: the plan hash is a function of
+   the plan document alone, which is what §2's hatch argument rests on. A
+   massing that moved under an unchanged plan is §2's warning, never a
+   refusal — demonstrated against a record naming a different blockout hash.
 2. `delvec schema --stage all` includes `detail-plan`;
    `tools/check-gallery-coverage.py` is green with every new unit bound in
    the gallery domain or refusal-proven; the `DW0841` and `DW0843` probes
@@ -407,9 +425,13 @@ Machine-checkable; each names its verdict's instrument.
    allowlist entries.
 4. On the blockout fixture with one place bound and a fresh passed record:
    `delvec build` exit 0; double-build byte-identity holds; the battery's
-   binding line states its counts; the bot playthrough passes on the same
-   harness, export and critical path as the unbound fixture — traversal
-   equivalence demonstrated as a passing battery, not asserted.
+   binding line states its counts; and the export the bot is driven by
+   (`critical-path.json`) equals the unbound fixture's in every step field
+   but one `pos`, moved inside the bound place — traversal equivalence
+   demonstrated as a passing battery, not asserted. The playthrough itself
+   is the bot tier's, which runs on release candidates: **the bot walk of a
+   detailed build is owed on the first release ladder that carries one**,
+   and is not claimed here.
 5. Deleting the record, or editing the site plan without re-recording, reds
    `DW0841` naming the hashes; `delvec allocation` refuses identically —
    both entry points demonstrated.

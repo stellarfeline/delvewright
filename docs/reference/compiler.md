@@ -571,10 +571,11 @@ a **site-plan revision**, which moves the plan hash, which re-opens the walk gat
 **The frame** a piece must exactly fill is the box's play space grown one course
 downward — the walk plane's own floor. Everything else the derivation writes
 around a box is structure and stays whole-owned: every vertical party plane,
-every wall, every unshared shell face, every seam frame, every derived stair in
-an unbound host and every bar in a vertical-plane seam. Where boxes stack, the
-horizontal party plane **is** the upper box's floor course and belongs to the
-upper piece. In the derivation this is one rule rather than six exemptions: a
+every wall, every unshared shell face, every seam frame in a vertical plane,
+every derived stair in an unbound host and every bar in a vertical-plane seam.
+Where boxes stack, the horizontal party plane **is** the upper box's floor
+course and belongs to the upper piece — a seam frame lying in that course goes
+with it. In the derivation this is one rule rather than six exemptions: a
 bound frame is a hole in what the whole writes, so the floor accent, the interior
 clear, the ceiling of the box underneath, a hosted stair and a bar in the box's
 own floor course all stop by the same subtraction, and everything outside the
