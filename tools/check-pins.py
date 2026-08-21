@@ -168,7 +168,28 @@ FETCH_SITES = (
 # it, and which no human edits.
 NON_EXECUTING = ("*.md", "**/Cargo.lock", "**/package-lock.json", "*.json.txt")
 
-SKIP_DIRS = {".git", "target", "node_modules", "dist", "campaigns", "content-repo"}
+# Build output, on a RAW FILESYSTEM WALK of an upstream checkout — and nowhere
+# else. `package_dirs()` reads `repo.rglob("Cargo.toml")` across a working tree
+# nobody has filtered, where `target/` and `node_modules/` really do carry
+# manifests that are not the repository's own. Every name here is a fact about a
+# cargo or npm working tree, true of any such tree anywhere, and NOT ONE of them
+# names a directory of this or any other Delvewright repository.
+#
+# That last clause is the whole of the lesson, and it was paid for. This list was
+# once applied to `tracked_files()` as well, where it did nothing: that function
+# reads `git ls-files`, which yields only tracked, authored files, so every entry
+# matched zero of them. Zero, that is, until the tool was copied to the
+# repository where `campaigns/` IS the content — at which point the same inert
+# entry silently removed 27 tracked files, every campaign stage document among
+# them, from both pin discovery and the fetch-verb enumeration.
+#
+# Nothing was red and nothing could have been. The binding counts were truthful
+# about what they were handed; the handing was the defect, and a file the
+# enumeration never lists cannot be reported as unexamined. So a constant that
+# names a directory is data about ONE tree wearing the clothes of tool
+# configuration: it is scoped to the single population that needs it, and kept
+# out of the population that does not.
+BUILD_OUTPUT_DIRS = {".git", "target", "node_modules", "dist"}
 
 # The language a file is written in, which is what decides how to READ a verb
 # found in it. A basename wins over a suffix, since the file kinds named by
@@ -310,8 +331,14 @@ def tracked_files(root: pathlib.Path) -> list[str]:
     for rel in out.split("\0"):
         if not rel:
             continue
-        if rel.split("/", 1)[0] in SKIP_DIRS:
-            continue
+        # NOTHING is skipped here, and the omission is load-bearing. The
+        # population is `git ls-files`: every entry is a tracked, authored file
+        # of this repository, which is exactly the set a pin can hide in. A skip
+        # list over this population can only ever SUBTRACT real content — it can
+        # never add safety, because build output and ignored trees are not
+        # tracked and so were never in the list to begin with. See
+        # BUILD_OUTPUT_DIRS for the walk that does need one, and for the 27
+        # files this filter cost the last time the two were confused.
         p = root / rel
         if p.is_symlink() or not p.is_file():
             continue
@@ -747,7 +774,7 @@ def package_dirs(repo: pathlib.Path, packages: list[str]) -> list[str]:
     """
     manifests: dict[str, pathlib.Path] = {}
     for man in repo.rglob("Cargo.toml"):
-        if any(part in SKIP_DIRS for part in man.parts):
+        if any(part in BUILD_OUTPUT_DIRS for part in man.parts):
             continue
         try:
             with man.open("rb") as fh:
