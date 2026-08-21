@@ -40,12 +40,16 @@ exactly the places this repo can FETCH from: workflow and action definitions,
 shell that runs a container or clones a repo. `FETCH_SITES` is that list.
 
 An enumeration somebody remembered is how this shape survives review, so the list
-is itself checked: `fetch_verbs()` scans EVERY tracked, executable-or-buildable
-text file for an invocation that can reach the network — `uses: …@`, an
-`actions/checkout` step, `docker run|pull`, a Dockerfile `FROM`, `git clone`, a
-Cargo `git =` dependency — and reds if one is found in a file no `FETCH_SITES`
-pattern covers. So adding a new kind of fetch site fails here rather than
-silently escaping the registry.
+is itself checked: `stray_fetch_verbs()` scans EVERY tracked, executable-or-
+buildable text file for an invocation that can reach the network — `uses: …@`, a
+Dockerfile `FROM`, `docker run|pull`, `git clone`, a Cargo `git =` dependency —
+and reds if one is found in a file no `FETCH_SITES` pattern covers. So adding a
+new kind of fetch site fails here rather than silently escaping the registry. It
+states what it examined, and an enumeration that applied no verb to any file is a
+finding rather than a quiet pass.
+
+A verb is read in the language of the file it is found in, because half of them
+mean nothing outside their own: see `FETCH_VERBS`.
 
 ## Policy: deliberate is not the same as rotted
 
@@ -125,13 +129,75 @@ NON_EXECUTING = ("*.md", "**/Cargo.lock", "**/package-lock.json", "*.json.txt")
 
 SKIP_DIRS = {".git", "target", "node_modules", "dist", "campaigns", "content-repo"}
 
-# An invocation that can reach the network for a versioned artifact.
+# The language a file is written in, which is what decides how to READ a verb
+# found in it. A basename wins over a suffix, since the file kinds named by
+# convention rather than by extension are exactly the ones that carry directives.
+#
+# Membership here is a positive claim — "this kind of file is that language" —
+# never a claim that the file is safe. A kind absent from this map is UNKNOWN,
+# and an unknown file is read with every verb (see FETCH_VERBS), so the map can
+# only ever be incomplete in the direction of scanning more.
+LANGUAGE_BY_NAME = {
+    "Dockerfile": "dockerfile",
+    "Containerfile": "dockerfile",
+}
+LANGUAGE_BY_SUFFIX = {
+    ".dockerfile": "dockerfile",
+    ".yml": "yaml",
+    ".yaml": "yaml",
+    ".toml": "toml",
+    ".rs": "rust",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".py": "python",
+    ".sh": "shell",
+    ".bash": "shell",
+    ".zsh": "shell",
+    ".json": "json",
+    ".mcmeta": "json",
+    ".md": "markdown",
+    ".mcfunction": "mcfunction",
+    ".snbt": "snbt",
+    ".css": "css",
+    ".html": "html",
+    ".txt": "text",
+}
+
+# An invocation that can reach the network for a versioned artifact, paired with
+# the language in which it IS one.
+#
+# Two kinds sit in this list. A COMMAND — `docker run`, `git clone` — is a
+# program invocation, and every language can spawn a process, so it is read the
+# same way in all of them and pairs with `None`. A DIRECTIVE — `uses:`, `FROM`,
+# a Cargo `git =` dependency — is a statement in ONE configuration language, and
+# in a file that is some other language the identical characters are prose.
+#
+# The distinction is not decorative. A compiler diagnostic whose all-caps
+# emphasis wraps `FROM A SOFT-LOCK` onto a new line inside a Rust string literal
+# reads, to a uniformly-applied Dockerfile pattern, as a stage nobody registered
+# — and the remedy this gate prints, add the pattern and the pins, has no
+# meaning for a file that fetches nothing. Asking a directive of a foreign
+# language is the right question about the wrong key, and the answer comes back
+# honest.
+#
+# The narrowing is FAIL-CLOSED, which is what keeps it a repair rather than an
+# exemption: a directive is dropped for a file only when that file's language is
+# positively known to be a DIFFERENT one. A file whose kind the map above does
+# not recognise — an extensionless `build/base-image`, a form nobody has met yet
+# — is read with every verb, so a new kind of fetch site still fails here instead
+# of escaping the registry. Nothing is listed by path and there is no exception
+# list: the question a verb answers is what LANGUAGE it is in, and the defect this
+# gate catches (an uncovered file that really fetches) cannot change a file's
+# language to escape it.
 FETCH_VERBS = (
-    re.compile(r"^\s*-?\s*uses:\s*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@", re.M),
-    re.compile(r"^\s*FROM\s+\S+", re.M),
-    re.compile(r"\bdocker\s+(run|pull)\b"),
-    re.compile(r"\bgit\s+clone\b"),
-    re.compile(r"^\s*[A-Za-z0-9_-]+\s*=\s*\{[^}]*\bgit\s*=", re.M),
+    (re.compile(r"^\s*-?\s*uses:\s*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@", re.M), "yaml"),
+    (re.compile(r"^\s*FROM\s+\S+", re.M), "dockerfile"),
+    (re.compile(r"\bdocker\s+(run|pull)\b"), None),
+    (re.compile(r"\bgit\s+clone\b"), None),
+    (re.compile(r"^\s*[A-Za-z0-9_-]+\s*=\s*\{[^}]*\bgit\s*=", re.M), "toml"),
 )
 
 # Literal shapes a pin takes.
@@ -213,20 +279,49 @@ def fetch_sites(root: pathlib.Path, files: list[str]) -> list[str]:
     return [f for f in files if matches(f, FETCH_SITES)]
 
 
-def stray_fetch_verbs(root: pathlib.Path, files: list[str]) -> list[str]:
-    """Files that can fetch but that no FETCH_SITES pattern covers."""
+def language_of(rel: str) -> str | None:
+    """The language `rel` is written in, or None when its kind is unrecognised."""
+    base = rel.rsplit("/", 1)[-1]
+    if base in LANGUAGE_BY_NAME:
+        return LANGUAGE_BY_NAME[base]
+    dot = base.rfind(".")
+    if dot <= 0:  # no suffix, or a dotfile whose whole name is the suffix
+        return None
+    return LANGUAGE_BY_SUFFIX.get(base[dot:].lower())
+
+
+def stray_fetch_verbs(
+    root: pathlib.Path, files: list[str]
+) -> tuple[list[str], int, int]:
+    """Files that can fetch but that no FETCH_SITES pattern covers.
+
+    Returns the findings, the number of files read, and the number of verb
+    applications made — the enumeration's own binding count. A directive verb is
+    skipped for a file positively known to be another language; every verb is
+    applied to a file whose kind is unrecognised.
+    """
     stray = []
+    examined = 0
+    applications = 0
     for rel in files:
         if matches(rel, FETCH_SITES) or matches(rel, NON_EXECUTING):
             continue
         text = read_text(root / rel)
         if text is None:
             continue
-        for verb in FETCH_VERBS:
+        examined += 1
+        lang = language_of(rel)
+        applicable = [
+            verb
+            for verb, verb_lang in FETCH_VERBS
+            if verb_lang is None or lang is None or lang == verb_lang
+        ]
+        applications += len(applicable)
+        for verb in applicable:
             if verb.search(text):
                 stray.append(f"{rel} (matches {verb.pattern!r})")
                 break
-    return stray
+    return stray, examined, applications
 
 
 def literals(root: pathlib.Path, sites: list[str]) -> dict[str, set[str]]:
@@ -283,7 +378,18 @@ def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[s
         )
         return 0, errors
 
-    for s in stray_fetch_verbs(root, files):
+    stray, examined, applications = stray_fetch_verbs(root, files)
+    print(
+        f"-- fetch-verb enumeration: {applications} verb application(s) over "
+        f"{examined} file(s) no FETCH_SITES pattern covers"
+    )
+    if applications == 0:
+        errors.append(
+            "the fetch-verb enumeration applied no verb to any file. It is that "
+            "enumeration which stops a new kind of fetch site escaping the "
+            "registry, so a zero here is the gate going dark, not a clean tree."
+        )
+    for s in stray:
         errors.append(
             f"{s}: this file can fetch a versioned artifact but no FETCH_SITES "
             f"pattern covers it, so any pin in it is outside the registry's "
