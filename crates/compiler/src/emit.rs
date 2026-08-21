@@ -1376,7 +1376,16 @@ pub fn build_with_warnings(
     // registers its claim over the plan's own authored list and the claim is
     // judged against the shipped suite: `declared` cannot shrink when the walk
     // skips members, and `invoked` cannot be faked because it is read off bytes.
-    let watch_claims = [timed_gate_watch_claim(plan)];
+    let mut watch_claims = vec![
+        timed_gate_watch_claim(plan),
+        actor_watch_claim(plan),
+        wave_census_watch_claim(plan),
+        kill_reward_watch_claim(plan),
+        objective_activation_watch_claim(plan),
+        class_apply_watch_claim(plan),
+        npc_talk_watch_claim(plan),
+    ];
+    watch_claims.extend(dialogue_mask_watch_claims(plan));
     let (claim_binding, breaches) = crate::watch::check_claims(ns, &out, &watch_claims);
 
     put_json(
@@ -12682,7 +12691,7 @@ fn emit_packtest(
     // spec-0016 §1: resting at a bonfire moves the party respawn point and
     // re-seats its `respawns_on_rest` waves. Emits nothing without a bonfire.
     // The tag census really counts the wave, and only the wave.
-    emit_wave_census_packtest(plan, out);
+    emit_wave_census_packtest(plan, out, waves.placements);
     emit_bonfire_packtests(plan, out);
     // spec-0016 §1: a re-seated wave comes back
     // STATIONED — at its lane start / anchor, in its routed state, with no trace
@@ -12700,6 +12709,14 @@ fn emit_packtest(
     emit_shortcut_packtest(plan, out);
     // spec-0016 §4: the clock really alternates the gate region.
     emit_timed_gate_packtest(plan, out);
+    // Per-object bodies whose family the suite claims whole (DW0811): every
+    // declared wave's own kill reward, every declared objective's own activation,
+    // every declared class's own apply. Each emits nothing for a campaign that
+    // declares none of its mechanic.
+    emit_kill_reward_packtests(plan, out, waves.placements);
+    emit_objective_activation_packtests(plan, out);
+    emit_class_apply_packtests(plan, out);
+    emit_npc_talk_packtests(plan, out);
     emit_loot_packtest(plan, out);
     emit_actor_equipment_packtest(plan, out);
     // spec-0016 §6: the patrol NBT survives 1.21.11's strict codec, the lane
@@ -14259,14 +14276,47 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// reported wounded, from the server's own `Health` and `max_health`.
 ///
 /// Emits nothing for a campaign with no wave → byte-identical.
-fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
+/// The claim the census loop makes, judged against the shipped bytes by
+/// `DW0811`. Written from the campaign's authored `waves` list and NOT from
+/// whatever the loop happened to walk: a walk that stopped at `first()` would
+/// still declare every wave here, which is what lets the refusal fire on the
+/// defect rather than on the emitter's own bookkeeping.
+///
+/// `declared` is every declared wave; a wave the compiler could not place emits
+/// no `wave_census_<id>` body at all, and `check_claims` judges only bodies that
+/// EXIST — so an unplaceable wave is not a breach, and a placed one that the
+/// loop skipped is.
+fn wave_census_watch_claim(plan: &Plan) -> crate::watch::Claim {
+    crate::watch::Claim {
+        mechanic: "wave-census",
+        families: vec!["wave_census_".to_string()],
+        declared: plan
+            .campaign
+            .quests
+            .content
+            .waves
+            .iter()
+            .map(|w| plan::safe_local(w.id.as_str()))
+            .collect(),
+    }
+}
+
+fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput, wave_placements: &WavePlacements) {
+    // EVERY declared wave, not the first. `wave_census_<id>` dispatches into
+    // `wave_census_one_<id>`, whose wounded test is written against THAT wave's
+    // species and count — so a census proved over a three-zombie muster says
+    // nothing about a lane of skeletons, and the gallery drove one of two.
+    // Registered as a claim (`wave_census_watch_claim`).
+    for w in wave_machinery_waves(plan, wave_placements) {
+        emit_one_wave_census_packtest(plan, w, out);
+    }
+}
+
+fn emit_one_wave_census_packtest(plan: &Plan, w: &delvewright_dsl::Wave, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    let Some(w) = plan.campaign.quests.content.waves.first() else {
-        return;
-    };
     // A wave the compiler could not place emits no `spawn_<wave>` to drive.
-    if plan::wave_total(w) < 1 {
+    if plan::wave_total(w) < 1 || w.mobs.is_empty() {
         return;
     }
     let safe = plan::safe_local(w.id.as_str());
@@ -14281,49 +14331,65 @@ fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
     ));
     b.push(format!("function {ns}:setup"));
     b.push(format!("kill @e[tag={tag}]"));
-    b.push("kill @e[tag=dw_cen_bystander]".to_string());
+    b.push(format!("kill @e[tag=dw_cen_by_{safe}]"));
+    // `wave_census_<id>` writes its answer into `#wcen_n`/`#wcen_b`/`#wcen_d` —
+    // holder names the BODY owns, so a template cannot suffix them, and with one
+    // census template per wave they would be shared scratch across siblings
+    // (`crate::batchstate`, `DW0807`). So each answer is copied into this wave's
+    // own holder the instant it is produced, and every assertion reads the copy.
+    // The copy is inside the same atomic template as the call that produced it,
+    // which is what makes it a reading of this wave's census and not of whichever
+    // sibling ran last.
+    let cen = |b: &mut Vec<String>, src: &str, want: &str| {
+        b.push(format!(
+            "scoreboard players operation #wcn_{src}_{safe} dw.sys = #wcen_{src} dw.sys"
+        ));
+        b.push(format!(
+            "assert score #wcn_{src}_{safe} dw.sys matches {want}"
+        ));
+    };
     b.push(format!("function {ns}:spawn_{safe}"));
     // A BYSTANDER of the wave's own species, summoned on the wave's own anchor
     // cell: everything a silhouette probe uses to decide membership, and none of
     // what the census uses. It must not move a single count.
     b.push(format!(
         "execute at @e[tag={tag},limit=1] run summon {species} ~ ~ ~ \
-         {{Tags:[\"dw_cen_bystander\"],PersistenceRequired:1b}}"
+         {{Tags:[\"dw_cen_by_{safe}\"],PersistenceRequired:1b}}"
     ));
     b.push(format!("function {ns}:wave_census_{safe}"));
-    b.push(format!("assert score #wcen_n dw.sys matches {total}"));
-    b.push("assert score #wcen_b dw.sys matches 0".to_string());
-    b.push("assert score #wcen_d dw.sys matches 0".to_string());
+    cen(&mut b, "n", &total.to_string());
+    cen(&mut b, "b", "0");
+    cen(&mut b, "d", "0");
     // Brand this life's mobs. The bystander is not one of them, and the brand
     // rides the wave tag, so it cannot reach it.
     b.push(format!("function {ns}:wave_brand_{safe}"));
     b.push(format!("function {ns}:wave_census_{safe}"));
-    b.push(format!("assert score #wcen_b dw.sys matches {total}"));
+    cen(&mut b, "b", &total.to_string());
     b.push(format!(
-        "execute store result score #cen_by dw.sys if entity @e[tag=dw_cen_bystander,tag={brand}]"
+        "execute store result score #cen_by_{safe} dw.sys if entity @e[tag=dw_cen_by_{safe},tag={brand}]"
     ));
-    b.push("assert score #cen_by dw.sys matches 0".to_string());
+    b.push(format!("assert score #cen_by_{safe} dw.sys matches 0"));
     // Wound one, and the census says so — read off the server's own Health and
     // max_health, not a table and not whatever the client was sent.
     b.push(format!(
         "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
     ));
     b.push(format!("function {ns}:wave_census_{safe}"));
-    b.push("assert score #wcen_d dw.sys matches 1".to_string());
+    cen(&mut b, "d", "1");
     // A re-summon is a NEW mob: the brand cannot survive it, which is exactly the
     // property the die-retry fidelity verdict rests on.
     b.push(format!("kill @e[tag={tag}]"));
     b.push(format!("function {ns}:spawn_{safe}"));
     b.push(format!("function {ns}:wave_census_{safe}"));
-    b.push(format!("assert score #wcen_n dw.sys matches {total}"));
-    b.push("assert score #wcen_b dw.sys matches 0".to_string());
-    b.push("assert score #wcen_d dw.sys matches 0".to_string());
+    cen(&mut b, "n", &total.to_string());
+    cen(&mut b, "b", "0");
+    cen(&mut b, "d", "0");
     // Leave no residue for the shared batch (pin_dummy rule 4).
     b.push(format!("function {ns}:wave_unbrand_{safe}"));
     b.push(format!("kill @e[tag={tag}]"));
-    b.push("kill @e[tag=dw_cen_bystander]".to_string());
+    b.push(format!("kill @e[tag=dw_cen_by_{safe}]"));
     out.insert(
-        format!("packtest-datapack/data/{ns}/test/wave_census.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/wave_census_{safe}.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -14950,8 +15016,470 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
 fn timed_gate_watch_claim(plan: &Plan) -> crate::watch::Claim {
     crate::watch::Claim {
         mechanic: "timed-gate",
-        families: &["tgate_open_", "tgate_close_", "tgate_disarm_"],
+        families: vec![
+            "tgate_open_".to_string(),
+            "tgate_close_".to_string(),
+            "tgate_disarm_".to_string(),
+        ],
         declared: plan.timed_gates.iter().map(|g| g.safe.clone()).collect(),
+    }
+}
+
+// ------------------------------------------- per-object watch claims (DW0811) --
+//
+// Every emitter below walks a DECLARED list and writes one template per member,
+// and each registers a `crate::watch::Claim` over that same authored list. The
+// two halves of a claim are read from different places on purpose (see
+// `crate::watch`): `declared` comes from the plan's own authored list, so a walk
+// that stops at `first()` still declares every member; the driven set is read
+// off the shipped suite bytes, so an emitter cannot report coverage it did not
+// write. Neither half is forgeable by the defect the claim catches.
+//
+// What decided WHICH families get one. A family is claimable when its members'
+// bodies can differ in a way a sibling's proof cannot cover — a different entity
+// type, a different kit, a different dispatch arity, a different fixture at a
+// different cell. Every family below is of that kind, established by reading the
+// emitted bodies rather than by asserting it: `spawn_actor_hall_moth` summons a
+// bat and `spawn_actor_rafter_spider` a spider; `class_apply_wanderer` carries a
+// party-unique latch `class_apply_warder` does not; `talk_warden` dispatches one
+// cast clause and `talk_marshal` four. The rule is deliberately NOT "the bodies
+// differ today" — a family whose members happen to be identical modulo their id
+// is one authored field away from not being, and a claim narrowed to what the
+// emitter currently does is the defect this machinery exists to prevent arriving
+// from inside.
+
+/// The kill reward for one wave: `k_reward_<wave>` decrements THAT wave's own
+/// countdown and re-arms THAT wave's advancement.
+///
+/// The gallery drove one of two, and the one it did not drive is a wave with no
+/// kill objective — so `verb_kill`, which reaches a reward only through an
+/// objective that completes on it, structurally could never have covered it. The
+/// reward body is a per-wave mechanism in its own right, so it gets a per-wave
+/// proof rather than being reached sideways through the one objective that
+/// happens to use it.
+fn emit_kill_reward_packtests(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    wave_placements: &WavePlacements,
+) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    for w in wave_machinery_waves(plan, wave_placements) {
+        let total = plan::wave_total(w);
+        let safe = plan::safe_local(w.id.as_str());
+        let tag = plan::wave_tag(w.id.as_str());
+        let counter = plan::wave_counter(w.id.as_str());
+        let obj = plan::WAVE_OBJECTIVE;
+        let (pin, sel) = pin_dummy(&format!("dw_t_kr_{safe}"));
+        let mut b = packtest_header(&format!(
+            "{title}: the kill reward for wave `{}` decrements its OWN countdown and re-arms",
+            w.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        // Own init: the batch is one shared server and `spawn_<wave>` is
+        // unguarded, so a sibling may already have fired it. Clear, then spawn —
+        // which is what sets the countdown to this wave's own total.
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!("assert score {counter} {obj} matches {total}"));
+        // Grant the advancement exactly as a kill grants it. The grant is not a
+        // setup step: this advancement's reward IS `k_reward_<wave>`, so granting
+        // it runs the body — which is the whole wiring under test, and the reason
+        // a template that ALSO called the body by hand counted two kills for one.
+        b.push(format!(
+            "execute as {sel} run advancement grant @s only {ns}:k_{safe}"
+        ));
+        b.push(format!(
+            "assert score {counter} {obj} matches {}",
+            total - 1
+        ));
+        // …and the reward consumed the record, so the NEXT kill of this wave
+        // counts too. Vanilla has no `execute if advancement`; the selector
+        // argument is the primitive for reading advancement state.
+        b.push(format!(
+            "execute as {sel} if entity @s[advancements={{{ns}:k_{safe}=false}}] run scoreboard \
+             players set #kr_{safe} dw.sys 1"
+        ));
+        b.push(format!("assert score #kr_{safe} dw.sys matches 1"));
+        // The body driven DIRECTLY, from a pinned countdown — the per-object drive
+        // the watch coverage is about, and the half a grant cannot stand in for:
+        // an advancement reward is resolved by name at load, so a grant proves the
+        // wiring while only a call proves this wave's own body decrements this
+        // wave's own counter.
+        b.push(format!("scoreboard players set {counter} {obj} {total}"));
+        b.push(format!(
+            "execute as {sel} run function {ns}:k_reward_{safe}"
+        ));
+        b.push(format!(
+            "assert score {counter} {obj} matches {}",
+            total - 1
+        ));
+        // Leave no residue for the shared batch (pin_dummy rule 4): the countdown
+        // is batch-global, so it goes back to the value a fresh spawn leaves.
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("scoreboard players set {counter} {obj} {total}"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/wave_kill_reward_{safe}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
+fn kill_reward_watch_claim(plan: &Plan) -> crate::watch::Claim {
+    crate::watch::Claim {
+        mechanic: "kill-reward",
+        families: vec!["k_reward_".to_string()],
+        declared: plan
+            .campaign
+            .quests
+            .content
+            .waves
+            .iter()
+            .map(|w| plan::safe_local(w.id.as_str()))
+            .collect(),
+    }
+}
+
+/// The waves that HAVE runtime machinery — the one traversal both the machinery
+/// emitter and every template that drives it must read.
+///
+/// A wave whose spawn anchor resolves in no assembled area gets no
+/// `spawn_<wave>`, no census and no kill reward (`DW0310` is the standing check
+/// on the dangling `spawn-wave` that leaves behind). A template loop that walked
+/// the authored list instead emitted templates calling four functions that do not
+/// exist — which `DW0497` refused, correctly, with the words this comment exists
+/// to honour: *an emitter's call walk and its machinery walk have gone out of
+/// agreement; fix the emitter so both derive from one traversal.*
+///
+/// This is NOT the claim's declared set and must never be confused with it. The
+/// claim declares every authored wave; `check_claims` judges only the bodies that
+/// exist, so an unplaceable wave is silently fine while a placed one the loop
+/// skipped is a breach. Deriving `declared` from this function instead would be
+/// the emitted set defining its own obligation — the exact shape the claim
+/// machinery exists to prevent.
+fn wave_machinery_waves<'a>(
+    plan: &'a Plan,
+    wave_placements: &WavePlacements,
+) -> impl Iterator<Item = &'a delvewright_dsl::Wave> {
+    plan.campaign
+        .quests
+        .content
+        .waves
+        .iter()
+        .filter(move |w| wave_placements.contains_key(w.id.as_str()) && plan::wave_total(w) >= 1)
+}
+
+/// What one objective's `activate_o_<id>` is supposed to MAKE EXIST, so a
+/// template can assert it appeared.
+///
+/// Derived from [`activation_commands`] — the same function that writes the
+/// body — rather than from a second hand-rolled table of objective kinds. A
+/// table would be the very shape this check exists to catch: a walk over the
+/// kinds someone remembered, silently missing the one added next.
+enum ActivationFixture {
+    /// N entities carrying the objective's own tag.
+    Entities { tag: String, count: usize },
+    /// The objective's stack in a container slot: the collect path summons
+    /// nothing and fills a block instead.
+    ContainerSlot { pos: [i32; 3], item: String },
+}
+
+fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
+    let summons = cmds.iter().filter(|c| c.starts_with("summon ")).count();
+    if summons > 0 {
+        // Every entity `activation_commands` summons carries the objective's own
+        // tag (`dw_i_<obj>` / `dw_r_<obj>`), which is what `completion_cleanup`
+        // kills them by. Read it off the first summon rather than recomputing it
+        // from the objective kind.
+        let tag = cmds
+            .iter()
+            .find(|c| c.starts_with("summon "))
+            .and_then(|c| {
+                c.split('"')
+                    .find(|s| s.starts_with("dw_i_") || s.starts_with("dw_r_"))
+            })?
+            .to_string();
+        return Some(ActivationFixture::Entities {
+            tag,
+            count: summons,
+        });
+    }
+    // `item replace block <x> <y> <z> container.<n> with <item>[…] <count>`
+    let fill = cmds.iter().find(|c| c.starts_with("item replace block "))?;
+    let f: Vec<&str> = fill.split_whitespace().collect();
+    let pos = [
+        f.get(3)?.parse().ok()?,
+        f.get(4)?.parse().ok()?,
+        f.get(5)?.parse().ok()?,
+    ];
+    // `item replace block <x> <y> <z> <slot> with <stack> [<count>]` — the stack
+    // is the field AFTER the `with` keyword, which is read by name rather than
+    // by a counted offset. The item id alone, without its component tail: `if
+    // items block` takes an item predicate, and the id is the part of the stack
+    // the activation is being judged on.
+    let stack = f.iter().skip_while(|w| **w != "with").nth(1)?;
+    let item = stack
+        .split_once('[')
+        .map(|(id, _)| id)
+        .unwrap_or(stack)
+        .to_string();
+    Some(ActivationFixture::ContainerSlot { pos, item })
+}
+
+/// Every objective's own activation body really materialises THAT objective's
+/// affordance.
+///
+/// `activate_o_<id>` is per-objective code: it summons the objective's own
+/// hitbox or marker at the objective's own cell, or fills the objective's own
+/// container with the objective's own stack. The gallery drove two of five —
+/// both interact-shaped — so all three `reach` markers shipped with no runtime
+/// proof that the thing a player is told to walk to ever appears.
+///
+/// Residue-free by construction, which is what lets it run beside the templates
+/// that already drive an activation: it never zeroes the `#act_<id>` latch (that
+/// would tell the campaign tick an objective is live when it is not) and it
+/// takes a BEFORE count, so it neither assumes a fresh world nor destroys a
+/// sibling's fixtures — it removes exactly the entities it caused.
+fn emit_objective_activation_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    if !campaign_is_v03(plan) {
+        return;
+    }
+    for q in &plan.campaign.quests.content.quests {
+        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
+        for o in &q.objectives {
+            let oid = o.id().as_str();
+            let cmds = activation_commands(plan, area, o);
+            let Some(fixture) = activation_fixture(&cmds) else {
+                continue;
+            };
+            let safe = plan::safe_local(oid);
+            let mut b = packtest_header(&format!(
+                "{title}: activating objective `{oid}` places its own affordance"
+            ));
+            b.push(format!("function {ns}:setup"));
+            match &fixture {
+                ActivationFixture::Entities { tag, count } => {
+                    b.push(format!(
+                        "execute store result score #fx0_{safe} dw.sys if entity @e[tag={tag}]"
+                    ));
+                    b.push(format!("function {ns}:activate_o_{safe}"));
+                    b.push(format!(
+                        "execute store result score #fx1_{safe} dw.sys if entity @e[tag={tag}]"
+                    ));
+                    b.push(format!(
+                        "scoreboard players operation #fx1_{safe} dw.sys -= #fx0_{safe} dw.sys"
+                    ));
+                    b.push(format!("assert score #fx1_{safe} dw.sys matches {count}"));
+                    // Remove exactly what this template caused, and nothing else.
+                    b.push(format!("kill @e[tag={tag},limit={count}]"));
+                }
+                ActivationFixture::ContainerSlot { pos, item } => {
+                    let (x, y, z) = (pos[0], pos[1], pos[2]);
+                    // Empty the objective's own slot first, so the after-read is a
+                    // fact about this activation rather than about whatever stood
+                    // in the container already. The activation refills it, which
+                    // is also the cleanup.
+                    b.push(format!(
+                        "item replace block {x} {y} {z} container.0 with minecraft:air"
+                    ));
+                    b.push(format!(
+                        "execute store success score #fx0_{safe} dw.sys if items block {x} {y} {z} \
+                         container.0 {item}"
+                    ));
+                    b.push(format!("assert score #fx0_{safe} dw.sys matches 0"));
+                    b.push(format!("function {ns}:activate_o_{safe}"));
+                    b.push(format!(
+                        "execute store success score #fx1_{safe} dw.sys if items block {x} {y} {z} \
+                         container.0 {item}"
+                    ));
+                    b.push(format!("assert score #fx1_{safe} dw.sys matches 1"));
+                }
+            }
+            out.insert(
+                format!("packtest-datapack/data/{ns}/test/obj_activate_{safe}.mcfunction"),
+                lines(&b).into_bytes(),
+            );
+        }
+    }
+}
+
+fn objective_activation_watch_claim(plan: &Plan) -> crate::watch::Claim {
+    crate::watch::Claim {
+        mechanic: "objective-activation",
+        families: vec!["activate_o_".to_string()],
+        declared: plan
+            .campaign
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| q.objectives.iter())
+            .map(|o| plan::safe_local(o.id().as_str()))
+            .collect(),
+    }
+}
+
+/// Every declared class's own apply body really dresses the player in THAT
+/// class.
+///
+/// `class_apply_<id>` is per-class code: its own kit, its own party-unique
+/// latches, its own worn tag. The gallery drove one of two through
+/// `class_trigger_once`, whose subject is the one-shot SEAL — a property of the
+/// trigger, not of any class — so the second class's kit, tag and entry warp
+/// shipped with a compile-time proof and nothing else.
+fn emit_class_apply_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let Some(entry) = campaign_spawn(plan) else {
+        return;
+    };
+    // `plan.classes` and the authored class list are index-parallel — the same
+    // pairing `class_apply_<id>` itself is emitted from.
+    for (cl, class) in plan
+        .classes
+        .iter()
+        .zip(plan.campaign.classes.content.classes.iter())
+    {
+        let safe = &cl.safe;
+        let mut b = packtest_header(&format!(
+            "{title}: class `{}` applies its own kit, tag and entry warp",
+            cl.class_id
+        ));
+        b.push(format!("function {ns}:setup"));
+        // Own init: the batch is one shared server, so "never set" is not 0.
+        b.push("scoreboard players reset @s dw.class".to_string());
+        b.push("scoreboard players reset @s dw.classed".to_string());
+        // Park away from the entry cell, so the warp this class performs is
+        // visible rather than assumed. Distinct from the entry by construction.
+        b.push(format!("tp @s {} {} {}", entry[0] + 32, entry[1], entry[2]));
+        b.push(format!(
+            "execute as @s run function {ns}:class_apply_{safe}"
+        ));
+        b.push(format!(
+            "execute store success score #cap_{safe} dw.sys if score @s dw.classed matches 1"
+        ));
+        b.push(format!("assert score #cap_{safe} dw.sys matches 1"));
+        // The class the player WEARS, when the campaign tags it (the flask path).
+        if !plan.flasks().is_empty() {
+            b.push(format!(
+                "execute store success score #capt_{safe} dw.sys if entity @s[tag={}]",
+                class_tag(safe)
+            ));
+            b.push(format!("assert score #capt_{safe} dw.sys matches 1"));
+        }
+        // …and it landed the player at the campaign entry. Read block-x back the
+        // way `emit_boundary_packtest` does, so the assertion is robust to
+        // teleport centering.
+        b.push(format!(
+            "execute store result score #capx_{safe} dw.sys run data get entity @s Pos[0] 1"
+        ));
+        b.push(format!(
+            "assert score #capx_{safe} dw.sys matches {}",
+            entry[0]
+        ));
+        // Leave no residue for the shared batch (pin_dummy rule 3/4): the kit, the
+        // worn tag, and the party-unique latches this apply may have taken are all
+        // batch-global or player-visible.
+        b.push("clear @s".to_string());
+        b.push(format!("tag @s remove {}", class_tag(safe)));
+        b.push("scoreboard players reset @s dw.classed".to_string());
+        for (k, item) in class.kit.iter().enumerate() {
+            if matches!(item.carrier, Some(delvewright_dsl::Carrier::One)) {
+                b.push(format!("scoreboard players reset #kit_{safe}_{k} dw.sys"));
+            }
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/class_apply_{safe}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
+/// Every declared NPC's own right-click reward really re-arms that NPC.
+///
+/// `talk_<npc>` is per-NPC code: it revokes THAT NPC's interaction advancement,
+/// runs THAT NPC's cast selector, and dispatches to a clause table whose size is
+/// THAT NPC's — one clause for the gallery's warden, four for its marshal, and a
+/// wholly different mechanism for its curator (a gated `show_` chooser rather
+/// than a bare `dialog show`). The suite drove one of four through
+/// `cast_none_silent`, whose subject is a SCENE KIND — "a `none` scene consumes
+/// the interaction and opens nothing" — and is therefore a property of one
+/// clause, not of any NPC.
+///
+/// The assertion is deliberately the one that cannot pass vacuously. On 1.21.11 a
+/// function with a single invalid line is refused **in its entirety**, so a
+/// `talk_` body naming a dialog id, a bark function or an advancement that does
+/// not resolve runs NONE of its lines — and the two reads below are exactly the
+/// two the body's own first two lines produce. A green here is the body loading
+/// and running on the real server; nothing weaker is asserted, and in particular
+/// the cast clause INDEX is not, because `cast_<npc>` can only ever set a value
+/// it has a clause for and an assertion on its range is true by construction.
+fn emit_npc_talk_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    for npc in &plan.npcs {
+        let safe = &npc.safe;
+        let (pin, sel) = pin_dummy(&format!("dw_t_tlk_{safe}"));
+        let mut b = packtest_header(&format!(
+            "{title}: NPC `{}`'s right-click reward runs and re-arms the interaction",
+            npc.npc_id
+        ));
+        b.push(format!("function {ns}:setup"));
+        // Pin this test's own dummy (see `pin_dummy`): the advancement record and
+        // the cast score are both per-player, and every sibling test has a dummy
+        // of its own on the same server.
+        b.push(pin);
+        // Own init: the batch is one shared server, so "never set" is not 0 — and
+        // the point of the read after the call is that the call SET it.
+        b.push(format!("scoreboard players reset {sel} dw.cast"));
+        b.push("# Grant the interaction advancement, exactly as a right-click".to_string());
+        b.push("# does: the record is written.".to_string());
+        b.push(format!(
+            "execute as {sel} run advancement grant @s only {ns}:{safe}_interact"
+        ));
+        b.push(format!("execute as {sel} run function {ns}:talk_{safe}"));
+        // 1. the record is consumed, so the advancement is re-armed: a second
+        // right-click still works (no dead NPC). Vanilla has no `execute if
+        // advancement`; the selector argument is the primitive for reading
+        // advancement state.
+        b.push(format!(
+            "execute as {sel} if entity @s[advancements={{{ns}:{safe}_interact=false}}] run \
+             scoreboard players set #tlk_{safe} dw.sys 1"
+        ));
+        b.push(format!("assert score #tlk_{safe} dw.sys matches 1"));
+        // 2. the cast selector really ran — its own first line writes `dw.cast`,
+        // and this template reset it above, so a score at all is the proof. This
+        // is what separates "the body loaded" from "the body dispatched": a
+        // `talk_` whose `function <ns>:cast_<npc>` line went missing would still
+        // revoke and still pass claim 1.
+        b.push(format!(
+            "execute as {sel} store success score #cst_{safe} dw.sys if score @s dw.cast matches \
+             -2147483648.."
+        ));
+        b.push(format!("assert score #cst_{safe} dw.sys matches 1"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/npc_talk_{safe}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
+fn npc_talk_watch_claim(plan: &Plan) -> crate::watch::Claim {
+    crate::watch::Claim {
+        mechanic: "npc-talk",
+        families: vec!["talk_".to_string()],
+        declared: plan.npcs.iter().map(|n| n.safe.clone()).collect(),
+    }
+}
+
+fn class_apply_watch_claim(plan: &Plan) -> crate::watch::Claim {
+    crate::watch::Claim {
+        mechanic: "class-apply",
+        families: vec!["class_apply_".to_string()],
+        declared: plan.classes.iter().map(|c| c.safe.clone()).collect(),
     }
 }
 
@@ -16358,6 +16886,29 @@ fn first_damage_players(
 /// per-tick yaw/NBT are covered by compiler unit tests (they assert the emitted
 /// commands directly — stronger and faster than a timing gametest). Emits nothing
 /// when the campaign declares no actors.
+/// The claim the three actor loops make, judged against the shipped bytes by
+/// `DW0811`. Written from `quests.content.actors` — the authored list — so an
+/// emitter that reverts to `actors.first()` still declares every actor here and
+/// the refusal names the ones it stopped driving.
+///
+/// Both families in one claim because both loops walk the same list: an actor
+/// with a spawn body and no unleash body is not a breach (`check_claims` judges
+/// only bodies that exist), but an actor with either body and no template is.
+fn actor_watch_claim(plan: &Plan) -> crate::watch::Claim {
+    crate::watch::Claim {
+        mechanic: "actor",
+        families: vec!["spawn_actor_".to_string(), "unleash_".to_string()],
+        declared: plan
+            .campaign
+            .quests
+            .content
+            .actors
+            .iter()
+            .map(|a| plan::safe_local(a.id.as_str()))
+            .collect(),
+    }
+}
+
 fn emit_v06_actor_packtests(
     plan: &Plan,
     out: &mut BuildOutput,
@@ -16392,88 +16943,106 @@ fn emit_v06_actor_packtests(
     // removes it. The visible difference (kill = in-place death animation, vanish =
     // silent relocate-then-kill out of view) is a client-eyes distinction; CI
     // asserts both leave zero entities under the actor tag.
-    if let Some(a) = actors.first() {
+    // EVERY declared actor, not the first. `spawn_actor_<id>` and `unleash_<id>`
+    // are per-actor bodies: each summons its OWN entity type, with its own NBT,
+    // at its own cell — a bat at one anchor and a spider at another are not two
+    // instances of one proof, they are two summons that can fail independently,
+    // and a 1.21.11 function with one bad line is refused in its entirety. The
+    // gallery shipped four actors and drove one of them here; three carried no
+    // runtime proof from this file at all. Registered as a claim
+    // (`actor_watch_claim`) so the walk cannot quietly stop at `first()` again.
+    for a in actors {
         let safe = plan::safe_local(a.id.as_str());
+        // Every scratch score is suffixed with the actor's own id. The suite is
+        // ONE batch on ONE server with no ordering guarantee between templates,
+        // so a score shared across sibling actors would be written by one
+        // template and asserted by another (`crate::batchstate`).
         let mut b = packtest_header(&format!(
-            "{}: spawn-actor appears; despawn kill & vanish both remove it",
-            artifact_title(c)
+            "{}: spawn-actor `{}` appears; despawn kill & vanish both remove it",
+            artifact_title(c),
+            a.id
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!(
-            "execute store result score #sp_sdsp dw.sys if entity @e[tag=dw_actor_{safe}]"
+            "execute store result score #sp_sdsp_{safe} dw.sys if entity @e[tag=dw_actor_{safe}]"
         ));
-        b.push("assert score #sp_sdsp dw.sys matches 1..".to_string());
+        b.push(format!("assert score #sp_sdsp_{safe} dw.sys matches 1.."));
         // kill style removes it.
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!(
-            "execute store result score #k_sdsp dw.sys if entity @e[tag=dw_actor_{safe}]"
+            "execute store result score #k_sdsp_{safe} dw.sys if entity @e[tag=dw_actor_{safe}]"
         ));
-        b.push("assert score #k_sdsp dw.sys matches 0".to_string());
+        b.push(format!("assert score #k_sdsp_{safe} dw.sys matches 0"));
         // re-spawn (idempotent), then vanish style also removes it — which also
         // leaves the world actor-free for the next test.
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!("tp @e[tag=dw_actor_{safe}] ~ -128 ~"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!(
-            "execute store result score #v_sdsp dw.sys if entity @e[tag=dw_actor_{safe}]"
+            "execute store result score #v_sdsp_{safe} dw.sys if entity @e[tag=dw_actor_{safe}]"
         ));
-        b.push("assert score #v_sdsp dw.sys matches 0".to_string());
-        write("v06_spawn_despawn", b);
+        b.push(format!("assert score #v_sdsp_{safe} dw.sys matches 0"));
+        write(&format!("v06_spawn_despawn_{safe}"), b);
     }
 
     // spawn-actor is idempotent (re-caging after unleash): two spawns yield exactly
-    // one puppet, not two.
-    if let Some(a) = actors.first() {
+    // one puppet, not two. Per actor for the same reason — the idempotence guard
+    // is `unless entity @e[tag=dw_actor_<id>]`, a per-actor tag.
+    for a in actors {
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
-            "{}: spawn-actor is idempotent (one puppet, not two)",
-            artifact_title(c)
+            "{}: spawn-actor `{}` is idempotent (one puppet, not two)",
+            artifact_title(c),
+            a.id
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!(
-            "execute store result score #n_sidm dw.sys if entity @e[tag=dw_pup_{safe}]"
+            "execute store result score #n_sidm_{safe} dw.sys if entity @e[tag=dw_pup_{safe}]"
         ));
-        b.push("assert score #n_sidm dw.sys matches 1".to_string());
+        b.push(format!("assert score #n_sidm_{safe} dw.sys matches 1"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
-        write("v06_spawn_idempotent", b);
+        write(&format!("v06_spawn_idempotent_{safe}"), b);
     }
 
     // unleash-actor: the NoAI puppet (dw_pup) is replaced by a real-AI twin (same
-    // body tag, real entity type, no puppet marker).
-    if let Some(a) = actors.first() {
+    // body tag, real entity type, no puppet marker). Per actor, and the entity
+    // type asserted is THIS actor's — which is precisely what one exemplar could
+    // never have covered.
+    for a in actors {
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
-            "{}: unleash-actor swaps the puppet for a real-AI twin",
-            artifact_title(c)
+            "{}: unleash-actor `{}` swaps the puppet for a real-AI twin",
+            artifact_title(c),
+            a.id
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!(
-            "execute store result score #pup_unl dw.sys if entity @e[tag=dw_pup_{safe}]"
+            "execute store result score #pup_unl_{safe} dw.sys if entity @e[tag=dw_pup_{safe}]"
         ));
-        b.push("assert score #pup_unl dw.sys matches 1".to_string());
+        b.push(format!("assert score #pup_unl_{safe} dw.sys matches 1"));
         b.push(format!("function {ns}:unleash_{safe}"));
         // puppet marker gone, one twin of the real entity type remains.
         b.push(format!(
-            "execute store result score #pup2_unl dw.sys if entity @e[tag=dw_pup_{safe}]"
+            "execute store result score #pup2_unl_{safe} dw.sys if entity @e[tag=dw_pup_{safe}]"
         ));
-        b.push("assert score #pup2_unl dw.sys matches 0".to_string());
+        b.push(format!("assert score #pup2_unl_{safe} dw.sys matches 0"));
         b.push(format!(
-            "execute store result score #twin_unl dw.sys if entity @e[type={},tag=dw_actor_{safe}]",
+            "execute store result score #twin_unl_{safe} dw.sys if entity @e[type={},tag=dw_actor_{safe}]",
             a.entity
         ));
-        b.push("assert score #twin_unl dw.sys matches 1".to_string());
+        b.push(format!("assert score #twin_unl_{safe} dw.sys matches 1"));
         // The twin is this test's residue — without this kill it survives the
         // test, and any later spawn no-ops against its body tag while owning no
         // puppet marker (the exact v06_spawn_idempotent red).
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
-        write("v06_unleash", b);
+        write(&format!("v06_unleash_{safe}"), b);
     }
 
     // move-actor: fast-forward the driver to its final waypoint (running on_arrive on
@@ -17021,131 +17590,201 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
     // and 0 again after the objective completes. If the node also has a flag-gated
     // option, a final phase sets that flag in isolation and asserts its bit flips —
     // proving the flag axis is unchanged and independent of the objective-state axis.
+    // EVERY gated node, and inside it every gated option — not the first of
+    // either. `dmask_<npc>_<node>` is per-node code whose bit `i` is the i-th
+    // gated option's own display condition, so a mask proved over one node says
+    // nothing about the next: the gallery's `curator_root` gates on an objective
+    // and its `curator_what` on a FORBIDDEN flag, an axis the single-node walk
+    // could not even select, because it looked only for an option that completes
+    // something. Registered as a claim (`dialogue_mask_watch_claim`).
     let v04 = campaign_is_v04(plan);
-    'dlg: for npc in &plan.npcs {
+    for npc in &plan.npcs {
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for probe in &npc.options {
             if !seen.insert(probe.node_id.as_str()) {
                 continue;
             }
             let gated = node_gated_options(npc, &probe.node_id, v04);
-            // The option under test: the first gated option that completes an
-            // objective with a resolvable quest (the objective-state axis).
-            let Some((b, under_test, qid, obj)) = gated.iter().enumerate().find_map(|(i, o)| {
-                o.completes
-                    .iter()
-                    .find_map(|obj| objective_quest(c, obj).map(|(q, _)| (q, obj)))
-                    .map(|(q, obj)| (i, *o, q, obj.as_str()))
-            }) else {
+            if gated.is_empty() {
                 continue;
-            };
-            let node_safe = plan::safe_local(&probe.node_id);
-            let dmask = format!("{ns}:dmask_{}_{}", npc.safe, node_safe);
-            let qa = quest_active_score(qid);
-            let os = obj_score(obj);
-
-            // Every score any of this node's gated options reads — zeroed so the
-            // mask isolates the bit under test (campaign-start quests would else
-            // leave sibling bits set).
-            let mut reset: BTreeSet<String> = BTreeSet::new();
-            for g in &gated {
-                for f in &g.requires_flags {
-                    reset.insert(plan::flag_score(f));
-                }
-                for f in &g.forbids_flags {
-                    reset.insert(plan::flag_score(f));
-                }
-                for o in &g.completes {
-                    if let Some((q, _)) = objective_quest(c, o) {
-                        reset.insert(quest_active_score(q));
-                        reset.insert(obj_score(o));
-                    }
-                }
             }
-
-            let (pin, sel) = pin_dummy("dw_t_dvis");
-            let mut bt = packtest_header(&format!(
-                "{}: dialogue option `{}` is displayed only while its objective `{obj}` is active",
-                artifact_title(c),
-                plain(&under_test.label)
-            ));
-            bt.push(format!("function {ns}:setup"));
-            // Pin this test's own dummy (see `pin_dummy`): with one dummy PER
-            // test coexisting on the batch server, an `as @a` mask run + copy
-            // would read the LAST dummy the selector visits — a foreign one.
-            bt.push(pin);
-            let clear = |bt: &mut Vec<String>| {
-                for s in &reset {
-                    bt.push(format!("scoreboard players set {} {s} 0", plan::PARTY));
-                }
-            };
-            // Run the mask, then ISOLATE the option-under-test's bit before the
-            // assert: `(dw.dmask >> bit) & 1` via `%= 2^(bit+1)` then `/= 2^bit`. A
-            // node's other gated options can share a quest-active score (e.g. two
-            // options completing objectives of the same quest), so activating that
-            // quest lights several bits at once — comparing the *whole* `dw.dmask`
-            // would then read a sibling's bit as this option's and mis-assert.
-            let assert_bit = |bt: &mut Vec<String>, bit: usize, present: bool| {
-                bt.push(format!("execute as {sel} run function {dmask}"));
-                // Copy the pinned dummy's mask into a fake player. `as {sel}` keeps
-                // the read single-entity (`= @s …`): `scoreboard players
-                // get`/`operation` reject a multi-entity selector.
-                bt.push(format!(
-                    "execute as {sel} run scoreboard players operation #dm_dvis dw.sys = @s dw.dmask"
-                ));
-                bt.push(format!(
-                    "scoreboard players set #dmhi_dvis dw.sys {}",
-                    1u32 << (bit + 1)
-                ));
-                bt.push(
-                    "scoreboard players operation #dm_dvis dw.sys %= #dmhi_dvis dw.sys".to_string(),
-                );
-                bt.push(format!(
-                    "scoreboard players set #dmlo_dvis dw.sys {}",
-                    1u32 << bit
-                ));
-                bt.push(
-                    "scoreboard players operation #dm_dvis dw.sys /= #dmlo_dvis dw.sys".to_string(),
-                );
-                bt.push(format!(
-                    "assert score #dm_dvis dw.sys matches {}",
-                    u32::from(present)
-                ));
-            };
-
-            // Phase A — quest inactive: the option is hidden (its bit is 0).
-            clear(&mut bt);
-            assert_bit(&mut bt, b, false);
-            // Phase B — quest active, objective incomplete: the option appears.
-            clear(&mut bt);
-            bt.push(format!("scoreboard players set {} {qa} 1", plan::PARTY));
-            assert_bit(&mut bt, b, true);
-            // Phase C — objective complete: the option disappears again.
-            bt.push(format!("scoreboard players set {} {os} 1", plan::PARTY));
-            assert_bit(&mut bt, b, false);
-
-            // Flag axis: a flag-only gated option's bit flips with its flag alone,
-            // independent of the objective-state axis.
-            if let Some((bf, flag_opt)) = gated
-                .iter()
-                .enumerate()
-                .find(|(_, o)| !o.requires_flags.is_empty() && o.completes.is_empty())
-            {
-                clear(&mut bt);
-                for f in &flag_opt.requires_flags {
-                    bt.push(format!(
-                        "scoreboard players set {} {} 1",
-                        plan::PARTY,
-                        plan::flag_score(f)
-                    ));
-                }
-                assert_bit(&mut bt, bf, true);
-            }
-
-            write("v04_dialogue_visibility", bt);
-            break 'dlg;
+            emit_one_dialogue_mask_packtest(plan, npc, &probe.node_id, &gated, out);
         }
     }
+}
+
+/// One dialogue node's availability mask, driven per option and per axis.
+///
+/// The generalisation that made this a loop is worth stating, because the shape
+/// it replaces is the one `crate::watch` exists to catch. The old walk searched
+/// every node for the FIRST option that completes an objective, tested that one,
+/// and stopped — so a node gated on a flag, on a FORBIDDEN flag or on a runtime
+/// datum was not merely untested, it was unreachable by construction: the search
+/// that skipped it was the same search that chose the exemplar. Reading the
+/// emitted bytes said "one of two masks is driven", which is true and does not
+/// say why.
+///
+/// So the axis is no longer chosen. Every gated option of the node is driven
+/// through its OWN full display condition — flags required, flags forbidden, the
+/// v0.10 numeric datum, and each completed objective's quest-active/not-yet-done
+/// pair — asserted displayed, and then each term of that condition is broken on
+/// its own and the bit asserted gone. Every axis the DSL has is covered because
+/// the drive is written from the option's condition rather than from a list of
+/// axes someone enumerated.
+///
+/// The bit is always ISOLATED (`(dw.dmask >> i) & 1`) rather than compared whole:
+/// a node's options can share a quest-active score, so lighting one condition can
+/// light several bits, and comparing the whole mask would read a sibling's bit as
+/// this option's.
+fn emit_one_dialogue_mask_packtest(
+    plan: &Plan,
+    npc: &plan::NpcPlan,
+    node_id: &str,
+    gated: &[&plan::OptionPlan],
+    out: &mut BuildOutput,
+) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let p = plan::PARTY;
+    let node_safe = plan::safe_local(node_id);
+    let key = format!("{}_{}", npc.safe, node_safe);
+    let dmask = format!("{ns}:dmask_{key}");
+    let (pin, sel) = pin_dummy(&format!("dw_t_dvis_{key}"));
+
+    let mut bt = packtest_header(&format!(
+        "{}: NPC `{}` node `{node_id}` — every gated option is displayed exactly when its own \
+         condition holds",
+        artifact_title(c),
+        npc.npc_id
+    ));
+    bt.push(format!("function {ns}:setup"));
+    // Pin this test's own dummy (see `pin_dummy`): with one dummy PER test
+    // coexisting on the batch server, an `as @a` mask run + copy would read the
+    // LAST dummy the selector visits — a foreign one.
+    bt.push(pin);
+
+    // Run the mask, then isolate one option's bit before the assert:
+    // `(dw.dmask >> bit) & 1` via `%= 2^(bit+1)` then `/= 2^bit`.
+    let assert_bit = |bt: &mut Vec<String>, bit: usize, present: bool| {
+        bt.push(format!("execute as {sel} run function {dmask}"));
+        // Copy the pinned dummy's mask into a fake player. `as {sel}` keeps the
+        // read single-entity (`= @s …`): `scoreboard players get`/`operation`
+        // reject a multi-entity selector.
+        bt.push(format!(
+            "execute as {sel} run scoreboard players operation #dm_{key} dw.sys = @s dw.dmask"
+        ));
+        bt.push(format!(
+            "scoreboard players set #dmhi_{key} dw.sys {}",
+            1u32 << (bit + 1)
+        ));
+        bt.push(format!(
+            "scoreboard players operation #dm_{key} dw.sys %= #dmhi_{key} dw.sys"
+        ));
+        bt.push(format!(
+            "scoreboard players set #dmlo_{key} dw.sys {}",
+            1u32 << bit
+        ));
+        bt.push(format!(
+            "scoreboard players operation #dm_{key} dw.sys /= #dmlo_{key} dw.sys"
+        ));
+        bt.push(format!(
+            "assert score #dm_{key} dw.sys matches {}",
+            u32::from(present)
+        ));
+    };
+
+    for (bit, o) in gated.iter().enumerate() {
+        // Satisfy this option's WHOLE display condition, term by term, from the
+        // option itself — never from a hand-listed set of axes.
+        let mut satisfied: Vec<String> = Vec::new();
+        // Each term, with the line that BREAKS it and the line that restores it.
+        // A term whose break and restore are the same shape is what lets the
+        // negative half be written once for every axis the DSL has.
+        let mut terms: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+        for f in &o.requires_flags {
+            let sc = plan::flag_score(f);
+            satisfied.push(format!("scoreboard players set {p} {sc} 1"));
+            terms.push((
+                vec![format!("scoreboard players set {p} {sc} 0")],
+                vec![format!("scoreboard players set {p} {sc} 1")],
+            ));
+        }
+        for f in &o.forbids_flags {
+            let sc = plan::flag_score(f);
+            satisfied.push(format!("scoreboard players set {p} {sc} 0"));
+            terms.push((
+                vec![format!("scoreboard players set {p} {sc} 1")],
+                vec![format!("scoreboard players set {p} {sc} 0")],
+            ));
+        }
+        satisfied.extend(state_drive_lines(plan, &o.requires_state, true));
+        for cmp in &o.requires_state {
+            terms.push((
+                state_drive_lines(plan, std::slice::from_ref(cmp), false),
+                state_drive_lines(plan, std::slice::from_ref(cmp), true),
+            ));
+        }
+        for obj in &o.completes {
+            let Some((qid, _)) = objective_quest(c, obj) else {
+                continue;
+            };
+            let qa = quest_active_score(qid);
+            let os = obj_score(obj);
+            satisfied.push(format!("scoreboard players set {p} {qa} 1"));
+            satisfied.push(format!("scoreboard players set {p} {os} 0"));
+            // Two independent ways the objective-state axis hides the option:
+            // the quest is not running, or the objective is already done.
+            terms.push((
+                vec![format!("scoreboard players set {p} {qa} 0")],
+                vec![format!("scoreboard players set {p} {qa} 1")],
+            ));
+            terms.push((
+                vec![format!("scoreboard players set {p} {os} 1")],
+                vec![format!("scoreboard players set {p} {os} 0")],
+            ));
+        }
+        if terms.is_empty() {
+            continue;
+        }
+        // Displayed when its own condition holds…
+        bt.extend(satisfied.iter().cloned());
+        assert_bit(&mut bt, bit, true);
+        // …and gone the moment any single term of it stops holding. One term at a
+        // time, restored after: a template that broke them all at once would pass
+        // just as well against a mask that reads only the first.
+        for (break_it, restore) in &terms {
+            bt.extend(break_it.iter().cloned());
+            assert_bit(&mut bt, bit, false);
+            bt.extend(restore.iter().cloned());
+        }
+    }
+
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/dlg_mask_{key}.mcfunction"),
+        lines(&bt).into_bytes(),
+    );
+}
+
+/// The claim the dialogue-mask loop makes, judged by `DW0811`. One claim per
+/// NPC, because the family prefix carries the NPC's own id (`dmask_<npc>_`) —
+/// which is why `Claim::families` is owned rather than a static list.
+///
+/// `declared` is every node the NPC's authored options mention, so a node whose
+/// options are all ungated (and which therefore emits no `dmask_` body at all) is
+/// declared and not judged, while a gated node the loop skipped is a breach.
+fn dialogue_mask_watch_claims(plan: &Plan) -> Vec<crate::watch::Claim> {
+    plan.npcs
+        .iter()
+        .map(|npc| crate::watch::Claim {
+            mechanic: "dialogue-mask",
+            families: vec![format!("dmask_{}_", npc.safe)],
+            declared: npc
+                .options
+                .iter()
+                .map(|o| plan::safe_local(&o.node_id))
+                .collect(),
+        })
+        .collect()
 }
 
 /// One real `tick` pass with every player on the batch server shielded from harm.

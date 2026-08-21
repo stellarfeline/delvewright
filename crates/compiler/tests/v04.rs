@@ -281,61 +281,76 @@ fn dialogue_display_gating_variants() {
     assert!(show.contains("dialog show @s v04-showcase:keeper_greet__m3"));
 }
 
-/// The generated PackTest drives the availability mask through the objective-state
-/// axis transitions (hidden before the quest activates, shown while active, hidden
-/// again after completion) plus the flag axis in isolation. It asserts
-/// the option-under-test's *isolated* bit, never the whole mask: sibling gated
-/// options in the same node can share a quest-active score, so a whole-mask compare
-/// would read a sibling's bit as this option's and mis-assert.
+/// The generated PackTest drives EVERY gated option of the node through its own
+/// full display condition — satisfied, then each term of it broken on its own —
+/// and asserts the option-under-test's *isolated* bit, never the whole mask:
+/// sibling gated options in the same node can share a quest-active score, so a
+/// whole-mask compare would read a sibling's bit as this option's and mis-assert.
+///
+/// One template per gated node, per NPC: `dmask_<npc>_<node>` is per-node code,
+/// so a mask proved over one node says nothing about the next. The claim over
+/// the family is `DW0811`'s.
 #[test]
 fn dialogue_visibility_packtest_covers_both_axes() {
     let out = build_showcase();
     let pt = std::str::from_utf8(
-        &out["packtest-datapack/data/v04-showcase/test/v04_dialogue_visibility.mcfunction"],
+        &out["packtest-datapack/data/v04-showcase/test/dlg_mask_keeper_greet.mcfunction"],
     )
     .unwrap();
     // The test pins its own dummy (batch model) and reads the MASK off it; the
     // state it drives is party state (spec-0018), so those writes go to `#party`.
-    const SEL: &str = "@a[tag=dw_t_dvis,limit=1]";
-    assert!(pt.contains("tag @p add dw_t_dvis"));
+    const SEL: &str = "@a[tag=dw_t_dvis_keeper_greet,limit=1]";
+    assert!(pt.contains("tag @p add dw_t_dvis_keeper_greet"));
     assert!(pt.contains(&format!(
-        "execute as {SEL} run scoreboard players operation #dm_dvis dw.sys = @s dw.dmask"
+        "execute as {SEL} run scoreboard players operation #dm_keeper_greet dw.sys = @s dw.dmask"
     )));
-    // Quest inactive → the completing option (bit 0) is hidden.
-    assert!(pt.contains("scoreboard players set #party dw.qa_greet 0"));
-    // Quest active, objective incomplete → the completing option appears.
+    // Objective axis, both directions: quest active + objective incomplete is the
+    // satisfied state, and each of its two terms is broken on its own.
     assert!(pt.contains("scoreboard players set #party dw.qa_greet 1"));
-    // Objective complete → hidden again.
+    assert!(pt.contains("scoreboard players set #party dw.qa_greet 0"));
+    assert!(pt.contains("scoreboard players set #party dw.o_talk 0"));
     assert!(pt.contains("scoreboard players set #party dw.o_talk 1"));
-    // Flag axis in isolation → the flag option (bit 1) appears.
+    // Flag axis, both directions — driven for the flag option itself, not merely
+    // as a positive phase appended to the objective option's walk.
     assert!(pt.contains("scoreboard players set #party dw.f_summoned 1"));
+    assert!(pt.contains("scoreboard players set #party dw.f_summoned 0"));
     // Every phase runs the emitted mask function (no re-implementation).
     assert!(pt.contains(&format!(
         "execute as {SEL} run function v04-showcase:dmask_keeper_greet"
     )));
     // Bit isolation `(dmask >> bit) & 1`: bit 0 via `%= 2` then `/= 1`; bit 1
     // (the flag option) via `%= 4` then `/= 2`. Both axes assert 0/1, never 2.
-    assert!(pt.contains("scoreboard players set #dmhi_dvis dw.sys 2"));
-    assert!(pt.contains("scoreboard players set #dmlo_dvis dw.sys 1"));
-    assert!(pt.contains("scoreboard players set #dmhi_dvis dw.sys 4"));
-    assert!(pt.contains("scoreboard players set #dmlo_dvis dw.sys 2"));
-    assert!(pt.contains("scoreboard players operation #dm_dvis dw.sys %= #dmhi_dvis dw.sys"));
-    assert!(pt.contains("scoreboard players operation #dm_dvis dw.sys /= #dmlo_dvis dw.sys"));
+    assert!(pt.contains("scoreboard players set #dmhi_keeper_greet dw.sys 2"));
+    assert!(pt.contains("scoreboard players set #dmlo_keeper_greet dw.sys 1"));
+    assert!(pt.contains("scoreboard players set #dmhi_keeper_greet dw.sys 4"));
+    assert!(pt.contains("scoreboard players set #dmlo_keeper_greet dw.sys 2"));
+    assert!(pt.contains(
+        "scoreboard players operation #dm_keeper_greet dw.sys %= #dmhi_keeper_greet dw.sys"
+    ));
+    assert!(pt.contains(
+        "scoreboard players operation #dm_keeper_greet dw.sys /= #dmlo_keeper_greet dw.sys"
+    ));
     // Isolated asserts are always 0 (hidden) or 1 (shown) — the whole-mask value
     // (e.g. 2 for a lit high bit) must never appear.
     assert!(
-        !pt.contains("assert score #dm_dvis dw.sys matches 2"),
+        !pt.contains("assert score #dm_keeper_greet dw.sys matches 2"),
         "isolated-bit asserts must be 0/1, never a raw mask value: {pt}"
     );
+    // Two options, each asserted SHOWN once under its own satisfied condition…
     assert_eq!(
-        pt.matches("assert score #dm_dvis dw.sys matches 0").count(),
+        pt.matches("assert score #dm_keeper_greet dw.sys matches 1")
+            .count(),
         2,
-        "hidden asserted before activation and after completion"
+        "each gated option is asserted shown while its own condition holds"
     );
+    // …and asserted HIDDEN once per term of that condition: the completing
+    // option has two (quest inactive, objective already done), the flag option
+    // has one.
     assert_eq!(
-        pt.matches("assert score #dm_dvis dw.sys matches 1").count(),
-        2,
-        "shown asserted while active (objective axis) and for the flag axis"
+        pt.matches("assert score #dm_keeper_greet dw.sys matches 0")
+            .count(),
+        3,
+        "every term of every option's condition is broken on its own"
     );
     // The mask read must be single-entity: `scoreboard players get`/`operation`
     // reject a multi-entity selector, so a bare `@a` read is a load-time command
@@ -343,12 +358,6 @@ fn dialogue_visibility_packtest_covers_both_axes() {
     assert!(
         !pt.contains("get @a dw.dmask"),
         "the dmask read must not use a multi-entity `@a` selector: {pt}"
-    );
-    assert!(
-        pt.contains(&format!(
-            "execute as {SEL} run scoreboard players operation #dm_dvis dw.sys = @s dw.dmask"
-        )),
-        "the dmask read copies @s (single) into the assert scratch: {pt}"
     );
 }
 
