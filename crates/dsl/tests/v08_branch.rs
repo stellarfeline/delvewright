@@ -101,6 +101,7 @@ fn diags(plan_doc: String, quests_doc: String, dialogue_doc: &str) -> Vec<Diagno
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     })
 }
 

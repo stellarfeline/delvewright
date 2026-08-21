@@ -184,6 +184,26 @@ enum Command {
         #[command(subcommand)]
         action: EditAction,
     },
+    /// The handed allocation for a site-plan place (spec-0050 §4): the frame's
+    /// extents, the datum in piece-local coordinates, every seam of the box with
+    /// the answering face it requires, the owed anchor names, and the detail
+    /// plan's palette.
+    ///
+    /// Derived from the site plan on every invocation and an input to nothing:
+    /// no gate, no build step and no check ever reads what this prints, so a
+    /// file made of it is a copy with no consumer and its staleness has no
+    /// vector into the build. It refuses without a passed, fresh walk record,
+    /// because obtaining an allocation is one of the two events that begin
+    /// detail work.
+    Allocation {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+        /// The place — a layout-graph node id (`node/<kebab>`).
+        place: Option<String>,
+        /// Every place of the plan, in document order.
+        #[arg(long)]
+        all: bool,
+    },
     /// Convert a harvested `rehearsal-report.json` (spec-0019) into per-shot
     /// `anchor + offset` DSL patches. Reads only the report and the creator
     /// overlay's `layout.json` — no campaign, no build, no world assembly.
@@ -264,6 +284,11 @@ fn main() -> ExitCode {
         }
         Command::Fmt { paths, check } => run_fmt(paths, *check, cli.json),
         Command::Schema { stage } => run_schema(stage),
+        Command::Allocation {
+            campaign_dir,
+            place,
+            all,
+        } => run_allocation(campaign_dir, place.as_deref(), *all, &cli.prefabs, cli.json),
         Command::Metrics { gym } => run_metrics(cli.json, gym.as_deref()),
         Command::Snapshot {
             campaign_dir,
@@ -646,6 +671,31 @@ fn validate_loaded(
             // effect history. Error tier, except the pre-0.7 deprecation window
             // (DW0465) and the staleness lint (DW0467), which warn.
             diags.extend(delvewright_compiler::cast::check_cast(&campaign));
+            // spec-0050 (DSL v0.15): the detail plan. `DW0841` (the whole was
+            // walked before any part is detailed), `DW0842`-`DW0845` (the
+            // binding binds, the piece is the shape of its allocation, its
+            // openings are the plan's seams, its anchors have standing) and
+            // `DW0848`'s consumer door. Bound HERE because this is the one
+            // funnel every subcommand's validation goes through — `build`
+            // included — so a defect cannot reach a datapack by skipping
+            // `delvec validate`. No-op for a campaign with no `detail-plan`,
+            // which is every campaign below 0.15.0, and the binding line states
+            // that zero rather than going quiet.
+            {
+                let (dd, dbind) = delvewright_compiler::detail::check(
+                    &campaign,
+                    &prefabs,
+                    loaded.walk_record.as_deref(),
+                );
+                if campaign.detail_plan.is_some() || campaign.site_plan.is_some() {
+                    eprintln!("{}", dbind.line());
+                }
+                diags.extend(dd);
+                diags.extend(delvewright_compiler::detail::blockout_drift(
+                    &campaign,
+                    loaded.walk_record.as_deref(),
+                ));
+            }
             // spec-0025 (DSL v0.8): branch-complete narrative verification. Every
             // declared branch is enumerated and every static proof re-run under
             // its flag assignment — terminality, cast continuity, exclusive-content
@@ -2169,6 +2219,95 @@ fn print_one_diag(d: &Diagnostic, json: bool) {
     }
 }
 
+/// `delvec allocation` — the handing (spec-0050 §4).
+///
+/// Refuses without a passed, fresh walk record, and the refusal is the same
+/// `DW0841` validation raises: the two events that begin detail work are
+/// obtaining an allocation and compiling a binding, and both are bound. There
+/// is no third, because no other verb reads a `detail-plan`.
+/// `delvec allocation` — the handing (spec-0050 §4).
+///
+/// Refuses without a passed, fresh walk record, and the refusal is the same
+/// `DW0841` validation raises: the two events that begin detail work are
+/// obtaining an allocation and compiling a binding, and both are bound. There is
+/// no third, because no other verb reads a `detail-plan`.
+///
+/// **Stdout carries the allocation and nothing else** on the success path, so an
+/// authoring loop can redirect it. What it prints is an input to nothing — see
+/// the note inside.
+fn run_allocation(
+    campaign_dir: &Path,
+    place: Option<&str>,
+    all: bool,
+    prefabs_dir: &Path,
+    json: bool,
+) -> ExitCode {
+    let _ = prefabs_dir;
+    let loaded = match load_campaign_dir(campaign_dir) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("internal error: cannot read campaign dir: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    };
+    // Parsed rather than fully validated, on the precedent `l10n-inventory`
+    // sets: this verb's stdout is a machine-readable document an authoring loop
+    // reads, and `print_diags` writes to stdout. Nothing is lost by it — an
+    // allocation is derived from the plan on every invocation and is an input to
+    // NOTHING, so a stale or wrong one has no vector into the build; the frame
+    // is recomputed and re-judged by `DW0843` at every validation. `delvec
+    // validate` is the verb that says what a campaign's state is.
+    let campaign = match parse_campaign(&loaded.raw) {
+        Ok(c) => c,
+        Err(diags) => {
+            print_diags(&Fenced::structural(diags), json);
+            return ExitCode::from(1);
+        }
+    };
+    if campaign.site_plan.is_none() {
+        eprintln!(
+            "error: `{}` carries no `site-plan.json`. An allocation is what the WHOLE hands a \
+             place, so there is nothing to hand out until the whole exists.",
+            campaign_dir.display()
+        );
+        return ExitCode::from(1);
+    }
+    // **The gate, at the second of the two events that begin detail work.** It is
+    // asked of the campaign as it stands, so a campaign with no `detail-plan`
+    // yet — which is exactly the campaign asking for its first allocation — is
+    // asked the same question against the plan whose hash it names.
+    if let Some(d) =
+        delvewright_compiler::detail::allocation_walk_gate(&campaign, loaded.walk_record.as_deref())
+    {
+        print_one_diag(&d, json);
+        return ExitCode::from(1);
+    }
+    let out = if all {
+        serde_json::to_value(delvewright_compiler::detail::allocations(&campaign))
+    } else {
+        let Some(place) = place else {
+            eprintln!("error: name a place (`node/<kebab>`), or pass `--all`");
+            return ExitCode::from(EXIT_INTERNAL);
+        };
+        let id = delvewright_dsl::NodeId(place.to_string());
+        match delvewright_compiler::detail::allocation(&campaign, &id) {
+            Some(a) => serde_json::to_value(a),
+            None => {
+                eprintln!(
+                    "error: the plan allocates no box to `{place}` — run with `--all` to see \
+                     every place it does, or `delvec validate` if you expected one here"
+                );
+                return ExitCode::from(1);
+            }
+        }
+    };
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&out.expect("an allocation serializes")).unwrap()
+    );
+    ExitCode::SUCCESS
+}
+
 fn run_schema(stage: &str) -> ExitCode {
     let stages = match stage {
         "1" => vec![Stage::World],
@@ -2184,10 +2323,13 @@ fn run_schema(stage: &str) -> ExitCode {
         // between the two that does not exist.
         "geometry-brief" => vec![Stage::GeometryBrief],
         "layout-graph" => vec![Stage::LayoutGraph],
+        "site-plan" => vec![Stage::SitePlan],
+        "detail-plan" => vec![Stage::DetailPlan],
         "all" => Stage::ALL.to_vec(),
         other => {
             eprintln!(
-                "unknown stage `{other}` (want 1..7, `geometry-brief`, `layout-graph`, or `all`)"
+                "unknown stage `{other}` (want 1..7, `geometry-brief`, `layout-graph`, \
+                 `site-plan`, `detail-plan`, or `all`)"
             );
             return ExitCode::from(EXIT_INTERNAL);
         }

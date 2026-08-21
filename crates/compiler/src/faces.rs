@@ -143,6 +143,23 @@ struct Piece {
     /// edge joins two of its own spaces makes a complete claim about its
     /// inside and none about its sides, so it contracts and faces nothing.
     contracted: bool,
+    /// **Whether the prefab registry has ever heard of this piece.**
+    ///
+    /// False for exactly one thing: a box of the derived blockout, which is a
+    /// `PiecePlacement` with no templates whose `prefab_id` no library file
+    /// backs (`crate::blockout`). Such a box *makes no claim about mating with
+    /// anything* — its own module says so — and a claim it does not make cannot
+    /// be a claim it fails to answer.
+    ///
+    /// The distinction only started to matter at stage 6. Before it, a
+    /// site-plan campaign had no real placed piece at all (`DW0839` forbids
+    /// `areas[]`), so no declared face could ever have found a derived box
+    /// beyond it. A detail piece's face opens onto the party plane, and the
+    /// party plane is inside the blockout box's SHELL bbox — so without this,
+    /// every detailed place would be refused `DW0780` for failing to mate with
+    /// a shell that is not a building. A cross-feature interaction that belonged
+    /// to neither change, found by reading the two for intent.
+    known: bool,
 }
 
 /// The verdict of the mating check: how many declared faces met another placed
@@ -244,6 +261,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                 contracted: prefabs
                     .get(&placement.prefab_id)
                     .is_some_and(|m| m.spatial_contract.is_some()),
+                known: prefabs.get(&placement.prefab_id).is_some(),
             });
         }
     }
@@ -260,6 +278,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
             // Which other placed piece owns the cells just beyond this opening?
             let Some((j, neighbour)) = pieces.iter().enumerate().find(|(j, other)| {
                 *j != i
+                    && other.known
                     && plane >= other.min[axis]
                     && plane <= other.max[axis]
                     && (0..3).all(|a| {

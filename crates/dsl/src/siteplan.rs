@@ -253,6 +253,55 @@ pub fn synthesized_anchors(c: &Campaign) -> BTreeSet<String> {
     out
 }
 
+/// **The synthesized names one PLACE owes** (spec-0050 §6) — the subset of
+/// [`synthesized_anchors`] whose bearer is this box.
+///
+/// Its own `anchor/node-…`; [`ENTRY_ANCHOR`] when it is the entry node; each
+/// `anchor/unlock-…` whose `opens_from` side it is — the side the derivation
+/// stands that affordance in. A gate region (`anchor/seam-…`) is **never** owed:
+/// it is whole fabric, standing in a party plane the piece does not own.
+///
+/// Here rather than in `crate::detailplan` because the answer is a fact about
+/// the graph, and [`synthesized_anchors`] is the one authority for what a
+/// site-plan campaign provides — a second module deciding which names belong to
+/// which place is exactly the two-functions-agreeing-about-spelling drift that
+/// note exists to remove. [`owed_anchors_partition_the_synthesized_set`] proves
+/// the two agree by construction rather than by care.
+///
+/// Empty for a campaign with no site plan, and for a node the graph does not
+/// have.
+#[must_use]
+pub fn owed_anchors(c: &Campaign, node: &NodeId) -> BTreeSet<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    if c.site_plan.is_none() {
+        return out;
+    }
+    let Some(graph) = c.layout_graph.as_ref().map(|g| &g.content) else {
+        return out; // `DW0824` refused the plan; there is nothing to name.
+    };
+    if !graph.nodes.iter().any(|n| &n.id == node) {
+        return out; // `DW0842` names a row whose place the graph does not have.
+    }
+    out.insert(node_anchor(node));
+    if &graph.entry == node {
+        out.insert(ENTRY_ANCHOR.to_string());
+    }
+    for e in &graph.edges {
+        let Edge::Barred { id, opens_from, .. } = e else {
+            continue;
+        };
+        let side = match opens_from {
+            crate::layout::OpensFrom::A => e.a(),
+            crate::layout::OpensFrom::B => e.b(),
+            crate::layout::OpensFrom::Either => continue,
+        };
+        if side == node {
+            out.insert(seam_unlock_anchor(id));
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // The document (spec-0049 §4.1)
 // ---------------------------------------------------------------------------

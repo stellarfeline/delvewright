@@ -840,7 +840,7 @@ impl PiecePlacement {
 /// `pos + rotation(offset + local)`, the whole zone rotated about the piece
 /// origin. That identity is what lets a tiled zone be rotated at all, and it is
 /// the same arithmetic [`Rotation::bbox`] already uses.
-fn placed_templates(
+pub(crate) fn placed_templates(
     meta: &delvewright_dsl::prefab::PrefabMeta,
     pos: [i32; 3],
     rotation: Rotation,
@@ -1953,9 +1953,32 @@ impl<'a> Plan<'a> {
         let mut blockout_reads = delvewright_dsl::metrics::Reads::new();
         let blockout = match crate::blockout::derive_with(campaign, &mut blockout_reads, perturb) {
             None => None,
-            Some((placement, derived)) => {
+            Some((mut placement, derived)) => {
                 for (name, resolved) in derived.anchors() {
                     anchors.insert((placement.area_id.clone(), name.to_string()), resolved);
+                }
+                // ---- the detail plan's pieces (spec-0050 §1) ----
+                //
+                // **The second tooth, and it is in the same door as the first.**
+                // A `details[]` row carries no coordinate, no extent and no
+                // offset; where its piece goes is `Frame::of` over the plan's
+                // own resolved box, computed here. There is no flag and no
+                // second entry point, so a part that wanted a different box
+                // would have to have built a `Plan` some other way, and there is
+                // none.
+                //
+                // The anchors go in AFTER the derived ones on purpose: the
+                // derivation names `anchor/node-…` at the massing's own footing,
+                // and where a piece stands there the piece's anchor is the
+                // truth. Overwriting is what keeps the campaign's stage-3
+                // vocabulary working without a quest edit.
+                let detailing = crate::detail::place(campaign, prefabs);
+                placement.pieces.extend(detailing.pieces);
+                for (name, pos, facing) in detailing.anchors {
+                    anchors.insert(
+                        (placement.area_id.clone(), name),
+                        ResolvedAnchor::Point { pos, facing },
+                    );
                 }
                 areas.push(placement);
                 Some(derived)

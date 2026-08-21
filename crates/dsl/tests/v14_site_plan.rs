@@ -230,6 +230,7 @@ fn campaign(plan: Option<String>, graph: Option<String>, brief: Option<String>) 
     if plan.is_none() {
         return RawCampaign {
             site_plan: plan,
+            detail_plan: None,
             layout_graph: graph,
             geometry_brief: brief,
             ..base
@@ -262,6 +263,7 @@ fn campaign(plan: Option<String>, graph: Option<String>, brief: Option<String>) 
             ],
         ),
         site_plan: plan,
+        detail_plan: None,
         layout_graph: graph,
         geometry_brief: brief,
         ..base

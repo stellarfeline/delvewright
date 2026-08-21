@@ -180,6 +180,9 @@ fn stage_versions(c: &Campaign) -> BTreeMap<&'static str, u32> {
     if let Some(sp) = &c.site_plan {
         m.insert("site-plan", minor_ordinal(&sp.dsl_version));
     }
+    if let Some(dp) = &c.detail_plan {
+        m.insert("detail-plan", minor_ordinal(&dp.dsl_version));
+    }
     m
 }
 
@@ -240,7 +243,8 @@ mod tests {
             world_edits: Some(garbage.clone()),
             geometry_brief: Some(garbage.clone()),
             layout_graph: Some(garbage.clone()),
-            site_plan: Some(garbage),
+            site_plan: Some(garbage.clone()),
+            detail_plan: Some(garbage),
         })
         .expect_err("unparseable stages cannot produce a campaign");
         assert_eq!(

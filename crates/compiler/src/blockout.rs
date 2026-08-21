@@ -218,6 +218,9 @@ impl Blockout {
 pub struct Binding {
     /// Places massed.
     pub boxes: usize,
+    /// Of those, places a detail plan bound — whose frame this derivation
+    /// deliberately left empty for a piece to fill (spec-0050 §3).
+    pub detailed: usize,
     /// Connections cut.
     pub seams: usize,
     /// Of those, connections whose massing includes a stair.
@@ -239,9 +242,11 @@ impl Binding {
     #[must_use]
     pub fn line(&self) -> String {
         format!(
-            "blockout binding: {b} place(s) massed, {s} seam(s) cut ({st} stair, {ba} barred), \
-             {v} whole-owned volume(s), {a} anchor(s) synthesized, {f} region write(s) over \
-             {c} cell(s).",
+            "blockout binding: {b} place(s) massed ({de} detailed, so {un} massed by the \
+             derivation), {s} seam(s) cut ({st} stair, {ba} barred), {v} whole-owned volume(s), \
+             {a} anchor(s) synthesized, {f} region write(s) over {c} cell(s).",
+            de = self.detailed,
+            un = self.boxes.saturating_sub(self.detailed),
             b = self.boxes,
             s = self.seams,
             st = self.stairs,
@@ -258,13 +263,37 @@ impl Binding {
 struct Mass {
     fills: Vec<SealFill>,
     cells: u64,
+    /// **The frames a detail plan bound** (spec-0050 §3): inclusive world AABBs
+    /// this derivation does not write inside, in plan document order.
+    ///
+    /// One rule rather than six special cases, and that is the whole of the
+    /// fabric split. A bound piece owns its play space and the floor course
+    /// under it; the derivation's floor accent, its interior clear, the ceiling
+    /// of the box stacked underneath, a stair hosted in the box and a bar
+    /// standing in the box's own floor course are all *writes that land inside
+    /// that frame*, so all five stop by the same subtraction. A list of five
+    /// exemptions is a list the sixth escapes.
+    ///
+    /// What stays whole-owned falls out of the same rule without being stated
+    /// again: every vertical party plane, every wall, every unshared shell face
+    /// and every ring of floor under a wall lie OUTSIDE the frame, so they are
+    /// written exactly as they were at stage 5 whether or not the boxes beside
+    /// them are detailed.
+    ///
+    /// Empty for every campaign with no detail plan, so such a campaign's output
+    /// does not move by a byte — [`crate::blockout::derive`] passes an empty
+    /// slice and a test measures the byte-identity.
+    holes: Vec<([i64; 3], [i64; 3])>,
 }
 
 impl Mass {
-    fn new() -> Mass {
+    /// A fresh mass with the frames a detail plan bound; an empty slice is a
+    /// campaign that details nothing, which is every campaign below 0.15.0.
+    fn new(holes: Vec<([i64; 3], [i64; 3])>) -> Mass {
         Mass {
             fills: Vec::new(),
             cells: 0,
+            holes,
         }
     }
 
@@ -285,7 +314,47 @@ impl Mass {
     /// plan outside `i32` cannot describe a Minecraft world at all and `DW0826`
     /// has already held every box and volume inside the declared region, so the
     /// clamp below is honest rather than a silent wrap.
+    /// Write `block` over `lo..=hi`, **minus every bound frame**.
+    ///
+    /// The subtraction is axis-by-axis and deterministic: for each axis in
+    /// order, the slab of the region below the hole is emitted, then the slab
+    /// above, and what is left is the overlap, which is dropped. At most six
+    /// sub-regions per hole, in one fixed order, so two runs over one plan emit
+    /// the same fills in the same sequence (ADR-0006).
     fn write(&mut self, lo: [i64; 3], hi: [i64; 3], block: &str) {
+        self.write_outside(lo, hi, block, 0);
+    }
+
+    fn write_outside(&mut self, lo: [i64; 3], hi: [i64; 3], block: &str, hole: usize) {
+        if (0..3).any(|i| lo[i] > hi[i]) {
+            return;
+        }
+        let Some((hlo, hhi)) = self.holes.get(hole).copied() else {
+            return self.write_raw(lo, hi, block);
+        };
+        if (0..3).any(|i| hi[i] < hlo[i] || lo[i] > hhi[i]) {
+            return self.write_outside(lo, hi, block, hole + 1); // disjoint
+        }
+        let (mut rlo, mut rhi) = (lo, hi);
+        for axis in 0..3 {
+            if rlo[axis] < hlo[axis] {
+                let mut slab_hi = rhi;
+                slab_hi[axis] = hlo[axis] - 1;
+                self.write_outside(rlo, slab_hi, block, hole + 1);
+                rlo[axis] = hlo[axis];
+            }
+            if rhi[axis] > hhi[axis] {
+                let mut slab_lo = rlo;
+                slab_lo[axis] = hhi[axis] + 1;
+                self.write_outside(slab_lo, rhi, block, hole + 1);
+                rhi[axis] = hhi[axis];
+            }
+        }
+        // Whatever survived all three axes is the intersection with the frame,
+        // and the frame is the piece's.
+    }
+
+    fn write_raw(&mut self, lo: [i64; 3], hi: [i64; 3], block: &str) {
         if (0..3).any(|i| lo[i] > hi[i]) {
             return;
         }
@@ -302,8 +371,8 @@ impl Mass {
             a_hi[axis] = mid;
             let mut b_lo = lo;
             b_lo[axis] = mid + 1;
-            self.write(lo, a_hi, block);
-            self.write(b_lo, hi, block);
+            self.write_raw(lo, a_hi, block);
+            self.write_raw(b_lo, hi, block);
             return;
         }
         self.cells += n;
@@ -403,6 +472,34 @@ pub fn derive_with(
     reads: &mut Reads,
     perturb: Perturb,
 ) -> Option<(AreaPlacement, Blockout)> {
+    derive_bound(c, reads, perturb, &delvewright_dsl::bound_places(c))
+}
+
+/// **The massing the WALK judged** — the derivation with nothing bound.
+///
+/// This is what `blockout_sha256` hashes, and the choice is what makes
+/// spec-0050 §2's hatch argument true rather than hopeful. The gate there says a
+/// blockout-hash mismatch is reachable only by *toolchain* movement, never by a
+/// campaign edit; had the hash been taken over the massing as actually written,
+/// binding the first place would have moved it, and the drift warning would have
+/// fired on every detailed campaign — a warning that always fires is a warning
+/// nobody reads.
+///
+/// So the hash names the pure function of plan, metrics and engine, which is
+/// exactly the object a walker walked.
+#[must_use]
+pub fn walked_massing(c: &Campaign, reads: &mut Reads) -> Option<Vec<SealFill>> {
+    derive_bound(c, reads, Perturb::none(), &BTreeSet::new()).map(|(a, _)| a.mass)
+}
+
+/// [`derive_with`] over an explicit set of bound places — see
+/// [`walked_massing`] for the second caller and why it exists.
+fn derive_bound(
+    c: &Campaign,
+    reads: &mut Reads,
+    perturb: Perturb,
+    bound: &BTreeSet<String>,
+) -> Option<(AreaPlacement, Blockout)> {
     c.site_plan.as_ref()?;
     let plan = &c.site_plan.as_ref()?.content;
     let table = Metrics::table();
@@ -411,7 +508,18 @@ pub fn derive_with(
     let by_node: BTreeMap<&str, &PlacedBox> =
         boxes.iter().map(|b| (b.node.0.as_str(), b)).collect();
 
-    let mut mass = Mass::new();
+    // The frames a binding owns, in plan document order. `Mass::holes` is what
+    // the fabric split IS; everything below writes as it always did.
+    let holes: Vec<([i64; 3], [i64; 3])> = boxes
+        .iter()
+        .filter(|b| bound.contains(b.node.0.as_str()))
+        .map(|b| {
+            let f = delvewright_dsl::Frame::of(b);
+            (f.lo, f.hi)
+        })
+        .collect();
+    let detailed = holes.len();
+    let mut mass = Mass::new(holes);
     let mut pieces: Vec<PiecePlacement> = Vec::new();
 
     // (1) The whole's own mass.
@@ -578,6 +686,7 @@ pub fn derive_with(
 
     let binding = Binding {
         boxes: boxes.len(),
+        detailed,
         seams: seams.len(),
         stairs,
         barred: seams.iter().filter(|s| s.class == "barred").count(),
@@ -1407,7 +1516,23 @@ fn nodes_reached(
         return; // `DW0824` refused the plan; there is no body to start.
     };
 
-    let seat = |x: &PlacedBox| b.footing(&x.node).unwrap_or_else(|| narrow(x.centre()));
+    // Where a body starts in a place, **as the built world has it**.
+    //
+    // The derivation's own footing is preferred and is standable by
+    // construction for a massed box, so every campaign without a detail plan
+    // seats exactly where it always did. A DETAILED box has no derived mass
+    // inside its frame at all — the piece's bytes are the floor — so the
+    // derivation's footing there is its documented fallback, the plan's centre,
+    // which the piece may legitimately have built a wall on. Seeding a walk from
+    // a solid cell reports a place a campaign spawns bodies in as unroutable,
+    // which is a wrong answer rather than a strict one.
+    let seat = |x: &PlacedBox| {
+        let want = b.footing(&x.node).unwrap_or_else(|| narrow(x.centre()));
+        if world.is_standable(want) {
+            return want;
+        }
+        standable_near(x, world, want).unwrap_or(want)
+    };
     let mut seeds: Vec<[i32; 3]> = vec![seat(entry)];
     let mut reached: BTreeSet<[i32; 3]> = BTreeSet::new();
     loop {
@@ -1491,6 +1616,43 @@ fn nodes_reached(
             ),
         );
     }
+}
+
+/// The standable cell of `b` nearest `want` **in the assembled world**,
+/// ordered by Chebyshev distance then lexicographically so two runs over one
+/// world choose the same cell (ADR-0006).
+///
+/// The same search `Mass::footing` runs over the derivation's own output, asked
+/// of the world instead — which is what a detailed place needs, because its
+/// floor arrived in a `.nbt` the derivation never saw.
+fn standable_near(b: &PlacedBox, world: &crate::nav::World, want: [i32; 3]) -> Option<[i32; 3]> {
+    let (lo, hi) = b.space();
+    let (lo, hi) = (narrow(lo), narrow(hi));
+    let reach = (hi[0] - lo[0]).max(hi[1] - lo[1]).max(hi[2] - lo[2]).max(0);
+    for r in 0..=reach {
+        let mut best: Option<[i32; 3]> = None;
+        for y in (want[1] - r).max(lo[1])..=(want[1] + r).min(hi[1]) {
+            for x in (want[0] - r).max(lo[0])..=(want[0] + r).min(hi[0]) {
+                for z in (want[2] - r).max(lo[2])..=(want[2] + r).min(hi[2]) {
+                    let cell = [x, y, z];
+                    let d = (x - want[0])
+                        .abs()
+                        .max((y - want[1]).abs())
+                        .max((z - want[2]).abs());
+                    if d != r || !world.is_standable(cell) {
+                        continue;
+                    }
+                    if best.is_none_or(|bst| cell < bst) {
+                        best = Some(cell);
+                    }
+                }
+            }
+        }
+        if best.is_some() {
+            return best;
+        }
+    }
+    None
 }
 
 /// Does the reached set contain a cell inside this place?
@@ -1658,8 +1820,14 @@ fn region_span(c: &Campaign) -> ([i64; 3], [i64; 3]) {
 
 /// `DW0821`: a declared sightline is unobstructed.
 ///
-/// **Warning in this slice, and the reason is a falsifier rather than a
-/// preference** (spec-0049 §5.3, §9.2). Derived massing has no landform shaping:
+/// **Warning while any box is unbound; a refusal once `details[]` binds every
+/// graph node** (spec-0050 §7.6). The severity is computed from the artifact —
+/// `crate::detail::fully_detailed` — rather than set by a stage marker or an
+/// author flag, so there is nothing to set and nothing to forget, and no author
+/// can choose the lenient reading.
+///
+/// The promotion is the whole of the reason the warning existed. Derived massing
+/// has no landform shaping:
 /// a vista that reads perfectly once the detail pass carves the ridge between
 /// two places is blocked at blockout time by the shells standing in the way.
 /// Refusing it now would force hand-shaped massing into the derivation — which
@@ -1695,28 +1863,41 @@ fn sightlines(
         if blocked.is_empty() {
             continue;
         }
+        let owed = crate::detail::fully_detailed(c);
         let shown: Vec<String> = blocked
             .iter()
             .take(12)
             .map(|c| format!("[{}, {}, {}]", c[0], c[1], c[2]))
             .collect();
         let _ = b;
+        let tail = if owed {
+            "Every place on this map is DETAILED, so nothing is left to carve: the vista was \
+             declared, the pieces that would have opened it are all standing, and the line is \
+             still solid. That is why this refuses here and only warns while any box is still \
+             massed. The fix is a plan edit, a piece edit, or the whole's own carving through \
+             the world-edit verbs — all authorable in this campaign."
+        } else {
+            "This is a WARNING and refuses nothing, because at least one place on this map is \
+             still derived massing, and derived massing has no landform: a vista the detail pass \
+             will carve a ridge for is blocked here by the shells themselves. It becomes a \
+             refusal the moment `details[]` binds every node, which is a fact computed from the \
+             campaign rather than a severity anyone selects."
+        };
+        let make = if owed {
+            Diagnostic::error
+        } else {
+            Diagnostic::warning
+        };
         raise(
             d,
             DW_SIGHTLINE_BLOCKED,
-            Diagnostic::warning(
+            make(
                 DW_SIGHTLINE_BLOCKED,
                 "site-plan",
                 format!("/content/sightlines[{}]", s.edge),
                 format!(
-                    "the vista `{id}` does not read in the blockout: the line from [{fx}, {fy}, {fz}] \
-                 to [{tx}, {ty}, {tz}] passes through {n} solid cell(s) — {shown}{more}. This is \
-                 a WARNING and refuses nothing. Derived massing has no landform, so a vista the \
-                 detail pass will carve a ridge for is blocked here by the shells themselves; \
-                 refusing it would force hand-shaped massing into a derivation whose whole \
-                 property is that nobody shapes it. Carry the fact to the walk instead — if a \
-                 walked blockout repeatedly needs massing shaped by hand to be judgeable, that is \
-                 the evidence spec-0049 §5.1 reserves for giving the derivation parameters.",
+                    "the vista `{id}` does not read: the line from [{fx}, {fy}, {fz}] \
+                 to [{tx}, {ty}, {tz}] passes through {n} solid cell(s) — {shown}{more}. {tail}",
                     id = s.edge,
                     fx = s.from[0],
                     fy = s.from[1],
