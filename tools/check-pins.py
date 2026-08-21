@@ -32,12 +32,75 @@ makes in order to build from the pin. That is deliberate: the check runs in the
 same job, over the same value, immediately before the thing it guards. There is
 no arrangement in which a job builds from a pin and skips its own next step.
 
+## Two obligations, and the class where they come apart
+
+A registry entry carries two independent things: that **nothing escapes
+discovery** — every external version is FOUND by the tool — and that **every held
+version has a recorded decision** — someone said what it is held for and on what
+terms it may move. For a hash- or ref-shaped pin the two coincide, so `sites`
+serves both: the value is found wherever it sits, and the entry is the decision.
+
+They come apart for a pin named by a VERSION STRING, and they come apart in the
+worst direction: the decision is owed exactly where discovery is impossible. A
+semantic version carries no shape distinguishing it from data — `1.97.1` in a
+`rust-version` floor and `1.97.1` in a comment measuring a build are the same
+seven characters — so a scan for it finds prose, and a scan by shape finds
+nothing at all. Left there the gap is invisible in BOTH directions: nothing reds
+while such a pin is absent from the registry, and an entry that registers one
+reds against a tree it is telling the truth about.
+
+Both halves are closed, and by different means, because the two obligations are
+different:
+
+- **Discovery reaches the site that CAUSES the fetch.** A value with no shape can
+  still be discovered when something else fixes what it MEANS. Four schemas do,
+  and each is a positive claim — never an exception list — so the set can only
+  ever be incomplete in the direction of discovering less, and an author cannot
+  escape an obligation by it growing.
+    - A manifest whose file kind fixes the key: `rust-toolchain.toml`'s
+      `[toolchain] channel` is the string rustup downloads a toolchain for, in a
+      file that exists for nothing else (`KEYED_VERSIONS`).
+    - A Python package manifest, read on the terms already granted to
+      `Cargo.toml` and `package.json`: what a requirements file or a
+      `[project] dependencies` array names EXACTLY is what pip fetches. Only
+      `==` is read, because every other operator states a RANGE and a range names
+      no version — which keeps a legitimate `>=` floor out by a property of the
+      requirement rather than by an exemption.
+    - An ACTION'S INPUT CONTRACT (`KEYED_ACTION_INPUTS`): the setup-node and
+      setup-python actions exist in order to fetch the version their input names,
+      so that input is a fetched version by the definition of the action being
+      used. The claim is about the action, and is true of it in any repository.
+    - An INSTALL COMMAND in a step this repository runs (`RE_PIP_INSTALL`). A
+      manifest states a requirement and a range is a legitimate one; an install
+      is an ACT, and a package argument naming no exact version is a fetch nobody
+      pinned. That is a finding rather than a pin — there is no value for an
+      entry to record and nothing to hold still — and it is the general form of a
+      live defect: `beet`, which re-validates every emitted mcfunction in a
+      required status check, was installed unpinned on the same line as a pinned
+      `mecha`.
+
+  What all four have in common is the rule that decides membership: **an entry
+  exists because discovery found the value, never because the value looked
+  important.** A runner label (`runs-on:`) is out by that rule and not by
+  oversight — it selects the machine a job runs on, fetches nothing, and has no
+  more-frozen form to hold; markdown is out for the same reason a Rust string
+  literal is, being prose in every language.
+- **`bound_by` reaches the sites that RESTATE it.** A `rust-version` floor in a
+  published manifest, or a restatement in `versions.toml`, is indistinguishable
+  from data, and no widening will ever reach it. So the entry names the checker
+  that holds those sites equal and the key that checker reads the value under,
+  and the offline half verifies all three of the things a defect cannot supply:
+  the named file really reads that key, it really names every site the entry
+  declares, and a workflow really runs it. The arm is not the author's to pick —
+  see `has_pin_shape`.
+
 ## Discovery, and why this enumeration is closed
 
 A pin that nothing reads cannot select anything, so the places a pin can live are
 exactly the places this repo can FETCH from: workflow and action definitions,
-`versions.toml`, Dockerfiles, compose files, Cargo manifests, `package.json`, and
-shell that runs a container or clones a repo. `FETCH_SITES` is that list.
+`versions.toml`, `rust-toolchain.toml`, Dockerfiles, compose files, Cargo
+manifests, `package.json`, and shell that runs a container or clones a repo.
+`FETCH_SITES` is that list.
 
 An enumeration somebody remembered is how this shape survives review, so the list
 is itself checked: `stray_fetch_verbs()` scans EVERY tracked, executable-or-
@@ -77,9 +140,10 @@ the kinds are decided by properties of the OBJECT, verified online:
 - `immutable` — a content-addressed digest or checksum (an image digest, a jar
   sha256, a bundle hash). It names bytes, not a moving branch, so there is
   nothing to drift and nothing to check online.
-- `floating` — a ref that moves on purpose (a third-party action's major tag).
-  Staleness is not a concept for it. It is registered so that the count of
-  deliberately-unfrozen refs is a number somebody can see rather than a habit.
+- `floating` — a ref that moves on purpose: a third-party action's major tag, or
+  a toolchain held at a major/minor line the publisher advances. Staleness is not
+  a concept for it. It is registered so that the count of deliberately-unfrozen
+  refs is a number somebody can see rather than a habit.
 
 `track`'s watched paths are NOT author-written. The registry records `builds`, the
 package names the site file builds out of the pinned checkout, and the check
@@ -97,6 +161,7 @@ import fnmatch
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -116,10 +181,23 @@ FETCH_SITES = (
     "**/*.js",
     "**/Dockerfile",
     "**/Dockerfile.*",
-    # Manifests a package manager resolves from.
+    # Manifests a package manager resolves from. `rust-toolchain.toml` is one:
+    # rustup downloads the channel named in it, inside worktrees too, and no
+    # workflow overrides it — so it is the file that literally causes a toolchain
+    # to be fetched, and a pin written there was outside the registry's reach.
     "versions.toml",
+    "rust-toolchain.toml",
     "**/Cargo.toml",
     "**/package.json",
+    # The same claim, for the other package manager this repo resolves from. A
+    # pip requirements file and a `[project] dependencies` array are manifests by
+    # their file kind: what stands in them is what pip fetches, which is exactly
+    # the claim already made for `Cargo.toml` and `package.json`. Their absence
+    # was the enumeration-somebody-remembered shape — the two Python manifests in
+    # a tree are not a different KIND of thing from the Rust and Node ones, and
+    # nothing about them made them unreachable except that nobody had listed them.
+    "**/requirements*.txt",
+    "**/pyproject.toml",
 )
 
 # Files that cannot execute or be built from. Markdown is prose; a lockfile is
@@ -127,7 +205,28 @@ FETCH_SITES = (
 # it, and which no human edits.
 NON_EXECUTING = ("*.md", "**/Cargo.lock", "**/package-lock.json", "*.json.txt")
 
-SKIP_DIRS = {".git", "target", "node_modules", "dist", "campaigns", "content-repo"}
+# Build output, on a RAW FILESYSTEM WALK of an upstream checkout — and nowhere
+# else. `package_dirs()` reads `repo.rglob("Cargo.toml")` across a working tree
+# nobody has filtered, where `target/` and `node_modules/` really do carry
+# manifests that are not the repository's own. Every name here is a fact about a
+# cargo or npm working tree, true of any such tree anywhere, and NOT ONE of them
+# names a directory of this or any other Delvewright repository.
+#
+# That last clause is the whole of the lesson, and it was paid for. This list was
+# once applied to `tracked_files()` as well, where it did nothing: that function
+# reads `git ls-files`, which yields only tracked, authored files, so every entry
+# matched zero of them. Zero, that is, until the tool was copied to the
+# repository where `campaigns/` IS the content — at which point the same inert
+# entry silently removed 27 tracked files, every campaign stage document among
+# them, from both pin discovery and the fetch-verb enumeration.
+#
+# Nothing was red and nothing could have been. The binding counts were truthful
+# about what they were handed; the handing was the defect, and a file the
+# enumeration never lists cannot be reported as unexamined. So a constant that
+# names a directory is data about ONE tree wearing the clothes of tool
+# configuration: it is scoped to the single population that needs it, and kept
+# out of the population that does not.
+BUILD_OUTPUT_DIRS = {".git", "target", "node_modules", "dist"}
 
 # The language a file is written in, which is what decides how to READ a verb
 # found in it. A basename wins over a suffix, since the file kinds named by
@@ -192,12 +291,16 @@ LANGUAGE_BY_SUFFIX = {
 # list: the question a verb answers is what LANGUAGE it is in, and the defect this
 # gate catches (an uncovered file that really fetches) cannot change a file's
 # language to escape it.
+#
+# A verb may belong to MORE THAN ONE language, which is a third case alongside
+# the two above rather than a loosening of either, so a verb is paired with a SET
+# of languages. `INSTALL_VERB_LANGUAGES` is the live instance of it.
 FETCH_VERBS = (
-    (re.compile(r"^\s*-?\s*uses:\s*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@", re.M), "yaml"),
-    (re.compile(r"^\s*FROM\s+\S+", re.M), "dockerfile"),
+    (re.compile(r"^\s*-?\s*uses:\s*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@", re.M), {"yaml"}),
+    (re.compile(r"^\s*FROM\s+\S+", re.M), {"dockerfile"}),
     (re.compile(r"\bdocker\s+(run|pull)\b"), None),
     (re.compile(r"\bgit\s+clone\b"), None),
-    (re.compile(r"^\s*[A-Za-z0-9_-]+\s*=\s*\{[^}]*\bgit\s*=", re.M), "toml"),
+    (re.compile(r"^\s*[A-Za-z0-9_-]+\s*=\s*\{[^}]*\bgit\s*=", re.M), {"toml"}),
 )
 
 # Literal shapes a pin takes.
@@ -208,6 +311,109 @@ RE_ACTION = re.compile(
     r"uses:\s*(?P<ref>[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.:-]+)"
 )
 RE_CARGO_BUILD_PKG = re.compile(r"cargo\s+build[^\n]*?-p\s+([A-Za-z0-9_-]+)")
+# The same ref grammar as RE_ACTION, without the `uses:` that anchors it to a
+# workflow line — because here it is asked of a registry VALUE rather than of a
+# file. Kept beside its twin so a change to one is read against the other.
+RE_ACTION_REF = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.:-]+")
+
+# A value with no shape of its own, discovered because its SITE has one: a TOML
+# manifest whose schema fixes the file kind AND the key, so what sits there is a
+# fetched version by the definition of the tool that reads it. Keyed by basename
+# to the dotted key path.
+#
+# This is a positive claim about a file's schema — "the tool that reads this file
+# fetches what this key names" — and never a claim that some other file is safe.
+# A kind absent from the map is simply not discovered this way, so the map can
+# only be incomplete in the direction of finding LESS, and an entry cannot escape
+# an obligation by the map growing: a new key only ever adds discoveries, each of
+# which must then be registered.
+KEYED_VERSIONS = {
+    # rustup installs the channel named here. ADR-0006's byte-identity gate
+    # compares two compiles made by the same binary, so nothing else in the tree
+    # can see this string move.
+    "rust-toolchain.toml": ("toolchain", "channel"),
+}
+
+# The same idea, where the schema that fixes the key is an ACTION'S INPUT
+# CONTRACT rather than a file's. A step that USES the setup-python action and
+# gives it `python-version: "3.14"` is fetching that interpreter by the
+# definition of the action being used — the identical standing `[toolchain]
+# channel` has by the definition of rustup. What makes it a schema and not a
+# remembered list is that the claim is about the ACTION: "this action exists in
+# order to fetch the version its input names", true of that action in any
+# repository. (Written without the `uses:` keyword on purpose: discovery applies
+# every pattern to every fetch site regardless of language — fail-closed, since
+# an over-discovered value reds for registration rather than passing unseen — so
+# a directive spelled out in a comment here would be found as a real site.)
+#
+# A positive claim, incomplete only in the direction of discovering LESS, and an
+# author cannot escape an obligation by the map growing — a new entry only ever
+# adds discoveries, each of which must then be registered.
+KEYED_ACTION_INPUTS = {
+    "actions/setup-python": "python-version",
+    "actions/setup-node": "node-version",
+    "actions/setup-java": "java-version",
+    "actions/setup-go": "go-version",
+    "actions/setup-dotnet": "dotnet-version",
+}
+
+# A step's `uses:` line, and the grammar for reading one of its `with:` inputs.
+# There is no YAML parser in the stdlib, so the step body is bounded textually:
+# a step ends at the next list item, which is what `RE_STEP_BREAK` finds.
+RE_USES_STEP = re.compile(
+    r"^(?P<indent>[ \t]*)-?[ \t]*uses:[ \t]*"
+    r"(?P<action>[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+)@",
+    re.M,
+)
+RE_STEP_BREAK = re.compile(r"^[ \t]*-[ \t]", re.M)
+
+# `pip install` is an ACT, not a declaration, and the distinction decides what a
+# missing version means. A manifest states a REQUIREMENT, and a range is a
+# legitimate way to state one — `setuptools>=68` names no version, so there is
+# nothing to discover and nothing to register. An install command in a step this
+# repository RUNS names what it is about to fetch, and a package argument with no
+# exact version is a fetch nobody pinned: the instrument of whatever that job
+# decides can move underneath it with nothing in any diff to show it did.
+#
+# That is not hypothetical. `beet` — which re-validates every emitted mcfunction
+# in a required status check — was installed unpinned beside a `mecha==` that was
+# pinned, so the required gate's own instrument was free to move while the pin
+# beside it said the opposite. `CLAUDE.md`'s rule that a frozen measurement names
+# its instrument literally is that case inverted, and the general form of it is
+# this scan rather than one more remembered name.
+RE_PIP_INSTALL = re.compile(
+    r"\b(?:pip3?|python3?[ \t]+-m[ \t]+pip)[ \t]+install\b(?P<args>[^\n]*)"
+)
+# The languages an install command IS one in. It is a shell command line, so it
+# is a real invocation in a shell script and in a workflow's `run:` block — and
+# in a Python file the identical characters are what a program PRINTS to tell a
+# creator what to install, never what the program does. That case is live: two
+# backends of `tools/refscore.py` carry their install line as a string, and the
+# tool's own documentation says the real backends "are not installed by anything
+# in this repo". Read uniformly, this rule would demand a pin for a package this
+# project does not depend on — which is exactly the pressure that produces an
+# exception list, and an exception list is what later covers a real one.
+INSTALL_VERB_LANGUAGES = frozenset({"yaml", "shell"})
+# Options whose VALUE is not a package: the token after them is skipped whole.
+PIP_VALUE_OPTIONS = {
+    "-r", "--requirement", "-c", "--constraint", "-e", "--editable",
+    "-f", "--find-links", "-i", "--index-url", "--extra-index-url",
+    "-t", "--target", "--prefix", "--root", "--only-binary", "--no-binary",
+    "--platform", "--python-version", "--implementation", "--abi",
+}
+# An exact pin. `==` and `===` are the only specifiers that name ONE version;
+# every other operator names a range, and a range is not a version.
+RE_PIP_EXACT = re.compile(
+    r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?===?"
+    r"(?P<ver>[A-Za-z0-9][A-Za-z0-9.*+!-]*)$"
+)
+# A requirement line of a pip requirements file, or one PEP 508 string out of a
+# `[project] dependencies` array. Same grammar, two containers.
+RE_REQ_LINE = re.compile(
+    r"^[ \t]*(?P<req>[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[^\]]*\])?===?"
+    r"[A-Za-z0-9][A-Za-z0-9.*+!-]*)",
+    re.M,
+)
 
 # A cross-repo checkout is a pin whether or not it is written as a hex literal:
 # `repository:` names the thing and `ref:` names the version. The ref is often an
@@ -247,8 +453,14 @@ def tracked_files(root: pathlib.Path) -> list[str]:
     for rel in out.split("\0"):
         if not rel:
             continue
-        if rel.split("/", 1)[0] in SKIP_DIRS:
-            continue
+        # NOTHING is skipped here, and the omission is load-bearing. The
+        # population is `git ls-files`: every entry is a tracked, authored file
+        # of this repository, which is exactly the set a pin can hide in. A skip
+        # list over this population can only ever SUBTRACT real content — it can
+        # never add safety, because build output and ignored trees are not
+        # tracked and so were never in the list to begin with. See
+        # BUILD_OUTPUT_DIRS for the walk that does need one, and for the 27
+        # files this filter cost the last time the two were confused.
         p = root / rel
         if p.is_symlink() or not p.is_file():
             continue
@@ -313,8 +525,8 @@ def stray_fetch_verbs(
         lang = language_of(rel)
         applicable = [
             verb
-            for verb, verb_lang in FETCH_VERBS
-            if verb_lang is None or lang is None or lang == verb_lang
+            for verb, verb_langs in FETCH_VERBS
+            if verb_langs is None or lang is None or lang in verb_langs
         ]
         applications += len(applicable)
         for verb in applicable:
@@ -324,13 +536,230 @@ def stray_fetch_verbs(
     return stray, examined, applications
 
 
-def literals(root: pathlib.Path, sites: list[str]) -> dict[str, set[str]]:
-    """value -> set of site files carrying it, over every fetch site."""
+def has_pin_shape(value: str) -> bool:
+    """Whether the shape scan could find `value` wherever it sits.
+
+    The predicate that decides which arm an entry is on, and it reads the VALUE —
+    so the arm is a fact about the object rather than something an entry selects.
+    A 40-hex revision, a digest, or an `owner/repo@ref` is found by the scan; a
+    version string is not, and no amount of declaring makes it so.
+    """
+    return bool(
+        RE_REV.fullmatch(value)
+        or RE_DIGEST.fullmatch(value)
+        or RE_BARE_DIGEST.fullmatch(value)
+        or RE_ACTION_REF.fullmatch(value)
+    )
+
+
+def literal_at(text: str, value: str) -> bool:
+    """Whether `value` stands in `text` as a whole token.
+
+    Substring is the wrong question for a version: `1.97.1` sits inside `1.97.10`
+    and inside `21.97.1`, and either would read as agreement. Same reason the
+    shell rule says a version literal goes through `grep -F` — one keystroke of
+    imprecision returns a plausible wrong answer.
+    """
+    return (
+        re.search(r"(?<![0-9A-Za-z.])" + re.escape(value) + r"(?![0-9A-Za-z.])", text)
+        is not None
+    )
+
+
+def keyed_value(text: str, key_path: tuple[str, ...]) -> tuple[str | None, str | None]:
+    """The string at `key_path` in a TOML document, or a reason there is none."""
+    try:
+        node = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        return None, f"is not parseable TOML ({exc})"
+    for part in key_path:
+        if not isinstance(node, dict) or part not in node:
+            return None, f"has no `{'.'.join(key_path)}`"
+        node = node[part]
+    if not isinstance(node, str):
+        return None, f"`{'.'.join(key_path)}` is not a string"
+    return node, None
+
+
+def action_input_versions(text: str, env: dict[str, str]) -> list[str]:
+    """Every version a toolchain-fetching action is told to install.
+
+    The step body is bounded textually rather than parsed, because the stdlib has
+    no YAML reader and this check must run with nothing installed. An input given
+    as `${{ env.X }}` is resolved first — the recorded trap of a computed key
+    naming an instrument — and anything still unresolved is recorded as it
+    stands, so it reds as an unregistered pin rather than passing unseen.
+    """
+    out: list[str] = []
+    for m in RE_USES_STEP.finditer(text):
+        key = KEYED_ACTION_INPUTS.get(m.group("action"))
+        if key is None:
+            continue
+        rest = text[m.end() :]
+        brk = RE_STEP_BREAK.search(rest)
+        body = rest[: brk.start()] if brk else rest
+        km = re.search(
+            r"(?<![A-Za-z0-9_-])" + re.escape(key) + r"[ \t]*:[ \t]*(?P<v>[^\n#,}]+)",
+            body,
+        )
+        if km is None:
+            continue
+        val = km.group("v").strip().strip("\"'").strip()
+        expr = RE_ENV_EXPR.fullmatch(val)
+        if expr:
+            val = env.get(expr.group(1), val)
+        if val:
+            out.append(val)
+    return out
+
+
+def pip_install_arguments(text: str) -> tuple[list[str], list[str]]:
+    """(exact versions this file installs, package arguments naming none).
+
+    A backslash continuation is joined first: a command split across lines is one
+    command, and reading only its first line would find fewer packages than are
+    installed — which is truncation faking coverage.
+    """
+    pinned: list[str] = []
+    unpinned: list[str] = []
+    joined = text.replace("\\\n", " ")
+    for m in RE_PIP_INSTALL.finditer(joined):
+        try:
+            tokens = shlex.split(m.group("args"), comments=True)
+        except ValueError:
+            tokens = m.group("args").split()
+        skip = False
+        for tok in tokens:
+            if skip:
+                skip = False
+                continue
+            if tok in PIP_VALUE_OPTIONS:
+                skip = True
+                continue
+            if tok.startswith("-"):
+                continue
+            if tok.startswith("git+"):
+                # A VCS install pins by revision or by nothing. A revision is
+                # already found by the shape scan wherever it sits, so only the
+                # unpinned case is this scan's to report.
+                (pinned if RE_REV.search(tok) else unpinned).append(tok)
+                continue
+            if tok in (".", "..") or "/" in tok or tok.startswith("$"):
+                continue  # a local path or a shell expansion, not a package name
+            exact = RE_PIP_EXACT.fullmatch(tok)
+            if exact:
+                pinned.append(exact.group("ver"))
+            else:
+                unpinned.append(tok)
+    return pinned, unpinned
+
+
+def manifest_requirements(rel: str, text: str) -> tuple[list[str], str | None]:
+    """Exactly-pinned versions declared by a Python package manifest.
+
+    Only `==` / `===` is read. Every other operator states a RANGE, and a range
+    names no version — so there is nothing to discover and nothing a registry
+    entry could record. That keeps a legitimate `>=` floor out by a property of
+    the requirement rather than by an exemption.
+    """
+    base = rel.rsplit("/", 1)[-1]
+    if base == "pyproject.toml":
+        try:
+            data = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as exc:
+            return [], f"is not parseable TOML ({exc})"
+        reqs: list[str] = []
+        project = data.get("project")
+        if isinstance(project, dict):
+            for arr in (project.get("dependencies"),):
+                if isinstance(arr, list):
+                    reqs += [x for x in arr if isinstance(x, str)]
+            optional = project.get("optional-dependencies")
+            if isinstance(optional, dict):
+                for arr in optional.values():
+                    if isinstance(arr, list):
+                        reqs += [x for x in arr if isinstance(x, str)]
+        build = data.get("build-system")
+        if isinstance(build, dict) and isinstance(build.get("requires"), list):
+            reqs += [x for x in build["requires"] if isinstance(x, str)]
+        out = []
+        for req in reqs:
+            m = RE_PIP_EXACT.fullmatch(req.split(";")[0].strip().replace(" ", ""))
+            if m:
+                out.append(m.group("ver"))
+        return out, None
+    # a pip requirements file: one requirement per line
+    out = []
+    for m in RE_REQ_LINE.finditer(text):
+        exact = RE_PIP_EXACT.fullmatch(m.group("req"))
+        if exact:
+            out.append(exact.group("ver"))
+    return out, None
+
+
+def literals(
+    root: pathlib.Path, sites: list[str]
+) -> tuple[dict[str, set[str]], list[str]]:
+    """value -> set of site files carrying it, over every fetch site.
+
+    Plus the findings of the keyed pass, which are about a manifest this tool is
+    unable to READ, or an install this repo runs without naming what it fetches —
+    both states that must red rather than quietly discover nothing, since
+    discovering nothing is how an unregistered pin passes.
+    """
     found: dict[str, set[str]] = {}
+    keyed_errors: list[str] = []
     for rel in sites:
         text = read_text(root / rel)
         if text is None:
             continue
+        lang = language_of(rel)
+        base = rel.rsplit("/", 1)[-1]
+        # A Python package manifest, read on the same terms as `Cargo.toml`:
+        # what it names exactly is what pip fetches.
+        if base == "pyproject.toml" or fnmatch.fnmatch(base, "requirements*.txt"):
+            versions, why = manifest_requirements(rel, text)
+            if why is not None:
+                keyed_errors.append(
+                    f"{rel} is a package manifest, and it {why}. A pin this tool "
+                    f"cannot read is a pin it cannot report as unregistered."
+                )
+            for value in versions:
+                found.setdefault(value, set()).add(rel)
+        # An action whose purpose is to fetch a toolchain, and the version its
+        # input names. Workflow and action definitions only — the `uses:` line is
+        # a directive of that one language.
+        if lang == "yaml":
+            env = {m["key"]: m["val"] for m in RE_ENV_ENTRY.finditer(text)}
+            for value in action_input_versions(text, env):
+                found.setdefault(value, set()).add(rel)
+        # An install this repository RUNS. A package argument naming no exact
+        # version is a fetch nobody pinned, which is a finding rather than a pin:
+        # there is no value for an entry to record and nothing to hold still.
+        if lang in INSTALL_VERB_LANGUAGES:
+            pinned, unpinned = pip_install_arguments(text)
+            for value in pinned:
+                found.setdefault(value, set()).add(rel)
+            for pkg in sorted(set(unpinned)):
+                keyed_errors.append(
+                    f"{rel} installs `{pkg}` without naming a version, so the "
+                    f"instrument of whatever that step decides can move with "
+                    f"nothing in any diff to show it did. Pin it exactly "
+                    f"(`{pkg}==<version>`) and register the pin, or the frozen "
+                    f"measurement beside it names an instrument that is not "
+                    f"frozen."
+                )
+        key_path = KEYED_VERSIONS.get(base)
+        if key_path is not None:
+            value, why = keyed_value(text, key_path)
+            if value is None:
+                keyed_errors.append(
+                    f"{rel} is the manifest `{'.'.join(key_path)}` names a fetched "
+                    f"version in, and it {why}. A pin this tool cannot read is a "
+                    f"pin it cannot report as unregistered."
+                )
+            else:
+                found.setdefault(value, set()).add(rel)
         for rx in (RE_DIGEST, RE_BARE_DIGEST, RE_REV):
             for m in rx.finditer(text):
                 lit = m.group(0)
@@ -353,7 +782,7 @@ def literals(root: pathlib.Path, sites: list[str]) -> dict[str, set[str]]:
             if RE_REV.fullmatch(ref):
                 continue  # already discovered as a revision literal
             found.setdefault(f"{m.group('repo')}@{ref}", set()).add(rel)
-    return found
+    return found, keyed_errors
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +793,53 @@ def load_registry(path: pathlib.Path) -> list[dict]:
     with path.open("rb") as fh:
         data = tomllib.load(fh)
     return data.get("pin", [])
+
+
+def check_bound_by(
+    root: pathlib.Path,
+    files: list[str],
+    pid: str,
+    bound_by: str,
+    bound_key: str,
+    declared: set[str],
+) -> list[str]:
+    """The three things a binder must supply, none of which the defect can.
+
+    `judged_by` is the shape being reused: a named file believed on its own word
+    is prose, and this project has shipped that five times. So the claim is
+    checked rather than read. A pin whose sites have silently drifted apart
+    cannot produce a checker that reads its key and names every one of them, and
+    a binding nobody runs is the UNRUN mode wearing a field's clothes.
+    """
+    errors: list[str] = []
+    text = read_text(root / bound_by)
+    if text is None:
+        return [
+            f"{pid}: `bound_by` names {bound_by}, which is not a readable file "
+            f"in this repo"
+        ]
+    if bound_key not in text:
+        errors.append(
+            f"{pid}: `bound_by` names {bound_by}, which never reads "
+            f"`{bound_key}` — a binder that does not read the key binds nothing, "
+            f"and the sites below would agree only by intention"
+        )
+    unnamed = sorted(s for s in declared if s not in text)
+    if unnamed:
+        errors.append(
+            f"{pid}: {bound_by} never names {', '.join(unnamed)}, which this "
+            f"entry declares as site(s). What discovery cannot see, the binder "
+            f"has to hold equal — a site no binder names is held by nobody."
+        )
+    if not any(
+        f.startswith(".github/workflows/") and bound_by in (read_text(root / f) or "")
+        for f in files
+    ):
+        errors.append(
+            f"{pid}: no workflow runs {bound_by}, so this pin's binding is "
+            f"declared and never runs"
+        )
+    return errors
 
 
 def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[str]]:
@@ -396,16 +872,36 @@ def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[s
             f"reach. Add the pattern (and the pins) rather than the exception."
         )
 
-    discovered = literals(root, sites)
+    discovered, keyed_errors = literals(root, sites)
+    errors.extend(keyed_errors)
     by_value = {p.get("value"): p for p in registry}
 
     # Every registry entry is well-formed and still describes its files.
     seen_ids: set[str] = set()
+    seen_values: dict[str, str] = {}
     for pin in registry:
         pid = pin.get("id", "<unnamed>")
         if pid in seen_ids:
             errors.append(f"{pid}: declared twice in the registry")
         seen_ids.add(pid)
+        # Discovery is keyed by the VALUE, so two entries sharing one would
+        # silently merge their site sets and one of them would vanish from
+        # `by_value` — a plausible wrong answer rather than an error, which is
+        # the family this project keeps paying for. Two unrelated things at the
+        # same version is an ordinary state of the world (a node line and a
+        # python line can both be "24"), so it reds here and is repaired by
+        # making the value distinguishable, never by dropping an entry.
+        val = pin.get("value")
+        if val is not None:
+            if val in seen_values:
+                errors.append(
+                    f"{pid}: value {val} is also declared by "
+                    f"{seen_values[val]}. Discovery is keyed by the value, so "
+                    f"two entries sharing one merge into whichever the registry "
+                    f"lists last and the other stops being checked at all."
+                )
+            else:
+                seen_values[val] = pid
         for field in ("id", "value", "policy", "why", "sites"):
             if not pin.get(field):
                 errors.append(f"{pid}: registry entry is missing `{field}`")
@@ -469,8 +965,43 @@ def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[s
         value, declared = pin.get("value"), set(pin.get("sites", []))
         if not value:
             continue
+
+        # Which arm this entry is on is read off the VALUE, so it is never a
+        # choice. A shaped value is found wherever it sits and gets nothing from
+        # declaring a binder; an unshaped one is found nowhere and cannot be left
+        # resting on `sites` alone, because that claim would be unfalsifiable.
+        bound_by, bound_key = pin.get("bound_by"), pin.get("bound_key")
+        stated = False
+        if has_pin_shape(value):
+            if bound_by or bound_key:
+                errors.append(
+                    f"{pid}: declares `bound_by`, which exists for a value the "
+                    f"shape scan cannot see — {value} has a pin shape and is "
+                    f"discovered wherever it sits. The arm is decided by the "
+                    f"value; an entry does not get to pick the weaker one."
+                )
+        elif not (bound_by and bound_key):
+            errors.append(
+                f"{pid}: {value} carries no pin shape — nothing discovers it, so "
+                f"`sites` alone is a claim no check can test. Name `bound_by`, "
+                f"the checker that holds those sites equal, and `bound_key`, the "
+                f"key it reads the value under."
+            )
+        else:
+            stated = True
+            errors.extend(
+                check_bound_by(root, files, pid, bound_by, bound_key, declared)
+            )
+
         actual = discovered.get(value, set())
         for missing in sorted(declared - actual):
+            # A stated site is verified directly: the value has to STAND there,
+            # as a whole token. That is the drift the registry exists to catch —
+            # four sites holding one toolchain, and a bump that moves two of them.
+            if stated:
+                text = read_text(root / missing)
+                if text is not None and literal_at(text, value):
+                    continue
             errors.append(
                 f"{pid}: declares site {missing} but the value {value} is not "
                 f"there any more — the registry drifted from the file"
@@ -537,7 +1068,7 @@ def package_dirs(repo: pathlib.Path, packages: list[str]) -> list[str]:
     """
     manifests: dict[str, pathlib.Path] = {}
     for man in repo.rglob("Cargo.toml"):
-        if any(part in SKIP_DIRS for part in man.parts):
+        if any(part in BUILD_OUTPUT_DIRS for part in man.parts):
             continue
         try:
             with man.open("rb") as fh:

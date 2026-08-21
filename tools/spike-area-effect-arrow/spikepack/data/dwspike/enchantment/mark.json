@@ -1,7 +1,30 @@
 {
+  "anvil_cost": 1,
   "description": {
     "translate": "dwspike.mark"
   },
+  "effects": {
+    "minecraft:hit_block": [
+      {
+        "effect": {
+          "function": "dwspike:hit_mark",
+          "type": "minecraft:run_function"
+        }
+      }
+    ]
+  },
+  "max_cost": {
+    "base": 50,
+    "per_level_above_first": 1
+  },
+  "max_level": 1,
+  "min_cost": {
+    "base": 1,
+    "per_level_above_first": 1
+  },
+  "slots": [
+    "any"
+  ],
   "supported_items": [
     "minecraft:bow",
     "minecraft:crossbow",
@@ -12,28 +35,5 @@
     "minecraft:iron_spear",
     "minecraft:copper_spear"
   ],
-  "weight": 1,
-  "max_level": 1,
-  "min_cost": {
-    "base": 1,
-    "per_level_above_first": 1
-  },
-  "max_cost": {
-    "base": 50,
-    "per_level_above_first": 1
-  },
-  "anvil_cost": 1,
-  "slots": [
-    "any"
-  ],
-  "effects": {
-    "minecraft:hit_block": [
-      {
-        "effect": {
-          "type": "minecraft:run_function",
-          "function": "dwspike:hit_mark"
-        }
-      }
-    ]
-  }
+  "weight": 1
 }

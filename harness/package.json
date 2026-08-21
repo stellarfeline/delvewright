@@ -1,21 +1,21 @@
 {
-  "name": "@delvewright/harness",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Delvewright validation harness (mineflayer bot tests) — stub; see spec-0003 and ADR-0005.",
-  "type": "module",
-  "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "node --test 'test/**/*.test.ts'",
-    "start": "node src/run.ts"
+  "dependencies": {
+    "mineflayer": "4.37.1",
+    "mineflayer-pathfinder": "2.4.5"
   },
+  "description": "Delvewright validation harness (mineflayer bot tests) — stub; see spec-0003 and ADR-0005.",
   "devDependencies": {
     "@types/node": "^24.0.0",
     "prismarine-registry": "^1.12.0",
     "typescript": "^5.6.0"
   },
-  "dependencies": {
-    "mineflayer": "4.37.1",
-    "mineflayer-pathfinder": "2.4.5"
-  }
+  "name": "@delvewright/harness",
+  "private": true,
+  "scripts": {
+    "start": "node src/run.ts",
+    "test": "node --test 'test/**/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "version": "0.0.0"
 }

@@ -281,7 +281,7 @@ binding**, because a gate that matched nothing is vacuous, not a pass.
 | C — DSL structs declared separately with an identical field set | 2 groups |
 | D — cross-cutting modifier absent from some variants of a tagged enum | 6 (enum, field) pairs (`QuestEffect.happening` left the ledger at spec-0031 — see finding 12, which is still open) |
 | E — every `Vec<QuestEffect>` bundle is reachable by some enumeration | 11 `Vec<QuestEffect>` fields |
-| F — every story-node construction supplies a `happening` an author can set | 2 `happening: None` sites (1 test, 1 budgeted continuation beat) |
+| F — every story-node construction supplies a `happening` an author can set | 5 `happening: None` sites (4 test, 1 budgeted continuation beat) |
 
 Demonstrated firing on the live instances: with `seal_fns` and
 `SEAL_HINT_DEFAULT` removed from the ledger — i.e. simulating `sealed_hint` being

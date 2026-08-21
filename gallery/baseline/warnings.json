@@ -117,7 +117,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -199,11 +199,6 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "hard.en": [
@@ -324,7 +319,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -406,11 +401,6 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "ocean-horizon.en": [
@@ -531,7 +521,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -618,11 +608,6 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "primary.en": [
@@ -743,7 +728,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -825,11 +810,6 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "primary.zh-cn": [
@@ -950,7 +930,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -1032,11 +1012,6 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "site-plan.en": [
@@ -1239,7 +1214,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -1321,11 +1296,6 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ]
 }
