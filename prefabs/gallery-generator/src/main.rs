@@ -1601,6 +1601,202 @@ fn write_shard(out: &Path) {
     println!("{SHARD_ID}: fragment source written");
 }
 
+
+// ---------------------------------------------------------------------------
+// The DETAIL piece (spec-0050): the yard the site-plan overlay's exit box holds
+// ---------------------------------------------------------------------------
+
+/// The detail piece's id.
+const YARD_ID: &str = "gallery-yard";
+
+/// **The frame the whole gives `node/exit`**, and every number here is a
+/// consequence of it rather than a choice.
+///
+/// The site-plan overlay gives that place an 8×8 footprint at the `alcove` rung
+/// with no ceiling, so its play space is 8×3×8 and its FRAME — the play space
+/// plus the one floor course a piece owns — is 8×4×8. A detail piece must be
+/// exactly the shape of its allocation, and `DW0843` refuses a cell either way,
+/// so this constant is not a size the generator picked: it is what
+/// `delvec allocation node/exit` hands out, and the campaign document that binds
+/// this piece is what makes the two answerable to each other.
+const YARD_SIZE: [i32; 3] = [8, 4, 8];
+
+/// The way in, in piece-local cells: the seam the plan cut on the exit's north
+/// face, as `delvec allocation` states it. The piece must leave exactly these
+/// cells passable and must not open a second way out — the first is `DW0844`
+/// from one direction and the second is `DW0844` from the other.
+const YARD_WAY: ([i32; 3], [i32; 3]) = ([2, 1, 0], [3, 3, 0]);
+
+/// Where a body stands when a quest seats it here — `anchor/node-exit` after the
+/// re-binding. Open paving, clear of the plinth.
+const YARD_SEAT: [i32; 3] = [1, 1, 4];
+
+/// A courtyard: paving, a low plinth to walk around, and four corner posts.
+///
+/// It is a **building** rather than the box's massing repeated, and that is the
+/// whole demonstration: the interior standable set and the route through a place
+/// are deliberately free to change under detail (spec-0050 §7), while the seam,
+/// its cells and its rise are not. What a reader should be able to see here is
+/// that the plan's one way in is still exactly where the plan cut it, and that
+/// everything else is the piece's own.
+fn build_yard() -> Structure {
+    let mut palette = Palette::new();
+    let mut blocks = Vec::new();
+    let [sx, sy, sz] = YARD_SIZE;
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let plinth = y == 1 && (3..=4).contains(&x) && (3..=4).contains(&z);
+                let post = (1..=2).contains(&y)
+                    && (x == 0 || x == sx - 1)
+                    && (z == 0 || z == sz - 1);
+                let name = if y == 0 {
+                    "minecraft:polished_andesite"
+                } else if plinth {
+                    "minecraft:chiseled_stone_bricks"
+                } else if post {
+                    "minecraft:polished_blackstone_bricks"
+                } else {
+                    // Air is AUTHORED rather than omitted: a detail piece
+                    // replaces the massing inside its frame, and a cell it does
+                    // not write is a cell whatever stood there keeps.
+                    "minecraft:air"
+                };
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: palette.idx(name, None),
+                });
+            }
+        }
+    }
+    Structure {
+        data_version: DATA_VERSION,
+        size: YARD_SIZE,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    }
+}
+
+/// **The piece answers the plan's seam, and says so.** `DW0844` reads this face
+/// contract against the site plan's own seams, in both directions, before any
+/// byte assembles — and `DW0836`/`DW0838` read the bytes afterwards. The two
+/// observers are deliberately redundant: a piece that lies here passes the first
+/// and reds on the second.
+fn yard_metadata() -> serde_json::Value {
+    let (wl, wh) = YARD_WAY;
+    serde_json::json!({
+        "prefab_id": format!("prefab/{YARD_ID}"),
+        "structure": {
+            "file": format!("{YARD_ID}.nbt"),
+            "id": YARD_ID,
+            "size": YARD_SIZE,
+            "data_version": DATA_VERSION,
+            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+        },
+        "anchors": {
+            "yard-stone": {
+                "pos": YARD_SEAT,
+                "facing": "north",
+                "resolves_to": "space:yard",
+                "role": "where a body stands when the campaign seats it in this place"
+            }
+        },
+        // The claim about what SIZE of box this piece is for, judged against its
+        // own bytes at admission and again wherever a detail plan consumes it
+        // (`DW0848`). 8×8 on the kit grid, three of clearance: an `alcove`.
+        "footprint_class": "alcove",
+        "spatial_contract": {
+            "entry": "yard",
+            "spaces": {
+                "yard": {
+                    "envelope": "open_top",
+                    "boxes": [region([0, 1, 0], [YARD_SIZE[0] - 1, YARD_SIZE[1] - 1, YARD_SIZE[2] - 1])]
+                }
+            },
+            "no_body": {},
+            "edges": [
+                {
+                    "a": "yard",
+                    "b": "exterior",
+                    "class": "walk",
+                    "via": { "region": "yard-arch", "boxes": [region(wl, wh)] }
+                }
+            ],
+            "faces": [
+                { "space": "yard", "class": "walk", "dir": "north", "opening": region(wl, wh) }
+            ]
+        },
+        "lighting": {
+            "profile": "lit",
+            "measured_min_light": 15,
+            "measured": "2026-08-21",
+            "method": "derived: an open-top courtyard under the site plan's own sky volume, \
+                       so its floor takes full daylight and needs no fixture"
+        },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Original Delvewright project asset (pipeline-code license per \
+                     prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+        }
+    })
+}
+
+fn write_yard(out: &Path) {
+    let s = build_yard();
+    let cells = invariant_cells(&s);
+    invariants::assert_blocks_are_real(YARD_ID, &cells);
+    connections::assert_shape_is_stated(YARD_ID, &cells);
+    invariants::assert_fluid_is_contained(YARD_ID, s.size, &cells);
+    // The piece's own claim about where a body stands, proved against its own
+    // blocks rather than trusted — the same rule `assert_anchors_are_standable`
+    // holds the hall to, and the reason a detail piece may carry an owed anchor
+    // at all.
+    let solid: std::collections::BTreeSet<[i32; 3]> = cells
+        .iter()
+        .filter(|(_, (name, _))| name.as_str() != "minecraft:air")
+        .map(|(p, _)| *p)
+        .collect();
+    let [ax, ay, az] = YARD_SEAT;
+    assert!(
+        !solid.contains(&[ax, ay, az])
+            && !solid.contains(&[ax, ay + 1, az])
+            && solid.contains(&[ax, ay - 1, az]),
+        "{YARD_ID}: `yard-stone` at {YARD_SEAT:?} is not a cell a body can stand in"
+    );
+    // And the way in is really open, in the bytes, at exactly the cells the
+    // metadata claims. A face contract nothing checks is a claim, not a way.
+    let (wl, wh) = YARD_WAY;
+    for x in wl[0]..=wh[0] {
+        for y in wl[1]..=wh[1] {
+            for z in wl[2]..=wh[2] {
+                assert!(
+                    !solid.contains(&[x, y, z]),
+                    "{YARD_ID}: the seam cell [{x}, {y}, {z}] is solid, so the piece seals \
+                     the plan's only way into this place"
+                );
+            }
+        }
+    }
+
+    let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{YARD_ID}.nbt")), &framed).expect("write yard nbt");
+    let mut t = serde_json::to_string_pretty(&yard_metadata()).expect("metadata serializes");
+    t.push(chr_nl());
+    std::fs::write(out.join(format!("{YARD_ID}.json")), t.as_bytes()).expect("write yard json");
+    println!(
+        "{YARD_ID}: detail piece written — {}x{}x{} to fill the exit box's frame exactly",
+        YARD_SIZE[0], YARD_SIZE[1], YARD_SIZE[2]
+    );
+}
+
 fn chr_nl() -> char {
     10 as u8 as char
 }
@@ -1639,6 +1835,7 @@ fn main() {
     write_piece(out);
     write_annex(out);
     write_shard(out);
+    write_yard(out);
     // The skins destination IS created: unlike the prefab directory it is not an
     // existing library the operator might mistype, it is a fixed subdirectory of
     // the campaign the caller just named, and it is gitignored build output.

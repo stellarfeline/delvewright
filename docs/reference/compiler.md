@@ -10,9 +10,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.14.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.15.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.13.0`, `0.14.0`** (additive supersets; `0.2.0` output stays
+  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.13.0`, `0.14.0`, `0.15.0`** (additive supersets; `0.2.0` output stays
   byte-identical across the later versions). This line is not prose: it is bound
   by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
   (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS` minus
@@ -546,6 +546,65 @@ active, i.e. `dw.qa_<quest>==1` and
 `dw.o_<obj>!=1` (objective-state axis) — so `DW0191`'s ungated completing option
 is visible exactly while its objective is active (the guarantee holds
 automatically).
+
+### The map pipeline — `detail-plan` (optional; v0.15, spec-0050)
+
+Stage 6: **which piece stands in which of the plan's places.** One document,
+`detail-plan.json`, and two fields.
+
+| Field | What it states |
+|---|---|
+| `palette` | Role name → block: the whole's material vocabulary, handed into every allocation and **gated by nothing**. Materials are style, style authority is rank-only, and a piece exported against a stale palette is a render finding rather than a machine one — the piece's own provenance row already freezes what it was built from. Absent means the whole states no vocabulary, which is a different claim from an empty map. |
+| `details[]` | `{place, piece, anchors}`. `place` is a layout-graph node; `piece` is a prefab; `anchors` maps each synthesized name that place **owes** to an anchor of the piece. |
+
+**There is no coordinate, no region, no extent, no datum, no seam and no offset
+in it** — absent fields, not optional ones. A detail document is *structurally
+unable* to move its box, its datum or its seams, because the schema has no
+spelling for any of them, and the only path from a `details[]` row to placed
+bytes runs through the compiler computing the frame from the site plan inside
+`Plan::build` — the one constructor every world-reaching verb goes through. That
+is the same tooth the blockout's is: inversion is not forbidden, it is
+uncompilable. The escalation path a part that wants different traversal takes is
+a **site-plan revision**, which moves the plan hash, which re-opens the walk gate
+(`DW0841`), which re-runs the whole's walk. The cost is stated, not hidden.
+
+**The frame** a piece must exactly fill is the box's play space grown one course
+downward — the walk plane's own floor. Everything else the derivation writes
+around a box is structure and stays whole-owned: every vertical party plane,
+every wall, every unshared shell face, every seam frame, every derived stair in
+an unbound host and every bar in a vertical-plane seam. Where boxes stack, the
+horizontal party plane **is** the upper box's floor course and belongs to the
+upper piece. In the derivation this is one rule rather than six exemptions: a
+bound frame is a hole in what the whole writes, so the floor accent, the interior
+clear, the ceiling of the box underneath, a hosted stair and a bar in the box's
+own floor course all stop by the same subtraction, and everything outside the
+frame is written exactly as before.
+
+**The fixture pass applies to derived interiors only.** A bound place lights
+itself; its cells leave the relight pass's deficiency set and go to the
+undeclared-darkness measurement instead, so a dark detailed place is a finding
+rather than a silence.
+
+**Detail is per-place and partial by construction**: every unbound box is massed
+exactly as at stage 5, so a campaign with one detailed place builds, walks and
+renders like any other. The broken intermediate is a real, lookable object at
+every point between "no detail" and "fully detailed".
+
+**Traversal equivalence** is proved by the stage-5 battery running unchanged over
+a world with pieces standing where massing stood — `DW0836`, `DW0837` and
+`DW0838` share no arithmetic with the derivation and do not care what wrote the
+blocks. What is deliberately free to change is the interior: partitions, stairs,
+lofts and pits inside a place, its materials and its light. What is not: the
+seams, their cells, their rises, and the absence of any way out the plan did not
+allocate.
+
+**`walk-record.json`** is a campaign artifact, not a stage document — no
+`dsl_version`, no `campaign_id`, no `stage`, because it records an event rather
+than being authored against a schema. Its form is
+`{site_plan_sha256, blockout_sha256, engine_revision, verdict, findings[]}`, and
+every build of a site-plan campaign prints both hashes with the engine's
+**revision** beside them, so a record can name its instrument literally. It is
+not a build input: a re-recorded walk moves no emitted byte.
 
 ### Stage 7 — `world-edits` (optional; v0.6, spec-0017)
 
@@ -3253,7 +3312,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.13.0,0.14.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.13.0,0.14.0,0.15.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
@@ -4852,6 +4911,62 @@ therefore not optional for a branching campaign.
   the reviewer compares NL against NL. Narrative incoherence becomes a readable
   contradiction in sequence.
 
+### DW0841–DW0845 and DW0848 — the detail plan (`compiler::detail` + `dsl::prefab`; spec-0050, DSL v0.15)
+
+Stage 6 of the map pipeline: a place is detailed inside the box the whole gave
+it. The document is `detail-plan.json` (§2); this is what judges it.
+
+**What invokes each check, and what happens without it.** `DW0841`–`DW0845` run
+in `validate_loaded`, the one funnel every `delvec` subcommand's validation goes
+through — `build` included — so a defect cannot reach a datapack by skipping
+`delvec validate`. `DW0841` runs again in `delvec allocation`, before that verb
+prints a single number, because obtaining an allocation and compiling a binding
+are the two events that begin detail work; there is no third, because no other
+verb reads a `detail-plan`. `DW0848` runs at `delve-admit audit` — the admission
+event, where the library's integrity lives — and again wherever a `details[]` row
+consumes the piece, so a pre-check-era piece cannot be consumed unjudged. The
+frame itself is computed in `Plan::build`, which is the only constructor a world
+can be reached through.
+
+**No opt-out exists.** A place is bound or unbound, and the kind is determined by
+whether a row exists rather than chosen among demands: there is no
+acknowledgement field, no exemption list and no severity an author selects. The
+two soft edges are each secured by a property the defect cannot supply. The walk
+record's freshness is the **plan hash**, and the defect `DW0841` catches —
+detailing a plan the walk never passed — is exactly what moves it. The
+blockout-drift advisory is reachable only by toolchain movement, because the hash
+is taken over the derivation as a pure function of plan, metrics and engine
+(`blockout::walked_massing`), so no campaign edit can move it without moving the
+plan hash first and refusing above.
+
+| Code | Rule |
+|---|---|
+| `DW0841` | **Detail without a passed walk of this plan.** A campaign carrying a `detail-plan` is refused unless `walk-record.json` exists, parses, carries `verdict: "passed"`, and names this plan's `site_plan_sha256`. Missing, unparseable, stale and `"findings"` are each named separately, and a stale record's refusal prints both hashes. The hash is over the plan's **canonical** bytes, so a reformat is not a re-walk. Stated plainly: the machine half of this gate is freshness and an explicit verdict — that a human really walked is the record author's assertion, held by operating practice, and no engine check can prove otherwise. A `blockout_sha256` mismatch under an unchanged plan is instead a **warning** naming both hashes and both engine revisions. Validation tier (exit 1), `every_version`. **Binding: walk records read, plan-hash comparisons made, and `details[]` rows stood in front of.** |
+| `DW0842` | **The binding does not bind.** A `detail-plan` in a campaign with no site plan (the limiting case, naming the missing document); a `place` naming no layout-graph node; two rows for one place; a `piece` the prefab library does not hold; an `anchors` key that is not a name this place owes; an `anchors` value naming no anchor of the piece. Validation tier (exit 1), `every_version`. **Binding: rows resolved, against the plan's box count.** |
+| `DW0843` | **The piece is not the shape of its allocation.** The piece's structure size differs from the handed frame on any axis — the refusal prints both extents, the axis and the direction. **Undersize refuses exactly as oversize does**: the box is the footprint, so a smaller building means a smaller box, which is a site-plan edit and a re-walk, taken visibly. Also under this code: a bound piece declaring no spatial contract, because the equivalence instrument would have nothing to read and a place detailed with such a piece would be a hole in the proof rather than a finding in it. Validation tier (exit 1), metadata only, `every_version`. **Binding: pieces measured.** |
+| `DW0844` | **The piece's openings are not the plan's seams.** Both directions, from metadata, before any byte assembles: a seam this box must answer with no aligned face opening of a compatible class, and a face of the piece answering no seam — the *discovered* seam, at the earliest tier there is. Alignment means the face's opening cells answer the seam's allocated cells across the party plane, or **at** them for a seam lying in the piece's own floor course. Deliberately redundant with `DW0836`/`DW0838` and **not** their replacement: this reads declarations and names the piece and the seam at validation, they read bytes at build and remain the independent observers, and a piece that lies in its metadata passes here and reds there. Validation tier (exit 1), `every_version`. **Binding: seams required, and declared faces examined.** |
+| `DW0845` | **An owed anchor has no standing.** An owed name left unbound; one bound to a piece anchor that declares no cell (a region answers a gate, and a gate region is never owed by a place); or one bound to an anchor the piece's own contract resolves into something a body cannot be at — a `no_body` region, a bar, a transit volume. Validation tier (exit 1), `every_version`. **Binding: owed names checked over every bound place.** |
+| `DW0848` | **A piece's declared footprint class disagrees with its bytes.** Prefab metadata gains an optional `footprint_class` naming a metrics `size-class.*` rung (`DW0812` refuses a name the table does not define, as for any document naming a table entry). A piece declaring one is refused when its own structure size could serve no box of that class: horizontal extents off the class's range, off the kit grid's quantum, or a height under the class's clearance plus the one floor course a piece owns. The field stays optional for the library at large — every piece predates it — and a piece bound by a `details[]` row is held to exact frame equality by `DW0843` whether or not it declares. Validation tier (exit 1) in the compiler, admission-failing in `delve-admit`, `every_version`. **Binding: pieces declaring a class, against declaration documents read.** |
+
+**The owed names** are the subset of the synthesized vocabulary whose bearer is a
+given box: its own `anchor/node-…`, `spawn` when it is the entry node, and each
+`anchor/unlock-…` whose opening side it is. A gate region (`anchor/seam-…`) is
+never owed — it stands in a party plane the whole owns. `dsl::siteplan::owed_anchors`
+answers, beside `synthesized_anchors`, and a test proves the two partition rather
+than agree. The `anchors` map re-binds each owed name to an anchor of the piece,
+so a kit piece keeps its own vocabulary and a campaign keeps its own: the quest
+layer bound those names to places at stage 3, before any detail existed, and
+detailing must never force a quest edit.
+
+**`delvec allocation <place>` / `--all`** emits the handed allocation as JSON:
+the frame's extents, the datum in piece-local coordinates, every seam of the box
+in piece-local coordinates with its face, cells, class, rise and the answering
+class the table above requires, the owed anchor names, and the detail plan's
+palette. It is derived from the site plan on every invocation and is **an input
+to nothing** — no gate, no build step and no check ever reads what it prints, so
+a file made of it is a copy with no consumer and its staleness has no vector into
+the build. Every obligation is recomputed from the plan at every validation.
+
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
 Separate binaries with their own exit-code schemes; diagnostics to **stderr**.
@@ -5121,7 +5236,7 @@ one proof in the compiler taken under different physics.
 | `DW0836` | **A built seam disagrees with its allocation.** Three claims over the bytes. *Every allocated cell is passable* — a hole the derivation failed to cut is a connection the graph declares and the world does not have. *No other cell of the shared wall is passable*, asked per **wall** rather than per seam, because two connections may legitimately pierce one wall and the union of their openings is what it is allowed to have. *The realized rise equals the declared rise*, measured as the lowest cell a body can stand on inside each place — so a floor course laid at the wrong height disagrees with the plan that put the two places at those datums. Build tier (exit 3), `every_version`. **Binding: seams proven, and shared walls examined.** |
 | `DW0837` | **A node's floor is unreached.** Per-cell reachability from the campaign's own spawn over the assembled world, with every way the graph's monotone gating closure never opens sealed as the plan sealed it — the base assembled model holds gate regions open, so a proof taken over it would walk through a door nothing unlocks. A declared `drop` is **seeded**, not walked: the step rule models no free fall (a router that could fall would prove routes a body cannot come back from), so the far side of a fall whose near side is already stood in is handed a starting cell and the closure iterates. That is the graph's own declaration carried into the bytes, never a widening of the step rule. The graph's `DW0816` proved this over topology; this proves the derivation preserved it in blocks. Build tier (exit 3), `every_version`. **Binding: places proven.** |
 | `DW0838` | **A connection nothing allocated.** Delete every allocated opening from the world and no two places may still be walk-connected. **Departure from spec-0049 §5.3, recorded**: the spec states this as *every legal step between a cell owned by one box and a cell owned by another*, and read literally that rule is vacuous by construction — the plan's own `DW0828` puts exactly one cell between any two boxes, so no cell of one is ever a cardinal neighbour of a cell of the other and the rule quantifies over an empty set forever. The claim is therefore made over **paths**, which is the same claim and can fail: it catches the crossings the step form was reaching for and could not see — a wall the massing left low, a corner two shells did not close, a roof one open place lets a body onto — none of which is a single step between two owned cells either. Build tier (exit 3), `every_version`. **Binding: standable cells classified, and place pairs tested.** |
-| `DW0821` | **A sightline is blocked.** The DDA walk of a declared `vision` edge's segment — `nav::walk_cells`, the same exact grid traversal the cutscene clip is proven with — naming **every** blocking cell rather than the first, because a walk sheet that names one cell of a wall has not said where the wall is. **Warning (exit 0)** in this slice: derived massing has no landform, so a vista the detail pass will carve a ridge for is blocked here by the shells themselves, and refusing it would force hand-shaped massing into a derivation whose whole property is that nobody shapes it. Promoted to an error by the detail-stage spec. `every_version`. **Binding: sightlines walked.** |
+| `DW0821` | **A sightline is blocked.** The DDA walk of a declared `vision` edge's segment — `nav::walk_cells`, the same exact grid traversal the cutscene clip is proven with — naming **every** blocking cell rather than the first, because a walk sheet that names one cell of a wall has not said where the wall is. **Warning (exit 0) while any box is unbound; an error (exit 3) once `details[]` binds every graph node.** Derived massing has no landform, so a vista the detail pass will carve a ridge for is blocked here by the shells themselves, and refusing it then would force hand-shaped massing into a derivation whose whole property is that nobody shapes it. A fully detailed map has nothing left to carve, so the same world becomes a refusal. The severity is **computed from the artifact** — `compiler::detail::fully_detailed` — rather than set by a stage marker or an author flag, so there is nothing to set, nothing to forget, and no author who can choose the lenient reading. `every_version`. **Binding: sightlines walked.** |
 | `DW0839` | **Two placement authorities in one campaign.** A stage-1 world declaring `areas[]` in a campaign that also carries a site plan. `areas[]` seats prefab pieces on the compiler's fixed stride and the site plan seats the derived blockout in its own declared region, so a world with both has two answers to every question about where something is and nothing says which. One or the other, per campaign; both surfaces stay legal at 0.14.0. Validation tier (exit 1), `every_version`. |
 
 `DW0833` and `DW0822` run their **second call sites** here, and the pair is the

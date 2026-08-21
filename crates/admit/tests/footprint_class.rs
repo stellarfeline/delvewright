@@ -36,9 +36,30 @@ fn scratch(tag: &str) -> PathBuf {
     dir
 }
 
+/// The two states this fixture writes, judged against the pinned registry before
+/// a byte is serialised.
+///
+/// A fixture that authors a palette owes the same rule a generator does: an id
+/// or a property value the pinned version does not have loads as **air**, with
+/// no error anywhere, so the piece silently loses those cells and the test that
+/// measured them measured a hole. `tools/check-structure-emitters.py` binds
+/// this, and an exemption would have been the weaker answer to a check that is
+/// right.
+const STATES: [&str; 2] = ["minecraft:stone_bricks", "minecraft:air"];
+
+fn judge_the_palette() {
+    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let none: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for name in STATES {
+        let verdict = registry.validate(name, &none);
+        verdict.unwrap_or_else(|e| panic!("the fixture names an impossible state: {e}"));
+    }
+}
+
 /// Gzip-framed vanilla structure NBT: a sealed stone shell of `SIZE`, which is
 /// all the palette audit needs to see and all the doors need to measure.
 fn structure_nbt() -> Vec<u8> {
+    judge_the_palette();
     let [sx, sy, sz] = SIZE;
     let mut blocks: Vec<Value> = Vec::new();
     for x in 0..sx {
@@ -56,7 +77,7 @@ fn structure_nbt() -> Vec<u8> {
         }
     }
     let palette = Value::List(
-        ["minecraft:stone_bricks", "minecraft:air"]
+        STATES
             .iter()
             .map(|n| {
                 let mut c = HashMap::new();

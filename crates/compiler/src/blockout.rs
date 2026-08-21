@@ -1516,23 +1516,7 @@ fn nodes_reached(
         return; // `DW0824` refused the plan; there is no body to start.
     };
 
-    // Where a body starts in a place, **as the built world has it**.
-    //
-    // The derivation's own footing is preferred and is standable by
-    // construction for a massed box, so every campaign without a detail plan
-    // seats exactly where it always did. A DETAILED box has no derived mass
-    // inside its frame at all — the piece's bytes are the floor — so the
-    // derivation's footing there is its documented fallback, the plan's centre,
-    // which the piece may legitimately have built a wall on. Seeding a walk from
-    // a solid cell reports a place a campaign spawns bodies in as unroutable,
-    // which is a wrong answer rather than a strict one.
-    let seat = |x: &PlacedBox| {
-        let want = b.footing(&x.node).unwrap_or_else(|| narrow(x.centre()));
-        if world.is_standable(want) {
-            return want;
-        }
-        standable_near(x, world, want).unwrap_or(want)
-    };
+    let seat = |x: &PlacedBox| seat_in(x, b, world);
     let mut seeds: Vec<[i32; 3]> = vec![seat(entry)];
     let mut reached: BTreeSet<[i32; 3]> = BTreeSet::new();
     loop {
@@ -1616,6 +1600,31 @@ fn nodes_reached(
             ),
         );
     }
+}
+
+/// **Where a body stands in this place, as the BUILT world has it.**
+///
+/// One helper and two callers — the reachability proof and the pacing
+/// measurement — because both ask the same question, and answering it twice is
+/// how one of them comes to be right. It was: the seat was widened for
+/// `DW0837` and not for `DW0822`, and the pacing router went on aiming at the
+/// plan's centre, which in a detailed place is wherever the piece happened to
+/// put its furniture. It reported a leg as unroutable while the place beside it
+/// was proven reached.
+///
+/// The derivation's own footing is preferred and is standable by construction
+/// for a massed box, so every campaign without a detail plan seats exactly where
+/// it always did and its measurements do not move by a block. A DETAILED box has
+/// no derived mass inside its frame at all — the piece's bytes are its floor —
+/// so the derivation's footing there is its documented fallback, the plan's
+/// centre, and the search below is what makes the answer a fact about the world
+/// rather than about the massing that is no longer there.
+fn seat_in(x: &PlacedBox, b: &Blockout, world: &crate::nav::World) -> [i32; 3] {
+    let want = b.footing(&x.node).unwrap_or_else(|| narrow(x.centre()));
+    if world.is_standable(want) {
+        return want;
+    }
+    standable_near(x, world, want).unwrap_or(want)
 }
 
 /// The standable cell of `b` nearest `want` **in the assembled world**,
@@ -2175,11 +2184,7 @@ fn pacing(
             continue;
         };
         binding.legs += 1;
-        let (a, z) = (
-            b.footing(&from.node)
-                .unwrap_or_else(|| narrow(from.centre())),
-            b.footing(&to.node).unwrap_or_else(|| narrow(to.centre())),
-        );
+        let (a, z) = (seat_in(from, b, world), seat_in(to, b, world));
         match world.find_path(a, z) {
             Some(path) => blocks += path.len().saturating_sub(1),
             None => unrouted.push(format!("`{}` → `{}`", pair[0], pair[1])),

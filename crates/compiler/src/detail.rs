@@ -341,11 +341,12 @@ fn walk_gate(c: &Campaign, record: Option<&str>, rows: usize) -> (Option<Diagnos
                  is walked before any part of it is detailed: detailing is where a map's cost \
                  stops being cheap to change, so the whole is judged first, in game, and the \
                  record of that judgement is what unlocks the parts. Write \
-                 `walk-record.json` beside the stage documents: \
-                 {{\"site_plan_sha256\": \"{current}\", \"blockout_sha256\": \"<the hash the \
-                 build printed>\", \"engine_revision\": \"{rev}\", \"verdict\": \"passed\", \
-                 \"findings\": []}}. Every build of this campaign prints both hashes. Binding: \
-                 {n} `details[]` row(s) stood in front of, ZERO records read.",
+                 `walk-record.json` beside the stage documents, with \
+                 `site_plan_sha256` set to `{current}`, `blockout_sha256` set to the hash the \
+                 build printed beside it, `engine_revision` set to the revision that built it \
+                 (this one is `{rev}`), `verdict` set to `passed`, and a `findings` list of \
+                 whatever the walk noted. Every build of this campaign prints both hashes. \
+                 Binding: {n} `details[]` row(s) stood in front of, ZERO records read.",
                 rev = engine_revision(),
                 n = binding.rows,
             ),

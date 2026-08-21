@@ -79,21 +79,40 @@ fn massing(c: &Campaign) -> BTreeMap<[i64; 3], String> {
 
 /// A place's cells, piece-local, with air stated rather than omitted — which is
 /// what a real exported piece does, and what makes the substitution total.
+///
+/// **Plus its own light**, and that is not decoration: spec-0050 §3 takes a bound
+/// frame out of the whole's fixture pass, because the whole hanging torches
+/// inside a building somebody designed would be the whole writing inside a bound
+/// frame. A bound place lights itself and the existing gate judges it — so a
+/// piece cut from the massing alone is a dark room, `DW0210` says so, and the
+/// repair is the one a real detail piece makes. Torches on a four-cell grid over
+/// the walk plane, never inside a seam's own cells.
 fn piece_cells(
     c: &Campaign,
     a: &Allocation,
     mass: &BTreeMap<[i64; 3], String>,
 ) -> Vec<([i32; 3], String)> {
     let _ = c;
+    let in_a_seam = |p: [i64; 3]| {
+        a.seams.iter().any(|s| {
+            (0..3).all(|i| {
+                p[i] >= s.cells[0][i].min(s.cells[1][i]) && p[i] <= s.cells[0][i].max(s.cells[1][i])
+            })
+        })
+    };
     let mut out = Vec::new();
     for x in 0..a.extent[0] {
         for y in 0..a.extent[1] {
             for z in 0..a.extent[2] {
                 let world = [a.world_min[0] + x, a.world_min[1] + y, a.world_min[2] + z];
-                let block = mass
+                let mut block = mass
                     .get(&world)
                     .cloned()
                     .unwrap_or_else(|| "minecraft:air".to_string());
+                let lit_here = y == 1 && x % 4 == 1 && z % 4 == 1;
+                if lit_here && block == "minecraft:air" && !in_a_seam([x, y, z]) {
+                    block = "minecraft:torch".to_string();
+                }
                 out.push(([x as i32, y as i32, z as i32], block));
             }
         }
@@ -1180,6 +1199,138 @@ fn a_detailed_build_exits_zero_and_prints_both_hashes() {
     assert!(
         err.contains("1 of 5 place(s) bound"),
         "and the detail binding count, with its denominator"
+    );
+}
+
+/// **A bound place lights itself, and the existing gate judges it**
+/// (spec-0050 §3).
+///
+/// The blockout fixture declares `lighting: {fixture: torch}`, and before stage 6
+/// that pass hung torches on every dark reachable cell of the whole area. Inside
+/// a bound frame it must not: the frame is the piece's, and lighting is part of
+/// what a place looks like — the whole lighting a building somebody designed
+/// would be the whole writing inside a bound frame, which is the one thing the
+/// fabric split says it does not do.
+///
+/// What replaces it is not silence. The cells go to the undeclared-darkness
+/// measurement, so a dark detailed place is a **finding**, and this is the
+/// demonstration: take the light out of the piece and the build refuses.
+#[test]
+fn the_whole_does_not_light_a_bound_place_and_a_dark_one_is_a_finding() {
+    let tmp = tempdir("relight");
+    let d = detailed(&tmp, &["node/exit"]);
+    // Green first, so what follows is measured against a piece that was lit.
+    let out = delvec(&[
+        "--prefabs",
+        d.prefabs.to_str().unwrap(),
+        "build",
+        d.campaign.to_str().unwrap(),
+        "--out",
+        tmp.join("out-lit").to_str().unwrap(),
+    ]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Now put the piece's own lights out, changing nothing else.
+    let c = campaign_at(&d.campaign);
+    let a = detail::allocation(&c, &NodeId("node/exit".into())).unwrap();
+    let mass = massing(&c);
+    let cells: Vec<([i32; 3], String)> = piece_cells(&c, &a, &mass)
+        .into_iter()
+        .map(|(p, b)| {
+            if b == "minecraft:torch" {
+                (p, "minecraft:air".to_string())
+            } else {
+                (p, b)
+            }
+        })
+        .collect();
+    assert!(
+        cells.iter().all(|(_, b)| b != "minecraft:torch"),
+        "the perturbation actually removed something"
+    );
+    write_piece(&d.prefabs, "exit", &a, &cells);
+
+    let out = delvec(&[
+        "--prefabs",
+        d.prefabs.to_str().unwrap(),
+        "build",
+        d.campaign.to_str().unwrap(),
+        "--out",
+        tmp.join("out-dark").to_str().unwrap(),
+    ]);
+    let s = String::from_utf8_lossy(&out.stdout) + String::from_utf8_lossy(&out.stderr);
+    assert_ne!(out.status.code(), Some(0), "a dark place is a finding: {s}");
+    assert!(
+        s.contains("DW0210"),
+        "and it is the darkness gate that says so, not a silence: {s}"
+    );
+    assert!(
+        s.contains("area/site"),
+        "over the site area the piece stands in: {s}"
+    );
+}
+
+/// **The UNFENCED vacuity mode, closed at the type level.**
+///
+/// A check whose code declares `Binds::Since(n)` is dropped by
+/// `delvewright_dsl::fence` for any campaign whose stage declares less than `n`
+/// — which is how a general check comes to pass on a tree it never examined.
+/// Every stage-6 code binds at **every** version, and it is correct that they
+/// do: each is a rule about what a `detail-plan` SAYS, and a campaign with no
+/// such document reaches none of them, so there is nothing to grandfather.
+///
+/// Asserted rather than described, because the difference between the two is
+/// exactly what the fence's own module docs say costs a staging round.
+#[test]
+fn every_stage_six_code_binds_at_every_version() {
+    use delvewright_dsl::Binds;
+    for code in [
+        detail::DW_UNWALKED,
+        detail::DW_BINDING,
+        detail::DW_NOT_THE_FRAME,
+        detail::DW_FACES,
+        detail::DW_ANCHOR_STANDING,
+        delvewright_dsl::prefab::DW_FOOTPRINT_CLASS,
+    ] {
+        assert_eq!(
+            code.binds(),
+            Binds::EveryVersion,
+            "`{code}` is a rule about what a document says, so nothing may grandfather it"
+        );
+    }
+}
+
+/// **The red reaching a creator's exit code**, end to end and through the fence.
+///
+/// The unit checks above read `detail::check`'s raw list; this reads what
+/// `delvec build` actually does with it, which is where an obligation that the
+/// fence quietly dropped would show up as a green build.
+#[test]
+fn a_piece_that_is_not_its_frame_fails_the_build_through_the_fence() {
+    let tmp = tempdir("build-red");
+    let d = detailed(&tmp, &["node/exit"]);
+    patch_piece(&d, "exit", |v| {
+        v["structure"]["size"][0] = serde_json::json!(12);
+    });
+    let out = delvec(&[
+        "--prefabs",
+        d.prefabs.to_str().unwrap(),
+        "build",
+        d.campaign.to_str().unwrap(),
+        "--out",
+        tmp.join("out").to_str().unwrap(),
+    ]);
+    let s = String::from_utf8_lossy(&out.stdout) + String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{s}");
+    assert!(s.contains("DW0843"), "{s}");
+    assert!(
+        !tmp.join("out").join("manifest.json").exists(),
+        "and no datapack was written"
     );
 }
 

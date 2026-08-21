@@ -791,6 +791,51 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
             None => None,
         };
 
+        // **The fixture pass applies to DERIVED interiors only** (spec-0050 §3).
+        //
+        // A detail piece's frame is the piece's, and lighting is part of what a
+        // place looks like: the whole hanging its own torches inside a building
+        // somebody designed would be the whole writing inside a bound frame,
+        // which is the one thing the fabric split says it does not do.
+        //
+        // The cells are not simply dropped, or a dark detailed place would be a
+        // silence rather than a finding. They go to `measure_undeclared`, which
+        // is the gate an area with no declaration already gets — so the piece
+        // lights itself and is judged on whether it did.
+        //
+        // Empty for every campaign with no detail plan, so nothing moves for
+        // anybody who has not opted in.
+        let frames: Vec<([i32; 3], [i32; 3])> = if area.area_id == delvewright_dsl::SITE_AREA {
+            let mut reads = delvewright_dsl::metrics::Reads::new();
+            delvewright_dsl::placed_boxes(c, &mut reads)
+                .iter()
+                .filter(|b| delvewright_dsl::is_bound(c, &b.node))
+                .map(|b| {
+                    let f = delvewright_dsl::Frame::of(b);
+                    (
+                        [f.lo[0] as i32, f.lo[1] as i32, f.lo[2] as i32],
+                        [f.hi[0] as i32, f.hi[1] as i32, f.hi[2] as i32],
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let detailed: BTreeSet<[i32; 3]> = reachable
+            .iter()
+            .copied()
+            .filter(|c| frames.iter().any(|(lo, hi)| in_bounds(*c, *lo, *hi)))
+            .collect();
+        let reachable: BTreeSet<[i32; 3]> = reachable.difference(&detailed).copied().collect();
+        if !detailed.is_empty()
+            && let Some(diag) = measure_undeclared(&model, &detailed, sky, false, &area.area_id)
+        {
+            out.diagnostics.push(diag);
+        }
+        if reachable.is_empty() {
+            continue; // every reachable cell here belongs to a piece.
+        }
+
         match lighting {
             Some(spec) => {
                 relight_area(
