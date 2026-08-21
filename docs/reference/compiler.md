@@ -1653,7 +1653,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `server/`, `critical-path.json`, plus `resourcepack.zip`+`SKINS.md`
   (`resource_pack_sha1` in manifest) for a skinned campaign.
 - `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
-  version**; `format_version` is the **contract's own** version, currently `2`
+  version**; `format_version` is the **contract's own** version, currently `3`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
   about proving the path changes, independently of the DSL. At format 2 every
   objective-bearing step (`talk-to`/`reach`/`kill`/`collect`/`interact`) carries

@@ -1182,10 +1182,17 @@ pub fn safe_local(id: &str) -> String {
 ///   its objective completing.
 /// * `2` — every objective-bearing step carries `objective`, and completion is
 ///   proved by the anchored per-objective marker channel ([`marker_line`]).
+/// * `3` — a `reach` step carries `completion`, the volume the datapack
+///   adjudicates in ([`ReachCompletion`]). The harness derives its walk goal from
+///   that and no longer from the authored `radius`, which the datapack had
+///   stopped reading at DSL v0.3 without telling anyone. The field is required in
+///   both directions, which is what makes this a format change rather than an
+///   addition: a format-2 artifact cannot tell a current bot where the objective
+///   completes, and a format-2 bot would refuse the new key outright.
 ///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 2;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 3;
 
 /// The machine completion-marker token for campaign completion. An objective's
 /// token is simply its own id (`obj/<kebab>`).

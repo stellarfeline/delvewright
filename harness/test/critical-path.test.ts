@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  CRITICAL_PATH_FORMAT_VERSION,
   CriticalPathParseError,
   insideCompletion,
   parseCriticalPath,
@@ -15,7 +16,7 @@ import type { ReachCompletion } from "../src/critical-path.ts";
 function validRaw(): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 2,
+    format_version: 3,
     campaign_id: "hello-world",
     steps: [
       {
@@ -485,7 +486,7 @@ test("rejects a non-integer assert-complete scoreboard value", () => {
 
 test("parses format_version and every objective-bearing step's objective id", () => {
   const path = parseCriticalPath(validRaw());
-  assert.equal(path.formatVersion, 2);
+  assert.equal(path.formatVersion, CRITICAL_PATH_FORMAT_VERSION);
   assert.equal((path.steps[1] as { objective: string }).objective, "obj/greet");
   assert.equal((path.steps[2] as { objective: string }).objective, "obj/exit");
   // The framing steps prove no objective and carry no id.
@@ -506,7 +507,7 @@ test("rejects a path with no format_version — it predates the oracle and is un
 
 test("rejects an unknown format_version rather than guessing the shape", () => {
   const raw = validRaw();
-  raw["format_version"] = 3;
+  raw["format_version"] = 2; // the previous contract: no `completion` on a reach step
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) =>

@@ -106,7 +106,7 @@ export const SUPPORTED_DSL_VERSIONS = [
  *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 2;
+export const CRITICAL_PATH_FORMAT_VERSION = 3;
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
