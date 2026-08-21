@@ -110,10 +110,12 @@ done
 [ -n "$PATH_ARG" ] || { echo "--path is required" >&2; exit 2; }
 [ -n "$BRANCH" ] || [ -n "$DETACH" ] || { echo "one of --branch / --detach is required" >&2; exit 2; }
 
-# Nothing below ever changes directory: a `cd` in the first clause of a compound
-# command persists through the rest of it, which is how this project has made
-# `git` and `gh` answer confidently about the wrong repository. Every call names
-# its tree.
+# No `cd` below ever ESCAPES its subshell. A `cd` in the first clause of a
+# compound command persists through the rest of it, which is how this project
+# has made `git` and `gh` answer confidently about the wrong repository. Where a
+# directory genuinely has to be entered — `rustc --version` reads the toolchain
+# pin from the CWD and has no flag for it — it is entered inside `$( ... )` and
+# the shell this script runs in never moves. Every git call names its tree.
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 MAIN="$(git -C "$HERE" worktree list --porcelain | awk 'NR==1{print $2}')"
 [ -n "$DONOR" ] || DONOR="$MAIN"
@@ -197,13 +199,24 @@ if [ "$DO_CLONE" = 1 ]; then
 fi
 
 # --- claim it, so the sweep never has to decide about a live dispatch -------
-if [ "$DO_LEASE" = 1 ] && [ -x "$HERE/tools/worktree-reclaim.py" ]; then
-  python3 "$HERE/tools/worktree-reclaim.py" --lease "$NEW" --holder "$HOLDER" \
-    --reason "dispatched worktree" >/dev/null
-  echo "   lease      : held by $HOLDER (release it at the merge; the sweep honours it until then)"
+# LEASED counts what HAPPENED, never what was asked for. A stated count that
+# reports the intention is the failure this project keeps paying for: it reads
+# as evidence and is a restatement of the flag.
+LEASED=0
+if [ "$DO_LEASE" = 1 ]; then
+  if [ ! -x "$HERE/tools/worktree-reclaim.py" ]; then
+    echo "   lease      : NOT TAKEN — $HERE/tools/worktree-reclaim.py is missing or not executable."
+    echo "                An unclaimed tree is one the sweep has to judge on its own."
+  elif python3 "$HERE/tools/worktree-reclaim.py" --lease "$NEW" --holder "$HOLDER" \
+         --reason "dispatched worktree" >/dev/null; then
+    LEASED=1
+    echo "   lease      : held by $HOLDER (release it at the merge; the sweep honours it until then)"
+  else
+    echo "   lease      : NOT TAKEN — the lease command failed. The tree is usable and unclaimed."
+  fi
 fi
 
-echo "   binding    : 1 worktree created, $CLONED target/ cloned, $( [ "$DO_LEASE" = 1 ] && echo 1 || echo 0 ) lease taken"
+echo "   binding    : 1 worktree created, $CLONED target/ cloned, $LEASED lease taken"
 echo
 echo "Build INSIDE the tree — 'cargo build --manifest-path $NEW/Cargo.toml' run from"
 echo "elsewhere resolves rust-toolchain.toml from your CWD, not from the manifest,"
