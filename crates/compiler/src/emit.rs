@@ -12482,8 +12482,9 @@ fn emit_packtest(
     //     therefore drives one coherent per-branch path per phase, serialized
     //     through the vanilla scheduler.
     //
-    // Campaigns with no branch points and a synchronous ending keep the original
-    // single-tick template byte for byte.
+    // Both shapes open with the SAME full progression re-baseline
+    // ([`campaign_progression_baseline`]) — see that function for the defect
+    // that cost this its own intermittent red.
     let (pin, sel) = pin_dummy("dw_t_camp");
     let party = plan::PARTY;
     let branches: Vec<crate::branch::RealizedBranch> = crate::branch::realize(c)
@@ -12501,20 +12502,15 @@ fn emit_packtest(
             .map(|q| q.id.as_str())
             .collect();
         let tail = quests_ending_tail(c, &quests, moves, actor_moves);
-        // Baseline + drive. Actively establish the asserted baseline — on the
-        // shared-batch server "never set" is not 0. spec-0018: the whole chain is
+        // Baseline + drive. The baseline is the WHOLE progression surface
+        // ([`campaign_progression_baseline`]), not just the score this template
+        // asserts: the chain it drives is guarded, so a term a sibling left set
+        // silently turns the drive into a no-op. spec-0018: the whole chain is
         // PARTY state, so the baseline, the activation and the assert all address
         // `#party`; the dummy is still what DRIVES it (`execute as {sel} run …`),
         // which is exactly the multiplayer claim — one player's action advances
         // the party.
-        let mut drive: Vec<String> = Vec::new();
-        drive.push(format!("scoreboard players set {party} {comp_obj} 0"));
-        for qid in campaign_start_quests(c) {
-            drive.push(format!(
-                "scoreboard players set {party} {} 1",
-                quest_active_score(qid)
-            ));
-        }
+        let mut drive: Vec<String> = campaign_progression_baseline(c, &comp_obj);
         for q in &c.quests.content.quests {
             for o in &q.objectives {
                 drive.push(format!(
@@ -12755,6 +12751,87 @@ fn emit_packtest(
 /// function plus the completion write itself.
 const CAMPAIGN_PHASE_MARGIN_TICKS: u32 = 20;
 
+/// The campaign-playthrough template's opening baseline: **the whole party
+/// progression ledger, set to the campaign's start state**, in one place for
+/// both shapes of that template.
+///
+/// The completion objective, every declared flag, and every quest's
+/// active/complete score plus every objective score go to 0; then the
+/// campaign-start quests go active. What follows it is a drive of the real
+/// completion functions, so the template plays the campaign from its beginning
+/// rather than from wherever the batch happens to have left it.
+///
+/// ## Why the whole ledger, and not just the score the template asserts
+///
+/// The chain the drive runs is **guarded**: `check_q_<quest>` fires
+/// `complete_q_<quest>` only `unless score #party dw.q_<quest> matches 1`, which
+/// is right for the shipped campaign (a quest completes once) and fatal for a
+/// template that re-drives it. `#party` is batch-global (spec-0018), and the
+/// suite's own siblings reach that ledger through the campaign's real `tick` —
+/// so one sibling calling `function <ns>:tick` while another sibling's dummies
+/// stand in a `reach` volume can complete the terminal quest outright. The
+/// campaign template then zeroes only `dw.campaign`, drives every objective, and
+/// every `check_q_*` declines: **the drive becomes a silent no-op and the assert
+/// reads 0 on tick 0**.
+///
+/// Measured, on the shipped bytes of `souls-bonfire`: PackTest runs the suite as
+/// one batch in a RANDOMISED order, and in the order that reproduced it
+/// `verb_kill` (which runs the real `tick`, completing `obj/slay` and starting
+/// the closing cutscene, whose camera every dummy in the batch then spectates)
+/// and `v04_interact_cleanup`/`verb_interact` (which complete `obj/door`) landed
+/// before `campaign`; the next server tick completed `obj/shrine` on the
+/// spectating dummies, `check_q_trial` fired, and `dw.campaign` was already
+/// decided. The template that ran afterwards could not re-drive any of it.
+///
+/// The branch shape of the template has always done this — its phases re-run the
+/// same campaign, so it met the wall on its second phase and fixed it there.
+/// This is that fix reaching the shape that meets the wall through a *sibling*
+/// instead of through its own second phase, and it is one function rather than
+/// two spellings on purpose: a hand-rolled subset of a baseline is how a gate
+/// gets a hole (`crate::batchstate`, `DW0807`).
+///
+/// ## Why this is not a new order-dependence
+///
+/// Every term zeroed here is written again by the drive that follows it, in the
+/// same atomic `mcfunction` — the template body in the single-tick shape,
+/// `pt_camp_drive` in the scheduled-ending shape, `pt_camp_run_<i>` in the
+/// branch shape. Vanilla runs a function to completion before any other
+/// function, so no sibling can observe the zeroed intermediate state.
+fn campaign_progression_baseline(c: &delvewright_dsl::Campaign, comp_obj: &str) -> Vec<String> {
+    let party = plan::PARTY;
+    let mut b: Vec<String> = Vec::new();
+    b.push(format!("scoreboard players set {party} {comp_obj} 0"));
+    for f in declared_flags(c) {
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            plan::flag_score(&f)
+        ));
+    }
+    for q in &c.quests.content.quests {
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            quest_score(q.id.as_str())
+        ));
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            quest_active_score(q.id.as_str())
+        ));
+        for o in &q.objectives {
+            b.push(format!(
+                "scoreboard players set {party} {} 0",
+                obj_score(o.id().as_str())
+            ));
+        }
+    }
+    for qid in campaign_start_quests(c) {
+        b.push(format!(
+            "scoreboard players set {party} {} 1",
+            quest_active_score(qid)
+        ));
+    }
+    b
+}
+
 /// The branch-aware campaign mechanism test: ONE template that
 /// drives each reachable branch's coherent path as its own phase, serialized
 /// through the vanilla scheduler, and awaits one verdict per phase.
@@ -12768,11 +12845,10 @@ const CAMPAIGN_PHASE_MARGIN_TICKS: u32 = 20;
 /// control. Phases are strictly ordered by construction: phase *i*'s scheduled
 /// check is what starts phase *i + 1*.
 ///
-/// Each phase (`pt_camp_run_<i>`) re-baselines the WHOLE progression surface
-/// (completion objective, every flag, every quest active/complete score, every
-/// objective score — a fresh coherent run; a prior phase's terminal quest would
+/// Each phase (`pt_camp_run_<i>`) opens with the WHOLE progression re-baseline
+/// ([`campaign_progression_baseline`] — a prior phase's terminal quest would
 /// otherwise stay `dw.q_* = 1` and its completion-guarded `on_complete` never
-/// re-fire), sets the campaign-start quests active, then drives ONLY this
+/// re-fire), then drives ONLY this
 /// branch's path in play order. A `talk-to` step whose branch-scripted option
 /// sets flags has those flags emulated immediately before its drive — the
 /// option handler is UI-bound, and this is where the real playthrough sets
@@ -12811,35 +12887,7 @@ fn emit_branch_campaign_packtest(
             "# coherent path only (its scripted dialogue choices emulated as the flags".to_string(),
         );
         run.push("# those options set, at their real path positions).".to_string());
-        run.push(format!("scoreboard players set {party} {comp_obj} 0"));
-        for f in declared_flags(c) {
-            run.push(format!(
-                "scoreboard players set {party} {} 0",
-                plan::flag_score(&f)
-            ));
-        }
-        for q in &c.quests.content.quests {
-            run.push(format!(
-                "scoreboard players set {party} {} 0",
-                quest_score(q.id.as_str())
-            ));
-            run.push(format!(
-                "scoreboard players set {party} {} 0",
-                quest_active_score(q.id.as_str())
-            ));
-            for o in &q.objectives {
-                run.push(format!(
-                    "scoreboard players set {party} {} 0",
-                    obj_score(o.id().as_str())
-                ));
-            }
-        }
-        for qid in campaign_start_quests(c) {
-            run.push(format!(
-                "scoreboard players set {party} {} 1",
-                quest_active_score(qid)
-            ));
-        }
+        run.extend(campaign_progression_baseline(c, comp_obj));
         for step in &r.path {
             if let Some(opt) = step.talk_option {
                 for f in option_sets_flags(plan, &step.objective, opt) {
