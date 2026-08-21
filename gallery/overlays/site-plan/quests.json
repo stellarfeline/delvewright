@@ -34,18 +34,6 @@
         "objectives": [
           {
             "happening": {
-              "subject": "npc/curator",
-              "text": "The Curator tells them what the hall is for.",
-              "verb": "learns"
-            },
-            "hint": "The Curator stands in the middle of the near hall.",
-            "id": "obj/hear-the-curator",
-            "npc": "npc/curator",
-            "title": "Hear the Curator",
-            "type": "talk-to"
-          },
-          {
-            "happening": {
               "subject": "npc/factor",
               "text": "The Factor prices what is on the counter.",
               "verb": "learns"
@@ -54,6 +42,18 @@
             "id": "obj/reach-the-counter",
             "npc": "npc/factor",
             "title": "Reach the counter",
+            "type": "talk-to"
+          },
+          {
+            "happening": {
+              "subject": "npc/curator",
+              "text": "The Curator tells them what the hall is for.",
+              "verb": "learns"
+            },
+            "hint": "The Curator stands in the middle of the near hall.",
+            "id": "obj/hear-the-curator",
+            "npc": "npc/curator",
+            "title": "Hear the Curator",
             "type": "talk-to"
           }
         ],
@@ -162,14 +162,6 @@
             {
               "flag": "flag/muster-cleared",
               "type": "set-flag"
-            },
-            {
-              "anchor": "anchor/seam-east-door",
-              "happening": {
-                "text": "The east door lifts from the far side.",
-                "verb": "opens"
-              },
-              "type": "open-gate"
             }
           ]
         },
@@ -177,6 +169,42 @@
           "quest": "quest/near-hall",
           "type": "quest-complete"
         }
+      }
+    ],
+    "shortcuts": [
+      {
+        "gate": "anchor/seam-east-door",
+        "id": "shortcut/east-door",
+        "on_unlock": [
+          {
+            "flag": "flag/east-door-drawn",
+            "type": "set-flag"
+          },
+          {
+            "style": "chat",
+            "text": "The east door draws back. The near hall is one room away now.",
+            "type": "narrate"
+          }
+        ],
+        "unlock": "anchor/unlock-east-door"
+      }
+    ],
+    "triggers": [
+      {
+        "at": "anchor/seam-east-door",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The east door does not open from this side.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/east-door-wrong-side",
+        "on": {
+          "on": "use"
+        },
+        "once": false
       }
     ]
   },

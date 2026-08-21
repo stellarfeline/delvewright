@@ -177,6 +177,46 @@ fn slug(id: &str) -> &str {
     id.split_once('/').map_or(id, |(_, rest)| rest)
 }
 
+/// **What a sealed `barred` seam stands in until content opens it.**
+///
+/// One definition, here rather than in the derivation that lays it, for the same
+/// structural reason the metrics table owns the nav model's constants: two
+/// parties need this block and they need the *same* one. The derivation writes it
+/// into the gate region and declares it on the synthesized gate anchor; every
+/// verb that needs a gate's fill block — `close-gate`, a `shortcut`'s clear, a
+/// `timed-gate`'s clock — asks [`synthesized_gate_block`] whether this campaign
+/// declares one. A copy in each place would be an agreement rather than a fact.
+pub const SEAM_BAR: &str = "minecraft:iron_bars";
+
+/// The fill block a **synthesized** gate anchor declares, or `None` when `anchor`
+/// is not one of this campaign's derived seam gates.
+///
+/// This exists because `DW0343`'s question — *can the compiler fill and clear
+/// this gate?* — used to be answered by one instrument only, the prefab registry,
+/// and a derived world has no prefab. The answer came back honest and about a
+/// smaller world than the campaign has: a `shortcut` naming the very
+/// `anchor/seam-<edge>` the derivation seals with [`SEAM_BAR`] was refused for
+/// declaring no fill block, while the block sat in the derivation's own
+/// `AnchorSpec::Gate`. Nothing was red, because the check was refusing content.
+///
+/// `None` for a campaign with no site plan, and for any anchor the derivation
+/// does not synthesize — those are the prefab registry's to answer for, and this
+/// function never overrides it.
+#[must_use]
+pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<&'static str> {
+    c.site_plan.as_ref()?;
+    let graph = c.layout_graph.as_ref().map(|g| &g.content)?;
+    graph
+        .edges
+        .iter()
+        .filter_map(|e| match e {
+            Edge::Barred { id, .. } => Some(seam_anchor(id)),
+            _ => None,
+        })
+        .any(|name| name == anchor)
+        .then_some(SEAM_BAR)
+}
+
 /// **Every anchor a site-plan campaign's blockout provides**, derived from the
 /// documents alone.
 ///

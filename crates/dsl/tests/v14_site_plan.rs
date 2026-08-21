@@ -1106,3 +1106,155 @@ fn stair_massing_in_the_higher_place_is_refused_with_both_floors() {
         "the refusal names the place the treads belong in: {msg}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Every stage-5 verb reaches a DERIVED world's anchors
+// ---------------------------------------------------------------------------
+
+/// The names the derivation synthesizes for this fixture's graph — the whole
+/// spatial vocabulary a site-plan campaign has, because there is no prefab.
+const SYNTHESIZED: &[&str] = &[
+    "anchor/node-porch",
+    "anchor/node-hall",
+    "anchor/node-vault",
+    "anchor/node-cellar",
+    "anchor/node-yard",
+    "anchor/node-pit",
+    "anchor/seam-hall-vault",
+    "anchor/unlock-hall-vault",
+];
+
+/// **A site-plan campaign can author every stage-5 verb, and this is the test
+/// that was missing.**
+///
+/// Anchor resolution — *is this name one some area provides?* — was asked in
+/// eleven places in `dsl::validate`, each walking `world.areas` and the prefab
+/// registry itself. When a site plan became a second placement authority, ONE of
+/// the eleven was taught that a derived world's anchors come from
+/// `siteplan::synthesized_anchors` instead. The other ten went on enumerating
+/// prefabs a derived world does not have, so a `shortcut` naming the very
+/// `anchor/unlock-<edge>` the derivation places for it was refused as an invented
+/// name — and so were a trap, a shop, a loot chest, a lethal volume, an actor and
+/// a trigger. Every stage-5 verb but the ones that happen to walk was
+/// unauthorable on a derived map.
+///
+/// **Nothing was red**, and nothing could have been: a check resolving against a
+/// smaller world than the campaign has refuses CONTENT, not itself. It surfaced
+/// only when somebody tried to write the second verb.
+///
+/// The assertion is deliberately about the FAILURE SHAPE rather than about a
+/// list of codes: any diagnostic that names a synthesized anchor and says it
+/// comes from no prefab is this defect, whichever verb raised it. That is what
+/// makes the test cover the eleventh walk somebody writes next.
+#[test]
+fn no_stage_five_verb_calls_a_synthesized_anchor_an_invented_name() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
+    // **The fence, or this test proves nothing.** Every verb below sits behind a
+    // per-stage `dsl_version` fence, and the hello-world fixture's quests stage
+    // is 0.2.0 — so the first draft of this test added seven verbs to a document
+    // none of their checks were allowed to look at, and passed on the UNREPAIRED
+    // tree. That is the constitution's `unfenced` vacuity mode exactly, and it
+    // was caught only by red-demoing the repair it was written for.
+    quests["dsl_version"] = json!("0.14.0");
+    // The fixture is a 0.2.0 document, and the newer stage requires an
+    // objective's player-facing `title`.
+    quests["content"]["quests"][0]["objectives"][1]["title"] = json!("Leave by the vault");
+    let c = &mut quests["content"];
+
+    // The bar is lifted from the far side rather than by the objective, so the
+    // opener obligation is still satisfied and the `shortcut` is real.
+    c["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
+    c["shortcuts"] = json!([{
+        "id": "shortcut/vault-door",
+        "gate": "anchor/seam-hall-vault",
+        "unlock": "anchor/unlock-hall-vault"
+    }]);
+    c["shops"] = json!([{
+        "id": "shop/counter",
+        "anchor": "anchor/node-hall",
+        "title": "The counter",
+        "marker_item": "minecraft:emerald",
+        "offers": [{
+            "label": "Bread, one emerald",
+            "effects": [{ "type": "give-item", "item": "minecraft:bread", "count": 1 }]
+        }]
+    }]);
+    c["loot"] = json!([{
+        "id": "loot/cellar-chest",
+        "anchor": "anchor/node-cellar",
+        "items": [{ "item": "minecraft:bread", "count": 1 }]
+    }]);
+    c["lethal_volumes"] = json!([{
+        "id": "lethal/the-sump",
+        "damage_type": "fall",
+        "message": "The floor of the pit is not a floor.",
+        "region": { "anchor": "anchor/node-pit", "extent": [2, 2, 2] }
+    }]);
+    c["actors"] = json!([{
+        "id": "actor/yard-moth",
+        "anchor": "anchor/node-yard",
+        "entity": "minecraft:zombie",
+        "name": "The Yard Watcher"
+    }]);
+    c["triggers"] = json!([{
+        "id": "trigger/the-bar",
+        "at": "anchor/seam-hall-vault",
+        "on": { "on": "use" },
+        "once": false,
+        "audience": "presser",
+        "effects": [{
+            "type": "narrate", "style": "actionbar",
+            "text": "The bar does not lift from this side."
+        }]
+    }]);
+    raw.quests = serde_json::to_string(&quests).expect("re-serialize");
+
+    let bad: Vec<String> = check_campaign(&raw)
+        .into_iter()
+        .filter(|d| {
+            d.message.contains("prefab") && SYNTHESIZED.iter().any(|a| d.message.contains(a))
+        })
+        .map(|d| format!("{} {}", d.code, d.message))
+        .collect();
+    assert!(
+        bad.is_empty(),
+        "a derived world has no prefab to ask, and these checks asked one anyway:\n{}",
+        bad.join("\n")
+    );
+}
+
+/// The live instance, named on its own so a regression says which verb.
+///
+/// The pre-existing `a_shortcut_satisfies_the_opener_obligation_too` above
+/// asserted the absence of ONE code (`DW0818`) on this exact document — while
+/// `DW0371` was firing on it the whole time. A test that checks for one code and
+/// ignores the rest of the verdict is how a refusal hides inside a green test.
+#[test]
+fn a_shortcut_on_a_derived_world_resolves_its_gate_and_its_unlock() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
+    // `shortcut_checks` is fenced at 0.6.0; below it the declaration is parsed
+    // and never examined, which is a green that means nothing.
+    quests["dsl_version"] = json!("0.14.0");
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
+    quests["content"]["shortcuts"] = json!([{
+        "id": "shortcut/vault-door",
+        "gate": "anchor/seam-hall-vault",
+        "unlock": "anchor/unlock-hall-vault"
+    }]);
+    raw.quests = serde_json::to_string(&quests).expect("re-serialize");
+    let got = codes_of(&raw);
+    assert!(
+        !has(&got, "DW0371"),
+        "the derivation places both anchors; nothing here is invented: {got:?}"
+    );
+}

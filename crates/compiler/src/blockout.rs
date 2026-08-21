@@ -90,7 +90,11 @@ pub mod palette {
     /// The ground the places stand on.
     pub const GROUND: &str = "minecraft:tuff";
     /// What a sealed `barred` seam stands in until content opens it.
-    pub const BAR: &str = "minecraft:iron_bars";
+    ///
+    /// Re-exported, never restated: `DW0343` asks whether a gate anchor declares
+    /// a fill block, and for a derived seam the answer is this constant, so the
+    /// check and the derivation must read one definition rather than agree.
+    pub const BAR: &str = delvewright_dsl::siteplan::SEAM_BAR;
     /// Air.
     pub const AIR: &str = "minecraft:air";
 
