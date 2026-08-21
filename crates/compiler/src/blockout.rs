@@ -216,14 +216,20 @@ impl Blockout {
 /// it too.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Binding {
-    /// Places massed.
+    /// Places the plan resolved — the denominator, not the number massed.
+    ///
+    /// A bound place is in here and is massed by nobody: its frame is a hole
+    /// this derivation leaves for a piece. [`Binding::line`] states both, because
+    /// one number that meant either would be the count nobody can read.
     pub boxes: usize,
     /// Of those, places a detail plan bound — whose frame this derivation
     /// deliberately left empty for a piece to fill (spec-0050 §3).
     pub detailed: usize,
     /// Connections cut.
     pub seams: usize,
-    /// Of those, connections whose massing includes a stair.
+    /// Of those, connections whose massing includes a stair **that this
+    /// derivation laid**. A stair hosted in a bound box is the piece's to build,
+    /// so it is not counted here — the count means what it says.
     pub stairs: usize,
     /// Of those, connections sealed at world load.
     pub barred: usize,
@@ -279,6 +285,17 @@ struct Mass {
     /// and every ring of floor under a wall lie OUTSIDE the frame, so they are
     /// written exactly as they were at stage 5 whether or not the boxes beside
     /// them are detailed.
+    ///
+    /// **The one place the rule and spec-0050 §3's list read differently**, and
+    /// it is recorded here because this is where the choice is made: that list
+    /// says every seam frame stays whole-owned, and it also says the horizontal
+    /// party plane between stacked boxes IS the upper box's floor course and
+    /// belongs to the upper piece. For a stacked pair those two are the same
+    /// cells, so a literal reading of both is unsatisfiable. The subtraction
+    /// resolves it in favour of the sentence that is specific about stacked
+    /// boxes: with the upper box bound, the seam frame in that plane is the
+    /// piece's, like the rest of its floor. A vertical seam's frame — every seam
+    /// frame in any map that does not stack — is untouched.
     ///
     /// Empty for every campaign with no detail plan, so such a campaign's output
     /// does not move by a byte — [`crate::blockout::derive`] passes an empty
@@ -608,9 +625,19 @@ fn derive_bound(
     }
 
     // (5) Every stair's treads.
+    //
+    // A stair hosted in a BOUND box is skipped rather than written-and-clipped,
+    // and the difference is the count: `tread` reports whether it CALLED the
+    // writer, and every one of those calls lands inside the hole, so counting
+    // them would report stairs the derivation did not build under a field whose
+    // doc says "connections whose massing includes a stair". The climb is the
+    // piece's to build (spec-0050 §3) and the bytes battery proves it was built.
     let mut stairs = 0usize;
     for s in &seams {
         let Some(host_id) = &s.stair_in else { continue };
+        if bound.contains(host_id.0.as_str()) {
+            continue;
+        }
         let Some(host) = by_node.get(host_id.0.as_str()).copied() else {
             continue;
         };
@@ -1516,7 +1543,8 @@ fn nodes_reached(
         return; // `DW0824` refused the plan; there is no body to start.
     };
 
-    let seat = |x: &PlacedBox| seat_in(x, b, world);
+    let bound = delvewright_dsl::bound_places(c);
+    let seat = |x: &PlacedBox| seat_in(x, b, world, &bound);
     let mut seeds: Vec<[i32; 3]> = vec![seat(entry)];
     let mut reached: BTreeSet<[i32; 3]> = BTreeSet::new();
     loop {
@@ -1612,16 +1640,28 @@ fn nodes_reached(
 /// put its furniture. It reported a leg as unroutable while the place beside it
 /// was proven reached.
 ///
-/// The derivation's own footing is preferred and is standable by construction
-/// for a massed box, so every campaign without a detail plan seats exactly where
-/// it always did and its measurements do not move by a block. A DETAILED box has
-/// no derived mass inside its frame at all — the piece's bytes are its floor —
-/// so the derivation's footing there is its documented fallback, the plan's
-/// centre, and the search below is what makes the answer a fact about the world
-/// rather than about the massing that is no longer there.
-fn seat_in(x: &PlacedBox, b: &Blockout, world: &crate::nav::World) -> [i32; 3] {
+/// The derivation's own footing is preferred, and for an unbound box it is the
+/// ONLY answer — see the guard below for why that is a guarantee rather than an
+/// optimisation. A DETAILED box has no derived mass inside its frame at all —
+/// the piece's bytes are its floor — so the derivation's footing there is its
+/// documented fallback, the plan's centre, which the piece may legitimately have
+/// built a wall on. The search is what makes the answer a fact about the world
+/// rather than about massing that is no longer there.
+fn seat_in(
+    x: &PlacedBox,
+    b: &Blockout,
+    world: &crate::nav::World,
+    bound: &BTreeSet<String>,
+) -> [i32; 3] {
     let want = b.footing(&x.node).unwrap_or_else(|| narrow(x.centre()));
-    if world.is_standable(want) {
+    // **Only a bound place searches**, and the guard is the claim above being
+    // true rather than nearly true. For a massed box the derivation's footing is
+    // standable by construction, so the search would be a no-op — but not
+    // always: this battery runs over the world with EDITS and RELIGHT applied,
+    // and an edit that filled the derived footing used to be a `DW0837`. Letting
+    // the search run there would silently relocate the seat and turn a finding
+    // into a pass, on a campaign that has no detail plan at all.
+    if world.is_standable(want) || !bound.contains(x.node.0.as_str()) {
         return want;
     }
     standable_near(x, world, want).unwrap_or(want)
@@ -2174,6 +2214,7 @@ fn pacing(
     };
     let by_node: BTreeMap<&str, &PlacedBox> =
         b.boxes.iter().map(|x| (x.node.0.as_str(), x)).collect();
+    let bound = delvewright_dsl::bound_places(c);
     let mut blocks = 0usize;
     let mut unrouted: Vec<String> = Vec::new();
     for pair in graph.critical_path.windows(2) {
@@ -2184,7 +2225,10 @@ fn pacing(
             continue;
         };
         binding.legs += 1;
-        let (a, z) = (seat_in(from, b, world), seat_in(to, b, world));
+        let (a, z) = (
+            seat_in(from, b, world, &bound),
+            seat_in(to, b, world, &bound),
+        );
         match world.find_path(a, z) {
             Some(path) => blocks += path.len().saturating_sub(1),
             None => unrouted.push(format!("`{}` → `{}`", pair[0], pair[1])),

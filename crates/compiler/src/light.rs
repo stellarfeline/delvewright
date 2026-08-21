@@ -827,39 +827,45 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
             .filter(|c| frames.iter().any(|(lo, hi)| in_bounds(*c, *lo, *hi)))
             .collect();
         let reachable: BTreeSet<[i32; 3]> = reachable.difference(&detailed).copied().collect();
+
+        if !reachable.is_empty() {
+            match lighting {
+                Some(spec) => {
+                    relight_area(
+                        &mut model,
+                        &nav,
+                        &reachable,
+                        &required,
+                        &area.area_id,
+                        spec,
+                        sky,
+                        amin,
+                        amax,
+                        &mut out,
+                    );
+                }
+                None => {
+                    // Measured-darkness gate over the assembled reachable walkable cells.
+                    let night_vision = dsl_area.is_some_and(area_night_vision);
+                    if let Some(diag) =
+                        measure_undeclared(&model, &reachable, sky, night_vision, &area.area_id)
+                    {
+                        out.diagnostics.push(diag);
+                    }
+                }
+            }
+        }
+
+        // **A detailed place is judged LAST**, over the model the pass leaves
+        // behind. Light does not stop at a frame boundary: a piece standing off a
+        // corridor the whole has just hung torches in is lit by them, and
+        // measuring before that would report it dark for want of a fixture this
+        // same pass was about to place three cells away. Ordering is the whole of
+        // the difference — the set and the gate are the same either way.
         if !detailed.is_empty()
             && let Some(diag) = measure_undeclared(&model, &detailed, sky, false, &area.area_id)
         {
             out.diagnostics.push(diag);
-        }
-        if reachable.is_empty() {
-            continue; // every reachable cell here belongs to a piece.
-        }
-
-        match lighting {
-            Some(spec) => {
-                relight_area(
-                    &mut model,
-                    &nav,
-                    &reachable,
-                    &required,
-                    &area.area_id,
-                    spec,
-                    sky,
-                    amin,
-                    amax,
-                    &mut out,
-                );
-            }
-            None => {
-                // Measured-darkness gate over the assembled reachable walkable cells.
-                let night_vision = dsl_area.is_some_and(area_night_vision);
-                if let Some(diag) =
-                    measure_undeclared(&model, &reachable, sky, night_vision, &area.area_id)
-                {
-                    out.diagnostics.push(diag);
-                }
-            }
         }
     }
 

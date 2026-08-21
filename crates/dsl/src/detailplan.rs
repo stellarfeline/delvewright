@@ -130,10 +130,17 @@ pub const FLOOR_COURSE: i64 = 1;
 /// one layer down.
 ///
 /// What is **not** in here is as load-bearing as what is: every vertical party
-/// plane, every unshared shell face, every seam frame, every derived stair in an
-/// unbound host and every bar in a vertical-plane seam stay whole-owned. The
-/// piece dresses its side of a wall from within its own frame; the party plane
-/// is structure, and structure is the whole's.
+/// plane, every unshared shell face, every derived stair in an unbound host and
+/// every bar in a vertical-plane seam stay whole-owned. The piece dresses its
+/// side of a wall from within its own frame; the party plane is structure, and
+/// structure is the whole's.
+///
+/// A seam's FRAME is whole-owned on the same terms and with one recorded
+/// exception: where two boxes stack, the horizontal party plane between them is
+/// the upper box's floor course, so a bound upper box owns the frame cut in it
+/// along with the rest of its floor. That is spec-0050 §3's own stacked-box
+/// sentence; the reasoning is at `blockout::Mass::holes`, where the choice is
+/// made.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     /// The place this frames.

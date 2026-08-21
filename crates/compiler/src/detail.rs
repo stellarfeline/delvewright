@@ -750,8 +750,15 @@ pub fn allocations(c: &Campaign) -> Vec<Allocation> {
 /// What the detail checks examined, each count with its denominator.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DetailBinding {
-    /// `details[]` rows resolved — `DW0842`.
-    pub details: usize,
+    /// `details[]` rows READ — the denominator every row-level check has.
+    ///
+    /// Distinct from [`Self::bound`] on purpose: a duplicate row and a row
+    /// naming a place the graph does not have are both rows this check read and
+    /// neither is a place that got bound, so one number cannot honestly be both.
+    /// Collapsed, it could exceed its own denominator.
+    pub rows: usize,
+    /// Of those, rows that resolved to a distinct box — places actually bound.
+    pub bound: usize,
     /// The plan's boxes, which is what those rows are resolved against.
     pub boxes: usize,
     /// Pieces measured against their frame — `DW0843`.
@@ -764,24 +771,178 @@ pub struct DetailBinding {
     pub owed: usize,
     /// Bound pieces declaring a `footprint_class` — `DW0848`.
     pub classed: usize,
+    /// Walk records read — `DW0841`. Zero with a detail plan present is the
+    /// refusal; zero without one is a campaign that details nothing.
+    pub records: usize,
+    /// Plan-hash comparisons made — `DW0841`.
+    pub compared: usize,
 }
 
 impl DetailBinding {
-    /// One line, stated whether or not it is zero.
+    /// One line, stated whether or not any of it is zero — and the walk gate's
+    /// own counts are in it, because a check that reports no binding is a check
+    /// nobody can tell apart from one that never ran.
     #[must_use]
     pub fn line(&self) -> String {
         format!(
-            "detail binding: {d} of {b} place(s) bound, {m} piece(s) measured against their \
-             frame, {sr} seam(s) required answering over {fe} declared face(s) examined, {o} \
-             owed anchor name(s) checked, {cl} piece(s) declaring a footprint class.",
-            d = self.details,
+            "detail binding: {bd} of {b} place(s) bound over {r} `details[]` row(s), {m} \
+             piece(s) measured against their frame, {sr} seam(s) required answering over {fe} \
+             declared face(s) examined, {o} owed anchor name(s) checked, {cl} piece(s) \
+             declaring a footprint class; walk gate: {rec} record(s) read, {cmp} plan-hash \
+             comparison(s) made.",
+            bd = self.bound,
             b = self.boxes,
+            r = self.rows,
             m = self.measured,
             sr = self.seams_required,
             fe = self.faces_examined,
             o = self.owed,
             cl = self.classed,
+            rec = self.records,
+            cmp = self.compared,
         )
+    }
+}
+
+/// **`DW0842`'s anchor half and `DW0845`, for one row.**
+///
+/// A helper rather than a block inside the loop because there are two ways
+/// through that loop and both owe these verdicts. A piece that is not the shape
+/// of its frame, or that declares no contract, suspends the FACE check — those
+/// cells are computed from the frame — and suspends nothing else. It used to
+/// suspend everything, so fixing a piece's size produced a fresh crop of
+/// refusals nobody had been shown, and the owed names of that place were missing
+/// from the binding count while it happened.
+fn check_owed(
+    c: &Campaign,
+    d: &mut Vec<Diagnostic>,
+    binding: &mut DetailBinding,
+    row: &delvewright_dsl::Detail,
+    meta: &delvewright_dsl::PrefabMeta,
+    path: &str,
+) {
+    // ---- DW0842 / DW0845: the owed names ----
+    let owed = delvewright_dsl::owed_anchors(c, &row.place);
+    for key in row.anchors.keys() {
+        if !owed.contains(key) {
+            d.push(Diagnostic::error(
+                DW_BINDING,
+                STAGE,
+                format!("{path}/anchors/{key}"),
+                format!(
+                    "`{key}` is not a name `{place}` owes. A row re-binds exactly the \
+                     synthesized names whose bearer is this box — its own `anchor/node-…`, \
+                     `spawn` when it is the entry, and each `anchor/unlock-…` whose \
+                     opening side it is. A gate region (`anchor/seam-…`) is never owed: it \
+                     stands in a party plane the whole owns, not in the piece. This place \
+                     owes {n} name(s): {list}.",
+                    place = row.place,
+                    n = owed.len(),
+                    list = if owed.is_empty() {
+                        "none".to_string()
+                    } else {
+                        owed.iter().cloned().collect::<Vec<_>>().join(", ")
+                    },
+                ),
+            ));
+        }
+    }
+    for name in &owed {
+        binding.owed += 1;
+        let Some(bound_to) = row.anchors.get(name) else {
+            d.push(Diagnostic::error(
+                DW_ANCHOR_STANDING,
+                STAGE,
+                format!("{path}/anchors"),
+                format!(
+                    "`{place}` owes the anchor `{name}` and this row binds nothing to it. \
+                     The campaign's quest layer bound that name to this place before any \
+                     detail existed, so detailing must never force a quest edit — the row's \
+                     `anchors` map is what keeps the campaign's vocabulary and the piece's \
+                     own vocabulary both intact. Add `\"{name}\": \"<an anchor of \
+                     {piece}>\"`. This place owes {n} name(s): {list}.",
+                    place = row.place,
+                    piece = row.piece,
+                    n = owed.len(),
+                    list = owed.iter().cloned().collect::<Vec<_>>().join(", "),
+                ),
+            ));
+            continue;
+        };
+        let Some(anchor) = meta.anchors.get(bound_to) else {
+            d.push(Diagnostic::error(
+                DW_BINDING,
+                STAGE,
+                format!("{path}/anchors/{name}"),
+                format!(
+                    "`{name}` is bound to `{bound_to}`, which is not an anchor of \
+                     `{piece}`. That piece declares {n} anchor(s): {list}.",
+                    piece = row.piece,
+                    n = meta.anchors.len(),
+                    list = if meta.anchors.is_empty() {
+                        "none".to_string()
+                    } else {
+                        meta.anchors.keys().cloned().collect::<Vec<_>>().join(", ")
+                    },
+                ),
+            ));
+            continue;
+        };
+        // DW0845's second half: bound to somewhere a body cannot be.
+        if anchor.pos.is_none() {
+            d.push(Diagnostic::error(
+                DW_ANCHOR_STANDING,
+                STAGE,
+                format!("{path}/anchors/{name}"),
+                format!(
+                    "`{name}` is bound to `{piece}`'s anchor `{bound_to}`, which declares no \
+                     cell — it is a region, not a place to stand. Every name a place owes is \
+                     a point a body is put at: `anchor/node-…` is where a quest, an NPC or a \
+                     wave is seated, `spawn` is where the delve opens. A region anchor \
+                     answers a gate, and a gate region is never owed by a place. Bind this \
+                     to a point anchor of the piece.",
+                    piece = row.piece,
+                ),
+            ));
+            continue;
+        }
+        if let Some(resolves) = anchor.resolves_to.as_deref()
+            && !resolves.starts_with("space:")
+        {
+            d.push(Diagnostic::error(
+                DW_ANCHOR_STANDING,
+                STAGE,
+                format!("{path}/anchors/{name}"),
+                format!(
+                    "`{name}` is bound to `{piece}`'s anchor `{bound_to}`, which the piece's \
+                     own contract resolves into `{resolves}` — not play space. The campaign \
+                     puts bodies, quests and waves at this name; a body cannot be in a \
+                     `no_body` region, inside a bar, or in a transit volume. Bind it to an \
+                     anchor standing in one of the piece's declared spaces.",
+                    piece = row.piece,
+                ),
+            ));
+        }
+    }
+}
+
+/// **`DW0848`'s consumer door, for one row** — see [`check_owed`] for why it is
+/// a helper.
+fn check_class(
+    d: &mut Vec<Diagnostic>,
+    binding: &mut DetailBinding,
+    meta: &delvewright_dsl::PrefabMeta,
+    reads: &mut Reads,
+    path: &str,
+) {
+    if meta.footprint_class.is_none() {
+        return;
+    }
+    binding.classed += 1;
+    if let Some(f) =
+        delvewright_dsl::prefab::check_footprint_class(meta, STAGE, &format!("{path}/piece"), reads)
+    {
+        d.push(f);
     }
 }
 
@@ -798,8 +959,12 @@ pub fn check(
     prefabs: &PrefabRegistry,
     walk_record: Option<&str>,
 ) -> (Vec<Diagnostic>, DetailBinding) {
-    let (mut d, _walk) = check_walk(c, walk_record);
-    let mut binding = DetailBinding::default();
+    let (mut d, walk) = check_walk(c, walk_record);
+    let mut binding = DetailBinding {
+        records: walk.records,
+        compared: walk.compared,
+        ..DetailBinding::default()
+    };
     let Some(doc) = c.detail_plan.as_ref().map(|e| &e.content) else {
         return (d, binding);
     };
@@ -833,7 +998,7 @@ pub fn check(
 
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for (i, row) in doc.details.iter().enumerate() {
-        binding.details += 1;
+        binding.rows += 1;
         let path = format!("/content/details[{i}]");
         if !seen.insert(row.place.0.as_str()) {
             d.push(Diagnostic::error(
@@ -877,6 +1042,7 @@ pub fn check(
             ));
             continue;
         };
+        binding.bound += 1;
         let frame = Frame::of(b);
 
         let Some(meta) = prefabs.get(row.piece.as_str()) else {
@@ -942,11 +1108,11 @@ pub fn check(
                     over = over.join("; "),
                 ),
             ));
-            continue;
         }
 
         // ---- DW0843, second half: a detail piece owes a contract ----
-        let Some(contract) = meta.spatial_contract.as_ref() else {
+        let contract = meta.spatial_contract.as_ref();
+        if contract.is_none() {
             d.push(Diagnostic::error(
                 DW_NOT_THE_FRAME,
                 STAGE,
@@ -962,25 +1128,24 @@ pub fn check(
                     piece = row.piece,
                 ),
             ));
-            continue;
-        };
-
-        // ---- DW0848: the declared class, at the consumer door ----
-        if meta.footprint_class.is_some() {
-            binding.classed += 1;
-            if let Some(f) = delvewright_dsl::prefab::check_footprint_class(
-                meta,
-                STAGE,
-                &format!("{path}/piece"),
-                &mut reads,
-            ) {
-                d.push(f);
-            }
         }
 
         // ---- DW0844: faces against seams, both directions ----
+        //
+        // **The one half a wrong extent or a missing contract really does
+        // suspend**, and it is suspended rather than skipped silently: the cells
+        // this compares are computed from the FRAME, so against a piece that is
+        // not the frame every verdict would be about a geometry nobody has. The
+        // checks below it — the owed names, the declared class — depend on
+        // neither fact, so they run either way. Suppressing them was how fixing a
+        // piece's size produced a fresh crop of refusals nobody had been shown.
         let mine = seams_of(&seams, &row.place);
         let mut answered: BTreeSet<usize> = BTreeSet::new();
+        let Some(contract) = contract.filter(|_| got64 == want) else {
+            check_owed(c, &mut d, &mut binding, row, meta, &path);
+            check_class(&mut d, &mut binding, meta, &mut reads, &path);
+            continue;
+        };
         for (s, out) in &mine {
             binding.seams_required += 1;
             let (clo, chi) = answering_cells(&frame, s);
@@ -1102,109 +1267,8 @@ pub fn check(
             ));
         }
 
-        // ---- DW0842 / DW0845: the owed names ----
-        let owed = delvewright_dsl::owed_anchors(c, &row.place);
-        for key in row.anchors.keys() {
-            if !owed.contains(key) {
-                d.push(Diagnostic::error(
-                    DW_BINDING,
-                    STAGE,
-                    format!("{path}/anchors/{key}"),
-                    format!(
-                        "`{key}` is not a name `{place}` owes. A row re-binds exactly the \
-                         synthesized names whose bearer is this box — its own `anchor/node-…`, \
-                         `spawn` when it is the entry, and each `anchor/unlock-…` whose \
-                         opening side it is. A gate region (`anchor/seam-…`) is never owed: it \
-                         stands in a party plane the whole owns, not in the piece. This place \
-                         owes {n} name(s): {list}.",
-                        place = row.place,
-                        n = owed.len(),
-                        list = if owed.is_empty() {
-                            "none".to_string()
-                        } else {
-                            owed.iter().cloned().collect::<Vec<_>>().join(", ")
-                        },
-                    ),
-                ));
-            }
-        }
-        for name in &owed {
-            binding.owed += 1;
-            let Some(bound_to) = row.anchors.get(name) else {
-                d.push(Diagnostic::error(
-                    DW_ANCHOR_STANDING,
-                    STAGE,
-                    format!("{path}/anchors"),
-                    format!(
-                        "`{place}` owes the anchor `{name}` and this row binds nothing to it. \
-                         The campaign's quest layer bound that name to this place before any \
-                         detail existed, so detailing must never force a quest edit — the row's \
-                         `anchors` map is what keeps the campaign's vocabulary and the piece's \
-                         own vocabulary both intact. Add `\"{name}\": \"<an anchor of \
-                         {piece}>\"`. This place owes {n} name(s): {list}.",
-                        place = row.place,
-                        piece = row.piece,
-                        n = owed.len(),
-                        list = owed.iter().cloned().collect::<Vec<_>>().join(", "),
-                    ),
-                ));
-                continue;
-            };
-            let Some(anchor) = meta.anchors.get(bound_to) else {
-                d.push(Diagnostic::error(
-                    DW_BINDING,
-                    STAGE,
-                    format!("{path}/anchors/{name}"),
-                    format!(
-                        "`{name}` is bound to `{bound_to}`, which is not an anchor of \
-                         `{piece}`. That piece declares {n} anchor(s): {list}.",
-                        piece = row.piece,
-                        n = meta.anchors.len(),
-                        list = if meta.anchors.is_empty() {
-                            "none".to_string()
-                        } else {
-                            meta.anchors.keys().cloned().collect::<Vec<_>>().join(", ")
-                        },
-                    ),
-                ));
-                continue;
-            };
-            // DW0845's second half: bound to somewhere a body cannot be.
-            if anchor.pos.is_none() {
-                d.push(Diagnostic::error(
-                    DW_ANCHOR_STANDING,
-                    STAGE,
-                    format!("{path}/anchors/{name}"),
-                    format!(
-                        "`{name}` is bound to `{piece}`'s anchor `{bound_to}`, which declares no \
-                         cell — it is a region, not a place to stand. Every name a place owes is \
-                         a point a body is put at: `anchor/node-…` is where a quest, an NPC or a \
-                         wave is seated, `spawn` is where the delve opens. A region anchor \
-                         answers a gate, and a gate region is never owed by a place. Bind this \
-                         to a point anchor of the piece.",
-                        piece = row.piece,
-                    ),
-                ));
-                continue;
-            }
-            if let Some(resolves) = anchor.resolves_to.as_deref()
-                && !resolves.starts_with("space:")
-            {
-                d.push(Diagnostic::error(
-                    DW_ANCHOR_STANDING,
-                    STAGE,
-                    format!("{path}/anchors/{name}"),
-                    format!(
-                        "`{name}` is bound to `{piece}`'s anchor `{bound_to}`, which the piece's \
-                         own contract resolves into `{resolves}` — not play space. The campaign \
-                         puts bodies, quests and waves at this name; a body cannot be in a \
-                         `no_body` region, inside a bar, or in a transit volume. Bind it to an \
-                         anchor standing in one of the piece's declared spaces.",
-                        piece = row.piece,
-                    ),
-                ));
-            }
-        }
+        check_owed(c, &mut d, &mut binding, row, meta, &path);
+        check_class(&mut d, &mut binding, meta, &mut reads, &path);
     }
     (d, binding)
 }

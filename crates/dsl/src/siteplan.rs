@@ -265,8 +265,14 @@ pub fn synthesized_anchors(c: &Campaign) -> BTreeSet<String> {
 /// the graph, and [`synthesized_anchors`] is the one authority for what a
 /// site-plan campaign provides — a second module deciding which names belong to
 /// which place is exactly the two-functions-agreeing-about-spelling drift that
-/// note exists to remove. [`owed_anchors_partition_the_synthesized_set`] proves
-/// the two agree by construction rather than by care.
+/// note exists to remove.
+///
+/// `crates/compiler/tests/blockout.rs`'s
+/// `the_owed_anchors_partition_the_synthesized_set` proves the two PARTITION
+/// rather than merely overlap: every synthesized name is owed by exactly one
+/// place or is a gate region no place owes. A name in neither would be one a
+/// campaign resolves and no piece is ever asked for; a name in both would be two
+/// pieces claiming one anchor.
 ///
 /// Empty for a campaign with no site plan, and for a node the graph does not
 /// have.

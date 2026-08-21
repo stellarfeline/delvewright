@@ -151,3 +151,61 @@ fn a_lone_piece_binds_the_mating_check_to_zero_and_says_so() {
         finding.message
     );
 }
+
+/// **A world whose ways are ALLOCATED is never asked to mate** (spec-0050 §3).
+///
+/// The pair below is the red above with one thing changed — the same two pieces,
+/// the same one-block offset, the same doorway into the same wall — placed in the
+/// one area a site plan has. That is the whole difference, and it is the whole
+/// point. A site plan cuts its ways at stage 4 on faces two boxes already share
+/// and proves them over the built bytes with `DW0836`/`DW0838`; nothing in that
+/// world ever claimed to mate with anything, so a claim it never made cannot be
+/// a claim it fails to answer.
+///
+/// Two things reach this, and the second is why the predicate is the AREA rather
+/// than "the registry has never heard of this piece". A derived blockout box has
+/// no metadata, and the party plane a detail piece's face opens onto lies inside
+/// that box's shell — a narrower predicate covers that one. Two DETAIL pieces
+/// stacked vertically mate through the horizontal party plane DIRECTLY, and this
+/// check demands their classes be equal where spec-0050 §3's table requires
+/// `drop` leaving against `walk` landing, and `stair` in the hosting box against
+/// `walk` in the other. That pair would have satisfied `DW0844` and then
+/// hard-failed here.
+#[test]
+fn pieces_in_the_site_area_are_allocated_rather_than_mated() {
+    let (_dir, registry) = library("allocated");
+    let areas = vec![
+        placed(delvewright_dsl::SITE_AREA, [0, 0, 0], Rotation::None),
+        placed(delvewright_dsl::SITE_AREA, [1, 0, 15], Rotation::None),
+    ];
+    let binding = faces::check(&areas, &registry)
+        .expect("an allocated world is not judged by the mating check");
+    assert_eq!(
+        binding.bound, 0,
+        "and it examined nothing, rather than examining and passing"
+    );
+    assert_eq!(
+        binding.contracted, 2,
+        "the pieces still declare their contracts — the count is honest about what \
+         is there, and only the QUESTION moved"
+    );
+    let finding = binding
+        .finding(2, true)
+        .expect("a zero binding is stated whether or not it is a fault");
+    assert_eq!(finding.code, "DW0781");
+    assert!(
+        finding.message.contains("allocated at stage 4"),
+        "and the reader is told where the question went: {}",
+        finding.message
+    );
+
+    // The suspicion is the AREA and nothing else: the identical pair in ordinary
+    // areas is still refused, so the repair did not weaken the check.
+    let areas = vec![
+        placed("area/first", [0, 0, 0], Rotation::None),
+        placed("area/second", [1, 0, 15], Rotation::None),
+    ];
+    let err = faces::check(&areas, &registry)
+        .expect_err("the same pair outside a site plan is still a door into a wall");
+    assert_eq!(err.code.id(), "DW0780");
+}

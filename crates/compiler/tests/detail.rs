@@ -347,15 +347,26 @@ fn a_bound_place_validates_and_states_its_binding() {
         "a piece cut from the massing satisfies every stage-6 gate: {:?}",
         codes(&diags)
     );
-    assert_eq!(binding.details, 1, "one row resolved");
+    assert_eq!(binding.rows, 1, "one row read");
+    assert_eq!(binding.bound, 1, "and it bound a place");
     assert_eq!(binding.boxes, 5, "against the plan's five boxes");
+    assert_eq!(binding.records, 1, "over one walk record");
+    assert_eq!(binding.compared, 1, "whose plan hash was compared");
     assert_eq!(binding.measured, 1, "one piece measured against its frame");
     assert_eq!(binding.seams_required, 1, "`node/exit` has one seam");
     assert_eq!(binding.faces_examined, 1, "and the piece declares one face");
     assert_eq!(binding.owed, 1, "and owes one anchor name");
     assert!(
-        binding.line().contains("1 of 5 place(s) bound"),
+        binding
+            .line()
+            .contains("1 of 5 place(s) bound over 1 `details[]` row(s)"),
         "the count states its denominator: {}",
+        binding.line()
+    );
+    assert!(
+        binding.line().contains("walk gate: 1 record(s) read"),
+        "and the walk gate states its own, rather than being a check that reports \
+         nothing: {}",
         binding.line()
     );
 }
@@ -368,9 +379,12 @@ fn a_campaign_with_no_detail_plan_binds_zero_and_states_it() {
     let reg = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let (diags, binding) = detail::check(&c, &reg, None);
     assert!(diags.is_empty(), "{:?}", codes(&diags));
-    assert_eq!(binding.details, 0);
+    assert_eq!(binding.rows, 0);
+    assert_eq!(binding.records, 0, "and no walk record was asked for");
     assert!(
-        binding.line().contains("0 of 0 place(s) bound"),
+        binding
+            .line()
+            .contains("0 of 0 place(s) bound over 0 `details[]` row(s)"),
         "{}",
         binding.line()
     );
@@ -574,6 +588,70 @@ fn dw0842_refuses_a_detail_plan_with_no_site_plan() {
     let e = errors(&diags);
     assert!(e.iter().any(|x| x.code == "DW0842"), "{:?}", codes(&diags));
     assert_eq!(binding.boxes, 0, "and the zero denominator is stated");
+}
+
+/// **A row that is READ and a place that gets BOUND are different numbers**, and
+/// collapsing them let the first exceed its own denominator.
+///
+/// Two rows naming one place: two rows read, one place bound, five boxes. Said
+/// as one number it would have printed "2 of 5 place(s) bound" over a map with
+/// one detailed place.
+#[test]
+fn a_row_read_and_a_place_bound_are_counted_apart() {
+    let tmp = tempdir("counts");
+    let d = detailed(&tmp, &["node/exit"]);
+    patch_detail_plan(&d, |v| {
+        let row = v["content"]["details"][0].clone();
+        v["content"]["details"].as_array_mut().unwrap().push(row);
+    });
+    let (_, binding) = check_at(&d);
+    assert_eq!(binding.rows, 2, "both rows were read");
+    assert_eq!(binding.bound, 1, "and one place was bound");
+    assert!(
+        binding.bound <= binding.boxes,
+        "a count never exceeds its denominator"
+    );
+}
+
+/// **A piece that is not its frame suspends the FACE check and nothing else.**
+///
+/// The owed anchors and the declared class depend on neither the extent nor the
+/// contract, so a wrong size must not suppress them — fixing the size would then
+/// produce a crop of refusals nobody had been shown, and the place's owed names
+/// would have been missing from the binding count while it happened.
+#[test]
+fn a_wrong_extent_suspends_the_face_check_and_no_other() {
+    let tmp = tempdir("no-truncation");
+    let d = detailed(&tmp, &["node/exit"]);
+    patch_piece(&d, "exit", |v| {
+        v["structure"]["size"][0] = serde_json::json!(12);
+        v["footprint_class"] = serde_json::json!("expanse");
+    });
+    patch_detail_plan(&d, |v| {
+        v["content"]["details"][0]["anchors"] = serde_json::json!({});
+    });
+    let (diags, binding) = check_at(&d);
+    let found = codes(&diags);
+    assert!(found.contains(&"DW0843".to_string()), "{found:?}");
+    assert!(
+        found.contains(&"DW0845".to_string()),
+        "the owed anchor is still asked for: {found:?}"
+    );
+    assert!(
+        found.contains(&"DW0848".to_string()),
+        "and the declared class is still judged: {found:?}"
+    );
+    assert!(
+        !found.contains(&"DW0844".to_string()),
+        "while the face check is suspended, because its cells come from a frame \
+         this piece is not: {found:?}"
+    );
+    assert_eq!(binding.owed, 1, "and the owed name is IN the denominator");
+    assert_eq!(binding.classed, 1, "as is the declared class");
+    assert_eq!(
+        binding.seams_required, 0,
+        "while the suspended check honestly says it examined nothing"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -829,7 +907,7 @@ fn dw0821_is_a_warning_until_every_node_is_bound_and_then_a_refusal() {
         codes(&dd)
     );
     assert_eq!(
-        binding.details,
+        binding.bound,
         5,
         "and every place is bound: {}",
         binding.line()

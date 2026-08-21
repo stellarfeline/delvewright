@@ -143,23 +143,30 @@ struct Piece {
     /// edge joins two of its own spaces makes a complete claim about its
     /// inside and none about its sides, so it contracts and faces nothing.
     contracted: bool,
-    /// **Whether the prefab registry has ever heard of this piece.**
+    /// **Whether this piece was placed by an ALLOCATION rather than by a
+    /// mating** — that is, whether it stands in the one area a site plan has.
     ///
-    /// False for exactly one thing: a box of the derived blockout, which is a
-    /// `PiecePlacement` with no templates whose `prefab_id` no library file
-    /// backs (`crate::blockout`). Such a box *makes no claim about mating with
-    /// anything* — its own module says so — and a claim it does not make cannot
-    /// be a claim it fails to answer.
+    /// Such a piece is never a neighbour here, and the reason is the one
+    /// `FaceBinding::finding` already gives its reader in prose: a site plan
+    /// cuts its ways at stage 4, on faces two boxes already share, and proves
+    /// them over the built bytes with `DW0836`. Nothing in that world was ever
+    /// asked to mate with anything.
     ///
-    /// The distinction only started to matter at stage 6. Before it, a
-    /// site-plan campaign had no real placed piece at all (`DW0839` forbids
-    /// `areas[]`), so no declared face could ever have found a derived box
-    /// beyond it. A detail piece's face opens onto the party plane, and the
-    /// party plane is inside the blockout box's SHELL bbox — so without this,
-    /// every detailed place would be refused `DW0780` for failing to mate with
-    /// a shell that is not a building. A cross-feature interaction that belonged
-    /// to neither change, found by reading the two for intent.
-    known: bool,
+    /// The distinction only started to matter at stage 6, and it matters in two
+    /// ways that a narrower predicate catches only one of. A derived blockout box
+    /// is a `PiecePlacement` the registry has never heard of, and the party plane
+    /// a detail piece's face opens onto lies inside that box's SHELL bbox — so
+    /// without this, every detailed place is refused `DW0780` for failing to mate
+    /// with a shell that is not a building. And two DETAIL pieces stacked
+    /// vertically mate through the horizontal party plane directly, where this
+    /// check demands equal classes and spec-0050 §3's table requires `drop`
+    /// leaving against `walk` landing, and `stair` in the hosting box against
+    /// `walk` in the other. A `drop` between two bound places would have
+    /// satisfied `DW0844` and then hard-failed here.
+    ///
+    /// Both are the same fact — the ways of that world are allocated — so both
+    /// answer to one predicate rather than to a list.
+    allocated: bool,
 }
 
 /// The verdict of the mating check: how many declared faces met another placed
@@ -261,7 +268,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                 contracted: prefabs
                     .get(&placement.prefab_id)
                     .is_some_and(|m| m.spatial_contract.is_some()),
-                known: prefabs.get(&placement.prefab_id).is_some(),
+                allocated: area.area_id == delvewright_dsl::SITE_AREA,
             });
         }
     }
@@ -278,7 +285,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
             // Which other placed piece owns the cells just beyond this opening?
             let Some((j, neighbour)) = pieces.iter().enumerate().find(|(j, other)| {
                 *j != i
-                    && other.known
+                    && !other.allocated
                     && plane >= other.min[axis]
                     && plane <= other.max[axis]
                     && (0..3).all(|a| {
