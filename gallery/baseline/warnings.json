@@ -1022,7 +1022,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "10 of the 10 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "10 of the 10 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "site-plan:"
     },
     {
@@ -1089,11 +1089,6 @@
       "code": "DW0822",
       "pointer": "/content/boxes",
       "stage": "site-plan"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "void-horizon.en": [
