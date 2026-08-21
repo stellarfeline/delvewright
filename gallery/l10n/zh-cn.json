@@ -1,5 +1,5 @@
 {
-  "dsl_version": "0.11.0",
+  "dsl_version": "0.12.0",
   "campaign_id": "gallery",
   "kind": "l10n",
   "lang": "zh-cn",
@@ -69,6 +69,8 @@
     "npc.warden.name": "守望者",
     "obj.far-hall.clear-the-muster.hint": "他们在点兵线上。",
     "obj.far-hall.clear-the-muster.title": "清空点兵",
+    "obj.far-hall.climb-the-loft.hint": "踏板补回之后，顺着那道楼梯上去。",
+    "obj.far-hall.climb-the-loft.title": "登上夹层",
     "obj.far-hall.reach-the-end.title": "走到厅的尽头",
     "obj.far-hall.take-the-bone.hint": "就在点兵倒下的地方。",
     "obj.far-hall.take-the-bone.title": "取走点兵之骨",

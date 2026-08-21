@@ -76,6 +76,6 @@
       }
     ]
   },
-  "dsl_version": "0.11.0",
+  "dsl_version": "0.12.0",
   "stage": "npcs"
 }
