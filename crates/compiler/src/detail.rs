@@ -43,14 +43,16 @@
 //! an author selects. The two soft edges are each secured by a property the
 //! defect cannot supply:
 //!
-//! * the walk record's freshness hash — the defect `DW0841` catches is
-//!   *detailing a plan the whole's walk never passed*, and that defect moves the
-//!   PLAN hash, which is the one thing a fabricated-but-fresh record cannot
-//!   survive a plan edit with;
+//! * the walk record's freshness hashes — the defect `DW0841` catches is
+//!   *detailing a whole the walk never passed*, and the whole that was walked is
+//!   derived from **two** authored documents, the site plan and the layout
+//!   graph. Both are in the key, so the defect moves one of them, which is the
+//!   one thing a fabricated-but-fresh record cannot survive an edit to either
+//!   with;
 //! * the blockout-drift advisory — reachable only by toolchain movement, because
 //!   [`crate::blockout::walked_massing`] hashes the derivation as a pure function
-//!   of plan, metrics and engine, so no campaign edit can move it without moving
-//!   the plan hash first.
+//!   of the site plan, the layout graph, the metrics table and the engine, and
+//!   the first two are compared and found equal before the advisory is reached.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -143,6 +145,31 @@ pub fn site_plan_sha256(c: &Campaign) -> Option<String> {
     Some(sha256_hex(text.as_bytes()))
 }
 
+/// **The layout graph's hash**: sha256 over the document's CANONICAL bytes.
+///
+/// The second half of the freshness key, and it is not a refinement of the
+/// first: **the whole that is walked is derived from two authored documents**,
+/// and only one of them is the plan. A box's headroom comes from its node's
+/// `size_class` ([`delvewright_dsl::siteplan::placed_boxes`]); a seam's opening
+/// is cut to air or filled with the bar according to its edge's `class`; the
+/// side an `anchor/unlock-…` stands on is the edge's `opens_from`; what a body
+/// must hold to pass is its `gating`; and which way a fall goes is its `falls`.
+/// None of that is stated anywhere in the plan.
+///
+/// Taken over the WHOLE document, exactly as the plan's is and for the same
+/// reason. A key over a hand-picked traversal projection of the graph would be
+/// narrower — a reworded `note` would not re-open the gate — but it would be a
+/// list somebody has to remember to extend, and the field added next release
+/// falls silently outside it. Whole-document is closed by construction, and it
+/// is the rule the plan's own key already applies to a document that likewise
+/// carries prose (`views[].note`).
+#[must_use]
+pub fn layout_graph_sha256(c: &Campaign) -> Option<String> {
+    let graph = c.layout_graph.as_ref()?;
+    let text = delvewright_dsl::to_canonical_string(graph).ok()?;
+    Some(sha256_hex(text.as_bytes()))
+}
+
 /// **The blockout's hash**: sha256 over the derived massing the WALK judged.
 ///
 /// Taken over [`crate::blockout::walked_massing`] — the derivation with nothing
@@ -161,22 +188,30 @@ pub fn blockout_sha256(c: &Campaign) -> Option<String> {
     Some(sha256_hex(text.as_bytes()))
 }
 
-/// The two hashes and the engine that produced them, printed on every build of a
-/// site-plan campaign so a walk record can name its instrument.
+/// The three hashes and the engine that produced them, printed on every build of
+/// a site-plan campaign so a walk record can name its subject and its
+/// instrument.
+///
+/// Two of them are the **key** — the authored documents the derivation reads —
+/// and the third is the derived massing, which is what the drift advisory reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hashes {
     /// Over the plan's canonical bytes.
     pub site_plan: String,
+    /// Over the layout graph's canonical bytes.
+    pub layout_graph: String,
     /// Over the massing a walker walked.
     pub blockout: String,
 }
 
 impl Hashes {
-    /// The two hashes of `c`, or `None` for a campaign with no site plan.
+    /// The three hashes of `c`, or `None` for a campaign with no site plan or no
+    /// layout graph — a whole with either missing is not a whole anything walked.
     #[must_use]
     pub fn of(c: &Campaign) -> Option<Hashes> {
         Some(Hashes {
             site_plan: site_plan_sha256(c)?,
+            layout_graph: layout_graph_sha256(c)?,
             blockout: blockout_sha256(c)?,
         })
     }
@@ -185,8 +220,10 @@ impl Hashes {
     #[must_use]
     pub fn line(&self) -> String {
         format!(
-            "site plan sha256: {sp}\nblockout sha256:  {bo}\nengine revision:  {rev}",
+            "site plan sha256:    {sp}\nlayout graph sha256: {lg}\nblockout sha256:     {bo}\n\
+             engine revision:     {rev}",
             sp = self.site_plan,
+            lg = self.layout_graph,
             bo = self.blockout,
             rev = engine_name(),
         )
@@ -232,6 +269,12 @@ pub struct WalkFinding {
 pub struct WalkRecord {
     /// The plan that was walked, by its canonical-bytes hash.
     pub site_plan_sha256: String,
+    /// The layout graph that was walked, by its canonical-bytes hash. **The
+    /// other half of the key**: the plan states the boxes and the seams' cells,
+    /// the graph states what those seams ARE — walk, stair, drop or bar, which
+    /// side opens it, what a body must hold to pass — so a record naming only
+    /// the plan is a record of half the whole.
+    pub layout_graph_sha256: String,
     /// The massing that was walked, by its hash.
     pub blockout_sha256: String,
     /// The engine that built it — the revision, never a version string.
@@ -256,21 +299,30 @@ impl WalkRecord {
 pub struct WalkBinding {
     /// Records read — 0 or 1, and 0 with a detail plan present is the refusal.
     pub records: usize,
-    /// Hash comparisons made.
+    /// Freshness hash comparisons made, out of [`Self::KEYED_DOCUMENTS`]. The
+    /// denominator is stated with the count on purpose: a gate that compared one
+    /// of the two documents the whole is derived from is green about a smaller
+    /// world than the one it claims to cover, which is exactly the escape this
+    /// key was widened to close.
     pub compared: usize,
     /// `details[]` rows the gate stood in front of.
     pub rows: usize,
 }
 
 impl WalkBinding {
+    /// The authored documents the derived whole is a function of, and therefore
+    /// the denominator of [`Self::compared`]: the site plan and the layout graph.
+    pub const KEYED_DOCUMENTS: usize = 2;
+
     /// One line, stated whether or not it is zero.
     #[must_use]
     pub fn line(&self) -> String {
         format!(
-            "detail walk gate binding: {r} walk record(s) read, {c} plan-hash comparison(s) made, \
-             standing in front of {n} `details[]` row(s).",
+            "detail walk gate binding: {r} walk record(s) read, {c} of {d} freshness hash(es) \
+             compared (site plan, layout graph), standing in front of {n} `details[]` row(s).",
             r = self.records,
             c = self.compared,
+            d = Self::KEYED_DOCUMENTS,
             n = self.rows,
         )
     }
@@ -283,9 +335,11 @@ impl WalkBinding {
 /// because no other verb reads a `detail-plan`: this one is validation, and
 /// therefore every build; [`allocation_walk_gate`] is `delvec allocation`.
 ///
-/// Missing, `"findings"` and stale are each named, and a stale record's refusal
-/// prints both hashes. A campaign with no detail plan binds zero of this and
-/// says so.
+/// Missing, `"findings"` and stale are each named — stale in the plan and stale
+/// in the layout graph separately, because they are different edits with
+/// different repairs — and a stale record's refusal prints both sides of the
+/// hash that moved. A campaign with no detail plan binds zero of this and says
+/// so.
 #[must_use]
 pub fn check_walk(c: &Campaign, record: Option<&str>) -> (Vec<Diagnostic>, WalkBinding) {
     let mut binding = WalkBinding::default();
@@ -345,9 +399,18 @@ fn walk_gate(c: &Campaign, record: Option<&str>, rows: usize) -> (Option<Diagnos
                  `site_plan_sha256` set to `{current}`, `blockout_sha256` set to the hash the \
                  build printed beside it, `engine_revision` set to the revision that built it \
                  (this one is `{rev}`), `verdict` set to `passed`, and a `findings` list of \
-                 whatever the walk noted. Every build of this campaign prints both hashes. \
-                 Binding: {n} `details[]` row(s) stood in front of, ZERO records read.",
+                 whatever the walk noted{graph}. Every build of this campaign prints all three \
+                 hashes. Binding: {n} `details[]` row(s) stood in front of, ZERO records read.",
                 rev = engine_revision(),
+                graph = match layout_graph_sha256(c) {
+                    Some(g) => format!(
+                        ". `layout_graph_sha256` goes beside the plan's and is `{g}` — the plan \
+                         states where the boxes and the seams' cells are, and the graph states \
+                         what those seams ARE, so a record naming only the plan is a record of \
+                         half the whole"
+                    ),
+                    None => String::new(),
+                },
                 n = binding.rows,
             ),
         ));
@@ -363,11 +426,11 @@ fn walk_gate(c: &Campaign, record: Option<&str>, rows: usize) -> (Option<Diagnos
                 "/content/details",
                 format!(
                     "`walk-record.json` is not a walk record: {e}. Its form is fixed — \
-                     `site_plan_sha256`, `blockout_sha256`, `engine_revision`, `verdict` \
-                     (`passed` or `findings`), and `findings[]` of `{{subject, note}}`. A record \
-                     that does not parse is a record nothing can be judged against, so it is a \
-                     refusal rather than an absence. Binding: {n} `details[]` row(s) stood in \
-                     front of, 1 record read.",
+                     `site_plan_sha256`, `layout_graph_sha256`, `blockout_sha256`, \
+                     `engine_revision`, `verdict` (`passed` or `findings`), and `findings[]` of \
+                     `{{subject, note}}`. A record that does not parse is a record nothing can be \
+                     judged against, so it is a refusal rather than an absence. Binding: {n} \
+                     `details[]` row(s) stood in front of, 1 record read.",
                     n = binding.rows,
                 ),
             ));
@@ -385,15 +448,49 @@ fn walk_gate(c: &Campaign, record: Option<&str>, rows: usize) -> (Option<Diagnos
                  not been walked. The record names `{recorded}`; this campaign's plan hashes to \
                  `{current}`. The hash is taken over the plan's canonical bytes, so a reformat is \
                  not a re-walk — these are different plans. That is the escalation path working, \
-                 not a nuisance: a part that wants different traversal revises the SITE PLAN, \
-                 which moves this hash, which re-opens this gate, which re-runs the whole's walk. \
+                 not a nuisance: a part that wants different space revises the SITE PLAN, which \
+                 moves this hash, which re-opens this gate, which re-runs the whole's walk. \
                  Walk the current blockout and re-record. Binding: {n} `details[]` row(s) stood \
-                 in front of, 1 plan-hash comparison made.",
+                 in front of, 1 of {d} freshness hash(es) compared.",
                 recorded = rec.site_plan_sha256,
                 n = binding.rows,
+                d = WalkBinding::KEYED_DOCUMENTS,
             ),
         ));
         return (d, binding);
+    }
+    // **The other half of the key.** The plan states where the boxes are and
+    // where each seam's cells are cut; the graph states what those seams ARE —
+    // walk, stair, drop or bar, which side opens the bar, what a body must hold
+    // to pass — and a node's `size_class`, which is a sky-open box's headroom.
+    // All of it reaches the derived whole, none of it is in the plan, so a key
+    // over the plan alone leaves a campaign free to move the walked bytes and
+    // the walked connectivity under a record that still reads as fresh.
+    if let Some(graph_now) = layout_graph_sha256(c) {
+        binding.compared = 2;
+        if rec.layout_graph_sha256 != graph_now {
+            d = Some(Diagnostic::error(
+                DW_UNWALKED,
+                STAGE,
+                "/content/details",
+                format!(
+                    "`walk-record.json` records a walk of a DIFFERENT layout graph, so this \
+                     whole has not been walked. The record names `{recorded}`; this campaign's \
+                     graph hashes to `{graph_now}`. The site plan is unchanged, and that is not \
+                     enough: the whole a walker walked is derived from the plan AND the graph, \
+                     so a seam that was an open archway and is now a quest-locked bar, a fall \
+                     that now falls the other way, or a place whose size class moved is a \
+                     different whole with the same plan. The hash is over the graph's canonical \
+                     bytes, so a reformat is not a re-walk. Walk the current blockout and \
+                     re-record. Binding: {n} `details[]` row(s) stood in front of, {d} of {d} \
+                     freshness hash(es) compared.",
+                    recorded = rec.layout_graph_sha256,
+                    n = binding.rows,
+                    d = WalkBinding::KEYED_DOCUMENTS,
+                ),
+            ));
+            return (d, binding);
+        }
     }
     if rec.verdict != Verdict::Passed {
         let list = if rec.findings.is_empty() {
@@ -420,24 +517,36 @@ fn walk_gate(c: &Campaign, record: Option<&str>, rows: usize) -> (Option<Diagnos
                  begin on a whole that has not passed its walk — that is the ordering this \
                  pipeline exists to make structural. Answer the findings in the graph or the \
                  plan, rebuild, walk again, and re-record with `verdict: \"passed\"`. Binding: \
-                 {n} `details[]` row(s) stood in front of, 1 plan-hash comparison made.",
+                 {n} `details[]` row(s) stood in front of, {c} of {d} freshness hash(es) \
+                 compared.",
                 n = binding.rows,
+                c = binding.compared,
+                d = WalkBinding::KEYED_DOCUMENTS,
             ),
         ));
     }
     (d, binding)
 }
 
-/// **The blockout-drift advisory** (spec-0050 §2): same plan, different massing
-/// bytes.
+/// **The blockout-drift advisory** (spec-0050 §2): the same two authored
+/// documents, different massing bytes.
 ///
 /// A warning naming both hashes and both engine revisions, and never a refusal.
-/// The hatch question, answered: a campaign author has **no edit** that moves
-/// the blockout hash without moving the plan hash, because the derivation is a
-/// pure function of plan, metrics and engine. So this path is reachable only by
-/// toolchain movement — an engine or metrics change — which is a re-walk
-/// *decision* for the round summary, not a defect anyone could launder through
-/// it.
+/// The hatch question, answered — and the answer is a property of the KEY rather
+/// than of the derivation. The derivation is a pure function of the site plan,
+/// the layout graph, the metrics table and the engine. Both authored documents
+/// are in `DW0841`'s key and have been compared and found equal by the time this
+/// runs, so what is left to have moved is the toolchain, and this path is a
+/// re-walk *decision* for the round summary rather than a defect anyone could
+/// launder through it.
+///
+/// **The graph clause below is load-bearing, not a duplicate-diagnostic
+/// nicety.** Without it, a graph-only edit — an open archway turned into a
+/// quest-locked bar — moves the massing under an unmoved plan hash and lands
+/// here, under a message asserting that no campaign edit can. A warning that
+/// denies the state it is reporting trains its reader to wave that state
+/// through, so the suppression is what makes this text true and deleting it
+/// re-opens a laundering channel rather than a duplicate diagnostic.
 #[must_use]
 pub fn blockout_drift(c: &Campaign, record: Option<&str>) -> Option<Diagnostic> {
     c.detail_plan.as_ref()?;
@@ -446,9 +555,16 @@ pub fn blockout_drift(c: &Campaign, record: Option<&str>) -> Option<Diagnostic> 
     if rec.blockout_sha256 == current {
         return None;
     }
-    // A record of a different PLAN is `DW0841`'s refusal; saying so twice would
-    // be two diagnostics for one defect.
+    // A record of a different PLAN or a different GRAPH is `DW0841`'s refusal.
+    // Both clauses are here for the same two reasons: saying it twice would be
+    // two diagnostics for one defect, and a campaign edit that reaches this
+    // warning would make its text a lie.
     if site_plan_sha256(c).as_deref() != Some(rec.site_plan_sha256.as_str()) {
+        return None;
+    }
+    if let Some(g) = layout_graph_sha256(c)
+        && g != rec.layout_graph_sha256
+    {
         return None;
     }
     Some(Diagnostic::warning(
@@ -456,13 +572,14 @@ pub fn blockout_drift(c: &Campaign, record: Option<&str>) -> Option<Diagnostic> 
         STAGE,
         "/content/details",
         format!(
-            "the walked massing has MOVED under an unchanged site plan. The record was taken on \
-             engine `{was_rev}` and names blockout `{was}`; engine `{now_rev}` derives \
-             `{now}` from the same plan. This refuses nothing. No campaign edit can reach this \
-             state — the derivation is a pure function of the plan, the metrics table and the \
-             engine, so a plan edit would have moved the plan hash and refused above. What has \
-             moved is the toolchain, and whether the whole is walked again is a decision for the \
-             round summary rather than a defect to repair.",
+            "the walked massing has MOVED under an unchanged site plan and an unchanged layout \
+             graph. The record was taken on engine `{was_rev}` and names blockout `{was}`; \
+             engine `{now_rev}` derives `{now}` from the same two documents. This refuses \
+             nothing. What is left to have moved is the TOOLCHAIN — the engine or the metrics \
+             table — because the derivation is a pure function of the site plan, the layout \
+             graph, the metrics table and the engine, and the first two are what `DW0841` has \
+             just compared and found equal. Whether the whole is walked again is a decision for \
+             the round summary rather than a defect to repair.",
             was = rec.blockout_sha256,
             was_rev = rec.engine_revision,
             now = current,
@@ -774,7 +891,8 @@ pub struct DetailBinding {
     /// Walk records read — `DW0841`. Zero with a detail plan present is the
     /// refusal; zero without one is a campaign that details nothing.
     pub records: usize,
-    /// Plan-hash comparisons made — `DW0841`.
+    /// Freshness hash comparisons made — `DW0841` — out of the
+    /// [`WalkBinding::KEYED_DOCUMENTS`] the derived whole is a function of.
     pub compared: usize,
 }
 
@@ -788,8 +906,9 @@ impl DetailBinding {
             "detail binding: {bd} of {b} place(s) bound over {r} `details[]` row(s), {m} \
              piece(s) measured against their frame, {sr} seam(s) required answering over {fe} \
              declared face(s) examined, {o} owed anchor name(s) checked, {cl} piece(s) \
-             declaring a footprint class; walk gate: {rec} record(s) read, {cmp} plan-hash \
-             comparison(s) made.",
+             declaring a footprint class; walk gate: {rec} record(s) read, {cmp} of {kd} \
+             freshness hash(es) compared.",
+            kd = WalkBinding::KEYED_DOCUMENTS,
             bd = self.bound,
             b = self.boxes,
             r = self.rows,
