@@ -57,3 +57,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0044](spec-0044-a-respawn-that-resets-the-scene.md) | A respawn that resets the scene — the safe-zone proof measures the world the reset leaves | Accepted |
 | [spec-0046](spec-0046-an-entry-is-a-role-not-a-spelling.md) | An entry is a role, not a spelling — the entry point moves from the anchor's name to a declared role | Accepted |
 | [spec-0047](spec-0047-the-kind-belongs-to-the-cell.md) | The kind belongs to the cell — the out-of-walk classification re-bound to the blocks' own partition | Accepted |
+| [spec-0049](spec-0049-a-whole-map-is-walked-before-any-part-is-detailed.md) | A whole map is walked before any part is detailed — the vertical slice to a derived blockout | Accepted |
