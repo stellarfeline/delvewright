@@ -1380,6 +1380,73 @@ fn a_piece_that_is_not_its_frame_fails_the_build_through_the_fence() {
     );
 }
 
+/// **The bot is handed the same walk** (spec-0050 §16.4).
+///
+/// The critical-path export is what the mineflayer harness drives, so comparing
+/// it between a detailed map and its massed twin asks the playthrough's own
+/// question at compile time: same objectives, same order, same completion
+/// oracle. The one thing that moves is where inside the detailed place the body
+/// walks to — which is §7's "anchor positions within their box" being free, and
+/// is the anchor RE-BINDING working: if this were byte-identical, the piece's own
+/// anchor would not have replaced the massing's footing at all.
+///
+/// A full playthrough needs a server and a bot and is a runtime tier; this is
+/// what can be measured without one, and it is not a substitute for it.
+#[test]
+fn the_bot_is_handed_the_same_path_with_one_cell_moved_inside_the_detailed_place() {
+    let tmp = tempdir("bot-export");
+    let d = detailed(&tmp, &["node/exit"]);
+    let detailed_out = build_into(&d, &tmp.join("out-detailed"));
+
+    // The massed twin: the same campaign with the binding taken away.
+    std::fs::remove_file(d.campaign.join("detail-plan.json")).unwrap();
+    let massed_out = build_into(&d, &tmp.join("out-massed"));
+
+    let path = |t: &BTreeMap<String, Vec<u8>>| -> serde_json::Value {
+        serde_json::from_slice(
+            t.get("critical-path.json")
+                .expect("every build exports the bot's path"),
+        )
+        .expect("it is JSON")
+    };
+    let (a, b) = (path(&detailed_out), path(&massed_out));
+    let (sa, sb) = (
+        a["steps"].as_array().unwrap(),
+        b["steps"].as_array().unwrap(),
+    );
+    assert!(!sa.is_empty(), "the fixture has a critical path");
+    assert_eq!(sa.len(), sb.len(), "the same number of steps");
+
+    let mut moved = 0usize;
+    for (x, y) in sa.iter().zip(sb.iter()) {
+        for (k, v) in x.as_object().unwrap() {
+            if k == "pos" {
+                if v != &y["pos"] {
+                    moved += 1;
+                }
+                continue;
+            }
+            assert_eq!(
+                Some(v),
+                y.get(k),
+                "step field `{k}` moved, and only a POSITION inside a detailed place may"
+            );
+        }
+    }
+    assert_eq!(
+        moved, 1,
+        "exactly one step moved — the one seated in the place a piece now stands in"
+    );
+    for k in a.as_object().unwrap().keys() {
+        if k != "steps" {
+            assert_eq!(
+                a[k], b[k],
+                "and nothing else about the contract moved: `{k}`"
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
