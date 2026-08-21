@@ -325,8 +325,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: install (pinned skinpy-extended) + pytest
-        run: pip install -r requirements.txt pytest
+      - name: install (pinned skinpy-extended) + pinned pytest
+        run: pip install -r requirements.txt "pytest==9.1.1"
       - name: pytest (composition determinism + model-required contract)
         run: PYTHONPATH=. python -m pytest -q
 
@@ -343,8 +343,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Stdlib-only tool (tomllib needs >=3.11); pytest is the only test dep.
-      - run: pip install pytest
+      # Stdlib-only tool (tomllib needs >=3.11); pytest is the only test dep,
+      # and it is an INSTRUMENT of a required check, so it is named literally
+      # (versions.toml [ci].pytest_version).
+      - run: pip install "pytest==9.1.1"
       - run: python -m pytest -q tools/tests
 
   mecha-crosscheck:
@@ -359,11 +361,16 @@ jobs:
       # the build copies the prefab .nbt into the datapack — from the content repo
       - uses: ./.github/actions/checkout-content
       - uses: Swatinem/rust-cache@v2
+      # A DIFFERENT interpreter line from the two tool suites above, and it is
+      # entailed rather than chosen: mecha 0.104.1 declares Requires-Python
+      # >=3.14, so the pinned validator cannot be installed on 3.12 at all.
+      # versions.toml records that floor and check-versions.sh holds this value
+      # at or above it (versions.toml [ci]).
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - name: install mecha + beet (pinned)
-        run: pip install "mecha==0.104.1" beet
+      - name: install mecha + beet (both pinned)
+        run: pip install "mecha==0.104.1" "beet==0.116.0"
       - name: build the hello-world delve
         run: |
           cargo run --locked -p delvec --bin delvec -- \
