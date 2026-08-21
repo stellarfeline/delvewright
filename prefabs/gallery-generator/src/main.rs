@@ -59,10 +59,10 @@ const SIZE: [i32; 3] = [31, 8, 31];
 /// speaking parts, the pedestal); everything beyond it is the far hall.
 const DIVIDER_Z: i32 = 15;
 
-/// The three openings in the divider, as `(x_from, x_to)` inclusive. Each is
+/// The openings in the divider, as `(x_from, x_to)` inclusive. Each is
 /// three tall (`y ∈ 1..=3`) and filled with iron bars, which is what a
 /// prefab-declared gate anchor opens.
-const GATES: [(i32, i32); 3] = [(14, 15), (24, 25), (4, 5)];
+const GATES: [(i32, i32); 5] = [(14, 15), (24, 25), (4, 5), (9, 10), (19, 20)];
 
 /// What an anchor is FOR, in one line, printed into the metadata so a creator
 /// reading the piece can tell the roles apart without reading the campaign.
@@ -362,6 +362,29 @@ const GATE_ANCHORS: &[GateAnchor] = &[
         from: [24, 1, DIVIDER_Z],
         to: [25, 3, DIVIDER_Z],
         role: "the gate on a clock: opens and re-seals on its own cycle",
+    },
+    // Three clocked gates, not one, and the LETHAL one is last. A per-object
+    // mechanic's defects only exist at cardinality ≥2 — the runtime suite bound
+    // `timed_gates.first()` and watched exactly one gate per campaign, so a
+    // level whose crushing gate was its third shipped with no runtime proof of
+    // the only thing in it that could kill a player. The gallery bound
+    // `timed_gates` once, which is why it could not catch that; the coverage
+    // gate counts UNITS, and a cardinality is not a unit.
+    GateAnchor {
+        name: "anchor/timed-door-mid",
+        from: [9, 1, DIVIDER_Z],
+        to: [10, 3, DIVIDER_Z],
+        role: "the second gate on a clock, carrying nothing special — it is here so \
+               the suite has a middle member to skip, which is how one-of-N coverage \
+               shows up at all",
+    },
+    GateAnchor {
+        name: "anchor/timed-door-inner",
+        from: [19, 1, DIVIDER_Z],
+        to: [20, 3, DIVIDER_Z],
+        role: "the LAST gate on a clock, and the only one that crushes: the \
+               consequential member, declared last, where a walk that stops at the \
+               first member never reaches it",
     },
 ];
 

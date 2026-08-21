@@ -58,19 +58,10 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gallery_units import Binder, Enumerator  # noqa: E402
+from gallery_units import Binder, Enumerator, stage_files  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 GALLERY = REPO / "gallery"
-STAGE_FILES = {
-    "world": "world.json",
-    "npcs": "npcs.json",
-    "classes": "classes.json",
-    "quest-plan": "quest-plan.json",
-    "quests": "quests.json",
-    "dialogue": "dialogue.json",
-    "world-edits": "world-edits.json",
-}
 
 
 def die(msg: str) -> "None":
@@ -106,9 +97,9 @@ def schema_export(delvec: Path) -> dict:
     return json.loads(r.stdout)
 
 
-def load_stage_docs(campaign: Path) -> dict[str, dict]:
+def load_stage_docs(campaign: Path, export: dict) -> dict[str, dict]:
     out: dict[str, dict] = {}
-    for stage, fn in STAGE_FILES.items():
+    for stage, fn in stage_files(export).items():
         p = campaign / fn
         if p.is_file():
             out[stage] = json.loads(p.read_text())
@@ -200,7 +191,7 @@ def main() -> int:
             "matching it."
         )
 
-    primary_docs = load_stage_docs(GALLERY)
+    primary_docs = load_stage_docs(GALLERY, export)
     if not primary_docs:
         die(f"the gallery at `{GALLERY}` holds no stage documents")
     docs_walked = len(primary_docs)
@@ -227,7 +218,7 @@ def main() -> int:
                 )
             dest = tmp / od.name
             materialise(GALLERY, od, dest)
-            ov = bind(enumerator, export, load_stage_docs(dest), f"overlay:{od.name}")
+            ov = bind(enumerator, export, load_stage_docs(dest, export), f"overlay:{od.name}")
             for unit in declared:
                 if unit not in units:
                     die(f"overlay `{od.name}` declares `{unit}`, which is not a unit")
@@ -356,6 +347,31 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    if zero_bindings:
+        # `read_build_ledgers` has always said "the caller reds on the ones the
+        # gallery writes", and the caller did not: the list was computed,
+        # printed in the summary line, written into the report — and never
+        # gated. A verdict nothing acts on is the UNRUN shape wearing a
+        # measurement's clothes, and it is worse than an absent check, because
+        # the printed count reads as a check that ran. Every ledger the gallery
+        # emits binds today (7 of 7 non-zero), so this reds on drift and on
+        # nothing else.
+        print(
+            "\nThese compiler-stated bindings are ZERO on a campaign that "
+            "declares everything, so each is a proof that has stopped reaching "
+            "what the gallery plainly writes — vacuous, not a pass:",
+            file=sys.stderr,
+        )
+        for z in zero_bindings:
+            print(f"  {z}", file=sys.stderr)
+        print(
+            "\nFix the check that stopped binding. A ledger whose count is "
+            "honestly zero here means the gallery no longer writes that "
+            "machinery, which is itself the finding.",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -370,9 +386,9 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
     because the gallery declares everything: a zero there means the proof stopped
     reaching what the document plainly writes.
 
-    So the zeroes are reported by name rather than counted, and the caller reds on
-    the ones the gallery writes. `effect-roots.json` is the sharpest of them: the
-    gallery binds all eight roots, where the largest shipped campaign binds three.
+    So the zeroes are reported by name, and the caller reds on them.
+    `effect-roots.json` is the sharpest of them: the gallery binds all eight
+    roots, where the largest shipped campaign binds three.
     """
     vdir = out / "validation"
     if not vdir.is_dir():

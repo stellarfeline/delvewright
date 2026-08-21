@@ -67,6 +67,24 @@ from dataclasses import dataclass, field
 REGISTRY_VALUED: dict[str, str] = {}
 
 
+def stage_files(export: dict) -> dict[str, str]:
+    """stage name -> the filename a campaign directory holds it under.
+
+    **Derived from the export, never listed.** The map was written out by hand in
+    two tools — the coverage gate and the baseline tool — and the two then
+    disagreed the moment a stage was added: the coverage gate learned about the
+    map-pipeline documents and the baseline tool did not, so the same tree
+    reported 0 unaccounted units and 60, from the same schema export, on the same
+    run. That is the second-authority defect this module's own docstring refuses
+    for the unit enumeration, sitting one function away from it.
+
+    Nothing needs listing, because the filename IS the stage name: every stage
+    document in a campaign directory is `<stage>.json`, which is a convention the
+    loader already keeps and which the export's own keys therefore state.
+    """
+    return {stage: f"{stage}.json" for stage in export}
+
+
 @dataclass(frozen=True)
 class Unit:
     """One thing an author can write."""

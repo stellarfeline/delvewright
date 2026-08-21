@@ -1355,6 +1355,49 @@ pub fn build_with_warnings(
         })?;
     warnings.extend(batch_binding.finding());
 
+    // ---- runtime-watch coverage of per-object bodies (DW0810) ----
+    // A mechanic whose runtime body is emitted PER OBJECT gets one body per
+    // declared object, over its own region, with its own judgement — so a suite
+    // that drives one of them has proven nothing about the next. The timed-gate
+    // emitter bound `first()` and shipped a three-gate level whose LETHAL gate
+    // was the third with no runtime proof at all, green throughout (see
+    // `crate::watch`). Read off the shipped bytes with no table of mechanics, so
+    // it guards emitters not yet written.
+    let watch_ids = crate::watch::declared_ids(input_bytes);
+    let (watch_binding, unwatched) = crate::watch::check_tree(ns, &out, &watch_ids);
+
+    // ---- undischarged per-object watch claims (DW0811) ----
+    // The refusal half, and it is drawn one step in from `DW0810` on purpose.
+    // Nothing in the finished tree separates "the emitter meant to prove every
+    // member and skipped some" from "the suite drives one exemplar by design" —
+    // eight standing gallery families are honestly the second — so a refusal read
+    // off the bytes alone would need a per-family allowlist, which is an opt-out
+    // the defect can supply. The distinction lives in the EMITTER, so the emitter
+    // registers its claim over the plan's own authored list and the claim is
+    // judged against the shipped suite: `declared` cannot shrink when the walk
+    // skips members, and `invoked` cannot be faked because it is read off bytes.
+    let watch_claims = [timed_gate_watch_claim(plan)];
+    let (claim_binding, breaches) = crate::watch::check_claims(ns, &out, &watch_claims);
+
+    put_json(
+        &mut out,
+        "validation/watch-ledger.json",
+        &watch_binding.to_json(&unwatched),
+    );
+    put_json(
+        &mut out,
+        "validation/watch-claims.json",
+        &claim_binding.to_json(&breaches),
+    );
+
+    if let Some(d) = crate::watch::claim_finding(&claim_binding, &breaches) {
+        return Err(BuildFailure::Diagnostic {
+            code: crate::watch::DW_CLAIM_NOT_DISCHARGED,
+            message: d.message,
+        });
+    }
+    warnings.extend(crate::watch::finding(&watch_binding, &unwatched));
+
     // ---- score-seeding integrity (DW0495) ----
     // Every `if score` / `unless score` / `scores={…}` the compiler just wrote
     // must read an entry the pack itself creates, or be written so a missing entry
@@ -14881,11 +14924,45 @@ fn pin_tgdis(b: &mut Vec<String>, g: &crate::plan::TimedGatePlan) {
 }
 
 fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
+    // EVERY declared gate, not the first. A gate's clock is emitted per gate —
+    // `tgate_open_<id>`/`tgate_close_<id>` are distinct bodies over distinct
+    // regions with distinct blocks and its own `crush` judgement — so watching
+    // one gate says nothing whatever about the next. Binding `first()` here gave
+    // a three-gate campaign whose LETHAL gate was the third exactly one runtime
+    // proof, of the harmless one, and the suite was green throughout. That is the
+    // unbound-gate vacuity mode with a subtler surface: it binds one object and
+    // reports honestly about that one, while the set it covers has N members.
+    for g in &plan.timed_gates {
+        emit_one_timed_gate_packtest(plan, g, out);
+        emit_timed_gate_crush_packtest(plan, g, out);
+        emit_timed_gate_disarm_packtest(plan, g, out);
+    }
+}
+
+/// The claim the loop above makes, judged against the shipped bytes by
+/// `DW0811`. It is written from `plan.timed_gates` and NOT from whatever the
+/// loop happened to walk, which is the whole point: a walk that stops at
+/// `first()` still declares three gates here, so the refusal fires on exactly
+/// the defect that a comment asking the next author to loop would not have
+/// stopped. `DW0810` reads the same tree with no mechanic named at all and
+/// stays a warning; this is the half that can refuse, because the emitter's own
+/// claim is a proof obligation the defect cannot discharge.
+fn timed_gate_watch_claim(plan: &Plan) -> crate::watch::Claim {
+    crate::watch::Claim {
+        mechanic: "timed-gate",
+        families: &["tgate_open_", "tgate_close_", "tgate_disarm_"],
+        declared: plan.timed_gates.iter().map(|g| g.safe.clone()).collect(),
+    }
+}
+
+/// One gate's alternation template. Every scratch score is suffixed with the
+/// gate's own safe id: the suite is ONE batch on ONE server with no ordering
+/// guarantee between templates, so a score shared across sibling gates would be
+/// written by one template and asserted by another (`crate::batchstate`).
+fn emit_one_timed_gate_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    let Some(g) = plan.timed_gates.first() else {
-        return;
-    };
+    let id = &g.safe;
     let (from, to) = g.gate_region;
     let probe = from;
     let mut b = packtest_header(&format!(
@@ -14907,28 +14984,26 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     // sibling left (the flag-leak class); it pins what it depends on.
     pin_tgdis(&mut b, g);
     b.push(format!(
-        "execute store success score #tg_sealed dw.sys if block {} {} {} {}",
+        "execute store success score #tg_sealed_{id} dw.sys if block {} {} {} {}",
         probe[0], probe[1], probe[2], g.gate_block
     ));
-    b.push("assert score #tg_sealed dw.sys matches 1".to_string());
-    b.push(format!("function {ns}:tgate_open_{}", g.safe));
+    b.push(format!("assert score #tg_sealed_{id} dw.sys matches 1"));
+    b.push(format!("function {ns}:tgate_open_{id}"));
     b.push(format!(
-        "execute store success score #tg_open dw.sys if block {} {} {} minecraft:air",
+        "execute store success score #tg_open_{id} dw.sys if block {} {} {} minecraft:air",
         probe[0], probe[1], probe[2]
     ));
-    b.push("assert score #tg_open dw.sys matches 1".to_string());
-    b.push(format!("function {ns}:tgate_close_{}", g.safe));
+    b.push(format!("assert score #tg_open_{id} dw.sys matches 1"));
+    b.push(format!("function {ns}:tgate_close_{id}"));
     b.push(format!(
-        "execute store success score #tg_shut dw.sys if block {} {} {} {}",
+        "execute store success score #tg_shut_{id} dw.sys if block {} {} {} {}",
         probe[0], probe[1], probe[2], g.gate_block
     ));
-    b.push("assert score #tg_shut dw.sys matches 1".to_string());
+    b.push(format!("assert score #tg_shut_{id} dw.sys matches 1"));
     out.insert(
-        format!("packtest-datapack/data/{ns}/test/souls_timed_gate.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_{id}.mcfunction"),
         lines(&b).into_bytes(),
     );
-    emit_timed_gate_crush_packtest(plan, g, out);
-    emit_timed_gate_disarm_packtest(plan, g, out);
 }
 
 /// The disarm PackTest: a **disarmed** gate stays open across several former cycle
@@ -14973,17 +15048,17 @@ fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &m
     b.push(format!("function {ns}:tgate_open_{id}"));
     b.push(format!("function {ns}:tgate_close_{id}"));
     b.push(format!(
-        "execute store success score #tgd_armed dw.sys if block {} {} {} {}",
+        "execute store success score #tgd_armed_{id} dw.sys if block {} {} {} {}",
         probe[0], probe[1], probe[2], g.gate_block
     ));
-    b.push("assert score #tgd_armed dw.sys matches 1".to_string());
+    b.push(format!("assert score #tgd_armed_{id} dw.sys matches 1"));
     // Pull the lever: the span clears and the sentinel latches.
     b.push(format!("function {ns}:tgate_disarm_{id}"));
     b.push(format!(
-        "execute store success score #tgd_jam dw.sys if block {} {} {} minecraft:air",
+        "execute store success score #tgd_jam_{id} dw.sys if block {} {} {} minecraft:air",
         probe[0], probe[1], probe[2]
     ));
-    b.push("assert score #tgd_jam dw.sys matches 1".to_string());
+    b.push(format!("assert score #tgd_jam_{id} dw.sys matches 1"));
     b.push(format!("assert score #tgdis_{id} dw.sys matches 1"));
     // Three former cycle boundaries. The assertion lands immediately after the
     // CLOSE — before the open half runs — because that is the only place the
@@ -14994,20 +15069,20 @@ fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &m
     for n in 1..=3 {
         b.push(format!("function {ns}:tgate_close_{id}"));
         b.push(format!(
-            "execute store success score #tgd_c{n} dw.sys if block {} {} {} minecraft:air",
+            "execute store success score #tgd_c{n}_{id} dw.sys if block {} {} {} minecraft:air",
             probe[0], probe[1], probe[2]
         ));
-        b.push(format!("assert score #tgd_c{n} dw.sys matches 1"));
+        b.push(format!("assert score #tgd_c{n}_{id} dw.sys matches 1"));
         // …and the open half of the dead ping-pong is a harmless no-op.
         b.push(format!("function {ns}:tgate_open_{id}"));
         b.push(format!(
-            "execute store success score #tgd_o{n} dw.sys if block {} {} {} minecraft:air",
+            "execute store success score #tgd_o{n}_{id} dw.sys if block {} {} {} minecraft:air",
             probe[0], probe[1], probe[2]
         ));
-        b.push(format!("assert score #tgd_o{n} dw.sys matches 1"));
+        b.push(format!("assert score #tgd_o{n}_{id} dw.sys matches 1"));
     }
     out.insert(
-        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_disarm.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_disarm_{id}.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -15051,6 +15126,7 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
     }
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
+    let id = &g.safe;
     let (from, to) = g.gate_region;
     let selector = region_selector(from, to);
     // Feet-centred on one cell of the region: provably inside the selector box.
@@ -15070,7 +15146,7 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
     pin_tgdis(&mut b, g);
     // Open first: a mistimed crossing leaves the player standing in an open
     // gateway, which is the position the judgement must catch.
-    b.push(format!("function {ns}:tgate_open_{}", g.safe));
+    b.push(format!("function {ns}:tgate_open_{id}"));
     b.push(format!(
         "tp @s {} {} {}",
         fmt_f64(inside[0]),
@@ -15078,9 +15154,9 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
         fmt_f64(inside[2])
     ));
     b.push(format!(
-        "execute store success score #cr_in dw.sys if entity @s[{selector}]"
+        "execute store success score #cr_in_{id} dw.sys if entity @s[{selector}]"
     ));
-    b.push("assert score #cr_in dw.sys matches 1".to_string());
+    b.push(format!("assert score #cr_in_{id} dw.sys matches 1"));
     b.push(format!(
         "tp @s {} {} {}",
         fmt_f64(f64::from(clear_x) + 0.5),
@@ -15088,11 +15164,11 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
         fmt_f64(inside[2])
     ));
     b.push(format!(
-        "execute store success score #cr_out dw.sys if entity @s[{selector}]"
+        "execute store success score #cr_out_{id} dw.sys if entity @s[{selector}]"
     ));
-    b.push("assert score #cr_out dw.sys matches 0".to_string());
+    b.push(format!("assert score #cr_out_{id} dw.sys matches 0"));
     out.insert(
-        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_crush.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_crush_{id}.mcfunction"),
         lines(&b).into_bytes(),
     );
 }

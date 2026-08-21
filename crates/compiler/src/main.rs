@@ -650,6 +650,7 @@ fn validate_loaded(
             // both hold `Fenced`, which has no constructor from a bare list.
             let diags = Fenced::apply(&campaign, diags);
             report_grandfathered(&diags);
+            report_layout_binding(&campaign);
             print_diags(&diags, json);
             Ok(Validated {
                 campaign,
@@ -2168,17 +2169,17 @@ fn run_schema(stage: &str) -> ExitCode {
         "5" => vec![Stage::Quests],
         "6" => vec![Stage::Dialogue],
         "7" => vec![Stage::WorldEdits],
-        "all" => vec![
-            Stage::World,
-            Stage::Npcs,
-            Stage::Classes,
-            Stage::QuestPlan,
-            Stage::Quests,
-            Stage::Dialogue,
-            Stage::WorldEdits,
-        ],
+        // The map-pipeline documents are NAMED, never numbered into the 1..7
+        // sequence (spec-0049): that sequence is the campaign DSL's staging and
+        // this is a different pipeline, so a number would assert an ordering
+        // between the two that does not exist.
+        "geometry-brief" => vec![Stage::GeometryBrief],
+        "layout-graph" => vec![Stage::LayoutGraph],
+        "all" => Stage::ALL.to_vec(),
         other => {
-            eprintln!("unknown stage `{other}` (want 1..7 or all)");
+            eprintln!(
+                "unknown stage `{other}` (want 1..7, `geometry-brief`, `layout-graph`, or `all`)"
+            );
             return ExitCode::from(EXIT_INTERNAL);
         }
     };
@@ -2293,6 +2294,53 @@ fn print_build_error(code: DwCode, message: &str, json: bool) {
         println!("{d}");
     } else {
         eprintln!("{code} [error] build: {message}");
+    }
+}
+
+/// State the **binding count** of the layout-graph checks on stderr (spec-0049
+/// §3.3: *every check states its binding count*).
+///
+/// Printed on every validate, analyze and build of a campaign that carries
+/// either map-pipeline document, and printed whether or not anything was found —
+/// a count only means something when the run that found nothing prints it too.
+/// A campaign with neither document prints nothing at all, which is a different
+/// fact from a graph that bound to zero of everything and is the reason the two
+/// are distinguishable here rather than collapsed into one silence.
+///
+/// A **zero on a graph that exists is a finding**, and the two zeroes that can
+/// occur are named rather than counted: a graph with no beats is the *graph
+/// before mission* case (`DW0817` says so in its own line, at analysis tier),
+/// and a graph with no traversal edges is a set of places with no space between
+/// them, which no later check can catch because every one of them quantifies
+/// over edges.
+///
+/// stderr, not stdout: `--json` reserves stdout for one diagnostic object per
+/// line, and this is not a diagnostic — nothing here is wrong.
+fn report_layout_binding(campaign: &delvewright_dsl::Campaign) {
+    if campaign.layout_graph.is_none() && campaign.geometry_brief.is_none() {
+        return;
+    }
+    let b = delvewright_dsl::LayoutBinding::of(campaign);
+    eprintln!("{}", b.line());
+    if campaign.layout_graph.is_some() && b.traversal_edges == 0 {
+        eprintln!(
+            "layout-graph binding 0: this graph declares no traversal connection at all, so \
+             every check over edges above examined nothing. A set of places with no space \
+             between them is a finding, not a graph that happens to be simple."
+        );
+    }
+    if campaign.layout_graph.is_some() && b.spine_beats == 0 {
+        eprintln!(
+            "layout-graph binding 0: no beat of this graph belongs to a quest the finale depends \
+             on, so `DW0817`'s obligation to visit the mission on the way to the goal examined \
+             nothing. A critical path over an unbound graph is a route through nothing."
+        );
+    }
+    if campaign.geometry_brief.is_some() && b.brief_facts == 0 {
+        eprintln!(
+            "geometry-brief binding 0: this brief states no fact, so there is nothing for a \
+             site plan's identities to bind the map to."
+        );
     }
 }
 

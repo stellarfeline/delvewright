@@ -227,7 +227,7 @@ fn post_disarm_permanence_is_packtested_across_cycle_boundaries() {
     let out = build_fixture();
     let t = std::str::from_utf8(
         out.get(&format!(
-            "packtest-datapack/data/{NS}/test/souls_timed_gate_disarm.mcfunction"
+            "packtest-datapack/data/{NS}/test/souls_timed_gate_disarm_inner_door.mcfunction"
         ))
         .expect("disarm PackTest emitted when the gate declares one"),
     )
@@ -241,7 +241,7 @@ fn post_disarm_permanence_is_packtested_across_cycle_boundaries() {
     // template that asserted after the following open passed against a
     // deliberately unguarded build, because the open clears the span either way.
     for n in 1..=3 {
-        let probe = format!("assert score #tgd_c{n} dw.sys matches 1");
+        let probe = format!("assert score #tgd_c{n}_inner_door dw.sys matches 1");
         let at = t
             .find(&probe)
             .unwrap_or_else(|| panic!("missing boundary {n}: {t}"));
@@ -255,7 +255,9 @@ fn post_disarm_permanence_is_packtested_across_cycle_boundaries() {
              satisfies it and the guard is untested: {t}"
         );
         assert!(
-            t.contains(&format!("assert score #tgd_o{n} dw.sys matches 1")),
+            t.contains(&format!(
+                "assert score #tgd_o{n}_inner_door dw.sys matches 1"
+            )),
             "…and the dead open half is asserted a no-op: {t}"
         );
     }
@@ -266,7 +268,7 @@ fn post_disarm_permanence_is_packtested_across_cycle_boundaries() {
         "one armed close (which must seal) plus three disarmed ones (which must not): {t}"
     );
     assert!(
-        t.contains("assert score #tgd_armed dw.sys matches 1"),
+        t.contains("assert score #tgd_armed_inner_door dw.sys matches 1"),
         "the template first proves the clock really was live: {t}"
     );
 }
@@ -311,7 +313,7 @@ fn a_gate_without_a_disarm_is_untouched() {
     }
     assert!(
         !out.keys()
-            .any(|k| k.contains("souls_timed_gate_disarm.mcfunction")),
+            .any(|k| k.contains("souls_timed_gate_disarm_inner_door.mcfunction")),
         "…and no disarm PackTest"
     );
 }
@@ -337,9 +339,9 @@ fn every_generated_template_pins_the_jam_it_could_inherit() {
     let pin = "scoreboard players set #tgdis_";
 
     for name in [
-        "souls_timed_gate",
-        "souls_timed_gate_crush",
-        "souls_timed_gate_disarm",
+        "souls_timed_gate_inner_door",
+        "souls_timed_gate_crush_inner_door",
+        "souls_timed_gate_disarm_inner_door",
     ] {
         let path = format!("packtest-datapack/data/{NS}/test/{name}.mcfunction");
         let body = std::str::from_utf8(

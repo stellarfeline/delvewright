@@ -111,6 +111,16 @@
       "stage": "quests"
     },
     {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
+    },
+    {
       "code": "DW0543",
       "pointer": "gallery-annex-cell-b.json",
       "stage": "prefabs"
@@ -184,6 +194,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ],
   "hard.en": [
@@ -298,6 +313,16 @@
       "stage": "quests"
     },
     {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
+    },
+    {
       "code": "DW0543",
       "pointer": "gallery-annex-cell-b.json",
       "stage": "prefabs"
@@ -371,6 +396,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ],
   "ocean-horizon.en": [
@@ -485,6 +515,16 @@
       "stage": "quests"
     },
     {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
+    },
+    {
       "code": "DW0543",
       "pointer": "gallery-annex-cell-b.json",
       "stage": "prefabs"
@@ -563,6 +603,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ],
   "primary.en": [
@@ -677,6 +722,16 @@
       "stage": "quests"
     },
     {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
+    },
+    {
       "code": "DW0543",
       "pointer": "gallery-annex-cell-b.json",
       "stage": "prefabs"
@@ -750,6 +805,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ],
   "primary.zh-cn": [
@@ -864,6 +924,16 @@
       "stage": "quests"
     },
     {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
+    },
+    {
       "code": "DW0543",
       "pointer": "gallery-annex-cell-b.json",
       "stage": "prefabs"
@@ -937,6 +1007,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ],
   "void-horizon.en": [
@@ -1051,6 +1126,16 @@
       "stage": "quests"
     },
     {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
+    },
+    {
       "code": "DW0543",
       "pointer": "gallery-annex-cell-b.json",
       "stage": "prefabs"
@@ -1124,6 +1209,11 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ]
 }

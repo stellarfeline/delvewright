@@ -54,7 +54,16 @@ BASELINE = GALLERY / "baseline"
 # The builds that make up the domain: the primary in every declared language,
 # plus each overlay in `en`. Derived, never listed — a listed set goes stale the
 # first time a language or an overlay is added, and goes stale silently.
-WARNING_RE = re.compile(r"^(DW\d{4}) \[warning\] (\S+) (\S+):")
+# A warning line: code, stage, then the POINTER, which runs to the first
+# `: ` that ends it. The pointer is not a single token — a build-tier
+# diagnostic points at a phase of the build ("packtest watch coverage"),
+# not at a JSON pointer — and a `(\S+)` here silently dropped every one of
+# them, so the ledger that claims the emitted warning set must equal it
+# exactly was blind to a whole class of warning. `ANY_WARNING_RE` is what
+# stops that being silent again: a line that announces itself as a warning
+# and does not parse is a red, never a skip.
+WARNING_RE = re.compile(r"^(DW\d{4}) \[warning\] (\S+) (.+?): ")
+ANY_WARNING_RE = re.compile(r"^(DW\d{4}) \[warning\] ")
 
 
 def die(msg: str) -> None:
@@ -139,9 +148,20 @@ def build_one(delvec: Path, prefabs: Path, overlay: str | None, lang: str, work:
     manifest = json.loads((out / "manifest.json").read_text())
     rows = []
     for line in (r.stdout + r.stderr).splitlines():
-        m = WARNING_RE.match(line.strip())
+        stripped = line.strip()
+        m = WARNING_RE.match(stripped)
         if m:
             rows.append({"code": m.group(1), "stage": m.group(2), "pointer": m.group(3)})
+        elif ANY_WARNING_RE.match(stripped):
+            # Never `continue`. A warning the ledger cannot read is a warning the
+            # ledger cannot compare, and dropping it makes the set-equality claim
+            # false in exactly the direction that reads as a clean pass.
+            die(
+                "a warning line was emitted that this ledger cannot parse, so it "
+                "would have been dropped from the comparison in silence — the set "
+                "equality this file claims would be false and green:\n"
+                f"  {stripped[:200]}"
+            )
     return manifest, rows
 
 
@@ -162,7 +182,7 @@ def coverage_counts(delvec: Path) -> dict:
     Derived from the same enumeration the coverage gate uses, never a second one.
     """
     sys.path.insert(0, str(REPO / "tools"))
-    from gallery_units import Binder, Enumerator
+    from gallery_units import Binder, Enumerator, stage_files
 
     r = subprocess.run(
         [str(delvec), "schema", "--stage", "all"], capture_output=True, text=True
@@ -175,19 +195,9 @@ def coverage_counts(delvec: Path) -> dict:
     if not units:
         die("the schema export enumerated ZERO units; the header would record a lie")
 
-    stage_files = {
-        "world": "world.json",
-        "npcs": "npcs.json",
-        "classes": "classes.json",
-        "quest-plan": "quest-plan.json",
-        "quests": "quests.json",
-        "dialogue": "dialogue.json",
-        "world-edits": "world-edits.json",
-    }
-
     def bind_dir(root: Path, label: str, into: set) -> None:
         b = Binder(e)
-        for stage, fn in stage_files.items():
+        for stage, fn in stage_files(export).items():
             f = root / fn
             if f.is_file():
                 b.walk(export[stage], json.loads(f.read_text()), label)

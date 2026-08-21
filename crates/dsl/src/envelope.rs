@@ -5,13 +5,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{Diagnostic, codes};
 use crate::ids::CampaignId;
+use crate::layout::{GeometryBriefContent, LayoutGraphContent};
 use crate::stages::{
     ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
     WorldEditsContent,
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.12.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.13.0";
 
 /// The `dsl_version` that introduces the **`open-way`** effect (spec-0042 §2.4):
 /// a campaign opening a placed piece's contingent way, with the geometry, the
@@ -24,6 +25,22 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.12.0";
 /// its life, never two claims, so the row is deleted by the change that defines
 /// this constant.
 pub const OPEN_WAY_SINCE: &str = "0.12.0";
+
+/// The `dsl_version` at which a campaign may carry the spec-0049 map-pipeline
+/// documents: `geometry-brief.json` and `layout-graph.json`.
+///
+/// The **hand-written name** for `0.13.0`, and the reason it is written rather
+/// than derived is the reason [`RESERVED_DSL_VERSIONS`] gives: `is_v13` follows
+/// from the number, so two branches claiming `0.13.0` would produce the same
+/// anchor and the uniqueness gate would read one claim where there are two. A
+/// name an author chose cannot agree by accident.
+///
+/// This number was previously **reserved** for a surface with no scheduled work,
+/// and the row was cancelled rather than renumbered: a campaign built on a site
+/// plan cannot reach that surface at all, because spec-0049 §6 makes a campaign
+/// carry `areas[]` or a site plan and never both. The number was therefore being
+/// held in front of the live line on behalf of a road that is not being taken.
+pub const LAYOUT_GRAPH_SINCE: &str = "0.13.0";
 
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
@@ -102,17 +119,35 @@ pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
 /// why `tools/check-version-ledger-uniqueness.py` requires every version a
 /// branch **adds** to carry a hand-written name — a reservation row here, or a
 /// `*_SINCE` constant when the surface lands.
-pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[
-    // spec-0026: the stage-1 horizon library. Its branch had claimed `0.12.0`
-    // and lost it to `open-way` when the two were adjudicated; the replacement
-    // was never allocated, so the number that surface will define sat free for
-    // any author to take — the precise state this list exists to make
-    // impossible. Reserved rather than skipped, because the append-only rule
-    // means a skipped number can never be filled afterwards. The implementing
-    // change defines `HORIZON_LIBRARY_SINCE` and deletes this row in the same
-    // edit.
-    ("0.13.0", "HORIZON_LIBRARY_SINCE"),
-];
+///
+/// # The list is empty, and what that does and does not mean
+///
+/// It does not mean the mechanism is retired. A reservation still holds a number
+/// the moment one is genuinely owed, and every rule above still applies to it.
+///
+/// What it means is narrower and worth stating, because the alternative reading
+/// is that nothing is protecting the next free number. A row belongs here for a
+/// surface whose change is **in flight** — that is what "sibling" means, and it
+/// is the whole of what a row can do, since a row is a claim in THIS tree and a
+/// competing claim lives in a tree this crate cannot see. The last row was held
+/// for a surface with no scheduled work, which is a different thing: it stood in
+/// front of the live line on behalf of a road that may not be taken, and it made
+/// the ledger's own ordinal invariant unsatisfiable for the change that came
+/// next. Removing it is not a relaxation — the invariant it broke is asserted
+/// again below, unchanged.
+///
+/// The protection a standing row was approximating lives where it can actually
+/// see the other claim: the **allocation scan over every remote ref**, run
+/// before a round is dispatched, which is the only instrument that reads a
+/// number claimed on a branch that has not merged. `tools/check-version-ledger-
+/// uniqueness.py` is the same instrument's automatic half, and it diffs against
+/// `origin/main` alone — which is precisely why the scan exists and why the
+/// number a round will consume is handed to it rather than chosen by it.
+///
+/// A surface that lost its number to an adjudication takes a **fresh** one when
+/// it lands. Renumbering a standing reservation upward instead works exactly
+/// once and becomes a treadmill the moment two rows are pending.
+pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[];
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -375,6 +410,26 @@ pub fn is_v12(version: &str) -> bool {
     ordinal(version) >= 12
 }
 
+/// True if `version` enables the DSL v0.13 surface (spec-0049,
+/// [`LAYOUT_GRAPH_SINCE`]): the two **map-pipeline stage documents**, and
+/// nothing else.
+///
+/// * `geometry-brief.json` — the whole map's written brief reduced to numbers, a
+///   `facts[]` list a later site plan's identities bind to.
+/// * `layout-graph.json` — the campaign's space as a graph: places, the
+///   connections between them, the authored critical path, and where each quest
+///   beat happens. **No coordinate appears in either.**
+///
+/// Purely additive, and additive in the strongest sense available: both
+/// documents are optional files in a campaign directory, so a campaign that
+/// ships neither parses, validates and emits exactly as it did — there is no new
+/// field on any existing type for an older document to be judged against. Every
+/// check the two documents owe is reached only through the documents themselves,
+/// so a campaign without them binds zero of them and says so.
+pub fn is_v13(version: &str) -> bool {
+    ordinal(version) >= 13
+}
+
 /// Which stage a document belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -393,6 +448,13 @@ pub enum Stage {
     Dialogue,
     /// Stage 7 (optional; DSL v0.6, spec-0017): the map-editor edit script.
     WorldEdits,
+    /// The whole map's written brief, reduced to numbers (optional; DSL v0.13,
+    /// spec-0049 §4.2). Named, never renumbered into the 1..7 sequence: it is a
+    /// different pipeline's document and the two orderings are unrelated.
+    GeometryBrief,
+    /// The campaign's space as a graph, before any coordinate exists (optional;
+    /// DSL v0.13, spec-0049 §3).
+    LayoutGraph,
 }
 
 impl Stage {
@@ -407,8 +469,29 @@ impl Stage {
             Stage::Quests => "quests",
             Stage::Dialogue => "dialogue",
             Stage::WorldEdits => "world-edits",
+            Stage::GeometryBrief => "geometry-brief",
+            Stage::LayoutGraph => "layout-graph",
         }
     }
+
+    /// **Every stage, in document order.** The one enumeration.
+    ///
+    /// Hand-written stage lists are how a new document escapes a gate that was
+    /// written before it existed: `crates/dsl/tests/gate_consumers.rs` walked
+    /// seven stages by name, so a schema object declaring part of the gate in an
+    /// eighth would have been invisible to the check whose whole subject is that
+    /// no such object exists. Anything that means "over the stages" reads this.
+    pub const ALL: [Stage; 9] = [
+        Stage::World,
+        Stage::Npcs,
+        Stage::Classes,
+        Stage::QuestPlan,
+        Stage::Quests,
+        Stage::Dialogue,
+        Stage::WorldEdits,
+        Stage::GeometryBrief,
+        Stage::LayoutGraph,
+    ];
 }
 
 /// A stage document: `{ dsl_version, campaign_id, stage, content }`.
@@ -445,6 +528,10 @@ pub struct Campaign {
     /// `None` = no `world-edits.json` in the campaign directory — byte-identical
     /// to a campaign from before the stage existed.
     pub world_edits: Option<Envelope<WorldEditsContent>>,
+    /// The whole map's brief as numbers (optional; DSL v0.13, spec-0049 §4.2).
+    pub geometry_brief: Option<Envelope<GeometryBriefContent>>,
+    /// The campaign's space as a graph (optional; DSL v0.13, spec-0049 §3).
+    pub layout_graph: Option<Envelope<LayoutGraphContent>>,
 }
 
 /// The stage documents as raw JSON strings (compiler input): six required, the
@@ -466,6 +553,10 @@ pub struct RawCampaign {
     /// `world-edits.json` (optional stage 7, spec-0017); `None` when the
     /// campaign directory ships none.
     pub world_edits: Option<String>,
+    /// `geometry-brief.json` (optional; spec-0049 §4.2).
+    pub geometry_brief: Option<String>,
+    /// `layout-graph.json` (optional; spec-0049 §3).
+    pub layout_graph: Option<String>,
 }
 
 fn parse_stage<T: for<'de> Deserialize<'de>>(
@@ -526,6 +617,21 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         parse_stage(src, Stage::WorldEdits, &mut parsed, &mut diags);
         world_edits = parsed.map(Some);
     }
+    // The spec-0049 map-pipeline documents, on the same terms: absent = `None`
+    // and a campaign that ships neither is byte-identical to one from before
+    // they existed; present = parsed, validated and hashed like any other stage.
+    let mut geometry_brief: Result<Option<Envelope<GeometryBriefContent>>, ()> = Ok(None);
+    if let Some(src) = &raw.geometry_brief {
+        let mut parsed = Err(());
+        parse_stage(src, Stage::GeometryBrief, &mut parsed, &mut diags);
+        geometry_brief = parsed.map(Some);
+    }
+    let mut layout_graph: Result<Option<Envelope<LayoutGraphContent>>, ()> = Ok(None);
+    if let Some(src) = &raw.layout_graph {
+        let mut parsed = Err(());
+        parse_stage(src, Stage::LayoutGraph, &mut parsed, &mut diags);
+        layout_graph = parsed.map(Some);
+    }
 
     match (
         world,
@@ -535,6 +641,8 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         quests,
         dialogue,
         world_edits,
+        geometry_brief,
+        layout_graph,
     ) {
         (
             Ok(world),
@@ -544,6 +652,8 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
             Ok(quests),
             Ok(dialogue),
             Ok(world_edits),
+            Ok(geometry_brief),
+            Ok(layout_graph),
         ) => {
             let mut campaign = Campaign {
                 world,
@@ -553,6 +663,8 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
                 quests,
                 dialogue,
                 world_edits,
+                geometry_brief,
+                layout_graph,
             };
             // spec-0016 §3: expand the `ambush` sugar into real environment
             // triggers, ONCE, at the DSL boundary. Every downstream consumer —

@@ -29,6 +29,8 @@ pub fn valid_raw() -> RawCampaign {
         quests: read_valid("quests.json"),
         dialogue: read_valid("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
 }
 

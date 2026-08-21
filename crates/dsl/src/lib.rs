@@ -26,6 +26,7 @@ pub mod fmt;
 pub mod gate;
 pub mod ids;
 pub mod l10n;
+pub mod layout;
 pub mod mclang;
 pub mod metrics;
 pub mod prefab;
@@ -43,17 +44,17 @@ pub use effects::{
     for_each_effect_root_mut,
 };
 pub use envelope::{
-    Campaign, Envelope, OPEN_WAY_SINCE, RESERVED_DSL_VERSIONS, RawCampaign, SUPPORTED_DSL_VERSION,
-    SUPPORTED_DSL_VERSIONS, Stage, accepted_versions, check_campaign, is_supported_version, is_v03,
-    is_v04, is_v05, is_v06, is_v07, is_v08, is_v09, is_v10, is_v11, is_v12, minor_ordinal,
-    parse_campaign, reserved_for,
+    Campaign, Envelope, LAYOUT_GRAPH_SINCE, OPEN_WAY_SINCE, RESERVED_DSL_VERSIONS, RawCampaign,
+    SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage, accepted_versions, check_campaign,
+    is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09, is_v10, is_v11,
+    is_v12, is_v13, minor_ordinal, parse_campaign, reserved_for,
 };
 pub use fence::Fenced;
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DialogueId,
-    EditBatchId, EndingId, FlagId, LethalVolumeId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
-    RegionId, ShortcutId, StateId, TimedGateId, TriggerId, WaveId,
+    EdgeId, EditBatchId, EndingId, FactId, FlagId, LethalVolumeId, NodeId, NpcId, ObjectiveId,
+    PoolId, PrefabId, QuestId, RegionId, ShortcutId, StateId, TimedGateId, TriggerId, WaveId,
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
@@ -62,6 +63,10 @@ pub use l10n::{
     local_id, localize, on_screen_narrates, plain as l10n_plain, play_sound_actor_refs, sound_refs,
     tag_translatables, untag as l10n_untag, validate_l10n, validate_l10n_provenance,
     validate_marker_channel, validate_tr_sigil,
+};
+pub use layout::{
+    Beat, BriefFact, Closure, Direction, Edge, EdgeGating, GeometryBriefContent, Grant, Grants,
+    LayoutBinding, LayoutGraphContent, OpensFrom,
 };
 pub use mclang::mc_lang_code;
 pub use prefab::PrefabMeta;

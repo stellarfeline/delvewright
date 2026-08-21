@@ -499,6 +499,13 @@ pub enum MetricKind {
     SizeClass,
     /// A storey height (`storey.<name>`).
     Storey,
+    /// A pacing coefficient (`pacing.<name>`) — blocks of route per minute of
+    /// play. Named like the rest of the vocabulary rather than reached by a
+    /// second lookup, because [`Metrics::resolve`] is the ONE path from a name
+    /// to an entry and a coefficient read any other way would be a second
+    /// authority (spec-0049 §2.2). No campaign document names one; the pacing
+    /// projection does.
+    Pacing,
 }
 
 impl MetricKind {
@@ -510,6 +517,7 @@ impl MetricKind {
             MetricKind::Pitch => "pitch.",
             MetricKind::SizeClass => "size-class.",
             MetricKind::Storey => "storey.",
+            MetricKind::Pacing => "pacing.",
         }
     }
 
@@ -521,6 +529,7 @@ impl MetricKind {
             MetricKind::Pitch => "stair pitch",
             MetricKind::SizeClass => "size class",
             MetricKind::Storey => "storey height",
+            MetricKind::Pacing => "pacing coefficient",
         }
     }
 }

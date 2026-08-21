@@ -74,6 +74,8 @@ fn build(cutscene: &str) -> BuildOutput {
         quests: quests_doc(cutscene),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
     .expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

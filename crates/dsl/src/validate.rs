@@ -8,9 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, is_v11, is_v12,
+    is_v10, is_v11, is_v12, is_v13,
 };
 use crate::ids::is_kebab;
+use crate::metrics::Metrics;
 use crate::registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
     ItemRegistry, VendoredAnchorRegistry, VendoredEffectRegistry, VendoredEntityRegistry,
@@ -107,6 +108,20 @@ pub fn validate_campaign_with(
     if c.world_edits.is_some() {
         let blocks = ItemBackedBlockRegistry::new(items);
         world_edits_checks(c, &blocks, &mut d);
+    }
+    // spec-0049 (DSL v0.13): the map-pipeline documents. Bound to the EVENT it
+    // guards rather than to a step someone runs — a campaign directory holding a
+    // `layout-graph.json` has no path to a verdict that does not come through
+    // here, because this is the function every `delvec` subcommand's validation
+    // stage calls. The version fence is `reserved_v13`, below, and the reads
+    // ledger is what gives `DW0813` its document-side binding: every building
+    // metric these checks rest a verdict on records that it did.
+    if c.geometry_brief.is_some() || c.layout_graph.is_some() {
+        let mut reads = crate::metrics::Reads::new();
+        crate::layout::check(c, &mut reads, &mut d);
+        if let Some(notice) = Metrics::table().notice(&reads, "layout-graph") {
+            d.push(notice);
+        }
     }
     // DSL v0.8 (spec-0025): the declared story forks and the per-node
     // `happening`. Structural only — the branch proofs themselves (`DW048x`) are
@@ -544,6 +559,16 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 .iter()
                 .map(|e| (Stage::WorldEdits, e.stage, e.dsl_version.as_str())),
         )
+        .chain(
+            c.geometry_brief
+                .iter()
+                .map(|e| (Stage::GeometryBrief, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.layout_graph
+                .iter()
+                .map(|e| (Stage::LayoutGraph, e.stage, e.dsl_version.as_str())),
+        )
         .collect();
     for (expected, actual, version) in stages {
         if actual != expected {
@@ -590,6 +615,16 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
         c.world_edits
             .iter()
             .map(|e| (Stage::WorldEdits, &e.campaign_id)),
+    )
+    .chain(
+        c.geometry_brief
+            .iter()
+            .map(|e| (Stage::GeometryBrief, &e.campaign_id)),
+    )
+    .chain(
+        c.layout_graph
+            .iter()
+            .map(|e| (Stage::LayoutGraph, &e.campaign_id)),
     )
     .collect();
     let canonical = c.world.campaign_id.as_str();
@@ -1373,6 +1408,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v10(c, d);
     reserved_v11(c, d);
     reserved_v12(c, d);
+    reserved_v13(c, d);
     press_answer_checks(c, d);
     press_obligation_checks(c, d);
 }
@@ -1393,6 +1429,45 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// `DW0548`, `DW0549`), because a campaign below 0.12.0 cannot reach them: it
 /// cannot stage an `open-way` at all, and a piece whose way nothing opens is
 /// content rather than a defect (spec-0042 §2.5).
+/// The spec-0049 map-pipeline documents exist only at `dsl_version` 0.13.0.
+///
+/// A whole DOCUMENT is fenced here rather than a field, which is the only shape
+/// the fence has for a stage that did not exist: an older campaign has no
+/// `layout-graph.json`, so there is nothing on it to grandfather and nothing it
+/// could have been judged against. The refusal is `DW0141` like every other
+/// surface used below the version that introduced it, and it names the document
+/// rather than a path inside it, because raising one field's version would not
+/// make the file legal.
+fn reserved_v13(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (stage, version) in [
+        (
+            Stage::GeometryBrief,
+            c.geometry_brief.as_ref().map(|e| e.dsl_version.as_str()),
+        ),
+        (
+            Stage::LayoutGraph,
+            c.layout_graph.as_ref().map(|e| e.dsl_version.as_str()),
+        ),
+    ] {
+        let Some(version) = version else { continue };
+        if is_v13(version) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            stage.name(),
+            "/dsl_version",
+            format!(
+                "a `{name}` document requires dsl_version 0.13.0 and this one declares \
+                 `{version}` — raise this document's own `dsl_version` to 0.13.0, or delete the \
+                 file. It is a document of the map pipeline, which states a campaign's space \
+                 before any coordinate exists; no earlier version has anywhere to put it.",
+                name = stage.name(),
+            ),
+        ));
+    }
+}
+
 fn reserved_v12(c: &Campaign, d: &mut Vec<Diagnostic>) {
     if is_v12(c.quests.dsl_version.as_str()) {
         return;
@@ -4241,43 +4316,15 @@ fn v03_checks(
         }
     }
 
-    // Flags declared by `set-flag`; waves spawned by `spawn-wave` (first pass —
-    // needed before the reference checks below).
-    let mut declared_flags: BTreeSet<&str> = BTreeSet::new();
+    // Flags declared by `set-flag`, from the ONE producer inventory
+    // ([`produced_flags`]); waves spawned by `spawn-wave`.
+    let declared_flags: BTreeSet<String> = produced_flags(c);
     let mut spawned_waves: BTreeSet<&str> = BTreeSet::new();
-    // A `set-flag`/`spawn-wave` produces its flag/wave from anywhere it can fire —
-    // every root, at every nesting depth — so the producer scan is
-    // `for_each_campaign_effect`, which inherits both axes rather than listing
-    // either. It used to name four of the five roots: a `set-flag` in a dialogue
-    // option's `set-checkpoint` `on_respawn` bundle really is emitted (into
-    // `cp_on_respawn_<i>`) and this inventory could not see it, so the flag it
-    // produced looked never-produced everywhere else (`DW0172`).
     crate::stages::for_each_campaign_effect(c, &mut |_path, _site, e| {
-        if let Some(f) = e.set_flag() {
-            declared_flags.insert(f.as_str());
-        }
         if let Some(w) = e.spawn_wave() {
             spawned_waves.insert(w.as_str());
         }
     });
-    // v0.4: flags may also come from dialogue `set-flag` effects. NOT a root — a
-    // `DialogueEffect::SetFlag` is a flat outcome of a conversation, in the
-    // dialogue vocabulary, and the root walk above neither reaches it nor should.
-    // What the root walk DOES reach in this stage is the `set-checkpoint`
-    // `on_respawn` bundle nested inside a dialogue effect, which is quest-effect
-    // vocabulary. Empty for v0.2/v0.3 campaigns, so their flag resolution is
-    // unchanged.
-    for tree in &c.dialogue.content.dialogues {
-        for node in &tree.nodes {
-            for opt in &node.options {
-                for eff in &opt.effects {
-                    if let Some(f) = eff.set_flag() {
-                        declared_flags.insert(f.as_str());
-                    }
-                }
-            }
-        }
-    }
 
     // area id -> its single-prefab anchor set (pool areas deferred to compiler).
     let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();
@@ -8714,8 +8761,27 @@ pub fn declared_endings(c: &Campaign) -> BTreeSet<String> {
     out
 }
 
-/// Every flag some `set-flag` (quest, trigger, nested bundle, dialogue option or
-/// trap disarm) produces.
+/// **The one inventory of flags this campaign produces.**
+///
+/// A `FlagId` has no declaration list — the set of flags is exactly those the
+/// campaign produces — so every rule that asks *does this flag exist?* has to
+/// reconstruct that set, and a rule that reconstructs it differently is asking a
+/// different question under the same name. This is the answer all of them read:
+/// `DW0172`'s unknown-flag refusals over objectives, effects, triggers, traps,
+/// dialogue options and cast placements; `DW0480`'s over a declared branch's
+/// `forks_on`; and `DW0818`'s over a layout-graph edge's gating.
+///
+/// Three producers, and the third is the one a second inventory forgets. A
+/// `set-flag` fires from any effect root at any nesting depth, so the quest-side
+/// walk is [`crate::stages::for_each_campaign_effect`], which inherits both axes
+/// rather than listing either. A dialogue option's `set-flag` is a flat outcome
+/// of a conversation in the dialogue vocabulary, which that walk neither reaches
+/// nor should. And a **trap's `disarm.sets_flag`** is a flag no effect anywhere
+/// sets: the field's own documentation says other objectives and triggers may
+/// read it through `requires_flags`, and until this became the single authority
+/// `DW0172` was computing its own inventory that did not include it — so a
+/// campaign gating on a disarm was refused for naming a flag "no `set-flag`
+/// effect ever produces", which it never claimed to be.
 pub fn produced_flags(c: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     crate::stages::for_each_campaign_effect(c, &mut |_p, _site, eff| {

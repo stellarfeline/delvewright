@@ -77,11 +77,24 @@ jobs:
         id: probe
         continue-on-error: true
         run: |
-          set -o pipefail
+          # No `set -e` here: a non-zero exit is the expected case and is data.
+          # The previous form put `echo "exit=$?"` after the command under
+          # `bash -e`, so the line that records the code could only run when
+          # there was no code worth recording — the recorder firing exactly
+          # when there is nothing to record.
           crates/render/target/debug/delve-render fidelity-gate -o /tmp/fid \
             > /tmp/probe.out 2>&1
-          echo "exit=$?"
-        # The exit code is recorded by the step; the OUTPUT is the measurement.
+          code=$?
+          echo "exit=$code"
+          echo "probe_exit=$code" >> "$GITHUB_OUTPUT"
+          # The OUTPUT is the measurement, so it goes to the LOG as well as to
+          # the summary: a summary is readable by a person and by nothing else,
+          # and an answer only an eye can read is the same defect as a command
+          # whose response nobody reads.
+          echo "----- probe output begins -----"
+          cat /tmp/probe.out || true
+          echo "----- probe output ends -----"
+          exit 0
 
       - name: verdict
         if: always()
@@ -96,10 +109,23 @@ jobs:
             echo "(the probe produced no output)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          if grep -q "gpu init" /tmp/probe.out 2>/dev/null; then
-            echo "**Verdict: NO adapter.** wgpu could not open a device on this runner." >> "$GITHUB_STEP_SUMMARY"
-            echo "spec-0039 §7 branch: the CPU set is the CI floor; GPU shots are produced on a dev machine." >> "$GITHUB_STEP_SUMMARY"
+          # `grep -c` rather than `grep -q`: a count is reported whether it is
+          # zero or not, and reading the whole file removes the exit-at-match
+          # behaviour this repository has been bitten by. The verdict is written
+          # to BOTH the log and the summary, so a machine can read the answer.
+          hits=$(grep -c "gpu init" /tmp/probe.out 2>/dev/null || true)
+          hits=${hits:-0}
+          echo "gpu-init markers found: $hits"
+          if [ "$hits" -gt 0 ]; then
+            verdict="NO adapter — wgpu could not open a device on this runner."
+            branch="the CPU set is the CI floor; GPU shots are produced on a dev machine."
           else
-            echo "**Verdict: an adapter CAME UP.** Whatever this exited with, it got past device creation." >> "$GITHUB_STEP_SUMMARY"
-            echo "spec-0039 §7 branch: the GPU arms can join CI, with the fidelity gate (\`DW0720\`)." >> "$GITHUB_STEP_SUMMARY"
+            verdict="an adapter CAME UP — whatever this exited with, it got past device creation."
+            branch="the GPU arms can join CI, with the fidelity gate."
           fi
+          echo "VERDICT: $verdict"
+          echo "BRANCH: $branch"
+          {
+            echo "**Verdict: $verdict**"
+            echo "spec-0039 §7 branch: $branch"
+          } >> "$GITHUB_STEP_SUMMARY"

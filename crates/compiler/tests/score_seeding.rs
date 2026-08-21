@@ -36,6 +36,8 @@ fn parse_dir(dir: &std::path::Path) -> Campaign {
         quests: read("quests.json"),
         dialogue: read("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
     .expect("campaign parses")
 }
