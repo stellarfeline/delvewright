@@ -1,48 +1,66 @@
 //! What actually completes a `reach` — the single authority for the volume a
-//! body has to be in, read by the emitter that writes the selector and by the
-//! proof that the party can get into it.
+//! body has to be in, read by the emitter that writes the selector, by the
+//! artifact that hands the volume to the bot, and by the proof that the party
+//! can get into it.
 //!
 //! ## The defect this module exists to make impossible
 //!
-//! A `reach` objective is the campaign saying *arrive here*. Three separate
+//! A `reach` objective is the campaign saying *arrive here*. Four separate
 //! numbers decide whether arriving works, and until this module nothing ever
 //! compared them:
 //!
-//! * the **completion volume** the datapack tests — since v0.3 the anchor cell
-//!   with ±1 on every axis, a 3×3×3 cube ([`ReachVolume::Cube`]); at v0.2 a
-//!   `distance=..radius` sphere about the anchor point ([`ReachVolume::Sphere`]);
+//! * the **completion volume** the datapack tests — from v0.3 an axis-aligned
+//!   block region about the anchor cell ([`ReachCompletion::Cube`]); at v0.2 a
+//!   `distance=..radius` sphere about the anchor point
+//!   ([`ReachCompletion::Sphere`]);
+//! * the **walk goal** `critical-path.json` hands the harness, which used to be
+//!   derived from the authored `radius` on the bot's side;
 //! * the **footing** the world actually offers near that anchor, which is what
 //!   [`crate::nav::World::is_standable`] decides;
 //! * the **arrival** the route proof delivers, which is the snapped endpoint of
 //!   the leg walking to the anchor — snapped by
 //!   [`crate::nav::SNAP_RADIUS`], **three** blocks.
 //!
-//! The snap radius is three and the box half-extent is one. So a reach whose
-//! only standable cell is two or three blocks from its anchor satisfies every
-//! existing proof — `DW0311` finds footing, `DW0314` finds the route standable,
-//! the waypoint exports — and the player who walks to the cell the campaign
-//! itself routed them to is **outside the volume that completes the objective**.
-//! The delve stops there and every board is green.
+//! Two distinct pairs had drifted, and each drift is invisible in every artifact
+//! a board can read.
 //!
-//! That is the general form of the finding this module was written for: a
-//! reach-anchor's completion volume was a point sphere too tight for a human
-//! standing on the altar cell, so arriving did not complete the objective. The
-//! instance was repaired by widening the volume once, in the emitter, at v0.3.
-//! Nothing re-asserted it on a build, which meant the repair covered the volume
-//! that had been reported and no other — and the identical defect reached by a
-//! *different* number (snap distance rather than sphere radius) was left live.
+//! **The volume against the walk goal.** `radius` is authored once. The M2
+//! repair for a completion sphere too tight to stand in replaced the sphere with
+//! a fixed ±1 cube at v0.3 — and *replaced* is the defect: the authored number
+//! stopped reaching the datapack entirely, while the harness went on deriving
+//! its walk goal from it and aiming `radius - 1` blocks out, outside the box for
+//! every `radius` of 3 or more. The bot stopped short and hung on a completion
+//! that could not fire; it stayed green because a `GoalNear` usually overshoots
+//! inward, which makes the failure intermittent, and an intermittent failure is
+//! an under-specified test. So the v0.3+ half-extent is a **floor** on the
+//! authored radius (`max(1, radius)`), never a constant instead of it: the "too
+//! tight to stand in" instance stays closed at every radius, and the author's
+//! number means what it says again.
 //!
-//! ## Why the volume lives here rather than in the emitter
+//! **The volume against the footing.** The instance behind `DW0850` was repaired
+//! by widening the volume once, in the emitter, at v0.3. Nothing re-asserted it
+//! on a build, which meant the repair covered the volume that had been reported
+//! and no other — and the identical defect reached by a *different* number (snap
+//! distance rather than sphere radius) was left live. A reach whose only
+//! standable cell is further from the anchor than the volume reaches satisfies
+//! every existing proof — `DW0311` finds footing, `DW0314` finds the route
+//! standable, the waypoint exports — and the player who walks to the cell the
+//! campaign itself routed them to is **outside the volume that completes the
+//! objective**. The delve stops there and every board is green.
 //!
-//! Two readers must agree about a rule that is invisible in the DSL: the string
-//! [`crate::emit`] writes into `tick.mcfunction`, and the proof below. Where two
-//! sites decide one thing independently they eventually disagree, and this
+//! ## Why the volume lives here
+//!
+//! Three readers must agree about a rule that is invisible in the DSL: the
+//! string [`crate::emit`] writes into `tick.mcfunction`, the `completion` field
+//! [`crate::plan::Step::Reach`] exports to the harness, and the proof below.
+//! Where sites decide one thing independently they eventually disagree, and this
 //! particular disagreement is undetectable from any artifact — the selector
 //! looks right, the route looks right, and only a human standing on the spot
 //! finds out. So there is one function, exactly as
 //! [`crate::pressable::body_at`] is the one answer to *what does a click at this
-//! anchor land on*.
-
+//! anchor land on*. Every reader takes the whole value: the emitter **formats**
+//! its selector from it rather than restating an extent beside it, so a change
+//! to the rule cannot leave a stale number behind in a `format!`.
 use std::collections::BTreeMap;
 
 use crate::nav::{LegRoute, NavError, World};
@@ -63,47 +81,80 @@ pub const DW_REACH_UNCOMPLETABLE: DwCode = DwCode::every_version("DW0850");
 
 /// The volume a body has to be in for a `reach` objective to complete.
 ///
-/// Constructed only by [`ReachVolume::of`], which is the one place the rule is
-/// written down.
+/// Constructed only by [`reach_completion`], which is the one place the rule is
+/// written down. Carried verbatim by [`crate::plan::Step::Reach`] into
+/// `critical-path.json`, formatted into the `tick` selector by
+/// [`ReachCompletion::selector_args`], and judged by [`judge_reach_completion`]
+/// below — three readers of one value, none of them re-deriving it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReachVolume {
-    /// v0.3+: the anchor cell with ±1 on every axis — the 27 cells from
-    /// `min` to `max` inclusive. Emitted as `x=<min.x>,dx=2,…`, and vanilla's
-    /// `dx=2` spans three block columns, so the two agree by construction.
-    Cube {
-        /// Inclusive low corner.
-        min: [i32; 3],
-        /// Inclusive high corner.
-        max: [i32; 3],
-    },
-    /// v0.2: `distance=..radius` from the anchor point. Kept because v0.2
-    /// campaigns emit it and must stay byte-identical, and because the finding
-    /// this module exists for happened inside exactly this arm.
+pub enum ReachCompletion {
+    /// Pre-v0.3: `distance=..radius` about the anchor's block corner. Kept
+    /// because v0.2 campaigns emit it and must stay byte-identical, and because
+    /// the instance behind `DW0850` happened inside exactly this arm.
     Sphere {
         /// The anchor point the distance is measured from.
-        centre: [i32; 3],
-        /// The declared completion radius, in blocks.
+        pos: [i32; 3],
+        /// The authored completion radius, in blocks.
         radius: u32,
+    },
+    /// v0.3+: an axis-aligned block region about the anchor cell, inclusive
+    /// corners. Emitted as `x=<lo.x>,dx=<hi.x-lo.x>,…`, and vanilla's `dx=n`
+    /// spans `n + 1` block columns, so the two agree by construction.
+    Cube {
+        /// Inclusive low corner.
+        lo: [i32; 3],
+        /// Inclusive high corner.
+        hi: [i32; 3],
     },
 }
 
-impl ReachVolume {
-    /// The completion volume for a reach at `pos` with declared `radius`, under a
-    /// campaign whose quests stage is (`v03`) at or above 0.3.0.
-    ///
-    /// **The one place this rule is written.** [`crate::emit`] formats its
-    /// selector from the value this returns; the proof below judges the same
-    /// value.
-    pub fn of(v03: bool, pos: [i32; 3], radius: u32) -> Self {
-        if v03 {
-            ReachVolume::Cube {
-                min: [pos[0] - 1, pos[1] - 1, pos[2] - 1],
-                max: [pos[0] + 1, pos[1] + 1, pos[2] + 1],
+/// The completion volume for one `reach-anchor`, given the resolved anchor cell,
+/// the authored radius, and whether the campaign's quests stage is (`v03`) at or
+/// above 0.3.0.
+///
+/// **The one place this rule is written.**
+pub fn reach_completion(pos: [i32; 3], radius: u32, v03: bool) -> ReachCompletion {
+    if !v03 {
+        return ReachCompletion::Sphere { pos, radius };
+    }
+    // The FLOOR, not a replacement: never tighter than the ±1 that closed the
+    // "too tight for a standing body" instance, never narrower than what the
+    // author asked for.
+    let h = radius.max(1) as i32;
+    ReachCompletion::Cube {
+        lo: [pos[0] - h, pos[1] - h, pos[2] - h],
+        hi: [pos[0] + h, pos[1] + h, pos[2] + h],
+    }
+}
+
+impl ReachCompletion {
+    /// The `@s[...]` selector arguments the tick line adjudicates with.
+    pub fn selector_args(&self) -> String {
+        match self {
+            ReachCompletion::Sphere { pos, radius } => {
+                format!("x={},y={},z={},distance=..{radius}", pos[0], pos[1], pos[2])
             }
-        } else {
-            ReachVolume::Sphere {
-                centre: pos,
-                radius,
+            ReachCompletion::Cube { lo, hi } => format!(
+                "x={},dx={},y={},dy={},z={},dz={}",
+                lo[0],
+                hi[0] - lo[0],
+                lo[1],
+                hi[1] - lo[1],
+                lo[2],
+                hi[2] - lo[2]
+            ),
+        }
+    }
+
+    /// The same volume as `critical-path.json` carries it, so the harness walks
+    /// into the region the server is testing rather than into its own idea of one.
+    pub fn to_json(&self) -> serde_json::Value {
+        match self {
+            ReachCompletion::Sphere { pos, radius } => {
+                serde_json::json!({ "kind": "sphere", "pos": pos, "radius": radius })
+            }
+            ReachCompletion::Cube { lo, hi } => {
+                serde_json::json!({ "kind": "cube", "lo": lo, "hi": hi })
             }
         }
     }
@@ -118,15 +169,15 @@ impl ReachVolume {
     /// "the party completes this", rather than "the party might".
     pub fn certainly_completes_from(&self, c: [i32; 3]) -> bool {
         match *self {
-            ReachVolume::Cube { min, max } => (0..3).all(|i| c[i] >= min[i] && c[i] <= max[i]),
-            ReachVolume::Sphere { centre, radius } => {
+            ReachCompletion::Cube { lo, hi } => (0..3).all(|i| c[i] >= lo[i] && c[i] <= hi[i]),
+            ReachCompletion::Sphere { pos, radius } => {
                 // A body standing in cell `c` has its feet at the cell's centre
                 // column, at the cell's own floor height — the position vanilla
                 // measures `distance` from. The anchor point is the raw
                 // coordinate triple the selector carries.
-                let dx = (c[0] as f64 + 0.5) - centre[0] as f64;
-                let dy = c[1] as f64 - centre[1] as f64;
-                let dz = (c[2] as f64 + 0.5) - centre[2] as f64;
+                let dx = (c[0] as f64 + 0.5) - pos[0] as f64;
+                let dy = c[1] as f64 - pos[1] as f64;
+                let dz = (c[2] as f64 + 0.5) - pos[2] as f64;
                 (dx * dx + dy * dy + dz * dz).sqrt() <= radius as f64
             }
         }
@@ -136,12 +187,12 @@ impl ReachVolume {
     /// sphere arm is enumerated over its own integer bounding box.
     pub fn cells(&self) -> Vec<[i32; 3]> {
         let (min, max) = match *self {
-            ReachVolume::Cube { min, max } => (min, max),
-            ReachVolume::Sphere { centre, radius } => {
+            ReachCompletion::Cube { lo, hi } => (lo, hi),
+            ReachCompletion::Sphere { pos, radius } => {
                 let r = radius as i32 + 1;
                 (
-                    [centre[0] - r, centre[1] - r, centre[2] - r],
-                    [centre[0] + r, centre[1] + r, centre[2] + r],
+                    [pos[0] - r, pos[1] - r, pos[2] - r],
+                    [pos[0] + r, pos[1] + r, pos[2] + r],
                 )
             }
         };
@@ -159,13 +210,18 @@ impl ReachVolume {
     }
 
     /// How the volume reads in a diagnostic.
+    ///
+    /// The extent is **measured off the value**, never spelled out: the cube used
+    /// to be a fixed 3×3×3 and describing it as one would now be a diagnostic
+    /// that lies about the volume it is refusing.
     fn describe(&self) -> String {
         match *self {
-            ReachVolume::Cube { min, max } => {
-                format!("the 3×3×3 cube {min:?}..={max:?}")
+            ReachCompletion::Cube { lo, hi } => {
+                let span = hi[0] - lo[0] + 1;
+                format!("the {span}×{span}×{span} cube {lo:?}..={hi:?}")
             }
-            ReachVolume::Sphere { centre, radius } => {
-                format!("the sphere of radius {radius} about {centre:?}")
+            ReachCompletion::Sphere { pos, radius } => {
+                format!("the sphere of radius {radius} about {pos:?}")
             }
         }
     }
@@ -284,7 +340,7 @@ pub fn judge_reach_completion(
 ) -> Result<(), NavError> {
     let v03 = is_cube_campaign(plan);
     for site in sites(plan) {
-        let vol = ReachVolume::of(v03, site.pos, site.radius);
+        let vol = reach_completion(site.pos, site.radius, v03);
 
         let standable: Vec<[i32; 3]> = vol
             .cells()

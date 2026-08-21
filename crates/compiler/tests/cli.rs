@@ -2278,7 +2278,7 @@ fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
     let bolt: serde_json::Value =
         serde_json::from_slice(&tree["validation/branch-path-bolt.json"]).unwrap();
     // Same contract the harness parses — the version fields the bot checks first.
-    assert_eq!(bolt["format_version"], 2);
+    assert_eq!(bolt["format_version"], 3);
     assert_eq!(bolt["campaign_id"], "hello-world");
     let steps = bolt["steps"].as_array().unwrap();
     // The scripted choice rides inside the step: the bolt branch takes the option

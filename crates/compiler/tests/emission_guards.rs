@@ -337,3 +337,120 @@ fn non_mannequin_summon_is_unchanged() {
         "a villager must not gain a mannequin pose: {summon}"
     );
 }
+
+// --- DW0852: a stealth judge asks only where the player is ------------------
+//
+// A stealth beat is hiding, and hiding is a place. The emitter has promised that
+// since v0.6, in a doc comment — and a doc comment is a doc line, which this
+// project's doctrine says is not an invocation. A playtester met the promise from
+// the other side, as a scene that quietly required crouching when nothing in the
+// story had asked for it. These hold the rule against fabricated judges, where the
+// perturbation can be made without touching the emitter; `v06_checkpoints.rs`
+// holds it against a real build.
+
+/// One fabricated judge, spelled the way `emit_stealth_functions` spells one.
+fn judge(selector: &str) -> Vec<(String, String)> {
+    vec![(
+        "stealth_eval_1".to_string(),
+        format!(
+            "scoreboard players set @s dw.st_safe 0\n\
+             execute if entity @s[{selector}] run scoreboard players set @s dw.st_safe 1\n"
+        ),
+    )]
+}
+
+#[test]
+fn a_positional_stealth_judge_passes_and_says_what_it_examined() {
+    let a = emit::audit_stealth_judges(&judge("x=1,dx=4,y=64,dy=2,z=1,dz=4"), 1);
+    assert!(a.finding().is_none(), "{a:?}");
+    assert_eq!(a.examined, 1, "the binding count is the tests it read");
+    assert_eq!(a.judges, 1);
+    assert_eq!(a.arguments, ["dx", "dy", "dz", "x", "y", "z"]);
+    assert_eq!(a.ledger()["verdict"], "pass");
+}
+
+/// The instance the playtester hit: a judge that demands a posture.
+#[test]
+fn a_stealth_judge_demanding_a_crouch_is_dw0852() {
+    let a = emit::audit_stealth_judges(
+        &judge("x=1,dx=4,y=64,dy=2,z=1,dz=4,nbt={Pose:{Sneaking:1b}}"),
+        1,
+    );
+    let (code, msg) = a.finding().expect("a posture demand is a finding");
+    assert_eq!(code.id(), "DW0852");
+    assert!(
+        msg.contains("`nbt`"),
+        "names the offending argument:\n{msg}"
+    );
+    assert!(
+        msg.contains("stealth_eval_1"),
+        "names the function to fix:\n{msg}"
+    );
+    assert!(
+        msg.contains("Examined 1 per-player test(s)"),
+        "states its binding count:\n{msg}"
+    );
+    assert_eq!(a.ledger()["verdict"], "fail");
+}
+
+/// The general form, and the reason this is an allowlist. A denylist of the
+/// demands somebody has already thought of answers "not one of those" about the
+/// next one — honestly, and wrongly. Each of these is a way to ask a player for
+/// something other than where they are, and none of them is a crouch.
+#[test]
+fn any_demand_that_is_not_a_position_is_dw0852_whatever_it_is_spelled() {
+    for extra in [
+        "nbt={SelectedItem:{id:\"minecraft:torch\"}}",
+        "predicate=ns:holding_nothing",
+        "scores={dw.noise=0}",
+        "tag=dw_crouched",
+        "gamemode=adventure",
+        "advancements={ns:quiet=true}",
+        "team=hidden",
+    ] {
+        let a =
+            emit::audit_stealth_judges(&judge(&format!("x=1,dx=4,y=64,dy=2,z=1,dz=4,{extra}")), 1);
+        let (code, _) = a
+            .finding()
+            .unwrap_or_else(|| panic!("`{extra}` is a demand on the player and must red"));
+        assert_eq!(code.id(), "DW0852", "for `{extra}`");
+    }
+}
+
+/// The truncated-input mode, which is the one that would let this pass having
+/// proven nothing: rename the judge and the scan examines zero, finds nothing,
+/// and reports a clean bill about a smaller world than it claims to cover.
+#[test]
+fn a_judge_the_scan_cannot_see_is_dw0852_rather_than_a_pass() {
+    let renamed = vec![(
+        "stealth_adjudicate_1".to_string(),
+        "execute if entity @s[nbt={Pose:{Sneaking:1b}}] run say caught\n".to_string(),
+    )];
+    let a = emit::audit_stealth_judges(&renamed, 1);
+    assert_eq!(a.judges, 0, "the scan saw nothing");
+    assert!(a.scan_incomplete);
+    let (code, msg) = a.finding().expect("a scan that saw nothing is not a pass");
+    assert_eq!(code.id(), "DW0852");
+    assert!(
+        msg.contains("0 `stealth_eval_*` function(s) for 1 declared stealth beat(s)"),
+        "states both counts:\n{msg}"
+    );
+}
+
+/// The dispatcher is deliberately out of scope, and it must stay that way: its
+/// `@a[tag=!dw_cutscene]` is non-positional and correct — skipping a player
+/// watching a cinematic freezes the grace clock, it does not ask that player for
+/// anything. The distinction is between WHO is judged and WHAT the judgement asks.
+#[test]
+fn the_cutscene_skip_on_the_dispatcher_is_not_a_demand_on_the_player() {
+    let fns = vec![
+        (
+            "stealth_tick_1".to_string(),
+            "execute as @a[tag=!dw_cutscene] run function ns:stealth_eval_1\n".to_string(),
+        ),
+        judge("x=1,dx=4,y=64,dy=2,z=1,dz=4")[0].clone(),
+    ];
+    let a = emit::audit_stealth_judges(&fns, 1);
+    assert!(a.finding().is_none(), "{a:?}");
+    assert_eq!(a.judges, 1, "the dispatcher is not a judge");
+}

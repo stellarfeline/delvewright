@@ -1719,13 +1719,70 @@ fn the_bot_is_handed_the_same_path_with_one_cell_moved_inside_the_detailed_place
     assert!(!sa.is_empty(), "the fixture has a critical path");
     assert_eq!(sa.len(), sb.len(), "the same number of steps");
 
+    /// A step's displacement between the two builds, `detailed - massed`.
+    fn delta(x: &serde_json::Value, y: &serde_json::Value) -> [i64; 3] {
+        let (a, b) = (x.as_array(), y.as_array());
+        match (a, b) {
+            (Some(a), Some(b)) => std::array::from_fn(|i| {
+                a[i].as_i64().expect("coord") - b[i].as_i64().expect("coord")
+            }),
+            _ => [0; 3],
+        }
+    }
+
+    /// `v` with every `[x, y, z]` triple it holds translated by `d`.
+    fn shift(v: &serde_json::Value, d: [i64; 3]) -> serde_json::Value {
+        match v {
+            serde_json::Value::Array(a)
+                if a.len() == 3 && a.iter().all(serde_json::Value::is_i64) =>
+            {
+                serde_json::json!([
+                    a[0].as_i64().unwrap() + d[0],
+                    a[1].as_i64().unwrap() + d[1],
+                    a[2].as_i64().unwrap() + d[2],
+                ])
+            }
+            serde_json::Value::Object(o) => {
+                serde_json::Value::Object(o.iter().map(|(k, w)| (k.clone(), shift(w, d))).collect())
+            }
+            other => other.clone(),
+        }
+    }
+
     let mut moved = 0usize;
     for (x, y) in sa.iter().zip(sb.iter()) {
-        for (k, v) in x.as_object().unwrap() {
+        let xo = x.as_object().unwrap();
+        // The one displacement §7 permits, taken once so every field below is
+        // judged against it rather than against its own idea of what moved.
+        let d = match (xo.get("pos"), y.get("pos")) {
+            (Some(a), Some(b)) => delta(a, b),
+            _ => [0; 3],
+        };
+        if d != [0; 3] {
+            moved += 1;
+        }
+        for (k, v) in xo {
             if k == "pos" {
-                if v != &y["pos"] {
-                    moved += 1;
-                }
+                continue;
+            }
+            // `completion` is not an independent fact about the step: it is the
+            // anchor cell restated as the volume the server adjudicates in
+            // (`reach::reach_completion`), so it necessarily follows `pos`.
+            // Exempting it would be the weakening; demanding that it move by
+            // EXACTLY the displacement `pos` moved by is stronger than the
+            // equality it replaces, because it refuses a volume that failed to
+            // follow the re-bound anchor — one clamped, cached, or resolved
+            // against the massing's cell — and refuses one that changed shape on
+            // the way. What it deliberately does NOT judge is the extent rule
+            // itself, which is the same on both sides of this comparison;
+            // `tests/reach_completion.rs` owns that.
+            if k == "completion" {
+                assert_eq!(
+                    Some(v),
+                    y.get(k).map(|w| shift(w, d)).as_ref(),
+                    "step field `completion` did not follow `pos` by {d:?}; it is the \
+                     anchor cell restated as a volume and may move only with it"
+                );
                 continue;
             }
             assert_eq!(

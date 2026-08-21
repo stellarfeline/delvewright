@@ -1138,7 +1138,17 @@ const HORIZ4: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
 /// 2. [`spread`] then flows the completed source set outward (7-level decay +
 ///    infinite downward), omitting only vanilla's drop-seeking direction preference
 ///    (a safe over-mark).
-fn flood(solid: &BTreeSet<[i32; 3]>, sources: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
+///
+/// `pub(crate)` rather than private because the **ambient sea** is a second
+/// source of water this world has and the block map does not
+/// ([`crate::nav::measure_sea_seepage`], `DW0851`). That proof seeds this same
+/// function from the sea's contact face instead of writing a second physics —
+/// one flow model, two seed sets, so a change to decay or to source formation
+/// cannot leave the two disagreeing about the same room.
+pub(crate) fn flood(
+    solid: &BTreeSet<[i32; 3]>,
+    sources: &BTreeSet<[i32; 3]>,
+) -> BTreeSet<[i32; 3]> {
     if sources.is_empty() {
         return BTreeSet::new();
     }

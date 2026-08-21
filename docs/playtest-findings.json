@@ -27,9 +27,9 @@
         "kind": "dw"
       },
       "finding": "a reach-anchor's completion volume was a point sphere too tight for a human standing on the altar cell, so arriving did not complete the objective",
-      "general_form": "a reach objective's completion volume contains a cell a body can stand in, and the footing the route proof delivers the party to is inside that volume; the emitted volume and the proof read one authority (compiler::reach::ReachVolume), so the selector and the check cannot disagree",
+      "general_form": "a reach objective's completion volume contains a cell a body can stand in, and the footing the route proof delivers the party to is inside that volume; the emitted volume, the volume critical-path.json hands the bot and the volume the proof judges are one authority (compiler::reach::reach_completion), so no two of them can disagree",
       "id": "hv-01",
-      "note": "Closed as a property, not as the reported volume. Widening v0.3+ to a 3x3x3 cube fixed the sphere that had been reported and left the same defect reachable by a different number: nav::SNAP_RADIUS is 3 and the cube half-extent is 1, so a reach whose only footing is two or three blocks out routes green (DW0311), exports green (DW0314) and never fires. DW0850 refuses both.",
+      "note": "Closed as a property, not as the reported volume. Widening v0.3+ to a 3x3x3 cube fixed the sphere that had been reported and left the same defect reachable by a different number: nav::SNAP_RADIUS is 3, so a reach whose only footing lies further out than the completion volume reaches routes green (DW0311), exports green (DW0314) and never fires. DW0850 refuses both. The v0.3+ half-extent is now the authored radius with a floor of 1 rather than the fixed 1 that repair left behind, so the gap survives only where an author writes a radius below the snap radius.",
       "round": 1,
       "triage": "capability"
     },
@@ -669,11 +669,31 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "begin-stealth"
+          }
+        }
+      },
+      "binding": {
+        "file": "stealth-judge.json",
+        "kind": "artifact",
+        "path": "examined"
+      },
       "campaign": "nobodys-cave-island",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0852",
+        "kind": "dw"
+      },
       "finding": "a stealth beat demanded the player crouch, which the fiction never asked for",
-      "general_form": "presence in a declared zone is what stealth reads; no posture is required (closed by construction at v0.6). Nothing re-asserts it on a build",
+      "general_form": "a stealth judge's per-player test reads where the body is and nothing else; any other selector argument is a demand the fiction never made",
       "id": "isl-19",
+      "note": "Closed by construction at v0.6 and promised in the emitter's own doc comment, which is a doc line. DW0852 is the invocation: every build of a campaign that declares a stealth beat audits its FINAL emitted function list and ships the count. The rule is an allowlist of the six position arguments, never a denylist of the demands somebody has already thought of, and it is scoped to the per-player judge rather than the dispatcher — whose cutscene skip freezes the grace clock instead of asking the player for anything.",
       "round": 5,
       "triage": "content"
     },
@@ -1990,11 +2010,26 @@
       "triage": "capability"
     },
     {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "horizon": "ocean"
+          }
+        }
+      },
       "campaign": "tide-mill",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0851",
+        "kind": "dw"
+      },
       "finding": "an interior room in an ocean-horizon world sat one block under sea level and its whole walk plane flooded a minute after boot, while the compiler modelled it dry",
-      "general_form": "the assembled model accounts for water that will flow after placement, so a walk plane the compiler proves dry is dry in play",
+      "general_form": "the ambient sea is part of the assembled model: a walk plane the compiler proves standable is not one the sea will be standing over",
       "id": "tm-02",
+      "note": "The verdict is the HEAD cell, not the feet. A body wading at the waterline is walking where the game agrees it can walk, and refusing that reds the released nobodys-cave-island's west bank — 26 reachable cells at exactly sea level, every one the campaign has at or below the waterline, none head-deep. Those cells are counted as `walk_cells_wading` in `validation/sea-seepage.json` rather than judged, so the shoreline stays a number a reader can act on. Still open, for a later round with a campaign that shows it: a walk plane at exactly sea level INSIDE a room reads the same as a shore and is not refused.",
       "round": "2026-08-04",
       "triage": "capability"
     },
