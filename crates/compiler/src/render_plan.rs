@@ -26,6 +26,35 @@
 //! there is no RNG or wall-clock input — so `render-plan.json` rides the ADR-0006
 //! double-build byte-identity gate like every other output.
 //!
+//! ## Every camera's eye cell is proven clear (`DW0724`)
+//!
+//! A camera whose eye cell holds a block renders the inside of that block, and a
+//! picture of the inside of a block is indistinguishable from a picture of a
+//! featureless room. That is a fact about **a camera**, so it holds for every kind
+//! here and not just for the one that needed it first — `Shots::push` is the
+//! single door a shot enters through, and [`render_plan`] is the only constructor
+//! of a plan document, so it takes the assembled world and proves every eye
+//! before there is a document at all.
+//!
+//! Six of the seven kinds place their camera at a fixed stand-off from the thing
+//! they frame, and a fixed offset into authored geometry lands inside a block
+//! about a quarter of the time. Measured over every campaign and fixture that
+//! builds: **204 of 752 cameras** — 144 seam, 38 gate, 16 NPC, 6 interact — stood
+//! inside a block, and every one of the 27 campaigns had at least one. So the
+//! stand-off is a *preference*, not a position: a camera whose own cell holds a
+//! block stands instead at the furthest clear point on its own sight line
+//! ([`crate::camera::stand_in_open_air`], the mechanism `delvec snapshot --at`
+//! already used and kept to itself), and says so (`camera.requested_pos` +
+//! `camera.standoff`), because a displaced camera is invisible in its own frame.
+//! It yields to that one fact and nothing else — an interior shot's eye is
+//! deliberately outside the room and is not pulled through the roof it is
+//! looking past.
+//!
+//! `pov` is the exception, and the object decides it rather than the author: that
+//! eye IS the player's, 1.62 over a DW0314-proven-standable waypoint, so moving
+//! it would stop it being the player's view. It is never moved, and a violation
+//! there stays a hard `DW0724` against the derivation.
+//!
 //! ## Player-POV shots (the player's own eye)
 //!
 //! The other kinds are overhead/orbit cameras — useful for assembly review but not
@@ -38,8 +67,8 @@
 //! `expect` line composed from campaign data (area name + objective/anchor names +
 //! hint) — the (image ↔ expect) pair a vision model reviews. Every POV eye sits at
 //! the eye-height of a DW0314-proven-standable waypoint, so the camera is provably
-//! in open air; the DW0724 self-check ([`crate::nav::verify_pov_cameras`]) enforces
-//! it structurally.
+//! in open air; the DW0724 self-check ([`crate::nav::verify_camera_eyes`]) enforces
+//! it structurally, for this kind and every other.
 //!
 //! ## `horizon` (the render layer is told, never guesses)
 //!
@@ -65,16 +94,21 @@
 //! amplified noise), so `delvec scene` uses the stamp to apply its
 //! documented night-vision review emulation to exactly those shots and no others.
 
-use delvewright_dsl::{AreaMitigation, Campaign, Horizon, LightingProfile, Objective};
+use delvewright_dsl::{AreaMitigation, Campaign, Diagnostic, Horizon, LightingProfile, Objective};
 use serde_json::{Value, json};
 
-use crate::nav::LegRoute;
+use crate::nav::{CameraEye, LegRoute, NavError, World};
 use crate::plan::{Plan, ResolvedAnchor, Step};
 use crate::registry::PrefabRegistry;
 
 /// Player eye height above the standing cell's floor (vanilla: 1.62 blocks). The
 /// first-person camera sits here so a render frames exactly what the player sees.
-pub const EYE_HEIGHT: f64 = 1.62;
+///
+/// The metrics table (spec-0049 §2) is the one definition. A camera that framed
+/// a different eye from the one the navigation model proves standability for
+/// would be photographing a body that is not the player's, and before the table
+/// there was nothing that could have gone red about it.
+pub use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT as EYE_HEIGHT;
 
 /// First-person field of view, degrees (vanilla default ~70°).
 pub const POV_FOV_DEG: f64 = 70.0;
@@ -185,12 +219,18 @@ impl PovShot {
     /// The integer block the eye sits in — the cell the DW0724 clear-eye self-check
     /// verifies is unoccupied.
     pub fn eye_cell(&self) -> [i32; 3] {
-        [
-            self.eye[0].floor() as i32,
-            self.eye[1].floor() as i32,
-            self.eye[2].floor() as i32,
-        ]
+        eye_cell(self.eye)
     }
+}
+
+/// The integer block a camera eye sits in. One derivation, shared by every shot
+/// kind, so "which cell is this camera in" cannot mean two things.
+pub fn eye_cell(eye: [f64; 3]) -> [i32; 3] {
+    [
+        eye[0].floor() as i32,
+        eye[1].floor() as i32,
+        eye[2].floor() as i32,
+    ]
 }
 
 /// Plan the deterministic first-person POV shot list from the DW0311-proven
@@ -464,20 +504,165 @@ fn local_of(id: &str) -> String {
     id.rsplit('/').next().unwrap_or(id).to_string()
 }
 
-/// A camera JSON value with an explicit `fov` (POV shots carry the first-person
-/// FOV so the renderer frames what the player sees).
-fn pov_camera(pos: [f64; 3], look_at: [f64; 3], fov: f64) -> Value {
-    let mut cam = camera(pos, look_at);
-    cam.as_object_mut()
-        .unwrap()
-        .insert("fov".to_string(), json!(round3(fov)));
-    cam
+// ---- one door into the shot list ------------------------------------------
+
+/// One shot on its way into the plan, as [`Shots::push`] takes it.
+///
+/// Every kind fills the same fields, so a kind cannot quietly acquire a camera
+/// nobody else's rules apply to. In particular there is no way to state a camera
+/// position here without the eye cell being recorded for the clear-eye proof:
+/// both come from this one `eye`.
+struct Shot {
+    /// Stable shot id (`spawn`, `seam/keep/0`, `pov/leg0/wp3`, …).
+    id: String,
+    /// The shot `kind` string, and the kind the diagnostic names.
+    kind: &'static str,
+    /// The area the shot belongs to (`""` when the plan cannot name one).
+    area: String,
+    /// The camera eye, in world coordinates.
+    eye: [f64; 3],
+    /// The point the camera is aimed at.
+    look_at: [f64; 3],
+    /// An explicit field of view, for the kinds that frame like a player.
+    fov: Option<f64>,
+    /// Top-level keys this kind carries beyond the common ones.
+    extra: Vec<(&'static str, Value)>,
+    /// The machine `expect` checklist a vision review reads against the frame.
+    expect: Vec<Value>,
+    /// Whether the area's stage-1 `lighting` declaration is stamped on
+    /// ([`area_lighting_stamp`]).
+    stamped: bool,
 }
 
-/// Build the `render-plan.json` value for a compiled plan.
-pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Value {
+/// The shot list under construction, the eye cells the clear-eye proof owes a
+/// verdict on, and the world both are judged against.
+///
+/// [`Shots::push`] is the only way a shot enters the plan, and it does three
+/// things no kind may skip: it stands the camera up in open air, it writes the
+/// resulting eye into the shot's `camera`, and it records that same eye for the
+/// `DW0724` proof. A kind added later gets all three whether or not its author
+/// thought about it — which is the whole finding this shape exists to answer,
+/// since both the standing-up and the proof used to belong to one caller each.
+struct Shots<'c> {
+    campaign: &'c Campaign,
+    world: &'c World,
+    shots: Vec<Value>,
+    eyes: Vec<CameraEye>,
+    /// How many cameras could not stand at their requested stand-off.
+    pulled_in: usize,
+}
+
+impl<'c> Shots<'c> {
+    fn new(campaign: &'c Campaign, world: &'c World) -> Self {
+        Shots {
+            campaign,
+            world,
+            shots: Vec::new(),
+            eyes: Vec::new(),
+            pulled_in: 0,
+        }
+    }
+
+    fn push(&mut self, shot: Shot) {
+        // A `pov` camera is the PLAYER's eye: it is already 1.62 above a
+        // DW0314-proven-standable waypoint, and moving it would stop it being the
+        // player's view — the one thing that kind exists to show. Every other kind
+        // states a stand-off from a subject it frames, which is a preference and
+        // not a position. The distinction is a property of the kind, so it is read
+        // off the kind here rather than chosen per shot.
+        let requested = shot.eye;
+        let eye = if shot.kind == "pov" || self.world.is_clear(eye_cell(requested)) {
+            // The requested stand-off is honoured wherever it can be: an interior
+            // shot's dollhouse eye ABOVE the piece is deliberately outside the
+            // room (the renderer strips the ceiling), and pulling it down the
+            // sight line just because a roof is in the way would replace the
+            // framing this kind exists for. The stand-off yields to exactly one
+            // fact — that the cell it names holds a block.
+            requested
+        } else {
+            crate::camera::stand_in_open_air(
+                |cell| !self.world.is_clear(cell),
+                shot.look_at,
+                requested,
+            )
+            .unwrap_or(requested)
+        };
+        let moved = eye != requested;
+        if moved {
+            self.pulled_in += 1;
+        }
+        let mut cam = camera(eye, shot.look_at);
+        let cam_obj = cam.as_object_mut().expect("camera is a JSON object");
+        if let Some(fov) = shot.fov {
+            cam_obj.insert("fov".to_string(), json!(round3(fov)));
+        }
+        if moved {
+            // A displaced camera is invisible in its own frame, so the plan says
+            // where it was asked to stand and why it does not.
+            cam_obj.insert(
+                "requested_pos".to_string(),
+                json!([
+                    round3(requested[0]),
+                    round3(requested[1]),
+                    round3(requested[2])
+                ]),
+            );
+            cam_obj.insert(
+                "standoff".to_string(),
+                json!(
+                    "pulled-in — the requested stand-off is inside geometry; the camera stands \
+                       at the furthest clear point on its own sight line"
+                ),
+            );
+        }
+        let mut obj = serde_json::Map::new();
+        obj.insert("id".to_string(), json!(shot.id));
+        obj.insert("kind".to_string(), json!(shot.kind));
+        obj.insert("area".to_string(), json!(shot.area));
+        for (k, v) in shot.extra {
+            obj.insert(k.to_string(), v);
+        }
+        obj.insert("camera".to_string(), cam);
+        obj.insert("expect".to_string(), Value::Array(shot.expect));
+        if shot.stamped
+            && let Some(stamp) = area_lighting_stamp(self.campaign, &shot.area)
+        {
+            obj.insert("lighting".to_string(), stamp);
+        }
+        self.eyes.push(CameraEye {
+            shot_id: shot.id,
+            kind: shot.kind,
+            cell: eye_cell(eye),
+        });
+        self.shots.push(Value::Object(obj));
+    }
+}
+
+/// Build the `render-plan.json` value for a compiled plan (spec-0003), proving
+/// every camera's eye cell clear in `world` — the final assembled model the shots
+/// will be rendered from — before there is a document at all.
+///
+/// There is no way to a render-plan value that skips the proof: this function is
+/// the only constructor and it takes the world. Returns `DW0724` naming the first
+/// camera that could not be stood up, and — alongside the document — any
+/// advisory the proof owes, including the zero-binding one.
+///
+/// The document states its own binding counts (`camera_eye_proof`: how many
+/// cameras were examined, how many had to be pulled in), because a proof that
+/// examined nothing must not read like a proof that examined everything and found
+/// nothing.
+///
+/// Pure and deterministic: shot order is spawn → per-area interiors + seams →
+/// NPCs → interacts → gates → player-POV, every list plan-ordered or sorted, no
+/// RNG and no clock, so the result rides the ADR-0006 double-build gate.
+pub fn render_plan(
+    plan: &Plan,
+    prefabs: &PrefabRegistry,
+    pov: &[PovShot],
+    world: &World,
+) -> Result<(Value, Vec<Diagnostic>), NavError> {
     let c = plan.campaign;
-    let mut shots: Vec<Value> = Vec::new();
+    let mut out = Shots::new(c, world);
 
     // --- spawn -------------------------------------------------------------
     if let Some((area, pos, facing)) = spawn_of(plan) {
@@ -487,16 +672,22 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
         // the way the player faces.
         let eye = [base[0] - f[0] * 5.0, base[1] + 3.0, base[2] - f[2] * 5.0];
         let look = [base[0] + f[0] * 2.0, base[1] + 1.0, base[2] + f[2] * 2.0];
-        shots.push(json!({
-            "id": "spawn",
-            "kind": "spawn",
-            "area": area,
-            "camera": camera(eye, look),
-            "expect": [
-                "spawn point clear — player can stand, not suffocating or falling",
-                "area entry framed — no void gap at the floor",
+        out.push(Shot {
+            id: "spawn".to_string(),
+            kind: "spawn",
+            area,
+            eye,
+            look_at: look,
+            fov: None,
+            extra: Vec::new(),
+            expect: vec![
+                Value::String(
+                    "spawn point clear — player can stand, not suffocating or falling".into(),
+                ),
+                Value::String("area entry framed — no void gap at the floor".into()),
             ],
-        }));
+            stamped: false,
+        });
     }
 
     // --- per-area interiors + seams ---------------------------------------
@@ -527,15 +718,17 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
                 }
                 None => "room lighting unmeasured — verify readability".into(),
             }));
-            let shot = json!({
-                "id": format!("interior/{}/{pi}", short(&area.area_id)),
-                "kind": "interior",
-                "area": area.area_id,
-                "prefab": piece.prefab_id,
-                "camera": camera(eye, look),
-                "expect": expect,
+            out.push(Shot {
+                id: format!("interior/{}/{pi}", short(&area.area_id)),
+                kind: "interior",
+                area: area.area_id.clone(),
+                eye,
+                look_at: look,
+                fov: None,
+                extra: vec![("prefab", json!(piece.prefab_id))],
+                expect,
+                stamped: true,
             });
-            push_stamped(&mut shots, c, &area.area_id, shot);
         }
         // Seam (doorway) shots: air-clear seals are cut openings between mated
         // pieces; wall-fill seals seal dead-end sockets (skipped — nothing to see).
@@ -548,16 +741,20 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
             let mut n = [0.0, 0.0, 0.0];
             n[axis] = 1.0;
             let eye = [ctr[0] + n[0] * 4.0, ctr[1] + 1.5, ctr[2] + n[2] * 4.0];
-            shots.push(json!({
-                "id": format!("seam/{}/{si}", short(&area.area_id)),
-                "kind": "seam",
-                "area": area.area_id,
-                "camera": camera(eye, ctr),
-                "expect": [
-                    "seam between pieces shows no floating or clipped blocks",
-                    "doorway opening is clear — passage traversable",
+            out.push(Shot {
+                id: format!("seam/{}/{si}", short(&area.area_id)),
+                kind: "seam",
+                area: area.area_id.clone(),
+                eye,
+                look_at: ctr,
+                fov: None,
+                extra: Vec::new(),
+                expect: vec![
+                    Value::String("seam between pieces shows no floating or clipped blocks".into()),
+                    Value::String("doorway opening is clear — passage traversable".into()),
                 ],
-            }));
+                stamped: false,
+            });
         }
     }
 
@@ -591,18 +788,25 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
         // facing the player), so the camera stands there and looks back at the NPC.
         let eye = [base[0] + f[0] * 4.0, base[1] + 1.6, base[2] + f[2] * 4.0];
         let look = [base[0], base[1] + 1.0, base[2]];
-        shots.push(json!({
-            "id": format!("npc/{}", short(&npc.npc_id)),
-            "kind": "npc",
-            "area": area,
-            "npc": npc.npc_id,
-            "camera": camera(eye, look),
-            "expect": [
-                format!("NPC named \"{name}\" faces the camera"),
-                "NPC name tag renders as readable text — not literal JSON/SNBT",
-                "NPC stands on the floor — not floating, sunk, or clipping a wall",
+        out.push(Shot {
+            id: format!("npc/{}", short(&npc.npc_id)),
+            kind: "npc",
+            area,
+            eye,
+            look_at: look,
+            fov: None,
+            extra: vec![("npc", json!(npc.npc_id))],
+            expect: vec![
+                Value::String(format!("NPC named \"{name}\" faces the camera")),
+                Value::String(
+                    "NPC name tag renders as readable text — not literal JSON/SNBT".into(),
+                ),
+                Value::String(
+                    "NPC stands on the floor — not floating, sunk, or clipping a wall".into(),
+                ),
             ],
-        }));
+            stamped: false,
+        });
     }
 
     // --- interact anchors --------------------------------------------------
@@ -623,14 +827,17 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
                 delvewright_dsl::l10n_plain(&h)
             )));
         }
-        shots.push(json!({
-            "id": format!("interact/{}", short(&obj_id)),
-            "kind": "interact",
-            "area": area,
-            "objective": obj_id,
-            "camera": camera(eye, look),
-            "expect": expect,
-        }));
+        out.push(Shot {
+            id: format!("interact/{}", short(&obj_id)),
+            kind: "interact",
+            area,
+            eye,
+            look_at: look,
+            fov: None,
+            extra: vec![("objective", json!(obj_id))],
+            expect,
+            stamped: false,
+        });
     }
 
     // --- gates (both sides) -----------------------------------------------
@@ -644,16 +851,24 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
             let mut off = [0.0, 0.0, 0.0];
             off[axis] = sign * 4.0;
             let eye = [ctr[0] + off[0], ctr[1] + 1.0, ctr[2] + off[2]];
-            shots.push(json!({
-                "id": format!("gate/{}/{}/{side}", short(area), short(anchor)),
-                "kind": "gate",
-                "area": area,
-                "camera": camera(eye, ctr),
-                "expect": [
-                    format!("gate of {block} spans the opening — no gaps when closed"),
-                    "gate approach clear from this side — passage blocked until opened",
+            out.push(Shot {
+                id: format!("gate/{}/{}/{side}", short(area), short(anchor)),
+                kind: "gate",
+                area: area.clone(),
+                eye,
+                look_at: ctr,
+                fov: None,
+                extra: Vec::new(),
+                expect: vec![
+                    Value::String(format!(
+                        "gate of {block} spans the opening — no gaps when closed"
+                    )),
+                    Value::String(
+                        "gate approach clear from this side — passage blocked until opened".into(),
+                    ),
                 ],
-            }));
+                stamped: false,
+            });
         }
     }
 
@@ -663,18 +878,35 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
     for shot in pov {
         let mut expect: Vec<Value> = vec![Value::String(shot.expect_line.clone())];
         expect.extend(shot.extra_expect.iter().cloned().map(Value::String));
-        let v = json!({
-            "id": shot.id,
-            "kind": "pov",
-            "area": shot.area,
-            "leg": shot.leg,
-            "waypoint": shot.wp,
-            "objective": shot.objective,
-            "standing_cell": shot.standing_cell,
-            "camera": pov_camera(shot.eye, shot.look_at, POV_FOV_DEG),
-            "expect": expect,
+        out.push(Shot {
+            id: shot.id.clone(),
+            kind: "pov",
+            area: shot.area.clone(),
+            eye: shot.eye,
+            look_at: shot.look_at,
+            fov: Some(POV_FOV_DEG),
+            extra: vec![
+                ("leg", json!(shot.leg)),
+                ("waypoint", json!(shot.wp)),
+                ("objective", json!(shot.objective)),
+                ("standing_cell", json!(shot.standing_cell)),
+            ],
+            expect,
+            stamped: true,
         });
-        push_stamped(&mut shots, c, &shot.area, v);
+    }
+
+    crate::nav::verify_camera_eyes(world, &out.eyes)?;
+    let mut warnings = Vec::new();
+    if out.eyes.is_empty() {
+        warnings.push(Diagnostic::warning(
+            crate::nav::DW_CAMERA_EYE_OCCLUDED,
+            "world",
+            "/shots",
+            "the visual tier's clear-eye proof examined ZERO cameras: this campaign's render plan \
+             holds no shots at all, so nothing in it is proven and nothing in it can be reviewed. \
+             A zero binding is a finding, not a pass.",
+        ));
     }
 
     let (amin, amax) = layout_aabb(plan);
@@ -683,14 +915,15 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
         "campaign_id": plan.namespace,
         "layout_aabb": { "min": amin, "max": amax },
         "camera_convention": "yaw/pitch degrees; yaw=atan2(-dz,dx) (0=+X,90=-Z); pitch=atan2(-dy,horiz) (+down)",
-        "shots": shots,
+        "camera_eye_proof": { "cameras": out.eyes.len(), "pulled_in": out.pulled_in },
+        "shots": out.shots,
     });
     if let Some(h) = horizon_fact(c) {
         root.as_object_mut()
             .expect("render plan root is a JSON object")
             .insert("horizon".to_string(), h);
     }
-    root
+    Ok((root, warnings))
 }
 
 /// The world-generator horizon (spec-0013) as the render layer needs it, or
@@ -765,18 +998,6 @@ fn area_lighting_stamp(c: &Campaign, area_id: &str) -> Option<Value> {
         stamp.insert("mitigation".to_string(), json!(name));
     }
     Some(Value::Object(stamp))
-}
-
-/// Push `shot` after stamping it with its area's `lighting` declaration (no-op
-/// for undeclared areas — the key is absent, not null, so byte output only
-/// changes for campaigns that declare).
-fn push_stamped(shots: &mut Vec<Value>, c: &Campaign, area_id: &str, mut shot: Value) {
-    if let Some(stamp) = area_lighting_stamp(c, area_id) {
-        shot.as_object_mut()
-            .expect("shot is a JSON object")
-            .insert("lighting".to_string(), stamp);
-    }
-    shots.push(shot);
 }
 
 /// Whether a placed prefab's **measured** lighting profile is `lit`

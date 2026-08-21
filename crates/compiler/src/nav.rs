@@ -606,7 +606,14 @@ pub fn entity_dims(entity: &str) -> (f64, f64) {
         "skeleton" | "stray" | "wither_skeleton" => (0.6, 1.99),
         "creeper" | "enderman" => (0.6, 1.9),
         "allay" | "vex" => (0.35, 0.6),
-        "armor_stand" | "player" | "mannequin" => (0.6, 1.8),
+        // The player's own row reads the metrics table, so the body every proof
+        // in this engine routes is the body `delvec metrics` publishes. The mobs
+        // around it stay literals: they are not the player, and a metrics table
+        // that enumerated the 1.21.11 mob roster would be a registry dump.
+        "armor_stand" | "player" | "mannequin" => (
+            delvewright_dsl::metrics::PLAYER_WIDTH,
+            delvewright_dsl::metrics::PLAYER_HEIGHT,
+        ),
         _ => (0.6, 1.95),
     }
 }
@@ -944,23 +951,18 @@ pub struct World {
     built: Vec<BuiltPiece>,
 }
 
-/// The largest rise, in sixteenths of a block, a walker crosses **without
-/// jumping** — vanilla's player `maxUpStep` is 0.6 blocks, and 9/16 = 0.5625 is
-/// the largest sixteenth under it (10/16 = 0.625 already needs a jump). A rise
-/// within this budget needs no headroom above the *source* cell: the player walks
-/// straight up onto a slab or a path edge.
-const MAX_AUTO_STEP_16: i64 = 9;
-
-/// The largest rise a walker can reach **by jumping**, in sixteenths. A vanilla
-/// player's jump apex is ≈1.2522 blocks, so a surface 20/16 = 1.25 up is
-/// reachable and 21/16 = 1.3125 is not. This is the bound that makes the
-/// **1.5-block** slab-to-full-block step-up — which the old full-cube model
-/// happily "proved" as an ordinary `+1` step — the impossible move it is.
-const MAX_JUMP_RISE_16: i64 = 20;
-
-/// A full block's height in sixteenths (mirrors
-/// [`crate::assembled::FULL_HEIGHT_16`] in nav's `i64` step arithmetic).
-const FULL_16: i64 = 16;
+/// The step rule's three constants, taken from the metrics table (spec-0049 §2)
+/// rather than declared here.
+///
+/// The direction of the import is what the single-authority obligation means
+/// concretely: the exported player metrics ARE these constants at compile time,
+/// not a second table that agrees with them, so `delvec metrics` cannot describe
+/// a walker this model does not route. Their derivations are on the definitions
+/// (`dsl::metrics::MAX_AUTO_STEP_16` is vanilla's 0.6-block `maxUpStep` rounded
+/// down to a sixteenth; `MAX_JUMP_RISE_16` is the ≈1.2522-block apex), and they
+/// stay private to this module because the step rule is this module's, while the
+/// numbers are the table's.
+use delvewright_dsl::metrics::{FULL_16, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16};
 
 impl World {
     /// Build the occupancy model from the plan's placed pieces and the structure
@@ -1584,7 +1586,8 @@ impl World {
 
     /// Whether a cell is unoccupied — neither a solid block nor water-flooded, so a
     /// camera eye placed in it sees open air rather than the inside of a block.
-    /// Public wrapper for the visual-tier POV camera self-check ([`verify_pov_cameras`]).
+    /// Public wrapper for the visual-tier clear-eye self-check
+    /// ([`verify_camera_eyes`]).
     pub fn is_clear(&self, c: [i32; 3]) -> bool {
         !self.is_occupied(c)
     }
@@ -6746,38 +6749,79 @@ pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), 
     Ok(())
 }
 
-/// `DW0724`: a visual-tier player-POV camera eye cell is occupied (a solid block
-/// or water) in the FINAL assembled world — the frame would render the inside of a
-/// block instead of the scene the player sees. A self-check on the POV camera
-/// derivation (`crate::render_plan`), mirroring the DW0314 waypoint self-check:
-/// every POV camera stands at the eye-height of a DW0314-proven-standable waypoint,
-/// so this cannot fire unless the eye-height derivation changes to place the eye in
-/// a ceiling/wall (or a later pass mutates the cell). It makes "the camera clips a
-/// wall" — the owner's exact visual-review failure mode — a build error to fix at
-/// its source (the camera derivation), never a shot to nudge or a data value to
-/// change.
-pub const DW_POV_CAMERA_OCCLUDED: DwCode = DwCode::every_version("DW0724");
+/// `DW0724`: a visual-tier camera's eye cell is occupied (a solid block or water)
+/// in the FINAL assembled world — the frame would render the inside of a block
+/// instead of the scene, and a picture of the inside of a block is
+/// indistinguishable from a picture of a featureless room.
+///
+/// The property belongs to **a camera**, not to one kind of camera. Every shot
+/// `crate::render_plan` derives — spawn, per-piece interior, seam, NPC, interact
+/// anchor, gate, and the first-person `pov` shots — puts an eye at a point in the
+/// assembled world, and every one of them can land inside geometry. Binding this
+/// to the `pov` kind alone was an accident of which kind needed it first: a seam
+/// camera stands four blocks along the seal's axis one cell under the ceiling, on
+/// the tile's centre column, which is exactly where a hanging lantern is, and the
+/// resulting flat frame was invisible to every build.
+///
+/// Whether a violation is a defect of the *derivation* or of the *geometry*
+/// depends on the kind, and the message says which. A `pov` eye sits at 1.62
+/// above a DW0314-proven-standable waypoint, so it is clear by construction and a
+/// violation means the derivation changed (or a later pass mutated the cell) —
+/// fix the derivation, never the waypoint. Every other kind takes a fixed offset
+/// from authored geometry, so a violation is that geometry standing where the
+/// review camera has to be, and the repair is the piece.
+pub const DW_CAMERA_EYE_OCCLUDED: DwCode = DwCode::every_version("DW0724");
 
-/// Assert every player-POV camera eye cell is clear (unoccupied) in `world` — the
-/// final assembled model. Each entry is `(shot_id, eye_cell)` where `eye_cell` is
-/// the integer block the camera eye sits in (`floor` of the eye position). Returns
-/// [`DW_POV_CAMERA_OCCLUDED`] (`DW0724`) naming the first offending shot on
-/// violation. The structural guard behind the visual tier: it is impossible to ship
-/// a render plan whose first-person camera looks out from inside geometry.
-pub fn verify_pov_cameras(world: &World, cameras: &[(String, [i32; 3])]) -> Result<(), NavError> {
-    for (id, eye) in cameras {
-        if !world.is_clear(*eye) {
-            return Err(NavError {
-                code: DW_POV_CAMERA_OCCLUDED,
-                message: format!(
-                    "player-POV shot `{id}`: the camera eye cell {eye:?} is occupied (a solid \
-                     block or water) in the assembled world — the frame would render the inside \
-                     of a block, not the player's view. The eye sits at 1.62 above a proven \
-                     standable waypoint, so fix the POV camera derivation (eye height / standing \
-                     cell) — do NOT move the waypoint or the geometry."
-                ),
-            });
+/// One derived camera's eye, as [`verify_camera_eyes`] needs it.
+///
+/// Built by the derivation ([`crate::render_plan`]) from the same eye position it
+/// writes into the shot's `camera`, so a shot cannot carry one camera and offer
+/// the proof another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CameraEye {
+    /// The shot id the camera belongs to (`seam/keep/0`, `pov/leg0/wp3`, …).
+    pub shot_id: String,
+    /// The shot's `kind`, so the message can say what to repair.
+    pub kind: &'static str,
+    /// The integer block the eye sits in (`floor` of the eye position).
+    pub cell: [i32; 3],
+}
+
+/// Assert every derived camera's eye cell is clear (unoccupied) in `world` — the
+/// final assembled model the shots will be rendered from. Returns
+/// [`DW_CAMERA_EYE_OCCLUDED`] (`DW0724`) naming the first offending shot on
+/// violation. The structural guard behind the visual tier: it is impossible to
+/// ship a render plan holding a camera that looks out from inside geometry.
+pub fn verify_camera_eyes(world: &World, cameras: &[CameraEye]) -> Result<(), NavError> {
+    for cam in cameras {
+        if world.is_clear(cam.cell) {
+            continue;
         }
+        let CameraEye {
+            shot_id,
+            kind,
+            cell,
+        } = cam;
+        // A `pov` eye is clear by construction (1.62 over a DW0314-proven
+        // standable waypoint), so the two verdicts point at different repairs and
+        // must not be blurred into one sentence.
+        let repair = if *kind == "pov" {
+            "The eye sits at 1.62 above a proven standable waypoint, so fix the POV camera \
+             derivation (eye height / standing cell) — do NOT move the waypoint or the geometry."
+        } else {
+            "This camera is placed at a fixed offset from authored geometry, so the finding is \
+             that geometry: move what occupies the cell (a hung lantern on the centre column is \
+             the recorded case), or move the anchor/seal the camera is derived from. Never nudge \
+             the camera to make the picture come out."
+        };
+        return Err(NavError {
+            code: DW_CAMERA_EYE_OCCLUDED,
+            message: format!(
+                "{kind} shot `{shot_id}`: the camera eye cell {cell:?} is occupied (a solid block \
+                 or water) in the assembled world — the frame would render the inside of a block, \
+                 not the scene. {repair}"
+            ),
+        });
     }
     Ok(())
 }
@@ -8916,6 +8960,14 @@ mod tests {
         }
     }
 
+    fn eye(shot_id: &str, kind: &'static str, cell: [i32; 3]) -> CameraEye {
+        CameraEye {
+            shot_id: shot_id.to_string(),
+            kind,
+            cell,
+        }
+    }
+
     #[test]
     fn pov_camera_in_open_air_passes_but_inside_a_block_is_dw0724() {
         // A flat floor at y=64 with headroom; the eye of a standing player is at
@@ -8924,12 +8976,40 @@ mod tests {
         let world = floored(5, 5, 65, &[]);
         assert!(world.is_clear([2, 65, 2]), "standing eye cell is clear");
         // Clear eye → ok.
-        verify_pov_cameras(&world, &[("pov/leg0/wp0".into(), [2, 65, 2])]).expect("clear eye ok");
+        verify_camera_eyes(&world, &[eye("pov/leg0/wp0", "pov", [2, 65, 2])])
+            .expect("clear eye ok");
         // Eye buried in the solid floor → DW0724.
-        let err = verify_pov_cameras(&world, &[("pov/leg0/wp1".into(), [2, 64, 2])])
+        let err = verify_camera_eyes(&world, &[eye("pov/leg0/wp1", "pov", [2, 64, 2])])
             .expect_err("occupied eye must fail");
-        assert_eq!(err.code, DW_POV_CAMERA_OCCLUDED);
+        assert_eq!(err.code, DW_CAMERA_EYE_OCCLUDED);
         assert!(err.message.contains("pov/leg0/wp1"), "names the shot");
+    }
+
+    /// The widening this code exists for: the identical fact about a camera that
+    /// is NOT the player's own eye. A seam camera stands one cell under the
+    /// ceiling on the tile's centre column — where a hanging lantern is — and
+    /// before this binding reached it the frame was one flat colour and no build
+    /// in the repository said anything.
+    #[test]
+    fn a_seam_camera_inside_a_ceiling_block_is_dw0724_too() {
+        let world = floored(5, 5, 65, &[[2, 67, 2]]);
+        verify_camera_eyes(&world, &[eye("seam/keep/0", "seam", [2, 66, 2])])
+            .expect("a clear seam eye passes");
+        let err = verify_camera_eyes(&world, &[eye("seam/keep/0", "seam", [2, 67, 2])])
+            .expect_err("a seam eye inside the hung block must fail");
+        assert_eq!(err.code, DW_CAMERA_EYE_OCCLUDED);
+        assert!(
+            err.message.contains("seam shot `seam/keep/0`"),
+            "{}",
+            err.message
+        );
+        // The two kinds prescribe different repairs, and the message must not
+        // send a seam author looking at a waypoint they do not have.
+        assert!(
+            !err.message.contains("waypoint"),
+            "a non-pov verdict must not blame the waypoint derivation: {}",
+            err.message
+        );
     }
 
     #[test]
@@ -11277,6 +11357,33 @@ mod tests {
         // slab stairs are not treated like lumpy ground.
         assert!(step_cost_16(64 * 16, 64 * 16 + 8) < up);
         assert!(step_cost_16(64 * 16, 64 * 16 + 8) > flat);
+    }
+
+    /// The weight's own derivation, executable at last.
+    ///
+    /// `ELEV_WEIGHT`'s doc comment argued from a jump arc of ≈12 airborne ticks
+    /// against ≈4.6 ticks of flat walking per block, and both of those numbers
+    /// lived in prose, so the arithmetic could not go red if either moved. They
+    /// are entries of the metrics table now, and this asserts the relationship
+    /// rather than executing it: the weight is a TUNED number an owner playtest
+    /// settled (round 8), so deriving it at run time would let an edit to a
+    /// physics fact silently move every route in every campaign. Asserting it
+    /// makes the same edit a red that says which decision has to be re-taken.
+    #[test]
+    fn the_elevation_weight_is_the_integer_under_its_jump_arc() {
+        use delvewright_dsl::metrics::{JUMP_AIRBORNE_TICKS, walk_ticks_per_block};
+        let blocks_of_walking_per_block_of_climb = JUMP_AIRBORNE_TICKS / walk_ticks_per_block();
+        assert!(
+            (blocks_of_walking_per_block_of_climb - 2.59).abs() < 0.01,
+            "a block of climb costs about 2.5 blocks of walking time; got {blocks_of_walking_per_block_of_climb}"
+        );
+        assert_eq!(
+            ELEV_WEIGHT,
+            blocks_of_walking_per_block_of_climb.floor() as u32,
+            "the weight is deliberately the integer UNDER the physical figure — \
+             overpaying for flatness is what would distort routes on legitimately \
+             sloped terrain"
+        );
     }
 
     /// The island defect in miniature: a straight lane with one 1-block bump, and

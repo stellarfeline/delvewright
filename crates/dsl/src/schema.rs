@@ -6,6 +6,7 @@
 use schemars::schema_for;
 
 use crate::envelope::{Envelope, Stage};
+use crate::layout::{GeometryBriefContent, LayoutGraphContent};
 use crate::stages::{
     ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
     WorldEditsContent,
@@ -21,6 +22,8 @@ pub fn stage_schema(stage: Stage) -> serde_json::Value {
         Stage::Quests => schema_for!(Envelope<QuestsContent>),
         Stage::Dialogue => schema_for!(Envelope<DialogueContent>),
         Stage::WorldEdits => schema_for!(Envelope<WorldEditsContent>),
+        Stage::GeometryBrief => schema_for!(Envelope<GeometryBriefContent>),
+        Stage::LayoutGraph => schema_for!(Envelope<LayoutGraphContent>),
     };
     serde_json::to_value(schema).expect("schema serializes to JSON")
 }

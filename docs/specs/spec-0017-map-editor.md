@@ -69,16 +69,38 @@ Shot grammar from spec-0015 applies (declared expectation per snapshot).
    guarantee the greenfield berm currently provides physically becomes a
    checked invariant, freeing the boundary's SHAPE to be natural landform.
 
-## Acceptance (M3-island polish is the first real workload)
+## Acceptance criteria (M3-island polish is the first real workload)
 
-1. **De-wall the greenfield corridor**: the 3-high bounding berm replaced
-   by natural boundary treatment (slope/treeline/outcrop) via edit script
-   only — no generator code change; full ladder + invariants green.
-2. **Island exterior polish**: mountain silhouette + shoreline reworked
-   through the editor, reviewed via the snapshot loop, owner-accepted.
-3. Determinism proof over the edit stage (byte-identical double replay).
-4. Editor session transcript (edit script + snapshots) demonstrates the
-   closed loop end-to-end without any hand-authored blocks.
+Each names the reading that would make it vacuous.
+
+1. **Determinism over the edit stage**: same DSL + same edit script + same
+   seed → byte-identical world across a double replay (the ADR-0006 gate
+   extended over the edit stage). *Vacuous if* the replayed script is empty —
+   the run states how many edits it applied, and zero applied edits is a
+   finding, not a pass.
+2. **Every invariant can refuse**: one red fixture per invariant — an edit
+   that breaks the critical path (walk-envelope), one that opens a dark or
+   mob leak (sealing + relight), and one that leaves a walkable cell
+   bordering void (boundary safety) — each a compile error naming the edit
+   batch that caused it. *Vacuous if* the invariants are only ever seen green:
+   a validator never observed refusing has not been shown to validate.
+3. **De-wall by script alone**: the greenfield berm replaced by natural
+   boundary treatment through the edit script with **no generator code
+   change** — asserted on the change's scope (edit script and compiler
+   replay only, no `prefabs/` generator diff) — with the full ladder and all
+   invariants green. *Vacuous if* the ladder ran against a world built
+   without the script — the build names the edit script it replayed and the
+   batch count it applied.
+4. **The closed loop, end to end**: an editor session leaves an edit script
+   plus an auto-rendered snapshot per edited region and zero hand-authored
+   blocks or NBT. *Vacuous if* the snapshots render unedited regions — each
+   snapshot names the edit batch it renders and carries the declared
+   expectation the shot grammar (spec-0015) requires.
+
+Not machine-assertable, said plainly: whether the island's reworked mountain
+silhouette and shoreline *read* right is the owner's acceptance, given on the
+snapshot loop. The machine proves the loop closed and the invariants held; it
+cannot prove the mountain reads as a mountain.
 
 ## Non-goals
 

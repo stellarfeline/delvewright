@@ -2060,6 +2060,31 @@ pub struct Ambush {
     /// fully legal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub telegraph: Vec<QuestEffect>,
+    /// What the spring does to the story (DSL v0.8, spec-0025; required at
+    /// 0.8.0, `DW0481`).
+    ///
+    /// **The declaration lives here because this is the object the author
+    /// wrote.** An ambush desugars into a `spawn-actor` plus an `unleash-actor`
+    /// per listed actor, and every one of those is a story node `DW0481` demands
+    /// a `happening` from — on effects the author never wrote and cannot reach.
+    /// So for as long as this field did not exist, an `ambushes[]` entry could
+    /// not compile at 0.8.0 or above at all: declared in the schema, accepted by
+    /// the schema check, and refused at validation with a prescription naming a
+    /// field that was not there. Nothing caught it because no campaign and no
+    /// fixture had ever written an ambush at a version where the obligation was
+    /// live — which is the case spec-0039 exists to make impossible.
+    ///
+    /// An ambush is **one** beat, not `2N` of them: the ambushers appearing and
+    /// coming at you is a single dramatic moment, so one declaration covers the
+    /// whole spring. [`Self::to_trigger`] stamps it onto the first generated
+    /// `spawn-actor` so the chronicle carries the line at the right position,
+    /// and `branch::check_happenings` reads the obligation off the ambush rather
+    /// than off the beats derived from it. Repeating it on all `2N` is the
+    /// obvious alternative and it is wrong twice over: the chronicle would gain
+    /// `N` duplicate lines, and `DW0485` would see one subject act repeatedly
+    /// and be right to call it a contradiction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub happening: Option<Happening>,
 }
 
 impl Ambush {
@@ -2074,10 +2099,14 @@ impl Ambush {
     /// debuggable as the trigger an author would otherwise type.
     pub fn to_trigger(&self) -> EnvTrigger {
         let mut effects = self.telegraph.clone();
-        for a in &self.actors {
+        for (i, a) in self.actors.iter().enumerate() {
             effects.push(QuestEffect::SpawnActor {
                 actor: a.clone(),
-                happening: None,
+                // The ambush declaration, on the beat where the spring becomes
+                // real. Only the FIRST, for the reason the field documents: one
+                // ambush is one beat, and stamping the line on every generated
+                // effect would pad the chronicle and trip `DW0485`.
+                happening: if i == 0 { self.happening.clone() } else { None },
             });
         }
         for a in &self.actors {
@@ -4075,6 +4104,54 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
     },
+    /// **Opens a placed piece's contingent way** (DSL v0.12, spec-0042 §2.4): the
+    /// broken flight a beat repairs, the bridge a beat lowers, the rubble a beat
+    /// clears.
+    ///
+    /// A piece's spatial contract may declare a traversal edge whose crossability
+    /// depends on a named region — `laid` (empty as built, opening fills it) or
+    /// `cleared` (built solid, opening voids it). The prefab checker proves the
+    /// piece is severed as shipped and joined once that region is opened; this is
+    /// the verb that opens it, and it is the only one, because a way is the object
+    /// and opening it is the operation.
+    ///
+    /// **There is no region, no block and no sign on this effect, and that is the
+    /// design rather than an omission.** All three are read from the piece's own
+    /// exported metadata (`spatial_contract.edges[].way`), so the effect and the
+    /// building cannot disagree about what a way is — two authorities plus an
+    /// equality check is the defect this shape avoids, not a variant of the fix
+    /// (spec-0042 AC8). What the campaign decides is *when*.
+    ///
+    /// Completability: the way is **shut until this fires**, and from the DAG
+    /// point at which it fires the region is solid-and-footing (`laid`) or
+    /// passable (`cleared`) — the same [`QuestEffect::FillRegion`] /
+    /// [`QuestEffect::ClearRegion`] model, fed from metadata instead of from an
+    /// authored box, so this verb inherits the forced-footing rule (`DW0546`)
+    /// rather than restating it. Required content standing beyond a way that no
+    /// forced opening precedes is `DW0548`, which names the way, the effect and
+    /// the element.
+    OpenWay {
+        /// The placed piece whose way this opens (`prefab/<name>`).
+        ///
+        /// A piece, not an anchor: the way's cells are the contract's, not a gate
+        /// anchor's, and a piece placed twice has two ways. The reference must
+        /// name exactly one placement; naming none or several is `DW0547`.
+        piece: PrefabId,
+        /// The way's region name, as the piece's contract exports it
+        /// (`spatial_contract.edges[].way.region`).
+        way: String,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031); see
+        /// [`QuestEffect::requires_state`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
+    },
     /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5).
     DespawnNpc {
         /// The NPC (stage-2 ref) to remove.
@@ -5154,6 +5231,25 @@ impl std::fmt::Debug for QuestEffect {
                 self.requires_state(),
             )
             .finish(),
+            // Both fields print: the reference IS the content of this effect, and
+            // two `open-way`s on different ways of one piece emit different fills.
+            QuestEffect::OpenWay {
+                piece,
+                way,
+                requires_flags,
+                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("OpenWay")
+                        .field("piece", piece)
+                        .field("way", way)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
+            )
+            .finish(),
             QuestEffect::SetState {
                 state,
                 value,
@@ -6065,6 +6161,7 @@ impl QuestEffect {
             QuestEffect::SetBlock { .. } => "set-block",
             QuestEffect::FillRegion { .. } => "fill-region",
             QuestEffect::ClearRegion { .. } => "clear-region",
+            QuestEffect::OpenWay { .. } => "open-way",
             QuestEffect::DespawnNpc { .. } => "despawn-npc",
             QuestEffect::MoveNpc { .. } => "move-npc",
             QuestEffect::Cutscene { .. } => "cutscene",
@@ -6229,6 +6326,8 @@ impl QuestEffect {
             | QuestEffect::ClearState { .. }
             | QuestEffect::FillRegion { .. }
             | QuestEffect::ClearRegion { .. }
+            // spec-0042's `open-way` is v0.12 — it reports via `v12_effect`.
+            | QuestEffect::OpenWay { .. }
             | QuestEffect::GiveEffect { .. }
             | QuestEffect::ClearEffect { .. }
             | QuestEffect::Teleport { .. }
@@ -6305,6 +6404,34 @@ impl QuestEffect {
             QuestEffect::ClearEffect { .. } => Some("clear-effect"),
             QuestEffect::Teleport { .. } => Some("teleport"),
             QuestEffect::DropStake { .. } => Some("drop-stake"),
+            _ => None,
+        }
+    }
+
+    /// The v0.12 effect name if this effect is one introduced in DSL v0.12
+    /// (`open-way`, spec-0042). It validates in v0.12 campaigns and is reserved
+    /// (`DW0141`) earlier.
+    pub fn v12_effect(&self) -> Option<&'static str> {
+        match self {
+            QuestEffect::OpenWay { .. } => Some("open-way"),
+            _ => None,
+        }
+    }
+
+    /// **The way this effect opens** (DSL v0.12, spec-0042): the placed piece and
+    /// the name of one way that piece's spatial contract exports.
+    ///
+    /// The third spelling of the one region write, beside
+    /// [`QuestEffect::region_write`] (the author's own box) and
+    /// [`QuestEffect::gate_region_write`] (a gate anchor's box). It answers with a
+    /// *reference* and never with geometry, because the geometry is not the
+    /// campaign's to state: the cells, the block and the direction all live in the
+    /// piece's metadata, and the compiler resolves them there
+    /// (`compiler::ways`). A region-shaped accessor here would be the second
+    /// authority this surface exists to avoid.
+    pub fn way_write(&self) -> Option<(&PrefabId, &str)> {
+        match self {
+            QuestEffect::OpenWay { piece, way, .. } => Some((piece, way.as_str())),
             _ => None,
         }
     }
@@ -6857,6 +6984,7 @@ impl QuestEffect {
             | QuestEffect::DamagePlayers { requires_flags, .. }
             | QuestEffect::FillRegion { requires_flags, .. }
             | QuestEffect::ClearRegion { requires_flags, .. }
+            | QuestEffect::OpenWay { requires_flags, .. }
             | QuestEffect::Volley { requires_flags, .. }
             | QuestEffect::Collapse { requires_flags, .. }
             | QuestEffect::GiveEffect { requires_flags, .. }
@@ -6913,6 +7041,7 @@ impl QuestEffect {
             | QuestEffect::DamagePlayers { forbids_flags, .. }
             | QuestEffect::FillRegion { forbids_flags, .. }
             | QuestEffect::ClearRegion { forbids_flags, .. }
+            | QuestEffect::OpenWay { forbids_flags, .. }
             | QuestEffect::Volley { forbids_flags, .. }
             | QuestEffect::Collapse { forbids_flags, .. }
             | QuestEffect::GiveEffect { forbids_flags, .. }
@@ -6959,6 +7088,7 @@ impl QuestEffect {
             | QuestEffect::DamagePlayers { requires_state, .. }
             | QuestEffect::FillRegion { requires_state, .. }
             | QuestEffect::ClearRegion { requires_state, .. }
+            | QuestEffect::OpenWay { requires_state, .. }
             | QuestEffect::Volley { requires_state, .. }
             | QuestEffect::Collapse { requires_state, .. }
             | QuestEffect::GiveEffect { requires_state, .. }

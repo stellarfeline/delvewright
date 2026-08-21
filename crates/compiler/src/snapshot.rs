@@ -1373,6 +1373,7 @@ pub fn manifest(
     opts: &FrameOpts,
     grid: &VoxelGrid,
     scene: Scene<'_>,
+    canvas: &crate::raster::Canvas,
 ) -> Value {
     let Scene {
         pieces,
@@ -1423,6 +1424,26 @@ pub fn manifest(
             v
         }).collect::<Vec<_>>(),
         "out_of_frame": outside.iter().map(|t| target_json(t)).collect::<Vec<_>>(),
+        // What this frame is worth to a reviewer, judged by the arm that drew
+        // it. Two numbers, and both are the CLAUDE.md binding rule applied to a
+        // picture: `targets` is what the shot was aimed at and `featureless` is
+        // whether it shows anything at all. A render that succeeds, writes a
+        // file, and is a rectangle of flat background looks exactly like one
+        // more shot taken — to a directory listing, to a contact sheet, and to
+        // a reviewer skimming. The producer answers it here because a verdict
+        // computed by whoever consumes the file later is a second authority on
+        // one question.
+        "frame": {
+            "targets_in_frame": inside.len(),
+            "targets_out_of_frame": outside.len(),
+            "featureless": crate::view::detect::is_featureless(
+                &canvas.rgba,
+                canvas.width,
+                canvas.height,
+            )
+            .map(|f| json!({ "distinct_colors": f.distinct }))
+            .unwrap_or(Value::Null),
+        },
     })
 }
 

@@ -71,6 +71,8 @@ fn raw_with_dialogue(dialogue: String) -> RawCampaign {
         quests: common::read_valid("quests.json"),
         dialogue,
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
 }
 

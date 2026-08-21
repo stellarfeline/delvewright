@@ -47,7 +47,18 @@ fn version_line() {
     // "a pressable thing answers the presser" an ordinary trigger and retire
     // `close-gate`'s private copy of it. The obligation is `DW0429`: at 0.11.0 a
     // sealed body nothing answers is an error.
-    assert!(s.contains("dsl 0.11.0"), "{s}");
+    // 0.12.0 (spec-0042) adds one verb: `open-way`, a campaign opening a placed
+    // piece's contingent way — the broken flight a beat repairs, the bridge a
+    // beat lowers. It carries no region, no block and no sign; all three come
+    // from the piece's own exported metadata, so the effect and the building
+    // cannot disagree about what a way is.
+    // 0.13.0 (spec-0049) adds two documents and no field: `geometry-brief.json`,
+    // the whole map's written brief reduced to a list of named numbers, and
+    // `layout-graph.json`, the campaign's space as a graph — places, the
+    // connections between them, the authored critical path, and where each quest
+    // beat happens. No coordinate appears in either; the embedding is a later
+    // stage's document.
+    assert!(s.contains("dsl 0.13.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

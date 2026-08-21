@@ -301,3 +301,58 @@ fn the_template_binds_to_the_pair_and_not_to_either_half() {
         "every template names the stake it is about: {names:?}"
     );
 }
+
+// ----------------------------------------------------- the effect-root ledger --
+
+/// The effect-root walk publishes its binding as a file, not as a stderr string.
+///
+/// Most effect-shaped proofs in this compiler are only as good as the roots
+/// `for_each_effect_root` reaches, and until `validation/effect-roots.json`
+/// existed that number was a **string on stderr** — so nothing downstream could
+/// assert a build's effect walk had bound to anything at all. Asserted on
+/// `lift-stake` because it is a campaign with a genuinely mixed root profile:
+/// some roots carry bundles and some do not, which is exactly the shape a ledger
+/// has to be able to report honestly.
+#[test]
+fn the_effect_root_ledger_is_machine_readable() {
+    let out = build("effect-roots");
+    let raw = out
+        .get("validation/effect-roots.json")
+        .expect("every build emits the effect-root binding ledger");
+    let gate: serde_json::Value = serde_json::from_slice(raw).unwrap();
+
+    // The walk must enumerate every root it knows about, every time. A smaller
+    // number means a root stopped being enumerated, which is the silent defect
+    // the single enumeration exists to prevent.
+    assert_eq!(
+        gate["roots_enumerated"], gate["roots_total"],
+        "a walk that enumerated fewer roots than exist proves less than it claims: {gate}"
+    );
+    assert!(
+        gate["bundles"].as_u64().unwrap() > 0,
+        "a build whose effect walk reaches zero bundles makes every effect-shaped \
+         proof over it vacuous: {gate}"
+    );
+    assert!(
+        gate["effects"].as_u64().unwrap() > 0,
+        "bundles with no effects in them is the same vacuity one level down: {gate}"
+    );
+
+    // `sites` names every root, including the ones this campaign has none at —
+    // a zero that is present and named is a measurement; a zero that is absent
+    // is indistinguishable from a root nobody enumerated.
+    let sites = gate["sites"].as_object().expect("per-root site counts");
+    assert_eq!(
+        sites.len() as u64,
+        gate["roots_total"].as_u64().unwrap(),
+        "every root is named in `sites`, present or empty: {gate}"
+    );
+    let unbound = gate["unbound_roots"]
+        .as_array()
+        .expect("unbound_roots is a list");
+    assert_eq!(
+        unbound.len(),
+        sites.values().filter(|v| v.as_u64() == Some(0)).count(),
+        "`unbound_roots` must be exactly the roots with no bundles: {gate}"
+    );
+}

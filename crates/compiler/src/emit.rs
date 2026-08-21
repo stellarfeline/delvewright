@@ -460,10 +460,48 @@ pub fn build_with_warnings(
     // either needs it. Includes any colliding relight fixtures (campfire / floor
     // lantern) so a fixture can never wedge a required path shut *nor* be stood on
     // by a spawned mob (spec-0010: verification re-runs after placement).
+    //
+    // It is built for EVERY campaign, not only the ones `assembles_world` says
+    // need nav: the visual tier's clear-eye proof (`DW0724`) is owed by every
+    // campaign that emits a render plan, and a render plan is emitted
+    // unconditionally. Keying the model to the nav predicate would have left a
+    // campaign with no walked leg deriving seven kinds of camera against no world
+    // at all — a zero binding wearing a pass's clothes, which is precisely the
+    // shape that let a camera stand inside a ceiling lantern for as long as it did.
+    let world = match &edit_replay {
+        Some(er) => {
+            let mut occ = crate::assembled::occupancy_of(
+                er.assembled.blocks.clone(),
+                &er.assembled.open_gates,
+            );
+            occ.solid.extend(relight.extra_solid.iter().copied());
+            // The ambient is the world-generator PREMISE (spec-0013), not
+            // geometry, and `from_occupancy` defaults it to `Void`. The
+            // sibling arm gets it for free through `from_plan`; this arm
+            // has to say it, or an `ocean` campaign's proofs would run
+            // against a void world that does not exist. Harmless while
+            // nothing here read it — `verify_boundary_safety` below now
+            // does.
+            // The world-load gate seals travel with this arm too, and
+            // they are the prefab's measurement, not the edit script's:
+            // a batch that writes INTO a gate region already appears as
+            // ordinary solid blocks above (and is `DW0353`'s advisory).
+            // Missing this line is how an edit-carrying campaign — the
+            // island is one — would have got a vacuous green out of the
+            // completability model while every fixture went red.
+            crate::nav::World::from_occupancy(occ)
+                .with_ambient(
+                    crate::nav::Ambient::of_plan(plan),
+                    crate::nav::built_volume(plan),
+                )
+                .with_world_load_seals(plan, er.assembled.gate_seals.clone())
+        }
+        None => crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid),
+    };
     // Visual-tier player-POV shots (spec-0003): first-person cameras along the
     // proven critical-path routes. Filled inside the world block below (they need
-    // the routes + the assembled occupancy for the DW0724 clear-eye self-check);
-    // empty for a campaign with no walked leg, so its render plan stays byte-identical.
+    // the routes); empty for a campaign with no walked leg, so its render plan
+    // stays byte-identical.
     let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
     // spec-0025 per-branch waypoint artifacts: one
     // `validation/branch-waypoints-<branch>.json` per reachable branch, filled
@@ -579,39 +617,6 @@ pub fn build_with_warnings(
                 Some(er) => er.assembled.blocks.clone(),
                 None => crate::assembled::assembled_blocks(plan, structures),
             };
-            let world = match &edit_replay {
-                Some(er) => {
-                    let mut occ = crate::assembled::occupancy_of(
-                        er.assembled.blocks.clone(),
-                        &er.assembled.open_gates,
-                    );
-                    occ.solid.extend(relight.extra_solid.iter().copied());
-                    // The ambient is the world-generator PREMISE (spec-0013), not
-                    // geometry, and `from_occupancy` defaults it to `Void`. The
-                    // sibling arm gets it for free through `from_plan`; this arm
-                    // has to say it, or an `ocean` campaign's proofs would run
-                    // against a void world that does not exist. Harmless while
-                    // nothing here read it — `verify_boundary_safety` below now
-                    // does.
-                    // The world-load gate seals travel with this arm too, and
-                    // they are the prefab's measurement, not the edit script's:
-                    // a batch that writes INTO a gate region already appears as
-                    // ordinary solid blocks above (and is `DW0353`'s advisory).
-                    // Missing this line is how an edit-carrying campaign — the
-                    // island is one — would have got a vacuous green out of the
-                    // completability model while every fixture went red.
-                    crate::nav::World::from_occupancy(occ)
-                        .with_ambient(
-                            crate::nav::Ambient::of_plan(plan),
-                            crate::nav::built_volume(plan),
-                        )
-                        .with_world_load_seals(plan, er.assembled.gate_seals.clone())
-                }
-                None => {
-                    crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid)
-                }
-            };
-
             if world.has_gate_anchors() {
                 gate_seal_ledger = Some(world.gate_seal_ledger());
             }
@@ -847,16 +852,12 @@ pub fn build_with_warnings(
                     );
                 }
                 // Visual-tier POV cameras (spec-0003): one first-person shot per
-                // corner-thinned waypoint. Self-check every eye cell is clear in
-                // the FINAL assembled world (DW0724) — makes a camera looking out
-                // from inside a wall a build error, the owner's exact visual-review
-                // failure mode, caught at its source (the derivation).
+                // corner-thinned waypoint. Their eye cells are proven clear in the
+                // FINAL assembled world with every other kind's, at the one place
+                // a render plan can be built (`PlannedShots::into_document`) —
+                // this used to be a POV-only check here, which is exactly why the
+                // identical defect on a seam camera was invisible.
                 pov_shots = crate::render_plan::pov_shots(plan, &routes);
-                let eyes: Vec<(String, [i32; 3])> = pov_shots
-                    .iter()
-                    .map(|s| (s.id.clone(), s.eye_cell()))
-                    .collect();
-                crate::nav::verify_pov_cameras(&world, &eyes)?;
                 // spec-0025 branch navigation, made first-class. The
                 // DW0311 proof above quantifies over the DEFAULT playthrough
                 // only, and the waypoint export followed it — so a branch run
@@ -1259,11 +1260,16 @@ pub fn build_with_warnings(
     // Deterministic camera + expect-checklist shot list for the visual tier;
     // consumed by `delve-render`. Emitted before the manifest so its hash is
     // recorded there like every other output.
-    put_json(
-        &mut out,
-        "render-plan.json",
-        &crate::render_plan::render_plan(plan, prefabs, &pov_shots),
-    );
+    //
+    // `render_plan` is the only way to a render-plan value, and it takes the
+    // assembled world because every camera in it owes the `DW0724` clear-eye
+    // proof — every kind, not the one that needed it first. It also states the
+    // proof's binding count in the artifact and hands back a warning when that
+    // count is zero.
+    let (render_plan_doc, camera_warnings) =
+        crate::render_plan::render_plan(plan, prefabs, &pov_shots, &world)?;
+    warnings.extend(camera_warnings);
+    put_json(&mut out, "render-plan.json", &render_plan_doc);
 
     // ---- validate every emitted vanilla mcfunction ----
     let mut errors = Vec::new();
@@ -1308,6 +1314,20 @@ pub fn build_with_warnings(
         &fixture_gate.to_json(),
     );
 
+    // ---- the effect-root walk's own binding ledger ----
+    // Every other proof in this compiler publishes its binding as a
+    // `validation/*.json`; the walk that underpins most of them published a
+    // stderr STRING, so nothing downstream could assert it bound to anything.
+    // A build whose effect walk reaches zero bundles is a build where every
+    // effect-shaped proof is vacuous, and until this file existed that was not
+    // a fact any gate could read (spec-0039 criterion 6).
+    let root_binding = crate::plan::for_each_effect_root(plan.campaign, &mut |_site, _effs| {});
+    put_json(
+        &mut out,
+        "validation/effect-roots.json",
+        &root_binding.to_json(),
+    );
+
     // ---- call-graph integrity (DW0497) ----
     // Every `function <ns>:<name>` the compiler just wrote must point at a
     // function the compiler wrote. Vanilla resolves an unknown function to
@@ -1320,6 +1340,63 @@ pub fn build_with_warnings(
         code: e.code,
         message: e.message,
     })?;
+
+    // ---- PackTest batch-state ownership (DW0807) ----
+    // The generated suite runs as ONE batch on ONE shared server, so a template
+    // that runs the real `tick` and asserts on a gated outcome must OWN every
+    // `#party` term that gate reads — otherwise its verdict is decided by
+    // whichever sibling ran last, and the campaign-playthrough template holds the
+    // whole party ledger across ticks (see `crate::batchstate`). Feature-blind and
+    // read off the shipped bytes, so it guards templates not yet written.
+    let batch_binding =
+        crate::batchstate::check_tree(ns, &out).map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
+    warnings.extend(batch_binding.finding());
+
+    // ---- runtime-watch coverage of per-object bodies (DW0810) ----
+    // A mechanic whose runtime body is emitted PER OBJECT gets one body per
+    // declared object, over its own region, with its own judgement — so a suite
+    // that drives one of them has proven nothing about the next. The timed-gate
+    // emitter bound `first()` and shipped a three-gate level whose LETHAL gate
+    // was the third with no runtime proof at all, green throughout (see
+    // `crate::watch`). Read off the shipped bytes with no table of mechanics, so
+    // it guards emitters not yet written.
+    let watch_ids = crate::watch::declared_ids(input_bytes);
+    let (watch_binding, unwatched) = crate::watch::check_tree(ns, &out, &watch_ids);
+
+    // ---- undischarged per-object watch claims (DW0811) ----
+    // The refusal half, and it is drawn one step in from `DW0810` on purpose.
+    // Nothing in the finished tree separates "the emitter meant to prove every
+    // member and skipped some" from "the suite drives one exemplar by design" —
+    // eight standing gallery families are honestly the second — so a refusal read
+    // off the bytes alone would need a per-family allowlist, which is an opt-out
+    // the defect can supply. The distinction lives in the EMITTER, so the emitter
+    // registers its claim over the plan's own authored list and the claim is
+    // judged against the shipped suite: `declared` cannot shrink when the walk
+    // skips members, and `invoked` cannot be faked because it is read off bytes.
+    let watch_claims = [timed_gate_watch_claim(plan)];
+    let (claim_binding, breaches) = crate::watch::check_claims(ns, &out, &watch_claims);
+
+    put_json(
+        &mut out,
+        "validation/watch-ledger.json",
+        &watch_binding.to_json(&unwatched),
+    );
+    put_json(
+        &mut out,
+        "validation/watch-claims.json",
+        &claim_binding.to_json(&breaches),
+    );
+
+    if let Some(d) = crate::watch::claim_finding(&claim_binding, &breaches) {
+        return Err(BuildFailure::Diagnostic {
+            code: crate::watch::DW_CLAIM_NOT_DISCHARGED,
+            message: d.message,
+        });
+    }
+    warnings.extend(crate::watch::finding(&watch_binding, &unwatched));
 
     // ---- score-seeding integrity (DW0495) ----
     // Every `if score` / `unless score` / `scores={…}` the compiler just wrote
@@ -1423,6 +1500,16 @@ pub fn build_with_warnings(
     }
     if let Some(ledger) = &gate_seal_ledger {
         put_json(&mut out, "validation/gate-seal.json", ledger);
+    }
+    // The way gate's binding ledger (`compiler::ways`, spec-0042 AC11,
+    // playtest-methodology.md rule 1): every contingent way the placed world
+    // stages, what opens it and at which quest-DAG point — or that nothing does,
+    // with the cell count standing behind it — plus how many required elements
+    // the reachability half examined. A campaign whose world stages no way emits
+    // no file, so a file that exists and reports zero ways is a finding rather
+    // than an absence.
+    if let Some(gate) = &plan.way_gate {
+        put_json(&mut out, "validation/ways.json", &gate.to_json());
     }
     // The lethal-volume proofs' binding ledger (`compiler::lethal`,
     // playtest-methodology.md rule 1): how many volumes were declared, how many
@@ -5030,11 +5117,13 @@ fn declared_states(c: &delvewright_dsl::Campaign) -> &[delvewright_dsl::StateDec
 ///
 /// Every verb that writes a region at runtime goes through here — `fill-region`
 /// (author's box, author's block), `clear-region` (author's box, air),
-/// `close-gate` (the gate anchor's box and its declared block) and `open-gate`
+/// `close-gate` (the gate anchor's box and its declared block), `open-gate`
 /// (the gate anchor's box, air, `replace`-filtered to the gate block so an opened
-/// threshold never scrubs anything that drifted into it). The `replace` filter is
-/// the only difference between the four, which is why it is a parameter here
-/// rather than four spellings of `fill` in four match arms.
+/// threshold never scrubs anything that drifted into it) and `open-way` (a placed
+/// piece's exported way: its own cells, its own block for a `laid` one and air for
+/// a `cleared` one). The `replace` filter is the only difference between them,
+/// which is why it is a parameter here rather than five spellings of `fill` in
+/// five match arms.
 fn fill_region_command(region: ([i32; 3], [i32; 3]), block: &str, only: Option<&str>) -> String {
     let (from, to) = region;
     let filter = match only {
@@ -5207,6 +5296,26 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 && let Some(region) = plan.zone_box(zone)
             {
                 body.push(fill_region_command(region, block.unwrap_or(AIR), None));
+            }
+        }
+        // The same region write, over a box the PIECE declares (spec-0042 §2.4).
+        // One `fill` per box of the way, in the metadata's own order, with the
+        // block the metadata carries for a `laid` way and air for a `cleared`
+        // one. Nothing here consults the effect for geometry, a block or a
+        // direction, because the effect carries none of the three: an
+        // unresolvable reference is `DW0547` long before emission, so a way that
+        // reaches here has exactly one staged answer.
+        QuestEffect::OpenWay { .. } => {
+            if let Some((piece, name)) = eff.way_write()
+                && let Ok(way) = plan.ways.resolve(piece.as_str(), name)
+            {
+                let block = match way.sign {
+                    crate::ways::Sign::Laid => way.block.as_str(),
+                    crate::ways::Sign::Cleared => AIR,
+                };
+                for region in &way.boxes {
+                    body.push(fill_region_command(*region, block, None));
+                }
             }
         }
         QuestEffect::DespawnNpc { npc, .. } => {
@@ -12019,7 +12128,15 @@ fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
                     entry["functions"] = json!([{
                         "function": "minecraft:set_name",
                         "target": "custom_name",
-                        "name": { "text": name },
+                        // `tr`, not a bare `{"text": …}`. An authored display
+                        // name arrives here still carrying its l10n marker, and
+                        // a raw text component ships the marker verbatim — which
+                        // `DW0185` refuses, so a drop that named itself did not
+                        // build AT ALL, at any version. The diagnostic was right
+                        // and nothing had ever reached it: no campaign and no
+                        // fixture had named a drop, which is the coverage gap
+                        // spec-0039 exists to close rather than a missing rule.
+                        "name": tr(name),
                     }]);
                 }
                 Some(entry)
@@ -14807,11 +14924,45 @@ fn pin_tgdis(b: &mut Vec<String>, g: &crate::plan::TimedGatePlan) {
 }
 
 fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
+    // EVERY declared gate, not the first. A gate's clock is emitted per gate —
+    // `tgate_open_<id>`/`tgate_close_<id>` are distinct bodies over distinct
+    // regions with distinct blocks and its own `crush` judgement — so watching
+    // one gate says nothing whatever about the next. Binding `first()` here gave
+    // a three-gate campaign whose LETHAL gate was the third exactly one runtime
+    // proof, of the harmless one, and the suite was green throughout. That is the
+    // unbound-gate vacuity mode with a subtler surface: it binds one object and
+    // reports honestly about that one, while the set it covers has N members.
+    for g in &plan.timed_gates {
+        emit_one_timed_gate_packtest(plan, g, out);
+        emit_timed_gate_crush_packtest(plan, g, out);
+        emit_timed_gate_disarm_packtest(plan, g, out);
+    }
+}
+
+/// The claim the loop above makes, judged against the shipped bytes by
+/// `DW0811`. It is written from `plan.timed_gates` and NOT from whatever the
+/// loop happened to walk, which is the whole point: a walk that stops at
+/// `first()` still declares three gates here, so the refusal fires on exactly
+/// the defect that a comment asking the next author to loop would not have
+/// stopped. `DW0810` reads the same tree with no mechanic named at all and
+/// stays a warning; this is the half that can refuse, because the emitter's own
+/// claim is a proof obligation the defect cannot discharge.
+fn timed_gate_watch_claim(plan: &Plan) -> crate::watch::Claim {
+    crate::watch::Claim {
+        mechanic: "timed-gate",
+        families: &["tgate_open_", "tgate_close_", "tgate_disarm_"],
+        declared: plan.timed_gates.iter().map(|g| g.safe.clone()).collect(),
+    }
+}
+
+/// One gate's alternation template. Every scratch score is suffixed with the
+/// gate's own safe id: the suite is ONE batch on ONE server with no ordering
+/// guarantee between templates, so a score shared across sibling gates would be
+/// written by one template and asserted by another (`crate::batchstate`).
+fn emit_one_timed_gate_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    let Some(g) = plan.timed_gates.first() else {
-        return;
-    };
+    let id = &g.safe;
     let (from, to) = g.gate_region;
     let probe = from;
     let mut b = packtest_header(&format!(
@@ -14833,28 +14984,26 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     // sibling left (the flag-leak class); it pins what it depends on.
     pin_tgdis(&mut b, g);
     b.push(format!(
-        "execute store success score #tg_sealed dw.sys if block {} {} {} {}",
+        "execute store success score #tg_sealed_{id} dw.sys if block {} {} {} {}",
         probe[0], probe[1], probe[2], g.gate_block
     ));
-    b.push("assert score #tg_sealed dw.sys matches 1".to_string());
-    b.push(format!("function {ns}:tgate_open_{}", g.safe));
+    b.push(format!("assert score #tg_sealed_{id} dw.sys matches 1"));
+    b.push(format!("function {ns}:tgate_open_{id}"));
     b.push(format!(
-        "execute store success score #tg_open dw.sys if block {} {} {} minecraft:air",
+        "execute store success score #tg_open_{id} dw.sys if block {} {} {} minecraft:air",
         probe[0], probe[1], probe[2]
     ));
-    b.push("assert score #tg_open dw.sys matches 1".to_string());
-    b.push(format!("function {ns}:tgate_close_{}", g.safe));
+    b.push(format!("assert score #tg_open_{id} dw.sys matches 1"));
+    b.push(format!("function {ns}:tgate_close_{id}"));
     b.push(format!(
-        "execute store success score #tg_shut dw.sys if block {} {} {} {}",
+        "execute store success score #tg_shut_{id} dw.sys if block {} {} {} {}",
         probe[0], probe[1], probe[2], g.gate_block
     ));
-    b.push("assert score #tg_shut dw.sys matches 1".to_string());
+    b.push(format!("assert score #tg_shut_{id} dw.sys matches 1"));
     out.insert(
-        format!("packtest-datapack/data/{ns}/test/souls_timed_gate.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_{id}.mcfunction"),
         lines(&b).into_bytes(),
     );
-    emit_timed_gate_crush_packtest(plan, g, out);
-    emit_timed_gate_disarm_packtest(plan, g, out);
 }
 
 /// The disarm PackTest: a **disarmed** gate stays open across several former cycle
@@ -14899,17 +15048,17 @@ fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &m
     b.push(format!("function {ns}:tgate_open_{id}"));
     b.push(format!("function {ns}:tgate_close_{id}"));
     b.push(format!(
-        "execute store success score #tgd_armed dw.sys if block {} {} {} {}",
+        "execute store success score #tgd_armed_{id} dw.sys if block {} {} {} {}",
         probe[0], probe[1], probe[2], g.gate_block
     ));
-    b.push("assert score #tgd_armed dw.sys matches 1".to_string());
+    b.push(format!("assert score #tgd_armed_{id} dw.sys matches 1"));
     // Pull the lever: the span clears and the sentinel latches.
     b.push(format!("function {ns}:tgate_disarm_{id}"));
     b.push(format!(
-        "execute store success score #tgd_jam dw.sys if block {} {} {} minecraft:air",
+        "execute store success score #tgd_jam_{id} dw.sys if block {} {} {} minecraft:air",
         probe[0], probe[1], probe[2]
     ));
-    b.push("assert score #tgd_jam dw.sys matches 1".to_string());
+    b.push(format!("assert score #tgd_jam_{id} dw.sys matches 1"));
     b.push(format!("assert score #tgdis_{id} dw.sys matches 1"));
     // Three former cycle boundaries. The assertion lands immediately after the
     // CLOSE — before the open half runs — because that is the only place the
@@ -14920,20 +15069,20 @@ fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &m
     for n in 1..=3 {
         b.push(format!("function {ns}:tgate_close_{id}"));
         b.push(format!(
-            "execute store success score #tgd_c{n} dw.sys if block {} {} {} minecraft:air",
+            "execute store success score #tgd_c{n}_{id} dw.sys if block {} {} {} minecraft:air",
             probe[0], probe[1], probe[2]
         ));
-        b.push(format!("assert score #tgd_c{n} dw.sys matches 1"));
+        b.push(format!("assert score #tgd_c{n}_{id} dw.sys matches 1"));
         // …and the open half of the dead ping-pong is a harmless no-op.
         b.push(format!("function {ns}:tgate_open_{id}"));
         b.push(format!(
-            "execute store success score #tgd_o{n} dw.sys if block {} {} {} minecraft:air",
+            "execute store success score #tgd_o{n}_{id} dw.sys if block {} {} {} minecraft:air",
             probe[0], probe[1], probe[2]
         ));
-        b.push(format!("assert score #tgd_o{n} dw.sys matches 1"));
+        b.push(format!("assert score #tgd_o{n}_{id} dw.sys matches 1"));
     }
     out.insert(
-        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_disarm.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_disarm_{id}.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -14977,6 +15126,7 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
     }
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
+    let id = &g.safe;
     let (from, to) = g.gate_region;
     let selector = region_selector(from, to);
     // Feet-centred on one cell of the region: provably inside the selector box.
@@ -14996,7 +15146,7 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
     pin_tgdis(&mut b, g);
     // Open first: a mistimed crossing leaves the player standing in an open
     // gateway, which is the position the judgement must catch.
-    b.push(format!("function {ns}:tgate_open_{}", g.safe));
+    b.push(format!("function {ns}:tgate_open_{id}"));
     b.push(format!(
         "tp @s {} {} {}",
         fmt_f64(inside[0]),
@@ -15004,9 +15154,9 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
         fmt_f64(inside[2])
     ));
     b.push(format!(
-        "execute store success score #cr_in dw.sys if entity @s[{selector}]"
+        "execute store success score #cr_in_{id} dw.sys if entity @s[{selector}]"
     ));
-    b.push("assert score #cr_in dw.sys matches 1".to_string());
+    b.push(format!("assert score #cr_in_{id} dw.sys matches 1"));
     b.push(format!(
         "tp @s {} {} {}",
         fmt_f64(f64::from(clear_x) + 0.5),
@@ -15014,11 +15164,11 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
         fmt_f64(inside[2])
     ));
     b.push(format!(
-        "execute store success score #cr_out dw.sys if entity @s[{selector}]"
+        "execute store success score #cr_out_{id} dw.sys if entity @s[{selector}]"
     ));
-    b.push("assert score #cr_out dw.sys matches 0".to_string());
+    b.push(format!("assert score #cr_out_{id} dw.sys matches 0"));
     out.insert(
-        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_crush.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_crush_{id}.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -16649,6 +16799,12 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             "execute store result score #route_stnp dw.sys if entity @e[type=minecraft:interaction,tag={npc_tag},tag=dw_trig_{id}]"
         ));
         b.push("assert score #route_stnp dw.sys matches 1".to_string());
+        // Own the dispatch gate. This template runs the REAL `tick` and asserts
+        // the trigger fired, so it depends on every `#party` term the trigger's
+        // arming gate reads — and those are batch-global, written by siblings and
+        // held across ticks by the campaign-playthrough template. Leaving them to
+        // whatever ran last is what made this test's verdict a race.
+        b.extend(packtest_gate_drive(plan, trigger.gate(), true));
         if trigger.once {
             b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
         }
@@ -17114,9 +17270,13 @@ fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
         }
     }
     // `open` writes the assignment that opens `t`: every required flag set, every
-    // other named flag cleared.
+    // other named flag cleared — and then the rest of `t`'s gate, which the flag
+    // pass cannot express. The union above is what makes the SIBLING's flags
+    // explicit (the point of this template is that the other trigger is shut), so
+    // it stays; `packtest_gate_drive` then owns `t`'s own terms, including the
+    // v0.10 numeric axis this site used to drop on the floor.
     let open = |t: &delvewright_dsl::EnvTrigger| -> Vec<String> {
-        flags
+        let mut v: Vec<String> = flags
             .iter()
             .map(|f| {
                 let want = usize::from(t.requires_flags.iter().any(|r| r.as_str() == *f));
@@ -17126,7 +17286,9 @@ fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
                     plan::flag_score(f)
                 )
             })
-            .collect()
+            .collect();
+        v.extend(state_drive_lines(plan, t.requires_state.as_slice(), true));
+        v
     };
 
     let mut t = packtest_header(&format!(
@@ -17269,17 +17431,71 @@ fn pin_dummy(tag: &str) -> (String, String) {
     )
 }
 
+/// **The one way a generated PackTest establishes a gate.** Takes a whole
+/// [`Gate`] and drives every term it reads to the value that opens (`satisfy`)
+/// or shuts it, across all three axes at once.
+///
+/// It takes the gate as ONE value on purpose. `Gate` exists because a proof that
+/// reasons about gating must be written against the gate rather than against two
+/// of its three fields (`crates/dsl/src/gate.rs`), and three templates had each
+/// hand-rolled their own partial copy of this — `v04_strike_npc` drove none of
+/// the three axes, `collect_preheld` one, `v06_shared_hitbox` two. Each worked
+/// perfectly on the campaign it was written for and was a coin toss on any
+/// campaign that used an axis its author had not needed.
+///
+/// **Why a template must do this at all**: the suite runs as ONE batch on one
+/// shared server, and a gate's terms are `#party` state — batch-global. Siblings
+/// write them, and the campaign-playthrough template holds them ACROSS ticks, so
+/// a template that pins some terms and leaves the rest to whatever ran last is a
+/// coin toss dressed as a proof. That is not hypothetical: `trigger/skip-the-label`
+/// forbids `flag/hall-sealed`, the campaign template's phase-0 run completes
+/// `q_far_hall` (which SETS that flag) and never clears it, and `v04_strike_npc`
+/// then failed or passed purely on whether it ran before or after that — the same
+/// bytes producing both verdicts. `DW0807` is the standing check.
+fn packtest_gate_drive(plan: &Plan, gate: Gate<'_>, satisfy: bool) -> Vec<String> {
+    let party = plan::PARTY;
+    let mut p: Vec<String> = Vec::new();
+    for f in gate.requires_flags {
+        p.push(format!(
+            "scoreboard players set {party} {} {}",
+            plan::flag_score(f.as_str()),
+            if satisfy { 1 } else { 0 }
+        ));
+    }
+    // The v0.6 negative axis: actively CLEAR every forbidden flag rather than
+    // trusting it to be unset. `unless … matches 1` is unset-safe at read time,
+    // but a sibling that set it is not, and on a shared batch server one did.
+    //
+    // Cleared in BOTH directions, deliberately. With `satisfy: false` the caller
+    // wants the gate shut, and shutting it through the positive axis alone keeps
+    // the template varying exactly one thing — a red then names its own cause
+    // instead of leaving two candidate reasons the gate was closed.
+    for f in gate.forbids_flags {
+        p.push(format!(
+            "scoreboard players set {party} {} 0",
+            plan::flag_score(f.as_str())
+        ));
+    }
+    // The v0.10 numeric axis (spec-0031): the datum is DRIVEN to a value that
+    // opens or shuts the gate, for the same reason the flags are.
+    p.extend(state_drive_lines(plan, gate.requires_state, satisfy));
+    p
+}
+
 /// The guard half of [`packtest_preamble`]: every progression term an
 /// objective's activation gate READS, pinned to the value that opens (or, with
-/// `with_flags: false`, withholds) it — quest active, `after` prerequisites,
-/// `requires_flags`, and `forbids_flags` actively cleared.
+/// `with_flags: false`, withholds) it — quest active, `after` prerequisites, and
+/// the objective's whole [`Gate`] via [`packtest_gate_drive`].
 ///
 /// Split out because a template that must prove something about **how the item
 /// reaches the player** (the v0.8 named-stack collect) cannot use the preamble's
 /// own `give`: handing the plain item over first completes the objective and
-/// makes the named stack's assertion vacuous. Everything about which flags are
-/// pinned stays in one place, so no template can be written that opens a gate by
-/// hand and forgets one — template flag hygiene lives here.
+/// makes the named stack's assertion vacuous.
+///
+/// The gate half is delegated rather than written here, because an objective is
+/// not the only thing a template opens a gate on — a trigger's dispatch gate is
+/// the same question about a different object class, and a copy of this loop
+/// living beside each caller is what shipped the `v04_strike_npc` flake.
 fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool) -> Vec<String> {
     let party = plan::PARTY;
     let mut p = vec![format!(
@@ -17292,29 +17508,7 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
             obj_score(a.as_str())
         ));
     }
-    for f in o.requires_flags() {
-        p.push(format!(
-            "scoreboard players set {party} {} {}",
-            plan::flag_score(f.as_str()),
-            if with_flags { 1 } else { 0 }
-        ));
-    }
-    // v0.6 negative gate: actively clear every forbidden flag so the objective
-    // is not suppressed by a sibling template's leftover state (same batch-server
-    // reasoning as the `with_flags: false` clearing above).
-    for f in o.forbids_flags() {
-        p.push(format!(
-            "scoreboard players set {party} {} 0",
-            plan::flag_score(f.as_str())
-        ));
-    }
-    // v0.10 numeric gate (spec-0031): the datum is DRIVEN to a value that opens
-    // the gate, or — with `with_flags: false` — to one that shuts it, for the
-    // same batch-server reason the flags are actively cleared rather than merely
-    // left alone. A template that pinned the flags and left the numbers to
-    // whatever a sibling template last wrote would be a coin toss dressed as a
-    // proof.
-    p.extend(state_drive_lines(plan, o.requires_state(), with_flags));
+    p.extend(packtest_gate_drive(plan, o.gate(), with_flags));
     p
 }
 
@@ -17742,6 +17936,16 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id)
         ));
         b.extend(packtest_preamble(plan, qid, o, false, &sel)); // flags withheld (cleared)
+        // `with_flags: false` shuts EVERY gate the objective has, the numeric one
+        // included — which is right for a preamble and wrong for this test. This
+        // template's subject is `requires_flags`, so the flag must be the only
+        // variable: with the numeric gate also shut, the withheld assert passes
+        // because TWO gates are closed (it would pass with the flag logic
+        // deleted), and the released phase — which reopens only the flags — can
+        // never pass at all. An objective carrying both gates therefore emitted a
+        // test that could not go green, and nothing had ever written both on one
+        // objective until the gallery did.
+        b.extend(state_drive_lines(plan, o.requires_state(), true));
         driver(&mut b);
         b.push(format!("assert score {party} {} matches 0", obj_score(id)));
         for f in o.requires_flags() {
@@ -17875,25 +18079,14 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         // Take the item while the objective is INACTIVE (the pre-activation pickup).
         b.push(format!("give {sel} {item} {count}"));
-        // Activate WITHOUT re-giving (packtest_preamble would re-give the item, which
-        // would mask the bug by producing a fresh inventory_changed): set the quest
-        // active + every `after` prerequisite + every required flag by hand.
-        b.push(format!(
-            "scoreboard players set {party} {} 1",
-            quest_active_score(qid)
-        ));
-        for a in o.after() {
-            b.push(format!(
-                "scoreboard players set {party} {} 1",
-                obj_score(a.as_str())
-            ));
-        }
-        for f in o.requires_flags() {
-            b.push(format!(
-                "scoreboard players set {party} {} 1",
-                plan::flag_score(f.as_str())
-            ));
-        }
+        // Activate WITHOUT re-giving: `packtest_preamble` would re-give the item,
+        // masking the bug by producing a fresh `inventory_changed`. Only the GIVE
+        // is unwanted, so take the guard half whole (`packtest_guards`) rather
+        // than re-deriving it — this site used to hand-roll quest-active, `after`
+        // and `requires_flags` and stopped there, silently omitting the v0.6
+        // negative axis and the v0.10 numeric one, both of which this objective's
+        // own tick line reads.
+        b.extend(packtest_guards(plan, qid, o, true));
         // One tick's held check completes it — no inventory_changed event occurs.
         b.push(format!("function {ns}:tick"));
         b.push(format!(
@@ -18960,6 +19153,33 @@ mod loot_emit_tests {
             out[0].contains(r#"custom_name={"italic":false,"text":"Tide Ledger"}"#),
             "{}",
             out[0]
+        );
+    }
+
+    /// A drop that names itself lowers through [`tr`], never a raw literal.
+    ///
+    /// The regression this pins: `set_name` used to build `{"text": name}`
+    /// directly, and an authored name arrives still carrying its l10n marker —
+    /// so a named drop shipped the marker verbatim and `DW0185` refused the
+    /// build. Every version, unconditionally, for as long as the surface had
+    /// existed; nothing was red because nothing had ever named a drop.
+    #[test]
+    fn a_named_drop_lowers_through_tr_not_a_raw_literal() {
+        let tagged = delvewright_dsl::l10n::tag("wave.muster.mob.0.drop.0.name", "Muster Bone");
+        let component = tr(&tagged);
+        assert_eq!(
+            component["translate"], "wave.muster.mob.0.drop.0.name",
+            "a marked string must lower to a translate key: {component}"
+        );
+        assert_eq!(component["fallback"], "Muster Bone", "{component}");
+        assert!(
+            component.get("text").is_none(),
+            "a marked string must NOT keep a literal body — that body is what \
+             carries the marker into the emitted tree: {component}"
+        );
+        assert!(
+            !component.to_string().contains(&tagged),
+            "the marker itself must not survive into the component: {component}"
         );
     }
 

@@ -1,0 +1,49 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "areas": [
+      {
+        "id": "area/hall",
+        "lighting": {
+          "fixture": "lantern",
+          "min_light": 7
+        },
+        "mitigation": "night-vision",
+        "name": "The Gallery Hall",
+        "pieces": {
+          "max": 1,
+          "min": 1
+        },
+        "prefab": "prefab/gallery-hall"
+      },
+      {
+        "id": "area/annex",
+        "name": "The Annex",
+        "pieces": {
+          "max": 3,
+          "min": 3
+        },
+        "prefab_pool": "pool/gallery-annex"
+      }
+    ],
+    "boundary": {
+      "margin": 16,
+      "message": "The hall ends here."
+    },
+    "difficulty": "hard",
+    "languages": [
+      "zh-cn"
+    ],
+    "min_players": 1,
+    "outro": "Every case in the hall has been read.",
+    "premise": "One hall, every surface the DSL declares, written once and built on every pull request.",
+    "seed": 20260819,
+    "target_minutes": 5,
+    "theme": "A lit stone hall divided by a barred wall.",
+    "time": "day",
+    "title": "The Gallery",
+    "weather": "clear"
+  },
+  "dsl_version": "0.12.0",
+  "stage": "world"
+}

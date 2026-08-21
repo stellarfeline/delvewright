@@ -1,6 +1,6 @@
 # spec-0046: An entry is a role, not a spelling
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Question**: a piece's **entry point** — the cell a body arrives at when it
   enters the area — is identified by matching the anchor's *name* against a list
   of spellings (`plan::ENTRY_ANCHOR_NAMES` = `spawn`, `entry`). Two of the three

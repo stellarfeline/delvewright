@@ -51,6 +51,7 @@ pub mod affordance;
 pub mod analyze;
 pub mod assembled;
 pub mod atmos;
+pub mod batchstate;
 pub mod blocking;
 pub mod branch;
 pub mod calibrate;
@@ -97,7 +98,9 @@ pub mod textfit;
 pub mod timeline;
 pub mod traversal;
 pub mod view;
+pub mod watch;
 pub mod waypoints;
+pub mod ways;
 pub mod wrongside;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).

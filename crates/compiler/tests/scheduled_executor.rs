@@ -269,6 +269,8 @@ fn build_scheduled_hello_world() -> BuildOutput {
         quests: SCHEDULED_QUESTS.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     build_campaign(&campaign, &BTreeMap::new())

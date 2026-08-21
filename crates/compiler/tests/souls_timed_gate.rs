@@ -175,7 +175,7 @@ fn clock_runtime_behaviour_is_packtested() {
     let out = build_fixture();
     let t = std::str::from_utf8(
         out.get(&format!(
-            "packtest-datapack/data/{NS}/test/souls_timed_gate.mcfunction"
+            "packtest-datapack/data/{NS}/test/souls_timed_gate_inner_door.mcfunction"
         ))
         .expect("timed-gate PackTest emitted"),
     )
@@ -185,7 +185,11 @@ fn clock_runtime_behaviour_is_packtested() {
             && t.contains(&format!("function {NS}:tgate_close_inner_door")),
         "the template drives BOTH halves of the real clock: {t}"
     );
-    for score in ["#tg_sealed", "#tg_open", "#tg_shut"] {
+    for score in [
+        "#tg_sealed_inner_door",
+        "#tg_open_inner_door",
+        "#tg_shut_inner_door",
+    ] {
         assert!(
             t.contains(&format!("assert score {score} dw.sys matches 1")),
             "missing the {score} assertion: {t}"
@@ -337,7 +341,7 @@ fn crush_false_is_inert() {
         .collect();
     let expected = [
         format!("datapack/data/{NS}/function/tgate_close_inner_door.mcfunction"),
-        format!("packtest-datapack/data/{NS}/test/souls_timed_gate_crush.mcfunction"),
+        format!("packtest-datapack/data/{NS}/test/souls_timed_gate_crush_inner_door.mcfunction"),
         "validation/critical-path-waypoints.json".to_string(),
         "manifest.json".to_string(),
     ];
@@ -429,7 +433,7 @@ fn crush_runtime_scoping_is_packtested() {
     let out = build_with_crush(true);
     let t = std::str::from_utf8(
         out.get(&format!(
-            "packtest-datapack/data/{NS}/test/souls_timed_gate_crush.mcfunction"
+            "packtest-datapack/data/{NS}/test/souls_timed_gate_crush_inner_door.mcfunction"
         ))
         .expect("crush PackTest emitted when the gate opts in"),
     )
@@ -444,8 +448,8 @@ fn crush_runtime_scoping_is_packtested() {
         "it tests the same region selector the closing tick runs: {t}"
     );
     assert!(
-        t.contains("assert score #cr_in dw.sys matches 1")
-            && t.contains("assert score #cr_out dw.sys matches 0"),
+        t.contains("assert score #cr_in_inner_door dw.sys matches 1")
+            && t.contains("assert score #cr_out_inner_door dw.sys matches 0"),
         "both directions are asserted — in the gate, and clear of it: {t}"
     );
     // Sibling templates share ONE world, so the subject must be `@s`, never `@a`.

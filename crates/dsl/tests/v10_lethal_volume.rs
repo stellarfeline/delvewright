@@ -53,6 +53,8 @@ fn raw(quests: String) -> RawCampaign {
         quests,
         dialogue: hw("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
 }
 

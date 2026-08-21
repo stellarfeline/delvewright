@@ -69,6 +69,8 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
             .map(str::to_string)
             .unwrap_or_else(|| read_hw("dialogue.json")),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
     .expect("campaign parses")
 }
@@ -443,6 +445,8 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
 }"#
         .to_string(),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
     .expect("campaign parses")
 }

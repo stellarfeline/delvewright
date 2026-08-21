@@ -126,6 +126,8 @@ fn fresh_inventory(dir: &Path) -> BTreeMap<String, String> {
         quests: read("quests.json"),
         dialogue: read("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
     .expect("fixture parses");
     delvewright_dsl::l10n_inventory(&campaign)

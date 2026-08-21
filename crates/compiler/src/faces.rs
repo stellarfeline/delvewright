@@ -138,6 +138,11 @@ struct Piece {
     min: [i32; 3],
     max: [i32; 3],
     faces: Vec<PlacedFace>,
+    /// Whether the prefab declares a `spatial_contract` at all — which is a
+    /// different question from whether it declares a FACE. A piece whose every
+    /// edge joins two of its own spaces makes a complete claim about its
+    /// inside and none about its sides, so it contracts and faces nothing.
+    contracted: bool,
 }
 
 /// The verdict of the mating check: how many declared faces met another placed
@@ -148,7 +153,16 @@ pub struct FaceBinding {
     pub bound: usize,
     /// Declared faces in all, over every placed piece.
     pub declared: usize,
-    /// Placed pieces that declare a face contract at all.
+    /// Placed pieces that declare at least one FACE.
+    pub faced: usize,
+    /// Placed pieces that declare a `spatial_contract` at all.
+    ///
+    /// Reported beside [`FaceBinding::faced`] rather than folded into it,
+    /// because the two are different findings with different repairs: a
+    /// library that predates the contract needs an adoption round, while a
+    /// contracted piece with no face has made its claim and simply has no
+    /// side to offer a neighbour. Collapsing them told the reader of a
+    /// contracted piece that nothing declares a contract.
     pub contracted: usize,
 }
 
@@ -164,11 +178,13 @@ impl FaceBinding {
             "/areas",
             format!(
                 "the piece-mating check examined ZERO abutting faces: of {pieces} placed piece(s), \
-                 {} declare a spatial contract and {} face(s) are declared in all, none of which \
-                 touches another placed piece. Nothing here proves that the pieces of this world \
-                 fit together — a piece without a contract makes no claim about its own sides, so \
-                 there is nothing for a neighbour to disagree with",
-                self.contracted, self.declared
+                 {} with a spatial contract, {} of those with a face, and {} face(s) declared \
+                 in all — none of which touches another placed piece. Nothing here \
+                 proves that the pieces of this world fit together. A piece without a contract \
+                 makes no claim about its own sides at all; a piece whose contract declares only \
+                 interior edges has made its claim and offers a neighbour nothing to disagree \
+                 with",
+                self.contracted, self.faced, self.declared
             ),
         ))
     }
@@ -210,12 +226,16 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                 min,
                 max,
                 faces,
+                contracted: prefabs
+                    .get(&placement.prefab_id)
+                    .is_some_and(|m| m.spatial_contract.is_some()),
             });
         }
     }
 
     let declared: usize = pieces.iter().map(|p| p.faces.len()).sum();
-    let contracted = pieces.iter().filter(|p| !p.faces.is_empty()).count();
+    let faced = pieces.iter().filter(|p| !p.faces.is_empty()).count();
+    let contracted = pieces.iter().filter(|p| p.contracted).count();
     let mut bound = 0usize;
 
     for (i, piece) in pieces.iter().enumerate() {
@@ -311,6 +331,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
     Ok(FaceBinding {
         bound,
         declared,
+        faced,
         contracted,
     })
 }

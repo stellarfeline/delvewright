@@ -1,0 +1,73 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "classes": [
+      {
+        "blurb": "Carries the blade, the boots and the bread.",
+        "id": "class/wanderer",
+        "kit": [
+          {
+            "count": 1,
+            "item": "minecraft:iron_sword",
+            "name": "Gallery Blade"
+          },
+          {
+            "carrier": "all",
+            "count": 1,
+            "item": "minecraft:leather_boots"
+          },
+          {
+            "carrier": "one",
+            "count": 3,
+            "item": "minecraft:bread"
+          },
+          {
+            "contents": {
+              "color": "#3F76E4",
+              "effects": [
+                {
+                  "amplifier": 0,
+                  "duration": 200,
+                  "effect": "minecraft:night_vision"
+                }
+              ],
+              "potion": "minecraft:water"
+            },
+            "count": 1,
+            "flask": true,
+            "item": "minecraft:potion",
+            "name": "Curator's Draught"
+          }
+        ],
+        "name": "Wanderer"
+      },
+      {
+        "blurb": "Trades reach for a shield.",
+        "id": "class/warder",
+        "kit": [
+          {
+            "count": 1,
+            "item": "minecraft:shield",
+            "name": "Hall Guard's Shield"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:stone_axe"
+          },
+          {
+            "contents": {
+              "potion": "minecraft:healing"
+            },
+            "count": 2,
+            "flask": true,
+            "item": "minecraft:potion",
+            "name": "Warder's Flask"
+          }
+        ],
+        "name": "Warder"
+      }
+    ]
+  },
+  "dsl_version": "0.12.0",
+  "stage": "classes"
+}

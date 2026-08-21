@@ -39,6 +39,16 @@ jobs:
       - name: every server derives its world from the build
         run: bash validation/check-world-settings.sh
 
+      # A pin freezes an instrument on purpose; the defect is a pin nobody has
+      # looked at since the thing it names moved, which is invisible because the
+      # file reads the same on the day it is written and a year later. This half
+      # is offline: every literal that decides which version of an external thing
+      # this repo fetches is discovered by shape and must carry a registry entry
+      # naming its policy. It states its binding count, and a binding of zero is
+      # a finding rather than a pass.
+      - name: every pin is declared
+        run: python3 tools/check-pins.py
+
   rust:
     name: rust (fmt, clippy, test)
     runs-on: ubuntu-latest
@@ -243,6 +253,7 @@ jobs:
           workspaces: |
             prefabs/generator
             prefabs/cave-generator
+            prefabs/gallery-generator
             prefabs/hello-room-generator
             prefabs/island-generator
             prefabs/island-terrain-generator
@@ -255,8 +266,8 @@ jobs:
       - name: cargo fmt --check each generator workspace
         run: |
           set -euo pipefail
-          for g in generator cave-generator hello-room-generator island-generator \
-                   island-terrain-generator tidal-keep-generator; do
+          for g in generator cave-generator gallery-generator hello-room-generator \
+                   island-generator island-terrain-generator tidal-keep-generator; do
             cargo fmt --manifest-path "prefabs/$g/Cargo.toml" --all -- --check
           done
       # `prefabs/invariants.rs` is source-included by every generator, so one
@@ -270,8 +281,8 @@ jobs:
       - name: run every generator twice — invariants hold, output is identical
         run: |
           set -euo pipefail
-          for g in generator cave-generator hello-room-generator island-generator \
-                   island-terrain-generator tidal-keep-generator; do
+          for g in generator cave-generator gallery-generator hello-room-generator \
+                   island-generator island-terrain-generator tidal-keep-generator; do
             echo "::group::$g"
             rm -rf "/tmp/$g-a" "/tmp/$g-b"
             mkdir -p "/tmp/$g-a" "/tmp/$g-b"
@@ -367,7 +378,18 @@ jobs:
     name: docs (local link check)
     runs-on: ubuntu-latest
     steps:
+      # Full history, and it is `check-version-ledger-uniqueness.py` that needs
+      # it: deciding whether a ledger row missing from this branch was WITHDRAWN
+      # by it or simply arrived at `origin/main` after it was cut is a question
+      # about the fork point, and the two look identical in the tree. The
+      # default depth-1 checkout cannot answer it — measured on this
+      # repository's own PR merge-preview shape, `git merge-base HEAD
+      # origin/main` exits 1 with no output there and resolves at depth 0. The
+      # gate fails CLOSED without it (nothing is withdrawn, rule 1 is the union
+      # it always was), so this is what makes a correct cancellation green
+      # rather than what makes a collision red.
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       # docs/reference/compiler.md is the authoritative current-behavior record;
       # its DW diagnostics catalog must match crates/**/*.rs exactly, both ways
       # (CLAUDE.md Methodology). Deterministic, offline, stdlib-only python3
@@ -516,22 +538,45 @@ jobs:
       # given that fetch; the script itself takes no further network action.
       # What it cannot see — another open PR that has not yet merged into
       # `origin/main` — is stated in the script's own docstring, not buried.
-      # `--depth=1` is CI-ONLY and is correct HERE for a reason that does not
-      # travel: `actions/checkout@v4` already left this a shallow checkout, so
-      # there is no full history to truncate, and one commit is fetched instead
-      # of the branch's whole ancestry (measured against this repository's own
-      # history under CI's merge-preview shape: 1 commit versus 400). Run the
-      # same line in a developer's full clone and it converts that clone — and
-      # every worktree sharing its object store — into a shallow one, after
-      # which merge-base, ahead/behind and every other ancestry answer is a
-      # confident wrong number rather than an error. That is why the gates below
-      # never print this line: they compute the remedy from the repository they
-      # are running in (`tools/lib/gitbase.py`), and a full clone is told to
-      # fetch plainly.
-      - name: fetch origin/main for the numbering-uniqueness gates (CI-only depth)
-        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      # A PLAIN fetch, and the absence of `--depth=1` is the point. The checkout
+      # above is full, and that flag converts a full clone — and every worktree
+      # sharing its object store — into a shallow one, after which merge-base,
+      # ahead/behind and every other ancestry answer is a confident wrong number
+      # rather than an error. It would take back, in one line, the ancestry the
+      # ledger gate was given full history for. That is the same rule the gates
+      # below print for an operator: they compute the remedy from the repository
+      # they are running in (`tools/lib/gitbase.py`), and a full clone is told
+      # to fetch plainly.
+      - name: fetch origin/main for the numbering-uniqueness gates
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
       - name: no spec or ADR number collides with origin/main after this merges
         run: python3 tools/check-numbered-doc-uniqueness.py
+      # The same two series, asked a different question: not "is this number
+      # unique" but "does the index TELL THE TRUTH about it". `docs/specs/
+      # README.md` and `docs/adr/README.md` carry a status column, and neither is
+      # the authority — each document's own `Status:` line is — so both tables
+      # are copies, and a copy nothing compares against its source drifts the
+      # moment either side is edited alone. Measured before this step existed:
+      # seven of thirty-seven spec rows disagreed with the file they point at,
+      # seven spec files had no row at all (including `spec-0039`, the gallery),
+      # and `ADR-0020` was missing from the ADR index — while the local link
+      # check, `check-doc-dupes` and the uniqueness gate above were all green,
+      # because each asks about the table's SHAPE and none asks whether what it
+      # SAYS is true. Correcting the tables by hand and stopping is the UNRUN
+      # shape: correct the day it lands, stale at the next merge, with nothing
+      # that could say so. A document with no readable status is REPORTED, never
+      # filled in — a status written into a document nobody ruled on forges the
+      # fact this gate protects. The same step also holds the spec corpus to
+      # docs/specs/README.md's own preamble: every spec carries an Acceptance
+      # criteria section — an obligation that was previously a doc line, which
+      # is not an invocation, and was false in fact for four specs while the
+      # sentence asserting it stayed true by declaration. States its binding
+      # count per series (documents, rows, statuses compared, sections found);
+      # a series empty on either side exits 2. Deterministic, offline,
+      # stdlib-only python3, and no network I/O — it compares this tree
+      # against itself.
+      - name: every index row agrees with its document, and every spec carries its acceptance criteria
+        run: python3 tools/check-numbered-doc-index.py
       # The same defect one layer down, on a different kind of number. A version
       # ledger is picked exactly the way a spec number is — list what exists,
       # write the next one — so two branches take the same number for different
@@ -543,7 +588,10 @@ jobs:
       # construct it does not implement and silently drops it — ADR-0018 §7's
       # failure, reintroduced by the fence's own numbering. Covers every version
       # ledger in the repo (grammar `Program` version, campaign `dsl_version`),
-      # not one crate. Uses the fetch above; no further network action. What it
+      # not one crate. Uses the fetch above plus `git merge-base` against the
+      # full history the checkout now carries — a row missing from this branch
+      # was WITHDRAWN by it or arrived at the base after it was cut, and only
+      # the fork point tells those apart. No network action of its own. What it
       # cannot see, and where `dsl_version`'s anchors are self-naming so its
       # first rule cannot bind, are both in the script's own docstring.
       - name: no version number names two surfaces after this merges
@@ -796,6 +844,24 @@ jobs:
       # campaign, so the binary is named explicitly and the script never infers
       # one. Dev profile — the workspace sets `opt-level = 1` for it, which is
       # what makes a real layout solve affordable on every push.
+      # The pin's other half, judged where the pinned repository's history
+      # already is. This job checks the content repo out for its own reasons, so
+      # the drift measurement costs one deepening fetch and no new host: a
+      # required status check must not reach for something it does not already
+      # need. The checkout is shallow and AT the pin, so by itself it carries
+      # none of the commits the question is about — deepening it and fetching
+      # the default branch is what makes "what landed after this pin"
+      # answerable at all.
+      # One refspec, not a bare `--unshallow`: deepening every branch of the
+      # content repo costs 51 MB, deepening the one branch the question is about
+      # costs 2.6 MB. Measured, because a gate that makes every push slower for
+      # no reason is how the next person justifies removing it.
+      - name: deepen the content checkout so the pin has something to be behind
+        run: |
+          git -C campaigns fetch --unshallow origin main:refs/remotes/origin/main \
+            || git -C campaigns fetch origin main:refs/remotes/origin/main
+      - name: the content pin is measured against what it names
+        run: python3 tools/check-pins.py --online --checkout content-repo=campaigns
       - name: build the engine under test
         run: cargo build --locked -p delvec --bin delvec
       - name: every campaign in the pinned content repo still builds
@@ -817,6 +883,101 @@ jobs:
           cargo run --locked -q -p delvewright-grammar --bin delve-grammar -- \
             audit --library --campaign-root campaigns \
             --exclusions .github/zone-audit-exclusions.json
+
+  # ----------------------------------------------------------------- gallery --
+  # spec-0039: the engine's OWN campaign. The `campaign builds` job above proves
+  # that SHIPPED content still compiles under this change — real, and structurally
+  # unable to cover a surface this change just added, because the content pin lags
+  # the engine and those campaigns are approved artifacts no engine change may
+  # edit. The gallery is engine-owned and same-repo, so the element lands in the
+  # same pull request as the surface.
+  #
+  # Needs no content checkout, deliberately (§6): its one piece and its two skins
+  # are generated here by the engine's own generator, so the whole job runs from
+  # this repository alone — which is the creator-machine floor CLAUDE.md requires,
+  # not a convenience.
+  gallery:
+    name: gallery (coverage + build + baseline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `gallery-baseline.py` classifies a manifest mismatch as an emission
+          # change or a determinism finding by what the diff touches, and that
+          # needs the merge base rather than a shallow head.
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@v2
+        with: { key: gallery }
+      - name: build the engine under test
+        run: cargo build --locked -p delvec --bin delvec
+      # The piece and the skins, generated — never committed (§6). Doing this
+      # before anything else means a generator that stopped producing a piece
+      # fails in a step named for the generator, not inside one named for a gate.
+      - name: generate the gallery's piece and skins
+        run: |
+          mkdir -p gallery-prefabs
+          cargo run --locked --release \
+            --manifest-path prefabs/gallery-generator/Cargo.toml \
+            -- gallery-prefabs --skins gallery/skins
+      # `analyze` is the reachability half of the ladder (spec-0039 §4.2) and
+      # `build --lang en` is the tree the coverage gate reads its binding ledgers
+      # from. Every OTHER language, and every overlay, is built by the baseline
+      # step below — which walks the whole domain by construction, so this job
+      # never carries a hand-written list of languages to go stale.
+      - name: the gallery analyzes green and builds
+        run: |
+          set -euo pipefail
+          target/debug/delvec analyze gallery --prefabs gallery-prefabs
+          target/debug/delvec build gallery -o gallery-out-en --prefabs gallery-prefabs
+      # The coverage gate. Reds when the schema export gains a unit the gallery
+      # does not write — i.e. precisely on the changes that grow authoring
+      # surface, and on no others.
+      - name: every declared surface is written or proven refused
+        run: |
+          python3 tools/check-gallery-coverage.py \
+            --delvec target/debug/delvec \
+            --prefabs gallery-prefabs \
+            --build-out gallery-out-en \
+            --report gallery-coverage.json \
+            --index gallery-coverage.md
+      # spec-0039 §7. CI rendered nothing until this ran. The CPU arms only —
+      # they need no GPU, no client jar and no `nucleation`, so the whole step
+      # runs on an ordinary runner. Whether the GPU arms can be driven here
+      # through a software adapter is a separate question and moves only where
+      # frames come from, never what the engine can do.
+      - name: every declared view is produced, and shows something
+        if: '!cancelled()'
+        run: |
+          python3 tools/check-gallery-render.py \
+            --delvec target/debug/delvec \
+            --prefabs gallery-prefabs \
+            --build-out gallery-out-en \
+            --frames gallery-frames
+
+      - name: emission baseline + expected-warnings ledger
+        if: '!cancelled()'
+        run: |
+          python3 tools/gallery-baseline.py \
+            --delvec target/debug/delvec --prefabs gallery-prefabs
+      # §6: the numbers are reported from day one, and no wall-clock value gates
+      # — a timing red on a shared runner is an intermittent red, and the debug
+      # doctrine forbids re-running those.
+      - name: job summary
+        if: always()
+        run: |
+          {
+            echo "## Gallery"
+            echo
+            sed -n '1,12p' gallery-coverage.md 2>/dev/null || echo "(coverage report not produced)"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-coverage
+          path: |
+            gallery-coverage.json
+            gallery-coverage.md
+            gallery-frames/
 
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
@@ -998,6 +1159,31 @@ jobs:
       # fixture carrying `interact` + `requires_item` (plus kill/collect/flag-gate,
       # which come along free). Same cost profile: one extra toolserver boot, no new
       # pull, no new compile.
+      # spec-0039 — the gallery's own generated suite. It is by far the largest
+      # any campaign in this repository emits (the next biggest is hello-world at
+      # six), because the gallery writes nearly every surface and a template is
+      # emitted per surface that has one. Every one of those templates was being
+      # generated and thrown away: the templates existed, were counted, and
+      # nothing ran them, which is a suite that cannot fail.
+      #
+      # No content checkout: the piece and the skins are generated here by the
+      # engine's own generator, so this pass runs from this repository alone.
+      # Same cost profile as the six passes around it — one toolserver boot; the
+      # image is pulled and the compiler is built already.
+      - name: build the gallery delve output (spec-0039)
+        run: |
+          set -euo pipefail
+          mkdir -p gallery-prefabs
+          cargo run --locked --manifest-path prefabs/gallery-generator/Cargo.toml \
+            -- gallery-prefabs --skins gallery/skins
+          target/debug/delvec build gallery \
+            -o validation/delve-output-gallery --prefabs gallery-prefabs
+
+      - name: PackTest suite — gallery (every template the engine emits)
+        run: |
+          bash validation/packtest-run.sh --project dw-ci-gallery \
+            --output ./delve-output-gallery
+
       - name: build the keep-trial delve output (held-item interact)
         run: |
           target/debug/delvec \

@@ -1,0 +1,6 @@
+{
+  "binds": [
+    "Horizon::ocean"
+  ],
+  "note": "A sea backdrop places areas on the sea-level datum instead of the void one, so it is a different world for the same campaign and cannot coexist with `void`."
+}

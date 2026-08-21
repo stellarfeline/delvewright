@@ -149,6 +149,8 @@ fn parse_with(quests: &str) -> Campaign {
         quests: quests.to_string(),
         dialogue: read_hw("dialogue.json").replacen("\"0.2.0\"", "\"0.6.0\"", 1),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
