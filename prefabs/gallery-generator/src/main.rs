@@ -233,6 +233,16 @@ const ANCHORS: &[Anchor] = &[
         trigger_block: None,
         role: "where a camera stands to look back down the hall",
     },
+    Anchor {
+        name: "anchor/loft",
+        pos: [19, LOFT_TOP_Y + 1, 18],
+        facing: Some("south"),
+        trigger_block: None,
+        role: "on top of the mezzanine, which the broken flight is the ONLY way \
+               onto. Three courses above the floor and a body steps one, so \
+               anything staged here is content the campaign has to open a way to \
+               — which is what makes the way load-bearing instead of scenery",
+    },
     // Kept clear of the outer wall on purpose: a POV camera stands on an anchor
     // and looks along the leg it is walking, so an anchor one or two blocks from
     // a wall renders the wall — a flat frame, or one framing nothing declared.
@@ -288,6 +298,48 @@ const SOLID_ANCHORS: &[Anchor] = &[Anchor {
 /// The canopy the collapse anchor points at: `(x0, x1, y, z0, z1)`, inclusive.
 const CANOPY: (i32, i32, i32, i32, i32) = (22, 28, 5, 19, 25);
 
+/// **The mezzanine** — a solid dais in the far hall's west corner, three courses
+/// tall, whose top is the only floor in the piece a body cannot walk onto.
+///
+/// It is solid rather than a slab on legs on purpose: a mezzanine with a room
+/// under it would roof floor the ceiling lanterns light, and the piece's
+/// lighting profile is a claim about every walkable cell. A dais shades nothing
+/// because there is nothing under it.
+///
+/// `(x0, x1, z0, z1)`, inclusive. Solid for `y ∈ 1..=LOFT_TOP_Y`.
+const LOFT: (i32, i32, i32, i32) = (18, 21, 17, 20);
+
+/// The dais's top course. A body on the mezzanine stands at `LOFT_TOP_Y + 1`.
+const LOFT_TOP_Y: i32 = 3;
+
+/// **The broken flight** — the stair that climbs the dais, with its treads
+/// missing (spec-0042).
+///
+/// `(x0, x1)` is the flight's width and `(z0, z1)` its run; the two tread
+/// courses are `TREADS`. As shipped those cells are AIR, so the mezzanine is
+/// three courses above a body that can step one — severed, provably, on the
+/// bytes that ship. A campaign's `open-way` lays them, and the same climb is
+/// then four one-block steps.
+const FLIGHT: (i32, i32, i32, i32) = (19, 20, 21, 22);
+
+/// The tread courses the flight is missing, as `(y, z)` — the cells a laid way
+/// fills and a body steps onto. Ordered bottom-first, which is the order the
+/// exported metadata lists them in.
+const TREADS: [(i32, i32); 2] = [(1, 22), (2, 21)];
+
+/// What the treads are laid in. Deliberately not the hall's own stone: a player
+/// who repairs the flight should be able to see which courses they put back.
+const TREAD_BLOCK: &str = "minecraft:stone_bricks";
+
+/// The way's name — what an `open-way` effect addresses, and what the piece's
+/// contract exports it as.
+const WAY_NAME: &str = "broken-flight";
+
+/// The stair edge's transit volume: the flight's own airspace, treads included.
+/// A way region must lie inside its edge's opening (spec-0042 §2.1), so this is
+/// the box the tread courses are carved out of.
+const FLIGHT_VIA: (i32, i32, i32, i32, i32, i32) = (FLIGHT.0, FLIGHT.1, 1, 3, FLIGHT.2, FLIGHT.3);
+
 /// The gate inventory. Every opening is a real hole in the divider, so an
 /// unopened gate really does stop a body and `DW0311` has something to prove.
 const GATE_ANCHORS: &[GateAnchor] = &[
@@ -329,6 +381,12 @@ fn lanterns() -> Vec<[i32; 3]> {
         }
         z += 6;
     }
+    // The mezzanine's own fixture. The grid is derived from `SIZE` and knows
+    // nothing about a floor three courses up, so its nearest lantern leaves the
+    // dais's far corner at light 7 — one under the `lit` bar the metadata
+    // claims. A floor the grid does not reach carries its own light rather than
+    // the profile carrying a claim it cannot meet.
+    out.push([19, SIZE[1] - 2, 18]);
     out
 }
 
@@ -416,6 +474,14 @@ fn block_at(
     }
     let (cx0, cx1, cy, cz0, cz1) = CANOPY;
     if y == cy && (cx0..=cx1).contains(&x) && (cz0..=cz1).contains(&z) {
+        return ("minecraft:stone", None);
+    }
+    // The mezzanine: solid to its top course, and nothing carves a way into it.
+    // The flight that climbs it is outside this footprint entirely, which is
+    // what makes the break a break — remove the treads and the dais's south
+    // face is a plain three-course wall.
+    let (lx0, lx1, lz0, lz1) = LOFT;
+    if (lx0..=lx1).contains(&x) && (lz0..=lz1).contains(&z) && (1..=LOFT_TOP_Y).contains(&y) {
         return ("minecraft:stone", None);
     }
     if CONTAINERS.iter().any(|a| a.pos == [x, y, z]) {
@@ -565,6 +631,169 @@ fn assert_anchors_are_standable(s: &Structure) {
     );
 }
 
+/// Every cell the broken flight is missing, as local coordinates — the way
+/// region, in the order the metadata exports it.
+fn tread_cells() -> Vec<[i32; 3]> {
+    let mut out = Vec::new();
+    for (y, z) in TREADS {
+        for x in FLIGHT.0..=FLIGHT.1 {
+            out.push([x, y, z]);
+        }
+    }
+    out
+}
+
+/// **The contract's own proof, run on the bytes this program is about to
+/// write** (spec-0042 §2.1, the closed and open halves).
+///
+/// A hand-built piece carries a resolved `spatial_contract` the way an expanded
+/// program does, and nothing downstream re-derives it: the compiler reads the
+/// declaration and believes it. So the claim "the mezzanine is severed as
+/// shipped, and laying `broken-flight` joins it" is proved HERE or it is proved
+/// nowhere — which would be the same wart the anchor table exists to avoid, one
+/// layer up.
+///
+/// Both halves are one walk over the piece's own blocks, run twice: once on the
+/// bytes as they ship, once on a copy with the tread courses filled. The walk is
+/// deliberately generous — a body steps up one course, falls any distance, and
+/// needs two cells of headroom — because a generous walk failing to reach the
+/// mezzanine is a stronger statement than a strict one failing to.
+///
+/// Rooted in the FAR hall rather than at `spawn`: the divider's iron bars are a
+/// campaign-controlled gate, not part of this edge's claim, and threading them
+/// here would make an assertion about the flight depend on how a gate is
+/// written. What this proves is exactly what the stair edge declares.
+fn assert_the_flight_is_broken(s: &Structure) {
+    let mut cells: BTreeMap<[i32; 3], &str> = BTreeMap::new();
+    for b in &s.blocks {
+        cells.insert(b.pos, s.palette[b.state as usize].name.as_str());
+    }
+
+    // The closed direction, on the bytes as shipped: every tread cell really is
+    // absent. A way declared over cells that are already solid is the
+    // `barred`-shaped defect spec-0042 §7.3 names — the delta opens nothing.
+    let treads = tread_cells();
+    assert!(!treads.is_empty(), "{ID}: the way region is empty");
+    for p in &treads {
+        assert_eq!(
+            cells.get(p).copied(),
+            Some("minecraft:air"),
+            "{ID}: way `{WAY_NAME}` claims cell {p:?}, which is not air as built — a laid way \
+             fills what is not there, and this cell is already something"
+        );
+    }
+    // Confinement (§2.1): the way lies inside its own edge's transit volume.
+    let (vx0, vx1, vy0, vy1, vz0, vz1) = FLIGHT_VIA;
+    for p in &treads {
+        assert!(
+            (vx0..=vx1).contains(&p[0])
+                && (vy0..=vy1).contains(&p[1])
+                && (vz0..=vz1).contains(&p[2]),
+            "{ID}: way cell {p:?} lies outside the stair's transit volume"
+        );
+    }
+
+    let laid: std::collections::BTreeSet<[i32; 3]> = treads.iter().copied().collect();
+    let loft_anchor = ANCHORS
+        .iter()
+        .find(|a| a.name == "anchor/loft")
+        .expect("the mezzanine declares its anchor")
+        .pos;
+    let foot = [FLIGHT.0, 1, FLIGHT.3 + 1];
+
+    let shut = walk(&cells, &laid, false, foot);
+    let open = walk(&cells, &laid, true, foot);
+    assert!(
+        shut.contains(&foot) && open.contains(&foot),
+        "{ID}: the flight's foot at {foot:?} is not somewhere a body can stand, so neither half \
+         of this proof examined anything"
+    );
+    assert!(
+        !shut.contains(&loft_anchor),
+        "{ID}: with `{WAY_NAME}` shut a body still reaches the mezzanine at {loft_anchor:?} — the \
+         way does not open anything, and the contract's severance claim is false on the bytes \
+         that ship"
+    );
+    assert!(
+        open.contains(&loft_anchor),
+        "{ID}: with `{WAY_NAME}` laid a body still cannot reach the mezzanine at \
+         {loft_anchor:?} — the declared delta does not join the two ends"
+    );
+    println!(
+        "{ID}: way `{WAY_NAME}` bound — {} tread cell(s) absent as built; {} stance(s) reachable \
+         shut, {} laid, and the mezzanine is in the difference",
+        treads.len(),
+        shut.len(),
+        open.len()
+    );
+}
+
+/// The walk both halves of [`assert_the_flight_is_broken`] use.
+///
+/// A stance is a cell a body occupies: air, air above it, a full cube under it.
+/// From one stance a body reaches a horizontally adjacent stance whose floor is
+/// at most one course higher, or any distance lower with a clear column to fall
+/// down. `laid` is the way region, treated as full cube when `open`.
+fn walk(
+    cells: &BTreeMap<[i32; 3], &str>,
+    laid: &std::collections::BTreeSet<[i32; 3]>,
+    open: bool,
+    from: [i32; 3],
+) -> std::collections::BTreeSet<[i32; 3]> {
+    // A full cube a body stands on and cannot walk through. Iron bars and
+    // lanterns are neither: the divider is not a floor and a lantern is not a
+    // step.
+    let full = |p: [i32; 3]| -> bool {
+        if open && laid.contains(&p) {
+            return true;
+        }
+        matches!(
+            cells.get(&p).copied(),
+            Some("minecraft:stone") | Some("minecraft:chest")
+        )
+    };
+    let air = |p: [i32; 3]| -> bool {
+        if open && laid.contains(&p) {
+            return false;
+        }
+        cells.get(&p).copied() == Some("minecraft:air")
+    };
+    let stance = |p: [i32; 3]| -> bool {
+        air(p) && air([p[0], p[1] + 1, p[2]]) && full([p[0], p[1] - 1, p[2]])
+    };
+
+    let mut seen = std::collections::BTreeSet::new();
+    if !stance(from) {
+        return seen;
+    }
+    let mut queue = std::collections::VecDeque::new();
+    seen.insert(from);
+    queue.push_back(from);
+    while let Some(p) = queue.pop_front() {
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let (nx, nz) = (p[0] + dx, p[2] + dz);
+            for ny in (1..=p[1] + 1).rev() {
+                let q = [nx, ny, nz];
+                if !stance(q) {
+                    continue;
+                }
+                let reachable = if ny == p[1] + 1 {
+                    // A step up needs the course above the body's head clear.
+                    air([p[0], p[1] + 2, p[2]])
+                } else {
+                    // Level, or a fall down a clear column.
+                    (ny + 2..=p[1] + 1).all(|y| air([nx, y, nz]))
+                };
+                if reachable && seen.insert(q) {
+                    queue.push_back(q);
+                }
+                break;
+            }
+        }
+    }
+    seen
+}
+
 fn invariant_cells(s: &Structure) -> invariants::Cells {
     s.blocks
         .iter()
@@ -602,6 +831,133 @@ fn resolve_connections(id: &str, s: &mut Structure) {
     }
 }
 
+/// One inclusive local box, as the contract writes it.
+fn region(from: [i32; 3], to: [i32; 3]) -> serde_json::Value {
+    serde_json::json!({ "from": from, "to": to })
+}
+
+/// **The piece's spatial contract** — what its own shape claims, resolved
+/// against these exact bytes (spec-0036, spec-0042 §2.3).
+///
+/// Three spaces and two contingencies, one of each kind the surface has:
+///
+/// * `near-hall` — where the party arrives; the contract's entry.
+/// * `far-hall` — beyond the divider, reached through a `barred` edge whose bar
+///   is the iron in the three gate openings. Content opens that by voiding it,
+///   which is the `cleared` direction.
+/// * `loft` — the mezzanine's airspace, reached through a `stair` edge whose
+///   treads are not there. Content opens that by filling it, which is the
+///   `laid` direction, and it is the one a campaign addresses by name.
+///
+/// `faces` is deliberately absent: every edge here joins two of this piece's own
+/// spaces, so the piece makes no claim about its outside and there is nothing
+/// for a neighbour to mate with.
+///
+/// The space boxes are computed rather than listed because they are the
+/// interior MINUS the two solid masses the mezzanine and its flight occupy, and
+/// a hand-written decomposition of that is a list that goes stale the first
+/// time a constant moves.
+fn spatial_contract() -> serde_json::Value {
+    use serde_json::{json, Map, Value};
+    let (lx0, lx1, lz0, lz1) = LOFT;
+    let (fx0, fx1, fz0, fz1) = FLIGHT;
+    let (in0, in1) = (1, SIZE[0] - 2); // the interior, wall to wall
+    let (top, floor) = (SIZE[1] - 2, 1);
+
+    // A stair lands ON the dais, so the flight's run starts where the dais's
+    // south face is. The decomposition below relies on that — with a gap
+    // between them it would leave a strip of floor in no space at all, silently.
+    assert_eq!(
+        fz0,
+        lz1 + 1,
+        "{ID}: the flight does not abut the mezzanine it climbs"
+    );
+    // …and it lands within the dais's width rather than flush with an edge. A
+    // flush flight collapses one of the strips below into an INVERTED box, which
+    // `space_holding` reads through `min`/`max` — so it would silently claim the
+    // dais's own solid cells for the far hall instead of failing.
+    assert!(
+        lx0 < fx0 && fx1 < lx1,
+        "{ID}: the flight is flush with a side of the mezzanine, which the space \
+         decomposition below cannot express"
+    );
+    // The far hall's walkable airspace, carved around the dais (solid, so in no
+    // space at all) and around the flight's transit volume (the stair edge's,
+    // not the room's).
+    let far: Vec<Value> = vec![
+        region([in0, floor, DIVIDER_Z + 1], [lx0 - 1, top, in1]),
+        region([lx1 + 1, floor, DIVIDER_Z + 1], [in1, top, in1]),
+        region([lx0, floor, DIVIDER_Z + 1], [lx1, top, lz0 - 1]),
+        region([lx0, floor, fz0], [fx0 - 1, top, fz1]),
+        region([fx1 + 1, floor, fz0], [lx1, top, fz1]),
+        region([fx0, LOFT_TOP_Y + 1, fz0], [fx1, top, fz1]),
+        region([lx0, floor, fz1 + 1], [lx1, top, in1]),
+    ];
+
+    let mut spaces = Map::new();
+    spaces.insert(
+        "near-hall".into(),
+        json!({
+            "envelope": "enclosed",
+            "boxes": [region([in0, floor, in0], [in1, top, DIVIDER_Z - 1])],
+        }),
+    );
+    spaces.insert(
+        "far-hall".into(),
+        json!({ "envelope": "enclosed", "boxes": far }),
+    );
+    spaces.insert(
+        "loft".into(),
+        json!({
+            "envelope": "enclosed",
+            "boxes": [region([lx0, LOFT_TOP_Y + 1, lz0], [lx1, top, lz1])],
+        }),
+    );
+
+    let bar: Vec<Value> = GATE_ANCHORS.iter().map(|g| region(g.from, g.to)).collect();
+    let (vx0, vx1, vy0, vy1, vz0, vz1) = FLIGHT_VIA;
+    let treads: Vec<Value> = TREADS
+        .iter()
+        .map(|(y, z)| region([fx0, *y, *z], [fx1, *y, *z]))
+        .collect();
+
+    json!({
+        "entry": "near-hall",
+        "spaces": Value::Object(spaces),
+        "edges": [
+            {
+                "a": "near-hall",
+                "b": "far-hall",
+                "class": "barred",
+                "rise": 0,
+                "via": { "region": "divider-openings", "boxes": bar.clone() },
+                "bar": {
+                    "region": "divider-iron",
+                    "boxes": bar,
+                    "block": "minecraft:iron_bars"
+                }
+            },
+            {
+                "a": "far-hall",
+                "b": "loft",
+                "class": "stair",
+                "rise": LOFT_TOP_Y,
+                "via": {
+                    "region": "loft-flight",
+                    "boxes": [region([vx0, vy0, vz0], [vx1, vy1, vz1])]
+                },
+                "way": {
+                    "opens": "laid",
+                    "region": WAY_NAME,
+                    "boxes": treads,
+                    "role": "tread",
+                    "block": TREAD_BLOCK
+                }
+            }
+        ]
+    })
+}
+
 /// The prefab metadata, printed from the same tables the geometry was carved
 /// around. `serde_json::Value` is built through a `BTreeMap` so key order is
 /// fixed (ADR-0006) without depending on any preserve-order feature.
@@ -637,6 +993,7 @@ fn metadata() -> serde_json::Value {
             "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
         },
         "anchors": Value::Object(anchors),
+        "spatial_contract": spatial_contract(),
         "lighting": {
             "profile": "lit",
             "measured_min_light": 8,
@@ -659,6 +1016,7 @@ fn write_piece(out: &Path) {
     let mut s = build();
     resolve_connections(ID, &mut s);
     assert_anchors_are_standable(&s);
+    assert_the_flight_is_broken(&s);
     let cells = invariant_cells(&s);
     invariants::assert_distress_never_stacks(ID, &cells);
     invariants::assert_blocks_are_real(ID, &cells);
