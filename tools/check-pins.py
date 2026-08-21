@@ -293,15 +293,8 @@ LANGUAGE_BY_SUFFIX = {
 # language to escape it.
 #
 # A verb may belong to MORE THAN ONE language, which is a third case alongside
-# the two above rather than a loosening of either: `pip install` is a shell
-# command line, so it is a real invocation in a shell script and in a workflow's
-# `run:` block, and it is prose in a Python file — where the identical characters
-# are what a program PRINTS to tell a creator what to install, never what the
-# program does. That case is live: two backends of `tools/refscore.py` carry
-# their install line as a string, and the tool's own documentation says the real
-# backends "are not installed by anything in this repo". Pairing the verb with a
-# SET of languages says which languages it is an invocation in, on the same
-# fail-closed terms — an unrecognised file kind is still read with every verb.
+# the two above rather than a loosening of either, so a verb is paired with a SET
+# of languages. `INSTALL_VERB_LANGUAGES` is the live instance of it.
 FETCH_VERBS = (
     (re.compile(r"^\s*-?\s*uses:\s*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@", re.M), {"yaml"}),
     (re.compile(r"^\s*FROM\s+\S+", re.M), {"dockerfile"}),
@@ -391,6 +384,16 @@ RE_STEP_BREAK = re.compile(r"^[ \t]*-[ \t]", re.M)
 RE_PIP_INSTALL = re.compile(
     r"\b(?:pip3?|python3?[ \t]+-m[ \t]+pip)[ \t]+install\b(?P<args>[^\n]*)"
 )
+# The languages an install command IS one in. It is a shell command line, so it
+# is a real invocation in a shell script and in a workflow's `run:` block — and
+# in a Python file the identical characters are what a program PRINTS to tell a
+# creator what to install, never what the program does. That case is live: two
+# backends of `tools/refscore.py` carry their install line as a string, and the
+# tool's own documentation says the real backends "are not installed by anything
+# in this repo". Read uniformly, this rule would demand a pin for a package this
+# project does not depend on — which is exactly the pressure that produces an
+# exception list, and an exception list is what later covers a real one.
+INSTALL_VERB_LANGUAGES = frozenset({"yaml", "shell"})
 # Options whose VALUE is not a package: the token after them is skipped whole.
 PIP_VALUE_OPTIONS = {
     "-r", "--requirement", "-c", "--constraint", "-e", "--editable",
@@ -733,7 +736,7 @@ def literals(
         # An install this repository RUNS. A package argument naming no exact
         # version is a fetch nobody pinned, which is a finding rather than a pin:
         # there is no value for an entry to record and nothing to hold still.
-        if lang in ("yaml", "shell"):
+        if lang in INSTALL_VERB_LANGUAGES:
             pinned, unpinned = pip_install_arguments(text)
             for value in pinned:
                 found.setdefault(value, set()).add(rel)
