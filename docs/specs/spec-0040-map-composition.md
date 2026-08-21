@@ -1,6 +1,6 @@
 # spec-0040: Map composition — how a whole map gets its appearance
 
-- **Status**: Accepted
+- **Status**: Superseded (ADR-0022)
 - **Question**: a campaign's zones are designed separately, each judged against
   its own reference and produced as its own prefab. The assembly of those parts
   is the whitebox step. What comes after — how the assembled whole acquires an

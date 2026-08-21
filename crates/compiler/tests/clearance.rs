@@ -67,6 +67,8 @@ fn build(base_entity: &str, edits: Option<String>) -> Result<Vec<Diagnostic>, Bu
         quests: read_hw("quests.json"),
         dialogue: read_hw("dialogue.json"),
         world_edits: edits,
+        geometry_brief: None,
+        layout_graph: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

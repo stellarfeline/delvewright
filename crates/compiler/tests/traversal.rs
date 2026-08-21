@@ -219,6 +219,8 @@ fn build_all(
         quests,
         dialogue: dialogue_v06(),
         world_edits: Some(edits),
+        geometry_brief: None,
+        layout_graph: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

@@ -1,7 +1,7 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
-version: 1.3.0
+version: 1.4.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
 verified_with: 1.1.0
@@ -492,6 +492,25 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      that opens a box into water (the water flows back in and the proof does not
      know), and a clear over rubble another mechanism dropped there (a `collapse`
      debris field, a shut timed gate) — those stay solid.
+   - **A piece can ship BROKEN and have the campaign repair it.** A zone whose
+     spatial contract declares a `way` on one of its edges is severed there as
+     built — a stair whose treads are missing, a bridge that is not down, a
+     doorway packed with rubble — and `open-way {piece, way}` is what opens it:
+     `{ "type": "open-way", "piece": "prefab/z7-bell-tower", "way": "broken-flight" }`.
+     Needs `dsl_version` 0.12.0 on the quests stage. This is how a beat *changes
+     the building*: the collapsed stair the party rebuilds, the drawbridge the
+     lever lowers, the shortcut opened once from the far side and open forever.
+     **You write the reference and nothing else** — the cells, the block and the
+     direction all come from the piece's own metadata, so there is no geometry to
+     get wrong and no second place for it to drift. Two rules follow, and both are
+     build errors rather than surprises in play: the piece must be placed exactly
+     once for the reference to name it (`DW0547`), and anything the party is
+     required to reach beyond the break — an objective anchor, an NPC's stand, a
+     wave's spawn — needs a **forced** `open-way` on an objective the quest DAG
+     puts *before* it (`DW0548`). A way nothing opens is fine and stays shut: a
+     door that never opens is content. Every staged way's fate is listed in
+     `validation/ways.json` after a build, so check there when a way is not doing
+     what you expected.
    - **A prefab's gate is SHUT until the campaign opens it.** A gate anchor's
      region holds whatever the prefab authors there — `hello-room`'s doorway is
      iron bars, the island's cave mouth is air — and the compiler measures which.

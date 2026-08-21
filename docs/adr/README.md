@@ -24,8 +24,9 @@ edit. Template at the bottom.
 | [0017](0017-toolchain-distribution.md) | Toolchain distribution: `cargo install delvec`, release shelf, CI-only publishing | Accepted |
 | [0018](0018-creator-toolchain-and-the-ir-hatch.md) | Creator toolchain: cargo as a prerequisite, one authoring crate, the escape hatch at the grammar IR | Accepted |
 | [0019](0019-java-edition-bedrock-shelved.md) | Java edition stays; a Bedrock backend is shelved | Accepted |
-| [0020](0020-map-design-pipeline.md) | The spatial contract — declared spaces and edges, checked against the emitted bytes | Proposed |
+| [0020](0020-map-design-pipeline.md) | The spatial contract — declared spaces and edges, checked against the emitted bytes | Superseded by ADR-0022 |
 | [0021](0021-creator-toolchain-rederived.md) | Creator toolchain re-derived: one distributed binary, registry Nucleation, off-the-shelf viewer core | Proposed |
+| [0022](0022-the-map-is-planned-before-it-is-built.md) | The map is planned before it is built — the whole-first pipeline | Accepted |
 
 ## Template
 

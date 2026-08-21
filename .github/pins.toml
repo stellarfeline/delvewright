@@ -1,0 +1,670 @@
+# THE PIN REGISTRY — every literal in this repo that decides which version of an
+# external thing gets fetched, with the policy that says whether it may drift.
+#
+# `tools/check-pins.py` reads this file. It discovers pins by SHAPE across every
+# file kind that can execute or be resolved from, so an entry is not how a pin
+# becomes visible — a pin is visible whether or not anyone registers it, and an
+# unregistered one is a red. What the entry adds is the DECISION: what this pin
+# is, and on what terms it is allowed to sit still.
+#
+# The reason lives here rather than in a comment beside the value because a
+# comment is not read by anything. A pin that has rotted and a pin that is frozen
+# on purpose look identical in a diff; only a machine-checked policy tells them
+# apart.
+#
+# POLICIES
+#   release   — names a commit a v<semver> tag points at. Verified online against
+#               the tags of the repo it names. A released delve reproduces through
+#               its own pinned engine, so such a pin must never move and drift is
+#               not a finding.
+#   track     — names a commit of a repository this project builds. Must be an
+#               ancestor of that repo's default branch, must carry `reviewed`
+#               (the upstream revision it was last judged against), and must name
+#               `judged_by`, the file whose CI job runs its online check. If any
+#               commit touching the sources the site BUILDS out of the pinned
+#               checkout landed after `reviewed`, the pin has not been looked at
+#               since its instrument changed, and that is a red.
+#   immutable — a content-addressed name for third-party bytes: an image digest,
+#               a jar checksum, a commit of a third-party repository. Currency is
+#               a supply-chain question with a different owner; this gate does not
+#               pretend to answer it, and says so rather than passing silently.
+#   floating  — a ref that moves on purpose: a third-party action held at its
+#               major tag, or a toolchain held at a major/minor line the
+#               publisher advances. Registered so that the number of
+#               deliberately-unfrozen refs is visible instead of habitual.
+#
+# `builds` is the package names the site file builds out of the pinned checkout.
+# It is not a watch list an author writes: the online check derives the watched
+# source directories from those packages in the upstream tree, and the offline
+# check reds if a `cargo build … -p <pkg>` in a site is missing from `builds`.
+#
+# DISCOVERY IS BY SCHEMA, AND MEMBERSHIP IS DECIDED BY DISCOVERY RATHER THAN BY
+# IMPORTANCE. An entry exists because something FOUND the value and demanded a
+# decision for it; appending one by hand for a value no schema reaches is the
+# enumeration-somebody-remembered defect this file's own checker refuses. Four
+# schemas reach a value that has no shape of its own — a manifest whose kind
+# fixes the key (`rust-toolchain.toml`'s `[toolchain] channel`), a Python package
+# manifest, an action's input contract (the setup-node / setup-python actions
+# exist in order to fetch the version their input names), and an install command
+# in a step this repository RUNS. Each is a positive claim about a schema, true
+# anywhere, so the set can only ever be incomplete in the direction of finding
+# LESS — and a package argument with no exact version is a finding rather than a
+# pin, because there is no value for an entry to record.
+#
+# `bound_by` + `bound_key` are for a value the shape scan cannot see. A hash or a
+# ref is found wherever it sits, so `sites` is both the discovery record and the
+# decision; a VERSION STRING carries no shape distinguishing it from data, so the
+# decision is owed exactly where discovery is impossible. Such an entry names the
+# checker that holds its sites equal and the key that checker reads the value
+# under, and check-pins.py verifies all three things a drifted pin could not
+# supply: the file really reads that key, it really names every declared site,
+# and a workflow really runs it. Every declared site is then asserted to carry
+# the value as a whole token.
+#
+# WHICH PAIR OF FIELDS AN ENTRY OWES IS NOT A CHOICE. The arm is read off the
+# value: a value with a pin shape may not declare `bound_by` (it would be the
+# weaker claim about an object that supports the stronger one), and a value
+# without one may not omit it (`sites` alone would be untestable). Where the
+# fetch itself is keyed — rustup reads `[toolchain] channel` and downloads it —
+# discovery reaches the site anyway, and that is what keeps an unregistered
+# version-string pin a red rather than a silence.
+
+# ---------------------------------------------------------------------------
+# The toolchain this repository is built with
+# ---------------------------------------------------------------------------
+# Named by VERSION rather than by bytes, so it is the entry that reaches both
+# ways: discovery finds it at rust-toolchain.toml, the one site where the string
+# CAUSES a fetch, and `bound_by` covers the three that restate it.
+
+[[pin]]
+id = "rust-toolchain"
+value = "1.97.1"
+sites = [
+    "crates/compiler/Cargo.toml",
+    "crates/dsl/Cargo.toml",
+    "rust-toolchain.toml",
+    "versions.toml",
+]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "rust_toolchain"
+why = """
+The Rust toolchain every artifact this project ships is built with. The channel
+in rust-toolchain.toml is the copy rustup obeys — it binds inside git worktrees
+too, and no workflow overrides it, so CI and a creator's own clone build on the
+same compiler. versions.toml restates it and both published manifests carry it as
+their `rust-version` floor; validation/check-versions.sh holds those four equal,
+and tools/check-reference-versions.py holds the two crate READMEs' "Rust 1.97.1
+or newer" line equal to them in turn.
+
+HELD FOR one instrument, constant across time and machines. ADR-0006's
+double-build gate compares two compiles made by the SAME binary, so it cannot see
+a toolchain change at all; what makes a byte-identity result from one month
+comparable to the next is that this string did not move. The same goes for every
+measured figure in docs/reference/distribution-size.md, each taken "on rustc
+1.97.1" — moving the pin silently re-reads all of them against a different
+instrument.
+
+DRIFT COSTS three things, none of which reds where the change was made.
+`cargo clippy -D warnings` is a required status check, so a toolchain carrying
+new lints reds every open pull request at once, for work unrelated to any of
+them. A codegen or float-formatting change moves emitted bytes with nothing
+anywhere saying the instrument moved. And a `rust-version` looser than what
+anybody has actually built on is an untested promise, discovered by a stranger
+running `cargo install`.
+
+RIGHT TO MOVE — and it is allowed to move, because a released delve reproduces
+through its own pinned engine (versions.toml + OCI) rather than through eternal
+byte-stable emission, so freezing this forever was never the requirement. The
+terms: a bump is its own explicit, proof-carrying round and never a side effect
+of another change, and it moves all four sites in one commit, which
+check-versions.sh already refuses to let anyone do by halves.
+
+POLICY `immutable`. rust-lang never republishes a point release, so 1.97.1 names
+a fixed set of published artifacts rather than a moving ref, and rustup verifies
+their bytes against its own signed manifests — the content-addressing is one
+layer down, held by the publisher. Whether 1.97.1 is still CURRENT is a
+supply-chain question with a different owner, which this gate declines rather
+than answers. Not `floating`: that is for a ref that moves on purpose, and this
+one does not move. Not `track` or `release`: both judge a pin against the history
+of a repository this project builds, and rust-lang/rust is not one.
+
+THE SHAPE SCAN CANNOT SEE IT. A semantic version carries nothing that separates
+it from data: 1.97.1 stands in five other tracked files as a measurement someone
+recorded, and a scan for the literal would call each of them a site. So the two
+obligations a registry entry carries come apart here — nothing discovers the
+value, and the decision is owed for exactly that reason — and each is met by its
+own means. rust-toolchain.toml is discovered by its KEY, because rustup fetches
+what `[toolchain] channel` names and that file exists for nothing else; an
+unregistered toolchain is therefore a red like any other pin. The three sites
+that RESTATE the value are covered by `bound_by`: check-versions.sh reads it as
+[engine].rust_toolchain and holds the channel, both `rust-version` floors and the
+manifest equal, ci.yml runs it, and check-pins.py verifies each of those three
+facts and then that the value stands as a whole token at every site.
+"""
+
+# ---------------------------------------------------------------------------
+# Our own history
+# ---------------------------------------------------------------------------
+
+[[pin]]
+id = "content-repo"
+value = "f28f15394eef6813a88122137e3050b1da28c6f9"
+sites = ["versions.toml"]
+repo = "stellarfeline/delvewright-campaigns"
+policy = "track"
+judged_by = ".github/workflows/ci.yml"
+reviewed = "b2ad117d897280550cb10ca756a75a78a0a19f46"
+builds = []
+why = """
+The content commit every reproducible build resolves the prefab library and
+campaign sources from (versions.toml [content], spec-0007). Nothing is BUILT out
+of this checkout — the engine is built from this tree and the content arrives as
+data — so no source directory is watched and drift is reported rather than red.
+The re-pin convention and the zone-inventory restatement that goes with it are
+enforced separately by validation/check-versions.sh and
+.github/content-zone-corpus.json.
+"""
+
+# ---------------------------------------------------------------------------
+# Third-party bytes
+# ---------------------------------------------------------------------------
+
+[[pin]]
+id = "nucleation-rev"
+value = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf"
+sites = ["crates/render/Cargo.toml", "versions.toml"]
+policy = "immutable"
+why = """
+Nucleation (MIT), the per-prefab headless renderer, pinned by git rev because no
+crates.io release carries its `rendering` feature (versions.toml [render]). Its
+currency is deliberately NOT checked here: judging it would mean a full clone of
+a third-party repository inside a required job, which is the reach
+tools/check-workspace-git-deps.py exists to keep out of required jobs. It
+renders validation artifacts and decides no verdict, so its drift changes no
+gate's answer.
+"""
+
+[[pin]]
+id = "base-image"
+value = "sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de"
+sites = [
+    ".github/workflows/infra-images.yml",
+    "docs/experiments/m2-jigsaw-seed-stability/Dockerfile",
+    "tools/spike-area-effect-arrow/run.sh",
+    "tools/spike-block-settling/run.sh",
+    "tools/spike-death-teleport/run.sh",
+    "tools/spike-fluid-plane/run.sh",
+    "tools/spike-jump-arc/run.sh",
+    "validation/Dockerfile.delve",
+    "validation/Dockerfile.toolserver",
+    "versions.toml",
+]
+policy = "immutable"
+why = """
+itzg/minecraft-server, and the byte-for-byte GHCR mirror of it that every server
+image is built FROM (versions.toml [images.base]). One digest in ten files, and
+validation/check-versions.sh is what keeps them equal.
+"""
+
+[[pin]]
+id = "toolserver-image"
+value = "sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b"
+sites = ["validation/compose.yaml", "versions.toml"]
+policy = "immutable"
+why = """
+The pre-baked Fabric + PackTest validation image (versions.toml
+[images.toolserver]). Republished only through infra-images.yml, at which point
+this digest is restated here and in versions.toml together.
+"""
+
+[[pin]]
+id = "server-jar"
+value = "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+sha256 of the pinned Minecraft 1.21.11 server jar. The bootstrap cache refuses
+any download whose bytes are not this (versions.toml [minecraft]). Moving it is
+moving the pinned Minecraft version, which is ADR-0009's long-term constant.
+"""
+
+[[pin]]
+id = "server-jar-sha1"
+value = "64bb6d763bed0a9f1d632ec347938594144943ed"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+The sha1 piston-meta publishes for the same jar, and the object id inside its
+download URL. Recorded beside the sha256 so the URL and the checksum cannot be
+edited apart.
+"""
+
+[[pin]]
+id = "fabric-api-jar"
+value = "c98467cbbaf4d197377266795ae015f4130d65b6"
+sites = ["validation/Dockerfile.toolserver", "versions.toml"]
+policy = "immutable"
+why = "sha1 of the Fabric API jar PackTest needs (versions.toml [fabric])."
+
+[[pin]]
+id = "packtest-jar"
+value = "7c9f83f1673209abb1d5262dd69583e61c85cbd2"
+sites = ["validation/Dockerfile.toolserver", "versions.toml"]
+policy = "immutable"
+why = "sha1 of the PackTest jar (versions.toml [packtest], ADR-0005)."
+
+[[pin]]
+id = "deepslate-bundle"
+value = "0d9496f187600b479bb83d015e49eccbf70997c5886f0c70b101ca4595bb2c46"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+sha256 of the committed deepslate bundle the prefab review page ships inside
+itself. It pins BYTES rather than a version string, so a hand-edited bundle is a
+red (versions.toml [render]).
+"""
+
+# --- misode/mcmeta data dumps, from which generated tables are extracted ------
+# Each names one retrieval of one file at the pinned Minecraft version. The
+# extractor refuses bytes that do not match, so these are what make a
+# regenerated table reproducible.
+
+[[pin]]
+id = "mcmeta-commit"
+value = "c976eb3b2cfcb9f205171527dec46b266afa3ac9"
+sites = ["tools/extract-block-defaults.py", "tools/extract-block-registry.py"]
+policy = "immutable"
+why = "The misode/mcmeta commit the pinned block summaries were retrieved from."
+
+[[pin]]
+id = "mcmeta-blocks"
+value = "178a12096f59f863758a6c685e5eb6de38721b376a30a30383e171d0799f3ee7"
+sites = ["tools/extract-block-defaults.py", "tools/extract-block-registry.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta `blocks/data.min.json` both block extractors read."
+
+[[pin]]
+id = "mcmeta-item-components"
+value = "51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4"
+sites = [
+    "tools/extract-item-combat-stats.py",
+    "tools/extract-item-stack-sizes.py",
+]
+policy = "immutable"
+why = "sha256 of the mcmeta `item_components/data.min.json`."
+
+[[pin]]
+id = "mcmeta-damage-types"
+value = "0ce7edc377446ecddfd1c3b74b32e2dc3b248edc4035275134fb821e98a6c7ad"
+sites = ["tools/extract-damage-types.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta damage-type summary."
+
+[[pin]]
+id = "mcmeta-damage-type-tags"
+value = "794ce6343293660b5f32d6a78f7a374623bb785d18dfc5ce3cbdeb3093b0161d"
+sites = ["tools/extract-damage-types.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta damage-type TAG summary."
+
+[[pin]]
+id = "mcmeta-entity-tags"
+value = "5523f45b7ddb178cd9f8bbe998458cc070910a74bc6c551a37b9279f5d73f844"
+sites = ["tools/extract-entity-tags.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta entity-type TAG summary."
+
+[[pin]]
+id = "mcmeta-sound-registry"
+value = "7efb184902cfef62b431bc9826ebcbcde2c23746e5624326ffcf922e15cf28f9"
+sites = ["tools/extract-sound-registry.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta registries summary the sound table is derived from."
+
+[[pin]]
+id = "mcmeta-block-tags"
+value = "ff73a0c7f08cb8276a48daa39c104a34d79f0aebd872b37de9c9dc137d49082f"
+sites = ["tools/extract-block-classification.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta block-tag summary."
+
+[[pin]]
+id = "mcmeta-recipes"
+value = "811e914cf45fc801146103442811285342327a6bb2f46641a58120a131e31918"
+sites = ["tools/extract-block-classification.py"]
+policy = "immutable"
+why = "sha256 of the mcmeta recipe summary."
+
+# ---------------------------------------------------------------------------
+# Refs that move on purpose
+# ---------------------------------------------------------------------------
+# Third-party actions are held at their MAJOR tag, which the publisher advances.
+# That is a deliberate trade — patch fixes arrive without a PR, and the trust
+# boundary is the publisher rather than a digest. It is registered so the trade
+# is a visible count instead of an unexamined habit: eight refs, all first-party
+# GitHub or Docker, none reaching a repository this project builds.
+
+[[pin]]
+id = "action-checkout"
+value = "actions/checkout@v4"
+sites = [
+    ".github/actions/checkout-content/action.yml",
+    ".github/workflows/ci.yml",
+    ".github/workflows/engine-release.yml",
+    ".github/workflows/gpu-probe.yml",
+    ".github/workflows/infra-images.yml",
+    ".github/workflows/release.yml",
+]
+policy = "floating"
+why = "GitHub's own checkout action, held at its major tag."
+
+[[pin]]
+id = "action-rust-cache"
+value = "Swatinem/rust-cache@v2"
+sites = [
+    ".github/workflows/ci.yml",
+    ".github/workflows/engine-release.yml",
+    ".github/workflows/gpu-probe.yml",
+    ".github/workflows/release.yml",
+]
+policy = "floating"
+why = "Cargo cache action, held at its major tag. Affects build time, not output."
+
+[[pin]]
+id = "action-setup-node"
+value = "actions/setup-node@v4"
+sites = [".github/workflows/ci.yml", ".github/workflows/release.yml"]
+policy = "floating"
+why = "GitHub's Node toolchain action, held at its major tag."
+
+[[pin]]
+id = "action-setup-python"
+value = "actions/setup-python@v5"
+sites = [".github/workflows/ci.yml"]
+policy = "floating"
+why = "GitHub's Python toolchain action, held at its major tag."
+
+[[pin]]
+id = "action-upload-artifact"
+value = "actions/upload-artifact@v4"
+sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml"]
+policy = "floating"
+why = "GitHub's artifact upload action, held at its major tag."
+
+[[pin]]
+id = "action-download-artifact"
+value = "actions/download-artifact@v4"
+sites = [".github/workflows/engine-release.yml"]
+policy = "floating"
+why = "GitHub's artifact download action, held at its major tag."
+
+[[pin]]
+id = "action-lychee"
+value = "lycheeverse/lychee-action@v2"
+sites = [".github/workflows/ci.yml"]
+policy = "floating"
+why = "Link checker, held at its major tag; runs --offline so it fetches nothing."
+
+[[pin]]
+id = "action-docker-qemu"
+value = "docker/setup-qemu-action@v3"
+sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+policy = "floating"
+why = "arm64 emulation for the multi-arch build (ADR-0010), held at its major tag."
+
+[[pin]]
+id = "action-docker-buildx"
+value = "docker/setup-buildx-action@v3"
+sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+policy = "floating"
+why = "buildx setup, held at its major tag."
+
+[[pin]]
+id = "action-docker-login"
+value = "docker/login-action@v3"
+sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+policy = "floating"
+why = "GHCR login, held at its major tag."
+
+[[pin]]
+id = "action-docker-build-push"
+value = "docker/build-push-action@v6"
+sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+policy = "floating"
+why = "Image build/push, held at its major tag."
+
+# ---------------------------------------------------------------------------
+# The toolchains CI selects, and the packages it installs into them
+# ---------------------------------------------------------------------------
+# None of these carries a pin shape, so none of them was discovered until the
+# schemas that fix what they MEAN were added: an action's input contract (the
+# setup-node / setup-python actions exist in order to fetch the version their
+# input names) and a Python package manifest, read on the same terms as
+# `Cargo.toml`. Both are positive claims about a schema, true of that action or
+# that file kind anywhere, and neither is a list of literals somebody remembered.
+
+[[pin]]
+id = "ci-node"
+value = "24"
+sites = [
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+    "versions.toml",
+]
+policy = "floating"
+bound_by = "validation/check-versions.sh"
+bound_key = "node_version"
+why = """
+The Node runtime five CI jobs select: the harness (`npm ci`, typecheck, tests),
+the viewer's stdlib `node --test` control suite, and the three storybook jobs in
+release.yml.
+
+HELD FOR the runtime, and NOT for the dependency set — `harness/package-lock.json`
+is what fixes the packages, and mineflayer is pinned separately in versions.toml
+[harness]. So what this value decides is which Node executes them.
+
+POLICY `floating`, and the value says so itself: `24` is a MAJOR line, which
+actions/setup-node resolves to its newest release. Patch and minor releases
+arrive without a pull request, exactly as they do for an action held at its major
+tag, and the trust boundary is the publisher. Registered so that the count of
+deliberately-unfrozen selections is a number somebody can see instead of a habit.
+Not `immutable`: that is for a value naming fixed bytes, and this one names a
+line that moves. It may move to another major line as an ordinary reviewed edit;
+what it may not do is disagree between the five sites, which is what the binder
+below refuses.
+
+BOUND because nothing discovers a restatement. check-versions.sh reads
+[ci].node_version and asserts that EVERY `node-version:` line in both workflows
+states it — two in ci.yml and three in release.yml, counted, because presence is
+not the property: the drift is one of five moving while the other four sit still,
+and a `grep -q` stops at the first and calls that agreement.
+"""
+
+[[pin]]
+id = "ci-python-tools"
+value = "3.12"
+sites = [".github/workflows/ci.yml", "versions.toml"]
+policy = "floating"
+bound_by = "validation/check-versions.sh"
+bound_key = "python_tools_version"
+why = """
+The interpreter the two Python tool suites run on: `tools/skin` (spec-0009
+composition + preview, whose test asserts byte-identical PNGs) and `tools/tests`
+(the stdlib-only tooling suite, whose network is blocked at `urlopen`).
+
+HELD FOR one interpreter across both suites, which is what makes a determinism
+result from one month comparable to the next — the same argument the Rust
+toolchain pin makes, one language over. The floor is real and lower: both suites
+need >= 3.11 for stdlib `tomllib`, and `tools/skin`'s own manifest declares
+`requires-python >= 3.10`.
+
+WHY IT DIFFERS from `ci-python-mecha`, since two interpreter lines in one
+workflow reads as drift and this pair is not: they carry disjoint dependency
+sets, and the other one is ENTAILED — the pinned mecha declares
+`Requires-Python >= 3.14`, so it cannot be installed on this line at all. This
+line is not entailed by anything; nothing in either suite requires it over the
+higher one. It is the older supported line, and it moves as an ordinary reviewed
+edit.
+
+POLICY `floating`: `3.12` is a MINOR line, resolved by actions/setup-python to
+its newest patch, so patch releases arrive without a pull request.
+
+BOUND by check-versions.sh, which reads [ci].python_tools_version and asserts the
+WHOLE SET rather than this value alone — every `python-version:` in ci.yml is one
+of the two declared lines, used exactly as many times as declared. A third value
+anywhere in the file breaks the sum and reds, which is the property a per-value
+presence check cannot give when one file legitimately holds two.
+"""
+
+[[pin]]
+id = "ci-python-mecha"
+value = "3.14"
+sites = [".github/workflows/ci.yml", "versions.toml"]
+policy = "floating"
+bound_by = "validation/check-versions.sh"
+bound_key = "python_mecha_version"
+why = """
+The interpreter the `mecha cross-check` job runs on — the required status check
+in which mecha independently re-validates every emitted .mcfunction against the
+1.21.11 command tree (ADR-0011).
+
+HELD FOR nothing this project chose: it is ENTAILED. mecha 0.104.1 declares
+`Requires-Python >= 3.14` and its beet declares the same, so the pinned validator
+cannot be installed on the tools line at all. That is why the two Python
+selections in one workflow disagree, and it is a fact about the pinned package
+rather than a preference. versions.toml records the floor as
+[ci].mecha_requires_python and check-versions.sh holds this value at or above it,
+so lowering this line reds in tier 1 naming the pin, rather than failing an
+install inside a required job with a message that names pip.
+
+RE-READ WHEN `mecha_version` MOVES: the recorded floor is that release's own
+declared metadata, so a mecha bump re-reads it in the same commit. Nothing
+offline can check that for us, which is why it is stated here rather than
+assumed.
+
+POLICY `floating`, for the same reason as its sibling: a MINOR line resolved to
+its newest patch.
+"""
+
+[[pin]]
+id = "mecha"
+value = "0.104.1"
+sites = [".github/workflows/ci.yml", "versions.toml"]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "mecha_version"
+why = """
+mecha (ADR-0011), the INDEPENDENT re-validation of every emitted .mcfunction
+against the pinned command tree. Disagreement with our own vendored-tree
+validator fails CI and is a bug in one of the two, so this is an instrument whose
+version decides a required check's verdict.
+
+POLICY `immutable`. PyPI refuses to re-upload a file for a version already
+published, so `0.104.1` names a fixed set of artifacts rather than a moving line
+— the same argument the Rust toolchain pin makes, with the content-addressing one
+layer down and held by the publisher, and the same declining of the currency
+question, which is a supply-chain matter with a different owner. Not `floating`:
+this one does not move on purpose. Not `track` or `release`: both judge a pin
+against the history of a repository this project builds, and mecha is not one.
+
+RIGHT TO MOVE — a bump is its own reviewed round, and it re-reads the two floors
+this package declares (`mecha_requires_python`, `mecha_requires_beet`) in the
+same commit, because both are restatements of THIS release's metadata.
+"""
+
+[[pin]]
+id = "beet"
+value = "0.116.0"
+sites = [".github/workflows/ci.yml", "versions.toml"]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "beet_version"
+why = """
+beet, the library mecha validates through, and the second instrument of the same
+required check.
+
+WHY THIS ENTRY EXISTS AT ALL: it was installed UNPINNED, on the same command line
+as a pinned mecha. `CLAUDE.md` says a frozen measurement names its instrument
+literally, by revision, never by indirection — an unpinned instrument inside a
+required gate is that rule inverted, and the gate's verdict could change with
+nothing in any diff to show what moved. The general form of that finding is not
+this entry but the discovery rule beside it: an install command in a step this
+repository RUNS, whose package argument names no exact version, is now a finding
+in its own right, so the next one reds rather than waiting to be remembered.
+
+CHOSEN AS the version the unpinned line already resolved to, so pinning changed
+nothing that was running and froze what was already there. Established two ways
+whose failure modes are unrelated: it is PyPI's current release, and it is
+exactly the floor mecha declares (`beet>=0.116.0`), so no other version could
+have been selected. check-versions.sh holds this value at or above that recorded
+floor.
+
+POLICY `immutable`, on the same published-artifact argument as `mecha`.
+"""
+
+[[pin]]
+id = "pytest"
+value = "9.1.1"
+sites = [".github/workflows/ci.yml", "versions.toml"]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "pytest_version"
+why = """
+The test runner both Python suites are judged by — `skin toolchain (pytest)` and
+`i18n translation tool (pytest)`, each a required status check.
+
+WHY IT IS AN INSTRUMENT and not a detail: a runner decides what gets COLLECTED
+and how an assertion is reported, so a runner that changes either moves a
+required check's verdict without any test changing. It was unpinned on two
+command lines, which is the same defect as `beet` and was found by the same rule
+rather than by remembering it separately.
+
+CHOSEN AS the version the unpinned line already resolved to — confirmed by
+resolving it (a real `pip install pytest` into a fresh virtual environment) and,
+independently, from the release index. Pinning changed nothing that was running.
+
+POLICY `immutable`, on the same published-artifact argument as `mecha`. A bump is
+an ordinary reviewed edit; what it may not be is silent.
+"""
+
+# ---------------------------------------------------------------------------
+# The skin toolchain's one third-party dependency
+# ---------------------------------------------------------------------------
+
+[[pin]]
+id = "skinpy-extended"
+value = "1.0.1"
+sites = [
+    "tools/skin/delve_skin/catalog.py",
+    "tools/skin/pyproject.toml",
+    "tools/skin/requirements.txt",
+    "versions.toml",
+]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "skinpy_extended"
+why = """
+skinpy-extended (MIT, ADR-0013 allowlist): the part/face-addressable composer and
+the pure-Python isometric preview renderer `tools/skin` is built on (spec-0009).
+
+HELD FOR byte-identity. The suite's whole claim is that one cast entry produces
+one PNG (ADR-0006), so a different library version is a different picture under
+the same declared version — and `tools/skin/delve_skin/compose.py` states its
+face-coordinate convention as verified against THIS release, which is a frozen
+measurement naming its instrument.
+
+FOUR SITES, and the fourth is why the binder matters. Two are manifests, now
+discovered by their file kind. The third is `catalog.py`, which stamps the
+library name and version into every emitted provenance record — a bump that
+missed it would ship metadata naming a library that did not draw the picture, and
+nothing would have been red. The fourth is the manifest restatement. What is
+deliberately NOT a site is the sentence in `compose.py` recording which release
+the coordinate convention was verified against: that is a measurement's
+instrument name and must NOT move with the pin, because moving it would rewrite
+a record of when something was checked.
+
+POLICY `immutable`, on the same published-artifact argument as `mecha`. Its
+currency is a supply-chain question with a different owner, and this gate
+declines it rather than passing silently.
+"""

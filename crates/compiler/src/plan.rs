@@ -416,11 +416,13 @@ pub struct TrapPlan {
 /// single completability model of "a box the delve fills or clears while it is
 /// running", whichever verb spelled it.
 ///
-/// Four verbs produce these and none of them owns the rule: `close-gate` fills a
+/// Five verbs produce these and none of them owns the rule: `close-gate` fills a
 /// prefab gate anchor's region with the block that anchor declares and `open-gate`
 /// clears it (DSL v0.6); `fill-region` and `clear-region` do the same to an
-/// author-declared box (DSL v0.10, spec-0031); a `shortcut`'s gate is registered
-/// filled from world-load. The occupancy model (`crate::assembled`) treats every
+/// author-declared box (DSL v0.10, spec-0031); `open-way` does it to the cells a
+/// placed piece's spatial contract exports, in the direction that contract
+/// declares (DSL v0.12, spec-0042); a `shortcut`'s gate is registered filled from
+/// world-load. The occupancy model (`crate::assembled`) treats every
 /// *gate* cell as always passable — the conservative "assume the gate the player
 /// needs is opened" stance `DW0306` checks — and a `fill` is the physical dual:
 /// the critical-path / checkpoint reachability proofs treat the region as
@@ -512,6 +514,11 @@ impl RegionWrite {
         matches!(self, RegionWrite::Fill | RegionWrite::Flood)
     }
 }
+
+/// One resolved region write: the inclusive world box, and what the write leaves
+/// in it. A verb resolves to a LIST of these, because a way is a region of as
+/// many boxes as its contract gave it and each is written by its own `fill`.
+type ResolvedWrite = (([i32; 3], [i32; 3]), RegionWrite);
 
 #[derive(Clone, Debug)]
 pub struct RegionEvent {
@@ -678,6 +685,24 @@ pub struct Plan<'a> {
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
     pub region_events: Vec<RegionEvent>,
+    /// **Every contingent way the placed world stages** (spec-0042 §2.4), in
+    /// area → placement → declaration order, with its world cells, its block and
+    /// its direction read from the carrying piece's metadata. Empty for every
+    /// world whose pieces declare none — which is every world built before this
+    /// surface — so nothing about such a build moves.
+    ///
+    /// It is on the plan rather than recomputed per consumer because three
+    /// readers need the same answer: emission (what an `open-way` fills),
+    /// the completability model ([`collect_region_events`]) and the disposition
+    /// gate (`crate::ways`). Two of the three deriving it independently is how a
+    /// verb and its proof come to disagree about what a way is.
+    pub ways: crate::ways::WayStaging,
+    /// The way gate's binding ledger (`crate::ways`, spec-0042 AC11) — what the
+    /// disposition enumeration examined and what it found. `None` for a world
+    /// that stages no way, which emits no artifact at all: a file reading zero is
+    /// a finding, and an absent file is the honest statement that there was
+    /// nothing to enumerate.
+    pub way_gate: Option<crate::ways::WayGate>,
     /// **Where the party can be CARRIED rather than walk**: every declared
     /// `teleport`'s resolved source volume (DSL v0.10, spec-0031), content-ordered.
     /// Empty for every campaign that declares no `teleport`, which is what keeps
@@ -2147,8 +2172,19 @@ impl<'a> Plan<'a> {
         // rule per verb.
         let press_answers = collect_press_answers(campaign, &seal_hints, &shortcuts);
 
+        // ---- the contingent ways the placed world stages (spec-0042 §2.4) ----
+        //
+        // Before the region-write model, because an `open-way`'s geometry IS a
+        // staged way: the campaign names a piece and a way, and everything else
+        // about the write comes from the piece. Sealed here and nowhere else —
+        // every campaign build goes through `Plan::build`, so a way that reaches
+        // the world with no cells to open cannot be compiled, packaged or
+        // shipped, and there is no flag and no separate command to remember.
+        let ways = crate::ways::stage(&areas, prefabs);
+        ways.seal().map_err(|e| e.with_warnings(warnings.clone()))?;
+
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
-        let mut region_events = collect_region_events(campaign, &anchors, &objective_steps);
+        let mut region_events = collect_region_events(campaign, &anchors, &objective_steps, &ways);
         // A shortcut gate is sealed from world-load and is opened only by an
         // OPTIONAL far-side interaction no proof can order (spec-0016 §2). Seal it
         // for the whole completability model — `fire_step: 0` precedes every leg —
@@ -2168,6 +2204,45 @@ impl<'a> Plan<'a> {
         let transit_teleports = collect_transit_teleports(campaign, &anchors);
 
         let region_events = region_events;
+
+        // ---- what became of every staged way (spec-0042 §2.5, DW0548) ----
+        //
+        // Last, because it needs everything above it: the staged ways, the
+        // openings' DAG points, the resolved anchors and the strict-ancestor
+        // relation the region-write model orders the world by. The ancestry
+        // predicate is `Plan::gate_fired_before`'s body, handed over rather than
+        // re-derived — a second reading of "has this fired yet" is a second
+        // instrument, and the whole point of the verdict is that it agrees with
+        // the route proof.
+        //
+        // **Run on either side of the pair, never on the intersection.** A world
+        // that stages a way owes a disposition for it; a campaign that writes an
+        // `open-way` owes a resolvable reference — and the case where a campaign
+        // opens a way NO placed piece stages is exactly the one a guard on the
+        // staged ways alone would skip in silence, which is how an effect comes to
+        // emit nothing and be reported by nobody (the class `DW0360` exists for).
+        let mut way_gate = None;
+        let openings = collect_way_openings(campaign, &objective_steps);
+        if !ways.ways.is_empty() || !openings.is_empty() {
+            let elements = collect_required_elements(campaign, &anchors, &objective_steps);
+            let precedes = |g: usize, s: usize| {
+                g == 0
+                    || strict_ancestor_steps
+                        .get(&s)
+                        .is_some_and(|anc| anc.contains(&g))
+            };
+            let gate = crate::ways::judge(&ways, &openings, &elements, &areas, prefabs, &precedes)
+                .map_err(|e| e.with_warnings(warnings.clone()))?;
+            if let Some(finding) = crate::ways::unbound_finding(&gate) {
+                warnings.push(finding);
+            }
+            // The artifact belongs to a world that stages a way. A ledger of zero
+            // ways is not a measurement of anything — and a campaign that reaches
+            // here with none has already been refused above.
+            if !ways.ways.is_empty() {
+                way_gate = Some(gate);
+            }
+        }
 
         Ok(Self {
             campaign,
@@ -2196,6 +2271,8 @@ impl<'a> Plan<'a> {
             seal_hints,
             press_answers,
             region_events,
+            ways,
+            way_gate,
             transit_teleports,
             strict_ancestor_steps,
             massing_bounds,
@@ -2248,7 +2325,8 @@ impl<'a> Plan<'a> {
         &self,
         cp: &CriticalPath,
     ) -> (Vec<RegionEvent>, BTreeMap<usize, BTreeSet<usize>>) {
-        let mut region_events = collect_region_events(self.campaign, &self.anchors, &cp.obj_step);
+        let mut region_events =
+            collect_region_events(self.campaign, &self.anchors, &cp.obj_step, &self.ways);
         region_events.extend(self.shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
@@ -2585,59 +2663,6 @@ impl<'a> Plan<'a> {
             .collect()
     }
 
-    /// The earliest critical-path step at which each hostile force can be in the
-    /// world, keyed by wave id and actor id.
-    ///
-    /// Read off the campaign's own staging beats — `spawn-wave` and
-    /// `spawn-actor` — through the one effect walk, so a new root or a new
-    /// nesting site cannot leave a body invisible here. A force no beat stages,
-    /// or one staged from a root with no step of its own (a trigger, a trap
-    /// payload, a death bundle), reports **0**: the conservative answer is "it
-    /// could be there from the start", and a proof that guessed later would be a
-    /// proof that looked away.
-    ///
-    /// `unleash-actor` is deliberately NOT an onset. It does not put a body in
-    /// the world — it replaces an already-summoned puppet with a real-AI twin, and
-    /// an unleash of something never spawned is a no-op ([`crate::combat`]'s
-    /// "unleash or nothing" rule states the same fact from the other side).
-    /// Counting it moved `nobodys-cave-island`'s warden onto step 0 because a
-    /// proximity trigger unleashes it, and reported a body five quests in the
-    /// future as standing two blocks from the party's respawn.
-    pub fn hostile_onsets(&self) -> BTreeMap<String, usize> {
-        let mut out: BTreeMap<String, usize> = BTreeMap::new();
-        let mut note = |id: &str, step: usize| {
-            let slot = out.entry(id.to_string()).or_insert(step);
-            *slot = (*slot).min(step);
-        };
-        delvewright_dsl::for_each_campaign_effect(self.campaign, &mut |_, site, eff| {
-            let step = match site {
-                delvewright_dsl::EffectSite::Objective { objective, .. } => self
-                    .objective_steps
-                    .get(objective.as_str())
-                    .copied()
-                    .unwrap_or(0),
-                delvewright_dsl::EffectSite::QuestComplete { quest } => self
-                    .campaign
-                    .quests
-                    .content
-                    .quests
-                    .iter()
-                    .find(|q| q.id.as_str() == quest)
-                    .map_or(0, |q| quest_complete_step(q, &self.objective_steps)),
-                // Roots with no beat of their own: proximity, a sprung trap, a
-                // death, a shortcut bar lifting, a shop purchase, a dialogue
-                // respawn hook. Rooted at 0, conservatively.
-                _ => 0,
-            };
-            match eff {
-                QuestEffect::SpawnWave { wave, .. } => note(wave.as_str(), step),
-                QuestEffect::SpawnActor { actor, .. } => note(actor.as_str(), step),
-                _ => {}
-            }
-        });
-        out
-    }
-
     /// Translate a [`Self::critical_path`] index into the index the SAME step
     /// carries in the **exported** `critical-path.json`.
     ///
@@ -2709,6 +2734,80 @@ impl<'a> Plan<'a> {
                     .all(|((a, _, e), z)| a.as_str() == z.anchor.as_str() && *e == z.extent)
         })
     }
+}
+
+/// **Every place the campaign says the party has to reach**, resolved
+/// (spec-0042 §2.5), for the way-disposition gate to judge against a piece's
+/// contract.
+///
+/// The set is [`required_anchors_for_area`]'s — the anchors the layout solver is
+/// already required to guarantee, which is this engine's existing definition of
+/// "a campaign reference to a place": NPC stands, `reach-anchor` / `collect` /
+/// `interact` targets, wave spawns and lane waypoints, every anchor-bearing
+/// effect. Re-deriving a narrower list here would be a second enumeration that
+/// drifts; a wider one would judge places nobody is required to visit.
+///
+/// An element carries the step it must be reachable BY when the campaign orders
+/// it — an objective's own critical-path step. Everything else carries none and
+/// is judged on the weaker half alone: it must be behind a way something forces
+/// open, in no particular order. That asymmetry is the honest one — a body placed
+/// at world load has no step, and inventing one would order a thing the campaign
+/// never ordered.
+fn collect_required_elements(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    objective_steps: &BTreeMap<String, usize>,
+) -> Vec<crate::ways::RequiredElement> {
+    // anchor name → the earliest objective that targets it, with its step. The
+    // earliest, because an anchor two objectives share must be reachable by the
+    // time the FIRST of them asks the party to stand there.
+    let mut by_objective: BTreeMap<&str, (&str, usize)> = BTreeMap::new();
+    for quest in &campaign.quests.content.quests {
+        for objective in &quest.objectives {
+            let anchor = match objective {
+                Objective::ReachAnchor { anchor, .. }
+                | Objective::Collect { anchor, .. }
+                | Objective::Interact { anchor, .. } => anchor.as_str(),
+                Objective::Kill { .. } | Objective::TalkTo { .. } => continue,
+            };
+            let Some(step) = objective_steps.get(objective.id().as_str()).copied() else {
+                continue;
+            };
+            let entry = by_objective
+                .entry(anchor)
+                .or_insert((objective.id().as_str(), step));
+            if step < entry.1 {
+                *entry = (objective.id().as_str(), step);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for area in &campaign.world.content.areas {
+        let area_id = area.id.as_str();
+        for name in required_anchors_for_area(campaign, area_id) {
+            let Some(resolved) = anchors.get(&(area_id.to_string(), name.clone())) else {
+                continue;
+            };
+            let pos = match resolved {
+                ResolvedAnchor::Point { pos, .. } => *pos,
+                ResolvedAnchor::Gate { from, .. } => *from,
+            };
+            let (what, by_step) = match by_objective.get(name.as_str()) {
+                Some((oid, step)) => (
+                    format!("objective `{oid}` (at anchor `{name}`)"),
+                    Some(*step),
+                ),
+                None => (format!("the campaign reference to anchor `{name}`"), None),
+            };
+            out.push(crate::ways::RequiredElement {
+                what,
+                area_id: area_id.to_string(),
+                pos,
+                by_step,
+            });
+        }
+    }
+    out
 }
 
 /// The set of anchor names the campaign references inside `area_id`: NPC stands
@@ -3354,7 +3453,7 @@ pub(crate) fn point_any(
 /// The `critical_path` step index at which a quest's `on_complete` fires: its
 /// last objective's step (max over the quest's objectives). `0` if the quest has
 /// no positioned objective (degenerate; conservative — proves the whole path).
-fn quest_complete_step(quest: &Quest, obj_step: &BTreeMap<String, usize>) -> usize {
+pub(crate) fn quest_complete_step(quest: &Quest, obj_step: &BTreeMap<String, usize>) -> usize {
     quest
         .objectives
         .iter()
@@ -4107,6 +4206,7 @@ fn collect_region_events(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     obj_step: &BTreeMap<String, usize>,
+    ways: &crate::ways::WayStaging,
 ) -> Vec<RegionEvent> {
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
@@ -4144,66 +4244,133 @@ fn collect_region_events(
             | EffectRoot::QuestComplete(_)
             | EffectRoot::Trigger(_) => format!("the effect bundle at `{}`", site.path),
         };
-        let (fire_step, forced) = match site.root {
-            EffectRoot::ObjectiveComplete(oid) => (obj_step.get(oid).copied().unwrap_or(0), true),
-            EffectRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
-            EffectRoot::Trigger(_) => (0, true),
-            // Optional roots: an `open-gate` from one is not credited (the proof may
-            // not lean on a wall the party might never open), a `close-gate` from
-            // one is (the proof must survive the seal). R6 is optional for a reason
-            // the model already asserts elsewhere — every shortcut gate is
-            // registered sealed at step 0 so the delve is finishable the long way,
-            // which is precisely "this bundle may never fire". R7 is optional
-            // because nobody is forced to die.
-            // R8 is optional for the same reason: nobody is forced to buy
-            // anything, so an `open-gate` bought at a shop may not be leaned on.
-            EffectRoot::TrapPayload(_)
-            | EffectRoot::DialogueRespawn
-            | EffectRoot::ShortcutUnlock
-            | EffectRoot::OnDeath
-            | EffectRoot::ShopOffer => (0, false),
-        };
-        // The two spellings of one write. A gate names a prefab gate anchor and
+        let (fire_step, forced) = firing_of(&site.root, obj_step);
+        // The three spellings of one write. A gate names a prefab gate anchor and
         // takes that anchor's box and its `replace`-filtered clear; a
         // `fill-region`/`clear-region` names its own anchor-centred box and clears
-        // it outright. Neither owns the model.
-        let resolved = match (e.gate_region_write(), e.region_write()) {
-            (Some((anchor, fills)), _) => {
-                gate_region_block_any(anchors, anchor.as_str()).map(|(from, to, gate_block)| {
-                    (
-                        (from, to),
-                        if fills {
-                            RegionWrite::of_block(&gate_block)
-                        } else {
-                            RegionWrite::Unseal
-                        },
-                    )
-                })
-            }
-            (_, Some((zone, block))) => zone_box_in(anchors, zone).map(|r| {
-                (
-                    r,
-                    match block {
-                        Some(b) => RegionWrite::of_block(b),
-                        None => RegionWrite::Clear,
-                    },
-                )
-            }),
-            _ => return,
-        };
-        let Some((region, write)) = resolved else {
+        // it outright; an `open-way` names a placed piece's exported way and takes
+        // its cells, its block and its direction from the piece's metadata. None
+        // of the three owns the model.
+        //
+        // A list rather than one box, because a way is a region with as many
+        // boxes as the contract gave it, and each is written by its own `fill`.
+        let resolved: Vec<ResolvedWrite> =
+            match (e.gate_region_write(), e.region_write(), e.way_write()) {
+                (Some((anchor, fills)), _, _) => gate_region_block_any(anchors, anchor.as_str())
+                    .map(|(from, to, gate_block)| {
+                        vec![(
+                            (from, to),
+                            if fills {
+                                RegionWrite::of_block(&gate_block)
+                            } else {
+                                RegionWrite::Unseal
+                            },
+                        )]
+                    })
+                    .unwrap_or_default(),
+                (_, Some((zone, block)), _) => zone_box_in(anchors, zone)
+                    .map(|r| {
+                        vec![(
+                            r,
+                            match block {
+                                Some(b) => RegionWrite::of_block(b),
+                                None => RegionWrite::Clear,
+                            },
+                        )]
+                    })
+                    .unwrap_or_default(),
+                // An unresolvable way reference is `DW0547`'s finding, raised by
+                // `crate::ways` before this model is consulted; here it simply
+                // contributes nothing, exactly as a dangling anchor does.
+                (_, _, Some((piece, name))) => ways
+                    .resolve(piece.as_str(), name)
+                    .map(|w| {
+                        let write = match w.sign {
+                            crate::ways::Sign::Laid => RegionWrite::of_block(&w.block),
+                            crate::ways::Sign::Cleared => RegionWrite::Clear,
+                        };
+                        w.boxes.iter().map(|b| (*b, write)).collect()
+                    })
+                    .unwrap_or_default(),
+                _ => return,
+            };
+        if resolved.is_empty() {
             return; // an unresolvable anchor is DW0142/DW0343/DW0355's finding
-        };
-        if !write.fills() && !forced {
-            // An optional firing may make a region impassable, never passable — a
-            // flood is credited for the same reason a fill is: the proof must
-            // survive it.
-            return;
         }
-        out.push(if forced {
-            RegionEvent::forced(region, write, fire_step)
-        } else {
-            RegionEvent::unforced(region, write, fire_step, blame())
+        for (region, write) in resolved {
+            if !write.fills() && !forced {
+                // An optional firing may make a region impassable, never passable — a
+                // flood is credited for the same reason a fill is: the proof must
+                // survive it.
+                continue;
+            }
+            out.push(if forced {
+                RegionEvent::forced(region, write, fire_step)
+            } else {
+                RegionEvent::unforced(region, write, fire_step, blame())
+            });
+        }
+    });
+    out
+}
+
+/// **When a firing happens, and whether the party can avoid causing it** — read
+/// off the site's [`EffectRoot`] and nowhere else.
+///
+/// One function because it is one reading. [`collect_region_events`] credits the
+/// geometry from it and [`collect_way_openings`] states the disposition from it;
+/// two copies of this match would be two instruments that agree until the day a
+/// root is added to one of them.
+///
+/// - a quest `on_objective_complete` fires at that objective's step, an
+///   `on_complete` at the quest's completion step — the player is *forced*
+///   through both;
+/// - an environment trigger, a trap payload and a dialogue-hosted `on_respawn`
+///   bundle have no step of their own (proximity, a sprung trap, a death), so all
+///   three are rooted conservatively at step 0, which precedes every leg.
+///
+/// The **optional** roots — a trap the party may never trip, a death nobody is
+/// forced to suffer, an offer nobody is forced to buy, a shortcut opened from its
+/// far side — are unforced: every shortcut gate is registered sealed at step 0 so
+/// the delve is proven completable with no shortcut ever taken, which is exactly
+/// "the party may never fire this bundle".
+fn firing_of(root: &EffectRoot<'_>, obj_step: &BTreeMap<String, usize>) -> (usize, bool) {
+    match root {
+        EffectRoot::ObjectiveComplete(oid) => (obj_step.get(*oid).copied().unwrap_or(0), true),
+        EffectRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
+        EffectRoot::Trigger(_) => (0, true),
+        EffectRoot::TrapPayload(_)
+        | EffectRoot::DialogueRespawn
+        | EffectRoot::ShortcutUnlock
+        | EffectRoot::OnDeath
+        | EffectRoot::ShopOffer => (0, false),
+    }
+}
+
+/// Every `open-way` the campaign writes, with the quest-DAG point it fires at and
+/// whether the party is forced to cause it (spec-0042 §2.5).
+///
+/// The same [`for_each_gate_effect`] walk and the same [`firing_of`] reading the
+/// region-write model uses, so an `open-way` nested in a `sequence` step, a trap
+/// payload or a shop offer is found by existing rather than by being remembered —
+/// and is judged unforced there for the same reason its fill is.
+pub(crate) fn collect_way_openings(
+    campaign: &Campaign,
+    obj_step: &BTreeMap<String, usize>,
+) -> Vec<crate::ways::WayOpening> {
+    let mut out = Vec::new();
+    for_each_gate_effect(campaign, &mut |site, e| {
+        let Some((piece, name)) = e.way_write() else {
+            return;
+        };
+        let (fire_step, forced) = firing_of(&site.root, obj_step);
+        out.push(crate::ways::WayOpening {
+            prefab_id: piece.as_str().to_string(),
+            way: name.to_string(),
+            path: site.path.clone(),
+            stage: site.stage,
+            fire_step,
+            forced,
         });
     });
     out

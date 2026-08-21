@@ -34,6 +34,26 @@
     },
     {
       "area": "area/hall",
+      "id": "gate/hall/timed_door_inner/a",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/timed_door_inner/b",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/timed_door_mid/a",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/timed_door_mid/b",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
       "id": "interact/press_the_case",
       "kind": "interact"
     },
@@ -179,11 +199,6 @@
     },
     {
       "area": "area/hall",
-      "id": "pov/leg3/wp8",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
       "id": "pov/leg4/wp0",
       "kind": "pov"
     },
@@ -199,12 +214,92 @@
     },
     {
       "area": "area/hall",
+      "id": "pov/leg5/wp10",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
       "id": "pov/leg5/wp2",
       "kind": "pov"
     },
     {
       "area": "area/hall",
       "id": "pov/leg5/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp6",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp7",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp8",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp9",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp6",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp7",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp8",
       "kind": "pov"
     },
     {

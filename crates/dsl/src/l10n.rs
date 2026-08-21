@@ -353,6 +353,14 @@ struct StageVersions {
     quests: u32,
     dialogue: u32,
     world_edits: u32,
+    /// The spec-0049 map-pipeline documents. Neither carries a player-visible
+    /// string — a node's `intent` and a fact's `note` are authoring prose a
+    /// player never sees — so no inventory key is ever fenced at either of them.
+    /// They are carried anyway rather than defaulted, because `of` is a total
+    /// function over [`Stage`] and a stage with no answer would have to be a
+    /// `_` arm, which is how the next stage's strings get silently unfenced.
+    geometry_brief: u32,
+    layout_graph: u32,
 }
 
 impl StageVersions {
@@ -365,6 +373,8 @@ impl StageVersions {
             Stage::Quests => self.quests,
             Stage::Dialogue => self.dialogue,
             Stage::WorldEdits => self.world_edits,
+            Stage::GeometryBrief => self.geometry_brief,
+            Stage::LayoutGraph => self.layout_graph,
         }
     }
 
@@ -380,6 +390,16 @@ impl StageVersions {
                 .world_edits
                 .as_ref()
                 .map(|w| minor_ordinal(&w.dsl_version))
+                .unwrap_or(0),
+            geometry_brief: c
+                .geometry_brief
+                .as_ref()
+                .map(|g| minor_ordinal(&g.dsl_version))
+                .unwrap_or(0),
+            layout_graph: c
+                .layout_graph
+                .as_ref()
+                .map(|g| minor_ordinal(&g.dsl_version))
                 .unwrap_or(0),
         }
     }

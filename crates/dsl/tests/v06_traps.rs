@@ -49,6 +49,8 @@ fn campaign_with_traps(version: &str, traps: &str) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
 }
 
@@ -154,5 +156,52 @@ fn v06_trap_unknown_forbids_flag_is_dw0172() {
             .iter()
             .any(|d| d.code == "DW0172" && d.path.contains("/traps/0/forbids_flags")),
         "unknown flag in trap forbids_flags must be DW0172: {diags:#?}"
+    );
+}
+
+/// **A flag a trap's `disarm` produces is a flag the campaign produces.**
+///
+/// This is a repair, and the shape of the defect is worth the test. There were
+/// two inventories of "which flags exist": `dsl::validate::produced_flags`, which
+/// counts a trap's `disarm.sets_flag`, and a second one built inline inside the
+/// v0.3 reference checks, which did not. `DW0172` read the second, so gating on
+/// a disarm was refused for naming a flag "no `set-flag` effect ever produces" —
+/// while the field's own documentation says other objectives and triggers may
+/// read it through `requires_flags`. One inventory now answers both, and this is
+/// the campaign that could not compile before it did.
+#[test]
+fn a_disarm_flag_can_gate_the_rest_of_the_campaign() {
+    let trap = r#"{
+      "id": "trap/dart-hall",
+      "at": "anchor/door",
+      "trigger": "trapped-chest",
+      "effect": { "dispense": { "item": "minecraft:torch", "count": 8 } },
+      "lethality": "harmful",
+      "disarm": { "via": "anchor/exit", "sets_flag": "flag/darts-off" }
+    }"#;
+    // The objective that waits on the disarm. Nothing else in the campaign sets
+    // this flag — the trap is its only producer, which is the whole point.
+    let mut raw = campaign_with_traps("0.6.0", trap);
+    raw.quests = raw.quests.replace(
+        r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }"#,
+        r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/darts-off"] }"#,
+    );
+    let diags = check_campaign(&raw);
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0172"),
+        "a flag the trap's disarm produces is produced: {diags:#?}"
+    );
+    // The other direction, so this is not a check that simply stopped firing: a
+    // flag nothing at all produces is still refused.
+    let mut unproduced = campaign_with_traps("0.6.0", trap);
+    unproduced.quests = unproduced.quests.replace(
+        r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }"#,
+        r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/never-set"] }"#,
+    );
+    assert!(
+        check_campaign(&unproduced)
+            .iter()
+            .any(|d| d.code == "DW0172"),
+        "a flag nothing produces is still DW0172"
     );
 }

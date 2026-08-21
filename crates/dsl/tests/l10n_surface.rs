@@ -171,6 +171,10 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("QuestEffect", "text", Inventoried),
     ("QuestEffect", "then_floor", Reference),
     ("QuestEffect", "type", Machine),
+    // spec-0042: the way's region name, as the carrying piece's
+    // `spatial_contract` exports it. A name in the piece's vocabulary that an
+    // `open-way` quotes back — a reference like `anchor`, never prose.
+    ("QuestEffect", "way", Reference),
     ("RegionShape", "blocks", Reference),
     ("RegionShape", "kind", Machine),
     (
@@ -492,6 +496,8 @@ fn fixture_with_actors() -> delvewright_dsl::Campaign {
         quests: serde_json::to_string(&quests).expect("quests re-serialize"),
         dialogue: read("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
     .expect("the patched keep-trial parses")
 }

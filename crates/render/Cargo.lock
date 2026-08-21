@@ -489,6 +489,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "delvec",
+ "delvewright-dsl",
  "delvewright-schem",
  "fastnbt",
  "flate2",

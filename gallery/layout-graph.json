@@ -1,0 +1,155 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "beats": [
+      { "node": "node/near-hall", "objective": "obj/hear-the-curator", "quest": "quest/near-hall" },
+      { "node": "node/near-hall", "objective": "obj/press-the-case", "quest": "quest/near-hall" },
+      { "node": "node/near-hall", "objective": "obj/take-the-emeralds", "quest": "quest/near-hall" },
+      { "node": "node/annex", "objective": "obj/reach-the-counter", "quest": "quest/near-hall" },
+      { "node": "node/far-hall", "objective": "obj/clear-the-muster", "quest": "quest/far-hall" },
+      { "node": "node/far-hall", "objective": "obj/take-the-bone", "quest": "quest/far-hall" },
+      { "node": "node/loft", "objective": "obj/climb-the-loft", "quest": "quest/far-hall" },
+      { "node": "node/exit", "objective": "obj/reach-the-end", "quest": "quest/far-hall" }
+    ],
+    "critical_path": [
+      "node/near-hall",
+      "node/annex",
+      "node/far-hall",
+      "node/loft",
+      "node/far-hall",
+      "node/exit"
+    ],
+    "edges": [
+      {
+        "a": "node/near-hall",
+        "b": "node/annex",
+        "class": "walk",
+        "id": "edge/annex-arch"
+      },
+      {
+        "a": "node/annex",
+        "b": "node/far-hall",
+        "class": "walk",
+        "gating": { "quest": "quest/near-hall" },
+        "id": "edge/annex-chute",
+        "one_way": "a-to-b",
+        "shortcut": true
+      },
+      {
+        "a": "node/near-hall",
+        "b": "node/far-hall",
+        "class": "barred",
+        "gating": { "quest": "quest/near-hall" },
+        "id": "edge/west-door",
+        "opens_from": "a"
+      },
+      {
+        "a": "node/near-hall",
+        "b": "node/far-hall",
+        "class": "barred",
+        "gating": { "quest": "quest/near-hall" },
+        "id": "edge/centre-door",
+        "opens_from": "either"
+      },
+      {
+        "a": "node/near-hall",
+        "b": "node/far-hall",
+        "class": "barred",
+        "gating": { "flags": ["flag/muster-cleared"] },
+        "id": "edge/east-door",
+        "one_way": "a-to-b",
+        "opens_from": "b",
+        "shortcut": true
+      },
+      {
+        "a": "node/far-hall",
+        "b": "node/loft",
+        "class": "stair",
+        "gating": { "flags": ["flag/muster-cleared"] },
+        "id": "edge/loft-stair"
+      },
+      {
+        "a": "node/far-hall",
+        "b": "node/loft",
+        "class": "drop",
+        "falls": "b-to-a",
+        "id": "edge/loft-drop",
+        "shortcut": true
+      },
+      {
+        "a": "node/far-hall",
+        "b": "node/undercroft",
+        "class": "stair",
+        "id": "edge/undercroft-stair"
+      },
+      {
+        "a": "node/undercroft",
+        "b": "node/near-hall",
+        "class": "stair",
+        "id": "edge/undercroft-crawl",
+        "one_way": "a-to-b",
+        "shortcut": true
+      },
+      {
+        "a": "node/near-hall",
+        "b": "node/undercroft",
+        "class": "drop",
+        "falls": "a-to-b",
+        "gating": { "flags": ["flag/muster-cleared"] },
+        "id": "edge/undercroft-shaft"
+      },
+      {
+        "a": "node/far-hall",
+        "b": "node/exit",
+        "class": "walk",
+        "id": "edge/exit-arch"
+      },
+      {
+        "a": "node/near-hall",
+        "b": "node/loft",
+        "class": "vision",
+        "id": "edge/loft-sightline"
+      }
+    ],
+    "entry": "node/near-hall",
+    "goal": "node/exit",
+    "nodes": [
+      {
+        "id": "node/near-hall",
+        "intent": "hub",
+        "note": "Everything the delve opens with stands here: the Curator, the case, the stall counter. It is the one place a body returns to.",
+        "size_class": "hall"
+      },
+      {
+        "id": "node/annex",
+        "intent": "side-gallery",
+        "note": "The three-tile chain drawn from `pool/gallery-annex`, off the near hall and back into the far one.",
+        "size_class": "room"
+      },
+      {
+        "id": "node/far-hall",
+        "intent": "arena",
+        "note": "Behind the barred wall: the muster forms up here and the loft looks down on it.",
+        "size_class": "hall"
+      },
+      {
+        "id": "node/loft",
+        "intent": "vista",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/undercroft",
+        "intent": "cache",
+        "note": "No beat happens here, which is deliberate: a place off the mandatory spine is what makes the critical path's spine obligation say something.",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/exit",
+        "intent": "goal-chamber",
+        "size_class": "alcove"
+      }
+    ]
+  },
+  "dsl_version": "0.13.0",
+  "stage": "layout-graph"
+}

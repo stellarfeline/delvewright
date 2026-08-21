@@ -30,6 +30,8 @@ fn campaign_with(quests: &str, dialogue: Option<&str>) -> RawCampaign {
             .map(str::to_string)
             .unwrap_or_else(|| common::read_valid("dialogue.json")),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
 }
 

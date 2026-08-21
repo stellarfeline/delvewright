@@ -930,7 +930,30 @@
           },
           {
             "after": [
-              "obj/clear-the-muster"
+              "obj/take-the-bone"
+            ],
+            "anchor": "anchor/loft",
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "subject": "anchor/loft",
+              "text": "They climb the flight they put back and come out over the hall.",
+              "verb": "arrives"
+            },
+            "hint": "Up the flight, once its treads are back.",
+            "id": "obj/climb-the-loft",
+            "radius": 2,
+            "requires_flags": [
+              "flag/muster-cleared"
+            ],
+            "stealth": false,
+            "title": "Climb to the mezzanine",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/climb-the-loft"
             ],
             "anchor": "anchor/exit",
             "happening": {
@@ -1850,6 +1873,26 @@
               ],
               "type": "despawn-npc"
             }
+          ],
+          "obj/take-the-bone": [
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "piece": "prefab/gallery-hall",
+              "requires_flags": [
+                "flag/muster-cleared"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/labels-read",
+                  "value": 0
+                }
+              ],
+              "type": "open-way",
+              "way": "broken-flight"
+            }
           ]
         },
         "trigger": {
@@ -2055,15 +2098,29 @@
     "timed_gates": [
       {
         "closed_ticks": 60,
+        "gate": "anchor/timed-door",
+        "id": "timed-gate/side-door",
+        "open_ticks": 40,
+        "phase": 10
+      },
+      {
+        "closed_ticks": 60,
+        "gate": "anchor/timed-door-mid",
+        "id": "timed-gate/mid-door",
+        "open_ticks": 40,
+        "phase": 20
+      },
+      {
+        "closed_ticks": 60,
         "crush": true,
         "disarm": {
           "sets_flag": "flag/gate-jammed",
           "via": "anchor/vantage"
         },
-        "gate": "anchor/timed-door",
-        "id": "timed-gate/side-door",
+        "gate": "anchor/timed-door-inner",
+        "id": "timed-gate/inner-door",
         "open_ticks": 40,
-        "phase": 10
+        "phase": 30
       }
     ],
     "traps": [
@@ -2404,6 +2461,6 @@
       }
     ]
   },
-  "dsl_version": "0.11.0",
+  "dsl_version": "0.12.0",
   "stage": "quests"
 }

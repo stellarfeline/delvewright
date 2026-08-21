@@ -87,6 +87,7 @@ pub mod registry;
 pub mod rehearsal;
 pub mod render_plan;
 pub mod resourcepack;
+pub mod respawn;
 pub mod seeding;
 pub mod snapshot;
 pub mod solver;
@@ -97,7 +98,9 @@ pub mod textfit;
 pub mod timeline;
 pub mod traversal;
 pub mod view;
+pub mod watch;
 pub mod waypoints;
+pub mod ways;
 pub mod wrongside;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).

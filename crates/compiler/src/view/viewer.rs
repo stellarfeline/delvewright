@@ -56,7 +56,11 @@ pub const SCHEMA: &str = "delvewright.prefab-viewer/2";
 
 /// A player's eye height above the floor of the cell they stand in, in blocks.
 /// A "player POV" preset that floats is not a player POV.
-pub const EYE_HEIGHT: f32 = 1.62;
+///
+/// Narrowed from the metrics table's `f64` (spec-0049 §2) rather than declared
+/// again: the page's camera payload is `f32`, and a literal here would have been
+/// a second copy of the one number every other camera in this engine reads.
+pub const EYE_HEIGHT: f32 = delvewright_dsl::metrics::PLAYER_EYE_HEIGHT as f32;
 
 /// Anchor name stems that mean "the party's way in", in precedence order — the
 /// **guess**, consulted only when the piece does not say.

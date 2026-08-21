@@ -39,6 +39,16 @@ jobs:
       - name: every server derives its world from the build
         run: bash validation/check-world-settings.sh
 
+      # A pin freezes an instrument on purpose; the defect is a pin nobody has
+      # looked at since the thing it names moved, which is invisible because the
+      # file reads the same on the day it is written and a year later. This half
+      # is offline: every literal that decides which version of an external thing
+      # this repo fetches is discovered by shape and must carry a registry entry
+      # naming its policy. It states its binding count, and a binding of zero is
+      # a finding rather than a pass.
+      - name: every pin is declared
+        run: python3 tools/check-pins.py
+
   rust:
     name: rust (fmt, clippy, test)
     runs-on: ubuntu-latest
@@ -315,8 +325,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: install (pinned skinpy-extended) + pytest
-        run: pip install -r requirements.txt pytest
+      - name: install (pinned skinpy-extended) + pinned pytest
+        run: pip install -r requirements.txt "pytest==9.1.1"
       - name: pytest (composition determinism + model-required contract)
         run: PYTHONPATH=. python -m pytest -q
 
@@ -333,8 +343,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Stdlib-only tool (tomllib needs >=3.11); pytest is the only test dep.
-      - run: pip install pytest
+      # Stdlib-only tool (tomllib needs >=3.11); pytest is the only test dep,
+      # and it is an INSTRUMENT of a required check, so it is named literally
+      # (versions.toml [ci].pytest_version).
+      - run: pip install "pytest==9.1.1"
       - run: python -m pytest -q tools/tests
 
   mecha-crosscheck:
@@ -349,11 +361,16 @@ jobs:
       # the build copies the prefab .nbt into the datapack — from the content repo
       - uses: ./.github/actions/checkout-content
       - uses: Swatinem/rust-cache@v2
+      # A DIFFERENT interpreter line from the two tool suites above, and it is
+      # entailed rather than chosen: mecha 0.104.1 declares Requires-Python
+      # >=3.14, so the pinned validator cannot be installed on 3.12 at all.
+      # versions.toml records that floor and check-versions.sh holds this value
+      # at or above it (versions.toml [ci]).
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - name: install mecha + beet (pinned)
-        run: pip install "mecha==0.104.1" beet
+      - name: install mecha + beet (both pinned)
+        run: pip install "mecha==0.104.1" "beet==0.116.0"
       - name: build the hello-world delve
         run: |
           cargo run --locked -p delvec --bin delvec -- \
@@ -368,7 +385,18 @@ jobs:
     name: docs (local link check)
     runs-on: ubuntu-latest
     steps:
+      # Full history, and it is `check-version-ledger-uniqueness.py` that needs
+      # it: deciding whether a ledger row missing from this branch was WITHDRAWN
+      # by it or simply arrived at `origin/main` after it was cut is a question
+      # about the fork point, and the two look identical in the tree. The
+      # default depth-1 checkout cannot answer it — measured on this
+      # repository's own PR merge-preview shape, `git merge-base HEAD
+      # origin/main` exits 1 with no output there and resolves at depth 0. The
+      # gate fails CLOSED without it (nothing is withdrawn, rule 1 is the union
+      # it always was), so this is what makes a correct cancellation green
+      # rather than what makes a collision red.
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       # docs/reference/compiler.md is the authoritative current-behavior record;
       # its DW diagnostics catalog must match crates/**/*.rs exactly, both ways
       # (CLAUDE.md Methodology). Deterministic, offline, stdlib-only python3
@@ -517,20 +545,17 @@ jobs:
       # given that fetch; the script itself takes no further network action.
       # What it cannot see — another open PR that has not yet merged into
       # `origin/main` — is stated in the script's own docstring, not buried.
-      # `--depth=1` is CI-ONLY and is correct HERE for a reason that does not
-      # travel: `actions/checkout@v4` already left this a shallow checkout, so
-      # there is no full history to truncate, and one commit is fetched instead
-      # of the branch's whole ancestry (measured against this repository's own
-      # history under CI's merge-preview shape: 1 commit versus 400). Run the
-      # same line in a developer's full clone and it converts that clone — and
-      # every worktree sharing its object store — into a shallow one, after
-      # which merge-base, ahead/behind and every other ancestry answer is a
-      # confident wrong number rather than an error. That is why the gates below
-      # never print this line: they compute the remedy from the repository they
-      # are running in (`tools/lib/gitbase.py`), and a full clone is told to
-      # fetch plainly.
-      - name: fetch origin/main for the numbering-uniqueness gates (CI-only depth)
-        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      # A PLAIN fetch, and the absence of `--depth=1` is the point. The checkout
+      # above is full, and that flag converts a full clone — and every worktree
+      # sharing its object store — into a shallow one, after which merge-base,
+      # ahead/behind and every other ancestry answer is a confident wrong number
+      # rather than an error. It would take back, in one line, the ancestry the
+      # ledger gate was given full history for. That is the same rule the gates
+      # below print for an operator: they compute the remedy from the repository
+      # they are running in (`tools/lib/gitbase.py`), and a full clone is told
+      # to fetch plainly.
+      - name: fetch origin/main for the numbering-uniqueness gates
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
       - name: no spec or ADR number collides with origin/main after this merges
         run: python3 tools/check-numbered-doc-uniqueness.py
       # The same two series, asked a different question: not "is this number
@@ -570,7 +595,10 @@ jobs:
       # construct it does not implement and silently drops it — ADR-0018 §7's
       # failure, reintroduced by the fence's own numbering. Covers every version
       # ledger in the repo (grammar `Program` version, campaign `dsl_version`),
-      # not one crate. Uses the fetch above; no further network action. What it
+      # not one crate. Uses the fetch above plus `git merge-base` against the
+      # full history the checkout now carries — a row missing from this branch
+      # was WITHDRAWN by it or arrived at the base after it was cut, and only
+      # the fork point tells those apart. No network action of its own. What it
       # cannot see, and where `dsl_version`'s anchors are self-naming so its
       # first rule cannot bind, are both in the script's own docstring.
       - name: no version number names two surfaces after this merges
@@ -823,6 +851,24 @@ jobs:
       # campaign, so the binary is named explicitly and the script never infers
       # one. Dev profile — the workspace sets `opt-level = 1` for it, which is
       # what makes a real layout solve affordable on every push.
+      # The pin's other half, judged where the pinned repository's history
+      # already is. This job checks the content repo out for its own reasons, so
+      # the drift measurement costs one deepening fetch and no new host: a
+      # required status check must not reach for something it does not already
+      # need. The checkout is shallow and AT the pin, so by itself it carries
+      # none of the commits the question is about — deepening it and fetching
+      # the default branch is what makes "what landed after this pin"
+      # answerable at all.
+      # One refspec, not a bare `--unshallow`: deepening every branch of the
+      # content repo costs 51 MB, deepening the one branch the question is about
+      # costs 2.6 MB. Measured, because a gate that makes every push slower for
+      # no reason is how the next person justifies removing it.
+      - name: deepen the content checkout so the pin has something to be behind
+        run: |
+          git -C campaigns fetch --unshallow origin main:refs/remotes/origin/main \
+            || git -C campaigns fetch origin main:refs/remotes/origin/main
+      - name: the content pin is measured against what it names
+        run: python3 tools/check-pins.py --online --checkout content-repo=campaigns
       - name: build the engine under test
         run: cargo build --locked -p delvec --bin delvec
       - name: every campaign in the pinned content repo still builds
@@ -1087,6 +1133,17 @@ jobs:
       # the entry script REQUIRES the project id, which is the only
       # name a ladder has now that compose.yaml pins none — and it tears its own
       # project down and proves it clean, so no pass can leave state for the next.
+      # The local sweep's enumerator, gated so it cannot rot. `packtest-all.sh`
+      # runs every project this job runs, and it learns WHICH by parsing this
+      # file — one authority, so there is no second list to hold in lockstep.
+      # That only holds while the parse does: a parser that quietly stopped
+      # seeing a project would hand a round a short sweep that reads as a full
+      # one, which is the exact defect the sweep exists to remove. Run bare, it
+      # refuses on a zero parse and on any project whose build step it cannot
+      # find, so this step is that guarantee and costs one second.
+      - name: the local PackTest sweep enumerates this job
+        run: python3 validation/packtest-matrix.py
+
       - name: PackTest suite (headless, exit code = failed tests)
         run: bash validation/packtest-run.sh --project dw-ci-helloworld
 
