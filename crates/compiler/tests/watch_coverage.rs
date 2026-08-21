@@ -232,10 +232,10 @@ fn the_verdict_is_deterministic() {
 // the emitter registers a `Claim` over the plan's own authored list — and THAT
 // is a proof obligation the defect cannot discharge.
 
-fn claim(families: &'static [&'static str], declared: &[&str]) -> watch::Claim {
+fn claim(families: &[&str], declared: &[&str]) -> watch::Claim {
     watch::Claim {
         mechanic: "timed-gate",
-        families,
+        families: families.iter().map(|s| (*s).to_string()).collect(),
         declared: declared.iter().map(|s| (*s).to_string()).collect(),
     }
 }

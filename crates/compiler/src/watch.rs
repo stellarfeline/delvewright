@@ -434,7 +434,14 @@ pub struct Claim {
     /// The mechanic as an author names it, for the message only.
     pub mechanic: &'static str,
     /// The emitted body families this claim covers, e.g. `tgate_open_`.
-    pub families: &'static [&'static str],
+    ///
+    /// Owned rather than `&'static [&'static str]` because a family prefix may
+    /// itself carry an object id: a dialogue node's mask body is
+    /// `dmask_<npc>_<node>`, so the family is per-NPC and cannot be a literal.
+    /// The claim over it is then one claim per NPC, each declaring that NPC's
+    /// own node list — which is the right shape anyway, since the thing being
+    /// claimed is "this NPC's every node", not "some node somewhere".
+    pub families: Vec<String>,
     /// Every declared object's function-safe id, from the plan's authored list.
     pub declared: BTreeSet<String>,
 }
@@ -528,7 +535,7 @@ pub fn check_claims(
     let mut breaches = Vec::new();
     for c in claims {
         binding.declared_objects += c.declared.len();
-        for family in c.families {
+        for family in &c.families {
             for id in &c.declared {
                 let f = format!("{family}{id}");
                 if !functions.contains(&f) {

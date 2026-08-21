@@ -1126,6 +1126,17 @@ jobs:
       # the entry script REQUIRES the project id, which is the only
       # name a ladder has now that compose.yaml pins none — and it tears its own
       # project down and proves it clean, so no pass can leave state for the next.
+      # The local sweep's enumerator, gated so it cannot rot. `packtest-all.sh`
+      # runs every project this job runs, and it learns WHICH by parsing this
+      # file — one authority, so there is no second list to hold in lockstep.
+      # That only holds while the parse does: a parser that quietly stopped
+      # seeing a project would hand a round a short sweep that reads as a full
+      # one, which is the exact defect the sweep exists to remove. Run bare, it
+      # refuses on a zero parse and on any project whose build step it cannot
+      # find, so this step is that guarantee and costs one second.
+      - name: the local PackTest sweep enumerates this job
+        run: python3 validation/packtest-matrix.py
+
       - name: PackTest suite (headless, exit code = failed tests)
         run: bash validation/packtest-run.sh --project dw-ci-helloworld
 
