@@ -18,6 +18,8 @@ import json
 import pathlib
 import sys
 
+import pytest
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools"))
 
@@ -245,21 +247,147 @@ def test_overlay_must_declare_a_non_empty_binds_set():
     assert found > 0, "zero overlays examined — this assertion bound to nothing"
 
 
-def test_every_probe_names_a_code_and_a_unit():
-    """An exemption is only as good as the diagnostic it names."""
+def test_every_committed_probe_satisfies_the_contract_the_checker_states():
+    """The contract is not restated here — it is DRIVEN.
+
+    This assertion used to be hand-written, and it drifted the moment the
+    checker learned the demonstration kind: it went on demanding that every
+    probe claim a unit, which the tool had stopped implementing, so the red it
+    produced was about the test rather than about the gallery. Two hand-written
+    authorities on one contract is what caused that, so there is now one —
+    `probe_kind` / `probe_discharges` in the checker — and this walks the
+    committed manifests through it.
+
+    Scope, stated rather than assumed: the pytest job has no `delvec`, so the
+    obligations that need one (*this document really is refused, with this
+    code*, and *every claimed unit exists*) are the gallery job's, run against
+    the real export. What is checkable here is that every committed manifest is
+    well formed under the contract and classifies the way it reads.
+    """
     probes = REPO / "gallery" / "probes"
     assert probes.is_dir(), "the gallery must carry its refusal probes"
-    found = 0
-    for pd in sorted(p for p in probes.iterdir() if p.is_dir()):
+    mod = _load_checker()
+
+    entries = sorted(probes.iterdir())
+    kinds: dict[str, str] = {}
+    for pd in (p for p in entries if p.is_dir()):
         manifest = json.loads((pd / "probe.json").read_text())
-        assert manifest.get("code", "").startswith("DW"), f"probe `{pd.name}` names no DW code"
-        assert manifest.get("units"), f"probe `{pd.name}` claims no unit"
-        assert manifest.get("why"), (
-            f"probe `{pd.name}` carries no reason — a probe is what a creator reads "
-            "to learn what the engine checks"
+        kind, code, claimed, why = mod.probe_kind(pd.name, manifest)
+        kinds[pd.name] = kind
+        assert (kind == mod.EXEMPTION) == bool(claimed), "the kind IS what is claimed"
+        # A demonstration discharges nothing, so it must survive being offered an
+        # EMPTY unit set: anything it tried to discharge would not be a unit and
+        # the checker would refuse it by name.
+        if kind == mod.DEMONSTRATION:
+            assert mod.probe_discharges(pd.name, kind, code, claimed, why, {}, {}) == {}
+
+    n = len(kinds)
+    assert n > 0, "zero probes examined — this assertion bound to nothing"
+    assert n == len(entries), (
+        f"{n} probe(s) examined of {len(entries)} entries under `gallery/probes/` "
+        "— a stray entry is a document the gate never runs"
+    )
+
+
+def test_the_probe_contract_refuses_every_way_of_breaking_it():
+    """Each obligation, driven directly, in the direction that must red."""
+    mod = _load_checker()
+    ok = {"code": "DW0001", "units": ["A.b"], "why": "because"}
+
+    for broken, what in (
+        ({**ok, "code": None}, "no code at all"),
+        ({**ok, "code": "0839"}, "a code that is not a DW code"),
+        ({**ok, "why": ""}, "no reason a creator could read"),
+    ):
+        try:
+            mod.probe_kind("p", broken)
+        except SystemExit:
+            continue
+        raise AssertionError(f"a probe manifest with {what} must be refused")
+
+    # A claim is held honest: the unit must exist, and must not already be bound.
+    with pytest.raises(SystemExit):
+        mod.probe_discharges("p", mod.EXEMPTION, "DW0001", ["A.b"], "w", {}, {})
+    with pytest.raises(SystemExit):
+        mod.probe_discharges("p", mod.EXEMPTION, "DW0001", ["A.b"], "w", {"A.b": 1}, {"A.b": []})
+
+    # …and both kinds owe the refusal itself, with the code they name.
+    for kind in (mod.EXEMPTION, mod.DEMONSTRATION):
+        with pytest.raises(SystemExit):
+            mod.assert_refused("p", kind, "DW0001", 0, [])
+        with pytest.raises(SystemExit):
+            mod.assert_refused("p", kind, "DW0001", 1, ["DW0002"])
+        mod.assert_refused("p", kind, "DW0001", 1, ["DW0002", "DW0001"])  # green
+
+    # The green case discharges exactly what it claims.
+    assert mod.probe_discharges(
+        "p", mod.EXEMPTION, "DW0001", ["A.b"], "w", {"A.b": 1}, {}
+    ) == {"A.b": {"probe": "p", "code": "DW0001", "why": "w"}}
+
+
+def test_a_demonstration_discharges_nothing_and_the_verdict_says_so(tmp_path, monkeypatch):
+    """The property a future change could silently break, asserted end to end.
+
+    Not on the contract functions but on `main`'s own verdict, because that is
+    where a discharge would have to show up. One unit is left unwritten and one
+    probe is pointed at it, twice: claiming it (an exemption — discharged, exit
+    0) and claiming nothing (a demonstration — still unaccounted, exit 1).
+
+    The pair is what makes the author's free choice of kind safe. If a
+    demonstration ever began discharging, the first half would go green and this
+    test would fail — which is the whole of the hatch question: the weaker kind
+    grants nothing, so picking it can only ever move a unit back into
+    `unaccounted`, never out of it.
+    """
+    mod = _load_checker()
+    # Deliberately smaller than `_schema()`: the only unit the gallery below
+    # leaves unwritten is `horizon`, so `unaccounted` measures the claim alone.
+    export = {
+        "world": {
+            "title": "Envelope_for_WorldContent",
+            "type": "object",
+            "properties": {"content": {"$ref": "#/$defs/WorldContent"}},
+            "$defs": {
+                "WorldContent": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}, "horizon": {"type": "string"}},
+                }
+            },
+        }
+    }
+
+    def verdict(claimed: list[str]) -> tuple[int, list[str]]:
+        root = tmp_path / ("claims" if claimed else "silent")
+        gallery = root / "gallery"
+        (gallery / "probes" / "p").mkdir(parents=True)
+        (gallery / "world.json").write_text(json.dumps(_doc({"id": "x"})))
+        (gallery / "probes" / "p" / "probe.json").write_text(
+            json.dumps({"code": "DW9999", "units": claimed, "why": "w"})
         )
-        found += 1
-    assert found > 0, "zero probes examined — this assertion bound to nothing"
+        prefabs = root / "prefabs"
+        prefabs.mkdir()
+        report = root / "report.json"
+        monkeypatch.setattr(mod, "GALLERY", gallery)
+        monkeypatch.setattr(mod, "schema_export", lambda _d: export)
+        monkeypatch.setattr(mod, "find_delvec", lambda _e: pathlib.Path("/nonexistent/delvec"))
+        monkeypatch.setattr(mod, "run_probe", lambda *_a: (1, ["DW9999"]))
+        monkeypatch.setattr(
+            sys, "argv", ["check", "--prefabs", str(prefabs), "--report", str(report)]
+        )
+        rc = mod.main()
+        return rc, json.loads(report.read_text())["unaccounted"]
+
+    rc, unaccounted = verdict([])
+    assert (rc, unaccounted) == (1, ["WorldContent.horizon"]), (
+        "a probe that claims nothing must discharge nothing — a demonstration "
+        f"that let the gate pass would be the escape hatch: {unaccounted}"
+    )
+
+    rc, unaccounted = verdict(["WorldContent.horizon"])
+    assert rc == 0 and unaccounted == [], (
+        "…and the SAME probe claiming the unit does discharge it, so the "
+        f"difference measured above is the claim and nothing else: {unaccounted}"
+    )
 
 
 def test_a_zero_compiler_binding_reds_rather_than_being_printed(tmp_path):

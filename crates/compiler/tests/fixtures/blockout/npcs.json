@@ -1,0 +1,25 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "npcs": [
+      {
+        "anchor": "anchor/node-hall",
+        "area": "area/site",
+        "base_entity": "minecraft:villager",
+        "id": "npc/keeper",
+        "name": "The Keeper",
+        "persona": {
+          "archetype": "stoic gatekeeper",
+          "backstory": "He was set to watch the cell door before the hall had walls, and he has not been relieved since.",
+          "demeanor": "Wary and unmoving at first; yields only to a traveler who asks rather than demands.",
+          "motivation": "Keep the cell shut until someone proves they mean to walk out the far side.",
+          "secret": "He has never once looked through the door he guards.",
+          "speech_style": "Terse, formal, archaic; clipped declarations and no contractions."
+        },
+        "role": "quest-giver"
+      }
+    ]
+  },
+  "dsl_version": "0.14.0",
+  "stage": "npcs"
+}

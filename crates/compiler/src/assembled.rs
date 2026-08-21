@@ -701,6 +701,27 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
     let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
     let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
     for area in &plan.areas {
+        // The area's own mass, before its templates: a derived blockout's blocks
+        // arrive as region writes rather than in a `.nbt` (`crate::blockout`),
+        // and they are the *ground* the rest of the area stands in — so they are
+        // written first and anything placed over them wins, exactly as a
+        // template placed over an earlier template does.
+        //
+        // Empty for every prefab-placed area, so this loop runs zero times and
+        // such a world is byte-identical.
+        for m in &area.mass {
+            if is_air(&m.block) {
+                for cell in region_cells(m.from, m.to) {
+                    blocks.remove(&cell);
+                    open_gates.remove(&cell);
+                }
+            } else {
+                for cell in region_cells(m.from, m.to) {
+                    blocks.insert(cell, m.block.clone());
+                    open_gates.remove(&cell);
+                }
+            }
+        }
         for (piece, template) in area
             .pieces
             .iter()

@@ -639,6 +639,24 @@ common.
 | `lighting` | `{fixture, min_light}` applied to every enclosed box, so a blockout interior is walkable at night without per-box surface. **The engine's existing area-lighting object**, not a twin of it, so it answers the same range rule with the same code (`DW0196`). |
 | Binding | Every run that carries a plan prints a second line beside the layout-graph one: boxes and **the pairs compared**, seams (stair, drop), datums, whole-owned volumes, identities, sightlines and views. Two zeroes are called out as findings rather than counted: a plan with no view (the walk has no declared vantage) and a plan with no whole-owned volume (the rule keeping the whole's mass out of the places examined nothing). A plan with no identity is `DW0834` in its own right. |
 
+### The blockout (derived — there is no document)
+
+Stage 5 has no element table because it has no elements: the whole map's mass is
+a pure function of the site plan and the metrics table, so there is nothing an
+author writes and nothing an author can get wrong. What a reader needs to know
+about it is what it BUILDS, which is fixed:
+
+| Thing | What the derivation makes of it |
+|---------|---------|
+| a box | A shell one cell thick around the play space — floor course, four walls to the top of the play space, and a ceiling unless the place is sky-open. The floor is the place's own **accent**, cycled deterministically over the plan's boxes, so the colour under a body's feet names the place it is standing in. Two connected places share the wall between them, written once by each and identical either way. |
+| a seam | A frame of contrasting wall around the opening, and the opening itself cut to air — or filled with the bar, on a `barred` way, which the world-load seal model then measures shut exactly as it measures a prefab-authored gate. |
+| a stair | A stepped run inside the box the plan named, at the **gentlest standard pitch that box affords** — chosen by the same walk over the same table `DW0830` refuses with, so a plan that reached green is a plan this can build. Realized as whole blocks and bottom slabs rather than as the table's `realization` blocks: the occupancy model treats a stair block as a full cube (deliberately conservative), so treads built from stair blocks would present the navigation model a 16/16 jump per course where the table's own `step_16` says the body takes two 8/16 steps and never leaves the ground. The derivation builds the geometry the table describes out of blocks whose top faces the model measures exactly. |
+| a volume | Plain mass — `massif` and `ground` in their own blocks, `clearance` kept empty. |
+| the order | Volumes, then every shell, then every interior cleared, then every seam's frame, then every stair, and **the openings last**. Two passes are separated on purpose. The interiors: a neighbour's shell may legally stand in the cells over or under a place, and clearing every interior after every shell is what makes *the play space the plan allocated is air* an invariant of the derivation rather than a property of the order two boxes happen to be written in. The openings: a stair arrives AT its seam, so its top course sits directly under or beside the hole, and a course written after the hole was cut fills it back in — cutting last makes *the opening the plan allocated is open* an invariant too, so the massing may do what it likes and the hole is the last word. |
+| lighting | The plan's one `lighting` setting, applied to every enclosed box by the ordinary relight pass. |
+
+Its diagnostics and the battery that judges the result are `DW0821`/`DW0836`–`DW0839`.
+
 ### l10n sidecars (`l10n/<code>.json`)
 
 Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content,source?}`; `content` =
@@ -5012,6 +5030,107 @@ half they will be checked against.
 | `DW0833` | **A brief identity does not hold.** An `identities[]` comparison is false. The refusal names **both numbers** and quotes the brief's own sentence, because the author's next action is deciding which of the two to move — and the prescription says where: change the fact *in the brief*, where the design is written down, so the change is a decision somebody took rather than a plan that drifted. Raised here over the plan; **its second call site is the built world**, where the same rule recomputes the same measures from assembled bytes so a derivation defect that moved a datum cannot hide behind a plan-time green. That site belongs to the round that builds the blockout, and nothing here approximates it. |
 | `DW0834` | **The identity gate binds nothing.** Zero `facts[]` in the brief, or zero `identities[]` in the plan: the binding that holds the whole to its written design is empty, which is the vacuity the whole stage exists to prevent — with either side empty the plan may say anything at all and every rule above still passes, because none of them has an opinion about how big the map was meant to be. **Warning (exit 0)**, naming the empty side, so a deliberately minimal plan stays compilable; printed every run, so the emptiness is never quietly a pass. |
 | `DW0835` | **A whole-owned volume enters a box.** A `volumes[]` region intersecting a box's play space, named with both and the intersection. The whole's mass may stand beside a place, under it and over it; inside it, the volume and the place are two authorities writing one cell, which the derivation must never be asked to arbitrate. |
+
+### DW0821/DW0836–DW0839 — the derived blockout (`compiler::blockout`; error + two advisories)
+
+Stage 5 of the map pipeline: the whole map's mass, derived from the site plan and
+the metrics table, and then **judged against the plan it was derived from**.
+
+**There is no authored form.** No document, no schema, no file. The only path to
+blockout bytes is `compiler::blockout::derive`, whose input is a validated site
+plan, and the only caller is `Plan::build` — which is the only constructor
+`build`, `analyze`, `snapshot`, `viewer`, `blocking-chart` and `edit` can reach a
+world through. That is what makes *blockout before site plan* uncompilable rather
+than forbidden: there is nothing to author early.
+
+**The mass is region writes, not a structure template.** A blockout box is a
+shell — six faces of one uniform block around a volume of air — so a `.nbt`
+packaging of it would be tens of thousands of mostly-air cells split across tiles
+past vanilla's 48-per-axis cap, and would need a template writer this crate
+cannot reach. A derived piece is therefore a `PiecePlacement` with **no
+templates** whose blocks live in `AreaPlacement::mass`, applied in
+`assembled::placed_blocks` one step ahead of the socket seals that already had
+that shape. Nothing downstream special-cases it: `bbox()` answers for forceload
+and relight off `pos`/`size` exactly as before, and a piece the prefab registry
+has never heard of contributes no face contract and no anchors — which is
+correct, because a derived box makes no claim about mating with anything. Each
+write is split at the point of writing so none exceeds what one vanilla `fill`
+will accept; a `fill` the server refuses fails in a function nobody reads.
+
+**No seed reaches the derivation.** It takes the plan and the table and nothing
+else — no RNG, no clock, no hash-order iteration — so the same plan derives the
+same mass, and changing `world.seed` changes no blockout byte.
+
+**The synthesized vocabulary** (what makes the unchanged quest layer land on
+massing nobody authored):
+
+| Name | What it is |
+|---|---|
+| `spawn` | The entry place's footing, resolved through the compiler's existing entry-anchor alias list. Spelled rather than given a role: the prefab-metadata anchor carries no `role` field on this engine, so a derivation writing one would be writing a fact nothing reads. |
+| `anchor/node-<place>` | A place's own footing. `node/near-hall` becomes `anchor/node-near-hall`, because a campaign reaches an anchor through `anchor/<kebab>` and `node/<id>` is not a name any document could write. |
+| `anchor/seam-<edge>` | A `barred` seam's gate region, filled at world load with the bar and measured shut by the same gate-seal model a prefab-authored gate is. `open-gate` and `shortcut` address it. |
+| `anchor/unlock-<edge>` | The far-side affordance's footing, on the side a one-sided `barred` seam opens from. Absent on an `either` seam, which needs none. |
+
+Each is read off the mass **after** it is laid, not computed from the plan: a
+stair the plan hosts in a box legitimately stands on that box's centre, so an
+anchor placed by arithmetic alone lands inside the massing and `summon` does no
+snapping. `dsl::siteplan::synthesized_anchors` is the one authority for the
+names — validation resolves a campaign's anchor references against it and the
+derivation places exactly it, so a name that validates cannot fail to exist.
+
+**What invokes the battery**: `emit::build_with_warnings`, the one function that
+turns a `Plan` into a datapack. A campaign with no site plan gets nothing and its
+output does not move. There is no flag, no subcommand and no line in a document
+to remember, and someone building a site-plan world without it would have had to
+emit a datapack without `build_with_warnings`.
+
+**Why the battery is an observer and not a replay.** Every verdict compares what
+the plan declares with what the assembled bytes are. It does not know where the
+derivation put a floor course, how it chose a pitch, or which cells it cleared —
+it knows the plan, resolved by the same `dsl::siteplan` code stage 4 judged, and
+it knows the world. That claim is demonstrated rather than asserted: each of
+`DW0836`, `DW0837` and `DW0838` is reddened in test by a **deliberately perturbed
+derivation** (`blockout::Perturb`), never by hand-authored bytes, and the
+production path passes `Perturb::none()` as a literal with a test asserting it.
+
+The step rule is the compiler's own (`nav::World::neighbors`), whose visibility
+was widened for this rather than copied — a second step rule would make this the
+one proof in the compiler taken under different physics.
+
+| Code | Rule |
+|---|---|
+| `DW0836` | **A built seam disagrees with its allocation.** Three claims over the bytes. *Every allocated cell is passable* — a hole the derivation failed to cut is a connection the graph declares and the world does not have. *No other cell of the shared wall is passable*, asked per **wall** rather than per seam, because two connections may legitimately pierce one wall and the union of their openings is what it is allowed to have. *The realized rise equals the declared rise*, measured as the lowest cell a body can stand on inside each place — so a floor course laid at the wrong height disagrees with the plan that put the two places at those datums. Build tier (exit 3), `every_version`. **Binding: seams proven, and shared walls examined.** |
+| `DW0837` | **A node's floor is unreached.** Per-cell reachability from the campaign's own spawn over the assembled world, with every way the graph's monotone gating closure never opens sealed as the plan sealed it — the base assembled model holds gate regions open, so a proof taken over it would walk through a door nothing unlocks. A declared `drop` is **seeded**, not walked: the step rule models no free fall (a router that could fall would prove routes a body cannot come back from), so the far side of a fall whose near side is already stood in is handed a starting cell and the closure iterates. That is the graph's own declaration carried into the bytes, never a widening of the step rule. The graph's `DW0816` proved this over topology; this proves the derivation preserved it in blocks. Build tier (exit 3), `every_version`. **Binding: places proven.** |
+| `DW0838` | **A connection nothing allocated.** Delete every allocated opening from the world and no two places may still be walk-connected. **Departure from spec-0049 §5.3, recorded**: the spec states this as *every legal step between a cell owned by one box and a cell owned by another*, and read literally that rule is vacuous by construction — the plan's own `DW0828` puts exactly one cell between any two boxes, so no cell of one is ever a cardinal neighbour of a cell of the other and the rule quantifies over an empty set forever. The claim is therefore made over **paths**, which is the same claim and can fail: it catches the crossings the step form was reaching for and could not see — a wall the massing left low, a corner two shells did not close, a roof one open place lets a body onto — none of which is a single step between two owned cells either. Build tier (exit 3), `every_version`. **Binding: standable cells classified, and place pairs tested.** |
+| `DW0821` | **A sightline is blocked.** The DDA walk of a declared `vision` edge's segment — `nav::walk_cells`, the same exact grid traversal the cutscene clip is proven with — naming **every** blocking cell rather than the first, because a walk sheet that names one cell of a wall has not said where the wall is. **Warning (exit 0)** in this slice: derived massing has no landform, so a vista the detail pass will carve a ridge for is blocked here by the shells themselves, and refusing it would force hand-shaped massing into a derivation whose whole property is that nobody shapes it. Promoted to an error by the detail-stage spec. `every_version`. **Binding: sightlines walked.** |
+| `DW0839` | **Two placement authorities in one campaign.** A stage-1 world declaring `areas[]` in a campaign that also carries a site plan. `areas[]` seats prefab pieces on the compiler's fixed stride and the site plan seats the derived blockout in its own declared region, so a world with both has two answers to every question about where something is and nothing says which. One or the other, per campaign; both surfaces stay legal at 0.14.0. Validation tier (exit 1), `every_version`. |
+
+`DW0833` and `DW0822` run their **second call sites** here, and the pair is the
+point of each:
+
+- `DW0833` re-measures the brief's identities off the assembled bytes, so a
+  derivation defect that moved a datum cannot hide behind a plan-time green — a
+  floor laid one block low satisfies every stage-4 rule, because stage 4 never
+  saw a block. **Departure, recorded**: four of the five measures have a
+  byte-side referent (a box's built footprint, its built headroom, the distance
+  between two built places, a datum's realized walk plane) and `region-extent`
+  does not. A region is a declaration the plan's contents must fit inside
+  (`DW0826`); nothing is required to reach its edges and the derivation builds no
+  object whose extent it is, so re-measuring it as *the extent of whatever got
+  built* would refuse every plan that leaves a margin. Such an identity is
+  evaluated once and counted as **declaration-only** in the binding line rather
+  than passed over in silence.
+- `DW0822` prints the **measured** A* route along the layout graph's own critical
+  path, beside the projection stage 3 made of it. Neither carries a threshold;
+  they exist to be set side by side, which is the only way the pacing coefficient
+  gets calibrated at all.
+
+**Binding line.** Every build of a site-plan campaign prints two: what the
+derivation massed (places, seams with their stair and barred counts,
+whole-owned volumes, anchors synthesized, region writes and the cells they cover)
+and what the battery examined (seams, walls, places, standable cells, place
+pairs, sightlines, identities with the declaration-only count, and critical-path
+legs).
 
 ---
 

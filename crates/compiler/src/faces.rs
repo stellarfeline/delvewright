@@ -168,10 +168,29 @@ pub struct FaceBinding {
 
 impl FaceBinding {
     /// The advisory a zero binding owes its reader, or `None`.
-    pub fn finding(&self, pieces: usize) -> Option<Diagnostic> {
+    ///
+    /// `allocated` says the world's ways were **allocated rather than mated** —
+    /// a site-plan campaign (spec-0049), whose seams are cut by the plan on
+    /// faces two boxes already share and proved over the built bytes by
+    /// `DW0836`. The zero is still stated, because a count only means something
+    /// when the run that found nothing prints it too; what changes is that the
+    /// reader is told where the question moved to instead of being told nothing
+    /// proves the world fits together, which in that world is false.
+    pub fn finding(&self, pieces: usize, allocated: bool) -> Option<Diagnostic> {
         if self.bound > 0 {
             return None;
         }
+        let tail = if allocated {
+            "This world's placement authority is a SITE PLAN, so no piece was ever asked to mate \
+             with another: its ways are allocated at stage 4, on faces two boxes already share, \
+             and proved over the built bytes by `DW0836`. The zero above is the honest count of a \
+             question this world does not ask, not a proof that went missing."
+        } else {
+            "Nothing here proves that the pieces of this world fit together. A piece without a \
+             contract makes no claim about its own sides at all; a piece whose contract declares \
+             only interior edges has made its claim and offers a neighbour nothing to disagree \
+             with."
+        };
         Some(Diagnostic::warning(
             DW_FACE_UNBOUND,
             "world",
@@ -179,11 +198,7 @@ impl FaceBinding {
             format!(
                 "the piece-mating check examined ZERO abutting faces: of {pieces} placed piece(s), \
                  {} with a spatial contract, {} of those with a face, and {} face(s) declared \
-                 in all — none of which touches another placed piece. Nothing here \
-                 proves that the pieces of this world fit together. A piece without a contract \
-                 makes no claim about its own sides at all; a piece whose contract declares only \
-                 interior edges has made its claim and offers a neighbour nothing to disagree \
-                 with",
+                 in all — none of which touches another placed piece. {tail}",
                 self.contracted, self.faced, self.declared
             ),
         ))

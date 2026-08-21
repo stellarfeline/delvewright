@@ -724,6 +724,18 @@ pub struct Plan<'a> {
     /// causal descendant of the gate's firing objective — not a parallel branch the
     /// lineariser merely interleaved ahead of it.
     pub strict_ancestor_steps: BTreeMap<usize, BTreeSet<usize>>,
+    /// **The derived blockout** (spec-0049 §5), for a campaign whose placement
+    /// authority is a site plan. `None` for every campaign that places pieces
+    /// with `areas[]` — which is why nothing about such a build moves.
+    ///
+    /// It is on the plan rather than recomputed per consumer for the reason
+    /// [`Plan::ways`] is: three readers need the same answer — emission (which
+    /// writes the mass), the stage-5 battery (which judges the built bytes
+    /// against the plan it was derived from) and the relight pass (which needs
+    /// the site plan's one lighting setting) — and two of them deriving it
+    /// independently is how a builder and its observer come to agree about a
+    /// world neither describes.
+    pub blockout: Option<crate::blockout::Blockout>,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -738,6 +750,17 @@ pub struct AreaPlacement {
     /// connector; a single-prefab area's lone piece has all of its unmated, so
     /// each one is walled.
     pub seals: Vec<SealFill>,
+    /// **The region writes this area's own blocks arrive as**, in the order the
+    /// world applies them — before the templates, and therefore before the socket
+    /// seals (`crate::assembled::placed_blocks`).
+    ///
+    /// Empty for every prefab-placed area, which is what keeps such a campaign's
+    /// output byte-identical: a prefab's blocks arrive in a `.nbt` and this list
+    /// is the other way a piece can be made of something. The blockout
+    /// (`crate::blockout`) is the one producer — a shell of uniform boxes, whose
+    /// natural packaging is a fill and whose `.nbt` packaging would be tens of
+    /// thousands of mostly-air cells split across tiles.
+    pub mass: Vec<SealFill>,
 }
 
 impl AreaPlacement {
@@ -1656,6 +1679,20 @@ pub type TransportMap = BTreeMap<String, [i32; 3]>;
 impl<'a> Plan<'a> {
     /// Build the plan. Requires a validated campaign and loaded prefab metadata.
     pub fn build(campaign: &'a Campaign, prefabs: &PrefabRegistry) -> Result<Self, PlanError> {
+        Self::build_with(campaign, prefabs, crate::blockout::Perturb::none())
+    }
+
+    /// [`Plan::build`] with a deliberate defect built into the blockout
+    /// derivation — see [`crate::blockout::Perturb`] for why this exists.
+    ///
+    /// The only caller outside a test is [`Plan::build`] itself, passing
+    /// [`Perturb::none`](crate::blockout::Perturb::none) as a literal; a test
+    /// asserts that, so this cannot quietly acquire another.
+    pub fn build_with(
+        campaign: &'a Campaign,
+        prefabs: &PrefabRegistry,
+        perturb: crate::blockout::Perturb,
+    ) -> Result<Self, PlanError> {
         let namespace = campaign.world.campaign_id.as_str().to_string();
         let seed = campaign.world.content.seed;
 
@@ -1769,6 +1806,7 @@ impl<'a> Plan<'a> {
                         rotation: Rotation::None,
                     }],
                     seals,
+                    mass: Vec::new(),
                 }
             } else if let Some(pool) = &area.prefab_pool {
                 // Pool area (ADR-0004 jigsaw assembly): the solver grows a layout
@@ -1882,6 +1920,7 @@ impl<'a> Plan<'a> {
                     area_id: area_id.clone(),
                     pieces,
                     seals: layout.seals,
+                    mass: Vec::new(),
                 }
             } else {
                 // Validation (DW0160) guarantees exactly one binding.
@@ -1896,6 +1935,32 @@ impl<'a> Plan<'a> {
             };
             areas.push(placement);
         }
+
+        // ---- the derived blockout (spec-0049 §5) ----
+        //
+        // **This is the ordering tooth, and it is here because here is the only
+        // door.** The blockout has no authored form — no document, no schema, no
+        // file — so the single path from a site plan to blockout bytes runs
+        // through `crate::blockout::derive`, and the single path to that runs
+        // through this function. Every `delvec` verb that reaches a world (build,
+        // analyze, snapshot, viewer, blocking-chart, edit) reaches it through a
+        // `Plan`, and there is no other constructor. Someone doing the guarded
+        // thing without calling this would have to have built a `Plan` some other
+        // way, and there is none.
+        //
+        // A campaign with no site plan gets `None` and nothing below runs, so its
+        // output does not move by a byte.
+        let mut blockout_reads = delvewright_dsl::metrics::Reads::new();
+        let blockout = match crate::blockout::derive_with(campaign, &mut blockout_reads, perturb) {
+            None => None,
+            Some((placement, derived)) => {
+                for (name, resolved) in derived.anchors() {
+                    anchors.insert((placement.area_id.clone(), name.to_string()), resolved);
+                }
+                areas.push(placement);
+                Some(derived)
+            }
+        };
 
         // ---- gate-aware reachability (M2 fix 7, DW0306) ----
         // With the layout solved, verify no objective's anchor is sealed behind a
@@ -1934,7 +1999,10 @@ impl<'a> Plan<'a> {
             w.extend(e.warnings.clone());
             PlanError::new(e.code, e.message).with_warnings(w)
         })?;
-        if let Some(finding) = binding.finding(crate::faces::placed_pieces(&areas)) {
+        if let Some(finding) = binding.finding(
+            crate::faces::placed_pieces(&areas),
+            campaign.site_plan.is_some(),
+        ) {
             warnings.push(finding);
         }
 
@@ -2138,6 +2206,7 @@ impl<'a> Plan<'a> {
             transit_teleports,
             strict_ancestor_steps,
             massing_bounds,
+            blockout,
         })
     }
 

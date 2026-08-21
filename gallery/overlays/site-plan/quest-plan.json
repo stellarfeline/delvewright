@@ -1,0 +1,36 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "finale": "quest/far-hall",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/site",
+        "depends_on": [],
+        "goal": "Read the near hall and the counter off it, and earn the doors through the barred wall.",
+        "id": "quest/near-hall",
+        "mandatory": true,
+        "npcs": [
+          "npc/curator",
+          "npc/factor"
+        ]
+      },
+      {
+        "act": 2,
+        "area": "area/site",
+        "depends_on": [
+          "quest/near-hall"
+        ],
+        "goal": "Cross the wall, clear the muster, climb the loft and leave by the far door.",
+        "id": "quest/far-hall",
+        "mandatory": true,
+        "npcs": [
+          "npc/warden",
+          "npc/marshal"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.12.0",
+  "stage": "quest-plan"
+}

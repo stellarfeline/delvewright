@@ -885,13 +885,20 @@ fn uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // ---------------------------------------------------------------------------
 
 fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let area_ids: BTreeSet<&str> = c
+    let mut area_ids: BTreeSet<&str> = c
         .world
         .content
         .areas
         .iter()
         .map(|a| a.id.as_str())
         .collect();
+    // A site-plan campaign has no `areas[]` — `DW0839` refuses one that does —
+    // and exactly one place instead: the site the plan lays out. NPCs and
+    // planned quests name it like any other area, so it is a declared area id
+    // here for the same reason `areas[]` entries are.
+    if c.site_plan.is_some() {
+        area_ids.insert(crate::siteplan::SITE_AREA);
+    }
     let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
     let planned_ids: BTreeSet<&str> = c
         .quest_plan
@@ -4000,7 +4007,20 @@ fn anchors_and_items(
 ) {
     // area id -> anchor set of its bound prefab (only for single-prefab areas
     // whose prefab is known; pool areas resolve their anchors elsewhere).
+    //
+    // A site-plan campaign has no prefab to ask, and it does not need one: its
+    // anchors are DERIVED from the graph and the plan, so the set is knowable
+    // here exactly as a prefab's is — and it is the same function the derivation
+    // itself places them by, so a name that resolves here cannot fail to exist
+    // in the built world.
+    let site_anchors: Option<BTreeSet<String>> = c
+        .site_plan
+        .is_some()
+        .then(|| crate::siteplan::synthesized_anchors(c));
     let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();
+    if let Some(set) = site_anchors.as_ref() {
+        area_anchors.insert(crate::siteplan::SITE_AREA, set);
+    }
     for a in &c.world.content.areas {
         if let Some(prefab) = &a.prefab
             && let Some(set) = anchors.anchors_for(prefab)
@@ -4013,7 +4033,8 @@ fn anchors_and_items(
     // references that have no owning area to resolve against: an environment
     // trigger's effects (triggers are global) and a cutscene's camera anchors (a
     // camera legitimately flies across areas).
-    let all_areas_known = c.world.content.areas.len() == area_anchors.len();
+    let all_areas_known =
+        c.world.content.areas.len() + usize::from(site_anchors.is_some()) == area_anchors.len();
     let union: BTreeSet<&str> = area_anchors
         .values()
         .flat_map(|s| s.iter().map(String::as_str))

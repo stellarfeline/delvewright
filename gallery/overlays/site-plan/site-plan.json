@@ -3,45 +3,103 @@
   "content": {
     "boxes": [
       {
-        "ceiling": { "clearance": 8 },
-        "extent": [16, 16],
-        "floor": { "datum": "datum/grade" },
-        "min": [21, 4],
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          21,
+          4
+        ],
         "node": "node/near-hall"
       },
       {
-        "ceiling": { "clearance": 8 },
-        "extent": [32, 16],
-        "floor": { "datum": "datum/grade" },
-        "min": [21, 21],
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          32,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          21,
+          21
+        ],
         "node": "node/far-hall"
       },
       {
-        "ceiling": { "clearance": 4 },
-        "extent": [16, 16],
-        "floor": { "datum": "datum/grade" },
-        "min": [4, 13],
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          4,
+          13
+        ],
         "node": "node/annex"
       },
       {
-        "ceiling": { "clearance": 3 },
-        "extent": [8, 8],
-        "floor": { "datum": "datum/loft" },
-        "min": [40, 12],
+        "ceiling": {
+          "clearance": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/loft"
+        },
+        "min": [
+          40,
+          12
+        ],
         "node": "node/loft"
       },
       {
-        "ceiling": { "clearance": 3 },
-        "extent": [8, 8],
-        "floor": { "y": 60 },
-        "min": [24, 16],
+        "ceiling": {
+          "clearance": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "y": 60
+        },
+        "min": [
+          24,
+          16
+        ],
         "node": "node/undercroft"
       },
       {
         "ceiling": "open",
-        "extent": [8, 8],
-        "floor": { "datum": "datum/grade" },
-        "min": [24, 38],
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          24,
+          38
+        ],
         "node": "node/exit"
       }
     ],
@@ -51,110 +109,292 @@
         "note": "The plane the delve opens on, and the one every place but the loft and the undercroft stands at.",
         "y": 64
       },
-      { "id": "datum/loft", "y": 69 }
+      {
+        "id": "datum/loft",
+        "y": 69
+      }
     ],
     "identities": [
       {
         "cmp": "eq",
         "fact": "fact/site-span",
-        "measure": { "axis": "x", "of": "region-extent" }
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
       },
       {
         "cmp": "eq",
         "fact": "fact/site-height",
-        "measure": { "axis": "y", "of": "region-extent" }
+        "measure": {
+          "axis": "y",
+          "of": "region-extent"
+        }
       },
       {
         "cmp": "eq",
         "fact": "fact/site-depth",
-        "measure": { "axis": "z", "of": "region-extent" }
+        "measure": {
+          "axis": "z",
+          "of": "region-extent"
+        }
       },
       {
         "cmp": "le",
         "fact": "fact/far-hall-span",
-        "measure": { "axis": "x", "node": "node/far-hall", "of": "box-extent" }
+        "measure": {
+          "axis": "x",
+          "node": "node/far-hall",
+          "of": "box-extent"
+        }
       },
       {
         "cmp": "ge",
         "fact": "fact/far-hall-depth",
-        "measure": { "axis": "z", "node": "node/far-hall", "of": "box-extent" }
+        "measure": {
+          "axis": "z",
+          "node": "node/far-hall",
+          "of": "box-extent"
+        }
       },
       {
         "cmp": "eq",
         "fact": "fact/hall-headroom",
-        "measure": { "node": "node/near-hall", "of": "box-height" }
+        "measure": {
+          "node": "node/near-hall",
+          "of": "box-height"
+        }
       },
       {
         "cmp": "lt",
         "fact": "fact/annex-standoff",
-        "measure": { "from": "node/near-hall", "of": "distance-xz", "to": "node/annex" }
+        "measure": {
+          "from": "node/near-hall",
+          "of": "distance-xz",
+          "to": "node/annex"
+        }
       },
       {
         "cmp": "gt",
         "fact": "fact/loft-datum",
-        "measure": { "datum": "datum/loft", "of": "datum-y" }
+        "measure": {
+          "datum": "datum/loft",
+          "of": "datum-y"
+        }
       }
     ],
-    "lighting": { "fixture": "torch", "min_light": 7 },
-    "region": { "extent": [64, 48, 64], "min": [0, 48, 0] },
+    "lighting": {
+      "fixture": "torch",
+      "min_light": 7
+    },
+    "region": {
+      "extent": [
+        64,
+        48,
+        64
+      ],
+      "min": [
+        0,
+        48,
+        0
+      ]
+    },
     "seams": [
-      { "at": [14, 64], "edge": "edge/annex-arch", "face": "west", "opening": "arch" },
-      { "at": [22, 64], "edge": "edge/annex-chute", "face": "east", "opening": "arch" },
-      { "at": [23, 64], "edge": "edge/west-door", "face": "south", "opening": "door" },
-      { "at": [28, 64], "edge": "edge/centre-door", "face": "south", "opening": "door" },
-      { "at": [33, 64], "edge": "edge/east-door", "face": "south", "opening": "door" },
       {
-        "at": [41, 69],
+        "at": [
+          14,
+          64
+        ],
+        "edge": "edge/annex-arch",
+        "face": "west",
+        "opening": "arch"
+      },
+      {
+        "at": [
+          22,
+          64
+        ],
+        "edge": "edge/annex-chute",
+        "face": "east",
+        "opening": "arch"
+      },
+      {
+        "at": [
+          23,
+          64
+        ],
+        "edge": "edge/west-door",
+        "face": "south",
+        "opening": "door"
+      },
+      {
+        "at": [
+          28,
+          64
+        ],
+        "edge": "edge/centre-door",
+        "face": "south",
+        "opening": "door"
+      },
+      {
+        "at": [
+          33,
+          64
+        ],
+        "edge": "edge/east-door",
+        "face": "south",
+        "opening": "door"
+      },
+      {
+        "at": [
+          41,
+          69
+        ],
         "edge": "edge/loft-stair",
         "face": "north",
         "opening": "passage",
         "stair_in": "node/far-hall"
       },
-      { "at": [45, 69], "edge": "edge/loft-drop", "face": "north", "opening": "arch" },
       {
-        "at": [25, 21],
+        "at": [
+          45,
+          69
+        ],
+        "edge": "edge/loft-drop",
+        "face": "north",
+        "opening": "arch"
+      },
+      {
+        "at": [
+          25,
+          21
+        ],
         "edge": "edge/undercroft-stair",
         "face": "down",
         "opening": "passage",
-        "stair_in": "node/far-hall"
+        "stair_in": "node/undercroft"
       },
       {
-        "at": [28, 16],
+        "at": [
+          28,
+          16
+        ],
         "edge": "edge/undercroft-crawl",
         "face": "up",
         "opening": "passage",
         "stair_in": "node/undercroft"
       },
-      { "at": [25, 16], "edge": "edge/undercroft-shaft", "face": "down", "opening": "door" },
-      { "at": [26, 64], "edge": "edge/exit-arch", "face": "south", "opening": "arch" }
+      {
+        "at": [
+          25,
+          16
+        ],
+        "edge": "edge/undercroft-shaft",
+        "face": "down",
+        "opening": "door"
+      },
+      {
+        "at": [
+          26,
+          64
+        ],
+        "edge": "edge/exit-arch",
+        "face": "south",
+        "opening": "arch"
+      }
     ],
     "sightlines": [
-      { "edge": "edge/loft-sightline", "from": [28, 66, 10], "to": [43, 70, 16] }
+      {
+        "edge": "edge/loft-sightline",
+        "from": [
+          28,
+          66,
+          10
+        ],
+        "to": [
+          43,
+          70,
+          16
+        ]
+      }
     ],
     "views": [
       {
-        "eye": [32, 88, 60],
+        "eye": [
+          32,
+          88,
+          60
+        ],
         "id": "view/the-approach",
-        "look_at": [32, 68, 20],
+        "look_at": [
+          32,
+          68,
+          20
+        ],
         "note": "The silhouette as a body walking in from the south first meets it."
       },
-      { "eye": [4, 80, 4], "id": "view/over-the-annex", "look_at": [28, 66, 20] }
+      {
+        "eye": [
+          4,
+          80,
+          4
+        ],
+        "id": "view/over-the-annex",
+        "look_at": [
+          28,
+          66,
+          20
+        ]
+      }
     ],
     "volumes": [
       {
         "id": "volume/bedrock",
         "note": "The rock the undercroft is cut into.",
-        "region": { "extent": [52, 10, 48], "min": [4, 48, 4] },
+        "region": {
+          "extent": [
+            52,
+            10,
+            48
+          ],
+          "min": [
+            4,
+            48,
+            4
+          ]
+        },
         "role": "massif"
       },
       {
         "id": "volume/hall-ground",
-        "region": { "extent": [52, 2, 48], "min": [4, 58, 4] },
+        "region": {
+          "extent": [
+            52,
+            2,
+            48
+          ],
+          "min": [
+            4,
+            58,
+            4
+          ]
+        },
         "role": "ground"
       },
       {
         "id": "volume/sky-over-the-exit",
-        "region": { "extent": [8, 20, 8], "min": [24, 68, 38] },
+        "region": {
+          "extent": [
+            8,
+            20,
+            8
+          ],
+          "min": [
+            24,
+            68,
+            38
+          ]
+        },
         "role": "clearance"
       }
     ]

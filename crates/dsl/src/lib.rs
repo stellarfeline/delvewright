@@ -79,9 +79,11 @@ pub use registry::{
 };
 pub use schema::stage_schema;
 pub use siteplan::{
-    Axis, Ceiling, Cmp, Datum, Face, Floor, Identity, Measure, PlanAxis, PlanBinding, PlanBox,
-    Seam, Sightline, SitePlanContent, View, Volume, VolumeRole, WorldBox,
+    Axis, Ceiling, Cmp, Datum, ENTRY_ANCHOR, Face, Floor, Identity, Measure, PlanAxis, PlanBinding,
+    PlanBox, SITE_AREA, Seam, Sightline, SitePlanContent, View, Volume, VolumeRole, WorldBox,
+    node_anchor, placed_boxes, placed_seams, seam_anchor, seam_unlock_anchor, synthesized_anchors,
 };
+pub use siteplan::{PlacedBox, PlacedSeam};
 pub use stages::{
     Actor, Ambush, Area, AreaLighting, AreaMitigation, BONFIRE_PROMPT_EN, BONFIRE_REST_LABEL_EN,
     BONFIRE_SAVE_LABEL_EN, BodyTraversal, BonfireLabels, Boundary, BranchDecl, BranchPoint,

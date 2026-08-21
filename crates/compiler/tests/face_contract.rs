@@ -54,6 +54,7 @@ fn placed(area: &str, pos: [i32; 3], rotation: Rotation) -> AreaPlacement {
             rotation,
         }],
         seals: Vec::new(),
+        mass: Vec::new(),
     }
 }
 
@@ -91,7 +92,7 @@ fn two_pieces_whose_faces_answer_each_other_assemble() {
         "the mating check examined ZERO abutting faces, so it proved nothing"
     );
     assert_eq!(binding.contracted, 2);
-    assert!(binding.finding(2).is_none());
+    assert!(binding.finding(2, false).is_none());
 }
 
 /// **The red.** The same two pieces, one of them a block to the side. Every
@@ -142,7 +143,7 @@ fn a_lone_piece_binds_the_mating_check_to_zero_and_says_so() {
     let areas = vec![placed("area/only", [0, 0, 0], Rotation::None)];
     let binding = faces::check(&areas, &registry).expect("a lone piece cannot mis-mate");
     assert_eq!(binding.bound, 0);
-    let finding = binding.finding(1).expect("a zero binding is stated");
+    let finding = binding.finding(1, false).expect("a zero binding is stated");
     assert_eq!(finding.code, "DW0781");
     assert!(
         finding.message.contains("ZERO abutting faces"),
