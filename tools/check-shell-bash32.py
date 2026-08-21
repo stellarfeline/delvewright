@@ -74,6 +74,14 @@ cargo workspaces and, in the content repository, excluded 27 tracked files:
 Counts are printed every run, against the tracked-file population they were drawn
 from, so a truncated input cannot read as a clean pass.
 
+What is outside it, checked rather than assumed. `Dockerfile*` `RUN` lines and
+`compose.yaml` `entrypoint:`/`command:` execute inside this repository's pinned
+Linux images, where bash is 5 — including `validation/Dockerfile.delve`, which
+writes `/delve/entrypoint.sh` from a heredoc and is byte-locked to it. And
+`.claude/settings.json`'s hooks carry no shell body of their own: both invoke
+`tools/planner-state.sh`, which is in the population. Should a hook ever grow an
+inline body, it would be host shell and would belong here.
+
 WHAT IS NOT READ, AND WHY — QUOTES AND HEREDOCS
 
 **Single-quoted spans are blanked.** bash performs no expansion inside them, so
