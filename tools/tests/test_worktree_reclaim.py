@@ -11,6 +11,23 @@ Nothing in this file touches a real checkout. Every repository is built by
 `git init` inside pytest's `tmp_path`, and the remote's pull-request authority is
 a fake `gh` on PATH — which also means the tool's `gh` invocation itself is under
 test, rather than a mocked-out function that a refactor could silently re-bind.
+
+## Binding count for the build-output ladder
+
+44 tests here, of which 10 cover `decide_target`. Run against the version that
+preceded it, **9 of those 10 go red** — which is what says they bind to the new
+behaviour rather than passing for an unrelated reason.
+
+The tenth is the finding, and it is worth more than the nine. It is
+`test_targets_only_removes_idle_output_and_never_the_worktree`, and it PASSES on
+the old version, because `--targets-only` always bypassed the free-space
+threshold and always deleted. So the old defect was never that the capability
+was gated too tightly: the capability worked, and **nothing invoked it** — the
+session hook passes `--apply` and no other flag, and that path collected nothing
+at 258 GiB free. It is the UNRUN vacuity mode, not a threshold, and the
+threshold was the second defect rather than the first: on the fixture the manual
+path deleted the output of a tree that was being built in at that moment,
+because it carried no liveness check at all.
 """
 
 from __future__ import annotations
