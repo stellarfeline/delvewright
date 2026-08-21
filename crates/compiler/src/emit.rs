@@ -519,7 +519,9 @@ pub fn build_with_warnings(
             Some(er) => er.assembled.blocks.clone(),
             None => crate::assembled::assembled_blocks(plan, structures),
         };
-        // The two hashes a walk record names its subject by (spec-0050 §2),
+        // The three hashes a walk record names its subject and its instrument
+        // by (spec-0050 §2) — the two authored documents that are its freshness
+        // key, and the derived massing the drift advisory reads —
         // printed by the one function that turns a `Plan` into a datapack, so a
         // creator who has just built the thing they are about to walk has the
         // numbers in front of them. The engine is named by its REVISION, never

@@ -288,6 +288,7 @@ fn rerecord_walk(dir: &Path) {
     let h = detail::Hashes::of(&c).expect("a site-plan campaign hashes");
     let rec = serde_json::json!({
         "site_plan_sha256": h.site_plan,
+        "layout_graph_sha256": h.layout_graph,
         "blockout_sha256": h.blockout,
         "engine_revision": detail::engine_revision(),
         "verdict": "passed",
@@ -351,7 +352,11 @@ fn a_bound_place_validates_and_states_its_binding() {
     assert_eq!(binding.bound, 1, "and it bound a place");
     assert_eq!(binding.boxes, 5, "against the plan's five boxes");
     assert_eq!(binding.records, 1, "over one walk record");
-    assert_eq!(binding.compared, 1, "whose plan hash was compared");
+    assert_eq!(
+        binding.compared, 2,
+        "whose plan hash AND layout-graph hash were both compared — the whole a walk \
+         judges is derived from both documents"
+    );
     assert_eq!(binding.measured, 1, "one piece measured against its frame");
     assert_eq!(binding.seams_required, 1, "`node/exit` has one seam");
     assert_eq!(binding.faces_examined, 1, "and the piece declares one face");
@@ -364,9 +369,12 @@ fn a_bound_place_validates_and_states_its_binding() {
         binding.line()
     );
     assert!(
-        binding.line().contains("walk gate: 1 record(s) read"),
-        "and the walk gate states its own, rather than being a check that reports \
-         nothing: {}",
+        binding
+            .line()
+            .contains("walk gate: 1 record(s) read, 2 of 2 freshness hash(es) compared"),
+        "and the walk gate states its own count WITH its denominator, rather than being \
+         a check that reports nothing — or a number about a smaller population than the \
+         one it covers: {}",
         binding.line()
     );
 }
@@ -455,6 +463,189 @@ fn dw0841_survives_a_reformat_of_the_plan() {
     );
 }
 
+/// Reach one edge of the fixture's graph BY ID — never by index, so a fixture
+/// that gains an edge cannot silently move which one a perturbation lands on.
+fn patch_edge(dir: &Path, id: &str, f: impl FnOnce(&mut serde_json::Value)) {
+    common::patch_file(&dir.join("layout-graph.json"), |v| {
+        let edges = v["content"]["edges"]
+            .as_array_mut()
+            .expect("the graph declares edges");
+        let e = edges
+            .iter_mut()
+            .find(|e| e["id"] == serde_json::json!(id))
+            .unwrap_or_else(|| panic!("`{id}` is an edge this fixture has"));
+        f(e);
+    });
+}
+
+/// **The whole a walk judges is derived from TWO authored documents**, and this
+/// is the escape that proves it, in the form that moves real placed bytes.
+///
+/// `edge/cell-exit` goes from an open archway to a quest-locked bar — a
+/// `layout-graph.json` edit and nothing else. The derivation writes
+/// `palette::BAR` where it wrote air, so the map a body walks is a different
+/// map. The site plan is untouched, so a freshness key over the plan alone reads
+/// as fresh and the human walk this record exists to gate is escaped.
+#[test]
+fn dw0841_refuses_a_graph_edit_that_moves_the_walked_massing() {
+    let tmp = tempdir("dw0841-graph-bytes");
+    let d = detailed(&tmp, &["node/exit"]);
+    let before = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+
+    patch_edge(&d.campaign, "edge/cell-exit", |e| {
+        assert_eq!(e["class"], serde_json::json!("walk"), "the way was open");
+        e["class"] = serde_json::json!("barred");
+        e["opens_from"] = serde_json::json!("a");
+        e["gating"] = serde_json::json!({ "flags": ["flag/keeper-yields"] });
+    });
+
+    let after = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    assert_eq!(
+        after.site_plan, before.site_plan,
+        "the site plan was never touched, which is the whole point"
+    );
+    assert_ne!(
+        after.blockout, before.blockout,
+        "and the walked massing MOVED: bar stands where air stood"
+    );
+    assert_ne!(
+        after.layout_graph, before.layout_graph,
+        "so the half of the key that sees it moved too"
+    );
+
+    let (diags, binding) = check_at(&d);
+    let e: Vec<_> = errors(&diags)
+        .into_iter()
+        .filter(|x| x.code == "DW0841")
+        .collect();
+    assert_eq!(e.len(), 1, "exactly one walk refusal: {:?}", codes(&diags));
+    assert!(
+        e[0].message.contains(&before.layout_graph),
+        "naming the graph the walk was recorded against: {}",
+        e[0].message
+    );
+    assert!(
+        e[0].message.contains(&after.layout_graph),
+        "and the graph this campaign now has: {}",
+        e[0].message
+    );
+    assert_eq!(binding.compared, 2, "both halves of the key were compared");
+
+    // **And the drift advisory stays silent underneath it.** Its text says what
+    // has moved is the TOOLCHAIN. A campaign edit reaching it would make that
+    // sentence a lie — which is exactly what this escape used to do, and it is
+    // the worse half of the defect, because a warning that denies the state it
+    // is reporting trains its reader to wave the state through.
+    let c = campaign_at(&d.campaign);
+    let rec = walk_record_at(&d.campaign);
+    assert!(
+        detail::blockout_drift(&c, rec.as_deref()).is_none(),
+        "a campaign edit never reaches the advisory that says the toolchain moved"
+    );
+}
+
+/// **The same escape with no signal of any kind**, and it is the one a
+/// derived-geometry key could never have caught.
+///
+/// `edge/hall-cell` is a one-side-openable door; flipping `opens_from` moves the
+/// side its `anchor/unlock-…` stands on, so the door the walk was judged with now
+/// opens from the other side. It moves neither the plan hash nor a single placed
+/// byte — which is why the key is over the graph's own bytes and not over the
+/// derivation: `PlacedSeam` carries a seam's `class`, and carries nothing at all
+/// of `opens_from`, `gating`, `one_way` or `falls`.
+#[test]
+fn dw0841_refuses_a_graph_edit_that_moves_no_byte_at_all() {
+    let tmp = tempdir("dw0841-graph-silent");
+    let d = detailed(&tmp, &["node/exit"]);
+    let before = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+
+    patch_edge(&d.campaign, "edge/hall-cell", |e| {
+        assert_eq!(e["opens_from"], serde_json::json!("a"), "it opened from `a`");
+        e["opens_from"] = serde_json::json!("b");
+    });
+
+    let after = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    assert_eq!(after.site_plan, before.site_plan, "the plan did not move");
+    assert_eq!(
+        after.blockout, before.blockout,
+        "and not one placed byte moved either — this edit is invisible to every \
+         hash taken over geometry"
+    );
+    assert_ne!(
+        after.layout_graph, before.layout_graph,
+        "the graph's own bytes are the only thing that saw it"
+    );
+
+    let (diags, binding) = check_at(&d);
+    let e: Vec<_> = errors(&diags)
+        .into_iter()
+        .filter(|x| x.code == "DW0841")
+        .collect();
+    assert_eq!(e.len(), 1, "exactly one walk refusal: {:?}", codes(&diags));
+    assert!(
+        e[0].message.contains("DIFFERENT layout graph"),
+        "and it says which document went stale, because the plan and the graph are \
+         different edits with different repairs: {}",
+        e[0].message
+    );
+    assert_eq!(binding.compared, 2);
+}
+
+/// A reformat is not a re-walk on the graph either — the same rule the plan's
+/// half already holds, because the hash is over the document's CANONICAL bytes,
+/// written by the writer `delvec fmt --check` accepts.
+#[test]
+fn dw0841_survives_a_reformat_of_the_layout_graph() {
+    let tmp = tempdir("dw0841-graph-reformat");
+    let d = detailed(&tmp, &["node/exit"]);
+    let path = d.campaign.join("layout-graph.json");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    std::fs::write(&path, serde_json::to_string(&value).unwrap()).unwrap();
+    assert_ne!(
+        std::fs::read_to_string(&path).unwrap(),
+        text,
+        "the bytes on disk moved"
+    );
+    let (diags, _) = check_at(&d);
+    assert!(
+        errors(&diags).is_empty(),
+        "and the walk still stands: {:?}",
+        codes(&diags)
+    );
+}
+
+/// A record that names only the plan is **not a walk record**, and it is refused
+/// as one rather than passing on the half it does name.
+///
+/// This is the hatch question asked of the record's own form: the escape hatch a
+/// missing field would open — *a record written before the key was whole is
+/// judged by the half of the key it happens to carry* — is precisely what an
+/// author with a stale graph would produce, so the field is required and its
+/// absence is a refusal that names the form.
+#[test]
+fn dw0841_refuses_a_record_that_names_no_layout_graph() {
+    let tmp = tempdir("dw0841-half-record");
+    let d = detailed(&tmp, &["node/exit"]);
+    common::patch_file(&d.campaign.join("walk-record.json"), |v| {
+        v.as_object_mut().unwrap().remove("layout_graph_sha256");
+    });
+    let (diags, binding) = check_at(&d);
+    let e = errors(&diags);
+    assert_eq!(e.len(), 1, "{:?}", codes(&diags));
+    assert_eq!(e[0].code, "DW0841");
+    assert!(
+        e[0].message.contains("layout_graph_sha256"),
+        "the refusal names the field the form requires: {}",
+        e[0].message
+    );
+    assert_eq!(binding.records, 1, "the record was read");
+    assert_eq!(
+        binding.compared, 0,
+        "and nothing was compared against it, which is the honest count"
+    );
+}
+
 #[test]
 fn dw0841_refuses_a_record_whose_verdict_is_findings() {
     let tmp = tempdir("dw0841-findings");
@@ -500,9 +691,13 @@ fn dw0841_guards_the_handing_too() {
     );
 }
 
-/// The blockout-drift advisory: same plan, different massing. Reachable only by
-/// toolchain movement, so it is provoked by re-recording a hash no campaign edit
-/// could have produced.
+/// The blockout-drift advisory: the same two authored documents, different
+/// massing. Reachable only by toolchain movement — because BOTH documents the
+/// derivation reads are in the freshness key and have been compared equal by the
+/// time it runs — so it is provoked by re-recording a blockout hash no campaign
+/// edit could have produced. The sibling test above holds the other direction:
+/// a campaign edit that does move the massing refuses at `DW0841` and never
+/// reaches this warning.
 #[test]
 fn a_blockout_that_moved_under_an_unchanged_plan_is_a_warning_not_a_refusal() {
     let tmp = tempdir("drift");
@@ -1249,11 +1444,11 @@ fn the_allocation_verb_refuses_without_a_passed_fresh_record() {
     );
 }
 
-/// Every build of a site-plan campaign prints both hashes and names the engine
-/// by its revision — which is what lets a walk record name its instrument
-/// literally.
+/// Every build of a site-plan campaign prints all three hashes and names the
+/// engine by its revision — which is what lets a walk record name its subject
+/// and its instrument literally.
 #[test]
-fn a_detailed_build_exits_zero_and_prints_both_hashes() {
+fn a_detailed_build_exits_zero_and_prints_every_hash() {
     let tmp = tempdir("build-cli");
     let d = detailed(&tmp, &["node/exit"]);
     let out = delvec(&[
@@ -1269,6 +1464,10 @@ fn a_detailed_build_exits_zero_and_prints_both_hashes() {
     let c = campaign_at(&d.campaign);
     let h = detail::Hashes::of(&c).unwrap();
     assert!(err.contains(&h.site_plan), "the plan hash: {err}");
+    assert!(
+        err.contains(&h.layout_graph),
+        "the layout-graph hash, which is the other half of the record's key: {err}"
+    );
     assert!(err.contains(&h.blockout), "the blockout hash: {err}");
     assert!(
         err.contains(detail::engine_revision()),
@@ -1280,37 +1479,58 @@ fn a_detailed_build_exits_zero_and_prints_both_hashes() {
     );
 }
 
-/// **The plan hash sees the plan and nothing else**, which is what makes the
-/// walk gate's hatch argument true.
+/// **Each half of the key sees its own document and nothing else**, and the key
+/// is CLOSED: the derived whole is a function of the site plan, the layout
+/// graph, the metrics table and the engine, so the two authored documents are
+/// hashed and the toolchain is named by revision. Nothing else in the campaign
+/// reaches it.
 ///
-/// `DW0841`'s security is that the defect it catches — detailing a plan the walk
-/// never passed — necessarily moves `site_plan_sha256`. That only holds if the
-/// hash is a function of the site-plan document alone: one that also saw the
-/// campaign around it would go stale on edits that move no geometry, and a gate
-/// that cries wolf is a gate somebody re-records past. What the toolchain moves
-/// is the SEPARATE blockout hash, which is why there are two.
+/// The closure is the load-bearing claim, and it is what this test measures. A
+/// key with a hole in it is not a weaker gate, it is a green one: the hole was
+/// the layout graph, and a graph-only edit moved placed bytes under a record
+/// that went on reading as fresh. A key that saw MORE than the derivation reads
+/// would fail the other way — a gate that cries wolf is a gate somebody
+/// re-records past — which is why `world.json` is measured here too.
 #[test]
-fn the_plan_hash_is_a_function_of_the_plan_document_alone() {
+fn the_key_is_each_document_and_the_key_is_closed() {
     let tmp = tempdir("hashes");
     let d = detailed(&tmp, &["node/exit"]);
     let before = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
 
-    // Two edits outside the plan: one to the campaign's own stage 1, and one to
-    // the map-pipeline document the plan is embedded FROM — the nearest thing to
-    // the plan that is not it.
+    // An edit outside BOTH keyed documents: the campaign's own stage 1.
     common::patch_file(&d.campaign.join("world.json"), |v| {
         v["content"]["seed"] = serde_json::json!(4242);
-    });
-    common::patch_file(&d.campaign.join("layout-graph.json"), |v| {
-        v["content"]["nodes"][0]["note"] = serde_json::json!("Reworded, and no geometry moved.");
     });
     let after = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
     assert_eq!(
         before, after,
-        "neither hash sees anything but the plan, the table and the engine"
+        "no hash sees anything but the plan, the graph, the table and the engine"
     );
 
-    // And the plan itself, which must move it.
+    // The graph, which moves its own half and leaves the plan's alone. It is
+    // hashed WHOLE — a reworded `note` re-opens the gate — because a key over a
+    // hand-picked traversal projection is a list somebody has to remember to
+    // extend, and the field added next release falls silently outside it. The
+    // plan's half already makes the same trade over `views[].note`.
+    common::patch_file(&d.campaign.join("layout-graph.json"), |v| {
+        v["content"]["nodes"][0]["note"] = serde_json::json!("Reworded, and no geometry moved.");
+    });
+    let graph_moved = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    assert_ne!(
+        graph_moved.layout_graph, before.layout_graph,
+        "a graph edit moves the graph hash"
+    );
+    assert_eq!(
+        graph_moved.site_plan, before.site_plan,
+        "and not the plan's, because they are different documents with different repairs"
+    );
+    assert_eq!(
+        graph_moved.blockout, before.blockout,
+        "this particular graph edit moves no geometry, which is exactly the case a \
+         geometry hash cannot carry"
+    );
+
+    // And the plan itself, which must move its own half and the massing with it.
     common::patch_file(&d.campaign.join("site-plan.json"), |v| {
         v["content"]["boxes"][0]["min"] = serde_json::json!([5, 8]);
     });

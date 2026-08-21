@@ -1,12 +1,20 @@
 //! **The blockout: derived, authored by no one** (spec-0049 §5) — pipeline
 //! stage 5.
 //!
-//! The whole map's mass, as a pure function of the site plan and the metrics
-//! table. There is no document to write, no schema, and no file an author can
-//! edit: the only path to blockout bytes is [`derive`], whose input is a
-//! validated site plan. That is what makes *blockout before site plan*
-//! **uncompilable** rather than merely forbidden (spec-0049 §7.2) — there is
-//! nothing to author early.
+//! The whole map's mass, as a pure function of the **site plan, the layout
+//! graph**, the metrics table and the engine. There is no blockout document to
+//! write, no schema, and no file an author can edit *as a blockout*: the only
+//! path to blockout bytes is [`derive`], whose input is a validated site plan.
+//! That is what makes *blockout before site plan* **uncompilable** rather than
+//! merely forbidden (spec-0049 §7.2) — there is nothing to author early.
+//!
+//! Both authored documents are named because both reach the bytes, and the
+//! consequence is a gate rather than a footnote: a seam is cut to air or filled
+//! with the bar by its edge's `class`, and a sky-open box takes its headroom
+//! from its node's `size_class`. The walk record's freshness key is therefore
+//! over both (`detail::layout_graph_sha256`); a key over the plan alone let a
+//! graph-only edit move the walked massing under a record that went on reading
+//! as fresh.
 //!
 //! # Where it enters the build
 //!
@@ -500,16 +508,19 @@ pub fn derive_with(
 
 /// **The massing the WALK judged** — the derivation with nothing bound.
 ///
-/// This is what `blockout_sha256` hashes, and the choice is what makes
-/// spec-0050 §2's hatch argument true rather than hopeful. The gate there says a
-/// blockout-hash mismatch is reachable only by *toolchain* movement, never by a
-/// campaign edit; had the hash been taken over the massing as actually written,
-/// binding the first place would have moved it, and the drift warning would have
-/// fired on every detailed campaign — a warning that always fires is a warning
-/// nobody reads.
+/// This is what `blockout_sha256` hashes, and the choice is *nothing bound*
+/// rather than *the massing as written*: had the hash been taken over the
+/// massing as actually written, binding the first place would have moved it, and
+/// the drift warning would have fired on every detailed campaign — a warning
+/// that always fires is a warning nobody reads.
 ///
-/// So the hash names the pure function of plan, metrics and engine, which is
-/// exactly the object a walker walked.
+/// So the hash names the object a walker walked. What that object is a function
+/// of is **the site plan, the layout graph, the metrics table and the engine** —
+/// the graph included, because a seam is air or bar by its edge's `class` and a
+/// sky-open box takes its headroom from its node's `size_class`. Both authored
+/// documents are therefore in `DW0841`'s freshness key
+/// (`detail::layout_graph_sha256`), which is what leaves *toolchain movement* as
+/// the only thing spec-0050 §2's drift advisory can be reporting.
 #[must_use]
 pub fn walked_massing(c: &Campaign, reads: &mut Reads) -> Option<Vec<SealFill>> {
     derive_bound(c, reads, Perturb::none(), &BTreeSet::new()).map(|(a, _)| a.mass)
@@ -2303,8 +2314,8 @@ fn pacing(
 /// # Why it is a parameter and not a hidden switch
 ///
 /// A test-only global would be a hidden input to a function whose whole
-/// property is that it is a pure function of the plan, and two tests running at
-/// once would see each other's setting. So the defect is an **argument**, it is
+/// property is that it is a pure function of its documents, and two tests
+/// running at once would see each other's setting. So the defect is an **argument**, it is
 /// public, it is documented, and the production path passes [`Perturb::none`] as
 /// a literal — which `blockout_derivation_is_never_perturbed_in_production`
 /// asserts, so this cannot quietly acquire a caller.
