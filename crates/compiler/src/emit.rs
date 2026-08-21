@@ -12525,42 +12525,51 @@ fn emit_packtest(
             artifact_title(c)
         ));
         body.push("# @dummy".to_string());
-        if tail == 0 {
-            body.push("# @timeout 100".to_string());
-            body.push(String::new());
-            body.push(format!("function {ns}:setup"));
-            // Pin this test's own dummy and drive the whole chain on it alone (see
-            // `pin_dummy`): `@a`-wide quest/objective writes would land on every
-            // sibling test's dummy in the batch, and the closing `@p` assert could
-            // read a foreign one.
-            body.push(pin);
-            body.extend(drive);
-            body.push(format!(
-                "assert score {party} {comp_obj} matches {comp_val}"
-            ));
+        // The baseline + drive live in `pt_camp_drive`, a suite `function/`
+        // called on the drive tick, in BOTH shapes — the scheduled-ending one
+        // because its template spans ticks, and the synchronous one because of
+        // the pair below.
+        //
+        // `tests/packtest_batch.rs::party_state_across_ticks_is_owned` reads each
+        // template's OWN text and demands that a `#party` score awaited across
+        // ticks be touched by exactly one template. The whole-ledger baseline
+        // ([`campaign_progression_baseline`]) touches every progression score, so
+        // written inline it would refuse any campaign whose suite also awaits one
+        // of them across ticks — `sched_arrive_flag`, emitted for a `move-npc`
+        // whose `on_arrive` sets a flag, awaits exactly that. There would then be
+        // NO green state: `DW0807` demands the baseline and that test refuses it.
+        // Hoisting is the state that satisfies both, so it is unconditional
+        // rather than a property of the ending's shape. The hoisted writes stay
+        // atomic-with-the-drive either way — one mcfunction, one tick.
+        let (close, timeout) = if tail == 0 {
+            (
+                format!("assert score {party} {comp_obj} matches {comp_val}"),
+                100,
+            )
         } else {
             // Scheduled ending: the ending lands `tail` ticks after the terminal
-            // drive, so the template awaits it (never a weaker assert — `await`
-            // fails the test at timeout exactly as `assert` fails it on the
-            // spot). The template now spans ticks, so its body may touch no
-            // `#party` score a sibling template also touches
-            // (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`):
-            // the baseline + drive — shared quest/flag state, written and
-            // consumed atomically within one tick, exactly as in the single-tick
-            // form — is hoisted into `pt_camp_drive`, leaving the awaited
-            // completion objective (owned by this template alone) as the
-            // template's only cross-tick surface.
-            body.push(format!("# @timeout {}", 100 + tail));
-            body.push(String::new());
-            body.push(format!("function {ns}:setup"));
-            body.push(pin);
-            body.push(format!("function {ns}:pt_camp_drive"));
-            body.push(format!("await score {party} {comp_obj} matches {comp_val}"));
-            out.insert(
-                format!("packtest-datapack/data/{ns}/function/pt_camp_drive.mcfunction"),
-                lines(&drive).into_bytes(),
-            );
-        }
+            // drive, so the template awaits it — never a weaker assert, since
+            // `await` fails the test at timeout exactly as `assert` fails it on
+            // the spot.
+            (
+                format!("await score {party} {comp_obj} matches {comp_val}"),
+                100 + tail,
+            )
+        };
+        body.push(format!("# @timeout {timeout}"));
+        body.push(String::new());
+        body.push(format!("function {ns}:setup"));
+        // Pin this test's own dummy and drive the whole chain on it alone (see
+        // `pin_dummy`): `@a`-wide quest/objective writes would land on every
+        // sibling test's dummy in the batch, and the closing `@p` assert could
+        // read a foreign one.
+        body.push(pin);
+        body.push(format!("function {ns}:pt_camp_drive"));
+        body.push(close);
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/pt_camp_drive.mcfunction"),
+            lines(&drive).into_bytes(),
+        );
         out.insert(
             format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
             lines(&body).into_bytes(),

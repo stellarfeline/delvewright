@@ -1091,18 +1091,28 @@ emission that omits it. Zeroing is safe because every term zeroed is written
 again by the drive that follows it inside the same atomic mcfunction, so no
 sibling can observe the zeroed state.
 
-- **Synchronous ending, no `branch_points`** — the single-tick template:
-  baseline, drive, `assert`, all in one atomic mcfunction.
+**The baseline and drive are hoisted into `pt_camp_drive` in every non-branch
+shape** (`pt_camp_run_<i>` is the branch shape's equivalent), so the template's
+own body touches exactly one `#party` score — the one it asserts or awaits.
+That is not only about spanning ticks: `packtest_batch::party_state_across_ticks_is_owned`
+reads each template's OWN text and demands that a `#party` score awaited across
+ticks be touched by one template alone, and a whole-ledger baseline written
+inline would refuse any campaign whose suite also awaits one of those scores —
+`sched_arrive_flag`, emitted for a `move-npc` whose `on_arrive` sets a flag,
+awaits exactly that. Hoisting is the state that satisfies `DW0807` and that test
+together, so it does not depend on the ending's shape.
+
+- **Synchronous ending, no `branch_points`** — the single-TICK template: it
+  `assert`s on the spot, `# @timeout 100`, and its exported critical path carries
+  no tail field.
 - **Scheduled ending, no `branch_points`** — the emitter computes the ending
   tail (`campaign_complete_tail`: max scheduled offset to a `campaign-complete`
   across all nesting — `sequence` steps add `at_ticks`, `move-npc`/`move-actor`
   `on_arrive` adds the planned walk; reaction bundles are skipped, `DW0204`
   proves the path's ending is not exclusively there) and the template `await`s
-  the completion objective with `# @timeout 100 + tail`. The baseline + drive
-  are hoisted into `pt_camp_drive` (a suite `function/`, called on the drive
-  tick) so the tick-spanning template's body touches ONLY the score it awaits
-  and solely owns (`party_state_across_ticks_is_owned`); the hoisted writes stay
-  atomic-with-the-drive exactly as in the single-tick form.
+  the completion objective with `# @timeout 100 + tail`. `await` is never a
+  weaker `assert`: it fails the test at timeout exactly as `assert` fails it on
+  the spot.
 - **Declared `branch_points`** — ONE template, one **phase per reachable
   realized branch**, serialized through the vanilla scheduler (two concurrent
   templates awaiting the shared completion objective would hand each other
