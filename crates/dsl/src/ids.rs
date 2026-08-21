@@ -175,6 +175,20 @@ prefixed_id!(
     /// Named edit region: `region/<kebab>` (stage-7 `select` verb, DSL v0.6,
     /// spec-0017). Scoped to its batch; later edits in the batch refer back to it.
     RegionId, "region");
+prefixed_id!(
+    /// Layout-graph node id: `node/<kebab>` (spec-0049 §3.1). A **place** — a
+    /// room, a courtyard, a stretch of shore, a cavern — named before any
+    /// coordinate exists. Unique within the layout graph.
+    NodeId, "node");
+prefixed_id!(
+    /// Layout-graph edge id: `edge/<kebab>` (spec-0049 §3.1). A connection
+    /// between two places, of a declared class. Unique within the layout graph.
+    EdgeId, "edge");
+prefixed_id!(
+    /// Geometry-brief fact id: `fact/<kebab>` (spec-0049 §4.2). A number with a
+    /// name, taken from the whole map's written brief. Unique within the brief;
+    /// a site plan's `identities[]` bind to these.
+    FactId, "fact");
 
 /// Campaign id: a bare kebab-case token (no type prefix).
 #[derive(

@@ -10,9 +10,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.12.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.13.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`** (additive supersets; `0.2.0` output stays
+  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.13.0`** (additive supersets; `0.2.0` output stays
   byte-identical across the later versions). This line is not prose: it is bound
   by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
   (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS` minus
@@ -23,13 +23,22 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   stage document declaring it is `DW0102`, naming the versions the build
   accepts. Reserving is how a number an approved spec has allocated stops being
   free, since a skipped number cannot be filled afterwards (the ledger is
-  append-only) and an unheld number is one a second change takes. `0.12.0` is
-  reserved for spec-0042's `open-way` as `("0.12.0", "OPEN_WAY_SINCE")`; the
-  change that lands the surface defines that constant and deletes the row in the
-  same edit. Held against every branch by
-  `tools/check-version-ledger-uniqueness.py`, which also refuses a number a
-  branch adds without a hand-written name — `is_v12` is computed from `0.12.0`
-  and so cannot disagree with a second branch's claim on it.
+  append-only) and an unheld number is one a second change takes. **The list is
+  empty today**, which does not retire the mechanism: a row belongs there for a
+  surface whose change is *in flight*, because a row in this tree is the only
+  claim a row can make. A number held for a surface with no scheduled work is a
+  different thing — it stands in front of the live line on behalf of a road that
+  may not be taken, and it made the ledger's own invariant (a reservation sits
+  above everything implemented) unsatisfiable for the change that came next. That
+  premise was removed rather than the invariant weakened, and a surface that lost
+  its number takes a fresh one when it lands. The protection a standing row
+  approximates lives where it can see the competing claim: the allocation scan
+  over **every remote ref**, run before a round is dispatched.
+  `tools/check-version-ledger-uniqueness.py` is that instrument's automatic half
+  and diffs against `origin/main` alone, which is exactly why the scan exists; it
+  also refuses a number a branch adds without a hand-written name — `is_v13` is
+  computed from `0.13.0` and so cannot disagree with a second branch's claim on
+  it, while `LAYOUT_GRAPH_SINCE` can.
 - v0.6 amends spec-0010's mitigation hierarchy: the night-vision mitigation is now
   the stage-1 `areas[].mitigation` **declaration** (emitting a real clocked
   `effect give`), not a class-kit display-name heuristic.
@@ -562,6 +571,36 @@ from l10n (no stage-7 string is player-visible).
 | L2 massing verbs | `swap-piece` (replace a piece with a library prefab that re-mates every mated socket at its exact world pose, any rotation, overlap-checked), `insert-piece` (attach at a specific **unmated** socket — the targeted form of the solver's frontier attach), `remove-piece` (a **leaf** only — exactly one mated socket, never the entry; the neighbour's socket unmates and re-seals), `rewire-socket` (`sealed` **unmates the doorway pair** — a graph operation: both planes wall up and the DW0306 connectivity proof loses the edge; `open` clears an unmated socket's fill — deliberately without granting the proof an edge, conservative), `reseed-piece` (seeded weighted re-pick among the area pool's compatible members, current excluded — a reseed always changes the piece or errors). All carry the `piece` index + `prefab` drift guard. Applied at **plan** time (`compiler::massing`, inside `Plan::build` right after `solve_area`): seals are regenerated from the massaged mated flags (`seal_layout`), and anchors, gate reachability, waterline, assembly, relight, nav and the L3 replay all run over the massaged layout — the full assembly validation re-runs by construction. Massing verbs live in **massing-only** batches ordered before every detailing batch (`DW0162`); an inapplicable verb is `DW0324`. `resize-piece` from the spec's initial list is **excluded**: the library has no size-parameterized piece primitive to express it through (no-hack doctrine); `swap-piece` covers the different-sized-variant case. |
 | Seeding | Every seeded verb streams from `stream_seed(campaign_seed, "edits/<batch-id>/<edit-index>")` — renaming a batch (or moving an edit) deliberately reseeds it; nothing else does (ADR-0006). |
 | Emission | The replay lowers to a `world_edits` function (x-run-coalesced `fill`/`setblock`), called from `setup_finish` after the socket seals and before the relight fixtures — the exact model order, and the reason `DW0352` exists (`trap_setup` runs later). `setup` additionally forceloads every batch's write AABB (an edit may write outside the piece bboxes — a leaning canopy, a stamped fragment — and a `setblock` on an unloaded chunk silently fails); those chunks then follow the **forceload lifecycle** below. `world-edits.json` is hashed into `manifest.json` inputs. |
+
+### The map pipeline — `geometry-brief` and `layout-graph` (optional; v0.13, spec-0049)
+
+Two documents that state a campaign's **space before any coordinate exists**.
+Both are optional files in the campaign directory, named rather than numbered
+into the 1–7 sequence: they belong to a different pipeline and a number would
+assert an ordering between the two that does not exist. A campaign that ships
+neither parses, validates and emits exactly as it did — there is no new field on
+any existing type, so nothing older is judged against them. `delvec schema
+--stage geometry-brief` and `--stage layout-graph` export them; `--stage all`
+includes both.
+
+`geometry-brief.json` is the whole map's written brief reduced to numbers:
+
+| Element | Behavior |
+|---------|----------|
+| `facts[]` | `{id: fact/<kebab>, value, unit?, note}`. A number with a name, taken from the brief's own prose. Ids are unique (`DW0111`) and well-formed (`DW0110`). Nothing reads a fact at this version — the site plan's identity checks are the consumer — and the binding line states the count so the absence is a number rather than a silence. |
+
+`layout-graph.json` states the campaign's space as a graph:
+
+| Element | Behavior |
+|---------|----------|
+| `nodes[]` | `{id: node/<kebab>, intent, size_class, note?}`. A **place**: a room, a courtyard, an arena, a stretch of shore, a cavern. `intent` is a free non-empty label no check keys on — recorded judgement for the reviewer and for the later per-place brief, kept free-form because an enum of intents would be one genre wearing a schema's clothes; empty is `DW0814`. `size_class` names a rung of the metrics table's ladder, and a name the table does not define is `DW0812`. |
+| `edges[]` | A connection, internally tagged on `class`: `walk`, `stair`, `drop`, `barred`, `vision`. All carry `{id: edge/<kebab>, a, b}`. `walk`/`stair`/`barred` carry `one_way` (`a-to-b` \| `b-to-a`; absent = both ways); a `drop` is one-way by construction and so carries a **required** `falls` instead. `barred` carries `opens_from` (`a` \| `b` \| `either`, default `either`) — the one-side-openable door, spelled as a property of the connection rather than of any campaign's fiction — and a **required** `gating`. `vision` carries a line of sight and no body, so it has no direction, no gating and no shortcut mark; stage 4 gives it a sightline rather than a seam. Because the class is the serde tag, a field the class does not read (an `opens_from` on a walk, a `drop` with no `falls`) is an ordinary `DW0100` and no rule has to police it. |
+| `edges[].gating` | `{flags[]?, quest?}` — what a body must already hold to pass. **Deliberately not the campaign's `Gate`.** A gate is a runtime object emission evaluates against an acting player; a layout-graph edge is evaluated by nothing at run time, so making it a gate consumer would push a never-emitted object into machinery whose whole subject is emission. It is also narrower on purpose: the closure below is monotone, so a negative flag term and a numeric comparison are terms no proof here could honour, and a surface an author may write and nothing honours is worse than one that is absent. What it states is a **projection** of the campaign's runtime gating into topology, and `DW0818` keeps it a projection — every flag it names must be one the campaign really produces, and every quest must exist. |
+| `entry` / `goal` | Node ids. Every proof over the graph starts or ends at one, so a name nothing defines is `DW0814`. |
+| `critical_path[]` | An authored node sequence from `entry` to `goal`. **Authored rather than derived**, so that it is a claim the machine verifies (`DW0817`) rather than an answer with no author to disagree with. |
+| `beats[]` | `{quest, objective, node}` — where each quest beat happens. **Every objective is place-bound**: a body has to be standing somewhere to talk, to reach, to fight or to take, so every objective in the quest documents binds to exactly one node, and one that does not is `DW0818`. |
+| Reachability | Judged under a **monotone closure**: from `entry` holding nothing, mark every edge whose gating the obtained set satisfies, mark every node reachable over those edges respecting one-way direction, add what every beat bound to a reached node grants, iterate to fixpoint. A beat grants the flags the campaign sets when that objective completes and — for a `talk-to` — everything reachable in the spoken-to NPC's dialogue tree, because the conversation happens where the speaker stands; a quest grants itself and its `on_complete` flags once every one of its beats is somewhere a body can stand. The closure is **optimistic in every direction it cannot decide**, which is one property rather than a list of exceptions: it is branch-blind, so a campaign whose branch points set mutually exclusive flags can reach a node no single playthrough reaches. That can only under-report at graph time; the branch-aware battery over the assembled world is what stops it shipping. |
+| Binding | Every run that carries either document prints one line: places, connections (traversal, one-way, shortcut, gated), beats and **how many of them are on the mandatory quest spine**, critical-path steps, metrics references and brief facts. Three zeroes are called out as findings rather than counted: a graph with no traversal connection (a set of places with no space between them), a graph none of whose beats belongs to a quest the finale depends on (a critical path over an unbound graph), and a brief with no fact. |
 
 ### l10n sidecars (`l10n/<code>.json`)
 
@@ -3159,7 +3198,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.13.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
@@ -4850,6 +4889,34 @@ Deterministic throughout (`BTreeMap`-sorted override keys, sorted file walk).
 | `DW0813` | **A verdict rests on a standard the metrics gym has not walked.** One warning per run (exit 0), `every_version`, naming every uncalibrated building metric some check above actually read. It asks the campaign for nothing — it reports a property of the ENGINE's own table — which is why no fence grandfathers it and no campaign can adopt its way out. The checks still ran and still refuse: a provisional number is a number, and what the line adds is that the green rests on a seed. **Bound to the READ, not to a call site.** `BuildingEntry::value` is the only way to reach a building metric's number and it takes the run's `Reads` ledger, so a check that consumes a seed has recorded that it did; `Metrics::notice` turns the ledger into the line. The residual is stated rather than implied: a caller that constructs its own ledger, reads through it and drops it has bypassed the notice — a deliberate act, not the omission the rule exists to catch, and it closes when stage-3 and stage-4 validation thread one run-scoped ledger. **Binding: building metrics read, and how many of them are provisional, stated every run whether or not the line prints.** Zero provisional reads means the line does not print, which is the calibrated end state and not a vacuity; zero reads at all is a different fact and is the one the binding count exposes. Its live binding today is `delvec metrics`'s own self-check — the table's consistency verdict is a real verdict on real seeds. |
 
 The table itself, its two halves and its export are §10.
+
+### DW0814–DW0822 — the layout graph (`dsl::layout`; error + advisory)
+
+Stage-3 of the map pipeline: the campaign's space checked as an object of its
+own, **cheaply, before geometry exists to make it expensive**. Every code is
+`every_version` for the same reason `DW0812` is — there is no field below
+`dsl_version` 0.13.0 in which to write any of it, so no campaign can go red on a
+document it did not change.
+
+Two tiers, and which one a rule is in is decided by what it asks. Referential
+wellformedness and agreement with the mission are **validation** (exit 1) and run
+before anything semantic; reachability is **analysis** (exit 2), the same tier
+`DW0202`–`DW0204` answer the quest graph's reachability at, and for the same
+reason. `dsl::layout::check` is called from `validate_campaign_with` whenever
+either document is present and `dsl::layout::analyze` from
+`compiler::analyze::analyze_campaign`, which is the one pass `delvec analyze` and
+`delvec build` both go through — so there is no path to a built world that skips
+either, and no step anyone has to remember.
+
+| Code | Meaning |
+|------|---------|
+| `DW0814` | **The graph is not a graph.** A duplicate node or edge id, an end naming no declared place, an edge with both ends in one place (at every class — a self-loop states nothing a place does not already state, and would later be a seam with no face to sit on), a `critical_path` step or a `beats[]` entry naming no place, an `entry` or `goal` that is not a node, a place with an empty `intent`. Referential wellformedness, refused before any semantic check runs, because every check below reads node ids and a dangling one would make each of them answer about a place that is not there. Malformed ids are the ordinary `DW0110` and duplicates in the brief the ordinary `DW0111`: an id is an id. Validation tier (exit 1). |
+| `DW0816` | **A node the closure never reaches.** Under the monotone closure (§2), a place unreachable from `entry` respecting gating and one-way direction. The message names the place, **the nearest place a body can stand** — so the missing link is visible rather than searched for — and how many of the graph's places are reachable at all. Analysis tier (exit 2). **Binding: places examined, stated.** |
+| `DW0817` | **The critical path does not hold.** Four faults under one code, because they are one claim: it does not run `entry` → `goal`; a step names two places no connection joins, or joins them the other way; a step crosses a connection **not open yet at that point in the walk**, judged stepwise against what the beats bound to places already visited have granted (quest-legal order, not merely eventual satisfiability); or it never visits a place where a beat of the **mandatory quest spine** happens, so a body walking it would reach the goal without doing the mission. The spine is the finale and everything its `depends_on` chain demands. Analysis tier (exit 2). **Binding: path steps checked and spine beats required, both stated in the binding line**, and a zero on the second is reported there as a finding — a critical path over an unbound graph is a route through nothing. The count is stated rather than raised as a diagnostic on purpose: at analysis tier every reported diagnostic is exit 2, warning or not, so a line saying *this bound to nothing* would turn a green analysis red, and a count is not a fault. |
+| `DW0818` | **The graph names quest-side state that does not exist, or a beat has no place.** Four shapes of one referential rule between the graph and the quest documents: a `beats[]` entry naming a quest or objective the mission does not declare; a `gating` naming a flag no producer sets or a quest that does not exist; a `barred` connection whose `gating` is **empty**, which is passable from world load and therefore not barred; and the reverse direction — an objective in the quest documents bound to no node, or to two. The flag half reads `dsl::validate::produced_flags`, the one producer inventory, so the answer here is the same answer `DW0172` gives. **The reverse direction is the ordering tooth between the mission and the space** (spec-0049 §7): a graph may be authored at any point without touching the quests, and it may not coexist with a mission it ignores. Validation tier (exit 1). |
+| `DW0819` | **A one-way edge strands.** For every one-way traversal edge `u → v`, some path from `v` back to the critical path must exist over edges passable under the obtained set with which `u` was **first** reached. A body can only be at `v` having been at `u` holding at most that much; if it cannot rejoin the spine, the drop is a softlock. **Marked judgement**: the set at `u` is the maximal one available at that round, and a player may arrive holding less — the residual is covered over bytes by the branch-aware battery, and a walked blockout demonstrating a strand this called green is the evidence that moves it to a gate-state lattice. Analysis tier (exit 2). **Binding: one-way edges examined, stated.** |
+| `DW0820` | **A shortcut closes no loop.** An edge marked `shortcut` must lie on a cycle: its ends stay connected with it removed. **Direction-blind and gating-blind** — the loop a shortcut closes is spatial, and a long way round that is gated or one-way is still the long way round. A shortcut that closes nothing is a corridor wearing a shortcut's name, and the graph is where that claim is cheap to refuse. Validation tier (exit 1). **Binding: shortcut edges examined, stated.** |
+| `DW0822` | **The pacing measurement.** Per critical-path leg, the nominal traverse length from the metrics table's size-class ladder, summed and multiplied by the pacing coefficient into a projected route-minutes figure. **Warning, exit 0, with no threshold anywhere**: the coefficient is uncalibrated until the first walked blockout and the first full playtest, and a threshold on a number that uncertain would be defending nothing. It is printed so the projection and the measurement taken over the built world can be set side by side, which is how the coefficient gets calibrated at all. **Binding: places crossed and steps measured, both in the message.** |
 
 ---
 

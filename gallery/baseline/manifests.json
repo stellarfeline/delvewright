@@ -7,7 +7,9 @@
     "inputs": {
       "classes.json": "664680942de7fde6bd64fa446b7d5cf08ce01852821f9d45e3e0124fa031297e",
       "dialogue.json": "7b7903005e916fa9d09a5be94682984f44fa77ca3e75025b7b7b830ff9d265f2",
+      "geometry-brief.json": "669c5172a1e0e56e61ae3771eff46d4e67ed85c21f26da714e264f0d5aff37ae",
       "l10n/zh-cn.json": "19dfcce8a5d8a4205a5390f70e43e4a8be2b9a7600e161be35be64fca1edffc2",
+      "layout-graph.json": "981084a2ff55fb1f3b9a33e69d3e6a3d30388ea70470754f48ac76da1072713d",
       "npcs.json": "493d9d5505aad7688017aed4230876a9fc8d612f7d749716fa9af6f1a8668d9b",
       "quest-plan.json": "495f3a6c8cd92eaf1e17440bd29f95aca0dea27157bc6e3e90dbce2a3308740c",
       "quests.json": "c2bfeaf0b673c909b7e31ec167495f31f0e78773dca76f1b01d623093745352a",
@@ -56,7 +58,7 @@
       "creator-datapack/data/gallery/function/creator/tick.mcfunction": "46bcd4d9ba824b6b90c6df098283f8e691f5d4cbb8bd95edb42f2ba6dff91aad",
       "creator-datapack/data/minecraft/tags/function/load.json": "5642aafbf8f3daaeeb34eb3ab03ddd50174d1db25b074e008f006733ace7f9e9",
       "creator-datapack/data/minecraft/tags/function/tick.json": "2c98623682b2196a3891fe4f4a8c5318ff9246a962b0f9b7d358b8e466303ab4",
-      "creator-datapack/layout.json": "402e5d5e38bbd0bbe0cf73c6e5e7ddcf4bab3033d5554f9a84e92a8540c4b3be",
+      "creator-datapack/layout.json": "68510434c575f0c13f85065864bd0c34e0c6177d4854beb4485470332d2caf41",
       "creator-datapack/pack.mcmeta": "066c7363b86d720099546a8649896e365bbc951ed3f0ca67dc302467b94d090c",
       "critical-path.json": "ccb708f3edfd2a0466f6bd1d11301052f076ddfd19136299cb53d468f0f7af9f",
       "datapack/data/gallery/advancement/bf_0.json": "b9157dcef0281c64ad88163f82522423d6ece8c7c8924db83626b98b5f4124bc",
@@ -473,7 +475,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5bce317ddee0c30890ae77e03f074367293b001ece51004240dfb90ba6dcebed",
-      "validation/watch-ledger.json": "e82e2ce7f6fbcdc09ffb772dd8d84eefec82f54f9c6a7d9e7afb29858e64aa20",
+      "validation/watch-ledger.json": "c3ce4f3f7507eeeafcd00da64162e8a5c926dfd3a5e50fecdca17c90e85fe8f2",
       "validation/ways.json": "6a698e0e1839a76b87b4ea53f3d7ec7daf4a0fe9d63a26cef5098248b6c0b21c"
     },
     "resource_pack_sha1": "e8e21da7cfa127add29a008259184671c86345d5"
@@ -486,7 +488,9 @@
     "inputs": {
       "classes.json": "664680942de7fde6bd64fa446b7d5cf08ce01852821f9d45e3e0124fa031297e",
       "dialogue.json": "7b7903005e916fa9d09a5be94682984f44fa77ca3e75025b7b7b830ff9d265f2",
+      "geometry-brief.json": "669c5172a1e0e56e61ae3771eff46d4e67ed85c21f26da714e264f0d5aff37ae",
       "l10n/zh-cn.json": "19dfcce8a5d8a4205a5390f70e43e4a8be2b9a7600e161be35be64fca1edffc2",
+      "layout-graph.json": "981084a2ff55fb1f3b9a33e69d3e6a3d30388ea70470754f48ac76da1072713d",
       "npcs.json": "493d9d5505aad7688017aed4230876a9fc8d612f7d749716fa9af6f1a8668d9b",
       "quest-plan.json": "495f3a6c8cd92eaf1e17440bd29f95aca0dea27157bc6e3e90dbce2a3308740c",
       "quests.json": "c2bfeaf0b673c909b7e31ec167495f31f0e78773dca76f1b01d623093745352a",
@@ -535,7 +539,7 @@
       "creator-datapack/data/gallery/function/creator/tick.mcfunction": "46bcd4d9ba824b6b90c6df098283f8e691f5d4cbb8bd95edb42f2ba6dff91aad",
       "creator-datapack/data/minecraft/tags/function/load.json": "5642aafbf8f3daaeeb34eb3ab03ddd50174d1db25b074e008f006733ace7f9e9",
       "creator-datapack/data/minecraft/tags/function/tick.json": "2c98623682b2196a3891fe4f4a8c5318ff9246a962b0f9b7d358b8e466303ab4",
-      "creator-datapack/layout.json": "402e5d5e38bbd0bbe0cf73c6e5e7ddcf4bab3033d5554f9a84e92a8540c4b3be",
+      "creator-datapack/layout.json": "68510434c575f0c13f85065864bd0c34e0c6177d4854beb4485470332d2caf41",
       "creator-datapack/pack.mcmeta": "066c7363b86d720099546a8649896e365bbc951ed3f0ca67dc302467b94d090c",
       "critical-path.json": "ccb708f3edfd2a0466f6bd1d11301052f076ddfd19136299cb53d468f0f7af9f",
       "datapack/data/gallery/advancement/bf_0.json": "b9157dcef0281c64ad88163f82522423d6ece8c7c8924db83626b98b5f4124bc",
@@ -952,7 +956,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5bce317ddee0c30890ae77e03f074367293b001ece51004240dfb90ba6dcebed",
-      "validation/watch-ledger.json": "e82e2ce7f6fbcdc09ffb772dd8d84eefec82f54f9c6a7d9e7afb29858e64aa20",
+      "validation/watch-ledger.json": "c3ce4f3f7507eeeafcd00da64162e8a5c926dfd3a5e50fecdca17c90e85fe8f2",
       "validation/ways.json": "6a698e0e1839a76b87b4ea53f3d7ec7daf4a0fe9d63a26cef5098248b6c0b21c"
     },
     "resource_pack_sha1": "e8e21da7cfa127add29a008259184671c86345d5"
@@ -965,7 +969,9 @@
     "inputs": {
       "classes.json": "664680942de7fde6bd64fa446b7d5cf08ce01852821f9d45e3e0124fa031297e",
       "dialogue.json": "7b7903005e916fa9d09a5be94682984f44fa77ca3e75025b7b7b830ff9d265f2",
+      "geometry-brief.json": "669c5172a1e0e56e61ae3771eff46d4e67ed85c21f26da714e264f0d5aff37ae",
       "l10n/zh-cn.json": "19dfcce8a5d8a4205a5390f70e43e4a8be2b9a7600e161be35be64fca1edffc2",
+      "layout-graph.json": "981084a2ff55fb1f3b9a33e69d3e6a3d30388ea70470754f48ac76da1072713d",
       "npcs.json": "493d9d5505aad7688017aed4230876a9fc8d612f7d749716fa9af6f1a8668d9b",
       "quest-plan.json": "495f3a6c8cd92eaf1e17440bd29f95aca0dea27157bc6e3e90dbce2a3308740c",
       "quests.json": "c2bfeaf0b673c909b7e31ec167495f31f0e78773dca76f1b01d623093745352a",
@@ -1014,7 +1020,7 @@
       "creator-datapack/data/gallery/function/creator/tick.mcfunction": "46bcd4d9ba824b6b90c6df098283f8e691f5d4cbb8bd95edb42f2ba6dff91aad",
       "creator-datapack/data/minecraft/tags/function/load.json": "5642aafbf8f3daaeeb34eb3ab03ddd50174d1db25b074e008f006733ace7f9e9",
       "creator-datapack/data/minecraft/tags/function/tick.json": "2c98623682b2196a3891fe4f4a8c5318ff9246a962b0f9b7d358b8e466303ab4",
-      "creator-datapack/layout.json": "f18378bb37fde5d1ae682330be58e298e9607c9e4eab004cafbe72d55c37b8dd",
+      "creator-datapack/layout.json": "d2418dc2170a44fed40b7a80d8512732bfab4100bcc88a3e24981f1dd975d31b",
       "creator-datapack/pack.mcmeta": "066c7363b86d720099546a8649896e365bbc951ed3f0ca67dc302467b94d090c",
       "critical-path.json": "f64cadfcfdcc152f7a3c41c6ef776569b4ca71c4a876a50038479e8d5a9532c8",
       "datapack/data/gallery/advancement/bf_0.json": "b9157dcef0281c64ad88163f82522423d6ece8c7c8924db83626b98b5f4124bc",
@@ -1431,7 +1437,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5bce317ddee0c30890ae77e03f074367293b001ece51004240dfb90ba6dcebed",
-      "validation/watch-ledger.json": "e82e2ce7f6fbcdc09ffb772dd8d84eefec82f54f9c6a7d9e7afb29858e64aa20",
+      "validation/watch-ledger.json": "c3ce4f3f7507eeeafcd00da64162e8a5c926dfd3a5e50fecdca17c90e85fe8f2",
       "validation/ways.json": "6a698e0e1839a76b87b4ea53f3d7ec7daf4a0fe9d63a26cef5098248b6c0b21c"
     },
     "resource_pack_sha1": "e8e21da7cfa127add29a008259184671c86345d5"
@@ -1444,7 +1450,9 @@
     "inputs": {
       "classes.json": "664680942de7fde6bd64fa446b7d5cf08ce01852821f9d45e3e0124fa031297e",
       "dialogue.json": "7b7903005e916fa9d09a5be94682984f44fa77ca3e75025b7b7b830ff9d265f2",
+      "geometry-brief.json": "669c5172a1e0e56e61ae3771eff46d4e67ed85c21f26da714e264f0d5aff37ae",
       "l10n/zh-cn.json": "19dfcce8a5d8a4205a5390f70e43e4a8be2b9a7600e161be35be64fca1edffc2",
+      "layout-graph.json": "981084a2ff55fb1f3b9a33e69d3e6a3d30388ea70470754f48ac76da1072713d",
       "npcs.json": "493d9d5505aad7688017aed4230876a9fc8d612f7d749716fa9af6f1a8668d9b",
       "quest-plan.json": "495f3a6c8cd92eaf1e17440bd29f95aca0dea27157bc6e3e90dbce2a3308740c",
       "quests.json": "c2bfeaf0b673c909b7e31ec167495f31f0e78773dca76f1b01d623093745352a",
@@ -1493,7 +1501,7 @@
       "creator-datapack/data/gallery/function/creator/tick.mcfunction": "46bcd4d9ba824b6b90c6df098283f8e691f5d4cbb8bd95edb42f2ba6dff91aad",
       "creator-datapack/data/minecraft/tags/function/load.json": "5642aafbf8f3daaeeb34eb3ab03ddd50174d1db25b074e008f006733ace7f9e9",
       "creator-datapack/data/minecraft/tags/function/tick.json": "2c98623682b2196a3891fe4f4a8c5318ff9246a962b0f9b7d358b8e466303ab4",
-      "creator-datapack/layout.json": "402e5d5e38bbd0bbe0cf73c6e5e7ddcf4bab3033d5554f9a84e92a8540c4b3be",
+      "creator-datapack/layout.json": "68510434c575f0c13f85065864bd0c34e0c6177d4854beb4485470332d2caf41",
       "creator-datapack/pack.mcmeta": "066c7363b86d720099546a8649896e365bbc951ed3f0ca67dc302467b94d090c",
       "critical-path.json": "ccb708f3edfd2a0466f6bd1d11301052f076ddfd19136299cb53d468f0f7af9f",
       "datapack/data/gallery/advancement/bf_0.json": "b9157dcef0281c64ad88163f82522423d6ece8c7c8924db83626b98b5f4124bc",
@@ -1910,7 +1918,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5bce317ddee0c30890ae77e03f074367293b001ece51004240dfb90ba6dcebed",
-      "validation/watch-ledger.json": "e82e2ce7f6fbcdc09ffb772dd8d84eefec82f54f9c6a7d9e7afb29858e64aa20",
+      "validation/watch-ledger.json": "c3ce4f3f7507eeeafcd00da64162e8a5c926dfd3a5e50fecdca17c90e85fe8f2",
       "validation/ways.json": "6a698e0e1839a76b87b4ea53f3d7ec7daf4a0fe9d63a26cef5098248b6c0b21c"
     },
     "resource_pack_sha1": "e8e21da7cfa127add29a008259184671c86345d5"
@@ -1923,7 +1931,9 @@
     "inputs": {
       "classes.json": "664680942de7fde6bd64fa446b7d5cf08ce01852821f9d45e3e0124fa031297e",
       "dialogue.json": "7b7903005e916fa9d09a5be94682984f44fa77ca3e75025b7b7b830ff9d265f2",
+      "geometry-brief.json": "669c5172a1e0e56e61ae3771eff46d4e67ed85c21f26da714e264f0d5aff37ae",
       "l10n/zh-cn.json": "19dfcce8a5d8a4205a5390f70e43e4a8be2b9a7600e161be35be64fca1edffc2",
+      "layout-graph.json": "981084a2ff55fb1f3b9a33e69d3e6a3d30388ea70470754f48ac76da1072713d",
       "npcs.json": "493d9d5505aad7688017aed4230876a9fc8d612f7d749716fa9af6f1a8668d9b",
       "quest-plan.json": "495f3a6c8cd92eaf1e17440bd29f95aca0dea27157bc6e3e90dbce2a3308740c",
       "quests.json": "c2bfeaf0b673c909b7e31ec167495f31f0e78773dca76f1b01d623093745352a",
@@ -1973,7 +1983,7 @@
       "creator-datapack/data/gallery/function/creator/tick.mcfunction": "46bcd4d9ba824b6b90c6df098283f8e691f5d4cbb8bd95edb42f2ba6dff91aad",
       "creator-datapack/data/minecraft/tags/function/load.json": "5642aafbf8f3daaeeb34eb3ab03ddd50174d1db25b074e008f006733ace7f9e9",
       "creator-datapack/data/minecraft/tags/function/tick.json": "2c98623682b2196a3891fe4f4a8c5318ff9246a962b0f9b7d358b8e466303ab4",
-      "creator-datapack/layout.json": "402e5d5e38bbd0bbe0cf73c6e5e7ddcf4bab3033d5554f9a84e92a8540c4b3be",
+      "creator-datapack/layout.json": "68510434c575f0c13f85065864bd0c34e0c6177d4854beb4485470332d2caf41",
       "creator-datapack/pack.mcmeta": "066c7363b86d720099546a8649896e365bbc951ed3f0ca67dc302467b94d090c",
       "critical-path.json": "ccb708f3edfd2a0466f6bd1d11301052f076ddfd19136299cb53d468f0f7af9f",
       "datapack/data/gallery/advancement/bf_0.json": "b9157dcef0281c64ad88163f82522423d6ece8c7c8924db83626b98b5f4124bc",
@@ -2389,7 +2399,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5bce317ddee0c30890ae77e03f074367293b001ece51004240dfb90ba6dcebed",
-      "validation/watch-ledger.json": "424594d124cf77f387aaa460dff31c2e319a07d896728cd952a7834d6fa99eef",
+      "validation/watch-ledger.json": "d302f9118966e901ac80075706f09bc48a0232bb7c371dd1fd994bce1a56d858",
       "validation/ways.json": "6a698e0e1839a76b87b4ea53f3d7ec7daf4a0fe9d63a26cef5098248b6c0b21c"
     },
     "resource_pack_sha1": "f17b6cae242932b1e55ddb977f436836caeb8a67"
@@ -2402,7 +2412,9 @@
     "inputs": {
       "classes.json": "664680942de7fde6bd64fa446b7d5cf08ce01852821f9d45e3e0124fa031297e",
       "dialogue.json": "7b7903005e916fa9d09a5be94682984f44fa77ca3e75025b7b7b830ff9d265f2",
+      "geometry-brief.json": "669c5172a1e0e56e61ae3771eff46d4e67ed85c21f26da714e264f0d5aff37ae",
       "l10n/zh-cn.json": "19dfcce8a5d8a4205a5390f70e43e4a8be2b9a7600e161be35be64fca1edffc2",
+      "layout-graph.json": "981084a2ff55fb1f3b9a33e69d3e6a3d30388ea70470754f48ac76da1072713d",
       "npcs.json": "493d9d5505aad7688017aed4230876a9fc8d612f7d749716fa9af6f1a8668d9b",
       "quest-plan.json": "495f3a6c8cd92eaf1e17440bd29f95aca0dea27157bc6e3e90dbce2a3308740c",
       "quests.json": "c2bfeaf0b673c909b7e31ec167495f31f0e78773dca76f1b01d623093745352a",
@@ -2451,7 +2463,7 @@
       "creator-datapack/data/gallery/function/creator/tick.mcfunction": "46bcd4d9ba824b6b90c6df098283f8e691f5d4cbb8bd95edb42f2ba6dff91aad",
       "creator-datapack/data/minecraft/tags/function/load.json": "5642aafbf8f3daaeeb34eb3ab03ddd50174d1db25b074e008f006733ace7f9e9",
       "creator-datapack/data/minecraft/tags/function/tick.json": "2c98623682b2196a3891fe4f4a8c5318ff9246a962b0f9b7d358b8e466303ab4",
-      "creator-datapack/layout.json": "402e5d5e38bbd0bbe0cf73c6e5e7ddcf4bab3033d5554f9a84e92a8540c4b3be",
+      "creator-datapack/layout.json": "68510434c575f0c13f85065864bd0c34e0c6177d4854beb4485470332d2caf41",
       "creator-datapack/pack.mcmeta": "066c7363b86d720099546a8649896e365bbc951ed3f0ca67dc302467b94d090c",
       "critical-path.json": "ccb708f3edfd2a0466f6bd1d11301052f076ddfd19136299cb53d468f0f7af9f",
       "datapack/data/gallery/advancement/bf_0.json": "b9157dcef0281c64ad88163f82522423d6ece8c7c8924db83626b98b5f4124bc",
@@ -2868,7 +2880,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5bce317ddee0c30890ae77e03f074367293b001ece51004240dfb90ba6dcebed",
-      "validation/watch-ledger.json": "e82e2ce7f6fbcdc09ffb772dd8d84eefec82f54f9c6a7d9e7afb29858e64aa20",
+      "validation/watch-ledger.json": "c3ce4f3f7507eeeafcd00da64162e8a5c926dfd3a5e50fecdca17c90e85fe8f2",
       "validation/ways.json": "6a698e0e1839a76b87b4ea53f3d7ec7daf4a0fe9d63a26cef5098248b6c0b21c"
     },
     "resource_pack_sha1": "e8e21da7cfa127add29a008259184671c86345d5"

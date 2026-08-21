@@ -111,6 +111,16 @@
       "stage": "quests"
     },
     {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
+    },
+    {
       "code": "DW0543",
       "pointer": "gallery-annex-cell-b.json",
       "stage": "prefabs"
@@ -303,6 +313,16 @@
       "stage": "quests"
     },
     {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
+    },
+    {
       "code": "DW0543",
       "pointer": "gallery-annex-cell-b.json",
       "stage": "prefabs"
@@ -493,6 +513,16 @@
       "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/33/requires_state",
       "stage": "quests"
+    },
+    {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
     },
     {
       "code": "DW0543",
@@ -692,6 +722,16 @@
       "stage": "quests"
     },
     {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
+    },
+    {
       "code": "DW0543",
       "pointer": "gallery-annex-cell-b.json",
       "stage": "prefabs"
@@ -884,6 +924,16 @@
       "stage": "quests"
     },
     {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
+    },
+    {
       "code": "DW0543",
       "pointer": "gallery-annex-cell-b.json",
       "stage": "prefabs"
@@ -1074,6 +1124,16 @@
       "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/33/requires_state",
       "stage": "quests"
+    },
+    {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "layout-graph:"
     },
     {
       "code": "DW0543",

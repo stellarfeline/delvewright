@@ -182,7 +182,7 @@ def coverage_counts(delvec: Path) -> dict:
     Derived from the same enumeration the coverage gate uses, never a second one.
     """
     sys.path.insert(0, str(REPO / "tools"))
-    from gallery_units import Binder, Enumerator
+    from gallery_units import Binder, Enumerator, stage_files
 
     r = subprocess.run(
         [str(delvec), "schema", "--stage", "all"], capture_output=True, text=True
@@ -195,19 +195,9 @@ def coverage_counts(delvec: Path) -> dict:
     if not units:
         die("the schema export enumerated ZERO units; the header would record a lie")
 
-    stage_files = {
-        "world": "world.json",
-        "npcs": "npcs.json",
-        "classes": "classes.json",
-        "quest-plan": "quest-plan.json",
-        "quests": "quests.json",
-        "dialogue": "dialogue.json",
-        "world-edits": "world-edits.json",
-    }
-
     def bind_dir(root: Path, label: str, into: set) -> None:
         b = Binder(e)
-        for stage, fn in stage_files.items():
+        for stage, fn in stage_files(export).items():
             f = root / fn
             if f.is_file():
                 b.walk(export[stage], json.loads(f.read_text()), label)

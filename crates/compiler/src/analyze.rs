@@ -96,6 +96,16 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
 
     let mut diags = Vec::new();
 
+    // spec-0049 §3.3: the layout graph's analysis-tier proofs (DW0816 / DW0817 /
+    // DW0819) — a place a body can never reach, an authored critical path that
+    // does not hold, and a one-way connection that strands. They live here
+    // rather than in `dsl::validate` because the tier is decided by the pass
+    // that raises them, and these are the graph's REACHABILITY questions: the
+    // same tier `DW0202`/`DW0203`/`DW0204` answer for the quest graph, and for
+    // the same reason. Empty for a campaign with no layout graph, and
+    // `LayoutBinding` states that zero rather than leaving it implied.
+    diags.extend(delvewright_dsl::layout::analyze(c));
+
     // DW0202: quests never activated, in any world.
     for (i, q) in quests.iter().enumerate() {
         if !active.contains(q.id.as_str()) {
