@@ -86,6 +86,25 @@ exist is a queue nobody can build from — and "covered by" coverage is explicit
 allowed to rot in the file's own rules. Every `DW` code, `spec-NNNN` number and
 `ADR-NNNN` number a row cites must resolve in this tree.
 
+## And it reads the queue the way the queue's reader reads it
+
+Both demands above are counted off the mechanic-demo table, so where that table
+ENDS is load-bearing, and the answer is not this script's to invent. A pipe
+table in CommonMark's GFM extension runs from a header row through a delimiter
+row to "the first empty line, or beginning of another block-level structure".
+`tools/lib/mdtable.py` applies that rule and no other, once, for every gate that
+reads a table. This one used to apply a different one —
+iterate to the next `## `, keep every line beginning with `|` — under which a
+blank line did not end anything, so a row detached from the table by a blank
+line was an entry for this gate and a paragraph of literal pipe characters for
+every renderer and every human. That is the whole obligation satisfiable in the
+letter while void in the reading, and it is one-directional falsifiability: the
+gate could only fail in the direction that does not drift.
+
+Silently dropping such a row would rebuild the same defect facing the other way,
+so a row no table contains is a **finding naming its line**, never a row and
+never a discard. The binding line states how many there are on both sides.
+
 Deterministic, offline, stdlib-only python3. States its binding counts; zero
 binaries, zero flags, zero rows or zero citations is a red, not a pass.
 """
@@ -100,6 +119,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from lib import mdtable  # noqa: E402
 from lib.gitbase import BaseUnresolved, resolve_base  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -249,26 +269,40 @@ def flag_owners(ref: str | None) -> tuple[dict[str, set[str]], int, int]:
 
 
 # ------------------------------------------------------------------- queue ---
-def queue_rows(ref: str | None) -> list[list[str]]:
-    """Every data row of the mechanic-demo table, as its cells."""
+def parse_queue(ref: str | None) -> tuple[list[list[str]], list[tuple[int, str]]]:
+    """The mechanic-demo table's data rows, and the rows no table contains.
+
+    The section between this heading and the next `## ` is read by
+    `tools/lib/mdtable.py`, which applies the renderer's rule and no other:
+    a pipe table runs from a header row, through a delimiter row, to the first
+    blank line or the start of another block-level structure. A row under a
+    blank line is therefore not in the table, and the reader sees a paragraph
+    of literal pipe characters where this gate used to see an entry.
+
+    The detached rows come back alongside rather than being dropped, because
+    dropping them would rebuild the same defect facing the other way: the gate
+    would be falsifiable only in the direction that does not drift.
+
+    Returns `(rows, orphans)`, each orphan a `(line number in the file, text)`.
+    """
     text = read_text(ref, QUEUE)
     if MECHANIC_HEADING not in text:
-        return []
-    body = text.split(MECHANIC_HEADING, 1)[1]
-    rows: list[list[str]] = []
-    for line in body.split("\n"):
-        line = line.strip()
-        if line.startswith("## "):
-            break
-        if not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if not cells or set("".join(cells)) <= set("-: "):
-            continue
-        if cells[0] == "Mechanic (spec)":
-            continue
-        rows.append(cells)
-    return rows
+        return [], []
+    before, body = text.split(MECHANIC_HEADING, 1)
+    # `body` resumes on the heading's own line, so line k of it is that line + k.
+    heading_lineno = before.count("\n") + 1
+    section = body.split("\n## ", 1)[0]
+
+    rows, orphans = mdtable.read(section)
+    return (
+        [list(row.cells) for row in rows],
+        [(heading_lineno + n - 1, line) for n, line in orphans],
+    )
+
+
+def queue_rows(ref: str | None) -> list[list[str]]:
+    """Every data row of the mechanic-demo table, as its cells."""
+    return parse_queue(ref)[0]
 
 
 def citations(rows: list[list[str]]) -> tuple[set[str], set[str], set[str]]:
@@ -320,8 +354,8 @@ def main() -> int:
 
     head_owners, head_crates, head_files = flag_owners(None)
     base_owners, base_crates, base_files = flag_owners(base)
-    head_rows = queue_rows(None)
-    base_rows = queue_rows(base)
+    head_rows, head_orphans = parse_queue(None)
+    base_rows, base_orphans = parse_queue(base)
     dw, adr, spec = citations(head_rows)
 
     print(
@@ -329,7 +363,8 @@ def main() -> int:
         f"{len(head_owners)} long flag(s) here; {base_crates}/{base_files}/"
         f"{len(base_owners)} at {args.base}. Queue: {len(head_rows)} row(s) here, "
         f"{len(base_rows)} at {args.base}; citations examined: {len(dw)} DW code(s), "
-        f"{len(spec)} spec number(s), {len(adr)} ADR number(s)."
+        f"{len(spec)} spec number(s), {len(adr)} ADR number(s). Rows no table "
+        f"contains: {len(head_orphans)} here, {len(base_orphans)} at {args.base}."
     )
 
     # ---- vacuity -----------------------------------------------------------
@@ -352,6 +387,23 @@ def main() -> int:
             f"heading {MECHANIC_HEADING!r} or the table shape moved out from "
             "under this parser."
         )
+    # ---- the row a reader cannot see --------------------------------------
+    for lineno, line in head_orphans:
+        findings.append(
+            f"{QUEUE}:{lineno} is a table row that no table contains:\n"
+            f"    {line}\n"
+            "    A blank line ends a pipe table (CommonMark GFM tables: a "
+            "table runs to `the first empty line, or beginning of another "
+            "block-level structure`), so this row is rendered as a paragraph "
+            "of literal pipe characters and is NOT an entry in the "
+            f"{MECHANIC_HEADING[3:]} table. It counts for nobody who reads the "
+            "page, so a mechanic whose only row is this one has no queue entry "
+            "— the obligation is met in the letter and void in the reading.\n"
+            "    Fix: delete the blank line above it so it joins the table, or "
+            "if it is meant to stand alone, it is not a queue row and should "
+            "not be written as one."
+        )
+
     if not (dw or spec or adr):
         findings.append(
             f"the queue's rows cite 0 resolvable identifiers — every spec "

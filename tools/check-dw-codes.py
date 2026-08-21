@@ -77,6 +77,10 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+from lib import mdtable  # noqa: E402
+
 CODE_RE = re.compile(r"DW[0-9]{4}")
 # A diagnostic-code constant, in either shape the workspace uses:
 #
@@ -281,16 +285,32 @@ def declared_constants() -> dict[str, set[tuple[str, str]]]:
     return table
 
 
-def catalog_row_counts() -> dict[str, int]:
-    """DW code -> number of diagnostics-catalog table rows introducing it in the
-    reference (`| `DWxxxx` | …`). A code with two rows documents two rules."""
+CATALOG_ROW_RE = re.compile(r"^\|\s*`(DW[0-9]{4})`\s*\|")
+
+
+def catalog_rows() -> tuple[dict[str, int], list[tuple[int, str]]]:
+    """`(DW code -> catalog rows introducing it, catalog rows no table holds)`.
+
+    A code with two rows documents two rules, which is a finding. A row that no
+    table holds documents nothing at all: a blank line ends a pipe table, so
+    such a row renders as a paragraph of literal pipe characters on the page
+    this file exists to BE. Twenty-one of them were live here at once — four
+    detached blocks covering DW0370 through DW0499 — and this counted every one
+    as a documented diagnostic, because it matched a regex against lines and had
+    no notion of a table. `tools/lib/mdtable.py` reads the file the way its
+    reader does.
+    """
+    text = DOC_PATH.read_text(encoding="utf-8")
+    rows, detached = mdtable.rows_matching(text, CATALOG_ROW_RE)
     counts: dict[str, int] = {}
-    row_re = re.compile(r"^\|\s*`(DW[0-9]{4})`\s*\|")
-    for line in DOC_PATH.read_text(encoding="utf-8").splitlines():
-        m = row_re.match(line)
-        if m:
-            counts[m.group(1)] = counts.get(m.group(1), 0) + 1
-    return counts
+    for row in rows:
+        code = CATALOG_ROW_RE.match(row.line.strip()).group(1)
+        counts[code] = counts.get(code, 0) + 1
+    return counts, detached
+
+
+def catalog_row_counts() -> dict[str, int]:
+    return catalog_rows()[0]
 
 
 def crate_test_scope_texts(crate: str) -> list[str]:
@@ -393,7 +413,17 @@ def main() -> int:
             "source, tests, the reference catalog and any content-repo mention"
         )
 
-    dup_rows = sorted(code for code, n in catalog_row_counts().items() if n > 1)
+    row_counts, detached_rows = catalog_rows()
+    for lineno, line in detached_rows:
+        errors.append(
+            f"docs/reference/compiler.md:{lineno} is a diagnostics-catalog row "
+            f"that no table contains:\n    {line[:100]}\n    A blank line ends a "
+            "pipe table, so this row renders as a paragraph of literal pipe "
+            "characters and documents nothing to anyone reading the page. Delete "
+            "the blank line above it so it rejoins the catalog table."
+        )
+
+    dup_rows = sorted(code for code, n in row_counts.items() if n > 1)
     if dup_rows:
         errors.append(
             "DW codes with MORE THAN ONE diagnostics-catalog row in "

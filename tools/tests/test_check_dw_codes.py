@@ -84,27 +84,56 @@ def test_one_constant_referenced_from_many_files_is_not_a_collision(gate):
 def test_two_catalog_rows_for_one_code_are_detected(gate):
     """The documentation half of the collision — two rules, two rows, one code."""
     gate.DOC_PATH.write_text(
+        "| Code | Rule |\n"
+        "| --- | --- |\n"
         "| `DW0351` | A continuity lint. |\n"
         "| `DW0352` | A world-edits batch writes into trap hardware. |\n"
         "| `DW0352` | A punishing begin-stealth whose grace window cannot be beaten. |\n"
         "| `DW0353` | A gate-region collision. |\n",
         encoding="utf-8",
     )
-    counts = gate.catalog_row_counts()
+    counts, detached = gate.catalog_rows()
+    assert detached == []
     assert counts["DW0352"] == 2
     assert [c for c, n in counts.items() if n > 1] == ["DW0352"]
+
+
+def test_a_row_a_blank_line_detached_from_the_catalog_documents_nothing(gate):
+    """The page is what the catalog IS. A blank line ends a pipe table, so a row
+    below one renders as a paragraph of literal pipes — twenty-one were live in
+    `compiler.md` at once, and this gate counted every one as a documented
+    diagnostic. It is a finding, never a row and never a silent discard."""
+    gate.DOC_PATH.write_text(
+        "| Code | Rule |\n"
+        "| --- | --- |\n"
+        "| `DW0351` | A continuity lint. |\n"
+        "\n"
+        "| `DW0352` | A world-edits batch writes into trap hardware. |\n",
+        encoding="utf-8",
+    )
+    counts, detached = gate.catalog_rows()
+    assert counts == {"DW0351": 1}
+    assert [lineno for lineno, _ in detached] == [5]
+    assert "DW0352" in detached[0][1]
 
 
 def test_a_code_merely_mentioned_in_prose_does_not_count_as_a_row(gate):
     """Only a catalog ROW introduces a rule; cross-references in pipeline tables
     and prose cite codes constantly and must not read as duplicate definitions."""
     gate.DOC_PATH.write_text(
+        "| # | Stage | Module | Codes |\n"
+        "| --- | --- | --- | --- |\n"
         "| 10 | Nav checks | `compiler::nav` | `DW0327`/`DW0355` (exit 3) |\n"
+        "\n"
         "- **Trap-hardware integrity (`DW0352`).** No batch write may land on it.\n"
+        "\n"
+        "| Code | Rule |\n"
+        "| --- | --- |\n"
         "| `DW0355` | A punishing begin-stealth whose grace window cannot be beaten. |\n",
         encoding="utf-8",
     )
-    counts = gate.catalog_row_counts()
+    counts, detached = gate.catalog_rows()
+    assert detached == []
     assert counts == {"DW0355": 1}
 
 
