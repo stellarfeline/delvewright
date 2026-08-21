@@ -199,8 +199,11 @@ fn scheduled_ending_campaign_template_awaits_the_tail() {
     );
 }
 
-/// A synchronous-ending, branch-free campaign keeps the original single-tick
-/// template — and its exported path carries no tail field (byte-identity).
+/// A synchronous-ending, branch-free campaign keeps the single-TICK template:
+/// it asserts on the spot rather than awaiting, and its exported path carries no
+/// tail field. The baseline and drive live in `pt_camp_drive` in both shapes —
+/// see the emitter for the pair that makes hoisting unconditional — so what
+/// distinguishes this shape is the close, not where the drive sits.
 #[test]
 fn synchronous_ending_keeps_the_single_tick_template() {
     let out = build_dir(&common::hello_world_dir());
@@ -211,8 +214,14 @@ fn synchronous_ending_keeps_the_single_tick_template() {
     assert!(test.contains("assert score #party dw.campaign matches 1"));
     assert!(test.contains("# @timeout 100"));
     assert!(!test.contains("await"));
-    assert!(
-        !out.contains_key("packtest-datapack/data/hello-world/function/pt_camp_drive.mcfunction")
+    assert!(test.contains("function hello-world:pt_camp_drive"));
+    // The template's own body touches ONE `#party` score — the one it asserts.
+    // Everything else is inside the hoisted drive
+    // (`packtest_batch::party_state_across_ticks_is_owned` reads this body).
+    assert_eq!(
+        test.matches("#party").count(),
+        1,
+        "the template body holds only the score it asserts:\n{test}"
     );
     let cp: serde_json::Value = serde_json::from_slice(&out["critical-path.json"]).unwrap();
     let last = cp["steps"].as_array().unwrap().last().unwrap();

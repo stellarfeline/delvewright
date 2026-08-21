@@ -771,12 +771,23 @@ fn packtest_suite_is_a_real_test() {
         test.contains("function hello-world:setup"),
         "runs the real generated init"
     );
+    // The baseline and the drive are hoisted into `pt_camp_drive` — one
+    // mcfunction, called on the drive tick, so the writes stay atomic with the
+    // drive while the template's own body stays down to the score it asserts.
     assert!(
-        test.contains("run function hello-world:complete_o_talk"),
+        test.contains("function hello-world:pt_camp_drive"),
+        "calls its own hoisted drive"
+    );
+    let drive = text(
+        &out,
+        "packtest-datapack/data/hello-world/function/pt_camp_drive.mcfunction",
+    );
+    assert!(
+        drive.contains("run function hello-world:complete_o_talk"),
         "drives the talk objective completion"
     );
     assert!(
-        test.contains("run function hello-world:complete_o_exit"),
+        drive.contains("run function hello-world:complete_o_exit"),
         "drives the reach objective completion"
     );
     assert!(

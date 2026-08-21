@@ -70,8 +70,23 @@ jobs:
           workspaces: |
             .
             crates/render
-      - name: cargo fmt --check
-        run: cargo fmt --all -- --check
+      # THE SAME SCRIPT A PERSON RUNS. `cargo fmt --all` at the root reaches the
+      # root workspace and nothing else, so the obvious local command reported
+      # clean while a generator was unformatted and this job reddened the pull
+      # request instead — the cost paid by whoever pushes rather than by whoever
+      # wrote it. The sweep derives its population from `git ls-files` and asks
+      # cargo which workspace each manifest belongs to, so it also covers a
+      # workspace nobody has added a step for yet; the hand-written list it
+      # replaces named nine of the tree's ten. `bash tools/fmt-workspaces.sh`
+      # (no flag) fixes everything this reports.
+      #
+      # Still FIRST, and still before the render workspace's one named fetch:
+      # measured with an empty `CARGO_HOME` and `CARGO_NET_OFFLINE=true`, the
+      # whole sweep — the git-dependency workspace included — exits 0 and leaves
+      # that `CARGO_HOME` empty. `cargo fmt` resolves nothing, so a formatting
+      # error reds without waiting on a network reach.
+      - name: cargo fmt --check (every workspace in the tree)
+        run: bash tools/fmt-workspaces.sh --check
       - name: cargo clippy -D warnings
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: cargo test (incl. determinism double-build gate)
@@ -108,10 +123,10 @@ jobs:
       # Excluding it from `--workspace` would have taken its coverage with it, so
       # the same three checks run against its manifest — this is the ONLY place in
       # CI that builds the render crate, and the only place that needs its
-      # dependency. `fmt` first: rustfmt resolves nothing, so a formatting error
-      # reds without waiting on a network reach.
-      - name: cargo fmt --check (render workspace)
-        run: cargo fmt --manifest-path crates/render/Cargo.toml --all -- --check
+      # dependency. Its `fmt` is not here: it is one of the nine workspaces the
+      # sweep above covers, which still puts it before the fetch below, and still
+      # for the reason this comment gave — rustfmt resolves nothing, so a
+      # formatting error reds without waiting on a network reach.
       # The one git fetch in this repo's CI, in a step that says so. Nucleation is
       # pinned by rev, so a warm rust-cache satisfies this without touching the
       # network at all (measured: 0.47s and zero `Updating git repository` lines
@@ -250,18 +265,18 @@ jobs:
             prefabs/island-generator
             prefabs/island-terrain-generator
             prefabs/tidal-keep-generator
-      # fmt only. `clippy -D warnings` is deliberately NOT wired here yet: the
-      # oldest generator (`prefabs/generator`) carries two pre-existing style
+      # `fmt` for these seven is NOT here any more, and that is the point of the
+      # change that moved it: it lived in a hand-written list of generator names,
+      # so a person's `cargo fmt --all` could not reach it and only a pull request
+      # could tell them. It is now one sweep in `rust (fmt, clippy, test)` running
+      # `tools/fmt-workspaces.sh --check` — the same script a person runs, over a
+      # population derived from `git ls-files` rather than typed here.
+      #
+      # `clippy -D warnings` is deliberately NOT wired for these workspaces yet:
+      # the oldest generator (`prefabs/generator`) carries two pre-existing style
       # lints, and silencing them belongs in its own PR rather than riding along
       # with a stair fix. Tracked as a follow-up; the correctness gate below is
       # the one that matters and it covers every generator workspace.
-      - name: cargo fmt --check each generator workspace
-        run: |
-          set -euo pipefail
-          for g in generator cave-generator gallery-generator hello-room-generator \
-                   island-generator island-terrain-generator tidal-keep-generator; do
-            cargo fmt --manifest-path "prefabs/$g/Cargo.toml" --all -- --check
-          done
       # `prefabs/invariants.rs` is source-included by every generator, so one
       # workspace's `cargo test` compiles and runs the shared gate's own unit
       # tests once — including the cases that prove it FAILS (a rock stacked on a
@@ -712,6 +727,21 @@ jobs:
       # message. Deterministic, offline, stdlib-only python3.
       - name: every redirect writes into a directory the script guarantees exists
         run: python3 tools/check-shell-redirect-dirs.py
+      # Dev is macOS, macOS ships bash 3.2.57, and CLAUDE.md says every validation
+      # must be runnable on the creator's own machine. `mapfile` is a bash 4.0
+      # builtin: on 3.2 it prints `command not found`, LEAVES THE ARRAY EMPTY and
+      # carries on at status 0 — so `validation/packtest-all.sh`, the script whose
+      # whole job is to run every PackTest project, ran none of them and exited 0.
+      # Seven scripts carry a comment saying not to do it, which is the bottom rung
+      # of the ladder CLAUDE.md ranks; this is the rung above. The class is the
+      # version boundary rather than the one string everybody remembers, and each
+      # member was run on /bin/bash 3.2.57 and on `bash:5` — two binaries on two
+      # operating systems, sharing no calibration. Population derived, never listed:
+      # `.sh`/`.bash` UNION every shell shebang, plus workflow `run:` blocks, since
+      # `engine-release.yml` builds two darwin targets on `macos-latest`.
+      # Deterministic, offline, stdlib-only python3.
+      - name: no repo shell uses syntax the creator's bash 3.2 does not have
+        run: python3 tools/check-shell-bash32.py
       # A grammar `Program` is a long-lived on-disk document (ADR-0018 §4/§5), and
       # the two ways it grows new surface are not equally safe. A new variant of a
       # tagged enum is safe — an older engine meets an `"op"` it does not know and
