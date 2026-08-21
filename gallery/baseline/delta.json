@@ -1,32 +1,6 @@
 {
-  "added": [
-    "site-plan.en:packtest-datapack/data/gallery/test/cast_ladder_curator.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/cast_ladder_factor.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/cast_ladder_marshal.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/cast_ladder_warden.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/class_apply_wanderer.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/class_apply_warder.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/dlg_mask_curator_curator_root.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/dlg_mask_factor_factor_root.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/dlg_mask_marshal_marshal_root.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/dlg_mask_warden_warden_root.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/env_trigger_east_door_wrong_side.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/npc_talk_curator.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/npc_talk_factor.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/npc_talk_marshal.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/npc_talk_warden.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/obj_activate_reach_the_end.mcfunction"
-  ],
-  "changed": [
-    "site-plan.en:validation/respawn-safety.json",
-    "site-plan.en:validation/watch-claims.json",
-    "site-plan.en:validation/watch-ledger.json"
-  ],
-  "classes": {
-    "PackTest": 17,
-    "validation ledger": 3
-  },
-  "removed": [
-    "site-plan.en:packtest-datapack/data/gallery/test/v04_dialogue_visibility.mcfunction"
-  ]
+  "added": [],
+  "changed": [],
+  "classes": {},
+  "removed": []
 }
