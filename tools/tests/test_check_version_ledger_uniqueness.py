@@ -79,12 +79,16 @@ def init_repo(root: Path) -> None:
     run(["git", "config", "user.name", "Test"], cwd=root)
 
 
-def commit_base(root: Path, files: dict[str, str]) -> str:
+def commit_base(root: Path, files: dict[str, str], parent: str | None = None) -> str:
     """Build a commit purely via plumbing (no checkout) and return its sha.
 
     Everything goes through a SCRATCH index (`GIT_INDEX_FILE`), so it never
     touches the real index or the working tree and cannot collide with the
     on-disk "this branch" files the gate reads separately.
+
+    `parent` builds real ancestry, which is what the withdrawal group needs: a
+    row the branch REMOVED and a row that appeared at the base after the fork
+    are the same absence in the checkout, and only a fork point separates them.
     """
     idx = root / ".git" / "tmp-index"
     env = {**os.environ, "GIT_INDEX_FILE": str(idx)}
@@ -102,7 +106,10 @@ def commit_base(root: Path, files: dict[str, str]) -> str:
         ["git", "write-tree"], cwd=root, env=env, check=True, capture_output=True, text=True
     ).stdout.strip()
     idx.unlink(missing_ok=True)
-    return run(["git", "commit-tree", tree, "-m", "origin/main fixture"], cwd=root).strip()
+    args = ["git", "commit-tree", tree, "-m", "ledger fixture"]
+    if parent is not None:
+        args += ["-p", parent]
+    return run(args, cwd=root).strip()
 
 
 def make_shallow(root: Path) -> None:
@@ -203,6 +210,30 @@ def go(checker, root: Path, monkeypatch, base: str = "origin/main") -> int:
 def scenario(root: Path, base_files: dict[str, str], local_files: dict[str, str]) -> None:
     init_repo(root)
     set_origin_main(root, commit_base(root, base_files))
+    write_local(root, local_files)
+
+
+def forked(
+    root: Path,
+    fork_files: dict[str, str],
+    base_files: dict[str, str],
+    local_files: dict[str, str],
+) -> None:
+    """`scenario`, plus the fork point both sides were cut from.
+
+    Three commits: the fork, `origin/main` on top of it, and this branch's own
+    commit on top of it. `HEAD` is moved to the branch commit so that
+    `git merge-base HEAD origin/main` answers with the fork — the one fact that
+    can tell a row this branch DELETED from a row that reached the base after
+    this branch was cut, since the checkout looks identical either way.
+
+    The gate still reads the checkout from disk, so `local_files` is written
+    there as well as committed; the commit exists only to carry ancestry.
+    """
+    init_repo(root)
+    fork = commit_base(root, fork_files)
+    set_origin_main(root, commit_base(root, base_files, parent=fork))
+    run(["git", "update-ref", "HEAD", commit_base(root, local_files, parent=fork)], cwd=root)
     write_local(root, local_files)
 
 
@@ -874,3 +905,201 @@ def test_rule_six_reads_the_real_ledger_shape(checker, tmp_path, capsys, monkeyp
     claim = sorted(left.derived.get(newest, set()))
     assert f"Its only claim is {claim or ['(nothing)']}" in err
     assert f"{ledger['reserved_const']} row" in err
+
+
+# --- the third incident: a hold that was CANCELLED ---------------------------
+#
+# Rule 1 took the plain union of the two trees while its message described the
+# state after the merge, and a union cannot subtract. The ordinary reservation
+# lifecycle hid it: the change that LANDS a reserved surface defines the very
+# constant the row named, so the two dedup. A change that CANCELS the hold and
+# takes the number for something else defines a different one — and to a union a
+# withdrawn hold and a competing one are the same absence.
+#
+# The two are the same absence in the CHECKOUT as well, which is why these
+# fixtures carry real ancestry: `HELD_BY_HORIZON` reaching the base by a route
+# this branch never saw is a genuine collision, and the identical file deleted by
+# this branch is not. Only the fork point separates them.
+
+HELD_BY_HORIZON = dsl_ledger(
+    DSL_VERSIONS + ["0.6.0"], DSL_PREDICATES, reserved={"0.6.0": "HORIZON_LIBRARY_SINCE"}
+)
+# The cancelling change: the number goes to a different surface, under its own
+# hand-written name, and the row is gone.
+TAKEN_BY_LAYOUT = dsl_ledger(
+    DSL_VERSIONS + ["0.6.0"],
+    {**DSL_PREDICATES, "is_v06": 6},
+    sinces={"LAYOUT_GRAPH_SINCE": "0.6.0"},
+)
+# The reserved surface itself landing — the lifecycle's ordinary end, and the
+# state in which the hold is no longer a hold and can no longer be cancelled.
+LANDED_BY_HORIZON = dsl_ledger(
+    DSL_VERSIONS + ["0.6.0"],
+    {**DSL_PREDICATES, "is_v06": 6},
+    sinces={"HORIZON_LIBRARY_SINCE": "0.6.0"},
+)
+# The hold dropped and nothing put in its place: the number is in use and unnamed.
+CANCELLED_AND_UNNAMED = dsl_ledger(DSL_VERSIONS + ["0.6.0"], {**DSL_PREDICATES, "is_v06": 6})
+# A live hold on the OTHER ledger, held on every tree of a scenario. It is what
+# makes that ledger's `0 withdrawal(s)` a measurement over a real population
+# rather than a zero nobody could distinguish from nothing to examine.
+GRAMMAR_HOLDING = grammar_ledger(
+    ["1.0.0", "1.1.0", "1.2.0"], {"MIRROR_SINCE": "1.1.0"}, {"1.2.0": "CONTRACT_SINCE"}
+)
+
+
+def dsl_summary(out_or_err: str) -> str:
+    return summary_for(out_or_err, "dsl-campaign")
+
+
+def test_a_withdrawn_hold_is_not_a_competing_claim(checker, tmp_path, capsys, monkeypatch):
+    """The change this gate was refusing. `0.6.0` is held for the horizon
+    library at the fork and still held at the base; this branch cancels the row
+    and takes the number for `LAYOUT_GRAPH_SINCE`. After the merge `0.6.0` names
+    exactly one surface, which is what rule 1's own message claims to be about.
+    """
+    forked(
+        tmp_path,
+        {GRAMMAR: GRAMMAR_HOLDING, DSL: HELD_BY_HORIZON},
+        {GRAMMAR: GRAMMAR_HOLDING, DSL: HELD_BY_HORIZON},
+        {GRAMMAR: GRAMMAR_HOLDING, DSL: TAKEN_BY_LAYOUT},
+    )
+    assert go(checker, tmp_path, monkeypatch) == 0
+    out = capsys.readouterr().out
+    # Stated, never silently dropped: the cancelled hold is named, with the side
+    # that cancelled it, in the binding line — a hold cannot leave the ledger
+    # without appearing in this output.
+    assert (
+        "1 withdrawal(s): 0.6.0 HORIZON_LIBRARY_SINCE (withdrawn by this branch)"
+        in dsl_summary(out)
+    )
+    assert "0 collision(s)" in dsl_summary(out)
+    # The other ledger's live hold is untouched, and its zero is stated against
+    # the population it was read from rather than left to be assumed.
+    assert "0 withdrawal(s) from 1 inherited hold(s)" in summary_for(out, "grammar-program")
+    # The instrument that decided it, named in the run's own header.
+    assert "merge base " in out
+
+
+def test_a_hold_that_reached_the_base_after_the_fork_is_still_a_collision(
+    checker, tmp_path, capsys, monkeypatch
+):
+    """The half that must not move, and the one this whole change risks.
+
+    The checkout is BYTE-IDENTICAL to the withdrawal above. What differs is the
+    fork: `0.6.0` did not exist when this branch was cut, so the base's hold
+    reached it by a route this branch never saw, survives the merge, and is a
+    competitor. A gate that cannot tell these two apart has not been repaired.
+    """
+    forked(
+        tmp_path,
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: HELD_BY_HORIZON},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: TAKEN_BY_LAYOUT},
+    )
+    assert go(checker, tmp_path, monkeypatch) == 1
+    err = capsys.readouterr().err
+    assert "dsl-campaign: version 0.6.0 is claimed by 2 different surfaces" in err
+    assert "LAYOUT_GRAPH_SINCE  (this branch)" in err
+    assert "HORIZON_LIBRARY_SINCE  (origin/main)" in err
+    assert "0 withdrawal(s) from 0 inherited hold(s)" in dsl_summary(err)
+
+
+def test_a_landed_surface_is_not_a_hold_and_cannot_be_withdrawn(
+    checker, tmp_path, capsys, monkeypatch
+):
+    """The restriction that keeps the subtraction from being an amnesty.
+
+    The hold IS inherited here — the branch saw it and deleted it — but between
+    the fork and now the horizon library LANDED at `0.6.0`. A defined `*_SINCE`
+    is a promise to documents already written, so it is not a thing a branch may
+    drop, and the collision stands. The inherited hold is counted and reported
+    unwithdrawn, so the zero is a measurement rather than an absence.
+    """
+    forked(
+        tmp_path,
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: HELD_BY_HORIZON},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: LANDED_BY_HORIZON},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: TAKEN_BY_LAYOUT},
+    )
+    assert go(checker, tmp_path, monkeypatch) == 1
+    err = capsys.readouterr().err
+    assert "dsl-campaign: version 0.6.0 is claimed by 2 different surfaces" in err
+    assert "0 withdrawal(s) from 1 inherited hold(s)" in dsl_summary(err)
+
+
+def test_a_withdrawal_that_names_nothing_is_red(checker, tmp_path, capsys, monkeypatch):
+    """Rule 6 follows the withdrawal, because cancelling a hold ALLOCATES the
+    number: the branch that drops the row is the branch that takes what the row
+    was holding. Left resting on `is_v06`, which is computed from the number, a
+    second branch taking `0.6.0` produces the same anchor and rule 1 reads one
+    claim where there are two — the blind spot rule 6 exists to close, reopened
+    through a door rule 6 did not watch.
+
+    Rule 3 is satisfied (`is_v06` DOES claim the number), so this is rule 6
+    alone.
+    """
+    forked(
+        tmp_path,
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: HELD_BY_HORIZON},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: HELD_BY_HORIZON},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: CANCELLED_AND_UNNAMED},
+    )
+    assert go(checker, tmp_path, monkeypatch) == 1
+    err = capsys.readouterr().err
+    assert (
+        "dsl-campaign: version 0.6.0 had its hold withdrawn by this branch, which frees "
+        "the number, and nothing NAMES it" in err
+    )
+    assert "Its only claim is ['is_v06'], which is computed from the number itself" in err
+    assert "1 finding(s)" in err
+
+
+def test_a_hold_the_base_cancels_is_named_as_withdrawn_by_the_base(
+    checker, tmp_path, capsys, monkeypatch
+):
+    """The other side. `origin/main` cancelled the hold and took `0.6.0`; this
+    branch is simply behind and still carries the row. The merge drops the row
+    for the same reason, so the number names one surface and the summary says
+    which side dropped it.
+    """
+    forked(
+        tmp_path,
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: HELD_BY_HORIZON},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: TAKEN_BY_LAYOUT},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: HELD_BY_HORIZON},
+    )
+    assert go(checker, tmp_path, monkeypatch) == 0
+    out = capsys.readouterr().out
+    assert (
+        "1 withdrawal(s): 0.6.0 HORIZON_LIBRARY_SINCE (withdrawn by origin/main)"
+        in dsl_summary(out)
+    )
+
+
+def test_without_a_merge_base_nothing_is_withdrawn_and_the_line_says_so(
+    checker, tmp_path, capsys, monkeypatch
+):
+    """The fail-closed direction, and the reason it is safe to leave it there.
+
+    The withdrawal above, run in a checkout with no fork point to read — an
+    unborn `HEAD`, or the shallow clone CI leaves behind, where git answers an
+    ancestry question with nothing rather than with an error. Unable to
+    subtract, the gate refuses exactly as the union always did: it over-refuses,
+    never under-refuses, and it names the missing instrument in both the finding
+    and the binding line rather than letting the operator read a real collision.
+    """
+    scenario(
+        tmp_path,
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: HELD_BY_HORIZON},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: TAKEN_BY_LAYOUT},
+    )
+    assert go(checker, tmp_path, monkeypatch) == 1
+    err = capsys.readouterr().err
+    assert "dsl-campaign: version 0.6.0 is claimed by 2 different surfaces" in err
+    assert "no merge base between HEAD and origin/main was available" in err
+    assert "this is that hold reading as a competitor" in err
+    assert (
+        "withdrawals not computable (no merge base with origin/main)" in dsl_summary(err)
+    )
+    assert "no merge base" in err

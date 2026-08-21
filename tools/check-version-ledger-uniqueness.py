@@ -55,10 +55,51 @@ otherwise. Precedence rather than union, because the two coexist for one version
 the moment a reserved surface lands (`OPEN_WAY_SINCE` and `is_v12` at `0.12.0`),
 and that is one surface with two spellings, not two surfaces.
 
-Six rules, run over the union of the checkout and `--base`:
+## A withdrawn hold is not a competing claim
+
+Rule 1 used to take the plain UNION of the two trees' claims while its own
+message described the state *after* the merge, and those are not the same set:
+a union cannot subtract, so a base-side row this branch REMOVES reads exactly
+like one it never saw. The ordinary reservation lifecycle hid it, because the
+change that lands a reserved surface defines the constant the row already named
+and the two dedup — a **cancellation** defines a different one, and the branch
+that cancelled `("0.13.0", "HORIZON_LIBRARY_SINCE")` and took the number for
+`LAYOUT_GRAPH_SINCE` was refused for a collision that does not exist after it
+merges.
+
+The state is a three-way question, so it needs the third tree: the **merge base**
+of this checkout's `HEAD` and `--base`, which is local (`git merge-base`, no
+network) and is the only thing that can separate *removed* from *never seen*. A
+claim at `--base` that this branch does not carry was withdrawn only if the
+branch INHERITED it; one that appeared at `--base` after the fork point survives
+the merge and is a competitor as before.
+
+Two properties keep this from being a weakening, and the second is the one that
+matters:
+
+- **Only a HOLD can be cancelled.** The subtraction is offered to reservation
+  rows alone, and only while neither tree DEFINES the anchor. A landed `*_SINCE`
+  and a derived predicate are not withdrawable at any distance — deleting one is
+  a deletion of shipped surface, and it stays rule 1's finding. This is the
+  property a real collision cannot supply: a competitor's base-side claim is
+  either implemented (so unwithdrawable) or arrived after the fork (so not
+  inherited).
+- **A withdrawal re-allocates the number, so rule 6 follows it.** Cancelling a
+  hold frees the number and this branch is taking it, which is the allocation
+  rule 6 exists for — so a withdrawn version must carry a hand-written name in
+  this checkout exactly as an added one must.
+
+When no merge base exists — an unborn `HEAD`, or a shallow checkout, where git
+answers ancestry with nothing rather than with an error — nothing is withdrawn
+and rule 1 is the union it always was. That is the fail-closed direction: the
+gate refuses more, never less, and says in its binding line that it could not
+compute the difference.
+
+Six rules, run over the claims that stand once this branch merges — the union of
+the checkout and `--base`, less what either side withdrew:
 
 1. **One number, one surface.** More than one distinct anchor claiming a version,
-   across the two trees, is the collision above.
+   once the merge has been taken into account, is the collision above.
 2. **One surface, one number.** An anchor at one version in the checkout and a
    different version at `--base` moved a construct's fence after it shipped,
    which changes what an already-written document means.
@@ -78,8 +119,10 @@ Six rules, run over the union of the checkout and `--base`:
    a `*_SINCE` constant when the surface lands in this same change, or by a
    reservation row when a sibling change will land it. This is the rule that
    makes rule 1 bind on a ledger whose implemented anchors are self-naming; it
-   examines only added versions, because a number already at `--base` is not
-   being allocated and re-naming one is the rename rule 2 refuses.
+   examines added versions and versions whose hold this branch withdrew, because
+   those are the two ways a number gets allocated — a number already at `--base`
+   and still held there is not being allocated, and re-naming one is the rename
+   rule 2 refuses.
 
 ## Ledgers covered, and why
 
@@ -127,9 +170,14 @@ Two limits. Neither is ledger-specific: rule 6 closed the one that was.
 ## Binding count
 
 Every run prints, per ledger: versions in the checkout and at `--base`, distinct
-anchors on each side, reservations, collisions, and how many ADDED versions rule
+anchors on each side, reservations, collisions, how many ADDED versions rule
 6 examined — zero added is the ordinary state of a branch that touches no ledger,
-and it is printed rather than left to be assumed. A ledger with **zero anchors on
+and it is printed rather than left to be assumed — and finally the withdrawals,
+each named with its version, its anchor and the side that cancelled it, so a hold
+cannot be dropped without appearing in the output. Zero withdrawals is stated
+against the number of holds INHERITED, so it reads as a measurement rather than
+as nothing to measure; where no merge base was available the line says the
+difference could not be computed at all. A ledger with **zero anchors on
 BOTH sides** is a FAIL — the file moved, was renamed, or the extraction pattern no
 longer matches (CLAUDE.md: a green gate that binds to nothing is VACUOUS). A
 ledger file that parses to zero versions, or to zero anchors while naming two or
@@ -316,6 +364,25 @@ class LedgerSide:
         return {a for s in self.claims.values() for a in s}
 
     @property
+    def present(self) -> dict[str, set[str]]:
+        """version -> every anchor this tree CARRIES for it, of any kind.
+
+        Deliberately not [`claims`]: claims apply precedence, so a version that
+        gains a hand-written name reads as having lost its derived one, and a
+        withdrawal computed from claims would call that loss a cancellation. A
+        withdrawal is a fact about what a tree contains, so it is read off what
+        the tree contains.
+        """
+        carried: dict[str, set[str]] = defaultdict(set)
+        for version, names in self.named.items():
+            carried[version] |= names
+        for version, names in self.derived.items():
+            carried[version] |= names
+        for version, anchor in self.reserved.items():
+            carried[version].add(anchor)
+        return carried
+
+    @property
     def defined_anchor_names(self) -> set[str]:
         """Hand-written anchors whose surface is IMPLEMENTED in this tree —
         reservations excluded, since a reservation is the promise, not the
@@ -358,7 +425,60 @@ def base_source(base: str, path: str) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
-def check_ledger(ledger: dict, base: str) -> tuple[list[str], str]:
+def merge_base_with(base: str) -> str | None:
+    """The fork point of this checkout's `HEAD` and `base`, or None.
+
+    Local only — `git merge-base` reads the object store and touches no network.
+    None is the honest answer in two ordinary states and is never an error: an
+    unborn `HEAD` (nothing has been committed here), and a shallow checkout,
+    where the graft hides every parent so git reports no common ancestor rather
+    than refusing. Both fall back to the union, which refuses more rather than
+    less.
+    """
+    result = subprocess.run(
+        ["git", "merge-base", "HEAD", base], cwd=ROOT, capture_output=True, text=True
+    )
+    sha = result.stdout.strip()
+    return sha if result.returncode == 0 and sha else None
+
+
+def withdrawals_of(
+    inherited_reserved: dict[str, str],
+    local: LedgerSide,
+    base_side: LedgerSide,
+    base: str,
+) -> list[tuple[str, str, str]]:
+    """`(version, anchor, who cancelled it)` for every hold the merge drops.
+
+    A row inherited from the merge base and gone from a side was deleted by that
+    side, so it is not in the tree the merge produces. Two restrictions, and they
+    are what stop this from being an amnesty:
+
+    * only a **reservation** at the merge base is offered the subtraction — a
+      landed `*_SINCE` or a derived predicate that vanishes is a deletion of
+      shipped surface and stays rule 1's finding;
+    * and only while **neither tree defines the anchor**, because a hold whose
+      surface has landed is no longer a hold. That is the case a competitor
+      cannot escape: its base-side claim is either implemented, or it arrived
+      after the fork and was never inherited at all.
+    """
+    dropped: list[tuple[str, str, str]] = []
+    local_present, base_present = local.present, base_side.present
+    for version, anchor in sorted(inherited_reserved.items()):
+        if anchor in local.defined_anchor_names or anchor in base_side.defined_anchor_names:
+            continue
+        gone_here = anchor not in local_present.get(version, set())
+        gone_there = anchor not in base_present.get(version, set())
+        if gone_here and gone_there:
+            dropped.append((version, anchor, f"this branch and {base}"))
+        elif gone_here:
+            dropped.append((version, anchor, "this branch"))
+        elif gone_there:
+            dropped.append((version, anchor, base))
+    return dropped
+
+
+def check_ledger(ledger: dict, base: str, merge_base: str | None) -> tuple[list[str], str]:
     """Findings for one ledger, plus its binding-count summary line."""
     name = ledger["name"]
     path = ledger["path"]
@@ -394,12 +514,27 @@ def check_ledger(ledger: dict, base: str) -> tuple[list[str], str]:
     base_versions, base_claims = base_side.versions, base_side.claims
     local_reserved = local.reserved
 
-    # Rule 1 — one number, one surface, across the union of the two trees.
+    # The third tree. Only its reservation rows are read — a hold is the one
+    # kind of claim a merge is allowed to drop — so an old fork point whose
+    # ledger no longer matches this gate's other patterns cannot make the run
+    # exit 2 for a file nobody is proposing to change.
+    inherited_reserved = (
+        {}
+        if merge_base is None
+        else reservations_of(ledger["reserved_const"], base_source(merge_base, path) or "")
+    )
+    withdrawn = withdrawals_of(inherited_reserved, local, base_side, base)
+    withdrawn_anchors: dict[str, set[str]] = defaultdict(set)
+    for version, anchor, _ in withdrawn:
+        withdrawn_anchors[version].add(anchor)
+
+    # Rule 1 — one number, one surface, over the claims that stand once this
+    # branch merges: the union of the two trees, less what either side withdrew.
     collisions = 0
     for version in sorted(set(local_claims) | set(base_claims)):
         here = set(local_claims.get(version, set()))
         there = set(base_claims.get(version, set()))
-        both = here | there
+        both = (here | there) - withdrawn_anchors.get(version, set())
         if len(both) <= 1:
             continue
         collisions += 1
@@ -421,6 +556,14 @@ def check_ledger(ledger: dict, base: str) -> tuple[list[str], str]:
             f"version would accept a document declaring it and silently drop the "
             f"surface it does not implement."
         )
+        if merge_base is None:
+            lines.append(
+                f"    NOTE: no merge base between HEAD and {base} was available (unborn "
+                f"HEAD, or a shallow checkout), so nothing could be read as WITHDRAWN. "
+                f"If one of the claims above is a hold this branch cancels, this is "
+                f"that hold reading as a competitor — fetch enough history for `git "
+                f"merge-base HEAD {base}` to answer and run again."
+            )
         findings.append("\n".join(lines))
 
     # Rule 2 — one surface, one number.
@@ -469,21 +612,35 @@ def check_ledger(ledger: dict, base: str) -> tuple[list[str], str]:
                 f"the {ledger['reserved_const']} row."
             )
 
-    # Rule 6 — a number this branch ADDS carries a hand-written name.
+    # Rule 6 — a number this branch ALLOCATES carries a hand-written name.
     #
-    # Only added versions, and only when there is a base ledger to have added
-    # them against: a number already at `--base` is not being allocated, and
-    # re-naming one is the rename rule 2 refuses. A version whose sole claim is
-    # a derived anchor (`is_v12`) is unnamed — the next branch to take that
-    # number computes the same anchor and rule 1 reads one claim where there
-    # are two.
+    # A number is allocated two ways, and both are examined. Added: present in
+    # the checkout and absent at `--base` — and only when there is a base ledger
+    # to have added it against. Re-allocated: a hold this branch withdrew, which
+    # frees the number and hands it to whatever this change puts there. What is
+    # NOT examined is a number already at `--base` and still held there: it is
+    # not being allocated, and re-naming one is the rename rule 2 refuses.
+    #
+    # A version whose sole claim is a derived anchor (`is_v12`) is unnamed — the
+    # next branch to take that number computes the same anchor and rule 1 reads
+    # one claim where there are two.
     added = [] if base_src is None else [v for v in local_versions if v not in set(base_versions)]
-    for version in added:
+    reallocated = [
+        version
+        for version, _, who in withdrawn
+        if who != base and version not in set(added) and version in set(local_versions)
+    ]
+    for version in added + reallocated:
         if local.named.get(version) or version in local_reserved:
             continue
         derived_here = sorted(local.derived.get(version, set()))
+        how = (
+            "is added by this branch"
+            if version in set(added)
+            else "had its hold withdrawn by this branch, which frees the number,"
+        )
         findings.append(
-            f"{name}: version {version} is added by this branch and nothing NAMES it. "
+            f"{name}: version {version} {how} and nothing NAMES it. "
             f"Its only claim is {derived_here or ['(nothing)']}, which is computed from "
             f"the number itself — a second branch adding {version} for a different "
             f"surface computes the same anchor, and rule 1 reads one claim where there "
@@ -493,6 +650,19 @@ def check_ledger(ledger: dict, base: str) -> tuple[list[str], str]:
             f"change lands the surface, or a {ledger['reserved_const']} row naming the "
             f"constant a sibling change will define if it does not."
         )
+
+    if merge_base is None:
+        withdrawal_note = (
+            f"withdrawals not computable (no merge base with {base}) — a hold this "
+            f"branch cancels reads as a competing claim"
+        )
+    elif withdrawn:
+        # ` | ` rather than `; `, which joins one ledger's summary to the next.
+        withdrawal_note = f"{len(withdrawn)} withdrawal(s): " + " | ".join(
+            f"{version} {anchor} (withdrawn by {who})" for version, anchor, who in withdrawn
+        )
+    else:
+        withdrawal_note = f"0 withdrawal(s) from {len(inherited_reserved)} inherited hold(s)"
 
     n_local_anchors = len(local.anchors)
     n_base_anchors = len(base_side.anchors)
@@ -508,7 +678,7 @@ def check_ledger(ledger: dict, base: str) -> tuple[list[str], str]:
             f"{name}: {len(local_versions)} versions here ({len(base_versions)} at "
             f"{base}), {n_local_anchors} anchors here ({n_base_anchors} at {base}), "
             f"{len(local_reserved)} reserved, {collisions} collision(s), "
-            f"{len(added)} added version(s) examined for a name"
+            f"{len(added)} added version(s) examined for a name, {withdrawal_note}"
         )
     return findings, summary
 
@@ -532,11 +702,21 @@ def main() -> int:
         print(unresolved.message, file=sys.stderr)
         return 1
 
+    # The fork point, named by its revision rather than by "the base", because
+    # it is the instrument that decides whether a missing row was withdrawn or
+    # never seen. Absent, everything reads as never seen (see `merge_base_with`).
+    merge_base = merge_base_with(base)
+    against = (
+        f"{base} @ {base_sha[:12]}, merge base {merge_base[:12]}"
+        if merge_base
+        else f"{base} @ {base_sha[:12]}, no merge base"
+    )
+
     findings: list[str] = []
     summaries: list[str] = []
     for ledger in LEDGERS:
         try:
-            ledger_findings, summary = check_ledger(ledger, base)
+            ledger_findings, summary = check_ledger(ledger, base, merge_base)
         except ShapeDrift as drift:
             print(f"check-version-ledger-uniqueness: {drift}", file=sys.stderr)
             return 2
@@ -546,7 +726,7 @@ def main() -> int:
     if findings:
         print(
             f"check-version-ledger-uniqueness: {len(findings)} finding(s) against "
-            f"{base} @ {base_sha[:12]} — {'; '.join(summaries)}\n",
+            f"{against} — {'; '.join(summaries)}\n",
             file=sys.stderr,
         )
         for finding in findings:
@@ -555,7 +735,7 @@ def main() -> int:
 
     print(
         f"check-version-ledger-uniqueness: OK — {'; '.join(summaries)}, diffed against "
-        f"{base} @ {base_sha[:12]}"
+        f"{against}"
     )
     return 0
 
