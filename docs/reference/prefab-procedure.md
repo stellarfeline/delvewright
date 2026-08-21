@@ -65,6 +65,17 @@ chosen region and seed beside the program — in the campaign's `GENERATION.md`,
 since the program JSON does not yet carry its own region (queued engine
 surface).
 
+**One exception: a piece that details a site-plan place (stage 6, spec-0050)
+has its region HANDED, not chosen.** `delvec allocation <campaign-dir>
+<place>` prints the frame's extents, the datum, every seam with the face
+class it must be answered with, the owed anchor names and the whole's
+palette; the piece is authored against that and nothing else, and must be
+exactly the handed extent — `DW0843` refuses undersize exactly as oversize.
+The output is derived from the site plan on every invocation and is an input
+to nothing; ask again whenever it is wanted. It refuses without a passed,
+fresh `walk-record.json` (`DW0841`), so the whole is walked before this step
+can begin.
+
 ## 2. Choose the palette by MEASUREMENT — screen, measure the mix, then LOOK
 
 **Never name a block from memory.** Block names are not descriptions of block
@@ -602,6 +613,7 @@ use.
 | `license` | no | `{source, spdx, note, provenance, generated_by?}`. |
 | `waterline_y` | no | Local y of the piece's top authored water block. Checked against the ocean datum by `DW0344`; an ocean world where no placed piece declares one is reported by `DW0344` rather than passing on an empty check, and there is no exemption for a piece that "needs none". |
 | `spatial_contract` | no | The piece's declared spaces, out-of-walk regions, edges and faces (ADR-0020). |
+| `footprint_class` | no | The metrics-table size class this piece claims to serve (`size-class.*`). Judged against the piece's own structure size at `delve-admit audit` and again wherever a `detail-plan` row consumes the piece (`DW0848`; an unknown name is `DW0812`). Absent means the claim is not made — a piece bound by a `details[]` row is held to exact frame equality (`DW0843`) either way. |
 
 An **anchor** is `{pos?, facing?, region?, block?, resolves_to?, dispenser?,
 trigger_block?}` — one object class covering a point, a gate region and a trap's
