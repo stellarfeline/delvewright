@@ -560,7 +560,11 @@ fn dw0841_refuses_a_graph_edit_that_moves_no_byte_at_all() {
     let before = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
 
     patch_edge(&d.campaign, "edge/hall-cell", |e| {
-        assert_eq!(e["opens_from"], serde_json::json!("a"), "it opened from `a`");
+        assert_eq!(
+            e["opens_from"],
+            serde_json::json!("a"),
+            "it opened from `a`"
+        );
         e["opens_from"] = serde_json::json!("b");
     });
 

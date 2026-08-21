@@ -540,13 +540,13 @@ fn walk_gate(c: &Campaign, record: Option<&str>, rows: usize) -> (Option<Diagnos
 /// re-walk *decision* for the round summary rather than a defect anyone could
 /// launder through it.
 ///
-/// The narrower claim — that the derivation is a function of the *plan* alone —
-/// was false, and it made this advisory the laundering channel it warned
-/// against: a graph-only edit that turned an open archway into a quest-locked
-/// bar moved the massing, kept the plan hash, and printed this warning
-/// underneath a sentence telling the reader no campaign edit could produce it.
-/// The suppression below is what makes the claim true, so it is the load-bearing
-/// line here and not a duplicate-diagnostic nicety.
+/// **The graph clause below is load-bearing, not a duplicate-diagnostic
+/// nicety.** Without it, a graph-only edit — an open archway turned into a
+/// quest-locked bar — moves the massing under an unmoved plan hash and lands
+/// here, under a message asserting that no campaign edit can. A warning that
+/// denies the state it is reporting trains its reader to wave that state
+/// through, so the suppression is what makes this text true and deleting it
+/// re-opens a laundering channel rather than a duplicate diagnostic.
 #[must_use]
 pub fn blockout_drift(c: &Campaign, record: Option<&str>) -> Option<Diagnostic> {
     c.detail_plan.as_ref()?;
