@@ -117,6 +117,32 @@ def test_a_missing_index_is_a_finding_not_a_quiet_pass(tree, capsys):
     assert "NO INDEX" in capsys.readouterr().out
 
 
+# ------------------------------------------------- where the index ends --
+
+def test_a_row_detached_from_the_index_table_is_a_finding(tree, capsys):
+    """An index is navigation, and a blank line ends a pipe table — so a row
+    below one renders as a paragraph of literal pipe characters and sends no
+    reader anywhere. It used to count as an entry, which made "every document is
+    indexed" true for the gate and false on the page."""
+    tree.spec("0001", "alpha", "Accepted")
+    tree.spec("0002", "beta", "Draft")
+    tree.index([row("0001", "alpha", "Accepted"), "", row("0002", "beta", "Draft")])
+    assert tree.checker().main() == 1
+    err = capsys.readouterr().err
+    assert "docs/specs/README.md:7 is an index row that no table contains" in err
+    # And the document it should have indexed is now reported as unindexed,
+    # which is the whole point: the obligation is unmet, not met invisibly.
+    assert "spec-0002" in err
+
+
+def test_the_same_row_attached_is_an_entry(tree, capsys):
+    """The other direction, so the red above is about the blank line alone."""
+    tree.spec("0001", "alpha", "Accepted")
+    tree.spec("0002", "beta", "Draft")
+    tree.index([row("0001", "alpha", "Accepted"), row("0002", "beta", "Draft")])
+    assert tree.checker().main() == 0
+
+
 # ------------------------------------------------------------- the five rules --
 
 def test_a_row_that_disagrees_with_its_document_is_a_finding(tree, capsys):

@@ -80,6 +80,10 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+from lib import mdtable  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Check A — interaction bodies
 # ---------------------------------------------------------------------------
@@ -691,11 +695,25 @@ def stated_bindings(root: pathlib.Path) -> tuple[dict[str, int], list[str]]:
     path = root / AUDIT
     if not path.exists():
         return {}, [f"FAIL: {AUDIT} not found — the audit this ledger documents moved."]
+    # Read the table the way the audit's reader reads it: a blank line ends a
+    # pipe table, so a row under one is a paragraph of literal pipe characters
+    # and states nothing to anybody. Two were live in this very file.
+    in_table, detached = mdtable.rows_matching(
+        path.read_text(encoding="utf-8"), AUDIT_ROW
+    )
+    problems = [
+        f"FAIL: {AUDIT}:{lineno} is an audit row that no table contains — a "
+        f"blank line above it ended the table, so the page shows it as a "
+        f"paragraph of literal pipes and its stated count is read by nobody:"
+        f"\n    {line[:100]}"
+        for lineno, line in detached
+    ]
     rows: dict[str, int] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        m = AUDIT_ROW.match(line.strip())
-        if m:
-            rows[m.group(1)] = int(m.group(2))
+    for row in in_table:
+        m = AUDIT_ROW.match(row.line.strip())
+        rows[m.group(1)] = int(m.group(2))
+    if problems:
+        return rows, problems
     if not rows:
         return {}, [
             f"FAIL: {AUDIT} states no binding count this checker can read. A "
