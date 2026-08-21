@@ -25,10 +25,14 @@ use std::collections::HashMap;
 
 use crate::nbt::Structure;
 
-/// Player eye height above the standing cell's floor, in blocks — the same
-/// 1.62 the compiler's player-POV cameras stand at, so a per-prefab eye shot and
-/// a whole-scene POV shot of the same spot agree.
-pub const EYE_HEIGHT: f32 = 1.62;
+/// Player eye height above the standing cell's floor, in blocks — the same eye
+/// the compiler's player-POV cameras stand at, so a per-prefab eye shot and a
+/// whole-scene POV shot of the same spot agree.
+///
+/// Narrowed from the metrics table's `f64` (spec-0049 §2) rather than repeated.
+/// The sentence above was true when it was written and was binding nothing; now
+/// the two cameras cannot disagree, because there is only one number.
+pub const EYE_HEIGHT: f32 = delvewright_dsl::metrics::PLAYER_EYE_HEIGHT as f32;
 
 /// A cardinal facing keyword, and the two things a facing is for: the direction
 /// a body walks/looks, and the yaw that points a camera along it.
