@@ -343,6 +343,18 @@ pub mod codes {
     /// is a no-op and the souls loop has no consumable to spend, so this is a
     /// build error rather than a design choice.
     pub const BONFIRE_NO_FLASK: DwCode = DwCode::every_version("DW0476");
+    /// **An item gate a class cannot bring.** An objective completes only for a
+    /// player holding a named item, and some class's player has no way to be
+    /// holding it: the item's only source in the whole campaign is *another*
+    /// class's kit, or it has no source at all.
+    ///
+    /// A delve is played by one to four players who each pick one class, so an
+    /// objective reachable only by one class's pick is an objective a party can
+    /// be assembled unable to finish — and the party finds out at the thing they
+    /// cannot press. Quantified over EVERY class for the same reason
+    /// [`BONFIRE_NO_FLASK`] is: one class that cannot bring it is as broken as
+    /// none, because a solo player of that class is a supported party.
+    pub const ITEM_GATE_UNBRINGABLE: DwCode = DwCode::every_version("DW0849");
     /// (spec-0016 §1) A kit item's potion `contents`
     /// is not something 1.21.11 can pour: declared on an item that carries no
     /// `minecraft:potion_contents` component, empty (neither a named potion nor
