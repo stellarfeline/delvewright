@@ -1202,6 +1202,52 @@ fn a_detailed_build_exits_zero_and_prints_both_hashes() {
     );
 }
 
+/// **The plan hash sees the plan and nothing else**, which is what makes the
+/// walk gate's hatch argument true.
+///
+/// `DW0841`'s security is that the defect it catches — detailing a plan the walk
+/// never passed — necessarily moves `site_plan_sha256`. That only holds if the
+/// hash is a function of the site-plan document alone: one that also saw the
+/// campaign around it would go stale on edits that move no geometry, and a gate
+/// that cries wolf is a gate somebody re-records past. What the toolchain moves
+/// is the SEPARATE blockout hash, which is why there are two.
+#[test]
+fn the_plan_hash_is_a_function_of_the_plan_document_alone() {
+    let tmp = tempdir("hashes");
+    let d = detailed(&tmp, &["node/exit"]);
+    let before = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+
+    // Two edits outside the plan: one to the campaign's own stage 1, and one to
+    // the map-pipeline document the plan is embedded FROM — the nearest thing to
+    // the plan that is not it.
+    common::patch_file(&d.campaign.join("world.json"), |v| {
+        v["content"]["seed"] = serde_json::json!(4242);
+    });
+    common::patch_file(&d.campaign.join("layout-graph.json"), |v| {
+        v["content"]["nodes"][0]["note"] = serde_json::json!("Reworded, and no geometry moved.");
+    });
+    let after = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    assert_eq!(
+        before, after,
+        "neither hash sees anything but the plan, the table and the engine"
+    );
+
+    // And the plan itself, which must move it.
+    common::patch_file(&d.campaign.join("site-plan.json"), |v| {
+        v["content"]["boxes"][0]["min"] = serde_json::json!([5, 8]);
+    });
+    let moved = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    assert_ne!(
+        moved.site_plan, before.site_plan,
+        "a plan edit moves the plan hash"
+    );
+    assert_ne!(
+        moved.blockout, before.blockout,
+        "and the massing derived from it moves too — which is why the blockout hash \
+         alone could never carry this gate"
+    );
+}
+
 /// **A bound place lights itself, and the existing gate judges it**
 /// (spec-0050 §3).
 ///

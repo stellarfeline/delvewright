@@ -522,10 +522,28 @@ fn answering_layer(frame: &Frame, s: &PlacedSeam) -> i64 {
     }
 }
 
-/// The class of face the piece must answer a seam with (spec-0050 §3's table),
-/// keyed to the geometry rather than chosen by anyone.
+/// The graph edge a seam allocates, when the graph has it.
+fn edge_of<'a>(c: &'a Campaign, s: &PlacedSeam) -> Option<&'a Edge> {
+    c.layout_graph
+        .as_ref()
+        .map(|g| &g.content)?
+        .edges
+        .iter()
+        .find(|e| e.id() == &s.edge)
+}
+
+/// **The class of face the piece must answer a seam with** — spec-0050 §3's
+/// table, keyed to the geometry rather than chosen by anyone.
+///
+/// It takes the graph EDGE rather than the campaign, and that is not tidying: one
+/// row of the table — a `barred` seam lying in the piece's own floor course — is
+/// reached by no site plan this repository ships, so with a `&Campaign` argument
+/// it could only be exercised by writing a whole campaign to reach one line. A
+/// function of a seam, a frame and an edge is a function `table_covers_every_row`
+/// can call directly, and a row nobody has checked is a row that is wrong the
+/// first time somebody authors it.
 fn required_face_class(
-    c: &Campaign,
+    edge: Option<&Edge>,
     s: &PlacedSeam,
     node: &NodeId,
     frame: &Frame,
@@ -542,13 +560,7 @@ fn required_face_class(
             }
         }
         "drop" => {
-            let Some(graph) = c.layout_graph.as_ref().map(|g| &g.content) else {
-                return vec!["walk"];
-            };
-            let Some(edge) = graph.edges.iter().find(|e| e.id() == &s.edge) else {
-                return vec!["walk"];
-            };
-            let Edge::Drop { falls, .. } = edge else {
+            let Some(Edge::Drop { falls, .. }) = edge else {
                 return vec!["walk"];
             };
             let leaving = match falls {
@@ -707,7 +719,7 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
                     face: dir_name(*out).to_string(),
                     cells: [frame.to_local(lo), frame.to_local(hi)],
                     rise: if &s.a == node { s.rise } else { -s.rise },
-                    answer_with: required_face_class(c, s, node, &frame)
+                    answer_with: required_face_class(edge_of(c, s), s, node, &frame)
                         .into_iter()
                         .map(str::to_string)
                         .collect(),
@@ -972,7 +984,7 @@ pub fn check(
         for (s, out) in &mine {
             binding.seams_required += 1;
             let (clo, chi) = answering_cells(&frame, s);
-            let want_classes = required_face_class(c, s, &row.place, &frame);
+            let want_classes = required_face_class(edge_of(c, s), s, &row.place, &frame);
             let hit = contract.faces.iter().position(|f| {
                 dir_of(&f.dir) == Some(*out) && {
                     let (flo, fhi) = face_world(&frame, f);
@@ -1293,4 +1305,121 @@ pub fn fully_detailed(c: &Campaign) -> bool {
     }
     let bound = delvewright_dsl::bound_places(c);
     graph.nodes.iter().all(|n| bound.contains(n.id.0.as_str()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use delvewright_dsl::EdgeId;
+    use delvewright_dsl::siteplan::Face;
+
+    fn a_box(node: &str, floor: i64) -> PlacedBox {
+        PlacedBox {
+            node: NodeId(node.into()),
+            foot: [0, 7, 0, 7],
+            floor,
+            clearance: 3,
+            open: false,
+        }
+    }
+
+    /// A seam of `class` on `face` of `a`, with its plane at `plane`.
+    fn a_seam(class: &'static str, face: Face, plane: i64, normal_axis: usize) -> PlacedSeam {
+        let flat = |v: i64| {
+            let mut c = [1i64; 3];
+            c[normal_axis] = v;
+            c
+        };
+        PlacedSeam {
+            edge: EdgeId("edge/way".into()),
+            class,
+            a: NodeId("node/a".into()),
+            b: NodeId("node/b".into()),
+            face,
+            normal_axis,
+            plane,
+            opening: (flat(plane), flat(plane)),
+            shared: (flat(plane), flat(plane)),
+            rise: 0,
+            stair_in: None,
+        }
+    }
+
+    /// **Every row of spec-0050 §3's table**, including the one no site plan in
+    /// this repository reaches.
+    ///
+    /// The table is the contract between a plan's seams and a piece's faces, and
+    /// a row nobody has exercised is a row that is wrong the first time somebody
+    /// authors it. The fixtures cover five of the six between them; this covers
+    /// all six from the geometry alone.
+    #[test]
+    fn the_class_table_answers_every_row() {
+        let upper = a_box("node/a", 64);
+        let f = Frame::of(&upper);
+        let a = NodeId("node/a".into());
+        let b = NodeId("node/b".into());
+
+        // `walk` → `walk`, from either side.
+        let s = a_seam("walk", Face::East, f.hi[0] + 1, 0);
+        assert_eq!(required_face_class(None, &s, &a, &f), ["walk"]);
+
+        // `stair`, this box hosts → `stair` or `walk`; the other box → `walk`.
+        let mut s = a_seam("stair", Face::East, f.hi[0] + 1, 0);
+        s.stair_in = Some(a.clone());
+        assert_eq!(required_face_class(None, &s, &a, &f), ["stair", "walk"]);
+        assert_eq!(required_face_class(None, &s, &b, &f), ["walk"]);
+
+        // `drop` → `drop` leaving, `walk` landing.
+        let s = a_seam("drop", Face::Down, f.lo[1], 1);
+        let edge = Edge::Drop {
+            id: EdgeId("edge/way".into()),
+            a: a.clone(),
+            b: b.clone(),
+            falls: Direction::AToB,
+            shortcut: false,
+            gating: None,
+        };
+        assert_eq!(required_face_class(Some(&edge), &s, &a, &f), ["drop"]);
+        assert_eq!(required_face_class(Some(&edge), &s, &b, &f), ["walk"]);
+
+        // `barred` in a VERTICAL party plane → `walk`: the bar stands in the
+        // whole's plane, beyond the piece.
+        let s = a_seam("barred", Face::East, f.hi[0] + 1, 0);
+        assert_ne!(
+            answering_layer(&f, &s),
+            s.plane,
+            "the plane is outside the frame"
+        );
+        assert_eq!(required_face_class(None, &s, &a, &f), ["walk"]);
+
+        // `barred` in THIS piece's own floor course → `barred`: the piece ships
+        // the gate's shut state, because that plane is the piece's. **This row is
+        // reached by no site plan in this repository**, which is why it is here.
+        let s = a_seam("barred", Face::Down, f.lo[1], 1);
+        assert_eq!(
+            answering_layer(&f, &s),
+            s.plane,
+            "the plane IS the floor course"
+        );
+        assert_eq!(required_face_class(None, &s, &a, &f), ["barred"]);
+    }
+
+    /// The answering layer is one of exactly two cells, and which one is a fact
+    /// about where the party plane lies relative to the frame — not a choice.
+    #[test]
+    fn the_answering_layer_is_the_plane_or_the_frame_face_nearest_it() {
+        let f = Frame::of(&a_box("node/a", 64));
+        for (axis, face) in [(0usize, Face::East), (1, Face::Up), (2, Face::South)] {
+            let beyond_high = a_seam("walk", face, f.hi[axis] + 1, axis);
+            assert_eq!(answering_layer(&f, &beyond_high), f.hi[axis]);
+            let beyond_low = a_seam("walk", face, f.lo[axis] - 1, axis);
+            assert_eq!(answering_layer(&f, &beyond_low), f.lo[axis]);
+            let inside = a_seam("walk", face, f.lo[axis], axis);
+            assert_eq!(
+                answering_layer(&f, &inside),
+                f.lo[axis],
+                "a plane inside the frame answers AT itself"
+            );
+        }
+    }
 }

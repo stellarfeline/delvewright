@@ -288,7 +288,7 @@ fn main() -> ExitCode {
             campaign_dir,
             place,
             all,
-        } => run_allocation(campaign_dir, place.as_deref(), *all, &cli.prefabs, cli.json),
+        } => run_allocation(campaign_dir, place.as_deref(), *all, cli.json),
         Command::Metrics { gym } => run_metrics(cli.json, gym.as_deref()),
         Command::Snapshot {
             campaign_dir,
@@ -2235,14 +2235,13 @@ fn print_one_diag(d: &Diagnostic, json: bool) {
 /// **Stdout carries the allocation and nothing else** on the success path, so an
 /// authoring loop can redirect it. What it prints is an input to nothing — see
 /// the note inside.
-fn run_allocation(
-    campaign_dir: &Path,
-    place: Option<&str>,
-    all: bool,
-    prefabs_dir: &Path,
-    json: bool,
-) -> ExitCode {
-    let _ = prefabs_dir;
+///
+/// It takes no prefab directory, and that is the signature saying what the verb
+/// is: an allocation is what the WHOLE hands a place, computed from the site plan
+/// and the metrics table. Nothing about it depends on which pieces exist, which
+/// is why it can be asked for before the piece is built — which is the only
+/// moment it is any use.
+fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: bool) -> ExitCode {
     let loaded = match load_campaign_dir(campaign_dir) {
         Ok(l) => l,
         Err(e) => {
