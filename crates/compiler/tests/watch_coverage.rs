@@ -221,3 +221,172 @@ fn the_verdict_is_deterministic() {
         assert_eq!(watch::check_tree(NS, &out, &ids(&["a", "b", "c"])), want);
     }
 }
+
+// --------------------------------------------------- DW0811, the refusal --
+//
+// `DW0810` above cannot refuse, and the reason is worth stating where the tests
+// are: nothing in a finished tree separates *the emitter meant to prove every
+// member and skipped some* from *the suite drives one exemplar by design*. Both
+// are a family with a watched member and an unwatched one, and eight families on
+// the gallery are honestly the second. The distinction lives in the emitter, so
+// the emitter registers a `Claim` over the plan's own authored list — and THAT
+// is a proof obligation the defect cannot discharge.
+
+fn claim(families: &'static [&'static str], declared: &[&str]) -> watch::Claim {
+    watch::Claim {
+        mechanic: "timed-gate",
+        families,
+        declared: declared.iter().map(|s| (*s).to_string()).collect(),
+    }
+}
+
+/// The motivating defect, as the refusal sees it: the emitter walked
+/// `first()`, so it WROTE three bodies and drove one. `declared` comes from the
+/// plan and does not shrink when the walk stops early, which is exactly why the
+/// claim can refuse where the byte-read warning can only report.
+#[test]
+fn a_claim_the_suite_only_partly_discharges_is_dw0811() {
+    let out = tree(
+        &[
+            "tgate_open_side_door",
+            "tgate_open_mid_door",
+            "tgate_open_inner_door",
+        ],
+        &[("souls_timed_gate", "function g:tgate_open_side_door\n")],
+    );
+    let claims = [claim(
+        &["tgate_open_"],
+        &["side_door", "mid_door", "inner_door"],
+    )];
+    let (binding, breaches) = watch::check_claims(NS, &out, &claims);
+
+    assert_eq!(binding.claims, 1);
+    assert_eq!(binding.declared_objects, 3);
+    assert_eq!(binding.bodies_judged, 3);
+    assert_eq!(binding.bodies_watched, 1);
+    assert_eq!(
+        breaches.iter().map(|b| &b.function).collect::<Vec<_>>(),
+        ["tgate_open_inner_door", "tgate_open_mid_door"],
+        "every undriven body is named, not just the next one"
+    );
+
+    let d = watch::claim_finding(&binding, &breaches).expect("DW0811 fires");
+    assert_eq!(d.code, watch::DW_CLAIM_NOT_DISCHARGED);
+    assert_eq!(
+        d.severity,
+        delvewright_dsl::Severity::Error,
+        "refusal tier, not a warning"
+    );
+    assert!(
+        d.message.contains("tgate_open_inner_door") && d.message.contains("tgate_open_mid_door"),
+        "the message names every undischarged member: {}",
+        d.message
+    );
+}
+
+/// The repaired emitter discharges its claim, and the binding is stated rather
+/// than assumed: seven bodies judged, seven driven.
+#[test]
+fn a_claim_the_suite_discharges_whole_is_silent() {
+    let out = tree(
+        &[
+            "tgate_open_a",
+            "tgate_open_b",
+            "tgate_close_a",
+            "tgate_close_b",
+        ],
+        &[
+            (
+                "souls_timed_gate_a",
+                "function g:tgate_open_a\nfunction g:tgate_close_a\n",
+            ),
+            (
+                "souls_timed_gate_b",
+                "function g:tgate_open_b\nfunction g:tgate_close_b\n",
+            ),
+        ],
+    );
+    let claims = [claim(&["tgate_open_", "tgate_close_"], &["a", "b"])];
+    let (binding, breaches) = watch::check_claims(NS, &out, &claims);
+    assert_eq!(binding.bodies_judged, 4);
+    assert_eq!(binding.bodies_watched, 4);
+    assert!(breaches.is_empty());
+    assert!(watch::claim_finding(&binding, &breaches).is_none());
+}
+
+/// A family emitted for a SUBSET of the declared list by design is not a
+/// breach. `tgate_disarm_<id>` exists only for the gates that declare a disarm,
+/// so the rule is over the body that was WRITTEN — written for a declared
+/// object, therefore driven — and never over one that was never meant to exist.
+/// Without this the refusal would red every campaign with an optional
+/// affordance, which is how a correct rule gets weakened to get green.
+#[test]
+fn a_body_that_was_never_written_is_not_a_breach() {
+    let out = tree(
+        &["tgate_open_a", "tgate_open_b", "tgate_disarm_b"],
+        &[(
+            "t",
+            "function g:tgate_open_a\nfunction g:tgate_open_b\nfunction g:tgate_disarm_b\n",
+        )],
+    );
+    let claims = [claim(&["tgate_open_", "tgate_disarm_"], &["a", "b"])];
+    let (binding, breaches) = watch::check_claims(NS, &out, &claims);
+    assert_eq!(
+        binding.bodies_judged, 3,
+        "`tgate_disarm_a` was never emitted, so there is nothing to drive"
+    );
+    assert!(breaches.is_empty());
+}
+
+/// A campaign that declares none of the mechanic binds to nothing, and says so.
+/// This is the one green that must never read as a pass on its own — the ledger
+/// carries `bodies_judged: 0` so a zero binding is visible rather than absorbed.
+#[test]
+fn a_claim_over_an_empty_declaration_binds_to_nothing_and_states_it() {
+    let out = tree(&["setup"], &[("t", "function g:setup\n")]);
+    let claims = [claim(&["tgate_open_"], &[])];
+    let (binding, breaches) = watch::check_claims(NS, &out, &claims);
+    assert_eq!(binding.claims, 1);
+    assert_eq!(binding.declared_objects, 0);
+    assert_eq!(binding.bodies_judged, 0);
+    assert!(breaches.is_empty());
+    let ledger = binding.to_json(&breaches);
+    assert_eq!(ledger["bodies_judged"], 0);
+    assert_eq!(
+        ledger["examined"], 0,
+        "and it is spelled the way `check-gallery-coverage.py` already reds on, so a claim \
+         that stops binding on the gallery is a red rather than a number nobody reads"
+    );
+}
+
+/// Mentioning a body still is not driving it — the refusal reads the same
+/// `function <ns>:<name>` invocation the warning does, from the same helper, so
+/// the two gates can never disagree about what the tree contains.
+#[test]
+fn a_mention_does_not_discharge_a_claim() {
+    let out = tree(
+        &["tgate_open_a", "tgate_open_b"],
+        &[(
+            "t",
+            "function g:tgate_open_a\n# tgate_open_b is covered elsewhere, honest\n",
+        )],
+    );
+    let claims = [claim(&["tgate_open_"], &["a", "b"])];
+    let (_, breaches) = watch::check_claims(NS, &out, &claims);
+    assert_eq!(breaches.len(), 1);
+    assert_eq!(breaches[0].function, "tgate_open_b");
+}
+
+/// Determinism (ADR-0006): the breach list is a function of the tree alone.
+#[test]
+fn the_claim_verdict_is_deterministic() {
+    let out = tree(
+        &["tgate_open_a", "tgate_open_b", "tgate_open_c"],
+        &[("t", "function g:tgate_open_a\n")],
+    );
+    let claims = [claim(&["tgate_open_"], &["a", "b", "c"])];
+    let want = watch::check_claims(NS, &out, &claims);
+    for _ in 0..8 {
+        assert_eq!(watch::check_claims(NS, &out, &claims), want);
+    }
+}

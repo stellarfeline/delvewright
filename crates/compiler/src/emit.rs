@@ -1365,11 +1365,37 @@ pub fn build_with_warnings(
     // it guards emitters not yet written.
     let watch_ids = crate::watch::declared_ids(input_bytes);
     let (watch_binding, unwatched) = crate::watch::check_tree(ns, &out, &watch_ids);
+
+    // ---- undischarged per-object watch claims (DW0811) ----
+    // The refusal half, and it is drawn one step in from `DW0810` on purpose.
+    // Nothing in the finished tree separates "the emitter meant to prove every
+    // member and skipped some" from "the suite drives one exemplar by design" —
+    // eight standing gallery families are honestly the second — so a refusal read
+    // off the bytes alone would need a per-family allowlist, which is an opt-out
+    // the defect can supply. The distinction lives in the EMITTER, so the emitter
+    // registers its claim over the plan's own authored list and the claim is
+    // judged against the shipped suite: `declared` cannot shrink when the walk
+    // skips members, and `invoked` cannot be faked because it is read off bytes.
+    let watch_claims = [timed_gate_watch_claim(plan)];
+    let (claim_binding, breaches) = crate::watch::check_claims(ns, &out, &watch_claims);
+
     put_json(
         &mut out,
         "validation/watch-ledger.json",
         &watch_binding.to_json(&unwatched),
     );
+    put_json(
+        &mut out,
+        "validation/watch-claims.json",
+        &claim_binding.to_json(&breaches),
+    );
+
+    if let Some(d) = crate::watch::claim_finding(&claim_binding, &breaches) {
+        return Err(BuildFailure::Diagnostic {
+            code: crate::watch::DW_CLAIM_NOT_DISCHARGED,
+            message: d.message,
+        });
+    }
     warnings.extend(crate::watch::finding(&watch_binding, &unwatched));
 
     // ---- score-seeding integrity (DW0495) ----
@@ -14878,6 +14904,22 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
         emit_one_timed_gate_packtest(plan, g, out);
         emit_timed_gate_crush_packtest(plan, g, out);
         emit_timed_gate_disarm_packtest(plan, g, out);
+    }
+}
+
+/// The claim the loop above makes, judged against the shipped bytes by
+/// `DW0811`. It is written from `plan.timed_gates` and NOT from whatever the
+/// loop happened to walk, which is the whole point: a walk that stops at
+/// `first()` still declares three gates here, so the refusal fires on exactly
+/// the defect that a comment asking the next author to loop would not have
+/// stopped. `DW0810` reads the same tree with no mechanic named at all and
+/// stays a warning; this is the half that can refuse, because the emitter's own
+/// claim is a proof obligation the defect cannot discharge.
+fn timed_gate_watch_claim(plan: &Plan) -> crate::watch::Claim {
+    crate::watch::Claim {
+        mechanic: "timed-gate",
+        families: &["tgate_open_", "tgate_close_", "tgate_disarm_"],
+        declared: plan.timed_gates.iter().map(|g| g.safe.clone()).collect(),
     }
 }
 

@@ -1,6 +1,11 @@
-//! Runtime-watch coverage of per-object bodies: when the generated PackTest
-//! suite drives ONE declared object's own emitted body, it must drive **every**
-//! sibling in that family (`DW0810`).
+//! Runtime-watch coverage of per-object bodies, in two tiers.
+//!
+//! * `DW0810`, a **warning**, read off the shipped bytes with no mechanic named
+//!   anywhere: when the generated PackTest suite drives ONE declared object's
+//!   own emitted body, it must drive **every** sibling in that family.
+//! * `DW0811`, a **refusal**, judged against a claim the emitter registers over
+//!   the plan's own authored list. See the `claims` section at the foot of this
+//!   file for why the refusal cannot be drawn on the byte read alone.
 //!
 //! ## The defect class this closes
 //!
@@ -206,13 +211,15 @@ fn collect_ids(v: &serde_json::Value, ids: &mut BTreeSet<String>) {
     }
 }
 
-/// Judge the finished tree. Returns what was examined and every unwatched
-/// sibling, both in deterministic order.
-pub fn check_tree(
+/// The two facts every judgement here rests on, read once off the finished
+/// tree: the campaign functions that exist, and the ones the generated suite
+/// calls. Both readings are shared by [`check_tree`] and [`check_claims`] on
+/// purpose — a second reading would be a second calibration, and two gates that
+/// disagree about what the tree contains is worse than either.
+fn emitted_and_invoked(
     ns: &str,
     out: &BTreeMap<String, Vec<u8>>,
-    ids: &BTreeSet<String>,
-) -> (WatchBinding, Vec<Unwatched>) {
+) -> (BTreeSet<String>, BTreeSet<String>) {
     let fn_prefix = format!("datapack/data/{ns}/function/");
     let suite_prefix = format!("packtest-datapack/data/{ns}/");
 
@@ -250,6 +257,17 @@ pub fn check_tree(
             }
         }
     }
+    (functions, invoked)
+}
+
+/// Judge the finished tree. Returns what was examined and every unwatched
+/// sibling, both in deterministic order.
+pub fn check_tree(
+    ns: &str,
+    out: &BTreeMap<String, Vec<u8>>,
+    ids: &BTreeSet<String>,
+) -> (WatchBinding, Vec<Unwatched>) {
+    let (functions, invoked) = emitted_and_invoked(ns, out);
 
     // Decompose each function into (family, object id), longest id wins.
     let mut families: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
@@ -369,6 +387,208 @@ pub fn finding(
             binding.campaign_functions,
             binding.invoked,
             binding.unwatched_families,
+        ),
+    ))
+}
+
+// ---------------------------------------------------------------- claims --
+//
+// `DW0810` above is read off the bytes and names no mechanic, which is what
+// makes it general — and is also exactly why it can only be a warning. Nothing
+// in the finished tree distinguishes *the emitter meant to prove every member
+// and skipped some* from *the suite deliberately drives one exemplar*: both are
+// a family with a watched member and an unwatched one, and eight families on
+// the engine's own gallery are honestly the second. A refusal drawn on that
+// reading would either red eight standing families or need a per-family
+// allowlist, and an allowlist is an opt-out the defect itself can supply.
+//
+// So the refusal is drawn where the distinction actually lives: in the emitter.
+// A suite emitter that walks a declared list to write per-object templates
+// **registers a [`Claim`] over that list**, and the claim is then judged against
+// the shipped bytes. The two halves cannot both be faked by the defect:
+//
+// * `declared` comes from the plan's own authored list, so skipping members
+//   does not shrink it — `plan.timed_gates.first()` still registers three;
+// * `invoked` is read off the emitted suite, never from the emitter's own
+//   bookkeeping, so an emitter cannot report coverage it did not write.
+//
+// The stated limit, because a silent one is worse than a narrow one: an emitter
+// that registers no claim at all is outside this refusal. That escape is not
+// free — deleting a registration is a visible deletion, `DW0810` still names
+// every sibling it leaves unwatched, and the gallery's warning ledger is a
+// set-equality that reds on the new row. What the claim buys is that the
+// mechanic which HAS been proven per object can never quietly stop being.
+
+/// `DW0811`: a suite emitter claimed per-object runtime proof over a declared
+/// list, and the shipped suite drives only some of the bodies it wrote for that
+/// list. Refusal tier — the emitter's own claim is the proof obligation, and a
+/// strict subset does not discharge it.
+pub const DW_CLAIM_NOT_DISCHARGED: DwCode = DwCode::every_version("DW0811");
+
+/// One suite emitter's claim that it proves a declared list **per object**.
+///
+/// Registered beside the loop that satisfies it, over the same authored list
+/// the loop walks. Emitting for a subset of `declared` is the breach.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Claim {
+    /// The mechanic as an author names it, for the message only.
+    pub mechanic: &'static str,
+    /// The emitted body families this claim covers, e.g. `tgate_open_`.
+    pub families: &'static [&'static str],
+    /// Every declared object's function-safe id, from the plan's authored list.
+    pub declared: BTreeSet<String>,
+}
+
+/// One declared object whose emitted body the claiming suite does not drive.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ClaimBreach {
+    /// The claiming mechanic.
+    pub mechanic: String,
+    /// The body family, e.g. `tgate_open_`.
+    pub family: String,
+    /// The declared object's safe id.
+    pub id: String,
+    /// The emitted body nothing in the suite calls.
+    pub function: String,
+}
+
+/// What the claim check examined. Stated for the same reason every other
+/// binding here is: a refusal that judged nothing is vacuous, not a pass.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ClaimBinding {
+    /// Claims registered by the emitters.
+    pub claims: usize,
+    /// Declared objects across every claim.
+    pub declared_objects: usize,
+    /// Emitted bodies those objects own, across every claimed family — the
+    /// number this refusal actually judged.
+    pub bodies_judged: usize,
+    /// Of those, the ones the suite drives.
+    pub bodies_watched: usize,
+}
+
+impl ClaimBinding {
+    /// Bodies this refusal actually judged. Zero on a campaign that declares
+    /// none of the claimed mechanic is honest; zero on one that declares it
+    /// means the refusal stopped reaching what the document plainly writes.
+    pub fn examined(&self) -> usize {
+        self.bodies_judged
+    }
+
+    /// Render for `validation/watch-claims.json`.
+    ///
+    /// Its own file rather than a section of the watch ledger, and the reason is
+    /// the whole point: `tools/check-gallery-coverage.py` reds on a top-level
+    /// `examined: 0` in any `validation/*.json`, and it reads TOP-LEVEL keys
+    /// only. Nested beside the `DW0810` numbers this count would have been
+    /// written, committed, diffed — and never once judged, which is the UNRUN
+    /// shape wearing a ledger's clothes. Hung off an invocation that already
+    /// exists, a claim that quietly stops binding on the gallery is a red rather
+    /// than a number nobody reads.
+    pub fn to_json(&self, breaches: &[ClaimBreach]) -> serde_json::Value {
+        serde_json::json!({
+            "examined": self.examined(),
+            "claims": self.claims,
+            "declared_objects": self.declared_objects,
+            "bodies_judged": self.bodies_judged,
+            "bodies_watched": self.bodies_watched,
+            "breaches": breaches
+                .iter()
+                .map(|b| {
+                    serde_json::json!({
+                        "mechanic": b.mechanic,
+                        "family": b.family,
+                        "id": b.id,
+                        "function": b.function,
+                    })
+                })
+                .collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// Judge every registered claim against the shipped bytes.
+///
+/// A body is judged only when it EXISTS: a family that is emitted for a subset
+/// of the declared list by design — a gate's `tgate_disarm_<id>` exists only for
+/// the gates that declare a disarm — must not be read as a breach for the ones
+/// that were never meant to have one. What is judged is the body that was
+/// written, and the rule over it is total: **written for a declared object,
+/// therefore driven.**
+pub fn check_claims(
+    ns: &str,
+    out: &BTreeMap<String, Vec<u8>>,
+    claims: &[Claim],
+) -> (ClaimBinding, Vec<ClaimBreach>) {
+    let (functions, invoked) = emitted_and_invoked(ns, out);
+    let mut binding = ClaimBinding {
+        claims: claims.len(),
+        ..ClaimBinding::default()
+    };
+    let mut breaches = Vec::new();
+    for c in claims {
+        binding.declared_objects += c.declared.len();
+        for family in c.families {
+            for id in &c.declared {
+                let f = format!("{family}{id}");
+                if !functions.contains(&f) {
+                    continue;
+                }
+                binding.bodies_judged += 1;
+                if invoked.contains(&f) {
+                    binding.bodies_watched += 1;
+                } else {
+                    breaches.push(ClaimBreach {
+                        mechanic: c.mechanic.to_string(),
+                        family: (*family).to_string(),
+                        id: id.clone(),
+                        function: f,
+                    });
+                }
+            }
+        }
+    }
+    breaches.sort();
+    (binding, breaches)
+}
+
+/// The `DW0811` refusal naming every undischarged claim, or `None`.
+pub fn claim_finding(
+    binding: &ClaimBinding,
+    breaches: &[ClaimBreach],
+) -> Option<delvewright_dsl::Diagnostic> {
+    if breaches.is_empty() {
+        return None;
+    }
+    let mechanics: BTreeSet<&str> = breaches.iter().map(|b| b.mechanic.as_str()).collect();
+    let rows: Vec<String> = breaches
+        .iter()
+        .map(|b| format!("`{}` (declared `{}`, {})", b.function, b.id, b.mechanic))
+        .collect();
+    Some(delvewright_dsl::Diagnostic::error(
+        DW_CLAIM_NOT_DISCHARGED,
+        "build",
+        "packtest watch claim",
+        format!(
+            "the suite emitter for {} claims per-object runtime proof over the campaign's \
+             declared list, and the shipped suite drives only {} of the {} body/bodies it wrote \
+             for that list. {} declared object(s) therefore ship with a compile-time proof and \
+             no runtime proof at all: {}. A per-object body is the object's own code — its own \
+             region, blocks and judgement — so driving one member proves nothing about the next; \
+             the level that exposed this shipped a LETHAL timed gate, third of three, with a \
+             green suite throughout. Drive every member of the declared list, not the first. \
+             (Judged {} claim(s) over {} declared object(s).)",
+            mechanics
+                .iter()
+                .map(|m| format!("`{m}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            binding.bodies_watched,
+            binding.bodies_judged,
+            breaches.len(),
+            rows.join("; "),
+            binding.claims,
+            binding.declared_objects,
         ),
     ))
 }
