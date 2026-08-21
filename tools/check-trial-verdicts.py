@@ -33,6 +33,10 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+from lib import mdtable  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRIALS = ROOT / "docs" / "trials"
 
@@ -44,21 +48,37 @@ BOUNDS_CELL = re.compile(r"^(R\d+)\s+run\s+(\d+)$")
 INSTRUMENT_BOUND = re.compile(r"^instrument-bound\s+—\s+\S.*$")
 
 
-def cells(line):
-    """The cells of a markdown table row, or None if the line is not one."""
-    s = line.strip()
-    if not s.startswith("|") or not s.endswith("|"):
-        return None
-    parts = [c.strip() for c in s[1:-1].split("|")]
-    if all(set(c) <= set("-: ") for c in parts):
-        return None  # the ---|--- separator
-    return parts
+ROW_SHAPED = re.compile(r"^\s{0,3}\|")
+
+
+def table_rows(text):
+    """`(line number -> cells, detached rows)` for one trial record.
+
+    A verdict and the declaration that bounds it are both read off tables, and a
+    blank line ends a pipe table — so a row under one renders as a paragraph of
+    literal pipe characters. That is the whole failure this gate exists to
+    prevent, arriving through its own parser: a bounds row a reader cannot see
+    used to satisfy the declaration for a verdict three paragraphs away. The
+    tables are therefore read by `tools/lib/mdtable.py`, and a row no table
+    holds is a problem rather than an answer.
+    """
+    rows, detached = mdtable.rows_matching(text, ROW_SHAPED)
+    return {r.lineno: list(r.cells) for r in rows}, detached
 
 
 def audit(path):
     """(problems, verdict_pairs, bounds_rows) for one trial record."""
     problems = []
-    lines = path.read_text(encoding="utf-8").splitlines()
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    by_line, detached = table_rows(text)
+    for lineno, line in detached:
+        problems.append(
+            f"{path.name}:{lineno} is a table row that no table contains — a "
+            f"blank line above it ended the table, so the record shows it as a "
+            f"paragraph of literal pipe characters and it declares nothing to a "
+            f"later reader: {line[:90]}"
+        )
 
     runs = [m.group(1) for line in lines if (m := RUN_HEADING.match(line))]
     # A judged verdict is (rubric id, THE RUN WHOSE SECTION IT IS IN) — not the
@@ -72,12 +92,12 @@ def audit(path):
     in_bounds = False
     current_run = None
 
-    for line in lines:
+    for n, line in enumerate(lines, start=1):
         if line.startswith("## "):
             in_bounds = bool(BOUNDS_HEADING.match(line))
             m = RUN_HEADING.match(line)
             current_run = m.group(1) if m else None
-        row = cells(line)
+        row = by_line.get(n)
         if row is None or not row:
             continue
         head = RUBRIC_CELL.match(row[0])

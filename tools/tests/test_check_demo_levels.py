@@ -232,6 +232,101 @@ def test_a_flag_on_a_crate_with_no_binary_is_out_of_scope(checker, tmp_path, cap
     assert "OK" in capsys.readouterr().out
 
 
+# ------------------------------------------------- where the table ends ----
+# The gate counts rows off a pipe table, so where that table ENDS decides what
+# the obligation means. A blank line ends one — CommonMark's GFM extension runs
+# a table to "the first empty line, or beginning of another block-level
+# structure" — and the parse this replaced ignored blank lines entirely, so a
+# detached row was an entry for the gate and a paragraph of literal pipes for
+# every reader. These bind the parse to the renderer's rule in both directions:
+# a detached row must be named, and it must not pay for the demand above.
+def test_a_blank_line_ends_the_table_as_the_renderer_ends_it(checker, tmp_path):
+    write_local(tmp_path, {"docs/demo-levels.md": queue([ROW_TRAPS, "\n", ROW_CAMERA])})
+    checker.ROOT = tmp_path
+    rows, orphans = checker.parse_queue(None)
+    assert [cells[0] for cells in rows] == ["Traps (0011)"]
+    assert len(orphans) == 1, orphans
+    lineno, text = orphans[0]
+    # 1 title, 2 blank, 3 heading, 4 blank, 5 header, 6 delimiter, 7 row,
+    # 8 blank, 9 the detached row — the finding names a line a reader can open.
+    assert lineno == 9, orphans
+    assert text.startswith("| Author-aimed review camera")
+
+
+def test_a_heading_ends_the_table_even_with_no_blank_line(checker, tmp_path):
+    doc = (
+        "# Demo levels\n\n## Mechanic demos\n\n"
+        "| Mechanic (spec) | Demo concept | Status |\n|---|---|---|\n"
+        + ROW_TRAPS
+        + "## Later\n\ntail\n"
+    )
+    write_local(tmp_path, {"docs/demo-levels.md": doc})
+    checker.ROOT = tmp_path
+    rows, orphans = checker.parse_queue(None)
+    assert [cells[0] for cells in rows] == ["Traps (0011)"]
+    assert orphans == []
+
+
+def test_a_detached_row_is_red_and_names_its_line(checker, tmp_path, capsys, monkeypatch):
+    build(tmp_path, MAIN_ONE_FLAG, [ROW_TRAPS], MAIN_ONE_FLAG, [ROW_TRAPS, "\n", ROW_CAMERA])
+    checker.ROOT = tmp_path
+    monkeypatch.setattr("sys.argv", ["check-demo-levels.py"])
+    assert checker.main() == 1
+    out = capsys.readouterr().out
+    assert "docs/demo-levels.md:9 is a table row that no table contains" in out
+    assert "Rows no table contains: 1 here, 0 at origin/main" in out
+
+
+def test_a_detached_row_does_not_pay_for_a_new_flag(checker, tmp_path, capsys, monkeypatch):
+    """The whole point. A row the renderer drops must not satisfy the demand,
+    or the obligation is met in the letter and void in the reading — which is
+    one-directional falsifiability, the mode this gate is supposed to be free
+    of. Both findings must appear: the row is unreadable AND the flag is
+    undocumented."""
+    build(tmp_path, MAIN_ONE_FLAG, [ROW_TRAPS], MAIN_TWO_FLAGS, [ROW_TRAPS, "\n", ROW_CAMERA])
+    checker.ROOT = tmp_path
+    monkeypatch.setattr("sys.argv", ["check-demo-levels.py"])
+    assert checker.main() == 1
+    out = capsys.readouterr().out
+    assert "is a table row that no table contains" in out
+    assert "--view  (delve-tool)" in out
+    assert "adds no row to docs/demo-levels.md" in out
+    assert "Queue: 1 row(s) here, 1 at origin/main" in out
+
+
+def test_the_same_row_attached_is_green(checker, tmp_path, capsys, monkeypatch):
+    """The other direction: the identical row, one blank line shorter, is an
+    entry — so the red above is about the blank line and nothing else."""
+    build(tmp_path, MAIN_ONE_FLAG, [ROW_TRAPS], MAIN_TWO_FLAGS, [ROW_TRAPS, ROW_CAMERA])
+    checker.ROOT = tmp_path
+    monkeypatch.setattr("sys.argv", ["check-demo-levels.py"])
+    assert checker.main() == 0
+    assert "Rows no table contains: 0 here, 0 at origin/main" in capsys.readouterr().out
+
+
+def test_a_delimiter_row_that_does_not_match_the_header_opens_no_table(checker, tmp_path):
+    """GFM: a delimiter row whose cell count differs from the header's makes no
+    table at all. The parse must agree loudly — every line becomes a finding —
+    rather than quietly keeping the rows a renderer would not draw."""
+    doc = (
+        "# Demo levels\n\n## Mechanic demos\n\n"
+        "| Mechanic (spec) | Demo concept | Status |\n|---|---|\n" + ROW_TRAPS + "\n"
+    )
+    write_local(tmp_path, {"docs/demo-levels.md": doc})
+    checker.ROOT = tmp_path
+    rows, orphans = checker.parse_queue(None)
+    assert rows == []
+    assert len(orphans) == 3, orphans
+
+
+def test_the_live_queue_has_no_detached_rows(checker):
+    """Bound to the real document, not a fixture: this is the assertion the
+    external review's nit would have failed."""
+    rows, orphans = checker.parse_queue(None)
+    assert orphans == [], orphans
+    assert len(rows) >= 30, len(rows)
+
+
 # ------------------------------------------------------------------- rot ----
 def test_a_row_citing_a_dead_dw_code_is_red(checker, tmp_path, capsys, monkeypatch):
     row = "| Traps (0011) | shows `DW0999` | pending |\n"
