@@ -94,7 +94,10 @@ pub const DW_FLOOR_UNCOVERED: DwCode = DwCode::every_version("DW0477");
 /// The vanilla player's `minecraft:max_health` base value. The DSL exposes no
 /// player-attribute surface at all, so this is not a default — it is the only
 /// value a delve can ship.
-pub const PLAYER_MAX_HEALTH: f64 = 20.0;
+///
+/// One definition, in the metrics table (spec-0049 §2), which is also where the
+/// survivable-fall figure derives from it.
+pub use delvewright_dsl::metrics::PLAYER_MAX_HEALTH;
 
 /// The vanilla player's `minecraft:attack_speed` base value, which a held
 /// weapon's (negative) `attack_speed` modifier subtracts from. Used only to put

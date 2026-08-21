@@ -247,8 +247,10 @@ const RH_ROSTER: &str = "dw_rh_roster";
 const RH_RAY_STEP: &str = "0.25";
 /// Raycast step budget.
 const RH_RAY_STEPS: i32 = 256;
-/// Player eye height in milli-blocks (vanilla standing eye offset, 1.62).
-const RH_EYE_MB: i32 = 1620;
+/// Player eye height in milli-blocks — the metrics table's figure (spec-0049 §2)
+/// scaled into the integer units the emitted commands do their arithmetic in,
+/// rather than a fourth site that happened to spell 1.62 correctly.
+const RH_EYE_MB: i32 = (delvewright_dsl::metrics::PLAYER_EYE_HEIGHT * 1000.0) as i32;
 /// Duration clamp for `dw.faster` / `dw.slower` (seconds), spec-0019 §3.
 const RH_MIN_SECONDS: i32 = 2;
 /// Upper duration clamp.
@@ -831,4 +833,18 @@ fn put_json(out: &mut BuildOutput, path: &str, value: &serde_json::Value) {
     let mut bytes = serde_json::to_vec_pretty(value).expect("json serializes");
     bytes.push(b'\n');
     out.insert(path.to_string(), bytes);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The eye height reaches the emitted commands as an integer, and the scaling
+    /// that gets it there is a truncating float cast — so the one thing worth
+    /// pinning is that it truncates to the figure the overlay has always emitted
+    /// rather than to the one below it.
+    #[test]
+    fn the_eye_height_scales_into_milli_blocks_without_losing_a_unit() {
+        assert_eq!(RH_EYE_MB, 1620);
+    }
 }
