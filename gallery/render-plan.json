@@ -34,6 +34,26 @@
     },
     {
       "area": "area/hall",
+      "id": "gate/hall/timed_door_inner/a",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/timed_door_inner/b",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/timed_door_mid/a",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/timed_door_mid/b",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
       "id": "interact/press_the_case",
       "kind": "interact"
     },
@@ -175,11 +195,6 @@
     {
       "area": "area/hall",
       "id": "pov/leg3/wp7",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg3/wp8",
       "kind": "pov"
     },
     {

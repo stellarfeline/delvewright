@@ -1,21 +1,6 @@
 {
   "added": [],
-  "changed": [
-    "easy.en:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
-    "easy.en:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction",
-    "hard.en:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
-    "hard.en:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction",
-    "ocean-horizon.en:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
-    "ocean-horizon.en:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction",
-    "primary.en:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
-    "primary.en:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction",
-    "primary.zh-cn:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
-    "primary.zh-cn:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction",
-    "void-horizon.en:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
-    "void-horizon.en:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction"
-  ],
-  "classes": {
-    "PackTest": 12
-  },
+  "changed": [],
+  "classes": {},
   "removed": []
 }
