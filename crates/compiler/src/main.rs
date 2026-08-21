@@ -111,7 +111,16 @@ enum Command {
     /// (facts of the pinned game) and the building half (this project's
     /// standards, each with its calibration state), on stdout; the table's
     /// self-consistency verdict and its binding counts on stderr.
-    Metrics,
+    Metrics {
+        /// Generate the metrics gym (spec-0049 §2.3) into this directory: a
+        /// site-plan campaign built FROM the table, one place per rung of the
+        /// size-class ladder at each of its bounds, every standard opening, both
+        /// stair pitches and a designed fall at the drop policy's cap. Walking
+        /// it is what retires `DW0813`. Nothing in it is authored geometry — it
+        /// compiles through the ordinary derivation.
+        #[arg(long, value_name = "DIR")]
+        gym: Option<PathBuf>,
+    },
     /// Draft-render one frame of the assembled world + a scene manifest
     /// (spec-0015: the visual authoring loop). Stops after placement +
     /// assembly — it never emits a datapack.
@@ -255,7 +264,7 @@ fn main() -> ExitCode {
         }
         Command::Fmt { paths, check } => run_fmt(paths, *check, cli.json),
         Command::Schema { stage } => run_schema(stage),
-        Command::Metrics => run_metrics(cli.json),
+        Command::Metrics { gym } => run_metrics(cli.json, gym.as_deref()),
         Command::Snapshot {
             campaign_dir,
             camera,
@@ -2223,7 +2232,7 @@ fn run_schema(stage: &str) -> ExitCode {
 /// table is engine data, so a table that contradicts itself is a defect in
 /// `dsl::metrics` and the person who has to act on it is whoever is holding the
 /// compiler.
-fn run_metrics(json: bool) -> ExitCode {
+fn run_metrics(json: bool, gym_dir: Option<&std::path::Path>) -> ExitCode {
     use delvewright_dsl::metrics::{Metrics, export};
 
     let table = Metrics::table();
@@ -2271,6 +2280,38 @@ fn run_metrics(json: bool) -> ExitCode {
             println!("{}", serde_json::json!(d));
         } else {
             eprintln!("{} [warning] {}: {}", d.code, d.stage, d.message);
+        }
+    }
+
+    // The gym, generated FROM the table this run just exported (spec-0049 2.3).
+    // It is written where the caller asks and never into this repository: a
+    // generated campaign is content, and the engine ships the generator the way
+    // it ships a prefab generator rather than the prefabs.
+    if let Some(dir) = gym_dir {
+        let gym = delvewright_compiler::gym::generate(&table, "metrics-gym");
+        if let Err(e) = delvewright_compiler::gym::write(&gym, dir) {
+            eprintln!(
+                "delvec metrics --gym: cannot write into {}: {e}",
+                dir.display()
+            );
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+        eprintln!(
+            "metrics gym binding: {d} document(s) written to {p}; {b} bay(s), {s} seam(s); {r} of \
+             the {t} building metric(s) instantiated.",
+            d = gym.documents.len(),
+            p = dir.display(),
+            b = gym.bays,
+            s = gym.seams,
+            r = gym.read.len(),
+            t = gym.entries,
+        );
+        if let Some(d) = gym.unwalked(&table) {
+            if json {
+                println!("{}", serde_json::json!(d));
+            } else {
+                eprintln!("{} [warning] {}: {}", d.code, d.stage, d.message);
+            }
         }
     }
 

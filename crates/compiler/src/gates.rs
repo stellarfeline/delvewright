@@ -38,6 +38,17 @@ pub const DW_SEAL_HINT_CONFLICT: DwCode = DwCode::every_version("DW0423");
 pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnostic> {
     let mut d = Vec::new();
     let diag = |anchor: &str, path: String| -> Option<Diagnostic> {
+        // A DERIVED seam gate declares its block in the derivation, not in prefab
+        // metadata — a site-plan campaign has no prefab to ask. Asking only the
+        // prefab registry made this check measure a smaller world than the
+        // campaign has: it refused a `shortcut` naming the very
+        // `anchor/seam-<edge>` the derivation seals, and nothing was red, because
+        // a check resolving against a truncated input refuses CONTENT. The
+        // question is "can the compiler fill and clear this", and here it
+        // demonstrably can — the block is the one the derivation writes.
+        if delvewright_dsl::synthesized_gate_block(c, anchor).is_some() {
+            return None;
+        }
         // `Some(true)` = every prefab providing this gate anchor declares a block;
         // `Some(false)` = a region-provider omits `block`; `None` = not a gate.
         if prefabs.gate_anchor_block(anchor) == Some(true) {
