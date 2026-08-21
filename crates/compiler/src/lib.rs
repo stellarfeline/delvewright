@@ -97,6 +97,7 @@ pub mod textfit;
 pub mod timeline;
 pub mod traversal;
 pub mod view;
+pub mod watch;
 pub mod waypoints;
 pub mod ways;
 pub mod wrongside;
