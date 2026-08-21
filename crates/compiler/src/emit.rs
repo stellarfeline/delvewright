@@ -15412,16 +15412,37 @@ fn emit_class_apply_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// The assertion is deliberately the one that cannot pass vacuously. On 1.21.11 a
 /// function with a single invalid line is refused **in its entirety**, so a
 /// `talk_` body naming a dialog id, a bark function or an advancement that does
-/// not resolve runs NONE of its lines — and the two reads below are exactly the
-/// two the body's own first two lines produce. A green here is the body loading
-/// and running on the real server; nothing weaker is asserted, and in particular
-/// the cast clause INDEX is not, because `cast_<npc>` can only ever set a value
-/// it has a clause for and an assertion on its range is true by construction.
+/// not resolve runs NONE of its lines — and the reads below are exactly the ones
+/// the body's own opening lines produce. A green here is the body loading and
+/// running on the real server; nothing weaker is asserted, and in particular the
+/// cast clause INDEX is not, because `cast_<npc>` can only ever set a value it
+/// has a clause for and an assertion on its range is true by construction.
+///
+/// **What a template may assume about a campaign it did not author.** `talk_<npc>`
+/// has two shapes, and the emitter picks between them from the campaign's own cast
+/// ledger (`cast_dispatch`): with a ledger it opens `function <ns>:cast_<npc>` and
+/// dispatches per clause; with none it is the single root line it always was, and
+/// no `cast_<npc>` is emitted at all. The dispatch claim therefore has a subject
+/// only in the first shape — asserted unconditionally it is a claim about a line
+/// this campaign's body neither has nor should have, which is how it reddened
+/// hello-world (one NPC, no ledger, `dw.cast` never written).
+///
+/// So it is gated on `crate::cast::npc_casts` — the campaign document, read
+/// through the SAME authority `cast_dispatch` keys off, so the two cannot
+/// disagree about which shape this NPC is. Gating it on the emitted body instead
+/// would be the sixth vacuity mode exactly: the opt-out would be supplied by the
+/// very defect the claim exists to catch, since a `talk_` that lost its dispatch
+/// line would also lose the assertion about it. An authored ledger is a fact no
+/// emitter defect can move. The stated limit, because a silent one is worse: a
+/// defect in ledger DETECTION itself moves both halves, and its surface is the
+/// `cast_` family rather than this claim.
 fn emit_npc_talk_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
+    let casts = crate::cast::npc_casts(plan.campaign);
     for npc in &plan.npcs {
         let safe = &npc.safe;
+        let dispatches = casts.contains_key(&npc.npc_id);
         let (pin, sel) = pin_dummy(&format!("dw_t_tlk_{safe}"));
         let mut b = packtest_header(&format!(
             "{title}: NPC `{}`'s right-click reward runs and re-arms the interaction",
@@ -15433,8 +15454,12 @@ fn emit_npc_talk_packtests(plan: &Plan, out: &mut BuildOutput) {
         // of its own on the same server.
         b.push(pin);
         // Own init: the batch is one shared server, so "never set" is not 0 — and
-        // the point of the read after the call is that the call SET it.
-        b.push(format!("scoreboard players reset {sel} dw.cast"));
+        // the point of the read after the call is that the call SET it. Only for
+        // a body that HAS a cast dispatch; for the single-root shape there is
+        // nothing to reset and nothing to read.
+        if dispatches {
+            b.push(format!("scoreboard players reset {sel} dw.cast"));
+        }
         b.push("# Grant the interaction advancement, exactly as a right-click".to_string());
         b.push("# does: the record is written.".to_string());
         b.push(format!(
@@ -15454,12 +15479,16 @@ fn emit_npc_talk_packtests(plan: &Plan, out: &mut BuildOutput) {
         // and this template reset it above, so a score at all is the proof. This
         // is what separates "the body loaded" from "the body dispatched": a
         // `talk_` whose `function <ns>:cast_<npc>` line went missing would still
-        // revoke and still pass claim 1.
-        b.push(format!(
-            "execute as {sel} store success score #cst_{safe} dw.sys if score @s dw.cast matches \
-             -2147483648.."
-        ));
-        b.push(format!("assert score #cst_{safe} dw.sys matches 1"));
+        // revoke and still pass claim 1. Emitted only for an NPC the campaign
+        // gave a cast ledger — see this function's doc for why the gate is the
+        // authored ledger and never the emitted body.
+        if dispatches {
+            b.push(format!(
+                "execute as {sel} store success score #cst_{safe} dw.sys if score @s dw.cast \
+                 matches -2147483648.."
+            ));
+            b.push(format!("assert score #cst_{safe} dw.sys matches 1"));
+        }
         out.insert(
             format!("packtest-datapack/data/{ns}/test/npc_talk_{safe}.mcfunction"),
             lines(&b).into_bytes(),

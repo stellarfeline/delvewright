@@ -172,6 +172,61 @@ fn no_ledger_means_byte_identical_talk_functions() {
     );
 }
 
+/// The per-NPC `talk_` template asserts the cast dispatch **exactly when the
+/// campaign authored a ledger for that NPC** — the general form of a live red.
+///
+/// `talk_<npc>` has two shapes (`cast_dispatch`): with a ledger it opens
+/// `function <ns>:cast_<npc>`, and with none it is the single root line it always
+/// was. `DW0811`'s `npc-talk` claim drives every NPC's body, and its second
+/// assertion — that the dispatch really ran, read off `dw.cast` — has a subject
+/// only in the first shape. Asserted unconditionally it is a claim about a line
+/// this campaign's body neither has nor should have, and it reddened hello-world
+/// on the live server: one NPC, no ledger, `dw.cast` never written.
+///
+/// The gate is the AUTHORED ledger (`cast::npc_casts`), never the emitted body.
+/// Gating on the body would be an opt-out the defect itself supplies — a `talk_`
+/// that lost its dispatch line would lose the assertion about it in the same
+/// stroke — which is the vacuity mode `CLAUDE.md` names sixth. This test is what
+/// keeps that gate honest in both directions: present for a ledger NPC, absent
+/// for one without.
+#[test]
+fn the_talk_template_claims_a_cast_dispatch_only_where_one_is_emitted() {
+    // No ledger: the template still proves the body loads and re-arms, and makes
+    // no claim about a dispatch that does not exist.
+    let hw = build(&common::hello_world_dir());
+    let t = std::str::from_utf8(
+        &hw["packtest-datapack/data/hello-world/test/npc_talk_keeper.mcfunction"],
+    )
+    .unwrap();
+    assert!(
+        t.contains("run function hello-world:talk_keeper"),
+        "the body is still driven per NPC:\n{t}"
+    );
+    assert!(
+        t.contains("assert score #tlk_keeper dw.sys matches 1"),
+        "the re-arm claim survives without a ledger:\n{t}"
+    );
+    assert!(
+        !t.contains("dw.cast"),
+        "a campaign with no ledger must carry no dispatch claim:\n{t}"
+    );
+
+    // With a ledger: the dispatch claim is present, and reads `dw.cast` after
+    // actively clearing it, so a score at all is the proof the selector ran.
+    let led = ledger();
+    let c = std::str::from_utf8(
+        &led["packtest-datapack/data/cast-ledger/test/npc_talk_keeper.mcfunction"],
+    )
+    .unwrap();
+    assert!(
+        c.contains("scoreboard players reset")
+            && c.contains("dw.cast")
+            && c.contains("assert score #cst_keeper dw.sys matches 1"),
+        "a ledger NPC's template clears `dw.cast` and then claims the dispatch \
+         wrote it:\n{c}"
+    );
+}
+
 /// The three cast PackTest templates are emitted for a ledger campaign.
 #[test]
 fn cast_packtests_are_emitted() {
