@@ -1,0 +1,33 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "facts": [
+      {
+        "id": "fact/hall-span",
+        "note": "The hall is thirty-one blocks wall to wall, which is the span the barred wall divides in two.",
+        "unit": "blocks",
+        "value": 31.0
+      },
+      {
+        "id": "fact/hall-height",
+        "note": "Eight blocks floor to vault, so the loft can sit above head height and still be looked up at from the near side.",
+        "unit": "blocks",
+        "value": 8.0
+      },
+      {
+        "id": "fact/annex-tiles",
+        "note": "The side gallery is three tiles long, drawn from the annex pool.",
+        "unit": "pieces",
+        "value": 3.0
+      },
+      {
+        "id": "fact/doors-in-the-wall",
+        "note": "Three doors pierce the barred wall, which is why the graph carries three barred connections between the same two places rather than one.",
+        "unit": "openings",
+        "value": 3.0
+      }
+    ]
+  },
+  "dsl_version": "0.13.0",
+  "stage": "geometry-brief"
+}

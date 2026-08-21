@@ -94,6 +94,8 @@ fn build_quests(
         quests: quests.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

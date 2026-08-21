@@ -64,6 +64,8 @@ fn build(triggers: &str) -> BuildOutput {
         quests: quests_doc(triggers),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -101,6 +103,8 @@ fn try_build(triggers: &str) -> Result<BuildOutput, emit::BuildFailure> {
         quests: quests_doc(triggers),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

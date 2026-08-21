@@ -52,7 +52,13 @@ fn version_line() {
     // beat lowers. It carries no region, no block and no sign; all three come
     // from the piece's own exported metadata, so the effect and the building
     // cannot disagree about what a way is.
-    assert!(s.contains("dsl 0.12.0"), "{s}");
+    // 0.13.0 (spec-0049) adds two documents and no field: `geometry-brief.json`,
+    // the whole map's written brief reduced to a list of named numbers, and
+    // `layout-graph.json`, the campaign's space as a graph — places, the
+    // connections between them, the authored critical path, and where each quest
+    // beat happens. No coordinate appears in either; the embedding is a later
+    // stage's document.
+    assert!(s.contains("dsl 0.13.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

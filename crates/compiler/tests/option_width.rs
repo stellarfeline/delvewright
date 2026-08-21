@@ -65,6 +65,8 @@ fn parse_hw(dialogue: &str, world: Option<String>) -> Campaign {
         quests: read_hw("quests.json"),
         dialogue: dialogue.to_string(),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }

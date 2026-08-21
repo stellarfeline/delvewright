@@ -28,6 +28,8 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     }
 }
 
@@ -231,6 +233,8 @@ fn check_two_quest(despawn: &str) -> Vec<delvewright_dsl::Diagnostic> {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     })
 }
 

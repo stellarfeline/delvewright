@@ -111,6 +111,8 @@ fn parse(quests: String, dialogue: String) -> Campaign {
         quests,
         dialogue,
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }

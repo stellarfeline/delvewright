@@ -82,15 +82,13 @@ type Site = (String, String);
 fn gate_sites() -> Vec<(Site, BTreeSet<String>)> {
     let mut out: Vec<(Site, BTreeSet<String>)> = Vec::new();
     let mut seen: BTreeSet<Site> = BTreeSet::new();
-    for stage in [
-        Stage::World,
-        Stage::Npcs,
-        Stage::Classes,
-        Stage::QuestPlan,
-        Stage::Quests,
-        Stage::Dialogue,
-        Stage::WorldEdits,
-    ] {
+    // `Stage::ALL`, never a list written here. A hand-written stage list is how a
+    // new document escapes a gate written before it existed, and this file's own
+    // subject is that no gate-declaring object escapes: it walked seven stages by
+    // name, so an eighth document declaring `requires_flags` without
+    // `requires_state` would have been invisible to the one check whose whole
+    // job is that no such object exists. Two such documents landed at 0.13.0.
+    for stage in Stage::ALL {
         let schema = delvewright_dsl::stage_schema(stage);
         if let Some(defs) = schema.get("$defs").and_then(Value::as_object) {
             for (name, def) in defs {

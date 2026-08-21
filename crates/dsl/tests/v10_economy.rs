@@ -59,6 +59,8 @@ fn campaign(version: &str, extra: &str) -> Campaign {
         quests,
         dialogue: hw("dialogue.json"),
         world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
