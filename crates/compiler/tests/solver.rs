@@ -469,12 +469,21 @@ fn keep_trial_m2_presentation_fixes() {
     );
     assert!(cc.contains("playsound minecraft:ui.toast.challenge_complete"));
 
-    // Fix 8: reach-anchor completion is a ±1 block region (dx=2/dy=2/dz=2), not a
-    // point-radius sphere.
+    // Fix 8: reach-anchor completion is a block region, not a point-radius
+    // sphere — and the region is the one the author asked for.
+    //
+    // This assertion used to spell the region as `dx=2`, i.e. the fixed ±1 cube
+    // the M2 repair hard-coded. That constant WAS the defect one layer down: it
+    // replaced the authored `radius` rather than putting a floor under it, so the
+    // number stopped reaching the datapack while the harness went on reading it
+    // and aiming outside the box. `keep-trial` authors `radius: 2`, so the region
+    // is now ±2 — strictly larger than the cube this line used to pin, so nothing
+    // that passed before can fail now. The sphere half of the fix is untouched.
+    // See `tests/reach_completion.rs` for the rule itself.
     assert!(
-        tick.contains("dx=2,y=")
-            && tick.contains("dz=2] run function keep-trial:complete_o_shrine"),
-        "reach objective uses a block region"
+        tick.contains("dx=4,y=")
+            && tick.contains("dz=4] run function keep-trial:complete_o_shrine"),
+        "reach objective uses a block region sized by the authored radius"
     );
     assert!(
         !tick.contains("distance=.."),

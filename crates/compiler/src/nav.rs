@@ -1918,7 +1918,12 @@ impl World {
     /// Whether a cell contains block geometry a cutscene camera must not fly
     /// through: a full-cube solid, a 1.5-tall fence/wall, or a fence gate.
     /// Water does not clip a camera.
-    fn blocks_camera(&self, c: [i32; 3]) -> bool {
+    ///
+    /// **Public**: a declared sightline (`DW0821`) asks exactly this question of
+    /// exactly these cells — whether a line of sight is stopped by geometry —
+    /// and a second predicate for it would be a second opinion about what a
+    /// fence does to a view.
+    pub fn blocks_camera(&self, c: [i32; 3]) -> bool {
         self.solid.contains(&c) || self.tall.contains(&c) || self.use_gates.contains(&c)
     }
 
@@ -2032,7 +2037,17 @@ impl World {
     /// path actually walkable: an assembled seam that ramps up under a low ceiling
     /// becomes a `DW0311` build error instead of a runtime strand on geometry the
     /// compiler wrongly "proved" connected.
-    fn neighbors(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+    ///
+    /// **Public**, and the widening is the point rather than a convenience: the
+    /// step rule is the engine's ONE answer to "can a body get from here to
+    /// there", and the stage-5 blockout battery (`crate::blockout`) asks that
+    /// question of a whole map — is any two places' geometry joined anywhere the
+    /// site plan did not allocate a seam (`DW0838`). A private rule leaves that
+    /// battery with nothing to reuse and a hand-rolled step rule to write, which
+    /// is `CLAUDE.md`'s second review shape: a general mechanism privately
+    /// re-implemented, working perfectly, and silently not the rule every other
+    /// proof in this compiler is taken under.
+    pub fn neighbors(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
         self.neighbors_fp(c, &Footprint::player())
     }
 
@@ -2081,7 +2096,12 @@ impl World {
     /// (inclusive of both ends) or `None` if unreachable. Deterministic: the
     /// frontier is ordered by `(f, g, cell)` and neighbours expand in a fixed
     /// order.
-    fn find_path(&self, start: [i32; 3], goal: [i32; 3]) -> Option<Vec<[i32; 3]>> {
+    ///
+    /// **Public** for the same reason [`World::neighbors`] is: the pacing
+    /// measurement (`DW0822`'s second call site) is the length of the route a
+    /// body really walks along the layout graph's own critical path, and a
+    /// second router would measure a second world.
+    pub fn find_path(&self, start: [i32; 3], goal: [i32; 3]) -> Option<Vec<[i32; 3]>> {
         self.find_path_fp(start, goal, &Footprint::player())
     }
 
@@ -3167,7 +3187,17 @@ fn first_clip(world: &World, pts: &[[f64; 3]]) -> Option<(usize, [i32; 3])> {
 /// starting cell, repeatedly advance along whichever axis reaches its next cell
 /// boundary soonest. An axis with zero delta never steps (its `t_max` is
 /// infinite). Both endpoint cells are included.
-fn walk_cells(a: [f64; 3], b: [f64; 3], hit: impl Fn([i32; 3]) -> bool) -> Option<[i32; 3]> {
+///
+/// **Public**, and `FnMut` rather than `Fn`: the camera clip wants the FIRST
+/// blocking cell and stops, while a blocked sightline (`DW0821`) owes its reader
+/// EVERY blocking cell, because a walk sheet that names one cell of a wall has
+/// not told anybody where the wall is. One traversal, two questions, and the
+/// difference lives entirely in the closure.
+pub fn walk_cells(
+    a: [f64; 3],
+    b: [f64; 3],
+    mut hit: impl FnMut([i32; 3]) -> bool,
+) -> Option<[i32; 3]> {
     let mut cell = [
         a[0].floor() as i32,
         a[1].floor() as i32,
@@ -6950,19 +6980,38 @@ pub fn verify_boundary_safety(world: &World, starts: &[AnchorRoot]) -> Result<()
     if let Some(e) = measure_fluid_escape(world).finding() {
         return Err(e);
     }
-    boundary_only(world, starts)
+    // The sea-seepage proof (`DW0851`) sits here for the same reason the fluid
+    // one does, and it is the same kind of reason: a walk region the sea is about
+    // to fill is a FALSE PREMISE of the stranding proof below, which reasons about
+    // where a body can stand and climb out. Under it, an interior room proved
+    // standable and dry is a room the stranding proof politely finds no fault
+    // with. Sequencing lives here, in the proof, so no caller has an order to get
+    // wrong — and the walk region is computed once and handed to both, so the two
+    // cannot end up judging different sets of cells.
+    let reachable = world.reachable_walkable_rooted(starts);
+    if let Some(e) = measure_sea_seepage(world, &reachable).finding() {
+        return Err(e);
+    }
+    boundary_from(world, &reachable)
 }
 
 /// Boundary safety alone, on a world whose fluid has already been accounted for.
 ///
 /// Split out of [`verify_boundary_safety`] for one reason: the masking that
 /// makes the sequence load-bearing has to be showable. A test that wants to see
-/// this proof go quiet on a flooded world calls this; nothing else should.
+/// this proof go quiet on a flooded world calls this; nothing else should — and
+/// `#[cfg(test)]` is what makes "nothing else" a fact rather than a request.
+#[cfg(test)]
 fn boundary_only(world: &World, starts: &[AnchorRoot]) -> Result<(), NavError> {
     let reachable = world.reachable_walkable_rooted(starts);
+    boundary_from(world, &reachable)
+}
+
+/// Boundary safety over an already-computed walk region.
+fn boundary_from(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), NavError> {
     match &world.ambient {
-        Ambient::Void => boundary_void(world, &reachable),
-        Ambient::Ocean(sea) => boundary_ocean(world, &reachable, sea),
+        Ambient::Void => boundary_void(world, reachable),
+        Ambient::Ocean(sea) => boundary_ocean(world, reachable, sea),
     }
 }
 
@@ -7409,6 +7458,335 @@ impl FluidEscape {
             "fluid_cells_examined": self.fluid_cells,
             "cells_outside_built_volume": self.outside.len(),
             "from_pieces": self.from_pieces,
+            "verdict": if self.finding().is_some() { "fail" } else { "pass" },
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The ambient sea inside the built volume (DW0851)
+// ---------------------------------------------------------------------------
+
+/// `DW0851`: **the ambient sea reaches a cell a body was proved to stand on.**
+///
+/// The world model holds water in two disjoint places and only one of them
+/// reaches walkability. [`crate::assembled::Occupancy::flooded`] is seeded from
+/// the *assembled block map* — prefab-authored sources and waterlogged blocks —
+/// and every downstream proof reads it. The **ambient sea** is not in that block
+/// map at all: under [`Ambient::Ocean`] the world generator puts water in every
+/// column the content did not build, and [`World::ambient_water`] is the only
+/// thing that knows it. That predicate had exactly one reader, the stranding
+/// proof's `swimmable`, which asks about the sea *surface outside* the content.
+///
+/// So the sea never reached `flooded`, never reached `is_occupied`, and never
+/// reached [`World::is_standable`]: **a cell inside a placed piece that the sea
+/// will fill was proved standable, and nothing could see it.** Field case: an
+/// interior room in an ocean world sat one block under sea level and its whole
+/// walk plane was under water a minute after boot, while the compiler modelled
+/// it dry — the route proof, the wave seating and the exported waypoints all
+/// stood on cells the game had already flooded.
+///
+/// ## The model
+///
+/// A piece's bytes decide what is inside its box ([`built_volume`]) — but they
+/// decide it at *placement*, and vanilla fluid physics runs afterwards. The sea
+/// is an unbounded body of source blocks pressed against every outward face of
+/// the built volume below [`Sea::level`], so wherever such a face is open, water
+/// comes in. This proof asks that one question and nothing else:
+///
+/// 1. **Seeds** — every non-blocking cell *inside* the built volume, in the sea's
+///    own band (`floor_top < y ≤ level`), that is 6-adjacent to an ambient sea
+///    cell. That is the contact face, and it is where the sea is already
+///    touching the content.
+/// 2. **Flow** — [`crate::assembled::flood`], the same function the block map's
+///    water runs through: infinite-water source formation, then 7-level decay
+///    with infinite downward fall. Deliberately **not** a second physics, so a
+///    room cannot be judged wet by one model and dry by the other.
+/// 3. **Confinement** — every non-built cell 6-adjacent to the built volume is
+///    added to the barrier set, so the flow stays inside the content instead of
+///    wandering across an ocean that is already water. What leaves the built
+///    volume is `DW0318`'s question, not this one.
+/// 4. **Verdict** — a **reachable, standable** cell whose **head** cell the flow
+///    reaches. Reachable, because a decorative sunken cellar nobody walks into is
+///    content and not a defect; standable, because that is precisely the claim
+///    `DW0314` and every route, seat and waypoint downstream rests on; and the
+///    head cell, because that is where the two models actually contradict each
+///    other about the same fact.
+///
+/// ## Why the head cell and not the feet
+///
+/// A body whose feet cell is wet and whose head cell is dry is **wading**, and
+/// vanilla lets it walk: the map says ground, the game says shin-deep water, and
+/// both are true. A body whose head cell is wet is **swimming** — the map says a
+/// body stands here and the game says a body cannot. That is a contradiction
+/// about the same fact, which is what a proof is entitled to refuse; the first is
+/// a difference in how deep the shore is drawn.
+///
+/// This line was chosen against a measurement rather than in the abstract, and
+/// the measurement is the reason it is not the more obvious one. The released
+/// `nobodys-cave-island` walks a 26-cell strip of its west bank at exactly sea
+/// level: every reachable standable cell that campaign has at or below the
+/// waterline is in that strip, and not one of them has a wet head. A feet-cell
+/// verdict refuses that shoreline — correct, accepted, played work — which is how
+/// a diagnostic gets weakened later by somebody who needs it green. The wading
+/// cells are still **counted**, in the binding ledger, so the shoreline is a
+/// number a reader can act on instead of a silence.
+///
+/// ## Direction of error
+///
+/// Same contract as the block map's flood, for the same reason: the model may
+/// call a cell wet that vanilla leaves dry, never the reverse. The seeds are
+/// entered as *sources* where vanilla would start them one level down, so a wide
+/// contact face fills further than the game would. Over-marking turns a proof red
+/// — caught, escalated, and answerable by walling the face; under-marking is
+/// tm-02 itself, a wet cell shipping as proven dry.
+///
+/// ## What this is not
+///
+/// Not the shoreline. A shore piece that authors its own water up to the
+/// waterline (`DW0344`, spec-0048) has that water in the block map already: those
+/// cells are `flooded`, therefore not standable, therefore never reachable, and
+/// this proof has nothing to say about them. Wading into the sea off a beach is a
+/// body leaving the walk region, which is `DW0322`'s question.
+pub const DW_SEA_ENTERS_WALK: DwCode = DwCode::every_version("DW0851");
+
+/// **What the sea-seepage proof looked at**, so its verdict reads as a
+/// measurement rather than a silence (CLAUDE.md: every validation artifact states
+/// its binding count, with its denominator).
+///
+/// Five of these six numbers are denominators or measurements and only
+/// `submerged` is a conclusion. `pieces` is how much built volume there is;
+/// `contact_cells` is how much of it the sea is touching — a build where that is
+/// zero has a watertight hull and this proof examined nothing; `wet_cells` is how
+/// far the water then got; `walk_cells` is how large the walk region it was
+/// compared against is; `wading` is the shoreline, reported and not judged.
+/// A run under `horizon: void` reports zeroes and says so in `horizon`: there is
+/// no ambient sea to come in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeaSeepage {
+    /// The horizon the verdict is stated against — `"void"` or `"ocean"`.
+    pub horizon: &'static str,
+    /// Placed pieces forming the built volume ([`World::built`]).
+    pub pieces: usize,
+    /// Cells inside the built volume that the ambient sea is directly touching —
+    /// the seed set. **Zero means the built volume presents no open face to the
+    /// sea**, which is the watertight case and the one honest way this proof
+    /// passes without looking at anything.
+    pub contact_cells: usize,
+    /// Every cell inside the built volume the sea reaches from those seeds.
+    pub wet_cells: usize,
+    /// Reachable standable cells this build has — the population `submerged` and
+    /// `wading` are both drawn from.
+    pub walk_cells: usize,
+    /// **Measured, not judged**: reachable standable cells the sea covers to the
+    /// feet only. A body wades these and the game agrees it can, so they are not
+    /// a finding — but a shoreline 26 cells wide and one 2000 cells wide are
+    /// different maps, and a check that says nothing about either is a silence.
+    pub wading: usize,
+    /// The violation: reachable standable cells whose **head** cell the sea
+    /// fills, sorted (ADR-0006).
+    pub submerged: Vec<[i32; 3]>,
+    /// The placed pieces those cells lie in — where to fix it. Sorted, deduped.
+    pub in_pieces: Vec<String>,
+}
+
+/// The 6 face-adjacent offsets, in a fixed order (determinism, ADR-0006).
+const FACE6: [[i32; 3]; 6] = [
+    [-1, 0, 0],
+    [1, 0, 0],
+    [0, -1, 0],
+    [0, 1, 0],
+    [0, 0, -1],
+    [0, 0, 1],
+];
+
+/// Measure how far the ambient sea comes into the built volume, and what of the
+/// walk region it reaches. See [`DW_SEA_ENTERS_WALK`] for the model.
+///
+/// `reachable` is the caller's already-computed reachable walkable set — passed
+/// in rather than re-derived so this proof and the stranding proof are answering
+/// about the **same** walk region, and so a build pays for that flood once.
+pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> SeaSeepage {
+    let empty = |horizon| SeaSeepage {
+        horizon,
+        pieces: world.built.len(),
+        contact_cells: 0,
+        wet_cells: 0,
+        walk_cells: reachable.len(),
+        wading: 0,
+        submerged: Vec::new(),
+        in_pieces: Vec::new(),
+    };
+    let Ambient::Ocean(sea) = &world.ambient else {
+        return empty("void");
+    };
+    if world.built.is_empty() {
+        return empty("ocean"); // nothing placed: the sea has nothing to come into
+    }
+
+    // Every block cell dams water, exactly as `occupancy_of` has it. `flooded` is
+    // deliberately absent: authored water is water, and the sea flows through it.
+    let mut barriers: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for set in [&world.solid, &world.tall, &world.use_gates] {
+        barriers.extend(set.iter().copied());
+    }
+    // Confinement (model step 3): the one-cell skin of NON-built cells around the
+    // built volume becomes barrier, so the flow cannot leave the content. Without
+    // it the flood would spread across the open sea — which is already water — and
+    // come back in somewhere else, and the answer would be about the ocean rather
+    // than about this build.
+    for (_, (lo, hi)) in &world.built {
+        for x in lo[0] - 1..=hi[0] + 1 {
+            for y in lo[1] - 1..=hi[1] + 1 {
+                for z in lo[2] - 1..=hi[2] + 1 {
+                    let on_skin = x == lo[0] - 1
+                        || x == hi[0] + 1
+                        || y == lo[1] - 1
+                        || y == hi[1] + 1
+                        || z == lo[2] - 1
+                        || z == hi[2] + 1;
+                    let c = [x, y, z];
+                    if on_skin && !world.is_built(c) {
+                        barriers.insert(c);
+                    }
+                }
+            }
+        }
+    }
+
+    // Seeds (model step 1): the contact face — inside the built volume, inside the
+    // sea's own band, open, and touching ambient sea water.
+    let mut seeds: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for (_, (lo, hi)) in &world.built {
+        let y_lo = (sea.floor_top + 1).max(lo[1]);
+        let y_hi = sea.level.min(hi[1]);
+        for y in y_lo..=y_hi {
+            for x in lo[0]..=hi[0] {
+                for z in lo[2]..=hi[2] {
+                    let c = [x, y, z];
+                    if barriers.contains(&c) {
+                        continue;
+                    }
+                    if FACE6
+                        .iter()
+                        .any(|d| world.ambient_water([c[0] + d[0], c[1] + d[1], c[2] + d[2]]))
+                    {
+                        seeds.insert(c);
+                    }
+                }
+            }
+        }
+    }
+    if seeds.is_empty() {
+        return empty("ocean");
+    }
+
+    // Flow (model step 2), through the block map's own flood — never a second
+    // physics.
+    let mut wet = crate::assembled::flood(&barriers, &seeds);
+    wet.retain(|c| !barriers.contains(c) && world.is_built(*c));
+
+    // Verdict (model step 4): the head cell decides. The feet-only cells are
+    // counted beside it rather than dropped — see `SeaSeepage::wading`.
+    let submerged: Vec<[i32; 3]> = reachable
+        .iter()
+        .copied()
+        .filter(|&c| wet.contains(&[c[0], c[1] + 1, c[2]]))
+        .collect();
+    let wading = reachable
+        .iter()
+        .filter(|&&c| wet.contains(&c) && !wet.contains(&[c[0], c[1] + 1, c[2]]))
+        .count();
+    let mut in_pieces: BTreeSet<String> = BTreeSet::new();
+    for &c in &submerged {
+        for (id, (lo, hi)) in &world.built {
+            if (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]) {
+                in_pieces.insert(id.clone());
+            }
+        }
+    }
+    SeaSeepage {
+        horizon: "ocean",
+        pieces: world.built.len(),
+        contact_cells: seeds.len(),
+        wet_cells: wet.len(),
+        walk_cells: reachable.len(),
+        wading,
+        submerged,
+        in_pieces: in_pieces.into_iter().collect(),
+    }
+}
+
+impl SeaSeepage {
+    /// The `DW0851` violation, or `None`.
+    pub fn finding(&self) -> Option<NavError> {
+        if self.submerged.is_empty() {
+            return None;
+        }
+        let columns: BTreeSet<(i32, i32)> = self.submerged.iter().map(|c| (c[0], c[2])).collect();
+        let highest = self.submerged.iter().map(|c| c[1]).max().unwrap_or(0);
+        let sample: Vec<String> = self
+            .submerged
+            .iter()
+            .take(BOUNDARY_LIST_LIMIT)
+            .map(|c| format!("{c:?}"))
+            .collect();
+        let more = self.submerged.len().saturating_sub(sample.len());
+        let blame = if self.in_pieces.is_empty() {
+            "no placed piece holds them".to_string()
+        } else {
+            format!("in placed piece(s) {}", self.in_pieces.join(", "))
+        };
+        Some(NavError {
+            code: DW_SEA_ENTERS_WALK,
+            message: format!(
+                "the ambient sea covers the walk region: {n} reachable standable cell(s) across \
+                 {cols} column(s), {blame}, have their HEAD cell under water once the world \
+                 loads — this build proves a body stands there and the game gives it a body that \
+                 swims. The piece put air in those cells; vanilla fluid physics fills them from \
+                 the sea before any player arrives, on the server's own clock. Cells (feet): \
+                 {sample}{extra}; the highest is y={highest} against sea level y={level}. \
+                 Examined {contact} cell(s) of open contact face and {wet} cell(s) the sea \
+                 reaches inside {pieces} placed piece(s), against a walk region of {walk} \
+                 cell(s), of which a further {wading} are wet to the feet only (wading — \
+                 measured, not judged). WHERE to fix: the piece whose face is open below the \
+                 waterline, or the placement that put that face against the sea. HOW: close the \
+                 face (a hull, a wall, a block the water cannot pass), raise the floor so the \
+                 walk plane stands clear of y={level}, or author the water yourself so the room \
+                 IS flooded and every proof downstream knows it. Do NOT weaken this check or \
+                 move the path around it: the water arrives whether or not anything proved it, \
+                 and a route over these cells is a route through the sea.",
+                n = self.submerged.len(),
+                cols = columns.len(),
+                sample = sample.join(", "),
+                extra = if more > 0 {
+                    format!(" (+{more} more)")
+                } else {
+                    String::new()
+                },
+                level = crate::plan::SEA_LEVEL,
+                contact = self.contact_cells,
+                wet = self.wet_cells,
+                pieces = self.pieces,
+                walk = self.walk_cells,
+                wading = self.wading,
+            ),
+        })
+    }
+
+    /// The binding ledger (`validation/sea-seepage.json`): what was examined, not
+    /// only what was found — so a build whose hull is watertight says *zero
+    /// contact face* rather than going quiet, and one that wades says how far.
+    pub fn ledger(&self) -> serde_json::Value {
+        serde_json::json!({
+            "horizon": self.horizon,
+            "pieces_examined": self.pieces,
+            "contact_face_cells": self.contact_cells,
+            "cells_the_sea_reaches": self.wet_cells,
+            "walk_cells_examined": self.walk_cells,
+            "walk_cells_submerged": self.submerged.len(),
+            "walk_cells_wading": self.wading,
+            "in_pieces": self.in_pieces,
             "verdict": if self.finding().is_some() { "fail" } else { "pass" },
         })
     }
@@ -8250,6 +8628,175 @@ mod tests {
         let err = verify_boundary_safety(&world, &roots([3, 65, 3]))
             .expect_err("a lip 2 above the surface is not a climb-out");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
+    }
+
+    // -----------------------------------------------------------------------
+    // DW0851 — the ambient sea inside the built volume
+    // -----------------------------------------------------------------------
+
+    /// A room sunk under the waterline, as a piece box the sea presses against on
+    /// every face: floor top at `y=60` (walk plane 61), walls up to `y=63`, a
+    /// ceiling at 64. `opening` cells are punched out of the west wall.
+    fn sunken_room(opening: &[[i32; 3]]) -> (BTreeSet<[i32; 3]>, Vec<Bbox>) {
+        let mut solid = BTreeSet::new();
+        for x in 0..8 {
+            for z in 0..8 {
+                solid.insert([x, 60, z]); // floor
+                solid.insert([x, 64, z]); // ceiling
+                for y in 61..=63 {
+                    if x == 0 || x == 7 || z == 0 || z == 7 {
+                        solid.insert([x, y, z]); // walls
+                    }
+                }
+            }
+        }
+        for c in opening {
+            solid.remove(c);
+        }
+        (solid, vec![([0, 60, 0], [7, 64, 7])])
+    }
+
+    /// **The shoreline is not a finding**, and this is the fixture that decides
+    /// the verdict's predicate.
+    ///
+    /// A plate whose top is at `sea_level - 1` inside a piece box that carries on
+    /// upward: the walk plane sits at exactly the waterline, INSIDE the built
+    /// volume, with the open sea against its western face. That is the shape of
+    /// `nobodys-cave-island`'s west bank — a released, accepted, played campaign
+    /// whose every reachable cell at or below the waterline is one of 26 such
+    /// cells, none of them head-deep.
+    ///
+    /// A feet-cell verdict refuses it. So the verdict is the head cell, and the
+    /// wading is **counted** instead of judged: a body that can breathe where it
+    /// was proved to stand is not a contradiction, it is a shore.
+    #[test]
+    fn sea_seepage_wades_a_shoreline_and_does_not_refuse_it_dw0851() {
+        let mut solid = BTreeSet::new();
+        for x in 0..8 {
+            for z in 0..8 {
+                for y in 60..=61 {
+                    solid.insert([x, y, z]);
+                }
+            }
+        }
+        let world = ocean(solid, BTreeSet::new(), vec![([0, 60, 0], [7, 66, 7])]);
+        let reachable = world.reachable_walkable_rooted(&roots([3, 62, 3]));
+        let m = measure_sea_seepage(&world, &reachable);
+        assert_eq!(m.horizon, "ocean");
+        assert!(
+            m.contact_cells > 0,
+            "the sea IS touching this piece — a zero here would be the unbound              vacuity mode wearing a pass: {m:?}"
+        );
+        assert!(
+            m.wading > 0,
+            "the walk plane is at the waterline, so it is wet to the feet: {m:?}"
+        );
+        assert!(
+            m.submerged.is_empty(),
+            "nothing is head-deep on a shore: {m:?}"
+        );
+        assert!(m.finding().is_none(), "a shore is not a finding");
+        // And the whole proof agrees: this world is buildable.
+        verify_boundary_safety(&world, &roots([3, 62, 3])).expect("wade the shore");
+    }
+
+    /// The finding itself: a room whose walk plane is under the sea, with its west
+    /// wall open **up to the waterline**, so the sea comes in over the walkers'
+    /// heads. Every cell in it was proved standable and dry before `DW0851`.
+    #[test]
+    fn sea_seepage_refuses_a_room_the_sea_walks_into_dw0851() {
+        let opening: Vec<[i32; 3]> = (61..=62).map(|y| [0, y, 3]).collect();
+        let (solid, covered) = sunken_room(&opening);
+        let world = ocean(solid, BTreeSet::new(), covered);
+        let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
+        let m = measure_sea_seepage(&world, &reachable);
+        assert!(m.contact_cells > 0, "the opening is contact face: {m:?}");
+        assert!(
+            !m.submerged.is_empty(),
+            "the sea is over the walk plane: {m:?}"
+        );
+        assert!(
+            m.walk_cells >= m.submerged.len(),
+            "the finding is a subset of its own denominator: {m:?}"
+        );
+        assert_eq!(m.pieces, 1);
+
+        let err = verify_boundary_safety(&world, &roots([3, 61, 3]))
+            .expect_err("a flooded walk plane is refused");
+        assert_eq!(err.code, DW_SEA_ENTERS_WALK);
+        assert!(
+            err.message.contains("HEAD cell under water"),
+            "names what is wrong:\n{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("piece-0"),
+            "names the piece to fix:\n{}",
+            err.message
+        );
+        // The verdict carries its own denominators.
+        assert!(
+            err.message.contains("against a walk region of")
+                && err.message.contains("cell(s) of open contact face"),
+            "states its binding counts:\n{}",
+            err.message
+        );
+    }
+
+    /// The same room with its wall intact: **zero contact face**, and the proof
+    /// says so. This is the only honest way this check passes without looking at
+    /// anything, and it is a number rather than a silence.
+    #[test]
+    fn sea_seepage_passes_a_watertight_hull_with_a_stated_zero() {
+        let (solid, covered) = sunken_room(&[]);
+        let world = ocean(solid, BTreeSet::new(), covered);
+        let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
+        let m = measure_sea_seepage(&world, &reachable);
+        assert_eq!(m.contact_cells, 0, "no face is open to the sea: {m:?}");
+        assert_eq!(m.wet_cells, 0);
+        assert_eq!(m.wading, 0);
+        assert!(m.submerged.is_empty());
+        assert!(
+            m.walk_cells > 0,
+            "there IS a walk region — the pass is about it, not about an empty world: {m:?}"
+        );
+        assert_eq!(m.ledger()["verdict"], "pass");
+        assert_eq!(m.ledger()["contact_face_cells"], 0);
+    }
+
+    /// A hole below the waterline that never reaches it wets feet and no heads —
+    /// vanilla water does not climb, and neither does this model. The room is
+    /// wet, the walk is not refused, and the wading number says how wet.
+    #[test]
+    fn sea_seepage_water_entering_below_the_surface_does_not_rise() {
+        let (solid, covered) = sunken_room(&[[0, 61, 3]]);
+        let world = ocean(solid, BTreeSet::new(), covered);
+        let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
+        let m = measure_sea_seepage(&world, &reachable);
+        assert!(m.contact_cells > 0, "the hole is contact face: {m:?}");
+        assert!(m.wet_cells > 0, "water came in: {m:?}");
+        assert!(
+            m.submerged.is_empty(),
+            "no head cell is wet — the water cannot rise to y=62 from a y=61 hole: {m:?}"
+        );
+        assert!(m.wading > 0, "the floor it reached is wet: {m:?}");
+    }
+
+    /// Under `horizon: void` there is no ambient sea, so the proof reports zeroes
+    /// **and names the horizon it reported them for** — a reader can tell "no sea"
+    /// from "not run".
+    #[test]
+    fn sea_seepage_under_void_reports_zeroes_and_says_which_horizon() {
+        let (solid, covered) = sunken_room(&[[0, 61, 3]]);
+        let world = World::from_solid_cells(solid).with_ambient(Ambient::Void, built(covered));
+        let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
+        let m = measure_sea_seepage(&world, &reachable);
+        assert_eq!(m.horizon, "void");
+        assert_eq!(m.contact_cells, 0);
+        assert_eq!(m.wet_cells, 0);
+        assert!(m.submerged.is_empty());
+        assert_eq!(m.pieces, 1, "it still says how much world it looked at");
+        assert_eq!(m.ledger()["horizon"], "void");
     }
 
     /// Stranding is proven **per body of water**, not globally: an island whose

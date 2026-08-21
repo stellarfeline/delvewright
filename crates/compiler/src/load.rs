@@ -24,15 +24,35 @@ pub const WORLD_EDITS_FILE: &str = "world-edits.json";
 /// The optional map-pipeline documents (spec-0049), on the same terms as the
 /// edit script: absent is never an error, and present is hashed into the
 /// manifest inputs like any other stage document.
-///
-/// **A site plan is not here yet**, and that is the ordering being structural
-/// rather than prose: there is no `site-plan.json` filename for a loader to
-/// find, so a campaign cannot author an embedding before the graph the
-/// embedding is of exists (spec-0049 §7).
 pub const GEOMETRY_BRIEF_FILE: &str = "geometry-brief.json";
 
 /// The layout graph's filename (spec-0049 §3) — see [`GEOMETRY_BRIEF_FILE`].
 pub const LAYOUT_GRAPH_FILE: &str = "layout-graph.json";
+
+/// The site plan's filename (spec-0049 §4) — see [`GEOMETRY_BRIEF_FILE`].
+///
+/// The loader finds it like any other stage document, and the ordering it sits
+/// under is enforced where it can name what is missing: a plan with no layout
+/// graph or no geometry brief beside it is `DW0824`, by name, at validation.
+/// Refusing to LOAD the file would have said the same thing in a message about
+/// a path, to an author who had just written it.
+pub const SITE_PLAN_FILE: &str = "site-plan.json";
+
+/// The detail plan's filename (spec-0050 §1) — see [`GEOMETRY_BRIEF_FILE`].
+pub const DETAIL_PLAN_FILE: &str = "detail-plan.json";
+
+/// **The walk record's filename** (spec-0049 §5.4, gated by spec-0050 §2).
+///
+/// Not a stage document: it carries no `dsl_version`, no `campaign_id` and no
+/// `stage`, because it is not authored against a schema version — it is the
+/// record of a human walking one particular derived blockout, and its form was
+/// fixed by the spec that produced the blockout rather than by the DSL.
+///
+/// It is deliberately **not** hashed into the manifest inputs. It reaches no
+/// emitted byte: it gates whether detail work may proceed at all, and a build
+/// whose record was merely re-recorded must stay byte-identical, or double-build
+/// determinism would become a property of when somebody last walked the map.
+pub const WALK_RECORD_FILE: &str = "walk-record.json";
 
 /// A loaded campaign directory: the parsed-ready [`RawCampaign`] plus the exact
 /// raw file contents (by filename) for deterministic input hashing.
@@ -44,6 +64,10 @@ pub struct LoadedCampaign {
     /// i18n l10n sidecars found under `l10n/`: language code (filename stem) →
     /// raw sidecar bytes. Empty when the campaign ships no `l10n/` directory.
     pub l10n: BTreeMap<String, Vec<u8>>,
+    /// `walk-record.json`, verbatim, when the campaign directory ships one —
+    /// see [`WALK_RECORD_FILE`] for why it travels beside the stage documents
+    /// rather than among them.
+    pub walk_record: Option<String>,
 }
 
 /// Read all six stage files from `dir` plus any `l10n/*.json` sidecars. Fails if a
@@ -83,6 +107,24 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     } else {
         None
     };
+    let site_plan = if dir.join(SITE_PLAN_FILE).is_file() {
+        Some(read(SITE_PLAN_FILE)?)
+    } else {
+        None
+    };
+    let detail_plan = if dir.join(DETAIL_PLAN_FILE).is_file() {
+        Some(read(DETAIL_PLAN_FILE)?)
+    } else {
+        None
+    };
+    // Read outside the `read` closure on purpose: that closure records a
+    // filename into `inputs`, and the walk record is not a build input — see
+    // [`WALK_RECORD_FILE`].
+    let walk_record = match std::fs::read_to_string(dir.join(WALK_RECORD_FILE)) {
+        Ok(s) => Some(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e),
+    };
     let l10n = load_l10n_dir(&dir.join("l10n"))?;
     // i18n v2 (spec-0029): every sidecar is a build input of **every** build, not
     // just of a `--lang` bake — the delve now ships each declared language's lang
@@ -102,7 +144,10 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
             world_edits,
             geometry_brief,
             layout_graph,
+            site_plan,
+            detail_plan,
         },
+        walk_record,
         inputs,
         l10n,
     })

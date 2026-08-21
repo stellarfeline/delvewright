@@ -135,6 +135,8 @@ fn parse_hw(quests: &str) -> Campaign {
         world_edits: Some(fence_the_doorway()),
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }

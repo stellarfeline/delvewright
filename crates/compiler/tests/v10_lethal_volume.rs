@@ -65,6 +65,8 @@ fn parse_hw(quests: &str) -> Campaign {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
     };
     let mut c = parse_campaign(&raw).expect("campaign parses");
     delvewright_dsl::tag_translatables(&mut c);

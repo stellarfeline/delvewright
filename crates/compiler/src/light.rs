@@ -777,32 +777,95 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
             .areas
             .iter()
             .find(|a| a.id.as_str() == area.area_id);
-        let lighting = dsl_area.and_then(|a| a.lighting);
-
-        match lighting {
-            Some(spec) => {
-                relight_area(
-                    &mut model,
-                    &nav,
-                    &reachable,
-                    &required,
-                    &area.area_id,
-                    spec,
-                    sky,
-                    amin,
-                    amax,
-                    &mut out,
-                );
+        // A site-plan campaign has no `areas[]` to carry a lighting declaration
+        // — `DW0839` refuses one that does — and states its one setting on the
+        // plan instead, so a blockout interior is walkable at night without
+        // per-box surface. Read here rather than copied into a synthetic `Area`,
+        // because `AreaLighting` is already the engine's "which fixture, to what
+        // level" object and this pass is already the one that consumes it.
+        let lighting = match dsl_area {
+            Some(a) => a.lighting,
+            None if area.area_id == delvewright_dsl::SITE_AREA => {
+                c.site_plan.as_ref().and_then(|p| p.content.lighting)
             }
-            None => {
-                // Measured-darkness gate over the assembled reachable walkable cells.
-                let night_vision = dsl_area.is_some_and(area_night_vision);
-                if let Some(diag) =
-                    measure_undeclared(&model, &reachable, sky, night_vision, &area.area_id)
-                {
-                    out.diagnostics.push(diag);
+            None => None,
+        };
+
+        // **The fixture pass applies to DERIVED interiors only** (spec-0050 §3).
+        //
+        // A detail piece's frame is the piece's, and lighting is part of what a
+        // place looks like: the whole hanging its own torches inside a building
+        // somebody designed would be the whole writing inside a bound frame,
+        // which is the one thing the fabric split says it does not do.
+        //
+        // The cells are not simply dropped, or a dark detailed place would be a
+        // silence rather than a finding. They go to `measure_undeclared`, which
+        // is the gate an area with no declaration already gets — so the piece
+        // lights itself and is judged on whether it did.
+        //
+        // Empty for every campaign with no detail plan, so nothing moves for
+        // anybody who has not opted in.
+        let frames: Vec<([i32; 3], [i32; 3])> = if area.area_id == delvewright_dsl::SITE_AREA {
+            let mut reads = delvewright_dsl::metrics::Reads::new();
+            delvewright_dsl::placed_boxes(c, &mut reads)
+                .iter()
+                .filter(|b| delvewright_dsl::is_bound(c, &b.node))
+                .map(|b| {
+                    let f = delvewright_dsl::Frame::of(b);
+                    (
+                        [f.lo[0] as i32, f.lo[1] as i32, f.lo[2] as i32],
+                        [f.hi[0] as i32, f.hi[1] as i32, f.hi[2] as i32],
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let detailed: BTreeSet<[i32; 3]> = reachable
+            .iter()
+            .copied()
+            .filter(|c| frames.iter().any(|(lo, hi)| in_bounds(*c, *lo, *hi)))
+            .collect();
+        let reachable: BTreeSet<[i32; 3]> = reachable.difference(&detailed).copied().collect();
+
+        if !reachable.is_empty() {
+            match lighting {
+                Some(spec) => {
+                    relight_area(
+                        &mut model,
+                        &nav,
+                        &reachable,
+                        &required,
+                        &area.area_id,
+                        spec,
+                        sky,
+                        amin,
+                        amax,
+                        &mut out,
+                    );
+                }
+                None => {
+                    // Measured-darkness gate over the assembled reachable walkable cells.
+                    let night_vision = dsl_area.is_some_and(area_night_vision);
+                    if let Some(diag) =
+                        measure_undeclared(&model, &reachable, sky, night_vision, &area.area_id)
+                    {
+                        out.diagnostics.push(diag);
+                    }
                 }
             }
+        }
+
+        // **A detailed place is judged LAST**, over the model the pass leaves
+        // behind. Light does not stop at a frame boundary: a piece standing off a
+        // corridor the whole has just hung torches in is lit by them, and
+        // measuring before that would report it dark for want of a fixture this
+        // same pass was about to place three cells away. Ordering is the whole of
+        // the difference — the set and the gate are the same either way.
+        if !detailed.is_empty()
+            && let Some(diag) = measure_undeclared(&model, &detailed, sky, false, &area.area_id)
+        {
+            out.diagnostics.push(diag);
         }
     }
 

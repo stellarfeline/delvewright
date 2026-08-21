@@ -29,6 +29,7 @@ import type {
   Transport,
   Vec3Tuple,
 } from "./critical-path.ts";
+import { insideCompletion, reachGoal } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
 import { hasSettled } from "./entity-settle.ts";
@@ -2780,22 +2781,53 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Walk to the anchor using the pathfinder. The datapack completes the objective
-   * with a `distance=..radius` check on the exact anchor point, so the bot targets
-   * a goal one block *tighter* than `radius` — landing well inside the check rather
-   * than on its boundary (where the pathfinder's block-granular goal and the
-   * server's precise-position check can disagree).
+   * Walk into the objective's completion volume, then prove the bot is in it.
+   *
+   * The goal comes from `step.completion` — what the SERVER adjudicates — and
+   * never from the authored `radius`. Those were the same number until DSL v0.3
+   * and have not been since: the datapack moved to a fixed ±1 cube and this bot
+   * kept aiming at `radius - 1`, so a `radius: 3` reach let it stop three blocks
+   * out, outside the region, and hang on the wait below. It failed intermittently,
+   * because a `GoalNear` usually overshoots inward — which is the worst way for it
+   * to be wrong.
+   *
+   * Standing in the volume is not success — the objective's own marker is
+   * (AUDIT-P0) — so the position is read on the FAILURE path and nowhere else.
+   * That placement is not squeamishness, it is the only correct one: this
+   * objective's completion may TELEPORT the player (an exported `transport`), so
+   * a bot that did everything right is legitimately somewhere else by the time
+   * anyone could look, and a positive precondition here would fail exactly the
+   * runs that worked. On the failure path there is no race and nothing to
+   * false-fail: the marker did not arrive, so nothing moved the bot, and where it
+   * is standing is where its walk left it. That turns the timeout this defect
+   * used to produce — sixty seconds of silence blamed on the datapack — into a
+   * sentence naming the volume, the position, and which of the two is wrong.
    */
   async reach(step: ReachStep): Promise<void> {
-    await this.walkTo(step.pos, Math.max(1, step.radius - 1), `anchor ${step.anchor}`, step.sneak, {
+    const goal = reachGoal(step.completion);
+    await this.walkTo(goal.pos, goal.range, `anchor ${step.anchor}`, step.sneak, {
       objective: step.objective,
       transport: step.transport,
     });
-    // Standing at the anchor is NOT success (AUDIT-P0): the objective's own
-    // completion marker is. A reach step whose zone check never fires — wrong cell,
-    // an inactive objective, a gate the path assumed open — now fails here instead
-    // of silently marching the run forward.
-    await this.requireObjective(step.objective, `reach ${step.anchor}`);
+    try {
+      await this.requireObjective(step.objective, `reach ${step.anchor}`);
+    } catch (err) {
+      const p = this.bot?.entity?.position;
+      if (p) {
+        const here: Vec3Tuple = [p.x, p.y, p.z];
+        if (!insideCompletion(here, step.completion)) {
+          throw new Error(
+            `reach ${step.anchor}: the objective never completed, and the bot is at ` +
+              `${here.map((n) => n.toFixed(2)).join(", ")} — OUTSIDE the volume the server ` +
+              `adjudicates this objective in (${JSON.stringify(step.completion)}; authored ` +
+              `radius ${step.radius}). The fault is the walk, not the datapack: no marker ` +
+              `can arrive from here. Fix the navigation or the exported volume — do not ` +
+              `widen either to make this pass. Original: ${(err as Error).message}`,
+          );
+        }
+      }
+      throw err;
+    }
   }
 
   /**

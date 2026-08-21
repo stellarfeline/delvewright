@@ -27,6 +27,7 @@ use delvewright_dsl::{
 };
 
 use crate::flow::objectives_in_order;
+use crate::reach::{ReachCompletion, reach_completion};
 use crate::registry::{AnchorMeta, PrefabRegistry};
 use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
 use delvewright_dsl::DwCode;
@@ -724,6 +725,18 @@ pub struct Plan<'a> {
     /// causal descendant of the gate's firing objective — not a parallel branch the
     /// lineariser merely interleaved ahead of it.
     pub strict_ancestor_steps: BTreeMap<usize, BTreeSet<usize>>,
+    /// **The derived blockout** (spec-0049 §5), for a campaign whose placement
+    /// authority is a site plan. `None` for every campaign that places pieces
+    /// with `areas[]` — which is why nothing about such a build moves.
+    ///
+    /// It is on the plan rather than recomputed per consumer for the reason
+    /// [`Plan::ways`] is: three readers need the same answer — emission (which
+    /// writes the mass), the stage-5 battery (which judges the built bytes
+    /// against the plan it was derived from) and the relight pass (which needs
+    /// the site plan's one lighting setting) — and two of them deriving it
+    /// independently is how a builder and its observer come to agree about a
+    /// world neither describes.
+    pub blockout: Option<crate::blockout::Blockout>,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -738,6 +751,17 @@ pub struct AreaPlacement {
     /// connector; a single-prefab area's lone piece has all of its unmated, so
     /// each one is walled.
     pub seals: Vec<SealFill>,
+    /// **The region writes this area's own blocks arrive as**, in the order the
+    /// world applies them — before the templates, and therefore before the socket
+    /// seals (`crate::assembled::placed_blocks`).
+    ///
+    /// Empty for every prefab-placed area, which is what keeps such a campaign's
+    /// output byte-identical: a prefab's blocks arrive in a `.nbt` and this list
+    /// is the other way a piece can be made of something. The blockout
+    /// (`crate::blockout`) is the one producer — a shell of uniform boxes, whose
+    /// natural packaging is a fill and whose `.nbt` packaging would be tens of
+    /// thousands of mostly-air cells split across tiles.
+    pub mass: Vec<SealFill>,
 }
 
 impl AreaPlacement {
@@ -817,7 +841,7 @@ impl PiecePlacement {
 /// `pos + rotation(offset + local)`, the whole zone rotated about the piece
 /// origin. That identity is what lets a tiled zone be rotated at all, and it is
 /// the same arithmetic [`Rotation::bbox`] already uses.
-fn placed_templates(
+pub(crate) fn placed_templates(
     meta: &delvewright_dsl::prefab::PrefabMeta,
     pos: [i32; 3],
     rotation: Rotation,
@@ -946,7 +970,7 @@ pub enum Step {
         /// The chat command the bot sends.
         command: String,
     },
-    /// Walk to within `radius` of `pos`.
+    /// Walk into the objective's completion volume at `pos`.
     Reach {
         /// The `obj/<id>` this step proves complete.
         objective_id: String,
@@ -954,8 +978,12 @@ pub enum Step {
         anchor_id: String,
         /// Absolute anchor position.
         pos: [i32; 3],
-        /// Completion radius.
+        /// Completion radius, as authored.
         radius: u32,
+        /// The volume the datapack adjudicates in ([`reach_completion`]) — the
+        /// same value the tick line is formatted from, carried here so the harness
+        /// navigates into the server's region instead of re-deriving one.
+        completion: ReachCompletion,
     },
     /// Slay a wave: goto `pos` (the wave anchor), attack entities tagged `tag`
     /// until the marker channel reports completion (v0.3).
@@ -1067,10 +1095,17 @@ pub fn safe_local(id: &str) -> String {
 ///   its objective completing.
 /// * `2` — every objective-bearing step carries `objective`, and completion is
 ///   proved by the anchored per-objective marker channel ([`marker_line`]).
+/// * `3` — a `reach` step carries `completion`, the volume the datapack
+///   adjudicates in ([`ReachCompletion`]). The harness derives its walk goal from
+///   that and no longer from the authored `radius`, which the datapack had
+///   stopped reading at DSL v0.3 without telling anyone. The field is required in
+///   both directions, which is what makes this a format change rather than an
+///   addition: a format-2 artifact cannot tell a current bot where the objective
+///   completes, and a format-2 bot would refuse the new key outright.
 ///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 2;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 3;
 
 /// The machine completion-marker token for campaign completion. An objective's
 /// token is simply its own id (`obj/<kebab>`).
@@ -1656,6 +1691,20 @@ pub type TransportMap = BTreeMap<String, [i32; 3]>;
 impl<'a> Plan<'a> {
     /// Build the plan. Requires a validated campaign and loaded prefab metadata.
     pub fn build(campaign: &'a Campaign, prefabs: &PrefabRegistry) -> Result<Self, PlanError> {
+        Self::build_with(campaign, prefabs, crate::blockout::Perturb::none())
+    }
+
+    /// [`Plan::build`] with a deliberate defect built into the blockout
+    /// derivation — see [`crate::blockout::Perturb`] for why this exists.
+    ///
+    /// The only caller outside a test is [`Plan::build`] itself, passing
+    /// [`Perturb::none`](crate::blockout::Perturb::none) as a literal; a test
+    /// asserts that, so this cannot quietly acquire another.
+    pub fn build_with(
+        campaign: &'a Campaign,
+        prefabs: &PrefabRegistry,
+        perturb: crate::blockout::Perturb,
+    ) -> Result<Self, PlanError> {
         let namespace = campaign.world.campaign_id.as_str().to_string();
         let seed = campaign.world.content.seed;
 
@@ -1769,6 +1818,7 @@ impl<'a> Plan<'a> {
                         rotation: Rotation::None,
                     }],
                     seals,
+                    mass: Vec::new(),
                 }
             } else if let Some(pool) = &area.prefab_pool {
                 // Pool area (ADR-0004 jigsaw assembly): the solver grows a layout
@@ -1882,6 +1932,7 @@ impl<'a> Plan<'a> {
                     area_id: area_id.clone(),
                     pieces,
                     seals: layout.seals,
+                    mass: Vec::new(),
                 }
             } else {
                 // Validation (DW0160) guarantees exactly one binding.
@@ -1896,6 +1947,55 @@ impl<'a> Plan<'a> {
             };
             areas.push(placement);
         }
+
+        // ---- the derived blockout (spec-0049 §5) ----
+        //
+        // **This is the ordering tooth, and it is here because here is the only
+        // door.** The blockout has no authored form — no document, no schema, no
+        // file — so the single path from a site plan to blockout bytes runs
+        // through `crate::blockout::derive`, and the single path to that runs
+        // through this function. Every `delvec` verb that reaches a world (build,
+        // analyze, snapshot, viewer, blocking-chart, edit) reaches it through a
+        // `Plan`, and there is no other constructor. Someone doing the guarded
+        // thing without calling this would have to have built a `Plan` some other
+        // way, and there is none.
+        //
+        // A campaign with no site plan gets `None` and nothing below runs, so its
+        // output does not move by a byte.
+        let mut blockout_reads = delvewright_dsl::metrics::Reads::new();
+        let blockout = match crate::blockout::derive_with(campaign, &mut blockout_reads, perturb) {
+            None => None,
+            Some((mut placement, derived)) => {
+                for (name, resolved) in derived.anchors() {
+                    anchors.insert((placement.area_id.clone(), name.to_string()), resolved);
+                }
+                // ---- the detail plan's pieces (spec-0050 §1) ----
+                //
+                // **The second tooth, and it is in the same door as the first.**
+                // A `details[]` row carries no coordinate, no extent and no
+                // offset; where its piece goes is `Frame::of` over the plan's
+                // own resolved box, computed here. There is no flag and no
+                // second entry point, so a part that wanted a different box
+                // would have to have built a `Plan` some other way, and there is
+                // none.
+                //
+                // The anchors go in AFTER the derived ones on purpose: the
+                // derivation names `anchor/node-…` at the massing's own footing,
+                // and where a piece stands there the piece's anchor is the
+                // truth. Overwriting is what keeps the campaign's stage-3
+                // vocabulary working without a quest edit.
+                let detailing = crate::detail::place(campaign, prefabs);
+                placement.pieces.extend(detailing.pieces);
+                for (name, pos, facing) in detailing.anchors {
+                    anchors.insert(
+                        (placement.area_id.clone(), name),
+                        ResolvedAnchor::Point { pos, facing },
+                    );
+                }
+                areas.push(placement);
+                Some(derived)
+            }
+        };
 
         // ---- gate-aware reachability (M2 fix 7, DW0306) ----
         // With the layout solved, verify no objective's anchor is sealed behind a
@@ -1934,7 +2034,10 @@ impl<'a> Plan<'a> {
             w.extend(e.warnings.clone());
             PlanError::new(e.code, e.message).with_warnings(w)
         })?;
-        if let Some(finding) = binding.finding(crate::faces::placed_pieces(&areas)) {
+        if let Some(finding) = binding.finding(
+            crate::faces::placed_pieces(&areas),
+            campaign.site_plan.is_some(),
+        ) {
             warnings.push(finding);
         }
 
@@ -2138,6 +2241,7 @@ impl<'a> Plan<'a> {
             transit_teleports,
             strict_ancestor_steps,
             massing_bounds,
+            blockout,
         })
     }
 
@@ -3103,6 +3207,11 @@ fn build_critical_path(
                         anchor_id: anchor.as_str().to_string(),
                         pos,
                         radius: *radius,
+                        completion: reach_completion(
+                            pos,
+                            *radius,
+                            delvewright_dsl::is_v03(campaign.quests.dsl_version.as_str()),
+                        ),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }

@@ -43,6 +43,8 @@ fn campaign_with(quests: String) -> RawCampaign {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
     }
 }
 

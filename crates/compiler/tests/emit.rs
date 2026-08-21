@@ -533,7 +533,7 @@ fn completion_marker_channel_is_anchored_and_per_objective() {
         serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
 
     // The contract version is explicit and independent of the DSL version.
-    assert_eq!(cp["format_version"], 2);
+    assert_eq!(cp["format_version"], 3);
     assert_eq!(cp["version"], "0.2.0");
 
     let steps = cp["steps"].as_array().unwrap();

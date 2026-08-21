@@ -58,7 +58,21 @@ fn version_line() {
     // connections between them, the authored critical path, and where each quest
     // beat happens. No coordinate appears in either; the embedding is a later
     // stage's document.
-    assert!(s.contains("dsl 0.13.0"), "{s}");
+    // 0.14.0 (spec-0049) adds one document and no field: `site-plan.json`, the
+    // geometric embedding of that graph and the whole map's design of record —
+    // the region, a box per place, a seam per connection on a face the two boxes
+    // share, the mass the whole itself owns, and the guarded comparisons that
+    // hold all of it to the brief's numbers. It is a version of its own because
+    // a version names one surface, and a campaign at 0.13.0 states its space as
+    // a graph with no way to embed it, which is exactly the state the ordering
+    // wants reachable.
+    // 0.15.0 (spec-0050) adds one document and no field: `detail-plan.json`,
+    // which piece stands in which of the plan's places. It has no coordinate, no
+    // region, no extent, no datum, no seam and no offset — absent fields, not
+    // optional ones — so a part is structurally unable to move the box the whole
+    // gave it, and the only path from a binding to placed bytes is the compiler
+    // computing the frame from the site plan inside `Plan::build`.
+    assert!(s.contains("dsl 0.15.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 
@@ -2264,7 +2278,7 @@ fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
     let bolt: serde_json::Value =
         serde_json::from_slice(&tree["validation/branch-path-bolt.json"]).unwrap();
     // Same contract the harness parses — the version fields the bot checks first.
-    assert_eq!(bolt["format_version"], 2);
+    assert_eq!(bolt["format_version"], 3);
     assert_eq!(bolt["campaign_id"], "hello-world");
     let steps = bolt["steps"].as_array().unwrap();
     // The scripted choice rides inside the step: the bolt branch takes the option

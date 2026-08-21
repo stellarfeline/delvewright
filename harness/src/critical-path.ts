@@ -62,6 +62,21 @@
  * on its own; neither exports a step, reorders one, or changes anything the bot
  * walks, so a v0.13 path is walked exactly as a v0.12 one is.
  *
+ * **v0.14** adds one document and no step: a site plan, the geometric embedding
+ * of that graph — the region, a box per place, a seam per connection on a face
+ * the two boxes share, and the comparisons that hold all of it to the brief's
+ * numbers. Like its two siblings it is a compile-time claim the compiler proves
+ * on its own; it exports no step, reorders none, and changes nothing the bot
+ * walks, so a v0.14 path is walked exactly as a v0.13 one is.
+ *
+ * **v0.15** adds one document and no step: a detail plan, which piece stands in
+ * which of the plan's places. It carries no coordinate — the frame is computed
+ * from the site plan's own box — and it exports no step, reorders none, and
+ * changes nothing the bot walks, so a v0.15 path is walked exactly as a v0.14
+ * one is. What it changes is what the bot walks THROUGH: a detailed place is a
+ * building rather than a shell, and the critical path across it is the same
+ * path, which is the property stage 6 exists to preserve.
+ *
  * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
  * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
  * enforces that in CI: an allowlist that lags the ceiling refuses a v0.9.0
@@ -80,6 +95,8 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.11.0",
   "0.12.0",
   "0.13.0",
+  "0.14.0",
+  "0.15.0",
 ] as const;
 
 /**
@@ -95,10 +112,18 @@ export const SUPPORTED_DSL_VERSIONS = [
  * * `2` — every objective-bearing step names the `obj/<id>` it proves, and
  *   completion is proved by the anchored per-objective marker channel
  *   (`markers.ts`).
+ * * `3` — a `reach` step carries `completion`, the volume the datapack actually
+ *   adjudicates in. The walk goal is derived from that and no longer from the
+ *   authored `radius`, which the datapack had stopped reading at DSL v0.3 without
+ *   telling anyone. Required in both directions, which is what makes it a format
+ *   change rather than an addition: a format-2 artifact cannot tell a current bot
+ *   where the objective completes, and this bot refuses the field's absence rather
+ *   than falling back to a completion model of its own — that fallback is the
+ *   defect.
  *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 2;
+export const CRITICAL_PATH_FORMAT_VERSION = 3;
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
@@ -160,14 +185,41 @@ export interface TalkToStep extends PresentationMarkers {
   readonly transport?: Transport;
 }
 
-/** Reach an anchor: get within `radius` blocks of the absolute position `pos`. */
+/**
+ * The volume the DATAPACK completes a reach objective in, exported by the
+ * compiler rather than re-derived here.
+ *
+ * The harness had a model of this, and it was wrong. Its comment said the server
+ * ran a `distance=..radius` check on the anchor point, so it aimed one block
+ * tighter than `radius`; from DSL v0.3 the server had in fact been testing a
+ * fixed ±1 cube and ignoring `radius` altogether. On a `radius: 3` reach the bot
+ * was therefore entitled to stop three blocks out — outside the cube — and then
+ * wait forever on a completion that could not arrive. Nothing was red, because a
+ * `GoalNear` usually overshoots inward; the failure was intermittent, which is
+ * the worst way for it to be wrong.
+ *
+ * The compiler now emits the region and its adjudicating line from one value, so
+ * "the harness never contains game logic, only assertions and navigation" is
+ * true here rather than aspirational: the completion rule is the server's, this
+ * file navigates into it, and {@link Executor.reach} asserts arrival in it.
+ */
+export type ReachCompletion =
+  /** Pre-v0.3 emission: `distance=..radius` about the anchor's block corner. */
+  | { readonly kind: "sphere"; readonly pos: Vec3Tuple; readonly radius: number }
+  /** v0.3+: an axis-aligned block region, inclusive corners. */
+  | { readonly kind: "cube"; readonly lo: Vec3Tuple; readonly hi: Vec3Tuple };
+
+/** Reach an anchor: walk into the objective's exported completion volume. */
 export interface ReachStep extends PresentationMarkers {
   readonly action: "reach";
   /** The `obj/<id>` this step must prove complete (format 2). */
   readonly objective: string;
   readonly anchor: string;
   readonly pos: Vec3Tuple;
+  /** The AUTHORED radius — reported, never used to decide where to stop. */
   readonly radius: number;
+  /** What the server actually adjudicates. See {@link ReachCompletion}. */
+  readonly completion: ReachCompletion;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
 }
@@ -362,6 +414,105 @@ function requirePos(
   return [coords[0]!, coords[1]!, coords[2]!];
 }
 
+/** A named `[x, y, z]` field, same coordinate shape as `pos`. */
+function requireVec3(
+  obj: Record<string, unknown>,
+  key: string,
+  pointer: string,
+): Vec3Tuple {
+  const value = obj[key];
+  if (!Array.isArray(value)) {
+    fail(`${pointer}/${key}`, `must be an array, got ${describe(value)}`);
+  }
+  if (value.length !== 3) {
+    fail(`${pointer}/${key}`, `must have exactly 3 elements, got ${value.length}`);
+  }
+  const coords = value.map((entry, i) => {
+    const at = `${pointer}/${key}/${i}`;
+    if (typeof entry !== "number" || !Number.isFinite(entry)) {
+      fail(at, `must be a finite number, got ${describe(entry)}`);
+    }
+    return entry;
+  });
+  return [coords[0]!, coords[1]!, coords[2]!];
+}
+
+/**
+ * The required `completion` volume on a reach step.
+ *
+ * Required, deliberately: an optional field with a fallback would be the harness
+ * keeping its own completion model alive under a nicer name, and that model is
+ * exactly what was wrong. If the artifact does not say what the server
+ * adjudicates, this bot has no business guessing.
+ */
+function requireCompletion(
+  obj: Record<string, unknown>,
+  pointer: string,
+): ReachCompletion {
+  const at = `${pointer}/completion`;
+  const value = obj["completion"];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    fail(at, `must be an object, got ${describe(value)}`);
+  }
+  const c = value as Record<string, unknown>;
+  const kind = c["kind"];
+  if (kind === "cube") {
+    rejectUnknownKeys(c, ["kind", "lo", "hi"], at);
+    return { kind: "cube", lo: requireVec3(c, "lo", at), hi: requireVec3(c, "hi", at) };
+  }
+  if (kind === "sphere") {
+    rejectUnknownKeys(c, ["kind", "pos", "radius"], at);
+    const radius = c["radius"];
+    if (typeof radius !== "number" || !Number.isFinite(radius) || radius <= 0) {
+      fail(`${at}/radius`, `must be a positive finite number, got ${describe(radius)}`);
+    }
+    return { kind: "sphere", pos: requireVec3(c, "pos", at), radius };
+  }
+  fail(`${at}/kind`, `must be "cube" or "sphere", got ${describe(kind)}`);
+}
+
+/**
+ * Whether `p` (a precise entity position) lies inside `c`.
+ *
+ * Block-region semantics, matching the `@s[x=..,dx=..]` the server runs: the
+ * region a `cube` names spans `lo` to `hi + 1` in continuous coordinates, because
+ * `x=lo,dx=hi-lo` covers whole blocks `lo..=hi`. The sphere form measures from the
+ * anchor's block corner, which is what `distance=..r` does.
+ */
+export function insideCompletion(p: Vec3Tuple, c: ReachCompletion): boolean {
+  if (c.kind === "cube") {
+    return [0, 1, 2].every((i) => p[i]! >= c.lo[i]! && p[i]! <= c.hi[i]! + 1);
+  }
+  const d = Math.hypot(p[0]! - c.pos[0]!, p[1]! - c.pos[1]!, p[2]! - c.pos[2]!);
+  return d <= c.radius;
+}
+
+/**
+ * The walk goal for a reach step: aim at the middle of the completion volume,
+ * with a range that cannot put the bot outside it.
+ *
+ * `GoalNear` is block-granular and the server's check is not, so the goal is one
+ * block tighter than the volume's own half-extent — landing well inside rather
+ * than on the boundary. Derived from the SERVER's volume, never from the authored
+ * radius: those were the same number until v0.3 and have not been since.
+ */
+export function reachGoal(c: ReachCompletion): { pos: Vec3Tuple; range: number } {
+  if (c.kind === "cube") {
+    const mid: Vec3Tuple = [
+      Math.floor((c.lo[0]! + c.hi[0]!) / 2),
+      Math.floor((c.lo[1]! + c.hi[1]!) / 2),
+      Math.floor((c.lo[2]! + c.hi[2]!) / 2),
+    ];
+    const half = Math.min(
+      c.hi[0]! - mid[0]!,
+      c.hi[1]! - mid[1]!,
+      c.hi[2]! - mid[2]!,
+    );
+    return { pos: mid, range: Math.max(1, half - 1) };
+  }
+  return { pos: c.pos, range: Math.max(1, c.radius - 1) };
+}
+
 /**
  * The optional `transport: [x, y, z]` marker (gap 8): the absolute destination a
  * step's completion teleports the player to. Returns a spreadable object — `{}`
@@ -504,7 +655,17 @@ function parseStep(value: unknown, pointer: string): Step {
     case "reach": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "anchor", "pos", "radius", "transport", "sneak", "cutscene_seconds"],
+        [
+          "action",
+          "objective",
+          "anchor",
+          "pos",
+          "radius",
+          "completion",
+          "transport",
+          "sneak",
+          "cutscene_seconds",
+        ],
         pointer,
       );
       const radius = obj["radius"];
@@ -520,6 +681,7 @@ function parseStep(value: unknown, pointer: string): Step {
         anchor: requireString(obj, "anchor", pointer),
         pos: requirePos(obj, pointer),
         radius,
+        completion: requireCompletion(obj, pointer),
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),
       };

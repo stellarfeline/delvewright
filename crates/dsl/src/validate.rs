@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, is_v11, is_v12, is_v13,
+    is_v10, is_v11, is_v12, is_v13, is_v14, is_v15,
 };
 use crate::ids::is_kebab;
 use crate::metrics::Metrics;
@@ -75,6 +75,13 @@ pub fn validate_campaign_with(
     prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
+    // `DW0849`: an item gate no class can bring. Unconditional, like its
+    // neighbours — the walk is empty for a campaign with no `requires_item`, and
+    // the rule judges a contradiction between two authored documents (a quest's
+    // item gate against the class kits), so it is `EveryVersion` and has no
+    // fence to live in. Bound HERE rather than to a step someone runs, because
+    // this is the function every `delvec` subcommand's validation stage calls.
+    item_gate_class_checks(c, &mut d);
     // DSL v0.3: the new stage-5 verbs, waves and flags. Gated on the quests
     // stage's version so a v0.2 campaign is unaffected (its uses of these verbs
     // are still rejected as reserved by `reserved`, above).
@@ -120,10 +127,24 @@ pub fn validate_campaign_with(
     // stage calls. The version fence is `reserved_v13`, below, and the reads
     // ledger is what gives `DW0813` its document-side binding: every building
     // metric these checks rest a verdict on records that it did.
-    if c.geometry_brief.is_some() || c.layout_graph.is_some() {
+    if c.geometry_brief.is_some() || c.layout_graph.is_some() || c.site_plan.is_some() {
+        // ONE run-scoped ledger across stages 2, 3 and 4. That is what closes
+        // the residual `dsl::metrics` names in its own module docs: a check
+        // cannot rest a verdict on an uncalibrated standard without the notice
+        // seeing it, because there is no second ledger for a read to go into.
         let mut reads = crate::metrics::Reads::new();
         crate::layout::check(c, &mut reads, &mut d);
-        if let Some(notice) = Metrics::table().notice(&reads, "layout-graph") {
+        crate::siteplan::check(c, &mut reads, &mut d);
+        // The notice names the newest document present, because that is the one
+        // whose checks read the most of the provisional half.
+        let stage = if c.site_plan.is_some() {
+            "site-plan"
+        } else if c.layout_graph.is_some() {
+            "layout-graph"
+        } else {
+            "geometry-brief"
+        };
+        if let Some(notice) = Metrics::table().notice(&reads, stage) {
             d.push(notice);
         }
     }
@@ -162,6 +183,113 @@ pub fn validate_campaign_with(
     d
 }
 
+// ---------------------------------------------------------------------------
+// What anchors does this campaign have? — ONE authority
+// ---------------------------------------------------------------------------
+
+/// Every anchor name this campaign's areas provide, and how much of that answer
+/// is known at validation time.
+///
+/// **This is the only place the question is asked.** Eleven checks used to walk
+/// `world.areas` and call [`AnchorRegistry::anchors_for`] themselves — the shape
+/// `CLAUDE.md` names as *a hand-rolled walk enumerating three of five effect
+/// roots: a defect of expressibility, not of care*. It cost exactly what that
+/// shape always costs. When a site plan became a second placement authority
+/// (spec-0049 §5.2), the derivation began synthesizing a campaign's whole anchor
+/// vocabulary — a `node-` per place, a `seam-` per barred way, an `unlock-` on
+/// the openable side of a one-sided one — and **one** of the eleven walks was
+/// taught to ask [`crate::siteplan::synthesized_anchors`] about it. The other ten
+/// went on enumerating prefabs a derived world does not have, so every stage-5
+/// verb but the ones that walk went unauthorable on a derived map: a `shortcut`
+/// naming the very `unlock-` anchor the derivation places for it was refused as
+/// an invented name, and so were a trap, a shop, a lane, a loot chest, a lethal
+/// volume, a timed gate, a cutscene camera and an actor.
+///
+/// Nothing was red, because a check that resolves against a smaller world than
+/// the campaign has refuses *content*, not itself.
+///
+/// Two properties every consumer needs and neither should re-derive:
+///
+/// * **Leniency.** A pool area's prefab is chosen by the compiler, so an anchor
+///   name it might provide cannot be refused here. [`Self::resolvable`] is
+///   therefore true for every name once any pool area exists — the long-standing
+///   policy, stated once instead of ten times.
+/// * **Completeness.** [`Self::all_areas_known`] is true only when every area
+///   contributed a set: no pool, no prefab the registry has never heard of. The
+///   checks with no owning area to resolve against (a global trigger's effects, a
+///   cutscene camera that legitimately flies between areas) need this rather than
+///   leniency.
+pub(crate) struct AnchorProviders {
+    /// area id → the anchor names that area provides.
+    per_area: BTreeMap<String, BTreeSet<String>>,
+    /// The union of every known area's set.
+    union: BTreeSet<String>,
+    /// Some area binds a pool, so the compiler resolves its anchors later.
+    deferred: bool,
+    /// Every area contributed a set — the union is the whole truth.
+    all_areas_known: bool,
+}
+
+impl AnchorProviders {
+    /// Ask the campaign, once.
+    pub(crate) fn build(c: &Campaign, anchors: &dyn AnchorRegistry) -> Self {
+        let mut per_area: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut deferred = false;
+        // A site-plan campaign has no prefab to ask, and it does not need one:
+        // its anchors are DERIVED from the graph and the plan, so the set is
+        // knowable here exactly as a prefab's is — and it is the same function
+        // the derivation itself places them by, so a name that resolves here
+        // cannot fail to exist in the built world.
+        let mut declared_areas = c.world.content.areas.len();
+        if c.site_plan.is_some() {
+            declared_areas += 1;
+            per_area.insert(
+                crate::siteplan::SITE_AREA.to_string(),
+                crate::siteplan::synthesized_anchors(c),
+            );
+        }
+        for a in &c.world.content.areas {
+            if let Some(prefab) = &a.prefab {
+                if let Some(set) = anchors.anchors_for(prefab) {
+                    per_area.insert(a.id.as_str().to_string(), set.clone());
+                }
+            } else if a.prefab_pool.is_some() {
+                deferred = true;
+            }
+        }
+        let union: BTreeSet<String> = per_area.values().flatten().cloned().collect();
+        let all_areas_known = declared_areas == per_area.len();
+        Self {
+            per_area,
+            union,
+            deferred,
+            all_areas_known,
+        }
+    }
+
+    /// The anchor set `area` provides, or `None` when that area's provider is not
+    /// known here (a pool the compiler resolves later, or an unknown prefab).
+    pub(crate) fn for_area(&self, area: &str) -> Option<&BTreeSet<String>> {
+        self.per_area.get(area)
+    }
+
+    /// Whether `name` may be referenced. Lenient by design: a pool area defers the
+    /// answer to the compiler, so nothing is refused while one exists.
+    pub(crate) fn resolvable(&self, name: &str) -> bool {
+        self.deferred || self.union.contains(name)
+    }
+
+    /// Every area contributed a set, so [`Self::union`] is the whole truth.
+    pub(crate) fn all_areas_known(&self) -> bool {
+        self.all_areas_known
+    }
+
+    /// Every anchor name any known area provides.
+    pub(crate) fn union(&self) -> &BTreeSet<String> {
+        &self.union
+    }
+}
+
 /// Stage-5 lethal-volume structural checks (DSL v0.10, spec-0031): id syntax and
 /// uniqueness, a resolvable region anchor, and a wording the player can actually
 /// read (`DW0512`).
@@ -176,17 +304,7 @@ fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<
     }
     // The same "is this anchor provided by some bound prefab" rule every stage-5
     // anchor reference uses; a pool area defers the answer to the compiler.
-    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
-    let mut has_pool_area = false;
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab {
-            if let Some(set) = anchors.anchors_for(prefab) {
-                known_anchor.extend(set.iter().map(String::as_str));
-            }
-        } else if a.prefab_pool.is_some() {
-            has_pool_area = true;
-        }
-    }
+    let providers = AnchorProviders::build(c, anchors);
     let mut seen_id: BTreeSet<&str> = BTreeSet::new();
     for (i, v) in volumes.iter().enumerate() {
         if !v.id.is_valid_syntax() {
@@ -209,7 +327,7 @@ fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<
                 format!("duplicate lethal-volume id `{}`", v.id),
             ));
         }
-        if !(has_pool_area || known_anchor.contains(v.region.anchor.as_str())) {
+        if !providers.resolvable(v.region.anchor.as_str()) {
             d.push(Diagnostic::error(
                 codes::ANCHOR_UNRESOLVED,
                 "quests",
@@ -312,19 +430,9 @@ fn shop_anchor_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Di
     if c.quests.content.shops.is_empty() {
         return;
     }
-    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
-    let mut has_pool_area = false;
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab {
-            if let Some(set) = anchors.anchors_for(prefab) {
-                known_anchor.extend(set.iter().map(String::as_str));
-            }
-        } else if a.prefab_pool.is_some() {
-            has_pool_area = true;
-        }
-    }
+    let providers = AnchorProviders::build(c, anchors);
     for (i, sh) in c.quests.content.shops.iter().enumerate() {
-        if has_pool_area || known_anchor.contains(sh.anchor.as_str()) {
+        if providers.resolvable(sh.anchor.as_str()) {
             continue;
         }
         d.push(Diagnostic::error(
@@ -573,6 +681,16 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 .iter()
                 .map(|e| (Stage::LayoutGraph, e.stage, e.dsl_version.as_str())),
         )
+        .chain(
+            c.site_plan
+                .iter()
+                .map(|e| (Stage::SitePlan, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.detail_plan
+                .iter()
+                .map(|e| (Stage::DetailPlan, e.stage, e.dsl_version.as_str())),
+        )
         .collect();
     for (expected, actual, version) in stages {
         if actual != expected {
@@ -629,6 +747,16 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
         c.layout_graph
             .iter()
             .map(|e| (Stage::LayoutGraph, &e.campaign_id)),
+    )
+    .chain(
+        c.site_plan
+            .iter()
+            .map(|e| (Stage::SitePlan, &e.campaign_id)),
+    )
+    .chain(
+        c.detail_plan
+            .iter()
+            .map(|e| (Stage::DetailPlan, &e.campaign_id)),
     )
     .collect();
     let canonical = c.world.campaign_id.as_str();
@@ -865,13 +993,20 @@ fn uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // ---------------------------------------------------------------------------
 
 fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let area_ids: BTreeSet<&str> = c
+    let mut area_ids: BTreeSet<&str> = c
         .world
         .content
         .areas
         .iter()
         .map(|a| a.id.as_str())
         .collect();
+    // A site-plan campaign has no `areas[]` — `DW0839` refuses one that does —
+    // and exactly one place instead: the site the plan lays out. NPCs and
+    // planned quests name it like any other area, so it is a declared area id
+    // here for the same reason `areas[]` entries are.
+    if c.site_plan.is_some() {
+        area_ids.insert(crate::siteplan::SITE_AREA);
+    }
     let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
     let planned_ids: BTreeSet<&str> = c
         .quest_plan
@@ -1413,6 +1548,8 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v11(c, d);
     reserved_v12(c, d);
     reserved_v13(c, d);
+    reserved_v14(c, d);
+    reserved_v15(c, d);
     press_answer_checks(c, d);
     press_obligation_checks(c, d);
 }
@@ -1470,6 +1607,58 @@ fn reserved_v13(c: &Campaign, d: &mut Vec<Diagnostic>) {
             ),
         ));
     }
+}
+
+/// The spec-0049 site plan exists only at `dsl_version` 0.14.0.
+///
+/// A whole DOCUMENT is fenced, on the same terms as its two siblings one version
+/// below: an older campaign has no `site-plan.json`, so there is nothing on it
+/// to grandfather and nothing it could have been judged against.
+fn reserved_v14(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let Some(version) = c.site_plan.as_ref().map(|e| e.dsl_version.as_str()) else {
+        return;
+    };
+    if is_v14(version) {
+        return;
+    }
+    d.push(Diagnostic::error(
+        codes::RESERVED,
+        Stage::SitePlan.name(),
+        "/dsl_version",
+        format!(
+            "a `site-plan` document requires dsl_version 0.14.0 and this one declares \
+             `{version}` — raise this document's own `dsl_version` to 0.14.0, or delete the \
+             file. It is the geometric embedding of the layout graph, and a campaign at 0.13.0 \
+             states its space as a graph and has nowhere to put the embedding: that is the \
+             ordering, and it is why the two are separate versions rather than one."
+        ),
+    ));
+}
+
+/// The spec-0050 detail plan exists only at `dsl_version` 0.15.0.
+///
+/// A whole DOCUMENT is fenced, on the same terms as the three map-pipeline
+/// documents below it: an older campaign has no `detail-plan.json`, so there is
+/// nothing on it to grandfather and nothing it could have been judged against.
+fn reserved_v15(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let Some(version) = c.detail_plan.as_ref().map(|e| e.dsl_version.as_str()) else {
+        return;
+    };
+    if is_v15(version) {
+        return;
+    }
+    d.push(Diagnostic::error(
+        codes::RESERVED,
+        Stage::DetailPlan.name(),
+        "/dsl_version",
+        format!(
+            "a `detail-plan` document requires dsl_version 0.15.0 and this one declares \
+             `{version}` — raise this document's own `dsl_version` to 0.15.0, or delete the \
+             file. It states which piece fills which of the site plan's places, and a campaign \
+             at 0.14.0 has the whole map and no way to detail a part of it: that is the \
+             ordering, and it is why the two are separate versions rather than one."
+        ),
+    ));
 }
 
 fn reserved_v12(c: &Campaign, d: &mut Vec<Diagnostic>) {
@@ -1799,6 +1988,198 @@ fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// (`plan::press_answer_trigger_id`). Stated here because the *reservation* is a
 /// DSL-level fact even though today's only user is in the compiler.
 const RESERVED_TRIGGER_PREFIX: &str = "dw-";
+
+/// Normalise an authored item id to its namespaced form, so `stripped_oak_log`
+/// and `minecraft:stripped_oak_log` are the same item to every comparison here.
+/// Same rule [`crate::stages::is_potion_bearing_item`] applies to its own list.
+fn ns_item(id: &str) -> String {
+    if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    }
+}
+
+/// Every item this campaign can put into the hands of a player **whatever class
+/// they picked** — the class-blind half of the provenance question `DW0849`
+/// asks.
+///
+/// The five ways an item enters a player's inventory are the class kit
+/// ([`crate::stages::Class::kit`], which is class-BOUND and therefore
+/// deliberately absent here) and these four. They are gathered from the closed
+/// enumerations rather than from a walk of the sites this function's author
+/// happened to remember: effects come through
+/// [`crate::stages::for_each_campaign_effect`], which is
+/// [`crate::effects::for_each_effect_root`] underneath — the same eight roots
+/// emission lowers from, and the one `tools/check-effect-roots.py` holds closed.
+///
+/// A trap's `dispense` payload is **not** a source, and the exclusion is about
+/// the object rather than about effort: a dispenser fires its stack at the party
+/// as a hazard. Being shot with a thing is not being handed it, and a campaign
+/// whose only supply of a required item is a trap firing it has a defect this
+/// check should name rather than excuse.
+fn class_blind_item_sources(c: &Campaign) -> BTreeSet<String> {
+    let mut src: BTreeSet<String> = BTreeSet::new();
+    let quests = &c.quests.content;
+
+    // A `give-item` anywhere. Deliberately unconditional on its flag gate and on
+    // its position in the quest DAG: a gated grant is still a way the item can
+    // be had, and treating one as no source at all would red campaigns that are
+    // fine. The direction of the approximation is chosen — this check refuses
+    // only where NOTHING class-blind supplies the item.
+    crate::stages::for_each_campaign_effect(c, &mut |_path, _site, eff| {
+        if let Some(item) = eff.give_item() {
+            src.insert(ns_item(item));
+        }
+    });
+
+    for q in &quests.quests {
+        for o in &q.objectives {
+            // A `collect` is provisioned into a container the compiler fills or
+            // adopts, or dropped by a wave — every one of those is open to
+            // whoever walks up to it.
+            if let Objective::Collect { item, .. } = o {
+                src.insert(ns_item(item));
+            }
+        }
+    }
+
+    for l in &quests.loot {
+        for it in &l.items {
+            src.insert(ns_item(&it.item));
+        }
+    }
+
+    for w in &quests.waves {
+        for m in &w.mobs {
+            for drop in &m.drops {
+                match (drop.item(), drop.slot()) {
+                    (Some(item), _) => {
+                        src.insert(ns_item(item));
+                    }
+                    // A worn piece drops the item the same mob's `equipment`
+                    // declares in that slot (`DW0490` already refuses a slot the
+                    // equipment leaves empty, so this lookup is total on a
+                    // campaign that got that far).
+                    (None, Some(slot)) => {
+                        if let Some(eq) = m.equipment.as_ref().and_then(|e| e.filled(slot)) {
+                            src.insert(ns_item(eq.item()));
+                        }
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+    }
+
+    src
+}
+
+/// `DW0849`: **an item gate a class cannot bring.**
+///
+/// ## The finding this is the general form of
+///
+/// A required item was issued through one class's kit rather than to the party,
+/// so a player who picked any other class arrived at the objective that consumed
+/// it and could do nothing. The instance was repaired by moving the item; the
+/// class of defect — *completability that depends on which class was picked* —
+/// had no check, and a campaign is free to reintroduce it at every new item
+/// gate.
+///
+/// ## Why this is a property of the object class, not of `interact`
+///
+/// The object is an **item gate**: a place where an objective completes only for
+/// a player who holds a named thing. Today the DSL has exactly one such site
+/// ([`Objective::Interact::requires_item`]) — a shop's price is a
+/// [`crate::stages::StateCompare`] over a datum and not an item at all, and no
+/// verb removes an item from an inventory. So the enumeration is one arm wide
+/// today and is written as an enumeration anyway, because the second site is
+/// where a rule keyed to the first verb leaves the next author with no surface.
+///
+/// ## The quantifier, and why it is `for all` rather than `there exists`
+///
+/// A delve is played by one to four players who each pick one class, so **a solo
+/// player of any class is a supported party**. An item only one class can bring
+/// is therefore an objective some real party is assembled unable to finish, and
+/// it finds out at the thing it cannot press. This is exactly the reasoning
+/// [`codes::BONFIRE_NO_FLASK`] already states for the flask: one class without it
+/// is as broken as none.
+///
+/// ## The direction the approximation runs
+///
+/// [`class_blind_item_sources`] is deliberately generous — a flag-gated
+/// `give-item` late in the DAG counts as a source. The refusal therefore fires
+/// only where the item has **no** class-blind supply anywhere in the campaign,
+/// which is the shape the finding had and the shape a typo has. Making it
+/// stricter would need the reachability model, which does not model items at
+/// all; making it stricter *without* that model would red correct campaigns,
+/// and a check that reds correct work is how a check gets weakened.
+fn item_gate_class_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let classes = &c.classes.content.classes;
+    if classes.is_empty() {
+        // The schema requires 1..4, so this is unreachable on a parsed campaign;
+        // returning rather than dividing by an empty quantifier keeps the "for
+        // all classes" reading honest instead of vacuously true.
+        return;
+    }
+    let blind = class_blind_item_sources(c);
+
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            let Objective::Interact {
+                id, requires_item, ..
+            } = o
+            else {
+                continue;
+            };
+            let Some(raw) = requires_item.as_deref() else {
+                continue;
+            };
+            let item = ns_item(raw);
+            if blind.contains(&item) {
+                continue;
+            }
+            let cannot: Vec<&str> = classes
+                .iter()
+                .filter(|cl| !cl.kit.iter().any(|k| ns_item(&k.item) == item))
+                .map(|cl| cl.id.as_str())
+                .collect();
+            if cannot.is_empty() {
+                continue;
+            }
+            let supply = if cannot.len() == classes.len() {
+                "nothing in this campaign supplies it at all".to_string()
+            } else {
+                format!(
+                    "its only supply is another class's kit, so {} cannot bring it: {}",
+                    if cannot.len() == 1 {
+                        "one class"
+                    } else {
+                        "those classes"
+                    },
+                    cannot.join(", ")
+                )
+            };
+            d.push(Diagnostic::error(
+                codes::ITEM_GATE_UNBRINGABLE,
+                "quests",
+                format!("/content/quests/{i}/objectives/{j}/requires_item"),
+                format!(
+                    "objective `{}` completes only for a player HOLDING `{raw}`, and {supply}. A \
+                     delve is played by one to four players who each pick one class, so a solo \
+                     player of any class is a party this campaign must be finishable by — and \
+                     this one is assembled unable to finish, which it learns standing at the \
+                     thing it cannot press. Three ways to supply it, and any one is enough: put \
+                     the item in a `collect` objective or a `loot` container on the way to this \
+                     gate; hand it out with a `give-item` effect (its default `carrier` is `all` \
+                     — every party member); or add it to EVERY class kit rather than one. Do not \
+                     drop `requires_item` to silence this — presenting the item is the beat.",
+                    id.as_str()
+                ),
+            ));
+        }
+    }
+}
 
 /// DSL v0.10 reserved-feature gating (spec-0031). **Two surfaces land in this
 /// version**, and this is the one fence for both:
@@ -3535,23 +3916,7 @@ fn v06_checks(
     // Anchor names provided by single-prefab areas (pool areas resolve anchors in
     // the compiler, so their presence defers the check — mirroring `DW0142`'s
     // single-prefab-only scope; never a false positive).
-    let mut anchor_union: BTreeSet<&str> = BTreeSet::new();
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab
-            && let Some(set) = anchors.anchors_for(prefab)
-        {
-            for name in set {
-                anchor_union.insert(name.as_str());
-            }
-        }
-    }
-    let defer_anchors = c
-        .world
-        .content
-        .areas
-        .iter()
-        .any(|a| a.prefab_pool.is_some());
-    let anchor_known = |name: &str| defer_anchors || anchor_union.contains(name);
+    let providers = AnchorProviders::build(c, anchors);
 
     // Actor declarations: entity id, skin, spawn anchor.
     let mut seen_skins: BTreeSet<&str> = BTreeSet::new();
@@ -3593,7 +3958,7 @@ fn v06_checks(
                 ));
             }
         }
-        if !anchor_known(a.anchor.as_str()) {
+        if !providers.resolvable(a.anchor.as_str()) {
             d.push(Diagnostic::error(
                 codes::ANCHOR_UNRESOLVED,
                 "quests",
@@ -3645,7 +4010,7 @@ fn v06_checks(
                 ));
             }
             if let QuestEffect::MoveActor { to_anchor, .. } = e
-                && !anchor_known(to_anchor.as_str())
+                && !providers.resolvable(to_anchor.as_str())
             {
                 d.push(Diagnostic::error(
                     codes::ANCHOR_UNRESOLVED,
@@ -3993,24 +4358,18 @@ fn anchors_and_items(
 ) {
     // area id -> anchor set of its bound prefab (only for single-prefab areas
     // whose prefab is known; pool areas resolve their anchors elsewhere).
-    let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab
-            && let Some(set) = anchors.anchors_for(prefab)
-        {
-            area_anchors.insert(a.id.as_str(), set);
-        }
-    }
+    //
+    // A site-plan campaign has no prefab to ask, and it does not need one: its
+    // anchors are DERIVED from the graph and the plan, so the set is knowable
+    // here exactly as a prefab's is — and it is the same function the derivation
+    // itself places them by, so a name that resolves here cannot fail to exist
+    // in the built world.
+    let providers = AnchorProviders::build(c, anchors);
     // Every anchor any known area provides, and whether that union is the whole
     // truth (no area binds a pool / an unknown prefab). Used for the anchor
     // references that have no owning area to resolve against: an environment
     // trigger's effects (triggers are global) and a cutscene's camera anchors (a
     // camera legitimately flies across areas).
-    let all_areas_known = c.world.content.areas.len() == area_anchors.len();
-    let union: BTreeSet<&str> = area_anchors
-        .values()
-        .flat_map(|s| s.iter().map(String::as_str))
-        .collect();
 
     // planned quest id -> its area.
     let quest_area: BTreeMap<&str, &str> = c
@@ -4023,7 +4382,7 @@ fn anchors_and_items(
 
     // NPC anchors.
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-        if let Some(set) = area_anchors.get(npc.area.as_str())
+        if let Some(set) = providers.for_area(npc.area.as_str())
             && !set.contains(npc.anchor.as_str())
         {
             d.push(Diagnostic::error(
@@ -4044,7 +4403,7 @@ fn anchors_and_items(
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         let set = quest_area
             .get(q.id.as_str())
-            .and_then(|area| area_anchors.get(*area).copied());
+            .and_then(|area| providers.for_area(area));
         let Some(set) = set else { continue };
 
         for (j, obj) in q.objectives.iter().enumerate() {
@@ -4081,7 +4440,7 @@ fn anchors_and_items(
                 let resolves = if cross_area {
                     // An unknown/pool area makes the union incomplete — defer to
                     // the compiler's build-time seal rather than guess.
-                    !all_areas_known || union.contains(anchor.as_str())
+                    !providers.all_areas_known() || providers.union().contains(anchor.as_str())
                 } else {
                     set.contains(anchor.as_str())
                 };
@@ -4113,11 +4472,11 @@ fn anchors_and_items(
     // resolved-or-diagnostic rule as quest effects, applied at the only scope a
     // trigger has. Skipped entirely when some area binds a pool / an unknown
     // prefab, because then the union is not the whole truth.
-    if all_areas_known {
+    if providers.all_areas_known() {
         for (ti, t) in c.quests.content.triggers.iter().enumerate() {
             for_each_trigger_effect_deep(t, |path, eff| {
                 for (suffix, anchor) in eff.anchor_refs() {
-                    if union.contains(anchor.as_str()) {
+                    if providers.union().contains(anchor.as_str()) {
                         continue;
                     }
                     d.push(Diagnostic::error(
@@ -4371,14 +4730,7 @@ fn v03_checks(
     });
 
     // area id -> its single-prefab anchor set (pool areas deferred to compiler).
-    let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab
-            && let Some(set) = anchors.anchors_for(prefab)
-        {
-            area_anchors.insert(a.id.as_str(), set);
-        }
-    }
+    let providers = AnchorProviders::build(c, anchors);
     let quest_area: BTreeMap<&str, &str> = c
         .quest_plan
         .content
@@ -4391,7 +4743,7 @@ fn v03_checks(
     for (i, q) in quests.quests.iter().enumerate() {
         let set = quest_area
             .get(q.id.as_str())
-            .and_then(|area| area_anchors.get(*area).copied());
+            .and_then(|area| providers.for_area(area));
 
         for (j, obj) in q.objectives.iter().enumerate() {
             match obj {
@@ -4701,24 +5053,7 @@ fn v04_checks(
     let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
 
     // area anchor sets (single-prefab areas only) + whether any pool area exists.
-    let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();
-    let mut has_pool_area = false;
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab {
-            if let Some(set) = anchors.anchors_for(prefab) {
-                area_anchors.insert(a.id.as_str(), set);
-            }
-        } else if a.prefab_pool.is_some() {
-            has_pool_area = true;
-        }
-    }
-    let known_anchor: BTreeSet<&str> = area_anchors
-        .values()
-        .flat_map(|s| s.iter().map(String::as_str))
-        .collect();
-    // Lenient anchor resolution: flag only when the name is provided by no known
-    // area AND there are no pool areas (which the compiler resolves later).
-    let anchor_resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+    let providers = AnchorProviders::build(c, anchors);
 
     // Declared flags across quest / dialogue / trigger `set-flag` effects and v0.6
     // trap disarms (a disarm's `sets_flag` is a first-class declared flag other
@@ -4857,7 +5192,7 @@ fn v04_checks(
                     t.on.npc_target().map(|n| n.as_str()).unwrap_or("?")
                 ),
             )),
-            (true, Some(at)) if !anchor_resolvable(at) => d.push(Diagnostic::error(
+            (true, Some(at)) if !providers.resolvable(at) => d.push(Diagnostic::error(
                 codes::ANCHOR_UNRESOLVED,
                 "quests",
                 format!("/content/triggers/{i}/at"),
@@ -5114,18 +5449,7 @@ fn v06_trap_checks(
     // Area anchor sets (single-prefab areas) + whether any pool area exists, so
     // resolution stays lenient for pool areas the compiler resolves later — the
     // same policy as the v0.4 trigger check.
-    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
-    let mut has_pool_area = false;
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab {
-            if let Some(set) = anchors.anchors_for(prefab) {
-                known_anchor.extend(set.iter().map(String::as_str));
-            }
-        } else if a.prefab_pool.is_some() {
-            has_pool_area = true;
-        }
-    }
-    let anchor_resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+    let providers = AnchorProviders::build(c, anchors);
 
     let flags = collect_declared_flags(c);
 
@@ -5154,7 +5478,7 @@ fn v06_trap_checks(
                 ),
             ));
         }
-        if !anchor_resolvable(t.at.as_str()) {
+        if !providers.resolvable(t.at.as_str()) {
             d.push(Diagnostic::error(
                 codes::TRAP_INVALID,
                 "quests",
@@ -5168,7 +5492,7 @@ fn v06_trap_checks(
             ));
         }
         if let Some(dis) = &t.disarm {
-            if !anchor_resolvable(dis.via.as_str()) {
+            if !providers.resolvable(dis.via.as_str()) {
                 d.push(Diagnostic::error(
                     codes::TRAP_INVALID,
                     "quests",
@@ -6956,18 +7280,7 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
     if quests.shortcuts.is_empty() {
         return;
     }
-    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
-    let mut has_pool_area = false;
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab {
-            if let Some(set) = anchors.anchors_for(prefab) {
-                known_anchor.extend(set.iter().map(String::as_str));
-            }
-        } else if a.prefab_pool.is_some() {
-            has_pool_area = true;
-        }
-    }
-    let resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+    let providers = AnchorProviders::build(c, anchors);
 
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for (i, sc) in quests.shortcuts.iter().enumerate() {
@@ -6995,7 +7308,7 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
             ));
         }
         for (field, anchor) in [("gate", &sc.gate), ("unlock", &sc.unlock)] {
-            if !resolvable(anchor.as_str()) {
+            if !providers.resolvable(anchor.as_str()) {
                 d.push(Diagnostic::error(
                     codes::SHORTCUT_INVALID,
                     "quests",
@@ -7162,18 +7475,7 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
     if quests.timed_gates.is_empty() {
         return;
     }
-    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
-    let mut has_pool_area = false;
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab {
-            if let Some(set) = anchors.anchors_for(prefab) {
-                known_anchor.extend(set.iter().map(String::as_str));
-            }
-        } else if a.prefab_pool.is_some() {
-            has_pool_area = true;
-        }
-    }
-    let resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+    let providers = AnchorProviders::build(c, anchors);
     let shortcut_gates: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     let mut driven: BTreeSet<&str> = BTreeSet::new();
@@ -7265,7 +7567,7 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
         }
         // The disarm affordance, the same two rules a trap's obeys.
         if let Some(dis) = &g.disarm {
-            if !resolvable(dis.via.as_str()) {
+            if !providers.resolvable(dis.via.as_str()) {
                 err(
                     format!("/content/timed_gates/{i}/disarm/via"),
                     format!(
@@ -7467,18 +7769,7 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
     {
         return;
     }
-    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
-    let mut has_pool_area = false;
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab {
-            if let Some(set) = anchors.anchors_for(prefab) {
-                known_anchor.extend(set.iter().map(String::as_str));
-            }
-        } else if a.prefab_pool.is_some() {
-            has_pool_area = true;
-        }
-    }
-    let resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+    let providers = AnchorProviders::build(c, anchors);
 
     for (i, w) in quests.waves.iter().enumerate() {
         let aggro_edge = w.summon == Some(crate::stages::WaveSummon::AggroEdge);
@@ -7530,7 +7821,7 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
             ));
         }
         for (k, wp) in lane.waypoints.iter().enumerate() {
-            if !resolvable(wp.as_str()) {
+            if !providers.resolvable(wp.as_str()) {
                 d.push(Diagnostic::error(
                     codes::LANE_INVALID,
                     "quests",
@@ -8168,18 +8459,7 @@ fn loot_checks(
     }
     let ench_reg = crate::registry::VendoredEnchantmentRegistry::v1_21_11();
 
-    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
-    let mut has_pool_area = false;
-    for a in &c.world.content.areas {
-        if let Some(prefab) = &a.prefab {
-            if let Some(set) = anchors.anchors_for(prefab) {
-                known_anchor.extend(set.iter().map(String::as_str));
-            }
-        } else if a.prefab_pool.is_some() {
-            has_pool_area = true;
-        }
-    }
-    let anchor_resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+    let providers = AnchorProviders::build(c, anchors);
 
     let mut seen_id: BTreeSet<&str> = BTreeSet::new();
     let mut seen_anchor: BTreeMap<&str, usize> = BTreeMap::new();
@@ -8204,7 +8484,7 @@ fn loot_checks(
                 format!("duplicate loot id `{}`", l.id),
             ));
         }
-        if !anchor_resolvable(l.anchor.as_str()) {
+        if !providers.resolvable(l.anchor.as_str()) {
             d.push(Diagnostic::error(
                 codes::ANCHOR_UNRESOLVED,
                 "quests",

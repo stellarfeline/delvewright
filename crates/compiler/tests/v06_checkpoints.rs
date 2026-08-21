@@ -306,6 +306,42 @@ fn reseat_packtest_drives_the_death_edge_from_the_entrance() {
     );
 }
 
+/// **The promise, re-asserted on the build** (`DW0852`, isl-19).
+///
+/// `emit_stealth_functions` has said "zone presence alone = hidden" in a doc
+/// comment since v0.6, and a playtester still met a stealth beat that quietly
+/// demanded a crouch. A doc comment is a doc line. So every build of a campaign
+/// that declares a stealth beat now audits its own emitted judges and ships the
+/// count: this asserts the audit ran, bound to something, and passed — the pass
+/// being a number rather than a silence.
+///
+/// The rule itself, and its red demos, live in `tests/emission_guards.rs`, where a
+/// judge can be perturbed without touching the emitter.
+#[test]
+fn the_emitted_stealth_judge_is_audited_and_the_ledger_says_what_it_examined() {
+    let out = build_fixture();
+    let raw = out
+        .get("validation/stealth-judge.json")
+        .expect("a campaign with a stealth beat ships the audit ledger");
+    let ledger: serde_json::Value = serde_json::from_slice(raw).expect("ledger json");
+    assert_eq!(ledger["verdict"], "pass");
+    assert_eq!(ledger["beats"], 1, "the fixture declares one beat");
+    assert_eq!(
+        ledger["judges"], ledger["beats"],
+        "a judge per beat — anything else and the scan was looking at a smaller world"
+    );
+    assert!(
+        ledger["examined"].as_u64().unwrap() > 0,
+        "a zero here is the unbound vacuity mode: {ledger}"
+    );
+    assert_eq!(
+        ledger["arguments"],
+        serde_json::json!(["dx", "dy", "dz", "x", "y", "z"]),
+        "the judge asks where the player is and nothing else: {ledger}"
+    );
+    assert_eq!(ledger["offenders"], serde_json::json!([]));
+}
+
 /// `begin-stealth` arms a per-tick judge that requires zone membership alone
 /// (no sneak requirement — holding sneak collides with the spectator cutscene
 /// camera), tracks grace, and fires `on_caught`.

@@ -361,6 +361,8 @@ struct StageVersions {
     /// `_` arm, which is how the next stage's strings get silently unfenced.
     geometry_brief: u32,
     layout_graph: u32,
+    site_plan: u32,
+    detail_plan: u32,
 }
 
 impl StageVersions {
@@ -375,6 +377,8 @@ impl StageVersions {
             Stage::WorldEdits => self.world_edits,
             Stage::GeometryBrief => self.geometry_brief,
             Stage::LayoutGraph => self.layout_graph,
+            Stage::SitePlan => self.site_plan,
+            Stage::DetailPlan => self.detail_plan,
         }
     }
 
@@ -398,6 +402,16 @@ impl StageVersions {
                 .unwrap_or(0),
             layout_graph: c
                 .layout_graph
+                .as_ref()
+                .map(|g| minor_ordinal(&g.dsl_version))
+                .unwrap_or(0),
+            site_plan: c
+                .site_plan
+                .as_ref()
+                .map(|g| minor_ordinal(&g.dsl_version))
+                .unwrap_or(0),
+            detail_plan: c
+                .detail_plan
                 .as_ref()
                 .map(|g| minor_ordinal(&g.dsl_version))
                 .unwrap_or(0),

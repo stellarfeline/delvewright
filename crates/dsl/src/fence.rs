@@ -164,6 +164,25 @@ fn stage_versions(c: &Campaign) -> BTreeMap<&'static str, u32> {
     if let Some(we) = &c.world_edits {
         m.insert("world-edits", minor_ordinal(&we.dsl_version));
     }
+    // The map-pipeline documents (spec-0049). They are here for the same reason
+    // the edit script is: a diagnostic carrying one of these stage names is
+    // ABOUT that document, so it is judged at the version that document
+    // declares. Omitted, they fell to the campaign-wide minimum below — which
+    // grandfathers rather than binds, so it costs nothing today (every rule over
+    // them is `EveryVersion`) and would silently under-fence the first
+    // `Binds::Since` rule any of them ever grows.
+    if let Some(gb) = &c.geometry_brief {
+        m.insert("geometry-brief", minor_ordinal(&gb.dsl_version));
+    }
+    if let Some(lg) = &c.layout_graph {
+        m.insert("layout-graph", minor_ordinal(&lg.dsl_version));
+    }
+    if let Some(sp) = &c.site_plan {
+        m.insert("site-plan", minor_ordinal(&sp.dsl_version));
+    }
+    if let Some(dp) = &c.detail_plan {
+        m.insert("detail-plan", minor_ordinal(&dp.dsl_version));
+    }
     m
 }
 
@@ -223,7 +242,9 @@ mod tests {
             dialogue: garbage.clone(),
             world_edits: Some(garbage.clone()),
             geometry_brief: Some(garbage.clone()),
-            layout_graph: Some(garbage),
+            layout_graph: Some(garbage.clone()),
+            site_plan: Some(garbage.clone()),
+            detail_plan: Some(garbage),
         })
         .expect_err("unparseable stages cannot produce a campaign");
         assert_eq!(

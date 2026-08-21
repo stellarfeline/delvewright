@@ -67,6 +67,8 @@ fn parse_hw(dialogue: &str, world: Option<String>) -> Campaign {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }

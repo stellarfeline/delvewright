@@ -73,6 +73,8 @@ fn night_vision_clock(quests: String, world: String) -> String {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

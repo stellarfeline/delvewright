@@ -111,7 +111,16 @@ enum Command {
     /// (facts of the pinned game) and the building half (this project's
     /// standards, each with its calibration state), on stdout; the table's
     /// self-consistency verdict and its binding counts on stderr.
-    Metrics,
+    Metrics {
+        /// Generate the metrics gym (spec-0049 §2.3) into this directory: a
+        /// site-plan campaign built FROM the table, one place per rung of the
+        /// size-class ladder at each of its bounds, every standard opening, both
+        /// stair pitches and a designed fall at the drop policy's cap. Walking
+        /// it is what retires `DW0813`. Nothing in it is authored geometry — it
+        /// compiles through the ordinary derivation.
+        #[arg(long, value_name = "DIR")]
+        gym: Option<PathBuf>,
+    },
     /// Draft-render one frame of the assembled world + a scene manifest
     /// (spec-0015: the visual authoring loop). Stops after placement +
     /// assembly — it never emits a datapack.
@@ -174,6 +183,26 @@ enum Command {
     Edit {
         #[command(subcommand)]
         action: EditAction,
+    },
+    /// The handed allocation for a site-plan place (spec-0050 §4): the frame's
+    /// extents, the datum in piece-local coordinates, every seam of the box with
+    /// the answering face it requires, the owed anchor names, and the detail
+    /// plan's palette.
+    ///
+    /// Derived from the site plan on every invocation and an input to nothing:
+    /// no gate, no build step and no check ever reads what this prints, so a
+    /// file made of it is a copy with no consumer and its staleness has no
+    /// vector into the build. It refuses without a passed, fresh walk record,
+    /// because obtaining an allocation is one of the two events that begin
+    /// detail work.
+    Allocation {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+        /// The place — a layout-graph node id (`node/<kebab>`).
+        place: Option<String>,
+        /// Every place of the plan, in document order.
+        #[arg(long)]
+        all: bool,
     },
     /// Convert a harvested `rehearsal-report.json` (spec-0019) into per-shot
     /// `anchor + offset` DSL patches. Reads only the report and the creator
@@ -255,7 +284,12 @@ fn main() -> ExitCode {
         }
         Command::Fmt { paths, check } => run_fmt(paths, *check, cli.json),
         Command::Schema { stage } => run_schema(stage),
-        Command::Metrics => run_metrics(cli.json),
+        Command::Allocation {
+            campaign_dir,
+            place,
+            all,
+        } => run_allocation(campaign_dir, place.as_deref(), *all, cli.json),
+        Command::Metrics { gym } => run_metrics(cli.json, gym.as_deref()),
         Command::Snapshot {
             campaign_dir,
             camera,
@@ -637,6 +671,31 @@ fn validate_loaded(
             // effect history. Error tier, except the pre-0.7 deprecation window
             // (DW0465) and the staleness lint (DW0467), which warn.
             diags.extend(delvewright_compiler::cast::check_cast(&campaign));
+            // spec-0050 (DSL v0.15): the detail plan. `DW0841` (the whole was
+            // walked before any part is detailed), `DW0842`-`DW0845` (the
+            // binding binds, the piece is the shape of its allocation, its
+            // openings are the plan's seams, its anchors have standing) and
+            // `DW0848`'s consumer door. Bound HERE because this is the one
+            // funnel every subcommand's validation goes through — `build`
+            // included — so a defect cannot reach a datapack by skipping
+            // `delvec validate`. No-op for a campaign with no `detail-plan`,
+            // which is every campaign below 0.15.0, and the binding line states
+            // that zero rather than going quiet.
+            {
+                let (dd, dbind) = delvewright_compiler::detail::check(
+                    &campaign,
+                    &prefabs,
+                    loaded.walk_record.as_deref(),
+                );
+                if campaign.detail_plan.is_some() || campaign.site_plan.is_some() {
+                    eprintln!("{}", dbind.line());
+                }
+                diags.extend(dd);
+                diags.extend(delvewright_compiler::detail::blockout_drift(
+                    &campaign,
+                    loaded.walk_record.as_deref(),
+                ));
+            }
             // spec-0025 (DSL v0.8): branch-complete narrative verification. Every
             // declared branch is enumerated and every static proof re-run under
             // its flag assignment — terminality, cast continuity, exclusive-content
@@ -2160,6 +2219,94 @@ fn print_one_diag(d: &Diagnostic, json: bool) {
     }
 }
 
+/// `delvec allocation` — the handing (spec-0050 §4).
+///
+/// Refuses without a passed, fresh walk record, and the refusal is the same
+/// `DW0841` validation raises: the two events that begin detail work are
+/// obtaining an allocation and compiling a binding, and both are bound. There
+/// is no third, because no other verb reads a `detail-plan`.
+/// `delvec allocation` — the handing (spec-0050 §4).
+///
+/// Refuses without a passed, fresh walk record, and the refusal is the same
+/// `DW0841` validation raises: the two events that begin detail work are
+/// obtaining an allocation and compiling a binding, and both are bound. There is
+/// no third, because no other verb reads a `detail-plan`.
+///
+/// **Stdout carries the allocation and nothing else** on the success path, so an
+/// authoring loop can redirect it. What it prints is an input to nothing — see
+/// the note inside.
+///
+/// It takes no prefab directory, and that is the signature saying what the verb
+/// is: an allocation is what the WHOLE hands a place, computed from the site plan
+/// and the metrics table. Nothing about it depends on which pieces exist, which
+/// is why it can be asked for before the piece is built — which is the only
+/// moment it is any use.
+fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: bool) -> ExitCode {
+    let loaded = match load_campaign_dir(campaign_dir) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("internal error: cannot read campaign dir: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    };
+    // Parsed rather than fully validated, on the precedent `l10n-inventory`
+    // sets: this verb's stdout is a machine-readable document an authoring loop
+    // reads, and `print_diags` writes to stdout. Nothing is lost by it — an
+    // allocation is derived from the plan on every invocation and is an input to
+    // NOTHING, so a stale or wrong one has no vector into the build; the frame
+    // is recomputed and re-judged by `DW0843` at every validation. `delvec
+    // validate` is the verb that says what a campaign's state is.
+    let campaign = match parse_campaign(&loaded.raw) {
+        Ok(c) => c,
+        Err(diags) => {
+            print_diags(&Fenced::structural(diags), json);
+            return ExitCode::from(1);
+        }
+    };
+    if campaign.site_plan.is_none() {
+        eprintln!(
+            "error: `{}` carries no `site-plan.json`. An allocation is what the WHOLE hands a \
+             place, so there is nothing to hand out until the whole exists.",
+            campaign_dir.display()
+        );
+        return ExitCode::from(1);
+    }
+    // **The gate, at the second of the two events that begin detail work.** It is
+    // asked of the campaign as it stands, so a campaign with no `detail-plan`
+    // yet — which is exactly the campaign asking for its first allocation — is
+    // asked the same question against the plan whose hash it names.
+    if let Some(d) =
+        delvewright_compiler::detail::allocation_walk_gate(&campaign, loaded.walk_record.as_deref())
+    {
+        print_one_diag(&d, json);
+        return ExitCode::from(1);
+    }
+    let out = if all {
+        serde_json::to_value(delvewright_compiler::detail::allocations(&campaign))
+    } else {
+        let Some(place) = place else {
+            eprintln!("error: name a place (`node/<kebab>`), or pass `--all`");
+            return ExitCode::from(EXIT_INTERNAL);
+        };
+        let id = delvewright_dsl::NodeId(place.to_string());
+        match delvewright_compiler::detail::allocation(&campaign, &id) {
+            Some(a) => serde_json::to_value(a),
+            None => {
+                eprintln!(
+                    "error: the plan allocates no box to `{place}` — run with `--all` to see \
+                     every place it does, or `delvec validate` if you expected one here"
+                );
+                return ExitCode::from(1);
+            }
+        }
+    };
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&out.expect("an allocation serializes")).unwrap()
+    );
+    ExitCode::SUCCESS
+}
+
 fn run_schema(stage: &str) -> ExitCode {
     let stages = match stage {
         "1" => vec![Stage::World],
@@ -2175,10 +2322,13 @@ fn run_schema(stage: &str) -> ExitCode {
         // between the two that does not exist.
         "geometry-brief" => vec![Stage::GeometryBrief],
         "layout-graph" => vec![Stage::LayoutGraph],
+        "site-plan" => vec![Stage::SitePlan],
+        "detail-plan" => vec![Stage::DetailPlan],
         "all" => Stage::ALL.to_vec(),
         other => {
             eprintln!(
-                "unknown stage `{other}` (want 1..7, `geometry-brief`, `layout-graph`, or `all`)"
+                "unknown stage `{other}` (want 1..7, `geometry-brief`, `layout-graph`, \
+                 `site-plan`, `detail-plan`, or `all`)"
             );
             return ExitCode::from(EXIT_INTERNAL);
         }
@@ -2223,7 +2373,7 @@ fn run_schema(stage: &str) -> ExitCode {
 /// table is engine data, so a table that contradicts itself is a defect in
 /// `dsl::metrics` and the person who has to act on it is whoever is holding the
 /// compiler.
-fn run_metrics(json: bool) -> ExitCode {
+fn run_metrics(json: bool, gym_dir: Option<&std::path::Path>) -> ExitCode {
     use delvewright_dsl::metrics::{Metrics, export};
 
     let table = Metrics::table();
@@ -2274,6 +2424,38 @@ fn run_metrics(json: bool) -> ExitCode {
         }
     }
 
+    // The gym, generated FROM the table this run just exported (spec-0049 2.3).
+    // It is written where the caller asks and never into this repository: a
+    // generated campaign is content, and the engine ships the generator the way
+    // it ships a prefab generator rather than the prefabs.
+    if let Some(dir) = gym_dir {
+        let gym = delvewright_compiler::gym::generate(&table, "metrics-gym");
+        if let Err(e) = delvewright_compiler::gym::write(&gym, dir) {
+            eprintln!(
+                "delvec metrics --gym: cannot write into {}: {e}",
+                dir.display()
+            );
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+        eprintln!(
+            "metrics gym binding: {d} document(s) written to {p}; {b} bay(s), {s} seam(s); {r} of \
+             the {t} building metric(s) instantiated.",
+            d = gym.documents.len(),
+            p = dir.display(),
+            b = gym.bays,
+            s = gym.seams,
+            r = gym.read.len(),
+            t = gym.entries,
+        );
+        if let Some(d) = gym.unwalked(&table) {
+            if json {
+                println!("{}", serde_json::json!(d));
+            } else {
+                eprintln!("{} [warning] {}: {}", d.code, d.stage, d.message);
+            }
+        }
+    }
+
     ExitCode::SUCCESS
 }
 
@@ -2317,11 +2499,33 @@ fn print_build_error(code: DwCode, message: &str, json: bool) {
 /// stderr, not stdout: `--json` reserves stdout for one diagnostic object per
 /// line, and this is not a diagnostic — nothing here is wrong.
 fn report_layout_binding(campaign: &delvewright_dsl::Campaign) {
-    if campaign.layout_graph.is_none() && campaign.geometry_brief.is_none() {
+    if campaign.layout_graph.is_none()
+        && campaign.geometry_brief.is_none()
+        && campaign.site_plan.is_none()
+    {
         return;
     }
     let b = delvewright_dsl::LayoutBinding::of(campaign);
     eprintln!("{}", b.line());
+    if campaign.site_plan.is_some() {
+        eprintln!("{}", b.plan_line());
+        if b.plan.views == 0 {
+            eprintln!(
+                "site-plan binding 0: this plan names no view, so the walk has no declared \
+                 vantage to judge the silhouette from and the render beside the reference sheet \
+                 has nothing to frame. The plan still builds; what is missing is the picture the \
+                 whole was supposed to be looked at in."
+            );
+        }
+        if b.plan.volumes == 0 {
+            eprintln!(
+                "site-plan binding 0: this plan declares no whole-owned volume, so the check \
+                 that keeps the whole's mass out of the places examined nothing. A map made \
+                 only of rooms is a legitimate map; a map with a mountain in it that forgot to \
+                 say so is not, and nothing else would notice."
+            );
+        }
+    }
     if campaign.layout_graph.is_some() && b.traversal_edges == 0 {
         eprintln!(
             "layout-graph binding 0: this graph declares no traversal connection at all, so \

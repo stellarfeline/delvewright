@@ -506,6 +506,12 @@ pub fn export_prefab(
         license: Some(license_metadata(program, &hash, options.seed, size, None)),
         waterline_y: None,
         spatial_contract: contract_metadata(&expansion),
+        // The export makes no `footprint_class` claim (spec-0050 §5). A program
+        // states a building; which size class of site-plan box that building is
+        // FOR is a fact about the map it is being written into, and the export
+        // has no map. Absent is the honest answer, and `DW0848` binds only where
+        // the claim is made — so this costs no grammar-ledger movement.
+        footprint_class: None,
         extra: BTreeMap::new(),
     };
     let metadata_json = metadata.to_json();
@@ -626,6 +632,12 @@ pub fn export_zone(
         )),
         waterline_y: None,
         spatial_contract: contract_metadata(&expansion),
+        // The export makes no `footprint_class` claim (spec-0050 §5). A program
+        // states a building; which size class of site-plan box that building is
+        // FOR is a fact about the map it is being written into, and the export
+        // has no map. Absent is the honest answer, and `DW0848` binds only where
+        // the claim is made — so this costs no grammar-ledger movement.
+        footprint_class: None,
         // A freshly exported manifest models every key it writes; the map is
         // what a LATER engine's key survives in on the way back out.
         extra: BTreeMap::new(),

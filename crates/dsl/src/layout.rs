@@ -649,12 +649,17 @@ impl Grants {
 // The binding ledger
 // ---------------------------------------------------------------------------
 
-/// What a run's layout-graph checks bound to.
+/// What a run's **map-pipeline** checks bound to — stages 2, 3 and 4.
 ///
 /// Stated on every run whether or not anything was found, because a count only
 /// means something when the run that found nothing prints it too (CLAUDE.md). It
 /// is one struct with one constructor, so the number the CLI prints, the number
 /// the build ledger records and the number a diagnostic quotes cannot disagree.
+///
+/// One ledger for three documents rather than one per document, and that is the
+/// point: a site plan's boxes are counted beside the graph's places, so a run
+/// that embeds five of six places states both numbers on one line and the
+/// mismatch is visible without arithmetic.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct LayoutBinding {
     /// Places declared — what `DW0816` examines.
@@ -684,9 +689,10 @@ pub struct LayoutBinding {
     pub path_steps: usize,
     /// Names resolved into the metrics table — what `DW0812` examines.
     pub metric_refs: usize,
-    /// Facts the geometry brief states. Nothing reads them at this version, and
-    /// the count says so rather than the absence being implied.
+    /// Facts the geometry brief states — what a site plan's identities bind to.
     pub brief_facts: usize,
+    /// What the site plan offers the stage-4 checks.
+    pub plan: crate::siteplan::PlanBinding,
 }
 
 impl LayoutBinding {
@@ -701,8 +707,10 @@ impl LayoutBinding {
             ..LayoutBinding::default()
         };
         let Some(graph) = c.layout_graph.as_ref().map(|g| &g.content) else {
+            b.plan = crate::siteplan::PlanBinding::of(c);
             return b;
         };
+        b.plan = crate::siteplan::PlanBinding::of(c);
         b.nodes = graph.nodes.len();
         b.edges = graph.edges.len();
         b.beats = graph.beats.len();
@@ -751,6 +759,12 @@ impl LayoutBinding {
             m = self.metric_refs,
             f = self.brief_facts,
         )
+    }
+
+    /// The site-plan half, when the campaign carries one.
+    #[must_use]
+    pub fn plan_line(&self) -> String {
+        self.plan.line()
     }
 }
 

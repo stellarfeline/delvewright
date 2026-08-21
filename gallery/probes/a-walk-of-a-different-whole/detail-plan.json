@@ -1,0 +1,16 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "details": [
+      {
+        "anchors": {
+          "anchor/node-exit": "yard-stone"
+        },
+        "piece": "prefab/gallery-yard",
+        "place": "node/exit"
+      }
+    ]
+  },
+  "dsl_version": "0.15.0",
+  "stage": "detail-plan"
+}

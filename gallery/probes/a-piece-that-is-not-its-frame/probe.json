@@ -1,0 +1,5 @@
+{
+  "code": "DW0843",
+  "units": [],
+  "why": "The gallery's own detail piece, bound to the wrong box. `gallery-yard` is built to the frame the site plan gives `node/exit` — 8x4x8 — and this binds it to `node/annex`, whose frame is 16x5x16. The refusal prints both extents. Frame equality is EXACT and undersize refuses exactly as oversize does: the box is the footprint, so a smaller building means a smaller box, which is a site-plan edit and a re-walk, taken visibly. That is the only way a part changes what the whole gave it, and it is why a detail document has no coordinate, no extent and no offset in it to nudge instead. It declares no unit for the reason the sibling probe gives: the surface it uses is bound in the overlay, and what must not compile is a piece that is not its allocation."
+}

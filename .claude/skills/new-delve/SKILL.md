@@ -1,7 +1,7 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
-version: 1.4.0
+version: 1.5.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
 verified_with: 1.1.0
@@ -46,6 +46,15 @@ skipped (ADR-0021 §3).
 
 4. **Python 3** — the skin toolchain is a declared prerequisite too, and a
    missing skin is a build error rather than a silent skip.
+
+5. **The metrics standard** — `delvec metrics` must print the table. It is the
+   single authority for the size classes, seam openings and stair pitches a
+   layout graph and a site plan name, so read it before writing either; a name it
+   does not define cannot compile (`DW0812`). The same command builds the
+   **metrics gym** (`--gym <dir>`), the campaign that instantiates the standard.
+   Nothing else in the Init depends on it — you need it at the map pipeline, not
+   before — but confirm it answers here rather than discovering at stage 3 that
+   the binary you were handed predates it.
 
 If any step here cannot be completed, say so and stop. Authoring against a
 half-built toolchain produces a campaign whose visual half was never reviewed,
@@ -829,8 +838,10 @@ Symptom → tool:
   proves the path is air, not that the shot is pointed at the subject, and an
   inside-out cinematic can be fully DW-green.
 - **Terrain/visual fixes beyond swapping prefabs**: `delvec edit` — the
-  spec-0017 map editor loop (edit script batch → replay → snapshot). Never
-  hand-patch `.nbt` or invent block edits outside it.
+  spec-0017 map editor loop (edit script batch → replay → snapshot). The script
+  is a campaign document, `world-edits.json`: batches of declared edits, replayed
+  deterministically, with the post-batch invariants enforced. Never hand-patch
+  `.nbt` or invent block edits outside it.
 - **Handing a build to a playtester**: mention the playtest note flow
   (spec-0006: `/trigger dw.note` in-game, then `delve-harvest` →
   `playtest-report.json`) — one line, human-optional.
@@ -1170,6 +1181,163 @@ which means one of the two values is already being silently discarded, so fix th
 document rather than the formatter. Never hand-sort a file, and never "fix" a
 `DW0773` by editing: re-run `fmt`. Full canonical form:
 `docs/reference/compiler.md` §9.
+
+### The map pipeline — say where everything is, before anything is built
+
+**Two ways to place a campaign, and a campaign has exactly one.** The older one
+is `areas[]` in `world.json`: pieces from the prefab library, laid on a fixed
+stride. The other is the **site plan** — the whole map's design of record, from
+which the engine *derives* the geometry. A campaign carrying both is refused by
+name (`DW0839`), so this is a decision taken once, at the start.
+
+Take the site plan whenever the map is the point: when the brief describes a
+place with a shape, when the party has to walk somewhere and the walking is the
+content, when there is no prefab that is the building the story is about. Take
+`areas[]` when the campaign is a small number of rooms the piece library already
+has.
+
+Three documents, in this order, each the input the next one needs. **The order is
+not advice — it is the only order that compiles**, and that is deliberate: the
+reset this design came out of was caused by an ordering that existed as prose.
+
+1. **`geometry-brief.json`** — the whole's written design reduced to *numbers*:
+   `facts[]` of `{id, value, unit?, note}`. A fact is a number with a name. The
+   brief's prose stays prose; only what is stated as a fact is checkable. Write
+   the numbers the brief actually commits to — how far across the site is, how
+   tall the thing the campaign is named after stands, how far the approach runs.
+   Reference imagery is style authority and never dimensional authority: an
+   identity binds to a number, never to a picture.
+
+2. **`layout-graph.json`** — the campaign's space as a graph, **before any
+   coordinate exists**. `nodes[]` are places (`{id, intent, size_class, note?}`);
+   `edges[]` are the connections between them (`walk | stair | drop | barred |
+   vision`, with `gating`, `one_way`, `shortcut`, `opens_from`). Plus `entry`,
+   `goal`, an authored `critical_path[]`, and `beats[]` binding every place-bound
+   quest beat to the node it happens in.
+   - `size_class` and every seam `opening` name an entry in the **metrics
+     table** — `delvec metrics` prints it, and a name the table does not define
+     is `DW0812`. The table is the single authority for that vocabulary; do not
+     invent a class or an opening.
+   - The graph is checked as a graph, cheaply, before geometry exists to make it
+     expensive: every place reachable under gating (`DW0816`), the authored
+     critical path actually a quest-legal path (`DW0817`), no one-way edge that
+     strands a body (`DW0819`), no "shortcut" that closes no loop (`DW0820`).
+   - `intent` is a free label no check keys on. It is judgement for the reviewer
+     and for later detail work — write what the place is *for*.
+
+3. **`site-plan.json`** — the geometric embedding of that graph. `region` (the
+   whole map's one box, in world coordinates), `datums` (named ground planes),
+   **one `boxes[]` entry per node**, **one `seams[]` entry per traversal edge**,
+   `volumes[]` for mass the whole owns (the mountain a cave is inside), a
+   `sightlines[]` entry per `vision` edge, optional `views[]` for the walk to
+   judge the silhouette from, and `identities[]` binding the plan back to the
+   brief's facts.
+   - **Extent flows down.** The region comes from the brief and the boxes
+     partition it. A box is never grounds to grow the region (`DW0826`): shrink
+     or move the box, or change the brief's fact and re-derive, visibly.
+   - **Seams are allocated, not discovered.** A seam sits on a face the two boxes
+     already share, at declared cells, at a standard opening (`DW0828`,
+     `DW0829`). Two places that cannot mate is resolved here, while both boxes
+     are still free.
+   - A stair's rise is not authored — it is the difference between the two floors
+     the plan already chose — and its `stair_in` names which box pays for the run
+     (`DW0830`). Treads rise off a walk plane, so `stair_in` is always the LOWER
+     place.
+
+Then build as usual. **There is no blockout document and nothing to author
+early**: the geometry is derived from the plan and the table by `delvec build`,
+which also runs the battery over the bytes — every seam built where it was
+allocated (`DW0836`), every place reached from the entry (`DW0837`), and no
+crossing between places anywhere a seam was not allocated (`DW0838`).
+
+The quest layer is unchanged and reaches the derived world through anchors the
+derivation synthesizes — there are no prefabs to read anchor names out of, so
+these are the names, and they are the only ones:
+
+| Anchor | Where |
+| --- | --- |
+| `spawn` | the entry node |
+| `anchor/node-<place>` | the floor centre of each place — where NPCs, waves and `reach-anchor` objectives go |
+| `anchor/seam-<edge>` | the gate region over a `barred` seam: what `open-gate` or a `shortcut` names |
+| `anchor/unlock-<edge>` | the far-side affordance of a one-sided `barred` seam, where a `shortcut`'s `unlock` stands. Present only when `opens_from` is `a` or `b` |
+
+`<place>` and `<edge>` are the part of the id after the `/` — `node/near-hall`
+becomes `anchor/node-near-hall`. Every barred way must be opened by something
+naming its own seam (`DW0818`), and a sealed door a player can push on owes an
+answer (`DW0429`) — a `use` trigger anchored on the gate.
+
+**A site-plan campaign has one area, `area/site`.** Quests, NPCs and waves name
+it; there is no `areas[]` to write.
+
+The walk comes next and it is the campaign's first real gate: scale, pacing,
+route legibility, and the silhouette from the declared `views[]`. A finding edits
+the graph or the plan and regenerates — there is no hand edit to lose, because
+there was never a hand edit to make.
+
+**The numbers the whole thing is built to are provisional** until the metrics gym
+has been walked, and every build says so (`DW0813`). `delvec metrics --gym <dir>`
+generates that gym: a site-plan campaign built from the table itself, one place
+per rung of the size-class ladder at each of its bounds, every standard opening,
+both stair pitches and a designed fall at the drop policy's cap. It reports what
+the table defines that it could not instantiate (`DW0840`) — read that line, not
+just the green.
+
+**Stage 6 — `detail-plan.json`: which piece stands in which place** (v0.15,
+spec-0050). Optional, and it comes **after the walk**, never before.
+
+A blockout is walkable and legible and made of concrete. Detailing replaces one
+place's massing with a real building — a prefab: frozen bytes plus metadata — and
+the document that does it has two fields:
+
+```json
+{
+  "palette": { "role/wall": "minecraft:stone_bricks" },
+  "details": [
+    { "place": "node/near-hall",
+      "piece": "prefab/near-hall",
+      "anchors": { "anchor/node-near-hall": "hearth" } }
+  ]
+}
+```
+
+**There is no coordinate in it, and there is no way to write one.** No region, no
+extent, no datum, no seam, no offset — the schema has no spelling for any of
+them, so a `place` and a `piece` is all a row can say. Where the piece goes is
+computed from the site plan's own box: the play space plus the one floor course
+under it. That is the frame, and the piece must be **exactly** that shape —
+undersize is refused the same way oversize is (`DW0843`), because the box is the
+footprint and a smaller building means a smaller box, which is a site-plan edit
+and another walk.
+
+The loop:
+
+1. **Walk the blockout and record it.** Write `walk-record.json` beside the stage
+   documents: the three hashes every site-plan build prints
+   (`site_plan_sha256`, `layout_graph_sha256`, `blockout_sha256`), the engine
+   revision it printed them from, `verdict: "passed"`, and whatever the walk
+   noted. Nothing about detail compiles without it (`DW0841`), including asking
+   for an allocation. **The first two hashes are the record's freshness key**:
+   the whole a walk judges is derived from the plan AND the graph, so editing
+   either one — even an edit that moves no block, such as which side a barred way
+   opens from — re-opens this gate and asks for another walk.
+2. **`delvec allocation <campaign-dir> <place>`** — the frame's extents, the
+   datum, every seam with the face class it must be answered by, and the owed
+   anchor names. Build the piece against that and nothing else. It is an input to
+   nothing; ask again whenever you want it.
+3. **Build the piece** — a grammar program's export or a piece admitted through
+   `delve-admit`; the engine consumes the object, never the tool that made it. It
+   must carry a spatial contract (`DW0843`), answer every seam and open no way
+   the plan did not allocate (`DW0844`, both directions).
+4. **Bind it**, re-binding each owed anchor name to one of the piece's own
+   anchors (`DW0845`). That is what keeps the quest layer working: those names
+   were bound to places before any detail existed, and detailing must never force
+   a quest edit.
+
+**Detail one place at a time.** Every unbound box is still massed, so the map
+builds, walks and renders at every point between none detailed and all of them.
+Only when `details[]` binds every node does a declared vista stop being an
+advisory and become a refusal (`DW0821`) — by then there is nothing left to
+carve.
 
 5. `delvec analyze <campaign-dir>` — reachability/deadlock/dark-mitigation. Fix in
    the DSL (never by weakening the campaign; a dead quest is a design bug).

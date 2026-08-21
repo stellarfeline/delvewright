@@ -10,11 +10,26 @@
   ],
   "findings": [
     {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "reach-anchor"
+          }
+        }
+      },
       "campaign": "hollow-vigil",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0850",
+        "kind": "dw"
+      },
       "finding": "a reach-anchor's completion volume was a point sphere too tight for a human standing on the altar cell, so arriving did not complete the objective",
-      "general_form": "reach completion is a region a body can occupy, not a point (closed by construction at dsl 0.3: +/-1 block); nothing re-asserts it on a build",
+      "general_form": "a reach objective's completion volume contains a cell a body can stand in, and the footing the route proof delivers the party to is inside that volume; the emitted volume, the volume critical-path.json hands the bot and the volume the proof judges are one authority (compiler::reach::reach_completion), so no two of them can disagree",
       "id": "hv-01",
+      "note": "Closed as a property, not as the reported volume. Widening v0.3+ to a 3x3x3 cube fixed the sphere that had been reported and left the same defect reachable by a different number: nav::SNAP_RADIUS is 3, so a reach whose only footing lies further out than the completion volume reaches routes green (DW0311), exports green (DW0314) and never fires. DW0850 refuses both. The v0.3+ half-extent is now the authored radius with a floor of 1 rather than the fixed 1 that repair left behind, so the gap survives only where an author writes a radius below the snap radius.",
       "round": 1,
       "triage": "capability"
     },
@@ -65,6 +80,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "requires_flags"
+          ]
+        }
+      },
       "binding": {
         "glob": "packtest-datapack/**/verb_flag_gate.mcfunction",
         "kind": "out"
@@ -77,6 +103,7 @@
       "finding": "objectives had no lifecycle feedback: nothing on screen said an objective had activated, completed, or that the delve had ended",
       "general_form": "every objective emits activation/completion presentation (title + hint + sound)",
       "id": "hv-04",
+      "note": "applies_when added 2026-08-21: the verb_flag_gate template is emitted for flag-gated objectives (`requires_flags`). Flag-gated objectives declared with no emitted template = UNBOUND; none declared = the class measures zero.",
       "round": 1,
       "triage": "capability"
     },
@@ -266,11 +293,26 @@
       "triage": "content"
     },
     {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "requires_item"
+          ]
+        }
+      },
       "campaign": "nobodys-cave-island",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0849",
+        "kind": "dw"
+      },
       "finding": "a required item was issued per class rather than to the whole party, so players without that class could not complete the objective that consumed it",
-      "general_form": "an objective gated on an item is completable by every player who must complete it, whatever class they picked",
+      "general_form": "an objective gated on a HELD item is completable by a solo player of every class: the item has a class-blind supply somewhere in the campaign (a give-item at any effect root, a collect, a loot container, a wave drop), or it is in every class kit",
       "id": "isl-02",
+      "note": "The capability half (a kit item's and a give-item's carrier, spec-0018, DSL v0.6) had landed; what had no check was whether the item a gate demands can be brought at all. Quantified over EVERY class for the reason DW0476 states about the flask: a solo player of any class is a supported party.",
       "round": 3,
       "triage": "capability"
     },
@@ -485,6 +527,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
       "binding": {
         "glob": "**/*.nbt",
         "kind": "out"
@@ -497,6 +550,7 @@
       "finding": "the generated landscape contained sheared half-trees where the terrain writer cut through prefab vegetation",
       "general_form": "a generator never leaves a structural feature half-written: it regrows or removes it whole",
       "id": "isl-12",
+      "note": "applies_when added 2026-08-21: generator invariants examine prefab bytes, which reach a build only through areas[] placement today (a derived blockout places no .nbt). Areas declared with zero .nbt in the build = UNBOUND; no area = the class measures zero. Re-point at detail pieces when spec-0050 lands them.",
       "round": 4,
       "triage": "capability"
     },
@@ -615,11 +669,31 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "begin-stealth"
+          }
+        }
+      },
+      "binding": {
+        "file": "stealth-judge.json",
+        "kind": "artifact",
+        "path": "examined"
+      },
       "campaign": "nobodys-cave-island",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0852",
+        "kind": "dw"
+      },
       "finding": "a stealth beat demanded the player crouch, which the fiction never asked for",
-      "general_form": "presence in a declared zone is what stealth reads; no posture is required (closed by construction at v0.6). Nothing re-asserts it on a build",
+      "general_form": "a stealth judge's per-player test reads where the body is and nothing else; any other selector argument is a demand the fiction never made",
       "id": "isl-19",
+      "note": "Closed by construction at v0.6 and promised in the emitter's own doc comment, which is a doc line. DW0852 is the invocation: every build of a campaign that declares a stealth beat audits its FINAL emitted function list and ships the count. The rule is an allowlist of the six position arguments, never a denylist of the demands somebody has already thought of, and it is scoped to the per-player judge rather than the dispatcher — whose cutscene skip freezes the grace clock instead of asking the player for anything.",
       "round": 5,
       "triage": "content"
     },
@@ -869,6 +943,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "collect"
+          }
+        }
+      },
       "binding": {
         "files": [
           "quests.json"
@@ -888,6 +973,7 @@
       "finding": "a collect objective could not fill the room's own container or name its item, so the compiler stamped a chest of its own beside the barrels the fiction described",
       "general_form": "a collect objective adopts a declared container that must resolve to a real fillable container in the assembled world, and no two fills claim one anchor",
       "id": "isl-33",
+      "note": "applies_when added 2026-08-21: the carriers of a `container` declaration are collect objectives. Collects declared with none carrying a container = UNBOUND; no collect anywhere = the class measures zero.",
       "requires": {
         "file": "quests.json",
         "min_dsl_version": "0.8.0"
@@ -896,11 +982,30 @@
       "triage": "capability"
     },
     {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "close-gate"
+          }
+        }
+      },
       "campaign": "nobodys-cave-island",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0429",
+        "kind": "dw"
+      },
       "finding": "a scene object answered a left-click with a hint but ignored a right-click, so half the players got no answer at all",
-      "general_form": "an interaction body is bound to the clickable SHAPE of the object at its anchor, not to a single cell, and co-located click triggers merge onto one hitbox rather than racing the ray pick",
+      "general_form": "a sealed body the party presses answers the press, and a left-click reply does not discharge it: pressing a thing is a right-click, so a strike-only answer leaves half the party told nothing. One rule over the whole sealed class (a close-gate seal and a shortcut door alike), read from plan::press_answer_sites",
       "id": "isl-34",
+      "note": "Closed by pointing at a check that landed since, and verified rather than assumed: this campaign's boulder IS a close-gate seal at anchor/boulder carrying only a strike trigger and no sealed_hint, and validating its own quests document raises DW0429 x1 today, reported as grandfathered by the obligation fence because the stage declares 0.8.0. Raised to 0.11.0 the refusal names anchor/boulder itself. The hitbox half of the same beat (an interaction body is the SHAPE of the object at its anchor, and co-located triggers ride one hitbox rather than racing the ray pick) is carried by compiler::pressable with DW0422 and DW0426. Residual, named rather than folded away: DW0429 quantifies over the SEALED class, so a non-sealed scene object that answers a strike and not a use is not covered by it.",
+      "requires": {
+        "file": "quests.json",
+        "min_dsl_version": "0.11.0"
+      },
       "round": 12,
       "triage": "capability"
     },
@@ -1025,6 +1130,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
       "binding": {
         "files": [
           "quests.json"
@@ -1044,6 +1160,7 @@
       "finding": "an item requirement was satisfied by carrying the item in a pocket rather than holding it, so a beat about brandishing something worked with it stowed",
       "general_form": "requires_item means held in the main hand, and an interaction that can refuse a click explains the refusal",
       "id": "isl-41",
+      "note": "applies_when added 2026-08-21: `requires_item` is an interact-objective declaration (schema: the interact variant carries it). Interacts declared with none requiring an item = UNBOUND; no interact = the class measures zero.",
       "round": 12,
       "triage": "capability"
     },
@@ -1086,6 +1203,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
       "binding": {
         "glob": "**/*.nbt",
         "kind": "out"
@@ -1098,6 +1226,7 @@
       "finding": "scatter debris sat on top of the stair treads instead of being embedded in them",
       "general_form": "a generator embeds scatter into the surface it decorates rather than stacking on it, and never onto a proven route's treads",
       "id": "isl-44",
+      "note": "applies_when added 2026-08-21: same carriers as isl-12 — scatter reaches a build only through placed prefab bytes. Re-point at detail pieces when spec-0050 lands them.",
       "round": 13,
       "triage": "capability"
     },
@@ -1222,6 +1351,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "cutscene"
+          }
+        }
+      },
       "binding": {
         "files": [
           "world.json"
@@ -1241,6 +1381,7 @@
       "finding": "granted night vision expired and flickered part-way through the ending cutscene it was granted for",
       "general_form": "a granted sight effect outlasts any authored camera it can overlap, plus vanilla's wind-down, so it can never begin ramping down on screen",
       "id": "isl-52",
+      "note": "applies_when added 2026-08-21: the class is a granted sight effect outlasting an authored camera, so its carriers are cutscenes. Cutscenes with no `mitigation` declared = UNBOUND; no cutscene = the class measures zero.",
       "round": 15,
       "triage": "capability"
     },
@@ -1315,6 +1456,20 @@
       "triage": "content"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "move-npc",
+              "move-actor"
+            ]
+          }
+        }
+      },
       "binding": {
         "file": "traversal-gate.json",
         "kind": "artifact",
@@ -1329,6 +1484,7 @@
       "finding": "a herded animal crossed a shut fence gate a player character could not walk through, and appeared to climb a stone wall",
       "general_form": "a walked leg's route contains no move the body walking it cannot make, per locomotion class",
       "id": "isl-57",
+      "note": "applies_when added 2026-08-21: same carriers as bell-02 — a legs count is a derivation of declared walks, so which kind of zero its zero is must be measured against move-npc/move-actor.",
       "round": "staging-2026-08-06",
       "triage": "capability"
     },
@@ -1342,6 +1498,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "world.json"
@@ -1361,6 +1528,7 @@
       "finding": "a pool draw seated the same anchor-bearing prefab twice, so anchor names stopped picking out one place in the world",
       "general_form": "a pool draw that seats one anchor-bearing prefab more than once is reported at the pool, not discovered one blocked placement at a time",
       "id": "isl-59",
+      "note": "applies_when added 2026-08-21: a pool draw exists only under areas[] placement; a site-plan campaign structurally has none (DW0839). Areas declared with no prefab_pool = UNBOUND; no area = the class measures zero.",
       "round": "staging-2026-08-06",
       "triage": "capability"
     },
@@ -1416,6 +1584,20 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "move-npc",
+              "move-actor"
+            ]
+          }
+        }
+      },
       "binding": {
         "file": "traversal-gate.json",
         "kind": "artifact",
@@ -1429,6 +1611,7 @@
       "finding": "stairs throughout the built scenes faced against the climb they carried",
       "general_form": "a stair block on a proven route faces the climb it carries",
       "id": "bell-02",
+      "note": "applies_when added 2026-08-21: route_cells counts cells of walked legs, whose declaring class is move-npc/move-actor. Walks declared with zero route cells = UNBOUND (legs escaped the gate); no walk = the class measures zero.",
       "round": 2,
       "triage": "capability"
     },
@@ -1456,6 +1639,20 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "spawn-wave",
+              "spawn-actor"
+            ]
+          }
+        }
+      },
       "binding": {
         "file": "combat-plan.json",
         "kind": "artifact",
@@ -1469,6 +1666,7 @@
       "finding": "an encounter billed as an elite was trivially weak, and the compiler had no way to express its durability at all",
       "general_form": "a billed encounter's declared effective HP is bounded against the best kit the party can field, and anything billed elite or boss that the floor gate cannot measure is reported",
       "id": "bell-04",
+      "note": "applies_when added 2026-08-21: the floor gate examines staged fights, declared by spawn-wave/spawn-actor. Fights declared with combat-plan.json unemitted = MISSING-CHECK (the ledger went missing); none declared = the class measures zero.",
       "round": 2,
       "triage": "capability"
     },
@@ -1812,11 +2010,26 @@
       "triage": "capability"
     },
     {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "horizon": "ocean"
+          }
+        }
+      },
       "campaign": "tide-mill",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0851",
+        "kind": "dw"
+      },
       "finding": "an interior room in an ocean-horizon world sat one block under sea level and its whole walk plane flooded a minute after boot, while the compiler modelled it dry",
-      "general_form": "the assembled model accounts for water that will flow after placement, so a walk plane the compiler proves dry is dry in play",
+      "general_form": "the ambient sea is part of the assembled model: a walk plane the compiler proves standable is not one the sea will be standing over",
       "id": "tm-02",
+      "note": "The verdict is the HEAD cell, not the feet. A body wading at the waterline is walking where the game agrees it can walk, and refusing that reds the released nobodys-cave-island's west bank — 26 reachable cells at exactly sea level, every one the campaign has at or below the waterline, none head-deep. Those cells are counted as `walk_cells_wading` in `validation/sea-seepage.json` rather than judged, so the shoreline stays a number a reader can act on. Still open, for a later round with a campaign that shows it: a walk plane at exactly sea level INSIDE a room reads the same as a shore and is not refused.",
       "round": "2026-08-04",
       "triage": "capability"
     },

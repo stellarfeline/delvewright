@@ -1,0 +1,108 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "beats": [
+      {
+        "node": "node/hall",
+        "objective": "obj/ask",
+        "quest": "quest/walk-the-whole"
+      },
+      {
+        "node": "node/cell",
+        "objective": "obj/enter-the-cell",
+        "quest": "quest/walk-the-whole"
+      },
+      {
+        "node": "node/exit",
+        "objective": "obj/walk-out",
+        "quest": "quest/walk-the-whole"
+      }
+    ],
+    "critical_path": [
+      "node/landing",
+      "node/hall",
+      "node/cell",
+      "node/exit"
+    ],
+    "edges": [
+      {
+        "a": "node/landing",
+        "b": "node/hall",
+        "class": "walk",
+        "id": "edge/landing-hall"
+      },
+      {
+        "a": "node/hall",
+        "b": "node/loft",
+        "class": "stair",
+        "id": "edge/hall-loft"
+      },
+      {
+        "a": "node/loft",
+        "b": "node/hall",
+        "class": "drop",
+        "falls": "a-to-b",
+        "id": "edge/loft-drop",
+        "shortcut": true
+      },
+      {
+        "a": "node/hall",
+        "b": "node/cell",
+        "class": "barred",
+        "gating": {
+          "flags": [
+            "flag/keeper-yields"
+          ]
+        },
+        "id": "edge/hall-cell",
+        "opens_from": "a"
+      },
+      {
+        "a": "node/cell",
+        "b": "node/exit",
+        "class": "walk",
+        "id": "edge/cell-exit"
+      },
+      {
+        "a": "node/landing",
+        "b": "node/loft",
+        "class": "vision",
+        "id": "edge/loft-sightline"
+      }
+    ],
+    "entry": "node/landing",
+    "goal": "node/exit",
+    "nodes": [
+      {
+        "id": "node/landing",
+        "intent": "arrival",
+        "note": "Where a body starts, and the only place on the map it has not chosen to be.",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/hall",
+        "intent": "hub",
+        "note": "The keeper stands here; every other place is entered from it.",
+        "size_class": "room"
+      },
+      {
+        "id": "node/loft",
+        "intent": "vista",
+        "note": "Climbed by the stair and left by the fall, which is what makes the fall a shortcut.",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/cell",
+        "intent": "gate-house",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/exit",
+        "intent": "goal-chamber",
+        "size_class": "alcove"
+      }
+    ]
+  },
+  "dsl_version": "0.14.0",
+  "stage": "layout-graph"
+}
