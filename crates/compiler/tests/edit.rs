@@ -257,17 +257,34 @@ fn edit_breaching_the_outer_wall_is_dw0322() {
     );
 }
 
-/// Rewrite the copy's stage-1 world doc to declare `horizon: ocean` (spec-0013),
-/// leaving everything else in the fixture alone.
-fn set_ocean_horizon(dir: &Path) {
+/// Rewrite the copy's stage-1 world doc to declare `horizon: ocean` (spec-0013)
+/// at the given stage `dsl_version`, leaving everything else in the fixture alone.
+///
+/// The version is a parameter because `horizon` is a **world-stage** surface with
+/// a floor of `0.6.0`, and a proof that keys off it has to be shown firing at both
+/// ends of the range the surface has ever existed over — otherwise "it is
+/// unfenced" is a claim about a constant rather than a measurement (CLAUDE.md's
+/// *unfenced* vacuity mode). Only this stage moves: raising every stage to
+/// `0.14.0` makes the fixture red on five `DW0481` obligations before the build
+/// tier is reached, which would demonstrate the version fence and nothing else.
+fn set_ocean_horizon_at(dir: &Path, dsl_version: &str) {
     let path = dir.join("world.json");
     let mut doc: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    doc["dsl_version"] = serde_json::json!("0.6.0");
+    doc["dsl_version"] = serde_json::json!(dsl_version);
     doc["content"]["horizon"] = serde_json::json!("ocean");
     // `DW0320`: an ocean horizon needs a return rule; the default margin is fine.
     doc["content"]["boundary"] = serde_json::json!({});
     std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+}
+
+/// The world-stage version floor for `horizon` (spec-0013) and the current
+/// `SUPPORTED_DSL_VERSION` — the two ends every `horizon: ocean` proof is driven
+/// at.
+const OCEAN_VERSIONS: [&str; 2] = ["0.6.0", "0.14.0"];
+
+fn set_ocean_horizon(dir: &Path) {
+    set_ocean_horizon_at(dir, OCEAN_VERSIONS[0]);
 }
 
 /// Boundary safety on an **ocean** horizon (`DW0322`), the false-premise fix:
@@ -311,32 +328,126 @@ fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
     assert!(!stdout.contains("DW0322"), "no boundary error:\n{stdout}");
 }
 
-/// The ocean horizon's *replacement* invariant (`DW0322`): the same wall breach
-/// that is a void drop under `horizon: void` is a **stranding** hazard under
-/// `horizon: ocean` — the room's floor sits below sea level, so a player who
-/// walks out of the breach is in open water with no shoreline at the waterline
-/// to climb back onto. The code is the same, the premise and the prescription
-/// are the horizon's.
+/// **The sea comes in through the breach** (`DW0851`) — and it gets there before
+/// anybody is stranded.
+///
+/// This scenario used to be asserted as `DW0322` stranding, on the premise that
+/// "a player who walks out of the breach is in open water with no shoreline to
+/// climb back onto". That premise was reading half the world. `prefab/hello-room`
+/// sits with its walk plane at y=61 — *entirely under* the sea level of 62 — so
+/// carving its wall does not open a door onto the sea, it opens the sea into the
+/// room. All 77 walkable cells go under: 50 of them head-deep, the other 27 wet
+/// to the feet. The player never reaches the breach to be stranded at it.
+///
+/// The engine could not say so, because the ambient sea reached exactly one
+/// predicate (`World::ambient_water`, read only by the stranding proof's sea
+/// surface) and never reached the occupancy model, so every cell it was about to
+/// fill was proved standable and dry. `DW0851` is that gap closed, and this test
+/// is why it runs BEFORE the stranding proof rather than after: a stranding
+/// verdict taken over a walk region that is already the sea prescribes a
+/// shoreline step for a room nobody can walk in.
+///
+/// `DW0322`'s ocean branch keeps its own red demos — four of them, over solid
+/// island plates whose walk planes are above the waterline, in `nav`'s unit tests
+/// — so nothing is lost by this fixture telling the truth about itself.
+///
+/// Driven at both ends of the range `horizon` has existed over (`OCEAN_VERSIONS`):
+/// the code is `every_version`, and this is what makes that a measurement.
 #[test]
-fn edit_ocean_breach_strands_the_player_dw0322() {
-    let dir = edits_copy("edits-ocean-breach");
+fn edit_ocean_breach_lets_the_sea_into_the_walk_region_dw0851() {
+    for version in OCEAN_VERSIONS {
+        let dir = edits_copy(&format!("edits-ocean-breach-{version}"));
+        set_ocean_horizon_at(&dir, version);
+        set_batches(
+            &dir,
+            serde_json::json!([{
+                "id": "batch/breach-wall",
+                "area": "area/keep",
+                "edits": [
+                    { "verb": "select", "name": "region/breach", "shape": {
+                        "kind": "box",
+                        "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                        "min": [4, 1, 0], "max": [6, 2, 0]
+                    }},
+                    { "verb": "carve", "region": "region/breach" }
+                ]
+            }]),
+        );
+        let out = tmp(&format!("edits-ocean-breach-out-{version}"));
+        let r = delvec(&[
+            "build",
+            dir.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            &prefabs_arg(),
+        ]);
+        let stdout = format!(
+            "{}{}",
+            String::from_utf8_lossy(&r.stdout),
+            String::from_utf8_lossy(&r.stderr)
+        );
+        assert_eq!(
+            r.status.code(),
+            Some(3),
+            "build-tier failure at dsl {version}:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("DW0851"),
+            "expected DW0851 at dsl {version}:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("batch/breach-wall"),
+            "names the batch at dsl {version}:\n{stdout}"
+        );
+        assert!(
+            stdout.contains("HEAD cell under water"),
+            "names what is wrong with the cells at dsl {version}:\n{stdout}"
+        );
+        // The binding counts travel with the verdict: what was examined, not only
+        // what was found. A message that says "50 cells" and nothing about the
+        // 77-cell walk region it drew them from is a finding without a denominator.
+        assert!(
+            stdout.contains("50 reachable standable cell(s)")
+                && stdout.contains("walk region of 77 cell(s)")
+                && stdout.contains("27 are wet to the feet only"),
+            "states its binding counts and denominator at dsl {version}:\n{stdout}"
+        );
+        // The whole point of the ordering: the stranding proof must not get to
+        // speak first about a room that is under the sea.
+        assert!(
+            !stdout.contains("DW0322"),
+            "the sea in the room is not a stranding finding at dsl {version}:\n{stdout}"
+        );
+    }
+}
+
+/// The complement, and the reason `DW0851` is a check rather than a refusal of
+/// every ocean world: **an unbreached hull is green**, and says so with a number.
+///
+/// The identical fixture under the identical horizon, with no wall carved, must
+/// build clean AND emit a binding ledger showing why — a watertight room presents
+/// zero cells of open contact face to the sea, so this proof examined the world
+/// and found nothing to flood, which is a different statement from not having run.
+#[test]
+fn edit_ocean_unbreached_hull_is_green_and_says_what_it_examined() {
+    let dir = edits_copy("edits-ocean-hull");
     set_ocean_horizon(&dir);
     set_batches(
         &dir,
         serde_json::json!([{
-            "id": "batch/breach-wall",
+            "id": "batch/probe",
             "area": "area/keep",
             "edits": [
-                { "verb": "select", "name": "region/breach", "shape": {
+                { "verb": "select", "name": "region/probe", "shape": {
                     "kind": "box",
                     "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
-                    "min": [4, 1, 0], "max": [6, 2, 0]
-                }},
-                { "verb": "carve", "region": "region/breach" }
+                    "min": [4, 1, 4], "max": [5, 2, 5]
+                }}
             ]
         }]),
     );
-    let out = tmp("edits-ocean-breach-out");
+    let out = tmp("edits-ocean-hull-out");
     let r = delvec(&[
         "build",
         dir.to_str().unwrap(),
@@ -345,25 +456,53 @@ fn edit_ocean_breach_strands_the_player_dw0322() {
         "--prefabs",
         &prefabs_arg(),
     ]);
-    assert_eq!(r.status.code(), Some(3), "build-tier failure");
     let stdout = format!(
         "{}{}",
         String::from_utf8_lossy(&r.stdout),
         String::from_utf8_lossy(&r.stderr)
     );
-    assert!(stdout.contains("DW0322"), "expected DW0322:\n{stdout}");
+    assert_eq!(r.status.code(), Some(0), "watertight hull:\n{stdout}");
+    assert!(!stdout.contains("DW0851"), "no seepage:\n{stdout}");
+    let ledger: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(out.join("validation/sea-seepage.json")).expect("sea-seepage ledger"),
+    )
+    .expect("ledger json");
+    assert_eq!(ledger["horizon"], "ocean");
+    assert_eq!(ledger["verdict"], "pass");
+    assert_eq!(ledger["contact_face_cells"], 0, "the hull is closed");
+    assert_eq!(ledger["walk_cells_submerged"], 0);
     assert!(
-        stdout.contains("batch/breach-wall"),
-        "names the batch:\n{stdout}"
+        ledger["walk_cells_examined"].as_u64().unwrap() > 0,
+        "a pass over zero walk cells would be the unbound vacuity mode: {ledger}"
     );
-    assert!(
-        stdout.contains("NO way back ashore"),
-        "the ocean horizon reports stranding, not a void drop:\n{stdout}"
-    );
-    assert!(
-        !stdout.contains("void drop"),
-        "the void premise must not be asserted in an ocean world:\n{stdout}"
-    );
+}
+
+/// A `horizon: void` build emits the ledger too, saying `void` and zeroes.
+///
+/// This is the shape a check goes quiet in: no sea, no file, and a later reader
+/// cannot tell "there was nothing to find" from "nobody ran it". The unedited
+/// fixture is the void world, and its ledger is the answer.
+#[test]
+fn void_horizon_still_ships_a_sea_seepage_ledger() {
+    let out = tmp("void-seepage-ledger");
+    let r = delvec(&[
+        "build",
+        edits_fixture_dir().to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    assert!(r.status.success(), "void fixture builds");
+    let ledger: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(out.join("validation/sea-seepage.json")).expect("sea-seepage ledger"),
+    )
+    .expect("ledger json");
+    assert_eq!(ledger["horizon"], "void");
+    assert_eq!(ledger["verdict"], "pass");
+    assert_eq!(ledger["contact_face_cells"], 0);
+    assert_eq!(ledger["cells_the_sea_reaches"], 0);
+    assert!(ledger["pieces_examined"].as_u64().unwrap() > 0);
 }
 
 /// Frame drift (`DW0323`): a piece-local frame whose declared prefab no longer

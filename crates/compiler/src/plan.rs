@@ -941,6 +941,94 @@ pub struct OptionPlan {
     pub spawns_npcs: Vec<String>,
 }
 
+/// **The volume a `reach-anchor` objective actually completes in** — the ONE
+/// authority on that question, read by the datapack line that adjudicates it and
+/// exported to the harness that has to walk into it.
+///
+/// It exists because those two readers had drifted. `radius` is authored, and
+/// from DSL v0.3 the datapack stopped reading it: the M2 repair for a completion
+/// sphere too tight to stand in replaced the sphere with a fixed ±1 cube, so a
+/// `radius: 3` reach adjudicated on a 3×3×3 box. Nothing told the harness, which
+/// went on deriving its walk goal from the authored number and aiming at
+/// `radius - 1` blocks — **outside** the box for every `radius` of 3 or more. The
+/// bot then stopped three blocks out, the objective never fired, and the step
+/// hung on its completion wait. It survived because a `GoalNear` usually
+/// overshoots inward, which makes the failure intermittent, and an intermittent
+/// failure is an under-specified test.
+///
+/// The repair is not a second constant. `radius` is an authored value and the
+/// v0.3 fix needed a **floor** on the completion volume, not a replacement for
+/// it: the cube's half-extent is `max(1, radius)`, so hv-01's "too tight to stand
+/// in" stays closed at every radius and the author's number means what it says
+/// again. And because the volume is computed here and nowhere else, the line that
+/// adjudicates it and the artifact that describes it cannot say different things.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReachCompletion {
+    /// Pre-v0.3: `distance=..radius` about the anchor's block corner. Kept so
+    /// v0.2 campaigns emit byte-identically.
+    Sphere {
+        /// The anchor cell the distance is measured from.
+        pos: [i32; 3],
+        /// The authored radius, in blocks.
+        radius: u32,
+    },
+    /// v0.3+: an axis-aligned block region, inclusive corners.
+    Cube {
+        /// Lowest corner.
+        lo: [i32; 3],
+        /// Highest corner.
+        hi: [i32; 3],
+    },
+}
+
+/// The completion volume for one `reach-anchor`, given the resolved anchor cell,
+/// the authored radius and whether the campaign compiles under v0.3+.
+pub fn reach_completion(pos: [i32; 3], radius: u32, v03: bool) -> ReachCompletion {
+    if !v03 {
+        return ReachCompletion::Sphere { pos, radius };
+    }
+    // The FLOOR, not a replacement: never tighter than the ±1 that closed hv-01,
+    // never narrower than what the author asked for.
+    let h = radius.max(1) as i32;
+    ReachCompletion::Cube {
+        lo: [pos[0] - h, pos[1] - h, pos[2] - h],
+        hi: [pos[0] + h, pos[1] + h, pos[2] + h],
+    }
+}
+
+impl ReachCompletion {
+    /// The `@s[...]` selector arguments the tick line adjudicates with.
+    pub fn selector_args(&self) -> String {
+        match self {
+            ReachCompletion::Sphere { pos, radius } => {
+                format!("x={},y={},z={},distance=..{radius}", pos[0], pos[1], pos[2])
+            }
+            ReachCompletion::Cube { lo, hi } => format!(
+                "x={},dx={},y={},dy={},z={},dz={}",
+                lo[0],
+                hi[0] - lo[0],
+                lo[1],
+                hi[1] - lo[1],
+                lo[2],
+                hi[2] - lo[2]
+            ),
+        }
+    }
+
+    /// The same volume as `critical-path.json` carries it, so the harness walks
+    /// into the region the server is testing rather than into its own idea of one.
+    pub fn to_json(&self) -> serde_json::Value {
+        match self {
+            ReachCompletion::Sphere { pos, radius } => {
+                serde_json::json!({ "kind": "sphere", "pos": pos, "radius": radius })
+            }
+            ReachCompletion::Cube { lo, hi } => {
+                serde_json::json!({ "kind": "cube", "lo": lo, "hi": hi })
+            }
+        }
+    }
+}
+
 /// A critical-path step (mirrors the amended `critical-path.json` shape).
 ///
 /// Every step that stands for a DSL objective carries that objective's id
@@ -969,7 +1057,7 @@ pub enum Step {
         /// The chat command the bot sends.
         command: String,
     },
-    /// Walk to within `radius` of `pos`.
+    /// Walk into the objective's completion volume at `pos`.
     Reach {
         /// The `obj/<id>` this step proves complete.
         objective_id: String,
@@ -977,8 +1065,12 @@ pub enum Step {
         anchor_id: String,
         /// Absolute anchor position.
         pos: [i32; 3],
-        /// Completion radius.
+        /// Completion radius, as authored.
         radius: u32,
+        /// The volume the datapack adjudicates in ([`reach_completion`]) — the
+        /// same value the tick line is formatted from, carried here so the harness
+        /// navigates into the server's region instead of re-deriving one.
+        completion: ReachCompletion,
     },
     /// Slay a wave: goto `pos` (the wave anchor), attack entities tagged `tag`
     /// until the marker channel reports completion (v0.3).
@@ -3225,6 +3317,11 @@ fn build_critical_path(
                         anchor_id: anchor.as_str().to_string(),
                         pos,
                         radius: *radius,
+                        completion: reach_completion(
+                            pos,
+                            *radius,
+                            delvewright_dsl::is_v03(campaign.quests.dsl_version.as_str()),
+                        ),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }

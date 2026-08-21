@@ -1439,6 +1439,7 @@ test("reach: a completion transport landing mid-gate-leg is step success, not a 
     anchor: "anchor/wheelpit",
     pos: [20, 63, -40],
     radius: 3,
+    completion: { kind: "cube" as const, lo: [17, 60, -43], hi: [23, 66, -37] },
     transport: [260, 61, 4],
   };
   const started = Date.now();

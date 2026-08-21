@@ -79,6 +79,7 @@ const reach: ReachStep = {
   anchor: "anchor/exit",
   pos: [8, 65, 24],
   radius: 2,
+  completion: { kind: "cube" as const, lo: [6, 63, 22], hi: [10, 67, 26] },
 };
 const kill: KillStep = {
   action: "kill",
@@ -224,6 +225,7 @@ test("runSequence awaits transport after a transport-marked step (gap 8)", async
     anchor: "anchor/exit",
     pos: [8, 65, 24],
     radius: 2,
+    completion: { kind: "cube" as const, lo: [6, 63, 22], hi: [10, 67, 26] },
     transport: [261, 65, 4],
   };
   const transports: Array<readonly [number, number, number]> = [];
@@ -259,6 +261,7 @@ test("runSequence awaits a cutscene after a cutscene-marked step (gap 7)", async
     anchor: "anchor/altar",
     pos: [8, 65, 24],
     radius: 2,
+    completion: { kind: "cube" as const, lo: [6, 63, 22], hi: [10, 67, 26] },
     cutsceneSeconds: 6,
   };
   const durations: number[] = [];

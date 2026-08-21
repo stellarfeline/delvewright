@@ -942,8 +942,23 @@
       "round": "2026-08-04",
       "finding": "an interior room in an ocean-horizon world sat one block under sea level and its whole walk plane flooded a minute after boot, while the compiler modelled it dry",
       "triage": "capability",
-      "general_form": "the assembled model accounts for water that will flow after placement, so a walk plane the compiler proves dry is dry in play",
-      "carrier": null
+      "general_form": "the ambient sea is part of the assembled model: a walk plane the compiler proves standable is not one the sea will be standing over",
+      "carrier": {
+        "kind": "dw",
+        "code": "DW0851"
+      },
+      "binding": {
+        "kind": "dsl",
+        "files": [
+          "world.json"
+        ],
+        "match": {
+          "eq": {
+            "horizon": "ocean"
+          }
+        }
+      },
+      "note": "The verdict is the HEAD cell, not the feet. A body wading at the waterline is walking where the game agrees it can walk, and refusing that reds the released nobodys-cave-island's west bank \u2014 26 reachable cells at exactly sea level, every one the campaign has at or below the waterline, none head-deep. Those cells are counted as `walk_cells_wading` in `validation/sea-seepage.json` rather than judged, so the shoreline stays a number a reader can act on. Still open, for a later round with a campaign that shows it: a walk plane at exactly sea level INSIDE a room reads the same as a shore and is not refused."
     },
     {
       "id": "tm-03",

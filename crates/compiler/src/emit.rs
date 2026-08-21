@@ -560,6 +560,12 @@ pub fn build_with_warnings(
     // that assembles a world — including a bone-dry one, which then ships a
     // ledger reading zero rather than nothing at all.
     let mut fluid_escape_ledger: Option<serde_json::Value> = None;
+    // The sea-seepage proof's binding ledger (`compiler::nav`, `DW0851`): how much
+    // open face the built volume presents to the ambient sea, how far the sea gets
+    // in, and how much of the walk region it covers. Filled by every campaign that
+    // assembles a world — a `horizon: void` one included, which then ships a
+    // ledger saying `"horizon": "void"` and zeroes, rather than nothing at all.
+    let mut sea_seepage_ledger: Option<serde_json::Value> = None;
     // The lethal-volume proofs' binding ledger (`compiler::lethal`), filled inside
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
@@ -736,6 +742,20 @@ pub fn build_with_warnings(
                     message: e.message,
                 });
             }
+
+            // Measured here for the LEDGER only, on the same terms as the fluid
+            // escape above: the refusal itself lives inside
+            // `verify_boundary_safety`, which owns the sequence, and this call
+            // cannot disagree with it because the measurement is pure and reads
+            // the same sets. A pass owes the numbers as much as a failure does —
+            // `contact_face_cells: 0` is a watertight hull saying so.
+            sea_seepage_ledger = Some(
+                crate::nav::measure_sea_seepage(
+                    &world,
+                    &world.reachable_walkable_rooted(&crate::edit::anchor_starts(plan)),
+                )
+                .ledger(),
+            );
 
             crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan)).map_err(
                 |e| BuildFailure::Diagnostic {
@@ -1530,6 +1550,13 @@ pub fn build_with_warnings(
     // assembles no world at all.
     if let Some(ledger) = &fluid_escape_ledger {
         put_json(&mut out, "validation/fluid-escape.json", ledger);
+    }
+    // The sea-seepage binding ledger (`DW0851`): the horizon, the open contact
+    // face the built volume presents to the ambient sea, how far the sea reaches
+    // inside it, and how much of the walk region it submerges or wades. `None`
+    // only for a campaign that assembles no world at all.
+    if let Some(ledger) = &sea_seepage_ledger {
+        put_json(&mut out, "validation/sea-seepage.json", ledger);
     }
     if let Some(ledger) = &gate_seal_ledger {
         put_json(&mut out, "validation/gate-seal.json", ledger);
@@ -3188,26 +3215,19 @@ fn emit_functions(
                         Some(ResolvedAnchor::Gate { from, .. }) => *from,
                         None => continue,
                     };
-                    // v0.3 (M2 fix 8): a point-radius `distance=..R` sphere was too
-                    // tight for a human standing on the altar cell. Test a block
-                    // region instead — the anchor cell with ±1 generosity on every
-                    // axis (a 3×3×3 box centred on the anchor). v0.2 keeps the
-                    // sphere so hello-world / keep-crawl stay byte-identical.
-                    if v03 {
-                        tick.push(format!(
-                            "execute as @a{} if entity @s[x={},dx=2,y={},dy=2,z={},dz=2] run function {ns}:complete_{}",
-                            pending_guard(plan, o, &qa),
-                            pos[0] - 1, pos[1] - 1, pos[2] - 1,
-                            safe_obj_fn(id.as_str())
-                        ));
-                    } else {
-                        tick.push(format!(
-                            "execute as @a{} if entity @s[x={},y={},z={},distance=..{}] run function {ns}:complete_{}",
-                            pending_guard(plan, o, &qa),
-                            pos[0], pos[1], pos[2], radius,
-                            safe_obj_fn(id.as_str())
-                        ));
-                    }
+                    // The completion volume is `plan::reach_completion`'s and
+                    // nothing else's — the same call `Step::Reach` carries into
+                    // `critical-path.json`. It used to be spelled out here, as a
+                    // fixed ±1 box that dropped the authored `radius` on the floor
+                    // while the harness went on reading it; see that function for
+                    // what the disagreement cost. v0.2 keeps the sphere, so
+                    // hello-world / keep-crawl stay byte-identical.
+                    tick.push(format!(
+                        "execute as @a{} if entity @s[{}] run function {ns}:complete_{}",
+                        pending_guard(plan, o, &qa),
+                        plan::reach_completion(pos, *radius, v03).selector_args(),
+                        safe_obj_fn(id.as_str())
+                    ));
                 }
                 Objective::Kill { id, wave, .. } => {
                     tick.push(format!(
@@ -18657,9 +18677,14 @@ fn critical_path_json(
                     "action": "talk-to", "objective": objective_id, "npc": npc_id,
                     "pos": pos, "command": command
                 }),
-                Step::Reach { objective_id, anchor_id, pos, radius } => json!({
+                // `completion` is the volume the server adjudicates in, not a
+                // second description of it: it comes off the same
+                // `plan::reach_completion` call the tick line is formatted from.
+                // `radius` stays beside it as the AUTHORED number, which is a
+                // different fact and is what a report cites.
+                Step::Reach { objective_id, anchor_id, pos, radius, completion } => json!({
                     "action": "reach", "objective": objective_id, "anchor": anchor_id,
-                    "pos": pos, "radius": radius
+                    "pos": pos, "radius": radius, "completion": completion.to_json()
                 }),
                 Step::Kill { objective_id, wave_id, pos, tag, count } => json!({
                     "action": "kill", "objective": objective_id, "wave": wave_id,
