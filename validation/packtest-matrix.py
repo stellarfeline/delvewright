@@ -5,7 +5,7 @@ WHY THIS EXISTS. A round that changes PackTest emission has to verify it on a
 live server, and until this existed the only way to know WHICH servers was to
 read the tier-2 job and remember what you found. One round read it, found the
 gallery, ran that suite exhaustively — three times, end to end, 97/97 — and
-shipped a red. The gate runs TWELVE projects; the change broke the one whose
+shipped a red. The gate ran TWELVE projects that day; the change broke the one whose
 campaign has no cast ledger, which is a shape the gallery does not have. The
 verification surface was a strict PREFIX of the gate's, and the red lived
 exactly in the difference.

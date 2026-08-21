@@ -6,7 +6,7 @@
 # ## Why this exists
 #
 # A change to PackTest emission is verified on a live server, and the surface it
-# must be verified on is "every project the gate runs" — twelve of them. Until
+# must be verified on is "every project the gate runs" — the parsed matrix. Until
 # this existed the only way to know that was to read the tier-2 job and remember
 # what you found, and `CLAUDE.md` says in as many words that a doc line is not an
 # invocation. A round read the job, found the gallery, ran that suite three times

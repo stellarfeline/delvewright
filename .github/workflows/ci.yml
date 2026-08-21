@@ -1156,10 +1156,30 @@ jobs:
             build crates/compiler/tests/fixtures/cast-ledger \
             -o validation/delve-output-cast --prefabs campaigns/prefabs
 
-      - name: PackTest suite — cast ledger (root swap, bark delivery, explicit none)
+      - name: PackTest suite — cast ledger (per-clause ladder, bark delivery, explicit none)
         run: |
           bash validation/packtest-run.sh --project dw-ci-cast \
             --output ./delve-output-cast
+
+      # The ladder proof's hardest case: two clauses of ONE quest differing only
+      # by `requires_state`. No other project in this job carries that shape —
+      # cast-ledger's clauses differ by quest, the gallery's same-quest pair
+      # differs by flags — and a proof written against one shape silently does
+      # not exist for the other (this job's own recorded lesson, one step up).
+      # The generated `cast_ladder_keeper` here asserts the fallback clause
+      # under the solved datum value that VIOLATES the sibling's comparison,
+      # which is exactly what a flag pin cannot do; a selector that lost its
+      # state axis reds on this server. Cost: one extra toolserver boot (~1 min).
+      - name: build the cast-state-ladder delve output (state-only siblings)
+        run: |
+          target/debug/delvec \
+            build crates/compiler/tests/fixtures/cast-state-ladder \
+            -o validation/delve-output-caststate --prefabs campaigns/prefabs
+
+      - name: PackTest suite — cast ladder distinguishes state-only siblings
+        run: |
+          bash validation/packtest-run.sh --project dw-ci-caststate \
+            --output ./delve-output-caststate
 
       # `requires_item` is HELD, not carried — and the
       # template that proves it, `verb_interact_held`, is emitted only for a campaign
