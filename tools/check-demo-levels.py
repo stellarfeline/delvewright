@@ -86,6 +86,24 @@ exist is a queue nobody can build from — and "covered by" coverage is explicit
 allowed to rot in the file's own rules. Every `DW` code, `spec-NNNN` number and
 `ADR-NNNN` number a row cites must resolve in this tree.
 
+## And it reads the queue the way the queue's reader reads it
+
+Both demands above are counted off the mechanic-demo table, so where that table
+ENDS is load-bearing, and the answer is not this script's to invent. A pipe
+table in CommonMark's GFM extension runs from a header row through a delimiter
+row to "the first empty line, or beginning of another block-level structure".
+This parser applies that rule and no other. It used to apply a different one —
+iterate to the next `## `, keep every line beginning with `|` — under which a
+blank line did not end anything, so a row detached from the table by a blank
+line was an entry for this gate and a paragraph of literal pipe characters for
+every renderer and every human. That is the whole obligation satisfiable in the
+letter while void in the reading, and it is one-directional falsifiability: the
+gate could only fail in the direction that does not drift.
+
+Silently dropping such a row would rebuild the same defect facing the other way,
+so a row no table contains is a **finding naming its line**, never a row and
+never a discard. The binding line states how many there are on both sides.
+
 Deterministic, offline, stdlib-only python3. States its binding counts; zero
 binaries, zero flags, zero rows or zero citations is a red, not a pass.
 """
@@ -117,6 +135,25 @@ ADR_REF = re.compile(r"ADR-([0-9]{4})")
 BARE_NUMBER = re.compile(r"(?<![0-9A-Za-z])([0-9]{4})(?![0-9A-Za-z])")
 
 MECHANIC_HEADING = "## Mechanic demos"
+
+# The two shapes CommonMark's GFM table extension is bounded by. A delimiter
+# cell is hyphens with an optional leading or trailing colon; a table ends at
+# the first blank line or at the start of another block-level structure, which
+# is every construct below. None of them can begin with `|`, so no row of a
+# table can be mistaken for one.
+DELIMITER_CELL = re.compile(r"^:?-+:?$")
+BLOCK_START = re.compile(
+    r"""^(?:
+          \#{1,6}(?:\s|$)          # ATX heading
+        | >                        # block quote
+        | (?:```|~~~)              # fenced code
+        | (?:[-*_][ \t]*){3,}$     # thematic break
+        | [-*+](?:\s|$)            # bullet list item
+        | [0-9]{1,9}[.)](?:\s|$)   # ordered list item
+        | <[A-Za-z/!?]             # HTML block
+    )""",
+    re.VERBOSE,
+)
 
 
 # --------------------------------------------------------------------- git ---
@@ -249,26 +286,78 @@ def flag_owners(ref: str | None) -> tuple[dict[str, set[str]], int, int]:
 
 
 # ------------------------------------------------------------------- queue ---
-def queue_rows(ref: str | None) -> list[list[str]]:
-    """Every data row of the mechanic-demo table, as its cells."""
+def _cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def _is_delimiter_row(line: str, width: int) -> bool:
+    """GFM's delimiter row: cells of hyphens with an optional leading or
+    trailing colon, and the same cell count as the header row above it. Both
+    conditions are the spec's; failing either means there is no table at all."""
+    line = line.strip()
+    if "|" not in line:
+        return False
+    cells = _cells(line)
+    return len(cells) == width and all(DELIMITER_CELL.match(c) for c in cells)
+
+
+def parse_queue(ref: str | None) -> tuple[list[list[str]], list[tuple[int, str]]]:
+    """The mechanic-demo table's data rows, and the rows no table contains.
+
+    Parsed the way the thing that CONSUMES this file parses it. A pipe table in
+    CommonMark's GFM extension runs from a header row, through a delimiter row,
+    to `the first empty line, or beginning of another block-level structure` —
+    so a blank line ENDS the table, and a row under that blank line is not in
+    it. Every renderer this document is read through obeys that; the parser
+    this replaced did not, and so counted a detached row as an entry while the
+    page showed it as a paragraph of literal pipes.
+
+    That gap is what made the demo-queue obligation satisfiable in the letter
+    and void in the reading: the row is there for the gate and absent for the
+    reader. So the detached rows are returned alongside, to be named as a
+    finding rather than silently counted or silently dropped — dropping them
+    would leave the gate falsifiable only in the direction that does not drift.
+
+    Returns `(rows, orphans)`, each orphan a `(line number in {QUEUE}, text)`.
+    """
     text = read_text(ref, QUEUE)
     if MECHANIC_HEADING not in text:
-        return []
-    body = text.split(MECHANIC_HEADING, 1)[1]
+        return [], []
+    before, body = text.split(MECHANIC_HEADING, 1)
+    # `body` resumes on the heading's own line, so index k of it is that line + k.
+    heading_lineno = before.count("\n") + 1
+
+    lines = body.split("\n")
     rows: list[list[str]] = []
-    for line in body.split("\n"):
-        line = line.strip()
+    orphans: list[tuple[int, str]] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
         if line.startswith("## "):
             break
-        if not line.startswith("|"):
+        if not line or "|" not in line:
+            i += 1
             continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if not cells or set("".join(cells)) <= set("-: "):
+        header = _cells(line)
+        if i + 1 < len(lines) and _is_delimiter_row(lines[i + 1], len(header)):
+            i += 2
+            while i < len(lines):
+                row = lines[i].strip()
+                if not row or BLOCK_START.match(row):
+                    break
+                rows.append(_cells(row))
+                i += 1
             continue
-        if cells[0] == "Mechanic (spec)":
-            continue
-        rows.append(cells)
-    return rows
+        # A pipe line with no delimiter row under it opens no table, so the
+        # renderer shows it as a paragraph. Name it rather than count it.
+        orphans.append((heading_lineno + i, line))
+        i += 1
+    return rows, orphans
+
+
+def queue_rows(ref: str | None) -> list[list[str]]:
+    """Every data row of the mechanic-demo table, as its cells."""
+    return parse_queue(ref)[0]
 
 
 def citations(rows: list[list[str]]) -> tuple[set[str], set[str], set[str]]:
@@ -320,8 +409,8 @@ def main() -> int:
 
     head_owners, head_crates, head_files = flag_owners(None)
     base_owners, base_crates, base_files = flag_owners(base)
-    head_rows = queue_rows(None)
-    base_rows = queue_rows(base)
+    head_rows, head_orphans = parse_queue(None)
+    base_rows, base_orphans = parse_queue(base)
     dw, adr, spec = citations(head_rows)
 
     print(
@@ -329,7 +418,8 @@ def main() -> int:
         f"{len(head_owners)} long flag(s) here; {base_crates}/{base_files}/"
         f"{len(base_owners)} at {args.base}. Queue: {len(head_rows)} row(s) here, "
         f"{len(base_rows)} at {args.base}; citations examined: {len(dw)} DW code(s), "
-        f"{len(spec)} spec number(s), {len(adr)} ADR number(s)."
+        f"{len(spec)} spec number(s), {len(adr)} ADR number(s). Rows no table "
+        f"contains: {len(head_orphans)} here, {len(base_orphans)} at {args.base}."
     )
 
     # ---- vacuity -----------------------------------------------------------
@@ -352,6 +442,23 @@ def main() -> int:
             f"heading {MECHANIC_HEADING!r} or the table shape moved out from "
             "under this parser."
         )
+    # ---- the row a reader cannot see --------------------------------------
+    for lineno, line in head_orphans:
+        findings.append(
+            f"{QUEUE}:{lineno} is a table row that no table contains:\n"
+            f"    {line}\n"
+            "    A blank line ends a pipe table (CommonMark GFM tables: a "
+            "table runs to `the first empty line, or beginning of another "
+            "block-level structure`), so this row is rendered as a paragraph "
+            "of literal pipe characters and is NOT an entry in the "
+            f"{MECHANIC_HEADING[3:]} table. It counts for nobody who reads the "
+            "page, so a mechanic whose only row is this one has no queue entry "
+            "— the obligation is met in the letter and void in the reading.\n"
+            "    Fix: delete the blank line above it so it joins the table, or "
+            "if it is meant to stand alone, it is not a queue row and should "
+            "not be written as one."
+        )
+
     if not (dw or spec or adr):
         findings.append(
             f"the queue's rows cite 0 resolvable identifiers — every spec "
