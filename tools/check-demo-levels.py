@@ -92,7 +92,8 @@ Both demands above are counted off the mechanic-demo table, so where that table
 ENDS is load-bearing, and the answer is not this script's to invent. A pipe
 table in CommonMark's GFM extension runs from a header row through a delimiter
 row to "the first empty line, or beginning of another block-level structure".
-This parser applies that rule and no other. It used to apply a different one —
+`tools/lib/mdtable.py` applies that rule and no other, once, for every gate that
+reads a table. This one used to apply a different one —
 iterate to the next `## `, keep every line beginning with `|` — under which a
 blank line did not end anything, so a row detached from the table by a blank
 line was an entry for this gate and a paragraph of literal pipe characters for
@@ -118,6 +119,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from lib import mdtable  # noqa: E402
 from lib.gitbase import BaseUnresolved, resolve_base  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -135,25 +137,6 @@ ADR_REF = re.compile(r"ADR-([0-9]{4})")
 BARE_NUMBER = re.compile(r"(?<![0-9A-Za-z])([0-9]{4})(?![0-9A-Za-z])")
 
 MECHANIC_HEADING = "## Mechanic demos"
-
-# The two shapes CommonMark's GFM table extension is bounded by. A delimiter
-# cell is hyphens with an optional leading or trailing colon; a table ends at
-# the first blank line or at the start of another block-level structure, which
-# is every construct below. None of them can begin with `|`, so no row of a
-# table can be mistaken for one.
-DELIMITER_CELL = re.compile(r"^:?-+:?$")
-BLOCK_START = re.compile(
-    r"""^(?:
-          \#{1,6}(?:\s|$)          # ATX heading
-        | >                        # block quote
-        | (?:```|~~~)              # fenced code
-        | (?:[-*_][ \t]*){3,}$     # thematic break
-        | [-*+](?:\s|$)            # bullet list item
-        | [0-9]{1,9}[.)](?:\s|$)   # ordered list item
-        | <[A-Za-z/!?]             # HTML block
-    )""",
-    re.VERBOSE,
-)
 
 
 # --------------------------------------------------------------------- git ---
@@ -286,73 +269,35 @@ def flag_owners(ref: str | None) -> tuple[dict[str, set[str]], int, int]:
 
 
 # ------------------------------------------------------------------- queue ---
-def _cells(line: str) -> list[str]:
-    return [c.strip() for c in line.strip().strip("|").split("|")]
-
-
-def _is_delimiter_row(line: str, width: int) -> bool:
-    """GFM's delimiter row: cells of hyphens with an optional leading or
-    trailing colon, and the same cell count as the header row above it. Both
-    conditions are the spec's; failing either means there is no table at all."""
-    line = line.strip()
-    if "|" not in line:
-        return False
-    cells = _cells(line)
-    return len(cells) == width and all(DELIMITER_CELL.match(c) for c in cells)
-
-
 def parse_queue(ref: str | None) -> tuple[list[list[str]], list[tuple[int, str]]]:
     """The mechanic-demo table's data rows, and the rows no table contains.
 
-    Parsed the way the thing that CONSUMES this file parses it. A pipe table in
-    CommonMark's GFM extension runs from a header row, through a delimiter row,
-    to `the first empty line, or beginning of another block-level structure` —
-    so a blank line ENDS the table, and a row under that blank line is not in
-    it. Every renderer this document is read through obeys that; the parser
-    this replaced did not, and so counted a detached row as an entry while the
-    page showed it as a paragraph of literal pipes.
+    The section between this heading and the next `## ` is read by
+    `tools/lib/mdtable.py`, which applies the renderer's rule and no other:
+    a pipe table runs from a header row, through a delimiter row, to the first
+    blank line or the start of another block-level structure. A row under a
+    blank line is therefore not in the table, and the reader sees a paragraph
+    of literal pipe characters where this gate used to see an entry.
 
-    That gap is what made the demo-queue obligation satisfiable in the letter
-    and void in the reading: the row is there for the gate and absent for the
-    reader. So the detached rows are returned alongside, to be named as a
-    finding rather than silently counted or silently dropped — dropping them
-    would leave the gate falsifiable only in the direction that does not drift.
+    The detached rows come back alongside rather than being dropped, because
+    dropping them would rebuild the same defect facing the other way: the gate
+    would be falsifiable only in the direction that does not drift.
 
-    Returns `(rows, orphans)`, each orphan a `(line number in {QUEUE}, text)`.
+    Returns `(rows, orphans)`, each orphan a `(line number in the file, text)`.
     """
     text = read_text(ref, QUEUE)
     if MECHANIC_HEADING not in text:
         return [], []
     before, body = text.split(MECHANIC_HEADING, 1)
-    # `body` resumes on the heading's own line, so index k of it is that line + k.
+    # `body` resumes on the heading's own line, so line k of it is that line + k.
     heading_lineno = before.count("\n") + 1
+    section = body.split("\n## ", 1)[0]
 
-    lines = body.split("\n")
-    rows: list[list[str]] = []
-    orphans: list[tuple[int, str]] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if line.startswith("## "):
-            break
-        if not line or "|" not in line:
-            i += 1
-            continue
-        header = _cells(line)
-        if i + 1 < len(lines) and _is_delimiter_row(lines[i + 1], len(header)):
-            i += 2
-            while i < len(lines):
-                row = lines[i].strip()
-                if not row or BLOCK_START.match(row):
-                    break
-                rows.append(_cells(row))
-                i += 1
-            continue
-        # A pipe line with no delimiter row under it opens no table, so the
-        # renderer shows it as a paragraph. Name it rather than count it.
-        orphans.append((heading_lineno + i, line))
-        i += 1
-    return rows, orphans
+    rows, orphans = mdtable.read(section)
+    return (
+        [list(row.cells) for row in rows],
+        [(heading_lineno + n - 1, line) for n, line in orphans],
+    )
 
 
 def queue_rows(ref: str | None) -> list[list[str]]:
