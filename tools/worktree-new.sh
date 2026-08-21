@@ -61,8 +61,12 @@
 # packages, and reported that cloning saves nothing. Nothing errored. The number
 # was plausible and wrong.
 #
-# So this script REFUSES when the donor and the new tree do not resolve the same
-# rustc, rather than cloning output the new tree cannot use.
+# So this script REFUSES when the donor and the new tree disagree about anything
+# a fingerprint depends on that can be cheaply established, rather than cloning
+# output the new tree cannot use. `rustc` was the first such input and is not the
+# only one: profile settings are fingerprint inputs too, and this repository moves
+# them. The comparison, and the stated limit of what it can and cannot reach,
+# lives in `tools/lib/cargo-fingerprint-inputs.py`.
 #
 # ## What it does NOT do
 #
@@ -156,17 +160,34 @@ if [ "$DO_CLONE" = 1 ]; then
   if [ ! -d "$DONOR/target" ]; then
     echo "   build cache: donor has no target/ — nothing to clone, the first build is cold"
   else
-    # The instrument is named literally on both sides and compared. A cloned
-    # target/ built by a different rustc is not a saving; it is 140 rebuilt
-    # packages and a wasted copy.
-    D_RUSTC="$(cd -- "$DONOR" && rustc --version 2>/dev/null || echo unknown)"
-    N_RUSTC="$(cd -- "$NEW" && rustc --version 2>/dev/null || echo unknown)"
+    # The instrument is named literally on both sides and compared — and the
+    # instrument is not only `rustc`. PROFILE SETTINGS are fingerprint inputs
+    # too, and this repository moves them (`[profile.dev]` gained
+    # `debug = "line-tables-only"` after `opt-level = 1`). A rustc-only refusal
+    # passes the first tree cloned from a donor whose target/ predates such a
+    # change, then invalidates every cloned unit anyway — which reproduces the
+    # exact symptom recorded above, *rebuilt all 140 packages and reported that
+    # cloning saves nothing*, wearing the costume of a regression in this script.
+    #
+    # `tools/lib/cargo-fingerprint-inputs.py` owns the comparison and its own
+    # header states, per input, what is compared and what is deliberately not.
+    # It runs `rustc`/`cargo` with each tree as their working directory, which is
+    # how a build resolves the toolchain pin (rustup walks up from the CWD and has
+    # no manifest flag) without this shell ever moving.
     D_LOCK="$(shasum -a 256 < "$DONOR/Cargo.lock" | awk '{print $1}')"
     N_LOCK="$(shasum -a 256 < "$NEW/Cargo.lock" | awk '{print $1}')"
-    if [ "$D_RUSTC" != "$N_RUSTC" ]; then
-      echo "   build cache: REFUSED — donor resolves '$D_RUSTC', new tree resolves '$N_RUSTC'."
-      echo "                The rustc version is part of every fingerprint, so every cloned"
-      echo "                unit would be invalid and the copy would buy nothing."
+    FP_RC=0
+    FP_OUT="$(python3 "$HERE/tools/lib/cargo-fingerprint-inputs.py" \
+                --diff "$DONOR" "$NEW")" || FP_RC=$?
+    if [ "$FP_RC" != 0 ]; then
+      # 1 = established and differing, 2 = could not be established. Both refuse:
+      # an unestablished agreement is exactly the state a clone must distrust.
+      echo "   build cache: REFUSED — donor and new tree do not agree on what a cargo"
+      echo "                fingerprint depends on, so every cloned unit would be invalid"
+      echo "                and the copy would buy nothing."
+      while IFS= read -r fp_line; do
+        echo "                $fp_line"
+      done <<<"$FP_OUT"
     else
       BEFORE="$(df -k /System/Volumes/Data | awk 'NR==2{print $4}')"
       T0=$(date +%s)
@@ -185,7 +206,9 @@ if [ "$DO_CLONE" = 1 ]; then
         awk -v b="$BEFORE" -v a="$AFTER" -v s="$((T1 - T0))" 'BEGIN{
           printf "   build cache: cloned in %ds; volume free space moved %+.3f GiB across the copy\n", s, (a-b)/1048576
           printf "                (whole-volume delta, other processes included — a clone costs ~0)\n" }'
-        echo "                toolchain on both sides: $D_RUSTC"
+        while IFS= read -r fp_line; do
+          echo "                $fp_line"
+        done <<<"$FP_OUT"
         if [ "$D_LOCK" != "$N_LOCK" ]; then
           echo "                NOTE: Cargo.lock differs from the donor's, so the dependency sets"
           echo "                differ. Units they still share are reused; the rest rebuild."
@@ -221,3 +244,7 @@ echo
 echo "Build INSIDE the tree — 'cargo build --manifest-path $NEW/Cargo.toml' run from"
 echo "elsewhere resolves rust-toolchain.toml from your CWD, not from the manifest,"
 echo "and silently uses a different compiler."
+echo
+echo "Format with 'bash tools/fmt-workspaces.sh' — it states how many workspaces it"
+echo "swept. 'cargo fmt --all' reaches the root workspace and no other, so it reports"
+echo "clean on an unformatted generator and CI reddens the pull request instead."
