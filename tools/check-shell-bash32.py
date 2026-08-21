@@ -114,8 +114,21 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 REPO = Path(__file__).resolve().parent.parent
+
+
+class Masks(NamedTuple):
+    """One source line, three times, differing only in what quoting removed.
+
+    Same length as the original line, so an offset into any of them is an offset
+    into the source.
+    """
+
+    bare: str  # nothing quoted survives — for COMMANDS
+    code: str  # double-quoted text survives — for EXPANSIONS
+    text: str  # all quoted text survives — for LITERALS
 
 # Frozen record, not live tooling: docs/experiments/ preserves an experiment
 # exactly as it was run. Rewriting it would falsify the record, and nothing in CI
@@ -156,9 +169,21 @@ DECLARE = re.compile(r"(?<![\w-])(declare|typeset|local)((?:\s+-[A-Za-z]+)+)")
 
 SHOPT = re.compile(r"(?<![\w-])shopt\s+(?:-[qp]\s+)*-[su]\s+([A-Za-z_][A-Za-z0-9_]*)")
 
-# Each entry: compiled pattern, and what bash 3.2 actually does with it — the
-# second half is the argument, and it was measured rather than recalled.
-PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+# Two catalogues, because a double-quoted span means opposite things to them.
+#
+# COMMANDS and OPERATORS are only themselves at a word position OUTSIDE quotes:
+# `echo "no mapfile here"` is a string, and flagging it would red a sentence.
+#
+# EXPANSIONS are expanded INSIDE double quotes — `"${v,,}"` is the ordinary way
+# to write the bug — so they are read from a mask that keeps double-quoted text.
+#
+# Single-quoted text is in neither: bash expands nothing there, and a command
+# word inside it is a program for something else (`awk`, `python3 -c`, a
+# `bash -c` sent into a container).
+#
+# Each entry records what bash 3.2 actually does with it, measured rather than
+# recalled.
+COMMANDS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"(?<![\w./-])(?:mapfile|readarray)(?![\w./-])"),
         "`mapfile`/`readarray` are bash 4.0 builtins; 3.2 prints "
@@ -172,26 +197,6 @@ PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"(?<![\w./-])wait\s+-n(?![\w-])"),
         "`wait -n` is bash 4.3; 3.2 prints `invalid option` and waits for nothing",
-    ),
-    (
-        # ${v,,} ${v^^} ${v,} ${v^} ${arr[@]^^} — a `,`/`^` immediately after the
-        # parameter (and its optional subscript) is the case-modification
-        # operator, which does not exist in 3.2 at all.
-        re.compile(r"\$\{[#!]?[A-Za-z_][A-Za-z0-9_]*(?:\[[^]{}]*\])?[,^]"),
-        "`${v,,}` / `${v^^}` case modification is bash 4.0; 3.2 aborts the whole "
-        "script with `bad substitution` — use `tr '[:upper:]' '[:lower:]'`",
-    ),
-    (
-        # ${v@Q} and friends. `${!prefix@}` IS valid in 3.2, so a letter after the
-        # `@` is required.
-        re.compile(r"\$\{[#!]?[A-Za-z_@*][A-Za-z0-9_]*(?:\[[^]{}]*\])?@[A-Za-z]\}"),
-        "`${v@Q}` parameter transformation is bash 4.4; 3.2 aborts with "
-        "`bad substitution`",
-    ),
-    (
-        re.compile(r"\$\{[#!]?[A-Za-z_][A-Za-z0-9_]*\[\s*-\s*\d"),
-        "a negative array subscript is bash 4.2; 3.2 prints "
-        "`bad array subscript` and expands to EMPTY",
     ),
     (
         re.compile(r"&>>"),
@@ -213,18 +218,53 @@ PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         "`[[ -n ${name+x} ]]`",
     ),
     (
-        re.compile(r"printf\s+(?:[^|;&\n]*\s)?-v\s+[\"']?[A-Za-z_][A-Za-z0-9_]*\["),
-        "`printf -v arr[i]` is bash 4.1; 3.2 refuses it as `not a valid "
-        "identifier` and prints to stdout instead",
-    ),
-    (
-        re.compile(r"%\([^)]*\)T"),
-        "`printf '%(fmt)T'` is bash 4.2; 3.2 refuses `(` as a format character",
-    ),
-    (
         re.compile(r"(?:^|[\s;&|(])\{[A-Za-z_][A-Za-z0-9_]*\}[<>]"),
         "`{fd}<file` automatic descriptor allocation is bash 4.1; 3.2 tries to "
         "execute a file named `{fd}`",
+    ),
+)
+
+# Read from the mask that KEEPS double-quoted text, because that is where these
+# are written: `"${v,,}"`, `printf -v t "%(%Y)T"`.
+EXPANSIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        # ${v,,} ${v^^} ${v,} ${v^} ${arr[@]^^} — a `,`/`^` immediately after the
+        # parameter (and its optional subscript) is the case-modification
+        # operator, which does not exist in 3.2 at all.
+        re.compile(r"\$\{[#!]?[A-Za-z_][A-Za-z0-9_]*(?:\[[^]{}]*\])?[,^]"),
+        "`${v,,}` / `${v^^}` case modification is bash 4.0; 3.2 aborts the whole "
+        "script with `bad substitution` — use `tr '[:upper:]' '[:lower:]'`",
+    ),
+    (
+        # ${v@Q} and friends. `${!prefix@}` IS valid in 3.2, so a letter after the
+        # `@` is required.
+        re.compile(r"\$\{[#!]?[A-Za-z_@*][A-Za-z0-9_]*(?:\[[^]{}]*\])?@[A-Za-z]\}"),
+        "`${v@Q}` parameter transformation is bash 4.4; 3.2 aborts with "
+        "`bad substitution`",
+    ),
+    (
+        re.compile(r"\$\{[#!]?[A-Za-z_][A-Za-z0-9_]*\[\s*-\s*\d"),
+        "a negative array subscript is bash 4.2; 3.2 prints "
+        "`bad array subscript` and expands to EMPTY",
+    ),
+    (
+        re.compile(r"printf\s+(?:[^|;&\n]*\s)?-v\s+[A-Za-z_][A-Za-z0-9_]*\s*\["),
+        "`printf -v arr[i]` is bash 4.1; 3.2 refuses it as `not a valid "
+        "identifier` and prints to stdout instead",
+    ),
+)
+
+# Read from the mask that keeps ALL quoted text. bash's own `printf` interprets
+# its format string whether it is quoted or not, so `printf '%(%Y)T'` is bash-4
+# syntax living inside single quotes — the one construct here that the
+# single-quote rule would otherwise put out of reach. The `printf` word itself
+# must still be a real command word, which is what keeps this off a python
+# `print("%(name)s" % d)` inside a heredoc… and heredocs are not read anyway.
+LITERALS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"(?:^|[\s;&|(])printf\s[^|;&\n]*%\([^)\n]*\)T"),
+        "`printf '%(fmt)T'` is bash 4.2; 3.2 refuses `(` as a format character "
+        "and prints the format instead — use `date +fmt`",
     ),
 )
 
@@ -316,12 +356,24 @@ def run_blocks(lines: list[str]) -> tuple[list[tuple[int, list[str]]], int]:
     return blocks, config
 
 
-def scan(lines: list[str]) -> tuple[list[tuple[int, str]], int, list[tuple[int, str]]]:
-    """Strip quotes/comments/heredocs.
+def scan(lines: list[str]) -> tuple[list[tuple[int, Masks]], int, list[tuple[int, str]]]:
+    """Strip comments and heredocs; emit the three masks the catalogues need.
 
-    Returns (scannable code per line, heredoc bodies skipped, shell-in-heredoc
-    findings). Quoting state is carried ACROSS lines: a multi-line single-quoted
-    `awk` program is one span.
+    Returns (per-line masks, heredoc bodies skipped, unread-input findings).
+    Quoting state is carried ACROSS lines: a multi-line single-quoted `awk`
+    program is one span, not three unquoted ones.
+
+    THREE MASKS, because "is this quoted" has three different answers depending
+    on who consumes the characters:
+
+      * `bare` — everything quoted is blanked. A COMMAND is only a command at a
+        word position outside quotes, so `echo "no mapfile here"` is a sentence
+        and reddening it is how a gate stops being read.
+      * `code` — double-quoted text kept. An EXPANSION happens inside double
+        quotes; `"${v,,}"` is the ordinary way to write the bug.
+      * `text` — all quoted text kept. bash's own `printf` interprets its format
+        whether or not it is quoted, so `printf '%(%Y)T'` is bash-4 syntax
+        sitting inside single quotes.
 
     A heredoc START is recognised inside the lexer, at a point where the scanner
     KNOWS it is not inside quotes — never by a regex over the finished line. The
@@ -335,7 +387,7 @@ def scan(lines: list[str]) -> tuple[list[tuple[int, str]], int, list[tuple[int, 
     `"$( … <<'PY' … )"`; without the push, the opener sits inside a double-quoted
     span, the scanner never sees it, and ~100 lines of python get read as shell.
     """
-    code: list[tuple[int, str]] = []
+    masks: list[tuple[int, Masks]] = []
     heredocs_skipped = 0
     shell_heredocs: list[tuple[int, str]] = []
     state = ""  # "", "'", '"'
@@ -349,19 +401,29 @@ def scan(lines: list[str]) -> tuple[list[tuple[int, str]], int, list[tuple[int, 
                 pending.pop(0)
             i += 1
             continue
+        bare: list[str] = []
         out: list[str] = []
+        text: list[str] = []
         starts: list[tuple[str, int]] = []  # (delimiter, offset of the `<<`)
         j, n = 0, len(raw)
+
+        def emit(bare_c: str, out_c: str, text_c: str) -> None:
+            bare.append(bare_c)
+            out.append(out_c)
+            text.append(text_c)
+
         while j < n:
             c = raw[j]
             if state == "'":
                 if c == "'":
                     state = ""
-                out.append(" ")
+                    emit(" ", " ", " ")
+                else:
+                    emit(" ", " ", c)
                 j += 1
                 continue
             if c == "\\" and j + 1 < n:
-                out.append("  ")
+                emit("  ", "  ", "  ")
                 j += 2
                 continue
             if raw[j : j + 3] == "$((":
@@ -369,35 +431,37 @@ def scan(lines: list[str]) -> tuple[list[tuple[int, str]], int, list[tuple[int, 
                 # mistaken for the close of a `$(`.
                 end = raw.find("))", j)
                 end = n if end < 0 else end + 2
-                out.append(raw[j:end])
+                chunk = raw[j:end]
+                emit(chunk, chunk, chunk)
                 j = end
                 continue
             if raw[j : j + 2] == "$(":
                 stack.append(state)
                 state = ""
-                out.append("$(")
+                emit("$(", "$(", "$(")
                 j += 2
                 continue
             if c == ")" and state == "" and stack:
                 state = stack.pop()
-                out.append(")")
+                emit(")", ")", ")")
                 j += 1
                 continue
             if state == '"':
                 if c == '"':
                     state = ""
-                    out.append(" ")
+                    emit(" ", " ", " ")
                 else:
-                    out.append(c)
+                    emit(" ", c, c)
                 j += 1
                 continue
             if c in "'\"":
                 state = c
-                out.append(" ")
+                emit(" ", " ", " ")
                 j += 1
                 continue
-            if c == "#" and (not out or out[-1] in " \t;|&(){}"):
-                out.append(" " * (n - j))
+            if c == "#" and (not bare or bare[-1] in " \t;|&(){}"):
+                pad = " " * (n - j)
+                emit(pad, pad, pad)
                 break
             if raw[j : j + 3] == "<<<":
                 # A here-STRING, not a heredoc, and the distinction is not a nicety:
@@ -406,25 +470,26 @@ def scan(lines: list[str]) -> tuple[list[tuple[int, str]], int, list[tuple[int, 
                 # the remaining 51 lines of `validation/packtest-all.sh` were skipped
                 # in silence. Truncation fakes coverage in the direction that reads
                 # as a clean pass, which is the same defect this file exists to stop.
-                out.append("   ")
+                emit("   ", "   ", "   ")
                 j += 3
                 continue
             if raw[j : j + 2] == "<<":
                 m = HEREDOC.match(raw, j)
                 if m:
                     starts.append((m.group(2) or m.group(3), j))
-                    out.append(" " * (m.end() - j))
+                    pad = " " * (m.end() - j)
+                    emit(pad, pad, pad)
                     j = m.end()
                     continue
-            out.append(c)
+            emit(c, c, c)
             j += 1
-        line_code = "".join(out)[:n]
+        line = Masks("".join(bare)[:n], "".join(out)[:n], "".join(text)[:n])
         if state == "" and not raw.rstrip().endswith("\\"):
             for delim, at in starts:
                 pending.append(delim)
                 heredocs_skipped += 1
-                if WRITES_SHELL.search(line_code[:at]) or FEEDS_SHELL.search(
-                    line_code[:at] + "<<"
+                if WRITES_SHELL.search(line.code[:at]) or FEEDS_SHELL.search(
+                    line.code[:at] + "<<"
                 ):
                     shell_heredocs.append(
                         (
@@ -434,7 +499,7 @@ def scan(lines: list[str]) -> tuple[list[tuple[int, str]], int, list[tuple[int, 
                             f"shell. Put it in a `.sh` file.\n    {raw.strip()}",
                         )
                     )
-        code.append((i + 1, line_code))
+        masks.append((i + 1, line))
         i += 1
     if pending:
         # An unterminated heredoc means every line after it was skipped. Whatever
@@ -448,20 +513,26 @@ def scan(lines: list[str]) -> tuple[list[tuple[int, str]], int, list[tuple[int, 
                 f"NOT read",
             )
         )
-    return code, heredocs_skipped, shell_heredocs
+    return masks, heredocs_skipped, shell_heredocs
 
 
-def constructs(code: str) -> list[str]:
-    """Every bash-4+ construct on one line of already-stripped shell."""
+def constructs(line: Masks) -> list[str]:
+    """Every bash-4+ construct on one line, each catalogue read from its own mask."""
     hits: list[str] = []
-    for pattern, why in PATTERNS:
-        if pattern.search(code):
+    for pattern, why in COMMANDS:
+        if pattern.search(line.bare):
             hits.append(why)
-    for m in DECLARE.finditer(code):
+    for pattern, why in EXPANSIONS:
+        if pattern.search(line.code):
+            hits.append(why)
+    for pattern, why in LITERALS:
+        if pattern.search(line.text):
+            hits.append(why)
+    for m in DECLARE.finditer(line.bare):
         for flag, why in BAD_DECLARE_FLAGS.items():
             if flag in m.group(2):
                 hits.append(f"`{m.group(1)} -{flag}`: {why}")
-    for m in SHOPT.finditer(code):
+    for m in SHOPT.finditer(line.bare):
         if m.group(1) not in BASH32_SHOPTS:
             hits.append(
                 f"`shopt … {m.group(1)}` is not one of the 34 options bash 3.2 has; "
@@ -472,15 +543,15 @@ def constructs(code: str) -> list[str]:
 
 def check(rel: str, lines: list[str], offset: int = 0) -> tuple[list[str], int, int]:
     findings: list[str] = []
-    code, skipped, unread = scan(lines)
+    masks, skipped, unread = scan(lines)
     for lineno, why in unread:
         findings.append(f"{rel}:{lineno + offset}: {why}")
-    for lineno, text in code:
-        for why in constructs(text):
+    for lineno, line in masks:
+        for why in constructs(line):
             findings.append(
                 f"{rel}:{lineno + offset}: {why}\n    {lines[lineno - 1].strip()}"
             )
-    return findings, skipped, len(code)
+    return findings, skipped, len(masks)
 
 
 def main() -> int:
