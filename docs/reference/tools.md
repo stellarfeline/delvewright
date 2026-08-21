@@ -53,6 +53,13 @@ real campaign (`nobodys-cave-island`: 46s). It is not optional decoration — at
 cargo default of `opt-level = 0` that same build takes 12m51s and reads as a hang.
 Add `--release` only for a long unattended run (25s on the same campaign); it
 costs ~20s per incremental rebuild, so it is the wrong choice while iterating.
+The same profile sets `debug = "line-tables-only"`, which is what a failing test
+needs — a panicking backtrace keeps every frame and every `file:line` — while
+costing a full workspace build about 17% less CPU and `target/` about 18% less
+disk than full DWARF. What it drops is inspecting local variables under a
+debugger; `CARGO_PROFILE_DEV_DEBUG=full cargo build` restores them for a session
+that wants them. `incremental` is left at cargo's default on purpose: turning it
+off buys 5% of a cold build and costs 4x on every rebuild after an edit.
 All profiles emit byte-identical output (ADR-0006 is profile-independent, and
 measured to be — `docs/notes/build-profile-measurements.md`).
 
