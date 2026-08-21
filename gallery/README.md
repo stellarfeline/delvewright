@@ -6,9 +6,9 @@ played, released or staged.
 
 It exists so that a new authoring surface meets something built to receive it. A
 surface no campaign exercises is a surface nothing has ever compiled end to end,
-and that is not a hypothetical: of the DSL's **867 declared surface units**, the
+and that is not a hypothetical: of the DSL's **941 declared surface units**, the
 whole authored corpus — four campaigns and twenty-eight fixtures — writes 527.
-The gallery binds **every one of them**: 861 written, 6 proven refused by a
+The gallery binds **every one of them**: 935 written, 6 proven refused by a
 probe the engine really rejects, and none left over.
 
 Four of those turned out not to work the first time anything reached them: an
@@ -34,6 +34,7 @@ order a player would:
 | `world-edits.json` | four batches that dress the floor, lay the hearth, thin the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
 | `layout-graph.json` | the same hall stated as six places and twelve connections, before any coordinate — three barred doors through the wall because the hall really has three, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
+| `overlays/site-plan/` | those same six places given geometry: a region, a box each, a seam per connection on a face the two boxes share, the rock and the sky the whole owns, and eight comparisons holding all of it to its own written brief. An overlay rather than primary surface, because a campaign has ONE placement authority and the primary's is `areas[]` |
 | `l10n/zh-cn.json` | the second language, so the sidecar surface is real rather than declared |
 | `render-plan.json` | the view set the gallery declares, so a shot that vanishes is a red |
 | `area/annex` (in `world.json`) | a three-tile chain assembled from `pool/gallery-annex` — what binds the piece verbs |

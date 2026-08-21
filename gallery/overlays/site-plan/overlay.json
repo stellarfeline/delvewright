@@ -1,0 +1,29 @@
+{
+  "binds": [
+    "Axis::x", "Axis::y", "Axis::z",
+    "Ceiling.clearance", "Ceiling::open",
+    "Cmp::eq", "Cmp::ge", "Cmp::gt", "Cmp::le", "Cmp::lt",
+    "Datum.id", "Datum.note", "Datum.y",
+    "Face::down", "Face::east", "Face::north", "Face::south", "Face::up", "Face::west",
+    "Floor.datum", "Floor.y",
+    "Identity.cmp", "Identity.fact", "Identity.measure",
+    "Measure::box-extent", "Measure::box-extent.axis", "Measure::box-extent.node",
+    "Measure::box-height", "Measure::box-height.node",
+    "Measure::datum-y", "Measure::datum-y.datum",
+    "Measure::distance-xz", "Measure::distance-xz.from", "Measure::distance-xz.to",
+    "Measure::region-extent", "Measure::region-extent.axis",
+    "PlanAxis::x", "PlanAxis::z",
+    "PlanBox.ceiling", "PlanBox.extent", "PlanBox.floor", "PlanBox.min", "PlanBox.node",
+    "Seam.at", "Seam.edge", "Seam.face", "Seam.opening", "Seam.stair_in",
+    "Sightline.edge", "Sightline.from", "Sightline.to",
+    "SitePlanContent.boxes", "SitePlanContent.datums", "SitePlanContent.identities",
+    "SitePlanContent.lighting", "SitePlanContent.region", "SitePlanContent.seams",
+    "SitePlanContent.sightlines", "SitePlanContent.views", "SitePlanContent.volumes",
+    "Stage::site-plan",
+    "View.eye", "View.id", "View.look_at", "View.note",
+    "Volume.id", "Volume.note", "Volume.region", "Volume.role",
+    "VolumeRole::clearance", "VolumeRole::ground", "VolumeRole::massif",
+    "WorldBox.extent", "WorldBox.min"
+  ],
+  "note": "The gallery's own six places, stated as a site plan: the same hall, annex, loft, undercroft and exit the primary campaign builds out of prefab pieces, embedded here as a region, a box per place and a seam per connection. It is an overlay rather than primary surface because a campaign has ONE placement authority — the primary places pieces with `areas[]`, and a site plan places the whole map in its own region, so a world carrying both would have two owners for one question. The overlay also ships its own geometry brief: its facts are the numbers this embedding is designed to, which are not the numbers written about the piece the primary assembles."
+}

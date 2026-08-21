@@ -10,9 +10,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.13.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.14.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.13.0`** (additive supersets; `0.2.0` output stays
+  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.13.0`, `0.14.0`** (additive supersets; `0.2.0` output stays
   byte-identical across the later versions). This line is not prose: it is bound
   by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
   (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS` minus
@@ -601,6 +601,43 @@ includes both.
 | `beats[]` | `{quest, objective, node}` — where each quest beat happens. **Every objective is place-bound**: a body has to be standing somewhere to talk, to reach, to fight or to take, so every objective in the quest documents binds to exactly one node, and one that does not is `DW0818`. |
 | Reachability | Judged under a **monotone closure**: from `entry` holding nothing, mark every edge whose gating the obtained set satisfies, mark every node reachable over those edges respecting one-way direction, add what every beat bound to a reached node grants, iterate to fixpoint. A beat grants the flags the campaign sets when that objective completes and — for a `talk-to` — everything reachable in the spoken-to NPC's dialogue tree, because the conversation happens where the speaker stands; a quest grants itself and its `on_complete` flags once every one of its beats is somewhere a body can stand. The closure is **optimistic in every direction it cannot decide**, which is one property rather than a list of exceptions: it is branch-blind, so a campaign whose branch points set mutually exclusive flags can reach a node no single playthrough reaches. That can only under-report at graph time; the branch-aware battery over the assembled world is what stops it shipping. |
 | Binding | Every run that carries either document prints one line: places, connections (traversal, one-way, shortcut, gated), beats and **how many of them are on the mandatory quest spine**, critical-path steps, metrics references and brief facts. Three zeroes are called out as findings rather than counted: a graph with no traversal connection (a set of places with no space between them), a graph none of whose beats belongs to a quest the finale depends on (a critical path over an unbound graph), and a brief with no fact. |
+
+### The map pipeline — `site-plan` (optional; v0.14, spec-0049)
+
+`site-plan.json` is the **geometric embedding** of the layout graph, and the
+whole map's design of record. Optional, named rather than numbered, and reached
+only through itself: a campaign that ships none parses, validates and emits
+exactly as it did. `delvec schema --stage site-plan` exports it; `--stage all`
+includes it.
+
+**Its one ordering obligation is not advice.** A plan validates only against a
+layout graph and a geometry brief: `DW0824` refuses a plan whose graph or brief
+is absent, naming the missing document, and a box carries a **required** `node`,
+so there is no site plan — well formed or otherwise — that describes a space
+without naming the place it is the space of. The inversion does not compile.
+
+**The model, because every rule below rests on it.** A box is the **play space**
+of a place: the cells a body can be in. The shell the blockout builds is not
+inside it — it stands in the one cell between two neighbours, and on the course
+under the floor and over the ceiling. So `extent` is the interior footprint the
+size-class ladder judges directly, and two connected places sit **exactly one
+cell apart** on the face they share, that cell being the wall they have in
+common.
+
+| Element | Behavior |
+|---------|----------|
+| `region` | `{min: [x,y,z], extent: [dx,dy,dz]}` in world coordinates — the whole map's one region, and the number the brief hands down. **Required, with no derived spelling**: there is no "compute this from the boxes", so extent-flows-up is unrepresentable rather than forbidden, and `DW0826` refuses a box that does not fit while naming the box. Extents are `NonZeroU32`, so a zero-volume region is a schema failure (`DW0100`) rather than a rule some check has to remember. The water plane is deliberately absent — `horizon: ocean` in the stage-1 world document already fixes sea level. |
+| `datums[]` | `{id: datum/<kebab>, y, note?}` — named ground planes. Ids are the ordinary `DW0110`/`DW0111`; a `floor` naming an undeclared one is the ordinary `DW0112`. |
+| `boxes[]` | `{node, min: [x,z], extent: [dx,dz], floor, ceiling}` — **exactly one per graph node** (`DW0824`). A box is a footprint standing on a plane, not a prism: its vertical position is `floor` alone, so the plane has one authority instead of a `y` inside `min` beside a declared floor with no rule about which the derivation believes. `floor` is `{"datum": <id>}` or `{"y": <n>}`; `ceiling` is `{"clearance": <cells>}` or `"open"`. Horizontal extents are on the kit grid (`DW0825`) and inside the region (`DW0826`); boxes are disjoint (`DW0827`) and built to their place's size class (`DW0832`). |
+| `ceiling: "open"` | A sky-open place — a courtyard, a shore, a summit. It claims the ground and its size class's own minimum headroom and **nothing above that**, which is what makes a `clearance` volume over a courtyard the whole reserving sky rather than two authorities over one cell. |
+| `seams[]` | `{edge, face, at: [u,v], opening, stair_in?}` — **exactly one per traversal edge** (`DW0824`). `face` is one of the engine's six face names (`east`/`west`/`up`/`down`/`south`/`north`), **of the edge's `a` box**; `at` is the opening's low corner in world coordinates on that face's own two in-plane axes — `[along, y]` on a vertical face (the sill is the second), `[x, z]` on a horizontal one. `opening` names a standard from the metrics table (`DW0812` on an unknown name). `stair_in` names which of the two boxes hosts the treads: required on a `stair` (`DW0830`) and refused on anything else (`DW0824`). |
+| A seam's **rise** | **Derived, never authored.** It is `floor(b) − floor(a)`, which the plan has already stated by putting the two places where it put them. Authoring it would be authoring arithmetic — unlike `critical_path`, which is authored precisely because it is a *choice* among many — and a second declaration of it could only agree or be a refusal teaching nothing the datums did not already say. `DW0830` and `DW0831` judge the derived number. |
+| `volumes[]` | `{id: volume/<kebab>, region, role, note?}` — the mass the WHOLE owns: `massif` (the mountain a cave system is inside), `ground` (the plane under a village), `clearance` (the sky a silhouette needs kept empty). They stand beside places, under them and over them, never inside one (`DW0835`), and they answer to the region like anything else the plan places (`DW0826`). |
+| `identities[]` | `{fact, measure, cmp}` — guarded comparisons binding the plan to the geometry brief's written numbers. `cmp` is `eq`/`lt`/`le`/`gt`/`ge`. `measure` is a tagged union over a **small fixed vocabulary**, not a parsed string: `{"of":"region-extent","axis":x\|y\|z}`, `{"of":"box-extent","node":…,"axis":x\|z}`, `{"of":"box-height","node":…}`, `{"of":"distance-xz","from":…,"to":…}` (Euclidean between footprint centres), `{"of":"datum-y","datum":…}`. An unknown measure is an ordinary `DW0100` and a node it names is checked like any other reference. **Marked judgement**: the vocabulary will grow, and the falsifier is the first brief fact a campaign cannot bind with it — at which point the missing measure is added as a variant, never worked around by binding a different fact. |
+| `sightlines[]` | `{edge, from, to}` — **one per `vision` edge** (`DW0824`), the segment the stage-5 battery walks. A vision edge carries a sightline rather than a seam because a vista's two ends are routinely not adjacent — a tower seen from a shore shares no face with it — so the seam construct cannot state the one thing it asserts. Each end must lie inside the place its connection names (`DW0824`): the proof walks exactly this segment, so ends elsewhere would prove a different claim, green or red. |
+| `views[]` | `{id: view/<kebab>, eye, look_at, note?}` — the named exterior vantages the walk judges the silhouette from, rendered beside the stage-2 reference sheet. Optional; a plan with zero views has that zero stated in the binding line. |
+| `lighting` | `{fixture, min_light}` applied to every enclosed box, so a blockout interior is walkable at night without per-box surface. **The engine's existing area-lighting object**, not a twin of it, so it answers the same range rule with the same code (`DW0196`). |
+| Binding | Every run that carries a plan prints a second line beside the layout-graph one: boxes and **the pairs compared**, seams (stair, drop), datums, whole-owned volumes, identities, sightlines and views. Two zeroes are called out as findings rather than counted: a plan with no view (the walk has no declared vantage) and a plan with no whole-owned volume (the rule keeping the whole's mass out of the places examined nothing). A plan with no identity is `DW0834` in its own right. |
 
 ### l10n sidecars (`l10n/<code>.json`)
 
@@ -3198,7 +3235,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.13.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.13.0,0.14.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
@@ -4886,7 +4923,7 @@ Deterministic throughout (`BTreeMap`-sorted override keys, sorted file walk).
 | Code | Meaning |
 |------|---------|
 | `DW0812` | **A document names a metrics entry the table does not define.** A size class, a seam opening, a stair pitch or a storey height that resolves to nothing. Validation tier (exit 1), `every_version`. Raised at `Metrics::resolve`, which is the **only** path from a name to an entry — the map behind it is private — so a name the table does not define cannot be resolved, cannot compile, and no check downstream ever has to cope with one. That is what makes the table the single authority for this vocabulary rather than a suggestion, and it is the reason a second lookup written beside it would be a defect rather than a convenience. The refusal names the bad name **and the whole defined set of that kind**, because the author's next action is choosing a real one and a refusal that only says *no* sends them to read the compiler. **Binding: references resolved.** At the current version that count is **zero documents**, stated here rather than implied: no authored surface names a metrics entry until the layout-graph and site-plan stages exist, so the code lands with its resolver and its tests and no document call site. It is not the UNRUN shape for the reason that shape is about — nothing has to *remember* to call this; the round that adds those stages has no other way to read a name. |
-| `DW0813` | **A verdict rests on a standard the metrics gym has not walked.** One warning per run (exit 0), `every_version`, naming every uncalibrated building metric some check above actually read. It asks the campaign for nothing — it reports a property of the ENGINE's own table — which is why no fence grandfathers it and no campaign can adopt its way out. The checks still ran and still refuse: a provisional number is a number, and what the line adds is that the green rests on a seed. **Bound to the READ, not to a call site.** `BuildingEntry::value` is the only way to reach a building metric's number and it takes the run's `Reads` ledger, so a check that consumes a seed has recorded that it did; `Metrics::notice` turns the ledger into the line. The residual is stated rather than implied: a caller that constructs its own ledger, reads through it and drops it has bypassed the notice — a deliberate act, not the omission the rule exists to catch, and it closes when stage-3 and stage-4 validation thread one run-scoped ledger. **Binding: building metrics read, and how many of them are provisional, stated every run whether or not the line prints.** Zero provisional reads means the line does not print, which is the calibrated end state and not a vacuity; zero reads at all is a different fact and is the one the binding count exposes. Its live binding today is `delvec metrics`'s own self-check — the table's consistency verdict is a real verdict on real seeds. |
+| `DW0813` | **A verdict rests on a standard the metrics gym has not walked.** One warning per run (exit 0), `every_version`, naming every uncalibrated building metric some check above actually read. It asks the campaign for nothing — it reports a property of the ENGINE's own table — which is why no fence grandfathers it and no campaign can adopt its way out. The checks still ran and still refuse: a provisional number is a number, and what the line adds is that the green rests on a seed. **Bound to the READ, not to a call site.** `BuildingEntry::value` is the only way to reach a building metric's number and it takes the run's `Reads` ledger, so a check that consumes a seed has recorded that it did; `Metrics::notice` turns the ledger into the line. The residual is stated rather than implied: a caller that constructs its own ledger, reads through it and drops it has bypassed the notice — a deliberate act, not the omission the rule exists to catch. On the campaign path it is closed rather than merely narrow: `validate_campaign_with` constructs ONE ledger and threads it through the stage-3 and stage-4 checks together, so every building metric either of them rests a verdict on lands in the ledger the notice reads, and there is no second ledger for a read to disappear into. **Binding: building metrics read, and how many of them are provisional, stated every run whether or not the line prints.** Zero provisional reads means the line does not print, which is the calibrated end state and not a vacuity; zero reads at all is a different fact and is the one the binding count exposes. Its live binding today is `delvec metrics`'s own self-check — the table's consistency verdict is a real verdict on real seeds. |
 
 The table itself, its two halves and its export are §10.
 
@@ -4917,6 +4954,64 @@ either, and no step anyone has to remember.
 | `DW0819` | **A one-way edge strands.** For every one-way traversal edge `u → v`, some path from `v` back to the critical path must exist over edges passable under the obtained set with which `u` was **first** reached. A body can only be at `v` having been at `u` holding at most that much; if it cannot rejoin the spine, the drop is a softlock. **Marked judgement**: the set at `u` is the maximal one available at that round, and a player may arrive holding less — the residual is covered over bytes by the branch-aware battery, and a walked blockout demonstrating a strand this called green is the evidence that moves it to a gate-state lattice. Analysis tier (exit 2). **Binding: one-way edges examined, stated.** |
 | `DW0820` | **A shortcut closes no loop.** An edge marked `shortcut` must lie on a cycle: its ends stay connected with it removed. **Direction-blind and gating-blind** — the loop a shortcut closes is spatial, and a long way round that is gated or one-way is still the long way round. A shortcut that closes nothing is a corridor wearing a shortcut's name, and the graph is where that claim is cheap to refuse. Validation tier (exit 1). **Binding: shortcut edges examined, stated.** |
 | `DW0822` | **The pacing measurement.** Per critical-path leg, the nominal traverse length from the metrics table's size-class ladder, summed and multiplied by the pacing coefficient into a projected route-minutes figure. **Warning, exit 0, with no threshold anywhere**: the coefficient is uncalibrated until the first walked blockout and the first full playtest, and a threshold on a number that uncertain would be defending nothing. It is printed so the projection and the measurement taken over the built world can be set side by side, which is how the coefficient gets calibrated at all. **Binding: places crossed and steps measured, both in the message.** |
+
+### DW0824–DW0835 — the site plan (`dsl::siteplan`; error + one advisory)
+
+Stage 4 of the map pipeline: the geometric embedding of the layout graph, judged
+**upstream of any geometry**. No block exists when these run and none of them
+reads one; what is being judged is whether the plan is a plan — whether the boxes
+fit in the region and not in each other, whether two places that claim to connect
+really touch, and whether the numbers the brief fixed still hold once the boxes
+are drawn.
+
+Every code is `every_version`, for the reason `DW0812` is: there is no field
+below `dsl_version` 0.14.0 in which to write any of it, so no campaign can go red
+on a document it did not change.
+
+**One tier, and it is validation (exit 1).** Round 3 of the pipeline puts nothing
+at analysis tier, and the reason is worth stating because its sibling does the
+opposite: the layout graph's `DW0816`/`DW0817`/`DW0819` are *reachability*
+questions about a whole graph, which is the tier `DW0202`–`DW0204` answer at.
+Nothing here is that. Every rule below is a property of the document in front of
+it, so a plan that is wrong is wrong before anything is analyzed.
+
+**What invokes them**: `dsl::siteplan::check`, from
+`dsl::validate::validate_campaign_with`, whenever the campaign directory holds a
+`site-plan.json` — the same event-bound shape stages 2, 3 and 7 use. That
+function is what every `delvec` subcommand's validation stage calls, so there is
+no path from a campaign directory to a verdict, a world or a datapack that goes
+round it, no flag to pass and no step to remember.
+
+**No opt-out exists.** Not one rule here has an acknowledgement, an override or
+an exemption field, which is the cheapest available answer to the question
+`CLAUDE.md` asks of every escape hatch — *could the defect this hatch exists to
+catch supply the hatch's own proof obligation?* A hatch that does not exist
+cannot be supplied.
+
+**What is deliberately absent, and where it went.** Three obligations of this
+stage are only decidable once the blockout exists: whether a built seam is the
+opening the plan allocated, whether every node's floor is reached, whether a
+crossing was *discovered* outside a seam; `DW0833`'s second call site over
+assembled bytes; and whether a declared sightline is unobstructed. All three read
+blocks. A version of them written here would be the derivation's arithmetic
+replayed against itself — the opposite of an independent observer — so they
+belong to the round that builds the blockout, and this stage states the plan-side
+half they will be checked against.
+
+| Code | Meaning |
+|------|---------|
+| `DW0824` | **The graph and the plan do not agree exactly.** Six correspondences and three references under one claim: everything the graph declares is embedded exactly once, and everything the plan embeds is something the graph declared. A place with no box or with two; a box naming no place; a traversal connection with no seam or with two; a seam naming no connection, or naming a `vision` one (which carries a sightline — a vista's two ends are routinely not adjacent, so the seam construct cannot state what it asserts); a `vision` connection with no sightline; a sightline naming a traversal connection, or whose end does not lie in the place its connection names (the stage-5 proof walks exactly that segment, so ends elsewhere prove a different claim); `stair_in` on a non-stair or naming a third place; an identity naming a fact the brief does not state or a place the plan does not embed. **And the ordering tooth**: a site plan present with no layout graph, or with no geometry brief, is refused naming the missing document — one refusal, not one per dangling name inside the plan. The type carries the other half, which no check could: a box's `node` is required, so a plan that describes a space without naming the place it is the space of does not parse. This is also the **two-artifact question's instrument** (spec-0049 §10): how often it fires *alone* — a graph edit with no plan edit, or the reverse — is the CI-visible number that decides whether graph and plan stay two documents. |
+| `DW0825` | **A box leaves the kit grid.** A horizontal extent that is not a multiple of the metrics table's quantum `q`, named per box with the extent, the quantum and the two nearest multiples — the numbers a plan edit needs. A zero extent is not a case here: extents are `NonZeroU32`, so the schema refuses one as `DW0100`. |
+| `DW0826` | **Something the plan places leaves the region.** A box cell or a whole-owned volume cell outside `region`, named with the offending span against the region's on each axis. The prescription is deliberate and is in the message: **the region is the brief's number flowing down, and a box is never grounds to grow it** — move the box, shrink it, or change the brief's fact and re-derive so the change is visible in the document that owns it. Volumes answer to it too, because a `massif` outside the region is the whole owning mass beyond its own declared extent, which is extent-flows-up arriving through the back door. |
+| `DW0827` | **Two boxes overlap.** Boxes are disjoint; shared **faces** are the only permitted contact, because a seam needs one — and a shared face is a one-cell gap rather than a touch. Named with both places and the intersection on all three axes. Overlapping boxes are two owners for one block and the derivation would have to pick between them with no rule to pick by. |
+| `DW0828` | **A seam is not on a shared face.** The declared face is not shared by the edge's two boxes — they are not one cell apart across it (the message states the gap it measured, and an overlap is stated as one), their spans miss each other on an in-plane axis, or a horizontal seam names a sky-open place with no ceiling or floor plane to sit in — or the seam's `at` corner lies off the shared area. **Seams are allocated on faces both boxes already have**: the two-places-cannot-mate failure class is resolved here, where both boxes are still free to move, and never later between two finished buildings. The refusal prints both boxes' cell ranges and floors. |
+| `DW0829` | **A seam's opening does not fit, or its sill cannot be reached.** Two halves of one claim that the opening is usable. Geometric: the named standard's `width × height` anchored at `at` runs past the shared face, named with both rectangles — the standard set is the vocabulary, so an opening is never quietly cropped to fit. Physical: on a vertical face, a `walk` or `barred` seam's sill is more blocks over the floor of a side the connection is entered from than a body reaches by jumping, so the connection the graph declares is not one; the prescription is to drop the sill or declare a `stair` and let the treads carry the climb. (An opening name the table does not define is `DW0812` — that is the table being the single authority for the vocabulary, and this code is the geometric half.) |
+| `DW0830` | **A stair seam cannot be built.** Three shapes of one claim. The seam declares no `stair_in`, so massing that has to stand somewhere stands nowhere. The two floors are the same plane, so the stair climbs nothing — which is a walk that has been called a stair, and is catchable precisely *because* the rise is derived rather than authored. Or `\|rise\|` needs a longer run than the hosting box affords along the seam's normal at **every** standard pitch: the message names the rise, the gentlest pitch's required run and the run available, and the prescription is a longer host, the other host, or closer floors — never a steeper pitch, because the pitches are standards. |
+| `DW0831` | **A drop seam falls outside the drop policy.** The derived fall along the edge's declared direction is zero or negative — a drop that rises is a mislabelled stair, and a drop is one-way only because a body cannot climb back up the way it came — or it exceeds the metrics table's designed-drop cap. A **policy** cap, deliberately far tighter than the survivability fact stored beside it in the player half: a drop is a decision about the shape of the map and should not also be a decision about the party's health. |
+| `DW0832` | **A box violates its node's size class.** Interior footprint on either horizontal axis, or declared headroom, outside the class's range. This is the one place a size class becomes geometry; the class's own playtime weight stays thresholdless (`DW0822`). A sky-open place is not judged on headroom — it has exactly the class minimum by construction. |
+| `DW0833` | **A brief identity does not hold.** An `identities[]` comparison is false. The refusal names **both numbers** and quotes the brief's own sentence, because the author's next action is deciding which of the two to move — and the prescription says where: change the fact *in the brief*, where the design is written down, so the change is a decision somebody took rather than a plan that drifted. Raised here over the plan; **its second call site is the built world**, where the same rule recomputes the same measures from assembled bytes so a derivation defect that moved a datum cannot hide behind a plan-time green. That site belongs to the round that builds the blockout, and nothing here approximates it. |
+| `DW0834` | **The identity gate binds nothing.** Zero `facts[]` in the brief, or zero `identities[]` in the plan: the binding that holds the whole to its written design is empty, which is the vacuity the whole stage exists to prevent — with either side empty the plan may say anything at all and every rule above still passes, because none of them has an opinion about how big the map was meant to be. **Warning (exit 0)**, naming the empty side, so a deliberately minimal plan stays compilable; printed every run, so the emptiness is never quietly a pass. |
+| `DW0835` | **A whole-owned volume enters a box.** A `volumes[]` region intersecting a box's play space, named with both and the intersection. The whole's mass may stand beside a place, under it and over it; inside it, the volume and the place are two authorities writing one cell, which the derivation must never be asked to arbitrate. |
 
 ---
 

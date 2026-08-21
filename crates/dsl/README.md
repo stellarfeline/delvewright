@@ -65,7 +65,7 @@ wall-clock time, or absolute paths.
 
 ## Compatibility
 
-- **Campaign format**: `dsl_version` `0.2.0` through `0.13.0`. Each version is an
+- **Campaign format**: `dsl_version` `0.2.0` through `0.14.0`. Each version is an
   additive superset of the one before, and a campaign is judged at the version
   it declares.
 - **Minecraft**: Java Edition 1.21.11.

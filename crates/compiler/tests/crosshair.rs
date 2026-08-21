@@ -108,6 +108,7 @@ fn build(scout_to: &str, cast_two: &str) -> Result<Vec<Diagnostic>, BuildFailure
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -198,6 +199,7 @@ fn the_eclipse_proof_is_silent_on_the_same_fixture() {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

@@ -58,7 +58,15 @@ fn version_line() {
     // connections between them, the authored critical path, and where each quest
     // beat happens. No coordinate appears in either; the embedding is a later
     // stage's document.
-    assert!(s.contains("dsl 0.13.0"), "{s}");
+    // 0.14.0 (spec-0049) adds one document and no field: `site-plan.json`, the
+    // geometric embedding of that graph and the whole map's design of record —
+    // the region, a box per place, a seam per connection on a face the two boxes
+    // share, the mass the whole itself owns, and the guarded comparisons that
+    // hold all of it to the brief's numbers. It is a version of its own because
+    // a version names one surface, and a campaign at 0.13.0 states its space as
+    // a graph with no way to embed it, which is exactly the state the ordering
+    // wants reachable.
+    assert!(s.contains("dsl 0.14.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

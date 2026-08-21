@@ -62,6 +62,13 @@
  * on its own; neither exports a step, reorders one, or changes anything the bot
  * walks, so a v0.13 path is walked exactly as a v0.12 one is.
  *
+ * **v0.14** adds one document and no step: a site plan, the geometric embedding
+ * of that graph — the region, a box per place, a seam per connection on a face
+ * the two boxes share, and the comparisons that hold all of it to the brief's
+ * numbers. Like its two siblings it is a compile-time claim the compiler proves
+ * on its own; it exports no step, reorders none, and changes nothing the bot
+ * walks, so a v0.14 path is walked exactly as a v0.13 one is.
+ *
  * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
  * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
  * enforces that in CI: an allowlist that lags the ceiling refuses a v0.9.0
@@ -80,6 +87,7 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.11.0",
   "0.12.0",
   "0.13.0",
+  "0.14.0",
 ] as const;
 
 /**
