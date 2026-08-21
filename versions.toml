@@ -285,3 +285,57 @@ esbuild_version = "0.28.2"
 # [minecraft]). Never committed (EULA); resolved at run time from --textures,
 # $DELVEWRIGHT_CLIENT_JAR, or ~/.chunky/resources/minecraft.jar.
 textures = "minecraft-client-1.21.11.jar"
+
+[ci]
+# The toolchains CI selects, and the packages it installs into them. Until these
+# lived here they stood alone in the workflow that used them: nothing said what
+# any of them was held for, nothing held two statements of one value equal, and
+# two of them named no version at all. `validation/check-versions.sh` is what
+# binds every consumer to the values below, and `.github/pins.toml` records what
+# each is held for and on what terms it may move.
+#
+# Node for the harness (`npm ci` + `node --test`) and for the storybook jobs.
+# A MAJOR line, resolved by actions/setup-node to its newest release: the harness
+# has a lockfile, so what this selects is the runtime, not the dependency set.
+# Consumed by: .github/workflows/ci.yml, .github/workflows/release.yml.
+node_version = "24"
+# The interpreter for the two Python tool suites (`tools/skin`, `tools/tests`).
+# A MINOR line, resolved by actions/setup-python to its newest patch.
+# Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool).
+python_tools_version = "3.12"
+# The interpreter for the mecha cross-check, and it is a DIFFERENT line from the
+# one above on purpose rather than by drift: `mecha_version` below declares
+# `Requires-Python: >=3.14`, so the pinned validator cannot be installed on the
+# tools line at all. `mecha_requires_python` records that floor and
+# check-versions.sh holds this value at or above it, so lowering this line reds
+# here instead of failing an install inside a required job.
+# Consumed by: .github/workflows/ci.yml (mecha cross-check).
+python_mecha_version = "3.14"
+# mecha (ADR-0011): the independent re-validation of every emitted .mcfunction
+# against the 1.21.11 command tree, and beet, the library it validates through.
+# Both are INSTRUMENTS of a required status check, so both are named literally.
+# beet was previously installed unpinned beside the pinned mecha, which is
+# `CLAUDE.md`'s "a frozen measurement names its instrument literally" inverted:
+# the gate's verdict could change with nothing in any diff to show what moved.
+# `mecha_requires_beet` is mecha's own declared floor for it.
+# Consumed by: .github/workflows/ci.yml (mecha cross-check).
+mecha_version = "0.104.1"
+mecha_requires_python = "3.14"
+mecha_requires_beet = "0.116.0"
+beet_version = "0.116.0"
+# The test runner both Python suites are judged by. Same argument as beet: an
+# unpinned runner is an unpinned instrument, and a runner that changes its
+# collection or assertion behaviour moves a required check's verdict.
+# Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool).
+pytest_version = "9.1.1"
+
+[skin]
+# skinpy-extended (MIT, ADR-0013 allowlist), the part/face-addressable composer
+# and isometric preview renderer `tools/skin` is built on (spec-0009). Pinned
+# exactly because the suite asserts byte-identical PNGs (ADR-0006): a different
+# library version is a different picture under the same declared version.
+# Consumed by: tools/skin/requirements.txt, tools/skin/pyproject.toml, and
+# tools/skin/delve_skin/catalog.py, which stamps it into every emitted
+# provenance record — the fourth statement of one value, and the one that would
+# have gone on claiming the old version in shipped metadata.
+skinpy_extended = "1.0.1"

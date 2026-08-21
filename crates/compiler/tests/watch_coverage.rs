@@ -149,6 +149,43 @@ fn a_family_nothing_drives_is_counted_not_diagnosed() {
     );
 }
 
+/// The stated limit states WHICH mechanics it passed over, not merely how many.
+///
+/// A bare `unwatched_families: 16` tells an operator that sixteen mechanics ship
+/// with no runtime proof and gives them no way to learn which sixteen — so the
+/// number can only be read as a mood, and the scope is honest without being
+/// actionable. The names are what let the next round triage them; the object
+/// count is the denominator `examined()` deliberately does not cover, stated
+/// beside it so 69-examined is never heard as "and that is all of them".
+#[test]
+fn an_unwatched_family_is_named_not_merely_counted() {
+    let out = tree(
+        &["bark_a", "bark_b", "hum_c", "hum_d", "hum_e"],
+        &[("t", "# drives nothing\n")],
+    );
+    let (binding, findings) = watch::check_tree(NS, &out, &ids(&["a", "b", "c", "d", "e"]));
+    assert_eq!(binding.unwatched_families, 2);
+    assert_eq!(
+        binding.unwatched_family_objects, 5,
+        "the population `examined()` excludes is stated, not left to be inferred"
+    );
+    assert_eq!(binding.examined(), 0, "none of them is judged by DW0810");
+    assert_eq!(
+        binding.unwatched_family_members["bark_"],
+        vec!["a".to_string(), "b".to_string()]
+    );
+    assert_eq!(
+        binding.unwatched_family_members["hum_"],
+        vec!["c".to_string(), "d".to_string(), "e".to_string()]
+    );
+    let ledger = binding.to_json(&findings);
+    assert_eq!(
+        ledger["unwatched_family_members"]["hum_"][0], "c",
+        "and the names travel with the build, not only the count"
+    );
+    assert_eq!(ledger["unwatched_family_objects"], 5);
+}
+
 /// Where two declared ids both match, the longest wins — otherwise
 /// `tgate_open_side_door` would be filed under `door` and land in a family with
 /// every other id ending in `door`.
@@ -232,10 +269,10 @@ fn the_verdict_is_deterministic() {
 // the emitter registers a `Claim` over the plan's own authored list — and THAT
 // is a proof obligation the defect cannot discharge.
 
-fn claim(families: &'static [&'static str], declared: &[&str]) -> watch::Claim {
+fn claim(families: &[&str], declared: &[&str]) -> watch::Claim {
     watch::Claim {
         mechanic: "timed-gate",
-        families,
+        families: families.iter().map(|s| (*s).to_string()).collect(),
         declared: declared.iter().map(|s| (*s).to_string()).collect(),
     }
 }

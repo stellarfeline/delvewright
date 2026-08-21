@@ -530,6 +530,159 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
     }
 }
 
+// ---------------------------------------------------------------------------
+// Satisfiability: the set of values that opens a gate, as a value
+// ---------------------------------------------------------------------------
+
+/// The set of integer values of ONE datum that a conjunction of comparison
+/// terms leaves open — an interval with holes, or a pinned point.
+///
+/// This is the arithmetic shared by every question of the form "can this gate
+/// ever open, and at what value?": [`Gate::contradiction`] asks it per gate,
+/// and the compiler's cast-ladder solver asks it per clause while also
+/// *refusing* sibling terms ([`DatumSet::forbid`]). It lives here, on the gate,
+/// because a gate is the object class the question is about — a copy beside
+/// each asking verb is how two answers to one question start disagreeing.
+///
+/// Determinism (ADR-0006): [`DatumSet::pick`] returns one canonical member, a
+/// pure function of the constraint set.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DatumSet {
+    /// Lower bound (inclusive), `None` = unbounded below.
+    lo: Option<i32>,
+    /// Upper bound (inclusive), `None` = unbounded above.
+    hi: Option<i32>,
+    /// Excluded points.
+    holes: std::collections::BTreeSet<i32>,
+    /// `Some(v)`: the set is at most `{v}` (an `equals` term).
+    pin: Option<i32>,
+    /// Two constraints that no integer can satisfy at once.
+    contra: bool,
+}
+
+impl Default for DatumSet {
+    fn default() -> Self {
+        Self::all()
+    }
+}
+
+impl DatumSet {
+    /// Every integer: the set before any term constrains it.
+    pub fn all() -> Self {
+        DatumSet {
+            lo: None,
+            hi: None,
+            holes: std::collections::BTreeSet::new(),
+            pin: None,
+            contra: false,
+        }
+    }
+
+    /// Intersect with the values that SATISFY `op value`.
+    pub fn require(&mut self, op: crate::stages::CompareOp, value: i32) {
+        use crate::stages::CompareOp::*;
+        match op {
+            Equals => match self.pin {
+                Some(p) if p != value => self.contra = true,
+                _ => self.pin = Some(value),
+            },
+            NotEquals => {
+                self.holes.insert(value);
+            }
+            AtLeast => self.lo = Some(self.lo.map_or(value, |l| l.max(value))),
+            AtMost => self.hi = Some(self.hi.map_or(value, |h| h.min(value))),
+        }
+    }
+
+    /// Intersect with the values that VIOLATE `op value` — the negation of
+    /// [`DatumSet::require`], spelled once so the two can never disagree about
+    /// what a term means.
+    pub fn forbid(&mut self, op: crate::stages::CompareOp, value: i32) {
+        use crate::stages::CompareOp::*;
+        match op {
+            Equals => self.require(NotEquals, value),
+            NotEquals => self.require(Equals, value),
+            // ¬(x ≥ v) ⇔ x ≤ v−1; at i32::MIN nothing violates it.
+            AtLeast => match value.checked_sub(1) {
+                Some(v) => self.require(AtMost, v),
+                None => self.contra = true,
+            },
+            AtMost => match value.checked_add(1) {
+                Some(v) => self.require(AtLeast, v),
+                None => self.contra = true,
+            },
+        }
+    }
+
+    /// A deterministic member of the set, or `None` when the set is empty —
+    /// which is the satisfiability verdict.
+    ///
+    /// Complete without enumeration games: an interval-with-holes is nonempty
+    /// iff a member exists within `holes.len() + 1` steps of a bound (or of 0
+    /// when unbounded both ways), because each step is only ever excluded by a
+    /// distinct hole.
+    pub fn pick(&self) -> Option<i32> {
+        if self.contra {
+            return None;
+        }
+        let ok = |v: i32| {
+            self.lo.is_none_or(|l| v >= l)
+                && self.hi.is_none_or(|h| v <= h)
+                && !self.holes.contains(&v)
+        };
+        if let Some(p) = self.pin {
+            return ok(p).then_some(p);
+        }
+        let steps = self.holes.len() as i64 + 1;
+        let from = match (self.lo, self.hi) {
+            (Some(l), _) => l as i64,
+            (None, Some(h)) => (h as i64) - steps + 1,
+            (None, None) => 0,
+        };
+        (from..from + steps)
+            .filter_map(|v| i32::try_from(v).ok())
+            .find(|v| ok(*v))
+    }
+}
+
+/// Why a gate can never open (see [`Gate::contradiction`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GateContradiction {
+    /// The same flag is both required and forbidden.
+    Flag(String),
+    /// No integer value of this datum satisfies every `requires_state` term
+    /// that reads it.
+    Datum(String),
+}
+
+impl Gate<'_> {
+    /// The first reason this gate can NEVER open, or `None` for a satisfiable
+    /// gate.
+    ///
+    /// A gate is a conjunction, so it is unsatisfiable exactly when one flag is
+    /// on both lists, or one datum's terms intersect to the empty set. Terms on
+    /// distinct flags/datums are independent and cannot contradict each other.
+    pub fn contradiction(&self) -> Option<GateContradiction> {
+        for f in self.requires_flags {
+            if self.forbids_flags.iter().any(|g| g == f) {
+                return Some(GateContradiction::Flag(f.as_str().to_string()));
+            }
+        }
+        let mut per: std::collections::BTreeMap<&str, DatumSet> = std::collections::BTreeMap::new();
+        for t in self.requires_state {
+            per.entry(t.state.as_str())
+                .or_default()
+                .require(t.op, t.value);
+        }
+        for (state, set) in per {
+            if set.pick().is_none() {
+                return Some(GateContradiction::Datum(state.to_string()));
+            }
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,5 +701,94 @@ mod tests {
             assert!(matches!(k.stage(), "quests" | "dialogue"), "{k:?}");
             assert!(!k.label().is_empty(), "{k:?}");
         }
+    }
+
+    use crate::stages::CompareOp::*;
+
+    #[test]
+    fn datum_set_picks_within_bounds_and_around_holes() {
+        let mut s = DatumSet::all();
+        assert_eq!(s.pick(), Some(0), "the unconstrained canonical member is 0");
+        s.require(AtLeast, 3);
+        s.require(AtMost, 5);
+        assert_eq!(s.pick(), Some(3), "the lower boundary is canonical");
+        s.require(NotEquals, 3);
+        assert_eq!(s.pick(), Some(4), "a hole at the boundary steps past it");
+        s.require(NotEquals, 4);
+        s.require(NotEquals, 5);
+        assert_eq!(s.pick(), None, "holes covering the interval empty it");
+    }
+
+    #[test]
+    fn datum_set_pins_and_pin_conflicts() {
+        let mut s = DatumSet::all();
+        s.require(Equals, 7);
+        assert_eq!(s.pick(), Some(7));
+        s.require(NotEquals, 7);
+        assert_eq!(s.pick(), None, "a hole at the pin empties the set");
+        let mut t = DatumSet::all();
+        t.require(Equals, 7);
+        t.require(Equals, 8);
+        assert_eq!(t.pick(), None, "two different pins contradict");
+    }
+
+    #[test]
+    fn forbid_is_the_exact_negation() {
+        // Violating `at-least 5` means at most 4; violating that too is empty.
+        let mut s = DatumSet::all();
+        s.forbid(AtLeast, 5);
+        assert_eq!(s.pick(), Some(4), "the violating boundary is canonical");
+        s.require(AtLeast, 5);
+        assert_eq!(s.pick(), None);
+        // Nothing violates `at-least i32::MIN` / `at-most i32::MAX`.
+        let mut lo = DatumSet::all();
+        lo.forbid(AtLeast, i32::MIN);
+        assert_eq!(lo.pick(), None);
+        let mut hi = DatumSet::all();
+        hi.forbid(AtMost, i32::MAX);
+        assert_eq!(hi.pick(), None);
+        // Violating `not-equals v` pins v.
+        let mut ne = DatumSet::all();
+        ne.forbid(NotEquals, 9);
+        assert_eq!(ne.pick(), Some(9));
+    }
+
+    #[test]
+    fn an_upper_bounded_set_picks_below_its_holes() {
+        let mut s = DatumSet::all();
+        s.require(AtMost, 10);
+        s.require(NotEquals, 10);
+        s.require(NotEquals, 9);
+        assert_eq!(s.pick(), Some(8), "walks down from the upper bound");
+    }
+
+    #[test]
+    fn gate_contradiction_answers_per_axis() {
+        use crate::ids::FlagId;
+        use crate::stages::StateCompare;
+        let f: Vec<FlagId> = vec![FlagId("flag/paid".to_string())];
+        let g = Gate::of(&f, &f, &[]);
+        assert_eq!(
+            g.contradiction(),
+            Some(GateContradiction::Flag("flag/paid".to_string()))
+        );
+        let terms = [
+            StateCompare {
+                state: crate::ids::StateId("state/toll".to_string()),
+                op: AtLeast,
+                value: 5,
+            },
+            StateCompare {
+                state: crate::ids::StateId("state/toll".to_string()),
+                op: AtMost,
+                value: 3,
+            },
+        ];
+        let g = Gate::of(&[], &[], &terms);
+        assert_eq!(
+            g.contradiction(),
+            Some(GateContradiction::Datum("state/toll".to_string()))
+        );
+        assert_eq!(Gate::OPEN.contradiction(), None);
     }
 }

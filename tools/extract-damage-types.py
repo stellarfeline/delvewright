@@ -42,7 +42,10 @@ Expected SHA-256 (pinned in PROVENANCE.md):
     {"minecraft:<id>": {"bypasses_armor": bool, "scaling": "<scaling>"}}
 
 over every damage type in the registry, then
-`json.dumps(indent=2, sort_keys=True) + "\n"`. `scaling` is copied verbatim from
+`json.dumps(indent=2, sort_keys=True, ensure_ascii=False) + "\n"` — `delvec fmt`
+canonical form, because the output is a tracked file inside the canonical-form
+sweep (`tools/check-json-canonical.py`) and a generator that wrote a form the
+sweep rejects would leave no green state. `scaling` is copied verbatim from
 Mojang's field; a type missing it is an error, never a defaulted guess.
 
     python3 tools/extract-damage-types.py damage_type.min.json \
@@ -110,7 +113,7 @@ def main(argv: list[str]) -> int:
             "scaling": scaling,
         }
 
-    out_path.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n")
+    out_path.write_text(json.dumps(out, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
     sys.stderr.write(f"wrote {len(out)} damage types -> {out_path}\n")
     return 0
 

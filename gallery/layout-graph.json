@@ -2,14 +2,46 @@
   "campaign_id": "gallery",
   "content": {
     "beats": [
-      { "node": "node/near-hall", "objective": "obj/hear-the-curator", "quest": "quest/near-hall" },
-      { "node": "node/near-hall", "objective": "obj/press-the-case", "quest": "quest/near-hall" },
-      { "node": "node/near-hall", "objective": "obj/take-the-emeralds", "quest": "quest/near-hall" },
-      { "node": "node/annex", "objective": "obj/reach-the-counter", "quest": "quest/near-hall" },
-      { "node": "node/far-hall", "objective": "obj/clear-the-muster", "quest": "quest/far-hall" },
-      { "node": "node/far-hall", "objective": "obj/take-the-bone", "quest": "quest/far-hall" },
-      { "node": "node/loft", "objective": "obj/climb-the-loft", "quest": "quest/far-hall" },
-      { "node": "node/exit", "objective": "obj/reach-the-end", "quest": "quest/far-hall" }
+      {
+        "node": "node/near-hall",
+        "objective": "obj/hear-the-curator",
+        "quest": "quest/near-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/press-the-case",
+        "quest": "quest/near-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/take-the-emeralds",
+        "quest": "quest/near-hall"
+      },
+      {
+        "node": "node/annex",
+        "objective": "obj/reach-the-counter",
+        "quest": "quest/near-hall"
+      },
+      {
+        "node": "node/far-hall",
+        "objective": "obj/clear-the-muster",
+        "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/far-hall",
+        "objective": "obj/take-the-bone",
+        "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/loft",
+        "objective": "obj/climb-the-loft",
+        "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/exit",
+        "objective": "obj/reach-the-end",
+        "quest": "quest/far-hall"
+      }
     ],
     "critical_path": [
       "node/near-hall",
@@ -30,7 +62,9 @@
         "a": "node/annex",
         "b": "node/far-hall",
         "class": "walk",
-        "gating": { "quest": "quest/near-hall" },
+        "gating": {
+          "quest": "quest/near-hall"
+        },
         "id": "edge/annex-chute",
         "one_way": "a-to-b",
         "shortcut": true
@@ -39,7 +73,9 @@
         "a": "node/near-hall",
         "b": "node/far-hall",
         "class": "barred",
-        "gating": { "quest": "quest/near-hall" },
+        "gating": {
+          "quest": "quest/near-hall"
+        },
         "id": "edge/west-door",
         "opens_from": "a"
       },
@@ -47,7 +83,9 @@
         "a": "node/near-hall",
         "b": "node/far-hall",
         "class": "barred",
-        "gating": { "quest": "quest/near-hall" },
+        "gating": {
+          "quest": "quest/near-hall"
+        },
         "id": "edge/centre-door",
         "opens_from": "either"
       },
@@ -55,7 +93,11 @@
         "a": "node/near-hall",
         "b": "node/far-hall",
         "class": "barred",
-        "gating": { "flags": ["flag/muster-cleared"] },
+        "gating": {
+          "flags": [
+            "flag/muster-cleared"
+          ]
+        },
         "id": "edge/east-door",
         "one_way": "a-to-b",
         "opens_from": "b",
@@ -65,7 +107,11 @@
         "a": "node/far-hall",
         "b": "node/loft",
         "class": "stair",
-        "gating": { "flags": ["flag/muster-cleared"] },
+        "gating": {
+          "flags": [
+            "flag/muster-cleared"
+          ]
+        },
         "id": "edge/loft-stair"
       },
       {
@@ -95,7 +141,11 @@
         "b": "node/undercroft",
         "class": "drop",
         "falls": "a-to-b",
-        "gating": { "flags": ["flag/muster-cleared"] },
+        "gating": {
+          "flags": [
+            "flag/muster-cleared"
+          ]
+        },
         "id": "edge/undercroft-shaft"
       },
       {

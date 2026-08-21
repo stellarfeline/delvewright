@@ -132,7 +132,7 @@ def main() -> int:
             )
         doc = json.loads(PLAN.read_text())
         doc["findings"] = n
-        PLAN.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+        PLAN.write_text(json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
         print(f"wrote {PLAN}: {len(declared)} declared view(s), {n} finding(s)")
         return 0
 
