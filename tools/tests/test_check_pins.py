@@ -152,6 +152,43 @@ def test_zero_binding_is_a_finding_not_a_pass(tmp_path: Path) -> None:
     assert "binding of zero" in r.stderr
 
 
+# A TRACKED FILE IS EXAMINED WHEREVER IT SITS, and this is the guard for the one
+# defect that cost this tool 27 files. `BUILD_OUTPUT_DIRS` is a claim about a raw
+# filesystem walk of an upstream checkout; applied to `tracked_files()`, whose
+# population is `git ls-files`, it can only ever subtract authored content. It
+# was so applied, and it was inert in the repository it was written in — every
+# entry matched zero tracked files there — so nothing ever showed it was wrong.
+# Copied to the repository where `campaigns/` IS the content, the same entry
+# removed every campaign stage document from both pin discovery and the fetch-
+# verb enumeration, with no count anywhere saying so.
+#
+# The names below are therefore of two kinds, and both belong here. `target`,
+# `node_modules` and `dist` are STILL in `BUILD_OUTPUT_DIRS`, so they fail the
+# moment anyone re-applies that constant to the tracked enumeration. `campaigns`
+# and `content-repo` are the two the list used to carry, and are the historical
+# instance. A skip list over tracked files is the defect either way.
+@pytest.mark.parametrize(
+    "directory",
+    ["target", "node_modules", "dist", "campaigns", "content-repo"],
+)
+def test_a_tracked_file_is_examined_whatever_directory_it_sits_in(
+    repo: Path, directory: str
+) -> None:
+    other = "sha256:" + "cd34" * 16
+    write_registry(repo, COMPLETE)
+    add_file(
+        repo,
+        f"{directory}/deploy.yml",
+        f"jobs:\n  a:\n    steps:\n      - with:\n          image: {other}\n",
+    )
+    r = run(repo)
+    assert r.returncode == 1, (
+        f"a tracked file under {directory}/ was not examined — a skip list has "
+        f"reached the tracked enumeration again"
+    )
+    assert "unregistered pin" in r.stderr and other in r.stderr
+
+
 def test_own_repo_pin_may_not_be_called_immutable(repo: Path) -> None:
     """The escape hatch the defect would reach for, closed by the object.
 
