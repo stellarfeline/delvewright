@@ -317,8 +317,28 @@
       "round": 5,
       "finding": "a stealth beat demanded the player crouch, which the fiction never asked for",
       "triage": "content",
-      "general_form": "presence in a declared zone is what stealth reads; no posture is required (closed by construction at v0.6). Nothing re-asserts it on a build",
-      "carrier": null
+      "general_form": "a stealth judge's per-player test reads where the body is and nothing else; any other selector argument is a demand the fiction never made",
+      "carrier": {
+        "kind": "dw",
+        "code": "DW0852"
+      },
+      "binding": {
+        "kind": "artifact",
+        "file": "stealth-judge.json",
+        "path": "examined"
+      },
+      "applies_when": {
+        "kind": "dsl",
+        "files": [
+          "quests.json"
+        ],
+        "match": {
+          "eq": {
+            "type": "begin-stealth"
+          }
+        }
+      },
+      "note": "Closed by construction at v0.6 and promised in the emitter's own doc comment, which is a doc line. DW0852 is the invocation: every build of a campaign that declares a stealth beat audits its FINAL emitted function list and ships the count. The rule is an allowlist of the six position arguments, never a denylist of the demands somebody has already thought of, and it is scoped to the per-player judge rather than the dispatcher \u2014 whose cutscene skip freezes the grace clock instead of asking the player for anything."
     },
     {
       "id": "isl-20",
