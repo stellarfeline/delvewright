@@ -146,6 +146,11 @@
       "stage": "prefabs"
     },
     {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
+      "stage": "prefabs"
+    },
+    {
       "code": "DW0188",
       "pointer": "l10n/zh-cn.json",
       "stage": "l10n"
@@ -348,6 +353,11 @@
       "stage": "prefabs"
     },
     {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
+      "stage": "prefabs"
+    },
+    {
       "code": "DW0188",
       "pointer": "l10n/zh-cn.json",
       "stage": "l10n"
@@ -547,6 +557,11 @@
     {
       "code": "DW0543",
       "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
       "stage": "prefabs"
     },
     {
@@ -757,6 +772,11 @@
       "stage": "prefabs"
     },
     {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
+      "stage": "prefabs"
+    },
+    {
       "code": "DW0188",
       "pointer": "l10n/zh-cn.json",
       "stage": "l10n"
@@ -959,6 +979,11 @@
       "stage": "prefabs"
     },
     {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
+      "stage": "prefabs"
+    },
+    {
       "code": "DW0188",
       "pointer": "l10n/zh-cn.json",
       "stage": "l10n"
@@ -1048,6 +1073,11 @@
     {
       "code": "DW0543",
       "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
       "stage": "prefabs"
     },
     {
@@ -1235,6 +1265,11 @@
     {
       "code": "DW0543",
       "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
       "stage": "prefabs"
     },
     {

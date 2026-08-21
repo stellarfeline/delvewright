@@ -1,39 +1,31 @@
 {
   "added": [
-    "site-plan.en:datapack/data/gallery/advancement/press_east_door_wrong_side.json",
-    "site-plan.en:datapack/data/gallery/function/press_east_door_wrong_side.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/shortcut_open_east_door.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/trig_east_door_wrong_side.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/ws_arm_east_door.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/souls_shortcut.mcfunction"
+    "site-plan.en:datapack/data/gallery/structure/gallery-yard.nbt"
   ],
   "changed": [
-    "site-plan.en:SKINS.md",
-    "site-plan.en:creator-datapack/data/gallery/function/creator/emit.mcfunction",
-    "site-plan.en:creator-datapack/data/gallery/function/creator/stamp.mcfunction",
+    "easy.en:creator-datapack/layout.json",
+    "hard.en:creator-datapack/layout.json",
+    "ocean-horizon.en:creator-datapack/layout.json",
+    "primary.en:creator-datapack/layout.json",
+    "primary.zh-cn:creator-datapack/layout.json",
     "site-plan.en:creator-datapack/layout.json",
     "site-plan.en:critical-path.json",
-    "site-plan.en:datapack/data/gallery/function/check_q_near_hall.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/complete_o_clear_the_muster.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/activate_o_reach_the_end.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/place_all.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/place_verify.mcfunction",
     "site-plan.en:datapack/data/gallery/function/setup.mcfunction",
     "site-plan.en:datapack/data/gallery/function/setup_finish.mcfunction",
     "site-plan.en:datapack/data/gallery/function/tick.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/campaign.mcfunction",
     "site-plan.en:render-plan.json",
-    "site-plan.en:resourcepack.zip",
     "site-plan.en:validation/critical-path-waypoints.json",
-    "site-plan.en:validation/effect-roots.json",
-    "site-plan.en:validation/fixture-gate.json",
-    "site-plan.en:validation/gate-seal.json",
-    "site-plan.en:validation/press-bodies.json",
-    "site-plan.en:validation/watch-ledger.json"
+    "site-plan.en:validation/fluid-escape.json",
+    "void-horizon.en:creator-datapack/layout.json"
   ],
   "classes": {
-    "PackTest": 2,
-    "creator overlay": 3,
-    "datapack function": 10,
-    "other": 4,
-    "validation ledger": 6
+    "creator overlay": 7,
+    "datapack function": 7,
+    "other": 2,
+    "validation ledger": 2
   },
   "removed": []
 }
