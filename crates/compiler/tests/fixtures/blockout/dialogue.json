@@ -3,26 +3,39 @@
   "content": {
     "dialogues": [
       {
-        "npc": "npc/keeper",
-        "root": "dlg/greeting",
         "nodes": [
           {
             "id": "dlg/greeting",
-            "text": "Halt. The cell beyond this hall is mine to guard, and its door stays shut.",
             "options": [
-              { "label": "What is in the cell?", "next": "dlg/lore" },
               {
-                "label": "Open the door, please.",
-                "effects": [{ "objective": "obj/ask", "type": "complete-objective" }]
+                "label": "What is in the cell?",
+                "next": "dlg/lore"
+              },
+              {
+                "effects": [
+                  {
+                    "objective": "obj/ask",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "Open the door, please."
               }
-            ]
+            ],
+            "text": "Halt. The cell beyond this hall is mine to guard, and its door stays shut."
           },
           {
             "id": "dlg/lore",
-            "text": "Nothing. That is the whole of what I have guarded, and I have guarded it well.",
-            "options": [{ "label": "Back.", "next": "dlg/greeting" }]
+            "options": [
+              {
+                "label": "Back.",
+                "next": "dlg/greeting"
+              }
+            ],
+            "text": "Nothing. That is the whole of what I have guarded, and I have guarded it well."
           }
-        ]
+        ],
+        "npc": "npc/keeper",
+        "root": "dlg/greeting"
       }
     ]
   },

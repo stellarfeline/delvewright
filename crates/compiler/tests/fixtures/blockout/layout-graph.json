@@ -1,35 +1,106 @@
 {
   "campaign_id": "blockout",
   "content": {
-    "nodes": [
-      { "id": "node/landing", "intent": "arrival", "size_class": "alcove", "note": "Where a body starts, and the only place on the map it has not chosen to be." },
-      { "id": "node/hall", "intent": "hub", "size_class": "room", "note": "The keeper stands here; every other place is entered from it." },
-      { "id": "node/loft", "intent": "vista", "size_class": "alcove", "note": "Climbed by the stair and left by the fall, which is what makes the fall a shortcut." },
-      { "id": "node/cell", "intent": "gate-house", "size_class": "alcove" },
-      { "id": "node/exit", "intent": "goal-chamber", "size_class": "alcove" }
+    "beats": [
+      {
+        "node": "node/hall",
+        "objective": "obj/ask",
+        "quest": "quest/walk-the-whole"
+      },
+      {
+        "node": "node/cell",
+        "objective": "obj/enter-the-cell",
+        "quest": "quest/walk-the-whole"
+      },
+      {
+        "node": "node/exit",
+        "objective": "obj/walk-out",
+        "quest": "quest/walk-the-whole"
+      }
+    ],
+    "critical_path": [
+      "node/landing",
+      "node/hall",
+      "node/cell",
+      "node/exit"
     ],
     "edges": [
-      { "id": "edge/landing-hall", "a": "node/landing", "b": "node/hall", "class": "walk" },
-      { "id": "edge/hall-loft", "a": "node/hall", "b": "node/loft", "class": "stair" },
-      { "id": "edge/loft-drop", "a": "node/loft", "b": "node/hall", "class": "drop", "falls": "a-to-b", "shortcut": true },
       {
-        "id": "edge/hall-cell",
+        "a": "node/landing",
+        "b": "node/hall",
+        "class": "walk",
+        "id": "edge/landing-hall"
+      },
+      {
+        "a": "node/hall",
+        "b": "node/loft",
+        "class": "stair",
+        "id": "edge/hall-loft"
+      },
+      {
+        "a": "node/loft",
+        "b": "node/hall",
+        "class": "drop",
+        "falls": "a-to-b",
+        "id": "edge/loft-drop",
+        "shortcut": true
+      },
+      {
         "a": "node/hall",
         "b": "node/cell",
         "class": "barred",
-        "opens_from": "a",
-        "gating": { "flags": ["flag/keeper-yields"] }
+        "gating": {
+          "flags": [
+            "flag/keeper-yields"
+          ]
+        },
+        "id": "edge/hall-cell",
+        "opens_from": "a"
       },
-      { "id": "edge/cell-exit", "a": "node/cell", "b": "node/exit", "class": "walk" },
-      { "id": "edge/loft-sightline", "a": "node/landing", "b": "node/loft", "class": "vision" }
+      {
+        "a": "node/cell",
+        "b": "node/exit",
+        "class": "walk",
+        "id": "edge/cell-exit"
+      },
+      {
+        "a": "node/landing",
+        "b": "node/loft",
+        "class": "vision",
+        "id": "edge/loft-sightline"
+      }
     ],
     "entry": "node/landing",
     "goal": "node/exit",
-    "critical_path": ["node/landing", "node/hall", "node/cell", "node/exit"],
-    "beats": [
-      { "quest": "quest/walk-the-whole", "objective": "obj/ask", "node": "node/hall" },
-      { "quest": "quest/walk-the-whole", "objective": "obj/enter-the-cell", "node": "node/cell" },
-      { "quest": "quest/walk-the-whole", "objective": "obj/walk-out", "node": "node/exit" }
+    "nodes": [
+      {
+        "id": "node/landing",
+        "intent": "arrival",
+        "note": "Where a body starts, and the only place on the map it has not chosen to be.",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/hall",
+        "intent": "hub",
+        "note": "The keeper stands here; every other place is entered from it.",
+        "size_class": "room"
+      },
+      {
+        "id": "node/loft",
+        "intent": "vista",
+        "note": "Climbed by the stair and left by the fall, which is what makes the fall a shortcut.",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/cell",
+        "intent": "gate-house",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/exit",
+        "intent": "goal-chamber",
+        "size_class": "alcove"
+      }
     ]
   },
   "dsl_version": "0.14.0",

@@ -10,7 +10,9 @@
         "goal": "Get the keeper to open the cell door and walk out the far side.",
         "id": "quest/walk-the-whole",
         "mandatory": true,
-        "npcs": ["npc/keeper"]
+        "npcs": [
+          "npc/keeper"
+        ]
       }
     ]
   },

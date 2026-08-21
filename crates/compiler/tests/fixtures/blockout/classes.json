@@ -6,9 +6,19 @@
         "blurb": "Sturdy boots, no questions.",
         "id": "class/wanderer",
         "kit": [
-          { "count": 1, "item": "minecraft:iron_sword", "name": "Keeper's Gift" },
-          { "count": 1, "item": "minecraft:leather_boots" },
-          { "count": 3, "item": "minecraft:bread" }
+          {
+            "count": 1,
+            "item": "minecraft:iron_sword",
+            "name": "Keeper's Gift"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:leather_boots"
+          },
+          {
+            "count": 3,
+            "item": "minecraft:bread"
+          }
         ],
         "name": "Wanderer"
       }
