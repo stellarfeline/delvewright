@@ -34,7 +34,7 @@ order a player would:
 | `world-edits.json` | four batches that dress the floor, lay the hearth, thin the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
 | `layout-graph.json` | the same hall stated as six places and twelve connections, before any coordinate — three barred doors through the wall because the hall really has three, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
-| `overlays/site-plan/` | those same six places given geometry: a region, a box each, a seam per connection on a face the two boxes share, the rock and the sky the whole owns, and eight comparisons holding all of it to its own written brief. An overlay rather than primary surface, because a campaign has ONE placement authority and the primary's is `areas[]` |
+| `overlays/site-plan/` | those same six places given geometry, and then a whole map DERIVED from it: a region, a box each, a seam per connection on a face the two boxes share, the rock and the sky the whole owns, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to |
 | `l10n/zh-cn.json` | the second language, so the sidecar surface is real rather than declared |
 | `render-plan.json` | the view set the gallery declares, so a shot that vanishes is a red |
 | `area/annex` (in `world.json`) | a three-tile chain assembled from `pool/gallery-annex` — what binds the piece verbs |
@@ -59,11 +59,14 @@ piece explains itself without the campaign in hand.
 
 `probes/` is the half worth reading if you want to know what this engine checks.
 Each probe is a committed document that a creator might reasonably write and that
-`delvec validate` says no to, with the diagnostic it says no with:
+`delvec validate` says no to, with the diagnostic it says no with. The last of
+them names no surface at all, and that is the point of it: both halves of what it
+writes are perfectly legal, and what the engine refuses is holding them at once.
 
 | Probe | Code | What it tries |
 | --- | --- | --- |
 | `reserved-npc-roles` | `DW0141` | giving an NPC the `vendor` or `boss` role |
+| `two-placement-authorities` | `DW0839` | carrying `areas[]` and a site plan at once |
 | `aquatic-locomotion` | `DW0455` | declaring a body that swims |
 | `peaceful-difficulty` | `DW0468` | setting the world to peaceful |
 | `sound-at-actor` | `DW0335` | playing a sound from an actor's position |

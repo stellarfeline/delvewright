@@ -1,0 +1,5 @@
+{
+  "code": "DW0839",
+  "units": [],
+  "why": "The gallery's own six places, embedded as a site plan, WITHOUT giving up the `areas[]` that seats its prefab pieces. Both surfaces are legal and both are bound elsewhere in this gallery — what the engine refuses is one campaign holding both, because `areas[]` seats pieces on the compiler's fixed stride and a site plan seats the derived blockout in its own declared region, so every question about where something is would have two answers and nothing would say which. It declares no unit deliberately: there is no unwritable surface here to exempt, only a combination that must not compile."
+}

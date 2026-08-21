@@ -1,0 +1,31 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "dialogues": [
+      {
+        "npc": "npc/keeper",
+        "root": "dlg/greeting",
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "text": "Halt. The cell beyond this hall is mine to guard, and its door stays shut.",
+            "options": [
+              { "label": "What is in the cell?", "next": "dlg/lore" },
+              {
+                "label": "Open the door, please.",
+                "effects": [{ "objective": "obj/ask", "type": "complete-objective" }]
+              }
+            ]
+          },
+          {
+            "id": "dlg/lore",
+            "text": "Nothing. That is the whole of what I have guarded, and I have guarded it well.",
+            "options": [{ "label": "Back.", "next": "dlg/greeting" }]
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.14.0",
+  "stage": "dialogue"
+}

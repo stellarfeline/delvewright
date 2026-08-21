@@ -1,0 +1,43 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "region": { "min": [0, 56, 0], "extent": [64, 32, 64] },
+    "datums": [
+      { "id": "datum/grade", "y": 64, "note": "The plane the delve opens on, and the one every place but the loft stands at." },
+      { "id": "datum/loft", "y": 69 }
+    ],
+    "boxes": [
+      { "node": "node/landing", "min": [4, 8], "extent": [8, 8], "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 4 } },
+      { "node": "node/hall", "min": [13, 4], "extent": [12, 16], "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 8 } },
+      { "node": "node/loft", "min": [26, 8], "extent": [8, 8], "floor": { "datum": "datum/loft" }, "ceiling": "open" },
+      { "node": "node/cell", "min": [13, 21], "extent": [8, 8], "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 4 } },
+      { "node": "node/exit", "min": [4, 21], "extent": [8, 8], "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 4 } }
+    ],
+    "seams": [
+      { "edge": "edge/landing-hall", "face": "east", "at": [10, 64], "opening": "arch" },
+      { "edge": "edge/hall-loft", "face": "east", "at": [10, 69], "opening": "arch", "stair_in": "node/hall" },
+      { "edge": "edge/loft-drop", "face": "west", "at": [13, 69], "opening": "arch" },
+      { "edge": "edge/hall-cell", "face": "south", "at": [15, 64], "opening": "arch" },
+      { "edge": "edge/cell-exit", "face": "west", "at": [23, 64], "opening": "arch" }
+    ],
+    "sightlines": [
+      { "edge": "edge/loft-sightline", "from": [7, 65, 11], "to": [29, 70, 11] }
+    ],
+    "volumes": [
+      { "id": "volume/bedrock", "region": { "min": [0, 56, 0], "extent": [64, 7, 64] }, "role": "massif", "note": "The rock every place is set into." },
+      { "id": "volume/sky", "region": { "min": [0, 74, 0], "extent": [64, 14, 64] }, "role": "clearance", "note": "The air the loft's silhouette needs kept empty." }
+    ],
+    "identities": [
+      { "fact": "fact/site-span", "measure": { "of": "region-extent", "axis": "x" }, "cmp": "eq" },
+      { "fact": "fact/site-depth", "measure": { "of": "region-extent", "axis": "z" }, "cmp": "eq" },
+      { "fact": "fact/hall-span", "measure": { "of": "box-extent", "node": "node/hall", "axis": "x" }, "cmp": "eq" },
+      { "fact": "fact/loft-datum", "measure": { "of": "datum-y", "datum": "datum/loft" }, "cmp": "eq" }
+    ],
+    "views": [
+      { "id": "view/the-approach", "eye": [32, 92, 60], "look_at": [18, 68, 14], "note": "The silhouette as a body walking in from the south first meets it." }
+    ],
+    "lighting": { "fixture": "torch", "min_light": 7 }
+  },
+  "dsl_version": "0.14.0",
+  "stage": "site-plan"
+}

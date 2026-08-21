@@ -53,6 +53,7 @@ pub mod assembled;
 pub mod atmos;
 pub mod batchstate;
 pub mod blocking;
+pub mod blockout;
 pub mod branch;
 pub mod calibrate;
 pub mod camera;

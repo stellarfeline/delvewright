@@ -124,10 +124,12 @@ const BRIEF: &str = r#"{
 ///   being the wall the two places have in common. `porch|hall` at x 12,
 ///   `hall|vault` at x 29, `hall|cellar` at x 12, `porch|cellar` at z 12,
 ///   `vault|yard` at z 12, and `yard|pit` at y 63 (twice, once per connection).
-/// * **the two stairs climb 5 blocks each.** `hall` (64) down to `cellar` (59),
-///   and `pit` (59) up to `yard` (64). The 1:1 standard pitch needs 5 blocks of
-///   run; `hall` affords 16 across its west face and `pit` affords 8, so both
-///   are buildable.
+/// * **the two stairs climb 5 blocks each, and both are hosted in the LOWER
+///   place**, because treads rise off a walk plane and the only one a stair has
+///   is the lower of the two. `hall` (64) down to `cellar` (59) is massed in
+///   `cellar`; `pit` (59) up to `yard` (64) is massed in `pit`. The 1:1 standard
+///   pitch needs 5 blocks of run, and each host affords 8 across the axis its
+///   run is spent on, so both are buildable.
 /// * **the two drops fall 5 blocks each**, which is exactly the designed-drop
 ///   cap — the deepest fall the policy allows, and therefore green.
 /// * **five identities hold**: the region is 64 across, the hall is 16 by 8, the
@@ -161,7 +163,7 @@ const PLAN: &str = r#"{
       { "edge": "edge/porch-hall", "face": "east", "at": [6, 64], "opening": "arch" },
       { "edge": "edge/hall-vault", "face": "east", "at": [6, 64], "opening": "door" },
       { "edge": "edge/hall-cellar", "face": "west", "at": [14, 64], "opening": "passage",
-        "stair_in": "node/hall" },
+        "stair_in": "node/cellar" },
       { "edge": "edge/porch-cellar", "face": "south", "at": [6, 64], "opening": "passage" },
       { "edge": "edge/vault-yard", "face": "south", "at": [32, 64], "opening": "arch" },
       { "edge": "edge/yard-pit", "face": "down", "at": [32, 16], "opening": "passage" },
@@ -202,12 +204,67 @@ const PLAN: &str = r#"{
 // Harness
 // ---------------------------------------------------------------------------
 
+/// The hello-world campaign, made into a **site-plan** campaign when a plan is
+/// handed over.
+///
+/// Four substitutions, and every one of them is an obligation the round that
+/// derived the blockout added rather than a convenience:
+///
+/// * **`areas[]` is emptied.** A campaign has one placement authority
+///   (`DW0839`), and this one's is the plan.
+/// * **the area references move to `area/site`.** That is the one place a
+///   site-plan campaign has, and it is where the NPC stands and the quest
+///   happens.
+/// * **the anchors move to the synthesized vocabulary.** A site-plan campaign
+///   has no prefab to name an anchor, so `anchor/node-<place>` is what its
+///   content binds to — the names `delvewright_dsl::synthesized_anchors`
+///   reports and the derivation really places.
+/// * **the `open-gate` names the barred seam's own region.** `DW0818`'s
+///   byte-side half: a barred way nothing opens is a wall, and the region such
+///   an effect must target only exists once a plan does.
+///
+/// A campaign handed no plan is left exactly as it was, which is what keeps the
+/// "a campaign with no plan binds nothing" case honest.
 fn campaign(plan: Option<String>, graph: Option<String>, brief: Option<String>) -> RawCampaign {
+    let base = common::valid_raw();
+    if plan.is_none() {
+        return RawCampaign {
+            site_plan: plan,
+            layout_graph: graph,
+            geometry_brief: brief,
+            ..base
+        };
+    }
+    let retarget = |doc: &str, edits: &[(&str, &str)]| -> String {
+        let mut out = doc.to_string();
+        for (from, to) in edits {
+            out = out.replace(from, to);
+        }
+        out
+    };
+    let mut world: Value = serde_json::from_str(&base.world).expect("hello-world's world parses");
+    world["content"]["areas"] = json!([]);
     RawCampaign {
+        world: serde_json::to_string(&world).expect("re-serialize"),
+        npcs: retarget(
+            &base.npcs,
+            &[
+                ("\"area/keep\"", "\"area/site\""),
+                ("\"anchor/keeper-stand\"", "\"anchor/node-porch\""),
+            ],
+        ),
+        quest_plan: retarget(&base.quest_plan, &[("\"area/keep\"", "\"area/site\"")]),
+        quests: retarget(
+            &base.quests,
+            &[
+                ("\"anchor/exit\"", "\"anchor/node-hall\""),
+                ("\"anchor/door\"", "\"anchor/seam-hall-vault\""),
+            ],
+        ),
         site_plan: plan,
         layout_graph: graph,
         geometry_brief: brief,
-        ..common::valid_raw()
+        ..base
     }
 }
 
@@ -912,4 +969,140 @@ fn duplicate_and_malformed_plan_ids_are_the_ordinary_id_rules() {
 fn the_plans_lighting_answers_the_same_range_rule_an_areas_does() {
     let got = plan_with(|v| v["content"]["lighting"]["min_light"] = json!(15));
     assert!(has(&got, "DW0196"), "{got:?}");
+}
+
+// ---------------------------------------------------------------------------
+// One campaign, one placement authority (spec-0049 §6)
+// ---------------------------------------------------------------------------
+
+/// `DW0839`: `areas[]` and a site plan in one campaign is two owners for one
+/// question.
+///
+/// The perturbation is the smallest one that exists — the campaign gets its
+/// `areas[]` back — so the green above and the red here differ in exactly the
+/// thing the rule is about.
+#[test]
+fn two_placement_authorities_in_one_campaign_are_refused() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    raw.world = common::valid_raw().world; // the `areas[]` this campaign gave up
+    let got = codes_of(&raw);
+    assert!(
+        has(&got, "DW0839"),
+        "a world with both authorities must be refused: {got:?}"
+    );
+    let d = check_campaign(&raw)
+        .into_iter()
+        .find(|d| d.code == "DW0839")
+        .expect("the refusal is present");
+    assert_eq!(d.stage, "world");
+    assert!(
+        d.message.contains("fixed stride") && d.message.contains("region"),
+        "the refusal says what each authority owns: {}",
+        d.message
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The opener obligation's byte-side half (spec-0049 §3.3 `DW0818`)
+// ---------------------------------------------------------------------------
+
+/// `DW0818`: a barred way nothing opens is a wall, and the region such an effect
+/// must target is the seam's own.
+///
+/// The graph half of this rule already stood: a `barred` edge must declare a
+/// `gating` naming a flag something really sets. That says the way is MEANT to
+/// open. This is the other half, and it could not be written before this round
+/// because the region an opener addresses did not exist until the derivation
+/// synthesized it.
+#[test]
+fn a_barred_way_no_effect_opens_is_refused_by_name() {
+    // The green campaign's `open-gate` names the seam. Point it somewhere else —
+    // an anchor no seam owns — and the barred way has nothing that opens it.
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    raw.quests = raw
+        .quests
+        .replace("\"anchor/seam-hall-vault\"", "\"anchor/node-porch\"");
+    let d = check_campaign(&raw);
+    let got: Vec<String> = d.iter().map(|x| x.code.clone()).collect();
+    assert!(
+        has(&got, "DW0818"),
+        "a barred way nothing opens must be refused: {got:?}"
+    );
+    let m = d
+        .iter()
+        .find(|x| x.code == "DW0818" && x.message.contains("barred and nothing"))
+        .expect("the opener refusal is present");
+    assert_eq!(m.stage, "layout-graph", "the fault is the graph's claim");
+    assert!(
+        m.message.contains("anchor/seam-hall-vault"),
+        "the refusal names the region an opener must address: {}",
+        m.message
+    );
+}
+
+/// The same obligation, satisfied by a `shortcut` rather than by an `open-gate`.
+///
+/// Two verbs open a gate and the rule knows both, which is what stops it from
+/// being a rule about `open-gate` that a shortcut campaign has to work around.
+#[test]
+fn a_shortcut_satisfies_the_opener_obligation_too() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    // Drop the `open-gate` and lift the bar from the far side instead.
+    let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
+    quests["content"]["shortcuts"] = json!([{
+        "id": "shortcut/vault-door",
+        "gate": "anchor/seam-hall-vault",
+        "unlock": "anchor/unlock-hall-vault"
+    }]);
+    raw.quests = serde_json::to_string(&quests).expect("re-serialize");
+    let got = codes_of(&raw);
+    assert!(
+        !got.iter().any(|c| c == "DW0818"),
+        "a shortcut lifting the bar is an opener: {got:?}"
+    );
+}
+
+/// `DW0830`: a stair's treads stand in the LOWER of the two places, and hosting
+/// them in the higher one is refused with both floors.
+///
+/// **Found by building, not by reading.** This check used to ask only whether
+/// the named host affords the RUN, so a plan hosting a downward stair in the
+/// upper place reached green here — and the derivation then laid a mound on the
+/// wrong side of the opening and filled the hole it was supposed to arrive at.
+/// The stage-5 observer caught that as a seam whose opening was still solid,
+/// which is a true refusal for the wrong defect: the repair belongs to the plan,
+/// and this is where the plan is judged.
+///
+/// The perturbation is the one field: the green plan hosts `edge/hall-cellar` in
+/// `cellar`, and this moves it to `hall`.
+#[test]
+fn stair_massing_in_the_higher_place_is_refused_with_both_floors() {
+    let d = plan_diags(|v| {
+        seams(v)[seam_of("edge/hall-cellar")]["stair_in"] = json!("node/hall");
+    });
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0830" && x.message.contains("HIGHER"))
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("`node/hall` stands at y 64"), "{msg}");
+    assert!(msg.contains("`node/cellar` at y 59"), "{msg}");
+    assert!(
+        msg.contains("Host it in `node/cellar`"),
+        "the refusal names the place the treads belong in: {msg}"
+    );
 }

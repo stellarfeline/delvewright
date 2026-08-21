@@ -1,0 +1,37 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "nodes": [
+      { "id": "node/landing", "intent": "arrival", "size_class": "alcove", "note": "Where a body starts, and the only place on the map it has not chosen to be." },
+      { "id": "node/hall", "intent": "hub", "size_class": "room", "note": "The keeper stands here; every other place is entered from it." },
+      { "id": "node/loft", "intent": "vista", "size_class": "alcove", "note": "Climbed by the stair and left by the fall, which is what makes the fall a shortcut." },
+      { "id": "node/cell", "intent": "gate-house", "size_class": "alcove" },
+      { "id": "node/exit", "intent": "goal-chamber", "size_class": "alcove" }
+    ],
+    "edges": [
+      { "id": "edge/landing-hall", "a": "node/landing", "b": "node/hall", "class": "walk" },
+      { "id": "edge/hall-loft", "a": "node/hall", "b": "node/loft", "class": "stair" },
+      { "id": "edge/loft-drop", "a": "node/loft", "b": "node/hall", "class": "drop", "falls": "a-to-b", "shortcut": true },
+      {
+        "id": "edge/hall-cell",
+        "a": "node/hall",
+        "b": "node/cell",
+        "class": "barred",
+        "opens_from": "a",
+        "gating": { "flags": ["flag/keeper-yields"] }
+      },
+      { "id": "edge/cell-exit", "a": "node/cell", "b": "node/exit", "class": "walk" },
+      { "id": "edge/loft-sightline", "a": "node/landing", "b": "node/loft", "class": "vision" }
+    ],
+    "entry": "node/landing",
+    "goal": "node/exit",
+    "critical_path": ["node/landing", "node/hall", "node/cell", "node/exit"],
+    "beats": [
+      { "quest": "quest/walk-the-whole", "objective": "obj/ask", "node": "node/hall" },
+      { "quest": "quest/walk-the-whole", "objective": "obj/enter-the-cell", "node": "node/cell" },
+      { "quest": "quest/walk-the-whole", "objective": "obj/walk-out", "node": "node/exit" }
+    ]
+  },
+  "dsl_version": "0.14.0",
+  "stage": "layout-graph"
+}

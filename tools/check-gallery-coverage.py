@@ -26,6 +26,18 @@ free-text exemption):
 - **refusal-proven** — a committed probe writes it and `delvec validate` refuses
   it with the ledgered code at the gallery's `dsl_version`.
 
+A probe may also declare **no unit at all**, and then it is not an exemption but
+a **refusal demonstration**: a document the engine says no to, committed so that
+the refusal is re-run rather than remembered. The distinction is real and worth
+the two lines it costs. Some rules are about a *combination* of surfaces both of
+which are perfectly writable — `DW0839` refuses a campaign that carries `areas[]`
+AND a site plan, and every unit involved is bound — so there is no unit for such
+a probe to discharge, and demanding one would either force it to claim a unit the
+domain already binds (which this tool refuses by name, correctly) or leave the
+rule with no committed artifact at all. Such a probe is held to the same two
+obligations as any other: it must be refused, and it must be refused with the
+code it names.
+
 Anything else is a **red naming the unit**. The refusal half is the
 vacuity-mode-6 hardening: the escape hatch demands a machine-produced refusal,
 which "nobody authored it" — the defect this gate exists to catch — cannot
@@ -244,6 +256,8 @@ def main() -> int:
 
     # ------------------------------------------------------------------ probes
     refusal: dict[str, dict] = {}
+    # Probes that name no unit: refused, re-run, and discharging nothing.
+    demonstrations: dict[str, dict] = {}
     probes_dir = GALLERY / "probes"
     tmp = Path(tempfile.mkdtemp(prefix="gallery-probes-"))
     try:
@@ -254,8 +268,8 @@ def main() -> int:
             manifest = json.loads(manifest_path.read_text())
             code = manifest.get("code")
             claimed = manifest.get("units") or []
-            if not code or not claimed:
-                die(f"probe `{pd.name}` must name a `code` and at least one `unit`")
+            if not code:
+                die(f"probe `{pd.name}` must name the `code` it is refused with")
             dest = tmp / pd.name
             materialise(GALLERY, pd, dest)
             rc, codes = run_probe(delvec, dest, prefabs)
@@ -273,6 +287,11 @@ def main() -> int:
                     "exemption is only as good as the code it names — a probe "
                     "refused for an unrelated reason proves nothing about this unit."
                 )
+            if not claimed:
+                demonstrations[pd.name] = {
+                    "code": code,
+                    "why": manifest.get("why", ""),
+                }
             for unit in claimed:
                 if unit not in units:
                     die(f"probe `{pd.name}` claims `{unit}`, which is not a unit")
@@ -299,6 +318,11 @@ def main() -> int:
         f"gallery coverage: {len(units)} unit(s) enumerated, {len(bound_ids)} bound, "
         f"{len(proven)} refusal-proven, {len(unaccounted)} in NEITHER state."
     )
+    if demonstrations:
+        print(
+            f"refusal demonstrations: {len(demonstrations)} probe(s) refused with the code "
+            f"they name and discharging no unit ({', '.join(sorted(demonstrations))})."
+        )
     print(
         f"binding domain: {docs_walked} primary stage document(s), "
         f"{len(overlay_rows)} overlay(s), {len(refusal)} unit(s) behind "
@@ -328,7 +352,15 @@ def main() -> int:
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     if args.index:
-        write_index(Path(args.index), units, bound, refusal, overlay_rows, unaccounted)
+        write_index(
+            Path(args.index),
+            units,
+            bound,
+            refusal,
+            overlay_rows,
+            unaccounted,
+            demonstrations,
+        )
 
     if unaccounted:
         print(
@@ -420,6 +452,7 @@ def write_index(
     refusal: dict[str, dict],
     overlays: list[dict],
     unaccounted: list[str],
+    demonstrations: dict[str, dict] | None = None,
 ) -> None:
     """The reader-facing half: element → surface, and surface → element.
 
@@ -452,6 +485,22 @@ def write_index(
         for unit in sorted(refusal):
             r = refusal[unit]
             lines.append(f"| `{unit}` | `{r['code']}` | {r['why']} |")
+        lines.append("")
+    if demonstrations:
+        lines += [
+            "## What the engine refuses to COMBINE",
+            "",
+            "Some rules are not about a surface at all — both halves are perfectly",
+            "writable, and what the engine says no to is holding them at once. Such",
+            "a probe discharges no unit; it exists so the refusal is re-run rather",
+            "than remembered.",
+            "",
+            "| Probe | Code | Why |",
+            "| --- | --- | --- |",
+        ]
+        for name in sorted(demonstrations):
+            d = demonstrations[name]
+            lines.append(f"| `{name}` | `{d['code']}` | {d['why']} |")
         lines.append("")
     if overlays:
         lines += [

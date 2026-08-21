@@ -110,6 +110,109 @@ pub const DW_IDENTITY_EMPTY: DwCode = DwCode::every_version("DW0834");
 /// `DW0835`: a whole-owned volume enters a box.
 pub const DW_VOLUME_IN_BOX: DwCode = DwCode::every_version("DW0835");
 
+/// `DW0839`: two placement authorities in one campaign.
+///
+/// `every_version` for the reason its siblings are: the rule judges what the
+/// campaign SAYS — that a `site-plan.json` and a non-empty `areas[]` are both
+/// present — and a document below `dsl_version` 0.14.0 has no site plan to be
+/// the second authority, so there is no earlier campaign the rule could reach.
+pub const DW_TWO_AUTHORITIES: DwCode = DwCode::every_version("DW0839");
+
+// ---------------------------------------------------------------------------
+// The vocabulary the derivation synthesizes (spec-0049 §5.2)
+// ---------------------------------------------------------------------------
+
+/// **The one area a site-plan campaign has.**
+///
+/// A campaign places its pieces either with `areas[]` or with a site plan, never
+/// both (`DW0839`), so a site-plan campaign has exactly one place for an NPC to
+/// stand in and one area for a quest to belong to. The name is fixed rather than
+/// authored because there is nothing to choose: the site plan is the whole map,
+/// and a second name for it would be a second way to spell one thing.
+pub const SITE_AREA: &str = "area/site";
+
+/// The anchor name the campaign's **entry** resolves through.
+///
+/// `spawn` and not a role, and the difference is recorded rather than implied:
+/// spec-0049 §5.2 says the entry node's anchor carries the declared entry *role*
+/// per spec-0046, and spec-0046 is Accepted and **not implemented** — the
+/// prefab-metadata `Anchor` carries no `role` field on this engine, so a
+/// derivation writing one would be writing a fact nothing reads. What ships is
+/// [`crate::siteplan`]'s counterpart of the compiler's `ENTRY_ANCHOR_NAMES`
+/// resolution: the derivation names the entry node's anchor with a spelling that
+/// resolution already answers to. When spec-0046 lands, this becomes a role and
+/// the spelling stops mattering — which is the whole point of that spec.
+pub const ENTRY_ANCHOR: &str = "spawn";
+
+/// The anchor at a place's floor centre — where quests, NPCs and waves in a
+/// site-plan campaign stand.
+///
+/// `node/near-hall` becomes `anchor/node-near-hall`, and the reshaping is not
+/// cosmetic: a campaign reaches an anchor through [`crate::ids::AnchorId`],
+/// which is `anchor/<kebab>`, so `node/<id>` — spec-0049 §5.2's spelling — is
+/// not a name any document could write. The three families (`node-`, `seam-`,
+/// `unlock-`) are disjoint by their first segment, so no two synthesized
+/// anchors can collide however the graph is named.
+#[must_use]
+pub fn node_anchor(node: &NodeId) -> String {
+    format!("anchor/node-{}", slug(node.0.as_str()))
+}
+
+/// The gate region over a `barred` seam's opening — what an `open-gate` or a
+/// `shortcut` names.
+#[must_use]
+pub fn seam_anchor(edge: &EdgeId) -> String {
+    format!("anchor/seam-{}", slug(edge.0.as_str()))
+}
+
+/// The anchor on the openable side of a one-sided `barred` seam, where a
+/// shortcut's far-side affordance stands.
+#[must_use]
+pub fn seam_unlock_anchor(edge: &EdgeId) -> String {
+    format!("anchor/unlock-{}", slug(edge.0.as_str()))
+}
+
+/// The part of an id after its kind prefix.
+fn slug(id: &str) -> &str {
+    id.split_once('/').map_or(id, |(_, rest)| rest)
+}
+
+/// **Every anchor a site-plan campaign's blockout provides**, derived from the
+/// documents alone.
+///
+/// One authority, and that is why it lives here rather than in the derivation
+/// that places them: validation resolves a campaign's anchor references against
+/// this set, the derivation creates exactly these anchors, and a name that
+/// validated could therefore never fail to exist at build time. Two functions
+/// agreeing about the spelling is the drift this one removes.
+///
+/// Empty for a campaign with no site plan — it has prefabs instead, and their
+/// metadata is the authority.
+#[must_use]
+pub fn synthesized_anchors(c: &Campaign) -> BTreeSet<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    if c.site_plan.is_none() {
+        return out;
+    }
+    let Some(graph) = c.layout_graph.as_ref().map(|g| &g.content) else {
+        return out; // `DW0824` refused the plan; there is nothing to name.
+    };
+    out.insert(ENTRY_ANCHOR.to_string());
+    for n in &graph.nodes {
+        out.insert(node_anchor(&n.id));
+    }
+    for e in &graph.edges {
+        let Edge::Barred { id, opens_from, .. } = e else {
+            continue;
+        };
+        out.insert(seam_anchor(id));
+        if !matches!(opens_from, crate::layout::OpensFrom::Either) {
+            out.insert(seam_unlock_anchor(id));
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // The document (spec-0049 §4.1)
 // ---------------------------------------------------------------------------
@@ -601,6 +704,220 @@ impl Placed<'_> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The resolved plan, in world cells — ONE authority, three readers
+// ---------------------------------------------------------------------------
+
+/// One place, resolved into world cells: the play space the plan gives it.
+///
+/// Public because three readers need the same answer and two of them are in
+/// another crate: the stage-4 checks here, the **blockout derivation** that
+/// builds the mass, and the **stage-5 battery** that judges the built bytes
+/// against the plan. Two of those computing "where is this box" independently is
+/// how a builder and its observer come to agree about a world neither of them
+/// describes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlacedBox {
+    /// The place this embeds.
+    pub node: NodeId,
+    /// Inclusive footprint `[x0, x1, z0, z1]`.
+    pub foot: [i64; 4],
+    /// The walk plane's world `y`.
+    pub floor: i64,
+    /// Cells of headroom over the walk plane.
+    pub clearance: u32,
+    /// True when the plan declared no ceiling — a courtyard, a shore, a summit.
+    /// The place still claims its size class's own minimum headroom (which is
+    /// what [`PlacedBox::clearance`] holds); what it makes no claim on is the
+    /// air above that.
+    pub open: bool,
+}
+
+impl PlacedBox {
+    /// The play space's inclusive world AABB.
+    #[must_use]
+    pub fn space(&self) -> ([i64; 3], [i64; 3]) {
+        (
+            [self.foot[0], self.floor, self.foot[2]],
+            [
+                self.foot[1],
+                self.floor + i64::from(self.clearance) - 1,
+                self.foot[3],
+            ],
+        )
+    }
+
+    /// The floor centre — where a body seated in this place stands.
+    #[must_use]
+    pub fn centre(&self) -> [i64; 3] {
+        [
+            (self.foot[0] + self.foot[1]) / 2,
+            self.floor,
+            (self.foot[2] + self.foot[3]) / 2,
+        ]
+    }
+}
+
+/// One connection, resolved into world cells: the wall the two places share and
+/// the hole the plan cut in it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlacedSeam {
+    /// The connection this allocates.
+    pub edge: EdgeId,
+    /// Its class, as the graph spells it.
+    pub class: &'static str,
+    /// The `a` end.
+    pub a: NodeId,
+    /// The `b` end.
+    pub b: NodeId,
+    /// Which face **of `a`** the seam sits on.
+    pub face: Face,
+    /// The axis the shared wall is flat in: 0 = x, 1 = y, 2 = z.
+    pub normal_axis: usize,
+    /// The wall's coordinate on that axis — one cell thick, so one number.
+    pub plane: i64,
+    /// The opening's inclusive world AABB (flat in [`Self::normal_axis`]).
+    pub opening: ([i64; 3], [i64; 3]),
+    /// The whole rectangle the two boxes share on that wall, inclusive.
+    pub shared: ([i64; 3], [i64; 3]),
+    /// `floor(b) − floor(a)`, derived — never authored (see [`Seam`]).
+    pub rise: i64,
+    /// Which place hosts the stair massing, on a `stair`.
+    pub stair_in: Option<NodeId>,
+}
+
+/// The plan's boxes, resolved by the code the stage-4 checks judge with.
+///
+/// A box whose floor names an undeclared datum is **absent** — `DW0112` has
+/// refused it, and a place with no plane has no cells for any reader to work in.
+/// A sky-open box whose size class did not resolve is absent for the same reason
+/// (`DW0812` refused the class, so the plan states no headroom for it at all).
+#[must_use]
+pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
+    let (Some(plan), Some(graph)) = (
+        c.site_plan.as_ref().map(|p| &p.content),
+        c.layout_graph.as_ref().map(|g| &g.content),
+    ) else {
+        return Vec::new();
+    };
+    let table = Metrics::table();
+    let mut sink = Vec::new();
+    resolve(plan, graph, &table, reads, &mut sink)
+        .into_iter()
+        .filter_map(|p| {
+            Some(PlacedBox {
+                node: p.plan.node.clone(),
+                foot: p.foot,
+                floor: p.floor,
+                clearance: p.clearance?,
+                open: matches!(p.plan.ceiling, Ceiling::Open),
+            })
+        })
+        .collect()
+}
+
+/// The plan's seams, resolved by the code the stage-4 checks judge with.
+///
+/// A seam whose face the two boxes do not share, or whose opening the table does
+/// not define, is **absent**: `DW0828`/`DW0812` refused it, and there is no hole
+/// for a reader to build or measure.
+#[must_use]
+pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec<PlacedSeam> {
+    let (Some(plan), Some(graph)) = (
+        c.site_plan.as_ref().map(|p| &p.content),
+        c.layout_graph.as_ref().map(|g| &g.content),
+    ) else {
+        return Vec::new();
+    };
+    let table = Metrics::table();
+    let by_node: BTreeMap<&str, &PlacedBox> =
+        boxes.iter().map(|b| (b.node.0.as_str(), b)).collect();
+    let edges: BTreeMap<&str, &Edge> = graph.edges.iter().map(|e| (e.id().0.as_str(), e)).collect();
+    let mut out = Vec::new();
+    for s in &plan.seams {
+        let Some(edge) = edges.get(s.edge.0.as_str()) else {
+            continue;
+        };
+        if matches!(edge, Edge::Vision { .. }) {
+            continue;
+        }
+        let (Some(a), Some(b)) = (
+            by_node.get(edge.a().0.as_str()).copied(),
+            by_node.get(edge.b().0.as_str()).copied(),
+        ) else {
+            continue;
+        };
+        let Ok(face) = shared_face_of(a, b, s.face) else {
+            continue;
+        };
+        let opening = match table.resolve(MetricKind::Opening, &s.opening) {
+            Ok(e) => match e.value(reads) {
+                MetricValue::Opening(o) => *o,
+                _ => continue,
+            },
+            Err(_) => continue,
+        };
+        let normal_axis = match s.face {
+            Face::East | Face::West => 0,
+            Face::Up | Face::Down => 1,
+            Face::South | Face::North => 2,
+        };
+        // The face's two in-plane axes, in the order `at` names them.
+        let (u_axis, v_axis) = in_plane_axes(s.face);
+        let mut lo = [0i64; 3];
+        let mut hi = [0i64; 3];
+        lo[normal_axis] = face.plane;
+        hi[normal_axis] = face.plane;
+        lo[u_axis] = s.at[0];
+        hi[u_axis] = s.at[0] + i64::from(opening.width) - 1;
+        lo[v_axis] = s.at[1];
+        hi[v_axis] = s.at[1] + i64::from(opening.height) - 1;
+        let mut smin = [0i64; 3];
+        let mut smax = [0i64; 3];
+        smin[normal_axis] = face.plane;
+        smax[normal_axis] = face.plane;
+        smin[u_axis] = face.u.0;
+        smax[u_axis] = face.u.1;
+        smin[v_axis] = face.v.0;
+        smax[v_axis] = face.v.1;
+        out.push(PlacedSeam {
+            edge: s.edge.clone(),
+            class: edge.class(),
+            a: edge.a().clone(),
+            b: edge.b().clone(),
+            face: s.face,
+            normal_axis,
+            plane: face.plane,
+            opening: (lo, hi),
+            shared: (smin, smax),
+            rise: b.floor - a.floor,
+            stair_in: s.stair_in.clone(),
+        });
+    }
+    out
+}
+
+/// The two world axes a face's `at` names, in that order.
+fn in_plane_axes(face: Face) -> (usize, usize) {
+    match face {
+        // `[along, y]` — `z` for east/west, `x` for north/south.
+        Face::East | Face::West => (2, 1),
+        Face::South | Face::North => (0, 1),
+        // `[x, z]`.
+        Face::Up | Face::Down => (0, 2),
+    }
+}
+
+/// A footprint's inclusive span on one WORLD axis (0 = x, 2 = z). Axis 1 has no
+/// answer here — a footprint is horizontal — and no caller asks for it.
+fn span(foot: [i64; 4], axis: usize) -> (i64, i64) {
+    if axis == 0 {
+        (foot[0], foot[1])
+    } else {
+        (foot[2], foot[3])
+    }
+}
+
 /// Inclusive overlap of two ranges, or `None`.
 fn overlap(a: (i64, i64), b: (i64, i64)) -> Option<(i64, i64)> {
     let lo = a.0.max(b.0);
@@ -764,6 +1081,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
 
     // Plan-internal wellformedness first: the ids every rule below quotes.
     ids(plan, d);
+    one_authority(c, d);
 
     // ------------------------------------------------------------- the tooth
     // A site plan validates ONLY against a layout graph and a geometry brief.
@@ -799,6 +1117,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
         return;
     };
 
+    openers(c, graph, d);
     let placed = resolve(plan, graph, &table, reads, d);
     agreement(plan, graph, &placed, d);
     grid(&placed, &table, reads, d);
@@ -809,6 +1128,89 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     volumes_outside_boxes(plan, &placed, d);
     identities(c, plan, &placed, d);
     lighting(plan, d);
+}
+
+/// `DW0839`: a campaign has ONE placement authority.
+///
+/// `areas[]` places pieces on the fixed stride; the site plan places the whole
+/// map in its own region. A world carrying both has two owners for one question
+/// and no rule to pick between them, so the answer is not to arbitrate but to
+/// refuse. Both surfaces stay legal at 0.14.0 — one per campaign.
+fn one_authority(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let n = c.world.content.areas.len();
+    if n == 0 {
+        return;
+    }
+    d.push(Diagnostic::error(
+        DW_TWO_AUTHORITIES,
+        "world",
+        "/content/areas",
+        format!(
+            "this campaign declares {n} `areas[]` entry(ies) AND a site plan. Those are two \
+             placement authorities for one world: `areas[]` seats prefab pieces on the compiler's \
+             fixed stride, and the site plan seats the derived blockout inside its own declared \
+             `region` — so every question about where something is has two answers and nothing \
+             says which. Keep one. A campaign that places pieces keeps `areas[]` and drops \
+             `site-plan.json`; a campaign whose map is the site plan declares an empty `areas` \
+             list and lets the plan own the space. Both surfaces are legal — what is not legal \
+             is one \
+             campaign holding both."
+        ),
+    ));
+}
+
+/// `DW0818`'s **byte-side half** of the opener obligation, which round 3 could
+/// not write and named as this round's.
+///
+/// The graph half already stands in [`crate::layout`]: a `barred` edge must
+/// declare a `gating` that names a flag some effect really sets or a quest that
+/// really exists. That says the way is *meant* to open; it does not say anything
+/// in the campaign ever opens **this** way, because at stage 3 the region such
+/// an effect would target does not exist yet. It exists here: the derivation
+/// synthesizes [`seam_anchor`] over every `barred` seam's opening, so "something
+/// opens `seam/<edge>`" is finally a question with a subject.
+///
+/// Raised under `DW0818` and against the layout graph, because the fault is the
+/// graph's claim rather than the plan's geometry — the plan did everything asked
+/// of it. Only reachable in a site-plan campaign, which is exactly the campaign
+/// in which the seam anchor exists to be named.
+fn openers(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
+    // Every gate region the campaign opens, however it opens it: an `open-gate`
+    // at any nesting depth, or a `shortcut` whose far side lifts the bar.
+    let mut opened: BTreeSet<&str> = BTreeSet::new();
+    crate::stages::for_each_campaign_effect(c, &mut |_, _, eff| {
+        eff.visit_deep(&mut |e| {
+            if let Some(a) = e.open_gate_anchor() {
+                opened.insert(a.0.as_str());
+            }
+        });
+    });
+    for s in &c.quests.content.shortcuts {
+        opened.insert(s.gate.0.as_str());
+    }
+
+    for (i, e) in graph.edges.iter().enumerate() {
+        let Edge::Barred { id, .. } = e else { continue };
+        let want = seam_anchor(id);
+        if opened.contains(want.as_str()) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            crate::layout::DW_GRAPH_MISSION,
+            "layout-graph",
+            format!("/content/edges/{i}"),
+            format!(
+                "`{id}` is barred and nothing in this campaign opens it. The derivation seals \
+                 this seam's opening at world load and names the region `{want}`; for the way to \
+                 ever be passable some effect has to address that name — an `open-gate` on the \
+                 beat whose completion earns it, or a `shortcut` whose far side lifts the bar. \
+                 The graph's `gating` says what a body must HOLD to pass, which is a different \
+                 claim and is already checked: a way that is gated on a flag nobody spends is \
+                 still a wall. This is the half of the obligation that could only be written once \
+                 the region existed, so it is asked here rather than at stage 3."
+            ),
+        ));
+    }
 }
 
 /// `datum/`, `volume/` and `view/` ids: well formed and unique, like every other
@@ -1473,7 +1875,46 @@ enum NotShared {
 /// A shared face is a **one-cell gap** — the wall the two places have in common,
 /// which the derivation writes once. See [`Placed`] for why the box is the play
 /// space rather than the play space plus its shell.
-fn shared_face(a: &Placed<'_>, b: &Placed<'_>, face: Face) -> Result<SharedFace, NotShared> {
+/// The geometry a shared-face question needs of one box: its footprint and its
+/// vertical span, when it has one.
+///
+/// A tiny value rather than `&Placed` so that the **one** implementation of "do
+/// these two boxes share this face" serves both readers of the resolved plan:
+/// the stage-4 checks, which hold a partially-resolved box, and the derivation
+/// and battery in the compiler, which hold a [`PlacedBox`]. A second copy of
+/// this arithmetic is how a plan-time green and a byte-time green come to be
+/// about different walls.
+#[derive(Clone, Copy)]
+struct FaceSide {
+    foot: [i64; 4],
+    y: Option<(i64, i64)>,
+}
+
+impl Placed<'_> {
+    fn side(&self) -> FaceSide {
+        FaceSide {
+            foot: self.foot,
+            y: self.y_span(),
+        }
+    }
+}
+
+impl PlacedBox {
+    fn side(&self) -> FaceSide {
+        let (lo, hi) = self.space();
+        FaceSide {
+            foot: self.foot,
+            y: Some((lo[1], hi[1])),
+        }
+    }
+}
+
+/// [`shared_face`] over two fully resolved boxes.
+fn shared_face_of(a: &PlacedBox, b: &PlacedBox, face: Face) -> Result<SharedFace, NotShared> {
+    shared_face(a.side(), b.side(), face)
+}
+
+fn shared_face(a: FaceSide, b: FaceSide, face: Face) -> Result<SharedFace, NotShared> {
     let horizontal_pair = |plane: i64, u: (i64, i64), v: (i64, i64)| -> SharedFace {
         SharedFace {
             plane,
@@ -1491,16 +1932,8 @@ fn shared_face(a: &Placed<'_>, b: &Placed<'_>, face: Face) -> Result<SharedFace,
                 Face::East | Face::West => (0usize, 2usize),
                 _ => (2usize, 0usize),
             };
-            let a_span = if normal == 0 {
-                (a.x0(), a.x1())
-            } else {
-                (a.z0(), a.z1())
-            };
-            let b_span = if normal == 0 {
-                (b.x0(), b.x1())
-            } else {
-                (b.z0(), b.z1())
-            };
+            let a_span = span(a.foot, normal);
+            let b_span = span(b.foot, normal);
             let positive = matches!(face, Face::East | Face::South);
             let (plane, gap) = if positive {
                 (a_span.1 + 1, b_span.0 - a_span.1 - 1)
@@ -1510,20 +1943,12 @@ fn shared_face(a: &Placed<'_>, b: &Placed<'_>, face: Face) -> Result<SharedFace,
             if gap != 1 {
                 return Err(NotShared::NotAdjacent { gap });
             }
-            let a_along = if along == 0 {
-                (a.x0(), a.x1())
-            } else {
-                (a.z0(), a.z1())
-            };
-            let b_along = if along == 0 {
-                (b.x0(), b.x1())
-            } else {
-                (b.z0(), b.z1())
-            };
+            let a_along = span(a.foot, along);
+            let b_along = span(b.foot, along);
             let u = overlap(a_along, b_along).ok_or(NotShared::NoCommonArea {
                 axis: if along == 0 { "x" } else { "z" },
             })?;
-            let (ya, yb) = match (a.y_span(), b.y_span()) {
+            let (ya, yb) = match (a.y, b.y) {
                 (Some(ya), Some(yb)) => (ya, yb),
                 (None, _) => return Err(NotShared::NoPlane { which: "a" }),
                 (_, None) => return Err(NotShared::NoPlane { which: "b" }),
@@ -1538,9 +1963,9 @@ fn shared_face(a: &Placed<'_>, b: &Placed<'_>, face: Face) -> Result<SharedFace,
             })
         }
         Face::Up | Face::Down => {
-            let (Some(ya), Some(yb)) = (a.y_span(), b.y_span()) else {
+            let (Some(ya), Some(yb)) = (a.y, b.y) else {
                 return Err(NotShared::NoPlane {
-                    which: if a.y_span().is_none() { "a" } else { "b" },
+                    which: if a.y.is_none() { "a" } else { "b" },
                 });
             };
             let (plane, gap) = if face == Face::Up {
@@ -1551,9 +1976,9 @@ fn shared_face(a: &Placed<'_>, b: &Placed<'_>, face: Face) -> Result<SharedFace,
             if gap != 1 {
                 return Err(NotShared::NotAdjacent { gap });
             }
-            let u = overlap((a.x0(), a.x1()), (b.x0(), b.x1()))
+            let u = overlap(span(a.foot, 0), span(b.foot, 0))
                 .ok_or(NotShared::NoCommonArea { axis: "x" })?;
-            let v = overlap((a.z0(), a.z1()), (b.z0(), b.z1()))
+            let v = overlap(span(a.foot, 2), span(b.foot, 2))
                 .ok_or(NotShared::NoCommonArea { axis: "z" })?;
             Ok(horizontal_pair(plane, u, v))
         }
@@ -1603,7 +2028,7 @@ fn seams(
             continue; // `DW0824` reported the missing box.
         };
 
-        let face = match shared_face(a, b, s.face) {
+        let face = match shared_face(a.side(), b.side(), s.face) {
             Ok(f) => f,
             Err(why) => {
                 d.push(not_shared(i, s, edge, a, b, &why));
@@ -1841,6 +2266,47 @@ fn stair(ctx: &SeamCtx<'_>, table: &Metrics, reads: &mut Reads, d: &mut Vec<Diag
     let Some(host_id) = &s.stair_in else {
         return; // the missing declaration is reported by `seams`.
     };
+    // **The treads stand in the LOWER place**, and that is geometry rather than
+    // taste: a stair is a stack of courses rising off a walk plane, and the only
+    // walk plane it can rise off is the lower of the two. Hosting it in the
+    // upper place asks for a stack that starts at that place's floor and has to
+    // reach a level *below* it, which is not a stair — it is a hole with treads
+    // drawn in the air under it.
+    //
+    // Found by building. This code checked only that the host affords the RUN,
+    // so a plan naming the upper place reached green at stage 4 and the
+    // derivation then laid a mound on the wrong side of the opening; the
+    // stage-5 observer caught it as a seam whose hole was still solid, which is
+    // the right refusal for the wrong defect. `stair_in` stays authored rather
+    // than derived because it says WHICH of the two footprints pays for the run
+    // when both are candidates — but when only one can be, saying the other is
+    // a refusal.
+    let (low, high) = if b.floor > a.floor {
+        (edge.a(), edge.b())
+    } else {
+        (edge.b(), edge.a())
+    };
+    if host_id == high {
+        d.push(Diagnostic::error(
+            DW_STAIR_PITCH,
+            "site-plan",
+            format!("/content/seams/{i}/stair_in"),
+            format!(
+                "the stair for `{id}` hosts its treads in `{high}`, which is the HIGHER of the two \
+                 places (`{an}` stands at y {af}, `{bn}` at y {bf}). Treads rise off a walk plane, \
+                 and the only plane this stair can rise off is the lower one — massing in the \
+                 upper place would have to start at that place's floor and reach a level beneath \
+                 it, which is not a stair. Host it in `{low}`, and check that `{low}` affords the \
+                 run: a stair costs its footprint, and moving the host moves who pays.",
+                id = s.edge,
+                an = edge.a(),
+                bn = edge.b(),
+                af = a.floor,
+                bf = b.floor,
+            ),
+        ));
+        return;
+    }
     let host = if host_id == edge.a() { a } else { b };
     // The run a stair needs is horizontal. Across a vertical face it is spent
     // along that face's normal; through a floor or ceiling it may run either

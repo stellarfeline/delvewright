@@ -1,0 +1,81 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/walk-the-whole",
+        "trigger": { "type": "campaign-start" },
+        "happening": {
+          "subject": "npc/keeper",
+          "text": "The party crosses the hall and the keeper decides they may pass.",
+          "verb": "arrives"
+        },
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/node-hall",
+            "dialogue": "dlg/greeting",
+            "doing": "standing in the middle of the hall with his back to the cell door"
+          }
+        },
+        "objectives": [
+          {
+            "id": "obj/ask",
+            "npc": "npc/keeper",
+            "type": "talk-to",
+            "happening": {
+              "subject": "npc/keeper",
+              "text": "The keeper hears the asking and yields the cell.",
+              "verb": "opens"
+            }
+          },
+          {
+            "after": ["obj/ask"],
+            "anchor": "anchor/node-cell",
+            "id": "obj/enter-the-cell",
+            "radius": 3,
+            "type": "reach-anchor",
+            "happening": {
+              "text": "The party steps through the opened door into the cell.",
+              "verb": "arrives"
+            }
+          },
+          {
+            "after": ["obj/enter-the-cell"],
+            "anchor": "anchor/node-exit",
+            "id": "obj/walk-out",
+            "radius": 3,
+            "type": "reach-anchor",
+            "happening": {
+              "text": "The party walks out the far side and the whole is behind them.",
+              "verb": "departs"
+            }
+          }
+        ],
+        "on_objective_complete": {
+          "obj/ask": [
+            { "flag": "flag/keeper-yields", "type": "set-flag" },
+            {
+              "anchor": "anchor/seam-hall-cell",
+              "type": "open-gate",
+              "happening": {
+                "text": "The cell door draws back into the wall.",
+                "verb": "opens"
+              }
+            }
+          ]
+        },
+        "on_complete": [
+          {
+            "type": "campaign-complete",
+            "happening": {
+              "text": "The whole has been walked end to end.",
+              "verb": "departs"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.14.0",
+  "stage": "quests"
+}

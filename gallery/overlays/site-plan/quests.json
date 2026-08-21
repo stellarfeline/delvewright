@@ -1,0 +1,185 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/curator": {
+            "at": "anchor/node-near-hall",
+            "dialogue": "dlg/curator-root",
+            "doing": "standing in the middle of the near hall with the catalogue open"
+          },
+          "npc/factor": {
+            "at": "anchor/node-annex",
+            "dialogue": "dlg/factor-root",
+            "doing": "minding the counter in the side gallery"
+          },
+          "npc/marshal": {
+            "at": "anchor/node-loft",
+            "dialogue": "dlg/marshal-root",
+            "doing": "looking down on the far hall from the loft"
+          },
+          "npc/warden": {
+            "at": "anchor/node-far-hall",
+            "dialogue": "dlg/warden-root",
+            "doing": "watching the barred wall from the far side"
+          }
+        },
+        "happening": {
+          "subject": "npc/curator",
+          "text": "The party arrives in the near hall and the Curator looks up.",
+          "verb": "arrives"
+        },
+        "id": "quest/near-hall",
+        "objectives": [
+          {
+            "happening": {
+              "subject": "npc/curator",
+              "text": "The Curator tells them what the hall is for.",
+              "verb": "learns"
+            },
+            "hint": "The Curator stands in the middle of the near hall.",
+            "id": "obj/hear-the-curator",
+            "npc": "npc/curator",
+            "title": "Hear the Curator",
+            "type": "talk-to"
+          },
+          {
+            "happening": {
+              "subject": "npc/factor",
+              "text": "The Factor prices what is on the counter.",
+              "verb": "learns"
+            },
+            "hint": "The Factor minds the counter in the side gallery.",
+            "id": "obj/reach-the-counter",
+            "npc": "npc/factor",
+            "title": "Reach the counter",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [
+          {
+            "anchor": "anchor/seam-west-door",
+            "happening": {
+              "text": "The west door draws back into the barred wall.",
+              "verb": "opens"
+            },
+            "type": "open-gate"
+          },
+          {
+            "anchor": "anchor/seam-centre-door",
+            "happening": {
+              "text": "The centre door draws back with it.",
+              "verb": "opens"
+            },
+            "type": "open-gate"
+          }
+        ],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/curator": {
+            "at": "anchor/node-near-hall",
+            "dialogue": "dlg/curator-root",
+            "doing": "standing in the middle of the near hall with the catalogue open"
+          },
+          "npc/factor": {
+            "at": "anchor/node-annex",
+            "dialogue": "dlg/factor-root",
+            "doing": "minding the counter in the side gallery"
+          },
+          "npc/marshal": {
+            "at": "anchor/node-loft",
+            "dialogue": "dlg/marshal-root",
+            "doing": "looking down on the far hall from the loft"
+          },
+          "npc/warden": {
+            "at": "anchor/node-far-hall",
+            "dialogue": "dlg/warden-root",
+            "doing": "watching the barred wall from the far side"
+          }
+        },
+        "happening": {
+          "subject": "npc/warden",
+          "text": "The party crosses the barred wall into the far hall.",
+          "verb": "arrives"
+        },
+        "id": "quest/far-hall",
+        "objectives": [
+          {
+            "happening": {
+              "subject": "npc/warden",
+              "text": "The Warden calls the muster cleared.",
+              "verb": "survives"
+            },
+            "hint": "The Warden watches the wall from the far side.",
+            "id": "obj/clear-the-muster",
+            "npc": "npc/warden",
+            "title": "Clear the muster",
+            "type": "talk-to"
+          },
+          {
+            "happening": {
+              "subject": "npc/marshal",
+              "text": "The Marshal shows them the hall from above.",
+              "verb": "learns"
+            },
+            "hint": "The Marshal is up in the loft.",
+            "id": "obj/climb-the-loft",
+            "npc": "npc/marshal",
+            "title": "Climb the loft",
+            "type": "talk-to"
+          },
+          {
+            "after": [
+              "obj/climb-the-loft"
+            ],
+            "anchor": "anchor/node-exit",
+            "happening": {
+              "text": "The party walks out the far side and the hall is behind them.",
+              "verb": "departs"
+            },
+            "id": "obj/reach-the-end",
+            "radius": 3,
+            "title": "Leave by the far door",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "The whole has been walked end to end.",
+              "verb": "departs"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/clear-the-muster": [
+            {
+              "flag": "flag/muster-cleared",
+              "type": "set-flag"
+            },
+            {
+              "anchor": "anchor/seam-east-door",
+              "happening": {
+                "text": "The east door lifts from the far side.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            }
+          ]
+        },
+        "trigger": {
+          "quest": "quest/near-hall",
+          "type": "quest-complete"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.14.0",
+  "stage": "quests"
+}

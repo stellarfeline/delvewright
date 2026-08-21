@@ -138,6 +138,31 @@ forbidden zone). `campaigns/` is a symlink to `../delvewright-campaigns/`.
 | `GENERATION.md` | prompt verbatim, date, `dsl_version`, decisions, the **posture note**, the chronicle citation table, the **findings ledger** |
 | `README.md` | the storybook — reader-facing, background only, opens with the engine-version marker |
 
+### A campaign whose map is a site plan
+
+A campaign has **one placement authority**. The usual one is `areas[]`, which
+seats prefab pieces; a campaign planned as a whole map hands the space to its
+site plan instead, and then three things about the six stage JSONs are different
+and none of them is optional:
+
+- **`world.areas` is empty.** Declaring both is refused (`DW0839`) — `areas[]`
+  seats pieces on the compiler's fixed stride and the plan seats the derived
+  blockout in its own region, so a world with both has two answers to every
+  question about where something is.
+- **The campaign's one area is `area/site`.** NPCs stand in it and planned
+  quests belong to it; there is no other.
+- **Content binds to anchors nobody authored.** The blockout is derived, so
+  there is no prefab metadata to name an anchor: the derivation synthesizes one
+  per place (`anchor/node-<place>`), a gate region over every barred connection
+  (`anchor/seam-<edge>`), the far-side affordance's footing on a one-sided one
+  (`anchor/unlock-<edge>`), and the campaign's `spawn`. Those are the names to
+  write, and validation resolves against exactly the set the derivation places.
+  Every barred connection must be opened by something naming its seam
+  (`DW0818`).
+
+Nothing else about authoring changes: the quest, gate and shortcut surfaces are
+the ones every other campaign uses, and they do not know the difference.
+
 ## 6. Tools come in two classes
 
 The class decides how a tool enters this file:

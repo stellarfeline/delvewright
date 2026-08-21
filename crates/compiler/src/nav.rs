@@ -1918,7 +1918,12 @@ impl World {
     /// Whether a cell contains block geometry a cutscene camera must not fly
     /// through: a full-cube solid, a 1.5-tall fence/wall, or a fence gate.
     /// Water does not clip a camera.
-    fn blocks_camera(&self, c: [i32; 3]) -> bool {
+    ///
+    /// **Public**: a declared sightline (`DW0821`) asks exactly this question of
+    /// exactly these cells — whether a line of sight is stopped by geometry —
+    /// and a second predicate for it would be a second opinion about what a
+    /// fence does to a view.
+    pub fn blocks_camera(&self, c: [i32; 3]) -> bool {
         self.solid.contains(&c) || self.tall.contains(&c) || self.use_gates.contains(&c)
     }
 
@@ -2032,7 +2037,17 @@ impl World {
     /// path actually walkable: an assembled seam that ramps up under a low ceiling
     /// becomes a `DW0311` build error instead of a runtime strand on geometry the
     /// compiler wrongly "proved" connected.
-    fn neighbors(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+    ///
+    /// **Public**, and the widening is the point rather than a convenience: the
+    /// step rule is the engine's ONE answer to "can a body get from here to
+    /// there", and the stage-5 blockout battery (`crate::blockout`) asks that
+    /// question of a whole map — is any two places' geometry joined anywhere the
+    /// site plan did not allocate a seam (`DW0838`). A private rule leaves that
+    /// battery with nothing to reuse and a hand-rolled step rule to write, which
+    /// is `CLAUDE.md`'s second review shape: a general mechanism privately
+    /// re-implemented, working perfectly, and silently not the rule every other
+    /// proof in this compiler is taken under.
+    pub fn neighbors(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
         self.neighbors_fp(c, &Footprint::player())
     }
 
@@ -2081,7 +2096,12 @@ impl World {
     /// (inclusive of both ends) or `None` if unreachable. Deterministic: the
     /// frontier is ordered by `(f, g, cell)` and neighbours expand in a fixed
     /// order.
-    fn find_path(&self, start: [i32; 3], goal: [i32; 3]) -> Option<Vec<[i32; 3]>> {
+    ///
+    /// **Public** for the same reason [`World::neighbors`] is: the pacing
+    /// measurement (`DW0822`'s second call site) is the length of the route a
+    /// body really walks along the layout graph's own critical path, and a
+    /// second router would measure a second world.
+    pub fn find_path(&self, start: [i32; 3], goal: [i32; 3]) -> Option<Vec<[i32; 3]>> {
         self.find_path_fp(start, goal, &Footprint::player())
     }
 
@@ -3167,7 +3187,17 @@ fn first_clip(world: &World, pts: &[[f64; 3]]) -> Option<(usize, [i32; 3])> {
 /// starting cell, repeatedly advance along whichever axis reaches its next cell
 /// boundary soonest. An axis with zero delta never steps (its `t_max` is
 /// infinite). Both endpoint cells are included.
-fn walk_cells(a: [f64; 3], b: [f64; 3], hit: impl Fn([i32; 3]) -> bool) -> Option<[i32; 3]> {
+///
+/// **Public**, and `FnMut` rather than `Fn`: the camera clip wants the FIRST
+/// blocking cell and stops, while a blocked sightline (`DW0821`) owes its reader
+/// EVERY blocking cell, because a walk sheet that names one cell of a wall has
+/// not told anybody where the wall is. One traversal, two questions, and the
+/// difference lives entirely in the closure.
+pub fn walk_cells(
+    a: [f64; 3],
+    b: [f64; 3],
+    mut hit: impl FnMut([i32; 3]) -> bool,
+) -> Option<[i32; 3]> {
     let mut cell = [
         a[0].floor() as i32,
         a[1].floor() as i32,

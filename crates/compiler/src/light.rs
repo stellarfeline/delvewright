@@ -777,7 +777,19 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
             .areas
             .iter()
             .find(|a| a.id.as_str() == area.area_id);
-        let lighting = dsl_area.and_then(|a| a.lighting);
+        // A site-plan campaign has no `areas[]` to carry a lighting declaration
+        // — `DW0839` refuses one that does — and states its one setting on the
+        // plan instead, so a blockout interior is walkable at night without
+        // per-box surface. Read here rather than copied into a synthetic `Area`,
+        // because `AreaLighting` is already the engine's "which fixture, to what
+        // level" object and this pass is already the one that consumes it.
+        let lighting = match dsl_area {
+            Some(a) => a.lighting,
+            None if area.area_id == delvewright_dsl::SITE_AREA => {
+                c.site_plan.as_ref().and_then(|p| p.content.lighting)
+            }
+            None => None,
+        };
 
         match lighting {
             Some(spec) => {

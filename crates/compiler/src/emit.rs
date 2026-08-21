@@ -498,6 +498,39 @@ pub fn build_with_warnings(
         }
         None => crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid),
     };
+
+    // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
+    //
+    // **Bound here, and here is the only door.** This is the one function that
+    // turns a `Plan` into a datapack, so a site-plan world cannot be built,
+    // packaged or shipped without being judged against the plan it was derived
+    // from. There is no flag, no subcommand and no line in a document to
+    // remember; a campaign with no site plan gets `None` and nothing runs, which
+    // is why every other campaign's output is byte-identical.
+    //
+    // It runs over the world model above — the same occupancy every other proof
+    // in this function is taken under, edits and relight included — because a
+    // battery that re-derived its own world would be judging a world nobody
+    // ships. `DW0836`/`DW0837`/`DW0838` refuse (exit 3); `DW0821` and `DW0822`
+    // are advisories that travel to the walk sheet, and the binding line is
+    // stated whether anything was found or not.
+    {
+        let blocks = match &edit_replay {
+            Some(er) => er.assembled.blocks.clone(),
+            None => crate::assembled::assembled_blocks(plan, structures),
+        };
+        if let Some(battery) = crate::blockout::check(plan, &blocks) {
+            eprintln!("{}", battery.binding.line());
+            if let Some((code, refusal)) = battery.refusal() {
+                return Err(BuildFailure::Diagnostic {
+                    code: *code,
+                    message: refusal.message.clone(),
+                });
+            }
+            warnings.extend(battery.advisories());
+        }
+    }
+
     // Visual-tier player-POV shots (spec-0003): first-person cameras along the
     // proven critical-path routes. Filled inside the world block below (they need
     // the routes); empty for a campaign with no walked leg, so its render plan
@@ -2811,16 +2844,19 @@ fn emit_functions(
     // area binding one, whose lone piece has all its sockets unmated and so gets
     // a wall fill per connector.
     for area in &plan.areas {
-        for seal in &area.seals {
+        // The area's own mass first — a derived blockout's blocks (spec-0049 §5)
+        // arrive as region writes rather than in a `.nbt`, in the same order the
+        // compile-time model applied them (`crate::assembled::placed_blocks`), so
+        // the world the server builds is the world every proof was taken over.
+        // Empty for every prefab-placed area → byte-identical setup.
+        //
+        // Each write is already inside vanilla's `/fill` cap: the derivation
+        // splits at the point of writing, because a `fill` the server refuses
+        // fails in a function nobody reads.
+        for m in area.mass.iter().chain(&area.seals) {
             setup.push(format!(
                 "fill {} {} {} {} {} {} {}",
-                seal.from[0],
-                seal.from[1],
-                seal.from[2],
-                seal.to[0],
-                seal.to[1],
-                seal.to[2],
-                seal.block
+                m.from[0], m.from[1], m.from[2], m.to[0], m.to[1], m.to[2], m.block
             ));
         }
     }

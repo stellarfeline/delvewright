@@ -1,0 +1,13 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "areas": [],
+    "premise": "Five places, four documents and no authored geometry. The keeper stands in the hall and the cell door is his to open.",
+    "seed": 20260821,
+    "target_minutes": 5,
+    "theme": "A blockout: mass, seams and nothing else.",
+    "title": "The Derived Whole"
+  },
+  "dsl_version": "0.14.0",
+  "stage": "world"
+}
