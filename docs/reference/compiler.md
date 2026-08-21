@@ -1872,6 +1872,24 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `reason`. `DW0426` is error-tier, so a build that ships proves no press lands
   on nothing; that sentence is equally true of a campaign that arms no press at
   all, and only the count tells the two apart.
+- `<out>/validation/watch-ledger.json`: the `DW0810` proof's **binding ledger**
+  (`compiler::watch::WatchBinding`). `declared_ids`, `campaign_functions`,
+  `invoked`, `families`, `multi_object_families`, `unwatched_families`,
+  `watched_objects`, `unwatched_objects`, and `examined` = watched + unwatched —
+  the per-object bodies the rule could judge at all. Plus one `unwatched` row per
+  finding, each naming the family, the declared id, the emitted body nothing
+  drives, and the siblings that ARE driven. `unwatched_families` is the rule's
+  own stated limit: a family with no runtime proof whatever is counted here
+  rather than diagnosed, so the scope is visible instead of silent.
+- `<out>/validation/watch-claims.json`: the `DW0811` refusal's **binding ledger**
+  (`compiler::watch::ClaimBinding`). `claims`, `declared_objects`,
+  `bodies_judged`, `bodies_watched`, `examined` = `bodies_judged`, and one
+  `breaches` row per undischarged member. Its own file rather than a section of
+  the watch ledger because `tools/check-gallery-coverage.py` reds on a top-level
+  `examined: 0` and reads top-level keys only — nested, the count would have been
+  written, committed and diffed and never judged. Zero on a campaign declaring
+  none of the claimed mechanic is honest; zero on the gallery, which declares
+  everything, is the finding.
 - `<out>/validation/combat-plan.json` (spec-0023): the bot ladder's encounter
   table. A top-level `fights` block states the **binding count for the whole
   spec-0023 pass** — `waves`, `actors`, `total`, `unbound`, `reason`
