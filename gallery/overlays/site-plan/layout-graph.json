@@ -3,13 +3,13 @@
   "content": {
     "beats": [
       {
-        "node": "node/near-hall",
-        "objective": "obj/hear-the-curator",
+        "node": "node/annex",
+        "objective": "obj/reach-the-counter",
         "quest": "quest/near-hall"
       },
       {
-        "node": "node/annex",
-        "objective": "obj/reach-the-counter",
+        "node": "node/near-hall",
+        "objective": "obj/hear-the-curator",
         "quest": "quest/near-hall"
       },
       {
@@ -31,6 +31,7 @@
     "critical_path": [
       "node/near-hall",
       "node/annex",
+      "node/near-hall",
       "node/far-hall",
       "node/loft",
       "node/far-hall",
@@ -80,7 +81,7 @@
         "class": "barred",
         "gating": {
           "flags": [
-            "flag/muster-cleared"
+            "flag/east-door-drawn"
           ]
         },
         "id": "edge/east-door",

@@ -243,7 +243,7 @@
         ],
         "edge": "edge/east-door",
         "face": "south",
-        "opening": "door"
+        "opening": "arch"
       },
       {
         "at": [

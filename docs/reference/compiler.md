@@ -4945,6 +4945,25 @@ Deterministic throughout (`BTreeMap`-sorted override keys, sorted file walk).
 
 The table itself, its two halves and its export are §10.
 
+### DW0840 — the metrics gym (`compiler::gym`; advisory)
+
+| Code | Meaning |
+|------|---------|
+| `DW0840` | **The gym leaves a building metric unwalked.** One warning per `delvec metrics --gym` run (exit 0), `every_version`, naming every building entry the generated gym is built from nothing of. The gym's whole argument is that walking it settles the standard, so an entry no bay instantiates is a number the walk cannot rule on however carefully it is walked — a finding about the authoring vocabulary rather than about the run. **Bound to the READ, and stated against the whole table.** The numerator is `Reads` — the same ledger `DW0813` uses — so an entry counts as instantiated only when the generator actually consumed its value to decide a footprint, an opening, a pitch, a datum or the walk's length; the denominator is every entry in the table. A hand-maintained list of "what the gym covers" would be exactly the drift this measures, so there is none, and a table entry added tomorrow and reached by nothing is named the first time anyone regenerates. There is no exemption and no acknowledgement: an entry is reached or it is reported. **Binding: entries instantiated, of entries defined.** Zero unreached entries means the line does not print, which is the calibrated end state and not a vacuity, because the count is taken against the whole table either way. |
+
+At this version the line names three entries, and the reasons are worth reading
+because two of them are gaps in the *vocabulary* rather than in the gym:
+
+- `corridor.min-width` and `corridor.min-clearance` describe a place narrower
+  than any rung of the size-class ladder admits — the smallest is four by four —
+  and the site plan has no surface for a place that is not a box with a size
+  class. A two-wide corridor is therefore not a thing this pipeline can spell, so
+  there is nothing for a walker to stand in and rule on. The repair is a decision
+  about the ladder or about the vocabulary, not a bigger gym.
+- `pacing.walk-only-blocks-per-minute` is a ceiling for the route coefficient
+  beside it, published so the ratio between them is what a playtest measures. No
+  verdict reads it and nothing is built from it.
+
 ### DW0814–DW0822 — the layout graph (`dsl::layout`; error + advisory)
 
 Stage-3 of the map pipeline: the campaign's space checked as an object of its
@@ -5866,6 +5885,7 @@ never a copy. `dsl::metrics` is the module; `delvec metrics` is the door.
 ```
 delvec metrics                # the table on stdout, the verdicts on stderr
 delvec --json metrics         # the DW0813 notice as a JSON diagnostic object
+delvec metrics --gym <dir>    # generate the metrics gym into <dir>
 ```
 
 The values are deliberately **not** listed here. This page fixes the table's
@@ -5973,6 +5993,34 @@ contradicts itself is a defect in `dsl::metrics` and not in anybody's campaign,
 so there is no author to address a refusal to. And a self-check that bound to
 nothing exits the same way, because a check that examined no entry is vacuous
 rather than a pass.
+
+### The gym — the campaign the table generates
+
+`delvec metrics --gym <dir>` writes a complete site-plan campaign into `<dir>`:
+nine stage documents, no authored geometry, built by the ordinary stage-5
+derivation. It is what a walk calibrates the table on.
+
+What it lays out is read out of the table rather than typed beside it — a
+**spine** of bays, one per rung of the size-class ladder at each of its two
+bounds, chained by seams that take the widest standard opening both faces admit,
+so a body walks from the smallest place the ladder allows to the largest through
+every doorway it defines; and off the spine, two climbs to the same rise whose
+hosts differ only in the run they afford, so the derivation picks the gentlest
+standard pitch for one and the steepest for the other, and a designed fall at
+exactly the drop policy's cap with a stair back out of it.
+
+Every one of those choices reads the table through the accessor `DW0813` binds
+to, which is what makes the coverage count above mean something: the generator
+decides nothing a table entry already states, so *how much of the standard the
+gym instantiates* and *how much of the standard the generator read* are the same
+number. Deciding a host pair with a hard-coded ratio instead of the pitches'
+declared runs is what `DW0840` caught during implementation.
+
+The gym is **not committed to this repository**. A generated campaign is content
+and the engine ships the generator, on the same footing as a prefab generator
+whose `.nbt` library lives in the content repo. Regenerating it is the update
+path: a walker's ruling edits the table entry and the bay that demonstrated it is
+a different size the next time anyone runs the command.
 
 ### The version
 

@@ -461,6 +461,18 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: no walk enumerates the campaign's effect roots by hand
         run: python3 tools/check-effect-roots.py
+      # The same shape, one question over. *What anchors does this campaign have*
+      # was answered by eleven hand-rolled walks over `world.areas` in
+      # `dsl::validate`. When the site plan became a second placement authority
+      # ONE of them was taught that a derived world synthesizes its own anchors;
+      # the other ten went on enumerating prefabs a derived world does not have,
+      # so every stage-5 verb but the ones that walk was unauthorable on a
+      # derived map -- and nothing was red, because a check resolving against a
+      # truncated world refuses CONTENT rather than itself. `AnchorProviders` is
+      # now the one authority and this is what stops the twelfth walk.
+      # Deterministic, offline, stdlib-only python3.
+      - name: one authority answers what anchors a campaign has
+        run: python3 tools/check-anchor-providers.py
       # Merge artifacts in the docs tree: a table row duplicated under one key, a
       # doubled heading, a stray conflict marker. Two branches appending rows at
       # the same table anchor merge cleanly and silently, so this class is

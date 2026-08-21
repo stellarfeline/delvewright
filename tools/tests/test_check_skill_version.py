@@ -84,8 +84,28 @@ enum EditAction {
 }
 '''
 
+ENVELOPE_RS = """
+impl Stage {
+    pub fn name(self) -> &'static str {
+        match self {
+            Stage::World => "world",
+            Stage::Npcs => "npcs",
+            Stage::SitePlan => "site-plan",
+        }
+    }
+}
+"""
+
+# What a body must carry to satisfy check 5 against the synthetic `Stage::name`
+# above. Spelled once so a test about the CLI parser never has to know that the
+# stage enumeration is also being held against the same file.
+STAGES_LINE = "\nStages: `world`, `npcs`, `site-plan`.\n"
+
 SKILL_BODY = """
 ## The loop
+
+Stages: `world`, `npcs`, and — for a campaign whose map is planned as a whole —
+`site-plan`.
 
 1. `delvec schema --stage <n>` — generate against the live schema.
 2. `delvec validate <campaign-dir>` — fix by diagnostic code.
@@ -117,6 +137,9 @@ def gate(tmp_path, monkeypatch):
     main_rs = tmp_path / "crates" / "compiler" / "src" / "main.rs"
     main_rs.parent.mkdir(parents=True)
     main_rs.write_text(MAIN_RS, encoding="utf-8")
+    envelope_rs = tmp_path / "crates" / "dsl" / "src" / "envelope.rs"
+    envelope_rs.parent.mkdir(parents=True)
+    envelope_rs.write_text(ENVELOPE_RS, encoding="utf-8")
 
     skill = tmp_path / ".claude" / "skills" / "new-delve" / "SKILL.md"
     skill.parent.mkdir(parents=True)
@@ -125,6 +148,7 @@ def gate(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "SKILL", skill)
     monkeypatch.setattr(module, "COMPILER_CARGO_TOML", cargo)
     monkeypatch.setattr(module, "COMPILER_MAIN_RS", main_rs)
+    monkeypatch.setattr(module, "ENVELOPE_RS", envelope_rs)
     module.SKILL_PATH = skill
     module.CARGO_PATH = cargo
     return module
@@ -150,6 +174,9 @@ def test_true_declaration_passes(gate, capsys):
     # The binding count is stated on every run, pass or fail.
     assert "4 distinct subcommand(s) (l10n-inventory, schema, snapshot, validate)" in out
     assert "5 long-flag reference(s)" in out
+    # Check 5's binding, stated as a fraction: a coverage count without its
+    # denominator is about a smaller world than the tool claims to cover.
+    assert "3 of the engine's 3 campaign stage document(s) named in the skill" in out
 
 
 def test_a_patch_engine_bump_inside_the_window_stays_green(gate):
@@ -253,7 +280,9 @@ def test_flag_the_subcommand_does_not_have_is_red(gate, capsys):
 
 
 def test_global_flag_is_accepted_on_any_subcommand(gate):
-    write_skill(gate, GOOD_FRONTMATTER, "1. `delvec validate <dir> --lang zh-cn`\n")
+    write_skill(
+        gate, GOOD_FRONTMATTER, "1. `delvec validate <dir> --lang zh-cn`\n" + STAGES_LINE
+    )
     assert gate.main() == 0
 
 
@@ -363,12 +392,71 @@ pub enum ViewCommand {
 
 def test_nested_action_is_not_a_top_level_subcommand(gate, capsys):
     """`delvec edit apply` exists; `delvec apply` does not."""
-    write_skill(gate, GOOD_FRONTMATTER, "1. `delvec apply <dir>`\n")
+    write_skill(gate, GOOD_FRONTMATTER, "1. `delvec apply <dir>`\n" + STAGES_LINE)
     assert gate.main() == 1
     assert "`delvec apply`, which the CLI does not have" in capsys.readouterr().err
 
 
 def test_nested_action_flags_belong_to_their_parent(gate):
     """…and its flags read correctly through the parent: `delvec edit --batch`."""
-    write_skill(gate, GOOD_FRONTMATTER, "1. `delvec edit apply <dir> --batch b.json`\n")
+    write_skill(
+        gate,
+        GOOD_FRONTMATTER,
+        "1. `delvec edit apply <dir> --batch b.json`\n" + STAGES_LINE,
+    )
     assert gate.main() == 0
+
+
+# ---------------------------------------------------------------------------
+# Check 5 — the direction nothing used to ask
+# ---------------------------------------------------------------------------
+
+
+def test_a_stage_the_engine_defines_and_the_skill_never_names_is_a_finding(gate, capsys):
+    """The live failure: the engine grows an authoring surface, the skill does not.
+
+    Checks 2-4 all run the other way, and that direction does not drift — a
+    skill is written once and the engine keeps moving. `geometry-brief`,
+    `layout-graph` and `site-plan` landed while the skill went on describing a
+    six-stage loop, and nothing anywhere noticed.
+    """
+    body = SKILL_BODY.replace("`site-plan`", "`(nothing)`")
+    write_skill(gate, GOOD_FRONTMATTER, body)
+    assert gate.main() == 1
+    err = capsys.readouterr().err
+    assert "site-plan.json" in err
+    assert "the skill never mentions it" in err
+    # It names the whole enumeration, so the author can see what else exists.
+    assert "world, npcs, site-plan" in err
+
+
+def test_the_binding_is_stated_as_a_fraction_even_when_it_fails(gate, capsys):
+    body = SKILL_BODY.replace("`site-plan`", "`(nothing)`")
+    write_skill(gate, GOOD_FRONTMATTER, body)
+    assert gate.main() == 1
+    err = capsys.readouterr().err
+    assert "2 of the engine's 3 campaign stage document(s) named in the skill" in err
+
+
+def test_a_stage_name_matches_only_as_a_whole_token(gate, capsys):
+    """`site-planning` is not `site-plan`.
+
+    The check is deliberately loose about WHERE a stage is named — a workflow
+    step and a passing mention read the same to it — and stating that limit is
+    what keeps it honest. What it is not loose about is the token: a longer word
+    that merely contains the name does not discharge it.
+    """
+    body = SKILL_BODY.replace("`site-plan`", "`site-planning`")
+    write_skill(gate, GOOD_FRONTMATTER, body)
+    assert gate.main() == 1
+    assert "site-plan.json" in capsys.readouterr().err
+
+
+def test_parsing_zero_stages_is_a_failure_not_a_pass(gate, capsys):
+    """A renamed `Stage::name` would make check 5 silent about every surface."""
+    write_skill(gate, GOOD_FRONTMATTER)
+    gate.ENVELOPE_RS.write_text("// the enumeration moved\n", encoding="utf-8")
+    assert gate.main() == 1
+    err = capsys.readouterr().err
+    assert "parsed 0 stage documents" in err
+    assert "Fix the parser, do not drop the gate" in err

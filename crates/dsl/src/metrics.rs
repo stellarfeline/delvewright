@@ -423,6 +423,18 @@ impl Reads {
     pub fn provisional(&self) -> Vec<&'static str> {
         self.provisional.iter().copied().collect()
     }
+
+    /// Every entry read, in table order.
+    ///
+    /// The metrics gym's coverage numerator: an entry the gym's construction
+    /// never read is an entry no bay was built from, so a walk of the gym cannot
+    /// rule on it. Taking it from the same ledger the reads are recorded in is
+    /// what stops the gym's own coverage claim being a list somebody maintains
+    /// beside the generator.
+    #[must_use]
+    pub fn read(&self) -> BTreeSet<&'static str> {
+        self.read.clone()
+    }
 }
 
 /// What a run's building-metric reads bound to.

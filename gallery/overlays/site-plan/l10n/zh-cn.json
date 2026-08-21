@@ -1,8 +1,5 @@
 {
-  "dsl_version": "0.14.0",
   "campaign_id": "gallery",
-  "kind": "l10n",
-  "lang": "zh-cn",
   "content": {
     "class.wanderer.blurb": "带一把剑、一双靴、一份面包。",
     "class.wanderer.kit.0.name": "陈列之刃",
@@ -20,6 +17,8 @@
     "dlg.marshal.marshal-root.text": "从这上面看，整座厅是一幅画。",
     "dlg.warden.warden-root.opt.0.label": "清空了吗？",
     "dlg.warden.warden-root.text": "点起的兵在这里列过队，又没有站住。",
+    "fx.sc.east-door.1.narrate": "东门向后退开。近厅只隔一间了。",
+    "fx.trig.east-door-wrong-side.0.narrate": "东门无法从这一侧打开。",
     "npc.curator.name": "馆长",
     "npc.factor.name": "经纪",
     "npc.marshal.name": "典礼官",
@@ -39,6 +38,9 @@
     "world.outro": "厅中每一只展柜都已读过。",
     "world.title": "陈列厅（推导版）"
   },
+  "dsl_version": "0.14.0",
+  "kind": "l10n",
+  "lang": "zh-cn",
   "source": {
     "class.wanderer.blurb": "Carries the blade, the boots and the bread.",
     "class.wanderer.kit.0.name": "Gallery Blade",
@@ -56,6 +58,8 @@
     "dlg.marshal.marshal-root.text": "From up here the whole hall is one picture.",
     "dlg.warden.warden-root.opt.0.label": "Is it cleared?",
     "dlg.warden.warden-root.text": "The muster formed up here and did not stay formed.",
+    "fx.sc.east-door.1.narrate": "The east door draws back. The near hall is one room away now.",
+    "fx.trig.east-door-wrong-side.0.narrate": "The east door does not open from this side.",
     "npc.curator.name": "The Curator",
     "npc.factor.name": "The Factor",
     "npc.marshal.name": "The Marshal",
