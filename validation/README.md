@@ -221,8 +221,8 @@ The rest of this section is why the surface has the shape it does; it is not a
 list to work down by hand.
 
 The generated PackTest suite is per-campaign: `delvec` emits a template only for a
-campaign that uses the feature it proves. hello-world — one quest, one NPC — cannot
-carry a dialogue-root **swap**, so spec-0020's cast-ledger templates (`cast_root_swap`,
+campaign that uses the feature it proves. hello-world — one quest, one NPC —
+declares no cast ledger, so spec-0020's cast-ledger templates (`cast_ladder_<npc>`,
 `cast_bark_cycle`, `cast_none_silent`) simply do not exist in its output. It has no
 `interact` objective either, so the `interact` templates (`verb_interact` and
 `verb_interact_held`, the held-vs-carried proof) are likewise absent — CI therefore
