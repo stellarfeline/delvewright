@@ -971,6 +971,24 @@ jobs:
         run: |
           python3 tools/gallery-baseline.py \
             --delvec target/debug/delvec --prefabs gallery-prefabs
+      # The step above compiles every overlay and keeps only a hash — correctly,
+      # it is a baseline. The consequence was that the site-plan overlay, the map
+      # pipeline's first walkable whole, existed ONLY inside that tool's temp
+      # directory: the bot ladder walked it and the run was reported against a
+      # tree no committed act could bring back. This is that act, and it runs
+      # here so it cannot rot — a script nothing invokes is UNRUN exactly as a
+      # gate nothing invokes is. A step of an existing job, deliberately: every
+      # job name is a required status context.
+      #
+      # It reproduces rather than merely compiling: the tree it writes must carry
+      # the manifest `gallery/baseline/` already recorded for this point, so a
+      # green here is "the tree on disk is the one the baseline measured", not
+      # "exit 0". Classifying a mismatch stays with the baseline tool.
+      - name: the walked whole rebuilds from a committed act
+        if: '!cancelled()'
+        run: |
+          python3 tools/gallery-build.py --point site-plan \
+            --delvec target/debug/delvec --prefabs gallery-prefabs
       # §6: the numbers are reported from day one, and no wall-clock value gates
       # — a timing red on a shared runner is an intermittent red, and the debug
       # doctrine forbids re-running those.

@@ -71,6 +71,13 @@ pub fn validate_campaign_with(
     prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
+    // `DW0849`: an item gate no class can bring. Unconditional, like its
+    // neighbours — the walk is empty for a campaign with no `requires_item`, and
+    // the rule judges a contradiction between two authored documents (a quest's
+    // item gate against the class kits), so it is `EveryVersion` and has no
+    // fence to live in. Bound HERE rather than to a step someone runs, because
+    // this is the function every `delvec` subcommand's validation stage calls.
+    item_gate_class_checks(c, &mut d);
     // DSL v0.3: the new stage-5 verbs, waves and flags. Gated on the quests
     // stage's version so a v0.2 campaign is unaffected (its uses of these verbs
     // are still rejected as reserved by `reserved`, above).
@@ -1977,6 +1984,198 @@ fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// (`plan::press_answer_trigger_id`). Stated here because the *reservation* is a
 /// DSL-level fact even though today's only user is in the compiler.
 const RESERVED_TRIGGER_PREFIX: &str = "dw-";
+
+/// Normalise an authored item id to its namespaced form, so `stripped_oak_log`
+/// and `minecraft:stripped_oak_log` are the same item to every comparison here.
+/// Same rule [`crate::stages::is_potion_bearing_item`] applies to its own list.
+fn ns_item(id: &str) -> String {
+    if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    }
+}
+
+/// Every item this campaign can put into the hands of a player **whatever class
+/// they picked** — the class-blind half of the provenance question `DW0849`
+/// asks.
+///
+/// The five ways an item enters a player's inventory are the class kit
+/// ([`crate::stages::Class::kit`], which is class-BOUND and therefore
+/// deliberately absent here) and these four. They are gathered from the closed
+/// enumerations rather than from a walk of the sites this function's author
+/// happened to remember: effects come through
+/// [`crate::stages::for_each_campaign_effect`], which is
+/// [`crate::effects::for_each_effect_root`] underneath — the same eight roots
+/// emission lowers from, and the one `tools/check-effect-roots.py` holds closed.
+///
+/// A trap's `dispense` payload is **not** a source, and the exclusion is about
+/// the object rather than about effort: a dispenser fires its stack at the party
+/// as a hazard. Being shot with a thing is not being handed it, and a campaign
+/// whose only supply of a required item is a trap firing it has a defect this
+/// check should name rather than excuse.
+fn class_blind_item_sources(c: &Campaign) -> BTreeSet<String> {
+    let mut src: BTreeSet<String> = BTreeSet::new();
+    let quests = &c.quests.content;
+
+    // A `give-item` anywhere. Deliberately unconditional on its flag gate and on
+    // its position in the quest DAG: a gated grant is still a way the item can
+    // be had, and treating one as no source at all would red campaigns that are
+    // fine. The direction of the approximation is chosen — this check refuses
+    // only where NOTHING class-blind supplies the item.
+    crate::stages::for_each_campaign_effect(c, &mut |_path, _site, eff| {
+        if let Some(item) = eff.give_item() {
+            src.insert(ns_item(item));
+        }
+    });
+
+    for q in &quests.quests {
+        for o in &q.objectives {
+            // A `collect` is provisioned into a container the compiler fills or
+            // adopts, or dropped by a wave — every one of those is open to
+            // whoever walks up to it.
+            if let Objective::Collect { item, .. } = o {
+                src.insert(ns_item(item));
+            }
+        }
+    }
+
+    for l in &quests.loot {
+        for it in &l.items {
+            src.insert(ns_item(&it.item));
+        }
+    }
+
+    for w in &quests.waves {
+        for m in &w.mobs {
+            for drop in &m.drops {
+                match (drop.item(), drop.slot()) {
+                    (Some(item), _) => {
+                        src.insert(ns_item(item));
+                    }
+                    // A worn piece drops the item the same mob's `equipment`
+                    // declares in that slot (`DW0490` already refuses a slot the
+                    // equipment leaves empty, so this lookup is total on a
+                    // campaign that got that far).
+                    (None, Some(slot)) => {
+                        if let Some(eq) = m.equipment.as_ref().and_then(|e| e.filled(slot)) {
+                            src.insert(ns_item(eq.item()));
+                        }
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+    }
+
+    src
+}
+
+/// `DW0849`: **an item gate a class cannot bring.**
+///
+/// ## The finding this is the general form of
+///
+/// A required item was issued through one class's kit rather than to the party,
+/// so a player who picked any other class arrived at the objective that consumed
+/// it and could do nothing. The instance was repaired by moving the item; the
+/// class of defect — *completability that depends on which class was picked* —
+/// had no check, and a campaign is free to reintroduce it at every new item
+/// gate.
+///
+/// ## Why this is a property of the object class, not of `interact`
+///
+/// The object is an **item gate**: a place where an objective completes only for
+/// a player who holds a named thing. Today the DSL has exactly one such site
+/// ([`Objective::Interact::requires_item`]) — a shop's price is a
+/// [`crate::stages::StateCompare`] over a datum and not an item at all, and no
+/// verb removes an item from an inventory. So the enumeration is one arm wide
+/// today and is written as an enumeration anyway, because the second site is
+/// where a rule keyed to the first verb leaves the next author with no surface.
+///
+/// ## The quantifier, and why it is `for all` rather than `there exists`
+///
+/// A delve is played by one to four players who each pick one class, so **a solo
+/// player of any class is a supported party**. An item only one class can bring
+/// is therefore an objective some real party is assembled unable to finish, and
+/// it finds out at the thing it cannot press. This is exactly the reasoning
+/// [`codes::BONFIRE_NO_FLASK`] already states for the flask: one class without it
+/// is as broken as none.
+///
+/// ## The direction the approximation runs
+///
+/// [`class_blind_item_sources`] is deliberately generous — a flag-gated
+/// `give-item` late in the DAG counts as a source. The refusal therefore fires
+/// only where the item has **no** class-blind supply anywhere in the campaign,
+/// which is the shape the finding had and the shape a typo has. Making it
+/// stricter would need the reachability model, which does not model items at
+/// all; making it stricter *without* that model would red correct campaigns,
+/// and a check that reds correct work is how a check gets weakened.
+fn item_gate_class_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let classes = &c.classes.content.classes;
+    if classes.is_empty() {
+        // The schema requires 1..4, so this is unreachable on a parsed campaign;
+        // returning rather than dividing by an empty quantifier keeps the "for
+        // all classes" reading honest instead of vacuously true.
+        return;
+    }
+    let blind = class_blind_item_sources(c);
+
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            let Objective::Interact {
+                id, requires_item, ..
+            } = o
+            else {
+                continue;
+            };
+            let Some(raw) = requires_item.as_deref() else {
+                continue;
+            };
+            let item = ns_item(raw);
+            if blind.contains(&item) {
+                continue;
+            }
+            let cannot: Vec<&str> = classes
+                .iter()
+                .filter(|cl| !cl.kit.iter().any(|k| ns_item(&k.item) == item))
+                .map(|cl| cl.id.as_str())
+                .collect();
+            if cannot.is_empty() {
+                continue;
+            }
+            let supply = if cannot.len() == classes.len() {
+                "nothing in this campaign supplies it at all".to_string()
+            } else {
+                format!(
+                    "its only supply is another class's kit, so {} cannot bring it: {}",
+                    if cannot.len() == 1 {
+                        "one class"
+                    } else {
+                        "those classes"
+                    },
+                    cannot.join(", ")
+                )
+            };
+            d.push(Diagnostic::error(
+                codes::ITEM_GATE_UNBRINGABLE,
+                "quests",
+                format!("/content/quests/{i}/objectives/{j}/requires_item"),
+                format!(
+                    "objective `{}` completes only for a player HOLDING `{raw}`, and {supply}. A \
+                     delve is played by one to four players who each pick one class, so a solo \
+                     player of any class is a party this campaign must be finishable by — and \
+                     this one is assembled unable to finish, which it learns standing at the \
+                     thing it cannot press. Three ways to supply it, and any one is enough: put \
+                     the item in a `collect` objective or a `loot` container on the way to this \
+                     gate; hand it out with a `give-item` effect (its default `carrier` is `all` \
+                     — every party member); or add it to EVERY class kit rather than one. Do not \
+                     drop `requires_item` to silence this — presenting the item is the beat.",
+                    id.as_str()
+                ),
+            ));
+        }
+    }
+}
 
 /// DSL v0.10 reserved-feature gating (spec-0031). **Two surfaces land in this
 /// version**, and this is the one fence for both:
