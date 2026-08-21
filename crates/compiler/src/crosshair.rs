@@ -135,7 +135,10 @@ pub const DW_CROSSHAIR_CONTEST: DwCode = DwCode::every_version("DW0489");
 /// The vanilla player hitbox width (1.21.11), in blocks. The player is a body:
 /// its eye can never be nearer than `(PLAYER_WIDTH + w)/2` to another body's
 /// centre, which is what bounds the closest stance in [`threshold`].
-pub const PLAYER_WIDTH: f64 = 0.6;
+///
+/// The metrics table (spec-0049 §2) is the one definition; this re-export keeps
+/// the name every call site already reads while removing the second copy.
+pub use delvewright_dsl::metrics::PLAYER_WIDTH;
 
 /// `player.entity_interaction_range`, the vanilla 1.21.11 default, in blocks —
 /// how far the entity-pick ray is traced from the eye.
