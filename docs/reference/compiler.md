@@ -564,9 +564,11 @@ spelling for any of them, and the only path from a `details[]` row to placed
 bytes runs through the compiler computing the frame from the site plan inside
 `Plan::build` — the one constructor every world-reaching verb goes through. That
 is the same tooth the blockout's is: inversion is not forbidden, it is
-uncompilable. The escalation path a part that wants different traversal takes is
+uncompilable. The escalation path a part that wants different *space* takes is
 a **site-plan revision**, which moves the plan hash, which re-opens the walk gate
-(`DW0841`), which re-runs the whole's walk. The cost is stated, not hidden.
+(`DW0841`), which re-runs the whole's walk; a part that wants different
+*traversal* revises the **layout graph** and pays the identical cost through the
+other half of the walk record's freshness key. The cost is stated, not hidden.
 
 **The frame** a piece must exactly fill is the box's play space grown one course
 downward — the walk plane's own floor. Everything else the derivation writes

@@ -58,34 +58,54 @@ and "fully detailed".
 
 ## 2. What the walk record gates, and what it cannot
 
-`walk-record.json` keeps the form spec-0049 §5.4 fixed:
-`{site_plan_sha256, blockout_sha256, engine_revision, verdict: "passed" |
-"findings", findings[]}`. This spec lands its gate and the hashes it needs:
-every build of a site-plan campaign prints `site_plan_sha256` (over the
-plan's canonical bytes, so a reformat is not a re-walk) and
-`blockout_sha256` (over the massing the walk judged — the derivation with
-**nothing bound**, in deterministic order: a hash over the massing as
-written would move on the first binding, and the drift warning below would
-fire on every detailed campaign), naming the engine revision beside them.
+`walk-record.json` extends the form spec-0049 §5.4 fixed by the one field
+that makes its key cover the whole that was walked:
+`{site_plan_sha256, layout_graph_sha256, blockout_sha256, engine_revision,
+verdict: "passed" | "findings", findings[]}`. This spec lands its gate and
+the hashes it needs: every build of a site-plan campaign prints
+`site_plan_sha256` and `layout_graph_sha256` (each over its document's
+canonical bytes, so a reformat is not a re-walk) and `blockout_sha256`
+(over the massing the walk judged — the derivation with **nothing bound**,
+in deterministic order: a hash over the massing as written would move on
+the first binding, and the drift warning below would fire on every detailed
+campaign), naming the engine revision beside them.
 The revision is stamped into the binary at compile time
 (`DELVEC_ENGINE_REVISION`); an unstamped binary prints `unstamped` rather
 than claiming one, because a run-time reading would need a `.git` a
 published crate does not carry, and what the engine must never do is claim
 a revision it does not have.
 
+**The key is the two authored documents, because the derived whole is a
+function of both.** The plan states where the boxes stand and where each
+seam's cells are cut; the graph states what those seams ARE — walk, stair,
+drop or bar, which side a bar opens from, what a body must hold to pass,
+which way a fall goes — and a node's `size_class`, which is a sky-open box's
+headroom. A key over the plan alone leaves a campaign free to move both the
+placed bytes and the connectivity of the walked whole while the record that
+gated the walk goes on reading as fresh. Each half is hashed WHOLE, not over
+a traversal projection: a hand-picked projection is a list somebody must
+remember to extend, and the field added next release falls silently outside
+it, which is the same defect one layer along. The cost — a reworded `note`
+re-opens the gate — is the cost the plan's own half already pays over
+`views[].note`.
+
 | Code | Rule |
 |---|---|
-| `DW0841` | **Detail without a passed walk of this plan.** A campaign carrying a `detail-plan` document refuses at validation unless `walk-record.json` exists, its `verdict` is `"passed"`, and its `site_plan_sha256` equals the current plan's. Missing, unparseable, `"findings"`, and stale are each named — a stale record's refusal prints both hashes. The same refusal guards `delvec allocation` (§4), so the two events that begin detail work — obtaining an allocation, compiling a binding — are both bound; there is no third entry point, because no other verb reads a `detail-plan`. Binding: the record checked and the hash compared, stated. |
+| `DW0841` | **Detail without a passed walk of this whole.** A campaign carrying a `detail-plan` document refuses at validation unless `walk-record.json` exists, its `verdict` is `"passed"`, its `site_plan_sha256` equals the current plan's and its `layout_graph_sha256` equals the current graph's. Missing, unparseable, `"findings"`, stale-in-the-plan and stale-in-the-graph are each named separately — they are different edits with different repairs — and a stale record's refusal prints both sides of the hash that moved. The same refusal guards `delvec allocation` (§4), so the two events that begin detail work — obtaining an allocation, compiling a binding — are both bound; there is no third entry point, because no other verb reads a `detail-plan`. Binding: the record checked, and the hashes compared **out of the two documents the whole is derived from**. |
 
-A `blockout_sha256` mismatch alone — same plan, different massing bytes — is
-a **warning naming both hashes and both engine revisions**, not a refusal.
-The hatch question, answered: the defect this gate exists to catch is
-detailing a plan the whole's walk never passed, and that defect moves the
-*plan* hash — a campaign author has no edit that moves the blockout hash
-without moving the plan hash, because the derivation is a pure function of
-plan, metrics and engine. The warning path is reachable only by toolchain
-movement (an engine or metrics change), which is a re-walk *decision* for
-the round summary, not a defect the author could launder through it.
+A `blockout_sha256` mismatch alone — the same two authored documents,
+different massing bytes — is a **warning naming both hashes and both engine
+revisions**, not a refusal. The hatch question, answered, and the answer is
+a property of the KEY rather than of the derivation: the derivation is a
+pure function of the site plan, the layout graph, the metrics table and the
+engine, and both authored documents have been compared and found equal
+before this warning is reached. What is left to have moved is the toolchain
+(an engine or metrics change), which is a re-walk *decision* for the round
+summary, not a defect the author could launder through it. **The advisory
+suppresses itself on a graph mismatch for that reason**, and not as a
+duplicate-diagnostic nicety: a campaign edit reaching this warning would
+make its own text false, and a warning that denies the state it is reporting
+trains its reader to wave that state through.
 
 Stated plainly, as spec-0049 stated it for the record itself: the machine
 half of this gate is **freshness and an explicit verdict**. That a human
@@ -259,16 +279,19 @@ check. What "equivalent" means, exhaustively:
 ## 8. What makes the ordering structural, enumerated
 
 1. **Detail before the walk**: `DW0841`, at both entry points (§2, §4). The
-   record's hash is the site plan's, so a plan edit re-opens the gate by
-   itself.
+   record's key is the two documents the whole is derived from — the site
+   plan and the layout graph — so an edit to either re-opens the gate by
+   itself, whether or not it moves a placed byte.
 2. **Detail before the plan**: a `detail-plan` validates only against a site
    plan (`DW0842`'s limiting case), and a `details[]` row without a box has
    no frame to be checked against — there is nothing to author early,
    because the document cannot state where anything goes.
 3. **A part moving its allocation**: unrepresentable (§1). The escalation
-   path a part that *wants* different traversal takes is the one ADR-0022
-   names: a site-plan revision, which moves the plan hash, which re-opens
-   `DW0841`, which re-runs the whole's walk. The cost is stated, not hidden.
+   path a part that *wants* different space takes is the one ADR-0022 names:
+   a site-plan revision, which moves the plan hash, which re-opens `DW0841`,
+   which re-runs the whole's walk. A part that wants different *traversal*
+   revises the layout graph and pays the identical cost through the other
+   half of the same key. The cost is stated, not hidden.
 4. **The content repo's campaign audit** owes the same gate on every push:
    a `detail-plan` present without a passing walk record for the current
    plan reds the campaign — the same event-bound shape as spec-0049 §7's
@@ -332,10 +355,12 @@ an unbound place gets the full derivation and the full battery, a bound one
 gets the full handing checks and the full battery. There is no
 acknowledgement field, no exemption list, no severity an author selects.
 The two soft edges, each secured by a property the defect cannot supply:
-the walk record's freshness hash (§2 — the defect moves the plan hash, which
-is the one thing a fabricated-but-fresh record cannot survive a plan edit
-with) and the blockout-drift warning (§2 — reachable only by toolchain
-movement, not by any campaign edit). The piece's own contract hatches
+the walk record's freshness hashes (§2 — the whole that was walked is
+derived from two authored documents, both are in the key, and the defect
+moves one of them, which is the one thing a fabricated-but-fresh record
+cannot survive an edit to either with) and the blockout-drift warning (§2 —
+reachable only by toolchain movement, because both keyed documents are
+compared equal before it fires). The piece's own contract hatches
 (`no_body` kinds, the majority ack) keep their existing securements and gain
 no new ones.
 
@@ -375,9 +400,11 @@ answer is a first-class surface or a refused feature, decided on that brief.
   piece generated at build time (the gallery's piece is generated, never
   committed), its walk record committed beside the overlay and regenerated
   with it. Committed probes bind the refusals in the probe form: a
-  `detail-plan` with no walk record (`DW0841`) and a piece one cell too
-  deep (`DW0843`) each produce exactly the machine refusal the hatch
-  demands.
+  `detail-plan` with no walk record (`DW0841`), a record fresh in the plan
+  and stale in the graph (`DW0841` again, and it is the sharper of the two
+  because every hash taken over geometry agrees nothing moved), and a piece
+  one cell too deep (`DW0843`) each produce exactly the machine refusal the
+  hatch demands.
 - The mechanic's demo row: a two-place site plan, one place bound, walked
   beside its massing twin — queued in `docs/demo-levels.md` by the
   implementation PR, per the standing rule.
@@ -388,8 +415,8 @@ answer is a first-class surface or a refused feature, decided on that brief.
 
 ## 15. Order of work
 
-1. Hashes and the walk record: build prints both hashes; the record schema;
-   `DW0841` at validation; the audit binding (§8.4).
+1. Hashes and the walk record: build prints all three hashes; the record
+   schema; `DW0841` at validation; the audit binding (§8.4).
 2. The `detail-plan` stage, the frame computation, placement, and
    `DW0842`/`DW0843`; the derivation learns to skip what a binding owns
    (§3).
@@ -408,17 +435,22 @@ every later round deepens a map that already substitutes.
 
 Machine-checkable; each names its verdict's instrument.
 
-1. Every build of a site-plan campaign prints `site_plan_sha256` and
-   `blockout_sha256` with the engine revision; two builds print identical
-   hashes; a plan edit moves both, and edits outside the plan document —
-   stage 1, the layout graph — move neither: the plan hash is a function of
-   the plan document alone, which is what §2's hatch argument rests on. A
-   massing that moved under an unchanged plan is §2's warning, never a
-   refusal — demonstrated against a record naming a different blockout hash.
+1. Every build of a site-plan campaign prints `site_plan_sha256`,
+   `layout_graph_sha256` and `blockout_sha256` with the engine revision;
+   two builds print identical hashes; a plan edit moves the first and the
+   third, a layout-graph edit moves the second and may move the third —
+   both branches pinned: a reworded graph `note` moves no massing byte, a
+   seam-class change does — and an edit to neither document moves none of
+   the three: each authored hash is a function of its own document alone,
+   and together the two cover everything the derivation reads besides the
+   metrics table and the engine, which is what §2's hatch argument rests
+   on. A massing that moved under an unchanged plan and an unchanged graph
+   is §2's warning, never a refusal — demonstrated against a record naming
+   a different blockout hash.
 2. `delvec schema --stage all` includes `detail-plan`;
    `tools/check-gallery-coverage.py` is green with every new unit bound in
-   the gallery domain or refusal-proven; the `DW0841` and `DW0843` probes
-   are committed and red.
+   the gallery domain or refusal-proven; the two `DW0841` probes and the
+   `DW0843` probe are committed and red.
 3. Every code in DW0841–DW0845, DW0848 has at least one test asserting it
    and a fixture the compiler (or `delve-admit`) refuses with it;
    `tools/check-dw-codes.py` is green in both directions with zero new
@@ -432,9 +464,11 @@ Machine-checkable; each names its verdict's instrument.
    is the bot tier's, which runs on release candidates: **the bot walk of a
    detailed build is owed on the first release ladder that carries one**,
    and is not claimed here.
-5. Deleting the record, or editing the site plan without re-recording, reds
-   `DW0841` naming the hashes; `delvec allocation` refuses identically —
-   both entry points demonstrated.
+5. Deleting the record, editing the site plan without re-recording, or
+   editing the layout graph without re-recording, each reds `DW0841` naming
+   the hashes — including a graph edit that moves no placed byte at all,
+   and including a record that names no `layout_graph_sha256`; `delvec
+   allocation` refuses identically — both entry points demonstrated.
 6. A piece whose structure size exceeds its frame by one cell on any axis
    is refused `DW0843` naming both extents; one cell smaller is refused
    the same way.
