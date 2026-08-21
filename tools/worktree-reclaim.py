@@ -1336,8 +1336,14 @@ def main(argv: list[str] | None = None) -> int:
     tree_of: list[tuple[Path, Worktree, RepoSweep]] = [
         (wt.path, wt, rs) for rs in sweeps for wt in rs.trees if wt.exists
     ]
+    # `--after-merge` and `--tree` narrow to one tree and return before the
+    # target ladder is ever consulted, so scanning for build output there is
+    # work whose result is discarded — and it is not cheap work: it walks every
+    # target directory on the machine and `du`s the reclaimable ones. A merge is
+    # the one moment this tool runs while someone is waiting for it.
+    narrowed = bool(args.after_merge or args.tree)
     tdirs: list[TargetDir] = []
-    for t in find_targets(target_roots):
+    for t in ([] if narrowed else find_targets(target_roots)):
         owner = next(((wt, rs) for path, wt, rs in tree_of if is_within(t, path)), None)
         td = TargetDir(t, owner[0] if owner else None)
         decide_target(
