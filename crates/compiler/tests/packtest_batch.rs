@@ -627,6 +627,13 @@ fn every_template_owns_the_gate_it_asserts_on() {
                     b.templates > 0,
                     "{suite}: the batch-state check examined zero templates"
                 );
+                // The denominator, printed rather than assumed: a widening of
+                // this check is only reviewable against the population it
+                // examined before and after.
+                eprintln!(
+                    "batch-state binding [{suite}]: templates={} driving={} judged={}",
+                    b.templates, b.driving, b.judged
+                );
                 judged_total += b.judged;
             }
             Err(e) => panic!("{suite}: {} — {}", e.code.id(), e.message),
