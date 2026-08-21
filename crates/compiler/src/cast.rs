@@ -72,6 +72,10 @@ pub const DW_CAST_PRE_07: DwCode = DwCode::every_version("DW0465");
 pub const DW_CAST_UNCHANGED_FIRST: DwCode = DwCode::every_version("DW0466");
 /// An NPC's dialogue never changes across the whole story (warning).
 pub const DW_CAST_STALE: DwCode = DwCode::every_version("DW0467");
+/// A cast clause no runtime state can select: at every state satisfying its own
+/// gate, a later clause of the same quest also passes and overrides it, so its
+/// scene is unreachable by construction (see [`check_clause_liveness`]).
+pub const DW_CAST_DEAD_CLAUSE: DwCode = DwCode::every_version("DW0846");
 
 /// What an NPC's right-click does during one scene.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -110,6 +114,9 @@ pub struct CastClause {
     /// Numeric gate terms (DSL v0.10, spec-0031): the clause selects its scene
     /// only while every comparison holds.
     pub requires_state: Vec<delvewright_dsl::StateCompare>,
+    /// Index of the declaring placement within its quest's entry for this NPC
+    /// (`entry.placements()` order) — what a diagnostic's JSON path needs.
+    pub placement: usize,
 }
 
 /// One NPC's whole ledger, resolved into the scenes the emitter swaps between.
@@ -141,7 +148,7 @@ pub fn npc_casts(c: &Campaign) -> BTreeMap<String, NpcCast> {
             // really does dispatch per branch. A declared absence
             // (`"offstage"`/`"dead"`) carries no dialogue and so yields no clause:
             // an NPC who is not in the world has no body to right-click.
-            for p in entry.placements() {
+            for (pi, p) in entry.placements().into_iter().enumerate() {
                 let Some(dialogue) = &p.dialogue else {
                     continue;
                 };
@@ -193,6 +200,7 @@ pub fn npc_casts(c: &Campaign) -> BTreeMap<String, NpcCast> {
                         .map(|f| f.as_str().to_string())
                         .collect(),
                     requires_state: p.requires_state.clone(),
+                    placement: pi,
                 });
             }
         }
@@ -418,6 +426,332 @@ pub fn check_cast(c: &Campaign) -> Vec<Diagnostic> {
     }
 
     diags.extend(check_unchanged_and_staleness(c, &order));
+    diags.extend(check_clause_liveness(c));
+    diags
+}
+
+// ---------------------------------------------------------------------------
+// Which runtime state selects one clause: the ladder solver (DW0846)
+// ---------------------------------------------------------------------------
+
+/// The concrete scoreboard state under which exactly ONE clause of an NPC's
+/// ladder governs — what a runtime proof drives before asserting `dw.cast`.
+///
+/// The three maps cover **everything the ladder reads**, not merely the target
+/// clause's own terms: the generated suite runs as one batch on one shared
+/// server, so any term left undriven is decided by whichever sibling template
+/// ran last (island r15 — the flee clause overrode the expected scene purely by
+/// batch order). Pinning at the consumer is the generator-side defense.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClauseDrive {
+    /// Quests whose `dw.qa_*` the proof sets to 1 — the story progressed to the
+    /// clause's own quest, every earlier declaring quest included (`dw.qa_*` is
+    /// never cleared at runtime, so this is the honest shape of "this beat has
+    /// begun"). Every other quest in the ladder is set 0.
+    pub begun: BTreeSet<String>,
+    /// Every flag the ladder reads → the value the proof pins it to.
+    pub flags: BTreeMap<String, i32>,
+    /// Every datum the ladder reads → the value the proof pins it to.
+    pub datums: BTreeMap<String, i32>,
+}
+
+/// Every flag any clause of this ladder reads, either polarity.
+pub fn ladder_flag_reads(cast: &NpcCast) -> BTreeSet<String> {
+    cast.by_quest
+        .iter()
+        .flat_map(|cl| cl.requires_flags.iter().chain(cl.forbids_flags.iter()))
+        .cloned()
+        .collect()
+}
+
+/// Every datum any clause of this ladder reads.
+pub fn ladder_datum_reads(cast: &NpcCast) -> BTreeSet<String> {
+    cast.by_quest
+        .iter()
+        .flat_map(|cl| cl.requires_state.iter())
+        .map(|t| t.state.as_str().to_string())
+        .collect()
+}
+
+/// Whether one clause's own gate (flags + numeric terms, quest activation NOT
+/// included) holds under a concrete assignment. Missing keys read as 0, the
+/// scoreboard's own "never set" answer under `matches 1` reads.
+pub fn clause_gate_holds(
+    cl: &CastClause,
+    flags: &BTreeMap<String, i32>,
+    datums: &BTreeMap<String, i32>,
+) -> bool {
+    use delvewright_dsl::stages::CompareOp;
+    cl.requires_flags
+        .iter()
+        .all(|f| flags.get(f).copied().unwrap_or(0) == 1)
+        && !cl
+            .forbids_flags
+            .iter()
+            .any(|f| flags.get(f).copied().unwrap_or(0) == 1)
+        && cl.requires_state.iter().all(|t| {
+            let x = datums.get(t.state.as_str()).copied().unwrap_or(0);
+            match t.op {
+                CompareOp::Equals => x == t.value,
+                CompareOp::NotEquals => x != t.value,
+                CompareOp::AtLeast => x >= t.value,
+                CompareOp::AtMost => x <= t.value,
+            }
+        })
+}
+
+/// The scene the ladder selects under a concrete assignment — the compiler-side
+/// model of the emitted `cast_<npc>` selector, evaluated at one point.
+///
+/// Same semantics, separate walk: the emitted body starts at 0 and lets every
+/// clause whose quest has begun and whose gate holds overwrite the selection in
+/// ladder order, so the last passing clause wins. A runtime proof asserts THIS
+/// function's answer against the emitted body running on the pinned server;
+/// the authored ledger is the one authority both walks read, so a selector that
+/// lost a clause, an axis or its ordering disagrees with the model on a live
+/// server rather than with itself.
+pub fn eval_ladder(
+    cast: &NpcCast,
+    begun: &BTreeSet<String>,
+    flags: &BTreeMap<String, i32>,
+    datums: &BTreeMap<String, i32>,
+) -> u32 {
+    let mut sel = 0;
+    for cl in &cast.by_quest {
+        if begun.contains(&cl.quest) && clause_gate_holds(cl, flags, datums) {
+            sel = cl.scene;
+        }
+    }
+    sel
+}
+
+/// One same-quest-later clause's violable terms, in deterministic order.
+enum Violation<'a> {
+    /// Violate a `requires_flags` term: force the flag to 0.
+    FlagOff(&'a str),
+    /// Violate a `forbids_flags` term: force the flag to 1.
+    FlagOn(&'a str),
+    /// Violate one numeric term: constrain its datum away from it.
+    State(&'a delvewright_dsl::StateCompare),
+}
+
+/// A concrete state under which clause `n` of this ladder governs — its own
+/// gate satisfied, every later same-quest clause's gate violated — or `None`
+/// when no such state exists.
+///
+/// `None` is a structural fact about the ladder, not a search giving up: the
+/// search is complete. Per later same-quest clause the only choice is WHICH of
+/// its terms to violate (violating one is violating the clause — a gate is a
+/// conjunction), so the whole space is the cartesian product of term choices,
+/// walked depth-first in declaration order; flag forcings conflict only on
+/// equality, and datum constraints intersect through
+/// [`delvewright_dsl::gate::DatumSet`], whose emptiness test is exact. A clause
+/// whose own gate is self-contradictory also answers `None`, but that defect is
+/// the gate's own (`DW0847`) and [`check_clause_liveness`] reports it there.
+///
+/// Later clauses of LATER quests need no violating: a clause's governing window
+/// is "its quest is the latest begun", and the drive's `begun` set excludes
+/// them. They cannot help the clause either — they could only override it — so
+/// unsatisfiability against the same-quest tail alone already proves the clause
+/// governs at no reachable runtime state.
+pub fn distinguishing_drive(cast: &NpcCast, n: usize) -> Option<ClauseDrive> {
+    use delvewright_dsl::gate::DatumSet;
+    let k = &cast.by_quest[n];
+
+    // The target's own gate, as forcings and datum sets.
+    let mut flags: BTreeMap<&str, i32> = BTreeMap::new();
+    for f in &k.requires_flags {
+        flags.insert(f.as_str(), 1);
+    }
+    for f in &k.forbids_flags {
+        if flags.insert(f.as_str(), 0) == Some(1) {
+            return None; // self-contradictory — DW0847's finding
+        }
+    }
+    let mut datums: BTreeMap<&str, DatumSet> = BTreeMap::new();
+    for t in &k.requires_state {
+        datums
+            .entry(t.state.as_str())
+            .or_insert_with(DatumSet::all)
+            .require(t.op, t.value);
+    }
+    if datums.values().any(|s| s.pick().is_none()) {
+        return None; // self-contradictory — DW0847's finding
+    }
+
+    let laters: Vec<&CastClause> = cast.by_quest[n + 1..]
+        .iter()
+        .filter(|j| j.quest == k.quest)
+        .collect();
+    let options: Vec<Vec<Violation<'_>>> = laters
+        .iter()
+        .map(|j| {
+            let mut v: Vec<Violation<'_>> = Vec::new();
+            v.extend(j.requires_flags.iter().map(|f| Violation::FlagOff(f)));
+            v.extend(j.forbids_flags.iter().map(|f| Violation::FlagOn(f)));
+            v.extend(j.requires_state.iter().map(Violation::State));
+            v
+        })
+        .collect();
+
+    // Depth-first over one violated term per later clause. An ungated later
+    // clause has no options, the product is empty, and the answer is `None` —
+    // which is exactly right: nothing can stop an unconditional later clause
+    // from overriding.
+    fn solve<'a>(
+        options: &[Vec<Violation<'a>>],
+        flags: &mut BTreeMap<&'a str, i32>,
+        datums: &mut BTreeMap<&'a str, DatumSet>,
+    ) -> bool {
+        let Some((first, rest)) = options.split_first() else {
+            return true;
+        };
+        for choice in first {
+            match choice {
+                Violation::FlagOff(f) | Violation::FlagOn(f) => {
+                    let want = if matches!(choice, Violation::FlagOn(_)) {
+                        1
+                    } else {
+                        0
+                    };
+                    match flags.get(f) {
+                        Some(v) if *v != want => continue,
+                        Some(_) => {
+                            if solve(rest, flags, datums) {
+                                return true;
+                            }
+                        }
+                        None => {
+                            flags.insert(f, want);
+                            if solve(rest, flags, datums) {
+                                return true;
+                            }
+                            flags.remove(f);
+                        }
+                    }
+                }
+                Violation::State(t) => {
+                    let prev = datums.get(t.state.as_str()).cloned();
+                    let set = datums.entry(t.state.as_str()).or_insert_with(DatumSet::all);
+                    set.forbid(t.op, t.value);
+                    if set.pick().is_some() && solve(rest, flags, datums) {
+                        return true;
+                    }
+                    match prev {
+                        Some(p) => {
+                            datums.insert(t.state.as_str(), p);
+                        }
+                        None => {
+                            datums.remove(t.state.as_str());
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+    if !solve(&options, &mut flags, &mut datums) {
+        return None;
+    }
+
+    // Concretize over everything the ladder reads: unforced flags to 0,
+    // unconstrained datums to 0 — deterministic, and safe because every later
+    // same-quest clause is already dead through its chosen violated term.
+    let drive_flags: BTreeMap<String, i32> = ladder_flag_reads(cast)
+        .into_iter()
+        .map(|f| {
+            let v = flags.get(f.as_str()).copied().unwrap_or(0);
+            (f, v)
+        })
+        .collect();
+    let drive_datums: BTreeMap<String, i32> = ladder_datum_reads(cast)
+        .into_iter()
+        .map(|s| {
+            let v = datums
+                .get(s.as_str())
+                .map(|set| set.pick().expect("checked nonempty at every step"))
+                .unwrap_or(0);
+            (s, v)
+        })
+        .collect();
+    let begun: BTreeSet<String> = cast.by_quest[..=n]
+        .iter()
+        .map(|cl| cl.quest.clone())
+        .collect();
+
+    // The guarantee the caller's assert rests on, verified in the model rather
+    // than assumed from the construction above.
+    debug_assert_eq!(
+        eval_ladder(cast, &begun, &drive_flags, &drive_datums),
+        k.scene,
+        "a distinguishing drive selects its own clause by construction"
+    );
+    if eval_ladder(cast, &begun, &drive_flags, &drive_datums) != k.scene {
+        return None;
+    }
+    Some(ClauseDrive {
+        begun,
+        flags: drive_flags,
+        datums: drive_datums,
+    })
+}
+
+/// `DW0846`: a clause no runtime state can select — its own gate is
+/// satisfiable, yet at every state that satisfies it some LATER clause of the
+/// SAME quest also passes and overrides it. The scene it declares is
+/// unreachable **by construction**: the ladder that would show it is the ladder
+/// that always overrides it, at every point of its governing window (later
+/// quests can only override further, never help).
+///
+/// The worked shape is ordering: a per-branch entry lists its fallback first
+/// and its specific branches after (`NpcCast::by_quest`); written the other way
+/// round, the unconditional fallback sits last and overrides every branch. The
+/// declaration IS the gate (spec-0020 proof 3), so a declaration that provably
+/// never governs is a broken gate, not a stylistic nit — the same standing as a
+/// contradictory `at` (`DW0461`).
+///
+/// A clause whose own gate is self-contradictory is skipped here: that is the
+/// gate's own defect and `DW0847` already names it at its site.
+fn check_clause_liveness(c: &Campaign) -> Vec<Diagnostic> {
+    let mut diags = Vec::new();
+    for (npc, cast) in npc_casts(c) {
+        for (n, k) in cast.by_quest.iter().enumerate() {
+            let own_contra = k.requires_flags.iter().any(|f| k.forbids_flags.contains(f)) || {
+                let mut per: BTreeMap<&str, delvewright_dsl::gate::DatumSet> = BTreeMap::new();
+                for t in &k.requires_state {
+                    per.entry(t.state.as_str())
+                        .or_default()
+                        .require(t.op, t.value);
+                }
+                per.values().any(|s| s.pick().is_none())
+            };
+            if own_contra || distinguishing_drive(&cast, n).is_some() {
+                continue;
+            }
+            let shadowers: Vec<String> = cast.by_quest[n + 1..]
+                .iter()
+                .filter(|j| j.quest == k.quest)
+                .map(|j| format!("placement {} (scene {})", j.placement, j.scene))
+                .collect();
+            let qi = quest_index(c, &k.quest);
+            diags.push(Diagnostic::error(
+                DW_CAST_DEAD_CLAUSE,
+                "quests",
+                format!("/content/quests/{qi}/cast/{npc}/{}", k.placement),
+                format!(
+                    "npc `{npc}`'s placement {} in quest `{}`'s cast can never govern: at every \
+                     state that satisfies its gate, a later placement of the same entry also \
+                     passes and overrides it ({}). Later clauses win — that is the retirement \
+                     mechanism — so a per-branch entry lists its fallback FIRST and its gated \
+                     branches after. Reorder the placements, or tighten the later gate so this \
+                     branch has a state of its own",
+                    k.placement,
+                    k.quest,
+                    shadowers.join(", ")
+                ),
+            ));
+        }
+    }
     diags
 }
 

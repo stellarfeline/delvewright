@@ -54,6 +54,10 @@ pub fn validate_campaign_with(
     // loop inside is empty for a campaign that declares no datum and no
     // comparison, and the version fence itself lives in `reserved_v10`.
     state_checks(c, &mut d);
+    // A gate that contradicts itself can never open (`DW0847`). Unconditional
+    // and over the whole closed consumer set — an ungated site contributes no
+    // terms and cannot contradict.
+    gate_contradiction_checks(c, &mut d);
     // DSL v0.10 (spec-0031): the status-effect verbs. Unconditional for the same
     // reason `state_checks` is — every walk inside is empty for a campaign that
     // declares neither verb, and the version fence lives in `reserved_v10`. The
@@ -2181,6 +2185,46 @@ fn check_one_status_effect(
             ),
         ));
     }
+}
+
+/// `DW0847`: a gate whose own terms contradict each other can never open, so
+/// the thing carrying it is authored content that provably never happens — an
+/// objective that never activates, an effect that never fires, a dialogue
+/// option that never shows, a cast clause that never governs.
+///
+/// One rule over [`for_each_gate`](crate::gate::for_each_gate)'s closed
+/// consumer set, because satisfiability is a property of the **gate** and a
+/// check written beside the first verb that needed it would leave the other
+/// six classes with no surface (CLAUDE.md: a capability belongs to the object
+/// class it acts on). The arithmetic is [`crate::gate::Gate::contradiction`],
+/// the same [`crate::gate::DatumSet`] the compiler's cast-ladder solver picks
+/// drive values from — one authority, so "can this open" and "at what value"
+/// can never disagree.
+fn gate_contradiction_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::gate::for_each_gate(c, &mut |site, gate| {
+        let Some(contra) = gate.contradiction() else {
+            return;
+        };
+        let what = match contra {
+            crate::gate::GateContradiction::Flag(f) => {
+                format!("flag `{f}` is both required and forbidden, so the gate is never satisfied")
+            }
+            crate::gate::GateContradiction::Datum(s) => format!(
+                "no value of `{s}` satisfies every `requires_state` term that reads it, so the \
+                 gate is never satisfied"
+            ),
+        };
+        d.push(Diagnostic::error(
+            codes::GATE_NEVER_OPENS,
+            site.consumer.stage(),
+            site.path.clone(),
+            format!(
+                "this {}'s gate contradicts itself: {what}. Whatever it guards can never happen — \
+                 fix the gate, or delete the thing it makes unreachable",
+                site.consumer.label()
+            ),
+        ));
+    });
 }
 
 fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {

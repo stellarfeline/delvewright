@@ -227,76 +227,156 @@ fn the_talk_template_claims_a_cast_dispatch_only_where_one_is_emitted() {
     );
 }
 
-/// The three cast PackTest templates are emitted for a ledger campaign.
+/// The cast PackTest templates emitted for a ledger campaign: one ladder proof
+/// PER LEDGER NPC (never an exemplar — the search that picks an exemplar is
+/// the search that skips the rest), plus the bark-cycle and silent files.
 #[test]
-fn cast_packtests_are_emitted() {
+fn cast_packtests_are_emitted_per_npc() {
     let out = ledger();
-    for name in ["cast_root_swap", "cast_bark_cycle", "cast_none_silent"] {
+    for name in [
+        "cast_ladder_keeper",
+        "cast_ladder_sleeper",
+        "cast_bark_cycle",
+        "cast_none_silent",
+    ] {
         let p = format!("packtest-datapack/data/cast-ledger/test/{name}.mcfunction");
         assert!(out.contains_key(&p), "missing packtest template {name}");
     }
 }
 
-/// A cast template's dispatch assertion must be batch-order-free. Zeroing every
-/// `dw.qa_*` a template reads is not enough on its own: leaving the ledger's
-/// branch-gate flags (`requires_flags` / `forbids_flags`) to whatever the batch
-/// has lets a sibling verb template that legitimately ends with a campaign flag
-/// set to 1 make `cast_root_swap`'s later assert read the OTHER branch's clause
-/// (expected `dw.cast 2`, got 3). The consumer pins every flag its ledger
-/// reads to the value that selects the asserted scene — the generator-side
-/// defense that holds against any future flag-setting template.
+/// The ladder proof asserts scene 0 (no declaring quest begun), then every
+/// clause's own scene in ladder order with the earlier quests still active —
+/// which is the retirement mechanism proven per clause, not on one exemplar
+/// pair.
 #[test]
-fn cast_root_swap_pins_the_branch_gate_flags_it_asserts_under() {
-    let out = build(&common::compiler_fixtures_dir().join("branch-two-endings"));
+fn the_ladder_proof_asserts_every_clause_and_the_default() {
+    let out = ledger();
     let t = text(
         &out,
-        "packtest-datapack/data/hello-world/test/cast_root_swap.mcfunction",
+        "packtest-datapack/data/cast-ledger/test/cast_ladder_keeper.mcfunction",
     );
-
-    // Phase 1 asserts the ungated pre-fork root: every ledger flag pinned 0.
-    // Phase 2 asserts the hold-branch root (`requires flag/wait`): wait pinned
-    // 1, the sibling branch's flee pinned 0 — the exact poison of island r15.
-    let first_assert = t.find("assert score").expect("first assert present");
-    let wait_zero = t
-        .find("scoreboard players set #party dw.f_wait 0")
-        .expect("phase 1 pins wait to 0");
-    let flee_zero = t
-        .find("scoreboard players set #party dw.f_flee 0")
-        .expect("phase 1 pins flee to 0");
+    // Phase order carries the claim: default 0, then scene 1 (only `ask`
+    // begun), then scene 2 with BOTH begun (`dw.qa_*` is never cleared).
+    let i0 = t.find("dw.cast matches 0").expect("default phase");
+    let i1 = t.find("dw.cast matches 1").expect("clause 1 phase");
+    let i2 = t.find("dw.cast matches 2").expect("clause 2 phase");
+    assert!(i0 < i1 && i1 < i2, "phases in ladder order:\n{t}");
+    let both_active = t
+        .rfind("scoreboard players set #party dw.qa_ask 1")
+        .expect("ask still active in the later phase");
     assert!(
-        wait_zero < first_assert && flee_zero < first_assert,
-        "phase 1's pins precede its assert:\n{t}"
+        both_active > i1 && both_active < i2,
+        "the later phase keeps the earlier quest active — retirement, not reset:\n{t}"
     );
-    let wait_one = t
-        .find("scoreboard players set #party dw.f_wait 1")
-        .expect("phase 2 pins wait to 1");
-    let flee_zero_again = t
-        .rfind("scoreboard players set #party dw.f_flee 0")
-        .expect("phase 2 re-pins flee to 0");
-    let last_assert = t.rfind("assert score").expect("second assert present");
-    assert!(
-        first_assert < wait_one && wait_one < last_assert,
-        "phase 2's requires-pin sits between the two asserts:\n{t}"
+    // Every ledger NPC gets its own file; the sleeper's ladder is not the
+    // keeper's.
+    let s = text(
+        &out,
+        "packtest-datapack/data/cast-ledger/test/cast_ladder_sleeper.mcfunction",
     );
     assert!(
-        first_assert < flee_zero_again && flee_zero_again < last_assert,
-        "phase 2 re-pins the sibling branch's flag to 0:\n{t}"
-    );
-    // The pin must precede the phase's dispatch drive, not merely its assert.
-    let last_drive = t
-        .rfind("run function hello-world:cast_")
-        .expect("dispatch driven");
-    assert!(
-        wait_one < last_drive && flee_zero_again < last_drive,
-        "phase 2 pins land before the dispatch runs:\n{t}"
+        s.contains("cast-ledger:cast_sleeper") && !s.contains("cast_keeper"),
+        "each NPC's ladder drives its own selector:\n{s}"
     );
 }
 
-/// A ledger with no branch-gated clause emits no pin lines at all.
+/// A cast template's dispatch assertion must be batch-order-free (island r15):
+/// every phase pins EVERY flag the ladder reads — the branch being asserted to
+/// 1, the sibling branch to 0 — before the dispatch runs, and each branch
+/// clause is asserted under its own drive.
+#[test]
+fn the_ladder_pins_every_flag_and_proves_each_branch() {
+    let out = build(&common::compiler_fixtures_dir().join("branch-two-endings"));
+    let t = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/cast_ladder_keeper.mcfunction",
+    );
+    // The wait branch's phase: wait 1, flee 0, then the dispatch, then scene 3.
+    let wait_on = t
+        .find("scoreboard players set #party dw.f_wait 1")
+        .expect("wait branch pinned on");
+    let wait_assert = t.find("dw.cast matches 3").expect("wait branch asserted");
+    assert!(wait_on < wait_assert, "pin precedes the assert:\n{t}");
+    let flee_zero_before = t[..wait_assert]
+        .rfind("scoreboard players set #party dw.f_flee 0")
+        .expect("sibling branch pinned OFF in the same phase — the r15 poison");
+    assert!(flee_zero_before > wait_on.saturating_sub(200));
+    // The flee branch's phase: flee 1, wait 0, scene 4.
+    let flee_on = t
+        .find("scoreboard players set #party dw.f_flee 1")
+        .expect("flee branch pinned on");
+    let flee_assert = t.find("dw.cast matches 4").expect("flee branch asserted");
+    assert!(wait_assert < flee_on && flee_on < flee_assert);
+    // The pin must precede the phase's dispatch drive, not merely its assert.
+    let last_drive = t[..flee_assert]
+        .rfind("run function hello-world:cast_")
+        .expect("dispatch driven");
+    assert!(
+        flee_on < last_drive,
+        "pins land before the dispatch runs:\n{t}"
+    );
+    // And each required term is broken on its own, falling back to the bark
+    // scene the model names.
+    assert!(
+        t.contains("# required `flag/wait` broken: the ladder must fall to scene 2"),
+        "the wait term's negative phase names the model's answer:\n{t}"
+    );
+}
+
+/// Two clauses of ONE quest differing only by `requires_state` — the case a
+/// flag pin cannot distinguish, and the reason the drive is SOLVED: the
+/// fallback clause is asserted under the value that VIOLATES the sibling's
+/// comparison, the gated clause under the boundary that satisfies it, and the
+/// broken-term phase must fall back to the fallback's scene.
+#[test]
+fn state_only_siblings_are_distinguished_by_a_solved_drive() {
+    let out = build(&common::compiler_fixtures_dir().join("cast-state-ladder"));
+    let t = text(
+        &out,
+        "packtest-datapack/data/cast-ledger/test/cast_ladder_keeper.mcfunction",
+    );
+    // Fallback clause (scene 2): patience driven to 499 — the solver violating
+    // the LATER sibling's `at-least 500`, which no flag pin could do.
+    let fb_pin = t
+        .find("scoreboard players set #party dw.s_patience 499")
+        .expect("fallback phase violates the sibling's comparison");
+    let fb_assert = t.find("dw.cast matches 2").expect("fallback asserted");
+    assert!(fb_pin < fb_assert, "drive precedes assert:\n{t}");
+    // Gated clause (scene 3): patience at the satisfying boundary.
+    let on_pin = t
+        .find("scoreboard players set #party dw.s_patience 500")
+        .expect("gated phase satisfies its comparison");
+    let on_assert = t.find("dw.cast matches 3").expect("gated clause asserted");
+    assert!(
+        fb_assert < on_pin && on_pin < on_assert,
+        "phase order:\n{t}"
+    );
+    // The negative direction: the state term broken on its own must fall back
+    // to the fallback's scene — a selector that lost the `requires_state`
+    // condition still answers 3 here and reds on the live server.
+    assert!(
+        t.contains("at-least 500 broken (driven to 499): the ladder must fall to scene 2"),
+        "the broken-term phase names the model's answer:\n{t}"
+    );
+    let broken = t
+        .rfind("scoreboard players set #party dw.s_patience 499")
+        .expect("broken-term drive present");
+    assert!(
+        broken > on_assert,
+        "negative phase follows the positive one:\n{t}"
+    );
+}
+
+/// A ledger with no branch-gated clause emits no flag pins at all — the
+/// ladder files and the silent file for an ungated ledger touch no `dw.f_*`.
 #[test]
 fn unbranched_cast_templates_emit_no_flag_pins() {
     let out = ledger();
-    for name in ["cast_root_swap", "cast_none_silent"] {
+    for name in [
+        "cast_ladder_keeper",
+        "cast_ladder_sleeper",
+        "cast_none_silent",
+    ] {
         let t = text(
             &out,
             &format!("packtest-datapack/data/cast-ledger/test/{name}.mcfunction"),
@@ -306,4 +386,58 @@ fn unbranched_cast_templates_emit_no_flag_pins() {
             "{name} must not touch any flag for an ungated ledger:\n{t}"
         );
     }
+}
+
+/// Every bark pool is cycled — both of an NPC's pools, not the first that fit
+/// a template — and every silent scene is proven, from the one authored
+/// ledger.
+#[test]
+fn every_pool_and_every_silent_scene_is_driven() {
+    let out = ledger();
+    let barks = text(
+        &out,
+        "packtest-datapack/data/cast-ledger/test/cast_bark_cycle.mcfunction",
+    );
+    assert!(
+        barks.contains("function cast-ledger:bark_sleeper_1"),
+        "the sleeper's pool is driven:\n{barks}"
+    );
+    let silent = text(
+        &out,
+        "packtest-datapack/data/cast-ledger/test/cast_none_silent.mcfunction",
+    );
+    assert!(
+        silent.contains("talk_sleeper") && silent.contains("dw.cast matches 2"),
+        "the sleeper's `\"none\"` scene is selected and proven:\n{silent}"
+    );
+}
+
+/// The suite's claims over the cast families are registered and discharged:
+/// `cast-ladder` declares every ledger NPC (from the AUTHORED ledger, so a
+/// walk that skips one still declares it — the DW0811 refusal), `cast-bark`
+/// declares every bark scene per NPC, and on this fixture nothing is breached.
+#[test]
+fn cast_claims_are_registered_and_discharged() {
+    let out = ledger();
+    let claims: serde_json::Value = serde_json::from_slice(
+        out.get("validation/watch-claims.json")
+            .expect("claims ledger"),
+    )
+    .unwrap();
+    let t = text(
+        &out,
+        "packtest-datapack/data/cast-ledger/test/cast_ladder_keeper.mcfunction",
+    );
+    assert!(t.contains("run function cast-ledger:cast_keeper"));
+    assert_eq!(
+        claims["breaches"].as_array().unwrap().len(),
+        0,
+        "no cast body may be written and undriven: {claims}"
+    );
+    // The binding is nonzero — this fixture declares two ledger NPCs and a
+    // bark scene, so a zero here would be the vacuous-green shape.
+    assert!(
+        claims["bodies_judged"].as_u64().unwrap() >= 3,
+        "the claim judged the cast bodies: {claims}"
+    );
 }
