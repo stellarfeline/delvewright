@@ -104,6 +104,7 @@ fn campaign(graph: Option<String>, brief: Option<String>) -> RawCampaign {
     RawCampaign {
         layout_graph: graph,
         site_plan: None,
+        detail_plan: None,
         geometry_brief: brief,
         ..common::valid_raw()
     }

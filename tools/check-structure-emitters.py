@@ -83,6 +83,13 @@ CONNECTION_RULE_MARKERS = ("connections::resolve(",)
 # Named individually and printed on every run, for the same reason NOT_EMITTERS
 # is: a class exemption is what hid the sixth emitter.
 NOT_CONNECTION_EMITTERS = {
+    "crates/admit/tests/footprint_class.rs": (
+        "test fixture for the footprint-class admission door (spec-0050 §5). Its palette is two "
+        "states named in one `STATES` constant the file also judges against the pinned registry "
+        "- stone bricks and air - neither of which is a fence, wall, pane or multiface block, "
+        "and the shell it frames is written into a temp directory and never admitted into the "
+        "library."
+    ),
     "crates/compiler/tests/edit.rs": (
         "test fixture for the edit-stage determinism gate. Its palette is four states — air, "
         "stone, a lantern and an oak log — none of them a fence, wall, pane or multiface block, "

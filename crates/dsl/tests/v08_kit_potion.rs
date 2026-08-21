@@ -43,6 +43,7 @@ fn campaign(classes: &str) -> RawCampaign {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     }
 }
 

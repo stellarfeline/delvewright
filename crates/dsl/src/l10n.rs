@@ -362,6 +362,7 @@ struct StageVersions {
     geometry_brief: u32,
     layout_graph: u32,
     site_plan: u32,
+    detail_plan: u32,
 }
 
 impl StageVersions {
@@ -377,6 +378,7 @@ impl StageVersions {
             Stage::GeometryBrief => self.geometry_brief,
             Stage::LayoutGraph => self.layout_graph,
             Stage::SitePlan => self.site_plan,
+            Stage::DetailPlan => self.detail_plan,
         }
     }
 
@@ -405,6 +407,11 @@ impl StageVersions {
                 .unwrap_or(0),
             site_plan: c
                 .site_plan
+                .as_ref()
+                .map(|g| minor_ordinal(&g.dsl_version))
+                .unwrap_or(0),
+            detail_plan: c
+                .detail_plan
                 .as_ref()
                 .map(|g| minor_ordinal(&g.dsl_version))
                 .unwrap_or(0),

@@ -66,6 +66,7 @@ pub mod creator;
 pub mod crosshair;
 pub mod daylight;
 pub mod deathplan;
+pub mod detail;
 pub mod eclipse;
 pub mod edit;
 pub mod emit;

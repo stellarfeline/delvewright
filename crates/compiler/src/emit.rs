@@ -519,6 +519,22 @@ pub fn build_with_warnings(
             Some(er) => er.assembled.blocks.clone(),
             None => crate::assembled::assembled_blocks(plan, structures),
         };
+        // The two hashes a walk record names its subject by (spec-0050 §2),
+        // printed by the one function that turns a `Plan` into a datapack, so a
+        // creator who has just built the thing they are about to walk has the
+        // numbers in front of them. The engine is named by its REVISION, never
+        // by its version string — two engines a hundred commits apart report the
+        // same version.
+        if let Some(h) = crate::detail::Hashes::of(plan.campaign) {
+            eprintln!("{}", h.line());
+        }
+        // What the DERIVATION bound to, beside what its observer did. Printing
+        // only the battery's line stated what was examined and never what was
+        // built — and at stage 6 the difference is the whole reading: `detailed`
+        // is how much of this map is a building and how much is still massing.
+        if let Some(b) = &plan.blockout {
+            eprintln!("{}", b.binding.line());
+        }
         if let Some(battery) = crate::blockout::check(plan, &blocks) {
             eprintln!("{}", battery.binding.line());
             if let Some((code, refusal)) = battery.refusal() {

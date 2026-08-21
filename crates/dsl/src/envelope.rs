@@ -3,6 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::detailplan::DetailPlanContent;
 use crate::diagnostic::{Diagnostic, codes};
 use crate::ids::CampaignId;
 use crate::layout::{GeometryBriefContent, LayoutGraphContent};
@@ -13,7 +14,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.14.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.15.0";
 
 /// The `dsl_version` that introduces the **`open-way`** effect (spec-0042 §2.4):
 /// a campaign opening a placed piece's contingent way, with the geometry, the
@@ -59,6 +60,22 @@ pub const LAYOUT_GRAPH_SINCE: &str = "0.13.0";
 /// which is exactly the state the ordering wants reachable.
 pub const SITE_PLAN_SINCE: &str = "0.14.0";
 
+/// The `dsl_version` at which a campaign may carry the spec-0050 **detail
+/// plan**: `detail-plan.json`, the statement of which piece stands in which of
+/// the site plan's places.
+///
+/// The **hand-written name** for `0.15.0`, written rather than derived for the
+/// reason [`RESERVED_DSL_VERSIONS`] gives: `is_v15` follows from the number, so
+/// two branches claiming `0.15.0` would produce the same anchor and the
+/// uniqueness gate would read one claim where there are two. A name an author
+/// chose cannot agree by accident.
+///
+/// A version of its own rather than a field added at [`SITE_PLAN_SINCE`],
+/// because a version names one surface: a campaign declaring 0.14.0 states the
+/// whole map and has no way to detail a part of it, which is exactly the state
+/// the ordering wants reachable.
+pub const DETAIL_PLAN_SINCE: &str = "0.15.0";
+
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
 /// (spec-0008) adds dialogue state, props, narration, live-threat tuning, NPC
@@ -91,7 +108,10 @@ pub const SITE_PLAN_SINCE: &str = "0.14.0";
 /// map-pipeline documents — a `geometry-brief` of named numbers and a
 /// `layout-graph` stating the campaign's space as places and connections before
 /// any coordinate exists; v0.14 (spec-0049) adds the `site-plan`, the geometric
-/// embedding of that graph and the whole map's design of record.
+/// embedding of that graph and the whole map's design of record; v0.15
+/// (spec-0050) adds the `detail-plan`, which piece stands in which of those
+/// places — a document with no coordinate, no extent and no seam in it, so that
+/// a part cannot move the box the whole gave it.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 ///
@@ -120,7 +140,7 @@ pub const SITE_PLAN_SINCE: &str = "0.14.0";
 /// through one set of rules.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
     "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
-    "0.12.0", "0.13.0", "0.14.0",
+    "0.12.0", "0.13.0", "0.14.0", "0.15.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -230,6 +250,7 @@ fn ordinal(version: &str) -> u32 {
         "0.12.0" => 12,
         "0.13.0" => 13,
         "0.14.0" => 14,
+        "0.15.0" => 15,
         _ => 0,
     }
 }
@@ -474,6 +495,24 @@ pub fn is_v14(version: &str) -> bool {
     ordinal(version) >= 14
 }
 
+/// True if `version` enables the DSL v0.15 surface (spec-0050,
+/// [`DETAIL_PLAN_SINCE`]): the **detail plan**, and nothing else.
+///
+/// `detail-plan.json` states which piece fills which of the site plan's places,
+/// and which of that piece's anchors answers each name the campaign had already
+/// bound to the place. It carries no coordinate, no region, no extent, no datum,
+/// no seam and no offset — absent fields, not optional ones — so a part is
+/// structurally unable to move the box the whole gave it.
+///
+/// Purely additive, and additive in the same strong sense v0.13 and v0.14 are:
+/// the document is an optional file in a campaign directory, so a campaign that
+/// ships none parses, validates and emits exactly as it did. Every obligation
+/// the detail plan owes is reached only through the document itself, so a
+/// campaign without one binds zero of them and says so.
+pub fn is_v15(version: &str) -> bool {
+    ordinal(version) >= 15
+}
+
 /// Which stage a document belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -502,6 +541,10 @@ pub enum Stage {
     /// The geometric embedding of that graph — the whole map's design of record
     /// (optional; DSL v0.14, spec-0049 §4).
     SitePlan,
+    /// Which piece stands in which of the plan's places (optional; DSL v0.15,
+    /// spec-0050). Named, never renumbered, for the reason `GeometryBrief`
+    /// gives.
+    DetailPlan,
 }
 
 impl Stage {
@@ -519,6 +562,7 @@ impl Stage {
             Stage::GeometryBrief => "geometry-brief",
             Stage::LayoutGraph => "layout-graph",
             Stage::SitePlan => "site-plan",
+            Stage::DetailPlan => "detail-plan",
         }
     }
 
@@ -529,7 +573,7 @@ impl Stage {
     /// seven stages by name, so a schema object declaring part of the gate in an
     /// eighth would have been invisible to the check whose whole subject is that
     /// no such object exists. Anything that means "over the stages" reads this.
-    pub const ALL: [Stage; 10] = [
+    pub const ALL: [Stage; 11] = [
         Stage::World,
         Stage::Npcs,
         Stage::Classes,
@@ -540,6 +584,7 @@ impl Stage {
         Stage::GeometryBrief,
         Stage::LayoutGraph,
         Stage::SitePlan,
+        Stage::DetailPlan,
     ];
 }
 
@@ -583,6 +628,9 @@ pub struct Campaign {
     pub layout_graph: Option<Envelope<LayoutGraphContent>>,
     /// The geometric embedding of that graph (optional; DSL v0.14, spec-0049 §4).
     pub site_plan: Option<Envelope<SitePlanContent>>,
+    /// Which piece fills which of the plan's places (optional; DSL v0.15,
+    /// spec-0050 §1).
+    pub detail_plan: Option<Envelope<DetailPlanContent>>,
 }
 
 /// The stage documents as raw JSON strings (compiler input): six required, the
@@ -610,6 +658,8 @@ pub struct RawCampaign {
     pub layout_graph: Option<String>,
     /// `site-plan.json` (optional; spec-0049 §4).
     pub site_plan: Option<String>,
+    /// `detail-plan.json` (optional; spec-0050 §1).
+    pub detail_plan: Option<String>,
 }
 
 fn parse_stage<T: for<'de> Deserialize<'de>>(
@@ -691,6 +741,12 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         parse_stage(src, Stage::SitePlan, &mut parsed, &mut diags);
         site_plan = parsed.map(Some);
     }
+    let mut detail_plan: Result<Option<Envelope<DetailPlanContent>>, ()> = Ok(None);
+    if let Some(src) = &raw.detail_plan {
+        let mut parsed = Err(());
+        parse_stage(src, Stage::DetailPlan, &mut parsed, &mut diags);
+        detail_plan = parsed.map(Some);
+    }
 
     match (
         world,
@@ -703,6 +759,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         geometry_brief,
         layout_graph,
         site_plan,
+        detail_plan,
     ) {
         (
             Ok(world),
@@ -715,6 +772,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
             Ok(geometry_brief),
             Ok(layout_graph),
             Ok(site_plan),
+            Ok(detail_plan),
         ) => {
             let mut campaign = Campaign {
                 world,
@@ -727,6 +785,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
                 geometry_brief,
                 layout_graph,
                 site_plan,
+                detail_plan,
             };
             // spec-0016 §3: expand the `ambush` sugar into real environment
             // triggers, ONCE, at the DSL boundary. Every downstream consumer —

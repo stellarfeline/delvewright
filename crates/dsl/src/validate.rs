@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, is_v11, is_v12, is_v13, is_v14,
+    is_v10, is_v11, is_v12, is_v13, is_v14, is_v15,
 };
 use crate::ids::is_kebab;
 use crate::metrics::Metrics;
@@ -682,6 +682,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 .iter()
                 .map(|e| (Stage::SitePlan, e.stage, e.dsl_version.as_str())),
         )
+        .chain(
+            c.detail_plan
+                .iter()
+                .map(|e| (Stage::DetailPlan, e.stage, e.dsl_version.as_str())),
+        )
         .collect();
     for (expected, actual, version) in stages {
         if actual != expected {
@@ -743,6 +748,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
         c.site_plan
             .iter()
             .map(|e| (Stage::SitePlan, &e.campaign_id)),
+    )
+    .chain(
+        c.detail_plan
+            .iter()
+            .map(|e| (Stage::DetailPlan, &e.campaign_id)),
     )
     .collect();
     let canonical = c.world.campaign_id.as_str();
@@ -1535,6 +1545,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v12(c, d);
     reserved_v13(c, d);
     reserved_v14(c, d);
+    reserved_v15(c, d);
     press_answer_checks(c, d);
     press_obligation_checks(c, d);
 }
@@ -1615,6 +1626,32 @@ fn reserved_v14(c: &Campaign, d: &mut Vec<Diagnostic>) {
              `{version}` — raise this document's own `dsl_version` to 0.14.0, or delete the \
              file. It is the geometric embedding of the layout graph, and a campaign at 0.13.0 \
              states its space as a graph and has nowhere to put the embedding: that is the \
+             ordering, and it is why the two are separate versions rather than one."
+        ),
+    ));
+}
+
+/// The spec-0050 detail plan exists only at `dsl_version` 0.15.0.
+///
+/// A whole DOCUMENT is fenced, on the same terms as the three map-pipeline
+/// documents below it: an older campaign has no `detail-plan.json`, so there is
+/// nothing on it to grandfather and nothing it could have been judged against.
+fn reserved_v15(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let Some(version) = c.detail_plan.as_ref().map(|e| e.dsl_version.as_str()) else {
+        return;
+    };
+    if is_v15(version) {
+        return;
+    }
+    d.push(Diagnostic::error(
+        codes::RESERVED,
+        Stage::DetailPlan.name(),
+        "/dsl_version",
+        format!(
+            "a `detail-plan` document requires dsl_version 0.15.0 and this one declares \
+             `{version}` — raise this document's own `dsl_version` to 0.15.0, or delete the \
+             file. It states which piece fills which of the site plan's places, and a campaign \
+             at 0.14.0 has the whole map and no way to detail a part of it: that is the \
              ordering, and it is why the two are separate versions rather than one."
         ),
     ));

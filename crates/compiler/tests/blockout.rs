@@ -465,3 +465,63 @@ fn the_synthesized_vocabulary_carries_the_unchanged_quest_layer() {
         "validation resolves a campaign's anchors against exactly what the derivation places"
     );
 }
+
+/// **What every place owes, plus the gate regions no place owes, is exactly the
+/// synthesized set** (spec-0050 §6).
+///
+/// `dsl::siteplan::synthesized_anchors` is the one authority for which names a
+/// site-plan campaign provides, and `owed_anchors` says which of them a given
+/// place must re-bind when a piece stands in it. Two functions reading two
+/// documents is exactly the drift the one-authority note exists to remove, so
+/// this asserts they PARTITION rather than merely overlap.
+///
+/// Both directions matter and each catches a different defect. A name owed by
+/// nobody is a name the campaign resolves and no piece is ever asked for — a
+/// quest pointing at a building that does not answer. A name owed by two places
+/// is two pieces claiming one anchor, which resolution cannot arbitrate.
+#[test]
+fn the_owed_anchors_partition_the_synthesized_set() {
+    let c = campaign();
+    let all = delvewright_dsl::synthesized_anchors(&c);
+    assert!(!all.is_empty(), "the fixture provides anchors at all");
+
+    let graph = c.layout_graph.as_ref().map(|g| &g.content).unwrap();
+    let mut owed_by: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for n in &graph.nodes {
+        for name in delvewright_dsl::owed_anchors(&c, &n.id) {
+            owed_by.entry(name).or_default().push(n.id.0.clone());
+        }
+    }
+    for (name, places) in &owed_by {
+        assert_eq!(
+            places.len(),
+            1,
+            "`{name}` is owed by {places:?} — two pieces claiming one anchor"
+        );
+    }
+
+    // The gate regions are the one family no place owes: they stand in a party
+    // plane the whole owns, not inside any piece.
+    let gates: std::collections::BTreeSet<String> = all
+        .iter()
+        .filter(|n| n.starts_with("anchor/seam-"))
+        .cloned()
+        .collect();
+    assert!(
+        !gates.is_empty(),
+        "the fixture has a barred way, or this binds nothing"
+    );
+    let owed: std::collections::BTreeSet<String> = owed_by.keys().cloned().collect();
+    assert!(
+        owed.is_disjoint(&gates),
+        "a gate region is never owed by a place"
+    );
+    let union: std::collections::BTreeSet<String> = owed.union(&gates).cloned().collect();
+    assert_eq!(
+        union, all,
+        "every synthesized name is either owed by exactly one place or a gate \
+         region the whole keeps — there is no third kind, and a name in neither \
+         is one no piece is ever asked for"
+    );
+}

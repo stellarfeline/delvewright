@@ -26,6 +26,7 @@ fn campaign_with(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     }
 }
 
@@ -405,6 +406,7 @@ fn talk_to_targets_despawned_npc_is_dw0195() {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     };
     let diags = check_campaign(&raw);
     assert!(

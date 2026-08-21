@@ -50,6 +50,7 @@ fn parse(deferred: bool, quests: &str) -> Campaign {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }

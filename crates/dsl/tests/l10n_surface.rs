@@ -499,6 +499,7 @@ fn fixture_with_actors() -> delvewright_dsl::Campaign {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     })
     .expect("the patched keep-trial parses")
 }

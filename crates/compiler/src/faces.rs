@@ -143,6 +143,30 @@ struct Piece {
     /// edge joins two of its own spaces makes a complete claim about its
     /// inside and none about its sides, so it contracts and faces nothing.
     contracted: bool,
+    /// **Whether this piece was placed by an ALLOCATION rather than by a
+    /// mating** — that is, whether it stands in the one area a site plan has.
+    ///
+    /// Such a piece is never a neighbour here, and the reason is the one
+    /// `FaceBinding::finding` already gives its reader in prose: a site plan
+    /// cuts its ways at stage 4, on faces two boxes already share, and proves
+    /// them over the built bytes with `DW0836`. Nothing in that world was ever
+    /// asked to mate with anything.
+    ///
+    /// The distinction only started to matter at stage 6, and it matters in two
+    /// ways that a narrower predicate catches only one of. A derived blockout box
+    /// is a `PiecePlacement` the registry has never heard of, and the party plane
+    /// a detail piece's face opens onto lies inside that box's SHELL bbox — so
+    /// without this, every detailed place is refused `DW0780` for failing to mate
+    /// with a shell that is not a building. And two DETAIL pieces stacked
+    /// vertically mate through the horizontal party plane directly, where this
+    /// check demands equal classes and spec-0050 §3's table requires `drop`
+    /// leaving against `walk` landing, and `stair` in the hosting box against
+    /// `walk` in the other. A `drop` between two bound places would have
+    /// satisfied `DW0844` and then hard-failed here.
+    ///
+    /// Both are the same fact — the ways of that world are allocated — so both
+    /// answer to one predicate rather than to a list.
+    allocated: bool,
 }
 
 /// The verdict of the mating check: how many declared faces met another placed
@@ -244,6 +268,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                 contracted: prefabs
                     .get(&placement.prefab_id)
                     .is_some_and(|m| m.spatial_contract.is_some()),
+                allocated: area.area_id == delvewright_dsl::SITE_AREA,
             });
         }
     }
@@ -260,6 +285,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
             // Which other placed piece owns the cells just beyond this opening?
             let Some((j, neighbour)) = pieces.iter().enumerate().find(|(j, other)| {
                 *j != i
+                    && !other.allocated
                     && plane >= other.min[axis]
                     && plane <= other.max[axis]
                     && (0..3).all(|a| {

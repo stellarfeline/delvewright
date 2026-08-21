@@ -89,6 +89,7 @@ fn parse_hw() -> Campaign {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -335,6 +336,7 @@ fn chained_moves_plan_from_last_staged_location() {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -378,6 +380,7 @@ fn chained_moves_plan_from_last_staged_location() {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let out = build(&campaign, &prefabs);

@@ -58,6 +58,7 @@ fn campaign_with_graph(graph: Option<&str>) -> delvewright_dsl::Campaign {
         geometry_brief: None,
         layout_graph: graph.map(str::to_string),
         site_plan: None,
+        detail_plan: None,
     };
     parse_campaign(&raw).expect("the fixture parses")
 }

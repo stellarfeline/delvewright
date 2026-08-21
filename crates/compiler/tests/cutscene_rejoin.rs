@@ -77,6 +77,7 @@ fn build(cutscene: &str) -> BuildOutput {
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
+        detail_plan: None,
     })
     .expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
