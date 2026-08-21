@@ -1,32 +1,52 @@
 {
   "added": [
-    "site-plan.en:packtest-datapack/data/gallery/test/cast_ladder_curator.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/cast_ladder_factor.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/cast_ladder_marshal.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/cast_ladder_warden.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/class_apply_wanderer.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/class_apply_warder.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/dlg_mask_curator_curator_root.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/dlg_mask_factor_factor_root.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/dlg_mask_marshal_marshal_root.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/dlg_mask_warden_warden_root.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/env_trigger_east_door_wrong_side.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/npc_talk_curator.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/npc_talk_factor.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/npc_talk_marshal.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/npc_talk_warden.mcfunction",
-    "site-plan.en:packtest-datapack/data/gallery/test/obj_activate_reach_the_end.mcfunction"
+    "easy.en:validation/sea-seepage.json",
+    "easy.en:validation/stealth-judge.json",
+    "hard.en:validation/sea-seepage.json",
+    "hard.en:validation/stealth-judge.json",
+    "ocean-horizon.en:validation/sea-seepage.json",
+    "ocean-horizon.en:validation/stealth-judge.json",
+    "primary.en:validation/sea-seepage.json",
+    "primary.en:validation/stealth-judge.json",
+    "primary.zh-cn:validation/sea-seepage.json",
+    "primary.zh-cn:validation/stealth-judge.json",
+    "site-plan.en:validation/sea-seepage.json",
+    "site-plan.en:validation/stealth-judge.json",
+    "void-horizon.en:validation/sea-seepage.json",
+    "void-horizon.en:validation/stealth-judge.json"
   ],
   "changed": [
-    "site-plan.en:validation/respawn-safety.json",
-    "site-plan.en:validation/watch-claims.json",
-    "site-plan.en:validation/watch-ledger.json"
+    "easy.en:critical-path.json",
+    "easy.en:datapack/data/gallery/function/tick.mcfunction",
+    "easy.en:validation/branch-path-read.json",
+    "easy.en:validation/branch-path-skipped.json",
+    "hard.en:critical-path.json",
+    "hard.en:datapack/data/gallery/function/tick.mcfunction",
+    "hard.en:validation/branch-path-read.json",
+    "hard.en:validation/branch-path-skipped.json",
+    "ocean-horizon.en:critical-path.json",
+    "ocean-horizon.en:datapack/data/gallery/function/tick.mcfunction",
+    "ocean-horizon.en:validation/branch-path-read.json",
+    "ocean-horizon.en:validation/branch-path-skipped.json",
+    "primary.en:critical-path.json",
+    "primary.en:datapack/data/gallery/function/tick.mcfunction",
+    "primary.en:validation/branch-path-read.json",
+    "primary.en:validation/branch-path-skipped.json",
+    "primary.zh-cn:critical-path.json",
+    "primary.zh-cn:datapack/data/gallery/function/tick.mcfunction",
+    "primary.zh-cn:validation/branch-path-read.json",
+    "primary.zh-cn:validation/branch-path-skipped.json",
+    "site-plan.en:critical-path.json",
+    "site-plan.en:datapack/data/gallery/function/tick.mcfunction",
+    "void-horizon.en:critical-path.json",
+    "void-horizon.en:datapack/data/gallery/function/tick.mcfunction",
+    "void-horizon.en:validation/branch-path-read.json",
+    "void-horizon.en:validation/branch-path-skipped.json"
   ],
   "classes": {
-    "PackTest": 17,
-    "validation ledger": 3
+    "datapack function": 7,
+    "other": 7,
+    "validation ledger": 26
   },
-  "removed": [
-    "site-plan.en:packtest-datapack/data/gallery/test/v04_dialogue_visibility.mcfunction"
-  ]
+  "removed": []
 }
