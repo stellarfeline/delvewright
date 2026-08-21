@@ -23,6 +23,15 @@ The repository's OWN registry is exercised too, in both directions: it must be
 complete now, and it must red when a pin is taken out of it. A checker that only
 ever passes proves nothing.
 
+A separate group is about the class where a registry entry's two obligations come
+apart. A pin named by a VERSION STRING is discovered by nothing — the literal
+carries no shape separating it from data — so the recorded decision is owed
+exactly where discovery is impossible. Both halves of that gap are asserted: the
+site that CAUSES the fetch is discovered by its key, so an unregistered one still
+reds; the sites that RESTATE it are covered by `bound_by`, and a binder that does
+not read the key, does not name a site, or is run by nothing is a red. Without
+those the field would be prose, and a defect can write prose.
+
 The last group is about the OTHER direction — a refusal the tree cannot satisfy.
 The enumeration that keeps `FETCH_SITES` honest reads a verb in the language of
 the file it is found in, because a COMMAND (`docker run`, `git clone`) is a
@@ -272,6 +281,227 @@ def test_a_checkout_at_a_branch_is_a_pin_too(repo: Path) -> None:
     r = run(repo)
     assert r.returncode == 1
     assert "stellarfeline/delvewright@main" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# A value with no shape: the class where "nothing escapes discovery" and "every
+# held version has a recorded decision" stop being the same claim.
+#
+# Deliberately not a real toolchain number. A version literal spelled the way the
+# repo's own is would be true of this tree as well as the fixture's, and a test
+# that can pass for a reason other than the one it names is the calibration trap.
+# ---------------------------------------------------------------------------
+TOOLVER = "9.87.6"
+BINDER = "tools/hold-versions.sh"
+STATED_SITES = ("versions.toml", "crates/app/Cargo.toml")
+
+
+def with_a_stated_pin(
+    repo: Path,
+    *,
+    binder_body: str | None = None,
+    key: str = "toolchain_version",
+    sites: tuple[str, ...] = STATED_SITES,
+    at: dict[str, str] | None = None,
+    binder: str = BINDER,
+    write_binder: bool = True,
+    runs: bool = True,
+) -> None:
+    """A pin named by a version string, with the binder the class owes.
+
+    `at` is what each site actually holds, so a caller can move one of them apart
+    from the rest — which is the drift the registry exists to catch.
+    """
+    at = at or {s: TOOLVER for s in sites}
+    for site, held in at.items():
+        add_file(repo, site, f'# fixture consumer\nversion = "{held}"\n')
+    if binder_body is None:
+        binder_body = (
+            "#!/usr/bin/env bash\n"
+            f"# reads {key} out of the manifest and asserts every consumer holds it\n"
+            + "".join(f'want_in "$ROOT/{s}"\n' for s in sites)
+        )
+    if write_binder:
+        add_file(repo, binder, binder_body)
+    if runs:
+        add_file(
+            repo,
+            ".github/workflows/hold.yml",
+            f"name: hold\njobs:\n  a:\n    steps:\n      - run: bash {binder}\n",
+        )
+    write_registry(
+        repo,
+        COMPLETE
+        + f"""
+[[pin]]
+id = "toolchain"
+value = "{TOOLVER}"
+sites = {list(sites)!r}
+policy = "immutable"
+bound_by = "{binder}"
+bound_key = "{key}"
+why = "the compiler every artifact is built with"
+""",
+    )
+
+
+def test_a_stated_pin_with_a_verified_binder_passes(repo: Path) -> None:
+    with_a_stated_pin(repo)
+    r = run(repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_version_string_with_no_binder_is_a_finding(repo: Path) -> None:
+    """`sites` alone, for a value nothing discovers, is an untestable claim."""
+    add_file(repo, "versions.toml", f'version = "{TOOLVER}"\n')
+    write_registry(
+        repo,
+        COMPLETE
+        + f"""
+[[pin]]
+id = "toolchain"
+value = "{TOOLVER}"
+sites = ["versions.toml"]
+policy = "immutable"
+why = "the compiler every artifact is built with"
+""",
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert "carries no pin shape" in r.stderr
+
+
+def test_a_binder_that_never_reads_the_key_is_a_finding(repo: Path) -> None:
+    """Required guard: a binder that does not bind is a red, or this is prose.
+
+    The named file exists, is run by a workflow, and names every site — and it
+    never reads the key, so the sites it lists agree only by intention.
+    """
+    with_a_stated_pin(
+        repo,
+        binder_body="#!/usr/bin/env bash\n"
+        + "".join(f'want_in "$ROOT/{s}"\n' for s in STATED_SITES),
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert "never reads `toolchain_version`" in r.stderr
+
+
+def test_a_binder_that_does_not_name_a_site_is_a_finding(repo: Path) -> None:
+    """A site no binder names is held by nobody, which is the state the entry denies."""
+    with_a_stated_pin(
+        repo,
+        binder_body="#!/usr/bin/env bash\n"
+        "# reads toolchain_version out of the manifest\n"
+        f'want_in "$ROOT/{STATED_SITES[0]}"\n',
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert f"never names {STATED_SITES[1]}" in r.stderr
+
+
+def test_a_binder_no_workflow_runs_is_a_finding(repo: Path) -> None:
+    """A gate nothing invokes is not a gate — the same demand `judged_by` makes."""
+    with_a_stated_pin(repo, runs=False)
+    r = run(repo)
+    assert r.returncode == 1
+    assert "declared and never runs" in r.stderr
+
+
+def test_a_binder_that_is_not_a_file_is_a_finding(repo: Path) -> None:
+    with_a_stated_pin(repo, binder="tools/no-such-checker.sh", write_binder=False)
+    r = run(repo)
+    assert r.returncode == 1
+    assert "not a readable file" in r.stderr
+
+
+def test_a_stated_site_that_lost_the_value_is_a_finding(repo: Path) -> None:
+    """The drift the whole registry exists to catch: one of the sites moves.
+
+    Nothing discovers this value, so the site claim has to be asserted directly.
+    Losing this would be the weakening, not the repair.
+    """
+    with_a_stated_pin(
+        repo, at={STATED_SITES[0]: TOOLVER, STATED_SITES[1]: "9.88.0"}
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert f"declares site {STATED_SITES[1]}" in r.stderr
+    assert "is not there any more" in r.stderr
+
+
+def test_a_site_holding_a_longer_version_does_not_count_as_agreement(
+    repo: Path,
+) -> None:
+    """`9.87.6` sits inside `9.87.65`, and a substring test would call that equal."""
+    with_a_stated_pin(
+        repo, at={STATED_SITES[0]: TOOLVER, STATED_SITES[1]: TOOLVER + "5"}
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert f"declares site {STATED_SITES[1]}" in r.stderr
+
+
+def test_a_shaped_value_may_not_declare_a_binder(repo: Path) -> None:
+    """The arm is decided by the object. A digest is found wherever it sits.
+
+    Letting an entry choose would make the effective obligation the disjunction
+    of the two arms, and only as strong as the weaker one.
+    """
+    add_file(repo, BINDER, "#!/usr/bin/env bash\n# image, .github/workflows/audit.yml\n")
+    add_file(
+        repo,
+        ".github/workflows/hold.yml",
+        f"name: hold\njobs:\n  a:\n    steps:\n      - run: bash {BINDER}\n",
+    )
+    write_registry(
+        repo,
+        f"""
+[[pin]]
+id = "fetcher"
+value = "{ACTION}"
+sites = [".github/workflows/audit.yml"]
+policy = "floating"
+why = "held at its major tag"
+
+[[pin]]
+id = "image"
+value = "{DIGEST}"
+sites = [".github/workflows/audit.yml"]
+policy = "immutable"
+bound_by = "{BINDER}"
+bound_key = "image"
+why = "third-party bytes"
+""",
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert "does not get to pick the weaker one" in r.stderr
+
+
+def test_a_keyed_manifest_field_is_discovered_though_its_value_has_no_shape(
+    repo: Path,
+) -> None:
+    """The other half of the gap: an unregistered version pin must still red.
+
+    rustup fetches the channel this file names, so the SITE carries the shape the
+    value does not. Without this, deleting the entry would restore green — which
+    is the weakening the registry exists to prevent.
+    """
+    write_registry(repo, COMPLETE)
+    add_file(repo, "rust-toolchain.toml", f'[toolchain]\nchannel = "{TOOLVER}"\n')
+    r = run(repo)
+    assert r.returncode == 1
+    assert f"unregistered pin {TOOLVER} in rust-toolchain.toml" in r.stderr
+
+
+def test_a_keyed_manifest_this_tool_cannot_read_is_a_finding(repo: Path) -> None:
+    """Discovering nothing is how an unregistered pin passes, so it is not a pass."""
+    write_registry(repo, COMPLETE)
+    add_file(repo, "rust-toolchain.toml", "# the channel moved somewhere else\n")
+    r = run(repo)
+    assert r.returncode == 1
+    assert "has no `toolchain.channel`" in r.stderr
 
 
 # ---------------------------------------------------------------------------

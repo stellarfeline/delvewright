@@ -35,13 +35,31 @@
 # It is not a watch list an author writes: the online check derives the watched
 # source directories from those packages in the upstream tree, and the offline
 # check reds if a `cargo build … -p <pkg>` in a site is missing from `builds`.
+#
+# `bound_by` + `bound_key` are for a value the shape scan cannot see. A hash or a
+# ref is found wherever it sits, so `sites` is both the discovery record and the
+# decision; a VERSION STRING carries no shape distinguishing it from data, so the
+# decision is owed exactly where discovery is impossible. Such an entry names the
+# checker that holds its sites equal and the key that checker reads the value
+# under, and check-pins.py verifies all three things a drifted pin could not
+# supply: the file really reads that key, it really names every declared site,
+# and a workflow really runs it. Every declared site is then asserted to carry
+# the value as a whole token.
+#
+# WHICH PAIR OF FIELDS AN ENTRY OWES IS NOT A CHOICE. The arm is read off the
+# value: a value with a pin shape may not declare `bound_by` (it would be the
+# weaker claim about an object that supports the stronger one), and a value
+# without one may not omit it (`sites` alone would be untestable). Where the
+# fetch itself is keyed — rustup reads `[toolchain] channel` and downloads it —
+# discovery reaches the site anyway, and that is what keeps an unregistered
+# version-string pin a red rather than a silence.
 
 # ---------------------------------------------------------------------------
 # The toolchain this repository is built with
 # ---------------------------------------------------------------------------
-# Named by VERSION rather than by bytes, which makes it the one entry here whose
-# value `check-pins.py` cannot discover. That is a fact about the registry's
-# population, not about this pin — see the entry's own `why`.
+# Named by VERSION rather than by bytes, so it is the entry that reaches both
+# ways: discovery finds it at rust-toolchain.toml, the one site where the string
+# CAUSES a fetch, and `bound_by` covers the three that restate it.
 
 [[pin]]
 id = "rust-toolchain"
@@ -53,6 +71,8 @@ sites = [
     "versions.toml",
 ]
 policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "rust_toolchain"
 why = """
 The Rust toolchain every artifact this project ships is built with. The channel
 in rust-toolchain.toml is the copy rustup obeys — it binds inside git worktrees
@@ -94,14 +114,18 @@ than answers. Not `floating`: that is for a ref that moves on purpose, and this
 one does not move. Not `track` or `release`: both judge a pin against the history
 of a repository this project builds, and rust-lang/rust is not one.
 
-DISCOVERY CANNOT SEE IT, and that is the finding rather than a defect in this
-entry. check-pins.py discovers a pin by SHAPE — 40-hex revisions, sha256
-digests, `uses: …@ref`, a checkout's (repository, ref) pair — and a semantic
-version string carries no shape that distinguishes it from data. So this entry
-reds the site-agreement check with a claim that is FALSE about the tree ("the
-value is not there any more"): the value is at all four sites and the checker
-cannot look. Deleting this entry restores green and is the weakening the registry
-exists to prevent; the repair is to widen what discovery can see.
+THE SHAPE SCAN CANNOT SEE IT. A semantic version carries nothing that separates
+it from data: 1.97.1 stands in five other tracked files as a measurement someone
+recorded, and a scan for the literal would call each of them a site. So the two
+obligations a registry entry carries come apart here — nothing discovers the
+value, and the decision is owed for exactly that reason — and each is met by its
+own means. rust-toolchain.toml is discovered by its KEY, because rustup fetches
+what `[toolchain] channel` names and that file exists for nothing else; an
+unregistered toolchain is therefore a red like any other pin. The three sites
+that RESTATE the value are covered by `bound_by`: check-versions.sh reads it as
+[engine].rust_toolchain and holds the channel, both `rust-version` floors and the
+manifest equal, ci.yml runs it, and check-pins.py verifies each of those three
+facts and then that the value stands as a whole token at every site.
 """
 
 # ---------------------------------------------------------------------------
