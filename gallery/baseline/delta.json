@@ -1,31 +1,6 @@
 {
-  "added": [
-    "site-plan.en:datapack/data/gallery/structure/gallery-yard.nbt"
-  ],
-  "changed": [
-    "easy.en:creator-datapack/layout.json",
-    "hard.en:creator-datapack/layout.json",
-    "ocean-horizon.en:creator-datapack/layout.json",
-    "primary.en:creator-datapack/layout.json",
-    "primary.zh-cn:creator-datapack/layout.json",
-    "site-plan.en:creator-datapack/layout.json",
-    "site-plan.en:critical-path.json",
-    "site-plan.en:datapack/data/gallery/function/activate_o_reach_the_end.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/place_all.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/place_verify.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/setup.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/setup_finish.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/tick.mcfunction",
-    "site-plan.en:render-plan.json",
-    "site-plan.en:validation/critical-path-waypoints.json",
-    "site-plan.en:validation/fluid-escape.json",
-    "void-horizon.en:creator-datapack/layout.json"
-  ],
-  "classes": {
-    "creator overlay": 7,
-    "datapack function": 7,
-    "other": 2,
-    "validation ledger": 2
-  },
+  "added": [],
+  "changed": [],
+  "classes": {},
   "removed": []
 }

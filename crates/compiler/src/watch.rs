@@ -67,9 +67,11 @@
 //!   family where nothing is watched is a different and much broader question —
 //!   most emitted functions have no template and never will — and folding it in
 //!   here would bury the finding this exists to surface. The limit is stated
-//!   rather than silent: [`WatchBinding`] reports unwatched families too, so a
-//!   mechanic with no runtime proof at all is visible in the ledger instead of
-//!   being passed over.
+//!   rather than silent: [`WatchBinding`] reports unwatched families too — by
+//!   NAME, with their members and their object count, not merely as a total —
+//!   so a mechanic with no runtime proof at all is visible in the ledger
+//!   instead of being passed over. A bare count would have stated the limit's
+//!   size and nothing an operator could act on.
 //! * **Sub-bodies are not siblings.** `lethal_east_pit` and
 //!   `lethal_east_pit_kill` share a prefix but only the first ends in a declared
 //!   id, so the second is never mistaken for an object. This is what keeps the
@@ -122,6 +124,26 @@ pub struct WatchBinding {
     /// Of those, families where NO member is watched. Not a `DW0810` finding
     /// (see the module doc), but reported so the limit is never silent.
     pub unwatched_families: usize,
+    /// Those same families **named**, each with the declared objects it holds.
+    ///
+    /// The count above without this was the stated limit stating only its own
+    /// size. `unwatched_families: 18` tells an operator that eighteen mechanics
+    /// carry no runtime proof and gives them no way to learn *which* — so the
+    /// number could only ever be read as a mood, and the module doc's promise
+    /// that such a mechanic is "visible in the ledger" was half kept. Naming
+    /// them is what makes the drawn scope actionable instead of merely honest.
+    ///
+    /// Set in the same loop as `unwatched_families`, so the two cannot drift.
+    pub unwatched_family_members: BTreeMap<String, Vec<String>>,
+    /// Declared objects living in those families — the population `examined()`
+    /// deliberately does **not** cover.
+    ///
+    /// Stated because a binding count owes a denominator (CLAUDE.md). `examined`
+    /// is the `DW0810` judgement's own denominator and is right to exclude
+    /// these: a family with no watched member is outside what `DW0810` judges.
+    /// But read alone it invites "61 objects examined" to be heard as "61 is all
+    /// the per-object bodies there are", which on the gallery is 61 of 124.
+    pub unwatched_family_objects: usize,
     /// Objects in multi-object families whose body the suite drives.
     pub watched_objects: usize,
     /// Objects in multi-object families whose body nothing drives, in a family
@@ -155,6 +177,8 @@ impl WatchBinding {
             "families": self.families,
             "multi_object_families": self.multi_object_families,
             "unwatched_families": self.unwatched_families,
+            "unwatched_family_objects": self.unwatched_family_objects,
+            "unwatched_family_members": self.unwatched_family_members,
             "watched_objects": self.watched_objects,
             "unwatched_objects": self.unwatched_objects,
             "unwatched": findings
@@ -298,6 +322,8 @@ pub fn check_tree(
         families: families.len(),
         multi_object_families: 0,
         unwatched_families: 0,
+        unwatched_family_members: BTreeMap::new(),
+        unwatched_family_objects: 0,
         watched_objects: 0,
         unwatched_objects: 0,
     };
@@ -315,6 +341,10 @@ pub fn check_tree(
             .collect();
         if watched.is_empty() {
             binding.unwatched_families += 1;
+            binding.unwatched_family_objects += members.len();
+            binding
+                .unwatched_family_members
+                .insert(family.clone(), members.keys().cloned().collect());
             continue;
         }
         binding.watched_objects += watched.len();
@@ -372,9 +402,10 @@ pub fn finding(
              one sibling proves nothing about the next; the level that exposed this shipped a \
              LETHAL timed gate, third of three, with no runtime proof at all and a green suite. \
              Drive every member of the family, not the first. (Examined {} declared id(s) against \
-             {} emitted campaign function(s), {} of which the suite invokes; {} multi-object \
-             family/families carry no runtime proof at all and are reported in \
-             `validation/watch-ledger.json` rather than here.)",
+             {} emitted campaign function(s), {} of which the suite invokes; a further {} \
+             multi-object family/families holding {} declared object(s) carry no runtime proof at \
+             all — outside this warning's scope and therefore NOT in the count above, and named \
+             one by one in `validation/watch-ledger.json`.)",
             binding.unwatched_objects,
             findings
                 .iter()
@@ -387,6 +418,7 @@ pub fn finding(
             binding.campaign_functions,
             binding.invoked,
             binding.unwatched_families,
+            binding.unwatched_family_objects,
         ),
     ))
 }
@@ -434,7 +466,14 @@ pub struct Claim {
     /// The mechanic as an author names it, for the message only.
     pub mechanic: &'static str,
     /// The emitted body families this claim covers, e.g. `tgate_open_`.
-    pub families: &'static [&'static str],
+    ///
+    /// Owned rather than `&'static [&'static str]` because a family prefix may
+    /// itself carry an object id: a dialogue node's mask body is
+    /// `dmask_<npc>_<node>`, so the family is per-NPC and cannot be a literal.
+    /// The claim over it is then one claim per NPC, each declaring that NPC's
+    /// own node list — which is the right shape anyway, since the thing being
+    /// claimed is "this NPC's every node", not "some node somewhere".
+    pub families: Vec<String>,
     /// Every declared object's function-safe id, from the plan's authored list.
     pub declared: BTreeSet<String>,
 }
@@ -528,7 +567,7 @@ pub fn check_claims(
     let mut breaches = Vec::new();
     for c in claims {
         binding.declared_objects += c.declared.len();
-        for family in c.families {
+        for family in &c.families {
             for id in &c.declared {
                 let f = format!("{family}{id}");
                 if !functions.contains(&f) {

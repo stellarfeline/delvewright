@@ -18,6 +18,11 @@ DELVE_DF="$ROOT/validation/Dockerfile.delve"
 TOOL_DF="$ROOT/validation/Dockerfile.toolserver"
 COMPOSE="$ROOT/validation/compose.yaml"
 HARNESS_PKG="$ROOT/harness/package.json"
+CI_WF="$ROOT/.github/workflows/ci.yml"
+RELEASE_WF="$ROOT/.github/workflows/release.yml"
+SKIN_REQ="$ROOT/tools/skin/requirements.txt"
+SKIN_PYPROJECT="$ROOT/tools/skin/pyproject.toml"
+SKIN_CATALOG="$ROOT/tools/skin/delve_skin/catalog.py"
 RENDER_CARGO="$ROOT/crates/render/Cargo.toml"
 BOOTSTRAP_SH="$ROOT/validation/server-bootstrap-cache.sh"
 
@@ -50,6 +55,15 @@ emit("GL_MATRIX_VERSION", d["render"]["gl_matrix_version"])
 emit("ESBUILD_VERSION",   d["render"]["esbuild_version"])
 emit("DEEPSLATE_BUNDLE",  d["render"]["deepslate_bundle"])
 emit("DEEPSLATE_SHA256",  d["render"]["deepslate_bundle_sha256"])
+emit("NODE_VERSION",         d["ci"]["node_version"])
+emit("PYTHON_TOOLS_VERSION", d["ci"]["python_tools_version"])
+emit("PYTHON_MECHA_VERSION", d["ci"]["python_mecha_version"])
+emit("MECHA_VERSION",        d["ci"]["mecha_version"])
+emit("MECHA_REQUIRES_PYTHON", d["ci"]["mecha_requires_python"])
+emit("MECHA_REQUIRES_BEET",   d["ci"]["mecha_requires_beet"])
+emit("BEET_VERSION",         d["ci"]["beet_version"])
+emit("PYTEST_VERSION",       d["ci"]["pytest_version"])
+emit("SKINPY_EXTENDED",      d["skin"]["skinpy_extended"])
 PY
 )"
 
@@ -336,6 +350,87 @@ while IFS=$'\t' read -r status msg; do
   if [ "$status" = "ok" ]; then pass "$msg"; else fail "$msg"; fi
 done < "$eng_report_file"
 rm -f "$eng_report_file"
+
+# Every occurrence of a keyed line in a file states the manifest value, and there
+# are exactly as many as declared. PRESENCE IS NOT ENOUGH for this class: the
+# drift it catches is one of five statements of a value moving while the rest sit
+# still, and a `grep -q` reads that as agreement because it stops at the first
+# one. The declared count is what makes a NEW site a decision rather than a
+# detail — a sixth job selecting a toolchain reds here until somebody says so.
+all_stated() { # <label> <extended-regex> <expected-literal> <expected-count> <file>
+  local label="$1" re="$2" good="$3" want="$4" file="$5"
+  local n bad
+  n="$( { grep -oE "$re" "$file" || true; } | wc -l | tr -d ' ')"
+  bad="$( { grep -oE "$re" "$file" || true; } | grep -vxF "$good" | sort -u || true)"
+  if [ -n "$bad" ]; then
+    fail "$label: ${file##*/} states $(echo "$bad" | tr '\n' ' ') where versions.toml says '$good'"
+  elif [ "$n" != "$want" ]; then
+    fail "$label: ${file##*/} carries $n occurrence(s) and $want are declared — a new site for a pinned toolchain is a decision, not a detail"
+  else
+    pass "$label ($n x '$good' in ${file##*/})"
+  fi
+}
+
+echo "== CI toolchain ([ci], [skin]) =="
+# Node runtime for the harness and the storybook jobs.
+all_stated "node -> ci.yml"      'node-version: *"[^"]*"' "node-version: \"$NODE_VERSION\"" 2 "$CI_WF"
+all_stated "node -> release.yml" 'node-version: *"[^"]*"' "node-version: \"$NODE_VERSION\"" 3 "$RELEASE_WF"
+
+# Python is the one value in this section that is NOT one value: two interpreter
+# lines, for two disjoint dependency sets. So the binding is over the whole set —
+# every `python-version:` in the workflow is one of the two the manifest
+# declares, and each is used exactly as many times as declared. A third value
+# appearing anywhere breaks the sum and reds, which is the property a per-value
+# `want_in` cannot give.
+py_total="$( { grep -oE 'python-version: *"[^"]*"' "$CI_WF" || true; } | wc -l | tr -d ' ')"
+py_tools="$( { grep -oF "python-version: \"$PYTHON_TOOLS_VERSION\"" "$CI_WF" || true; } | wc -l | tr -d ' ')"
+py_mecha="$( { grep -oF "python-version: \"$PYTHON_MECHA_VERSION\"" "$CI_WF" || true; } | wc -l | tr -d ' ')"
+if [ "$py_tools" = "2" ] && [ "$py_mecha" = "1" ] && [ "$py_total" = "3" ]; then
+  pass "python lines -> ci.yml (2 x $PYTHON_TOOLS_VERSION + 1 x $PYTHON_MECHA_VERSION = $py_total, none other)"
+else
+  fail "python lines -> ci.yml: $py_total selection(s), of which $py_tools at '$PYTHON_TOOLS_VERSION' and $py_mecha at '$PYTHON_MECHA_VERSION' — versions.toml declares 2 and 1 and nothing else"
+fi
+
+# The mecha cross-check's interpreter and its beet are ENTAILED, not chosen:
+# mecha declares both floors itself. Recording them makes the reason machine-held
+# instead of a sentence — lowering either line reds here rather than failing an
+# install inside a required job, where the message would name pip and not the pin.
+floor_report="$(python3 - "$PYTHON_MECHA_VERSION" "$MECHA_REQUIRES_PYTHON" "$BEET_VERSION" "$MECHA_REQUIRES_BEET" <<'FLOORS'
+import sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+
+
+def parts(v):
+    return tuple(int(x) for x in v.split(".") if x.isdigit())
+
+
+got_py, floor_py, got_beet, floor_beet = sys.argv[1:5]
+for label, got, floor in (
+    ("mecha cross-check interpreter", got_py, floor_py),
+    ("beet", got_beet, floor_beet),
+):
+    ok = parts(got) >= parts(floor)
+    print(f"{'ok' if ok else 'FAIL'}\t{label} {got} vs mecha's declared floor {floor}")
+FLOORS
+)"
+while IFS=$'\t' read -r status msg; do
+  [ -n "$status" ] || continue
+  if [ "$status" = "ok" ]; then pass "$msg"; else fail "$msg"; fi
+done <<< "$floor_report"
+
+# The packages CI installs into those interpreters, each an instrument of a
+# required status check and so each named literally rather than resolved.
+all_stated "mecha -> ci.yml"  'mecha==[0-9A-Za-z.*+!-]*'  "mecha==$MECHA_VERSION"   1 "$CI_WF"
+all_stated "beet -> ci.yml"   'beet==[0-9A-Za-z.*+!-]*'   "beet==$BEET_VERSION"     1 "$CI_WF"
+all_stated "pytest -> ci.yml" 'pytest==[0-9A-Za-z.*+!-]*' "pytest==$PYTEST_VERSION" 2 "$CI_WF"
+
+echo "== Skin toolchain ([skin], spec-0009) =="
+# Four statements of one library version, and the fourth is the one that matters
+# most: catalog.py stamps it into every emitted provenance record, so a bump that
+# missed it would ship metadata naming a library that did not draw the picture.
+all_stated "skinpy -> tools/skin/requirements.txt" 'skinpy-extended==[0-9A-Za-z.*+!-]*' "skinpy-extended==$SKINPY_EXTENDED" 1 "$SKIN_REQ"
+all_stated "skinpy -> tools/skin/pyproject.toml"   'skinpy-extended==[0-9A-Za-z.*+!-]*' "skinpy-extended==$SKINPY_EXTENDED" 1 "$SKIN_PYPROJECT"
+all_stated "skinpy -> tools/skin/delve_skin/catalog.py" '"version": "[^"]*", "license"' "\"version\": \"$SKINPY_EXTENDED\", \"license\"" 1 "$SKIN_CATALOG"
 
 echo "== Server-jar bootstrap =="
 # `server_jar_url` / `server_jar_sha256` stopped being provenance-only on 2026-08-05:

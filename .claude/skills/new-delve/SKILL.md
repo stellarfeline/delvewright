@@ -1312,10 +1312,14 @@ and another walk.
 The loop:
 
 1. **Walk the blockout and record it.** Write `walk-record.json` beside the stage
-   documents: the two hashes every site-plan build prints, the engine revision it
-   printed them from, `verdict: "passed"`, and whatever the walk noted. Nothing
-   about detail compiles without it (`DW0841`), including asking for an
-   allocation.
+   documents: the three hashes every site-plan build prints
+   (`site_plan_sha256`, `layout_graph_sha256`, `blockout_sha256`), the engine
+   revision it printed them from, `verdict: "passed"`, and whatever the walk
+   noted. Nothing about detail compiles without it (`DW0841`), including asking
+   for an allocation. **The first two hashes are the record's freshness key**:
+   the whole a walk judges is derived from the plan AND the graph, so editing
+   either one — even an edit that moves no block, such as which side a barred way
+   opens from — re-opens this gate and asks for another walk.
 2. **`delvec allocation <campaign-dir> <place>`** — the frame's extents, the
    datum, every seam with the face class it must be answered by, and the owed
    anchor names. Build the piece against that and nothing else. It is an input to

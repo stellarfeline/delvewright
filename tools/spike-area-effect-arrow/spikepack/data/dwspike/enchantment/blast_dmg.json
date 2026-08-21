@@ -1,15 +1,27 @@
 {
-  "weight": 1,
-  "max_level": 1,
-  "min_cost": {
-    "base": 1,
-    "per_level_above_first": 1
+  "anvil_cost": 1,
+  "description": {
+    "translate": "dwspike.blast_dmg"
+  },
+  "effects": {
+    "minecraft:hit_block": [
+      {
+        "effect": {
+          "function": "dwspike:hit_damage",
+          "type": "minecraft:run_function"
+        }
+      }
+    ]
   },
   "max_cost": {
     "base": 50,
     "per_level_above_first": 1
   },
-  "anvil_cost": 1,
+  "max_level": 1,
+  "min_cost": {
+    "base": 1,
+    "per_level_above_first": 1
+  },
   "slots": [
     "any"
   ],
@@ -23,17 +35,5 @@
     "minecraft:iron_spear",
     "minecraft:copper_spear"
   ],
-  "description": {
-    "translate": "dwspike.blast_dmg"
-  },
-  "effects": {
-    "minecraft:hit_block": [
-      {
-        "effect": {
-          "type": "minecraft:run_function",
-          "function": "dwspike:hit_damage"
-        }
-      }
-    ]
-  }
+  "weight": 1
 }
