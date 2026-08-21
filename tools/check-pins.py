@@ -32,12 +32,49 @@ makes in order to build from the pin. That is deliberate: the check runs in the
 same job, over the same value, immediately before the thing it guards. There is
 no arrangement in which a job builds from a pin and skips its own next step.
 
+## Two obligations, and the class where they come apart
+
+A registry entry carries two independent things: that **nothing escapes
+discovery** — every external version is FOUND by the tool — and that **every held
+version has a recorded decision** — someone said what it is held for and on what
+terms it may move. For a hash- or ref-shaped pin the two coincide, so `sites`
+serves both: the value is found wherever it sits, and the entry is the decision.
+
+They come apart for a pin named by a VERSION STRING, and they come apart in the
+worst direction: the decision is owed exactly where discovery is impossible. A
+semantic version carries no shape distinguishing it from data — `1.97.1` in a
+`rust-version` floor and `1.97.1` in a comment measuring a build are the same
+seven characters — so a scan for it finds prose, and a scan by shape finds
+nothing at all. Left there the gap is invisible in BOTH directions: nothing reds
+while such a pin is absent from the registry, and an entry that registers one
+reds against a tree it is telling the truth about.
+
+Both halves are closed, and by different means, because the two obligations are
+different:
+
+- **Discovery reaches the site that CAUSES the fetch.** A value with no shape can
+  still be discovered when its SITE has one: a manifest whose schema fixes both
+  the file kind and the key. `rust-toolchain.toml`'s `[toolchain] channel` is the
+  string rustup downloads a toolchain for, in a file that exists for nothing else.
+  `KEYED_VERSIONS` is that map. It is a positive claim about a file schema, never
+  an exception list, and it can only ever be incomplete in the direction of
+  discovering less — an author cannot add a key to escape anything.
+- **`bound_by` reaches the sites that RESTATE it.** A `rust-version` floor in a
+  published manifest, or a restatement in `versions.toml`, is indistinguishable
+  from data, and no widening will ever reach it. So the entry names the checker
+  that holds those sites equal and the key that checker reads the value under,
+  and the offline half verifies all three of the things a defect cannot supply:
+  the named file really reads that key, it really names every site the entry
+  declares, and a workflow really runs it. The arm is not the author's to pick —
+  see `has_pin_shape`.
+
 ## Discovery, and why this enumeration is closed
 
 A pin that nothing reads cannot select anything, so the places a pin can live are
 exactly the places this repo can FETCH from: workflow and action definitions,
-`versions.toml`, Dockerfiles, compose files, Cargo manifests, `package.json`, and
-shell that runs a container or clones a repo. `FETCH_SITES` is that list.
+`versions.toml`, `rust-toolchain.toml`, Dockerfiles, compose files, Cargo
+manifests, `package.json`, and shell that runs a container or clones a repo.
+`FETCH_SITES` is that list.
 
 An enumeration somebody remembered is how this shape survives review, so the list
 is itself checked: `stray_fetch_verbs()` scans EVERY tracked, executable-or-
@@ -116,8 +153,12 @@ FETCH_SITES = (
     "**/*.js",
     "**/Dockerfile",
     "**/Dockerfile.*",
-    # Manifests a package manager resolves from.
+    # Manifests a package manager resolves from. `rust-toolchain.toml` is one:
+    # rustup downloads the channel named in it, inside worktrees too, and no
+    # workflow overrides it — so it is the file that literally causes a toolchain
+    # to be fetched, and a pin written there was outside the registry's reach.
     "versions.toml",
+    "rust-toolchain.toml",
     "**/Cargo.toml",
     "**/package.json",
 )
@@ -229,6 +270,28 @@ RE_ACTION = re.compile(
     r"uses:\s*(?P<ref>[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.:-]+)"
 )
 RE_CARGO_BUILD_PKG = re.compile(r"cargo\s+build[^\n]*?-p\s+([A-Za-z0-9_-]+)")
+# The same ref grammar as RE_ACTION, without the `uses:` that anchors it to a
+# workflow line — because here it is asked of a registry VALUE rather than of a
+# file. Kept beside its twin so a change to one is read against the other.
+RE_ACTION_REF = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[A-Za-z0-9_.:-]+")
+
+# A value with no shape of its own, discovered because its SITE has one: a TOML
+# manifest whose schema fixes the file kind AND the key, so what sits there is a
+# fetched version by the definition of the tool that reads it. Keyed by basename
+# to the dotted key path.
+#
+# This is a positive claim about a file's schema — "the tool that reads this file
+# fetches what this key names" — and never a claim that some other file is safe.
+# A kind absent from the map is simply not discovered this way, so the map can
+# only be incomplete in the direction of finding LESS, and an entry cannot escape
+# an obligation by the map growing: a new key only ever adds discoveries, each of
+# which must then be registered.
+KEYED_VERSIONS = {
+    # rustup installs the channel named here. ADR-0006's byte-identity gate
+    # compares two compiles made by the same binary, so nothing else in the tree
+    # can see this string move.
+    "rust-toolchain.toml": ("toolchain", "channel"),
+}
 
 # A cross-repo checkout is a pin whether or not it is written as a hex literal:
 # `repository:` names the thing and `ref:` names the version. The ref is often an
@@ -351,13 +414,77 @@ def stray_fetch_verbs(
     return stray, examined, applications
 
 
-def literals(root: pathlib.Path, sites: list[str]) -> dict[str, set[str]]:
-    """value -> set of site files carrying it, over every fetch site."""
+def has_pin_shape(value: str) -> bool:
+    """Whether the shape scan could find `value` wherever it sits.
+
+    The predicate that decides which arm an entry is on, and it reads the VALUE —
+    so the arm is a fact about the object rather than something an entry selects.
+    A 40-hex revision, a digest, or an `owner/repo@ref` is found by the scan; a
+    version string is not, and no amount of declaring makes it so.
+    """
+    return bool(
+        RE_REV.fullmatch(value)
+        or RE_DIGEST.fullmatch(value)
+        or RE_BARE_DIGEST.fullmatch(value)
+        or RE_ACTION_REF.fullmatch(value)
+    )
+
+
+def literal_at(text: str, value: str) -> bool:
+    """Whether `value` stands in `text` as a whole token.
+
+    Substring is the wrong question for a version: `1.97.1` sits inside `1.97.10`
+    and inside `21.97.1`, and either would read as agreement. Same reason the
+    shell rule says a version literal goes through `grep -F` — one keystroke of
+    imprecision returns a plausible wrong answer.
+    """
+    return (
+        re.search(r"(?<![0-9A-Za-z.])" + re.escape(value) + r"(?![0-9A-Za-z.])", text)
+        is not None
+    )
+
+
+def keyed_value(text: str, key_path: tuple[str, ...]) -> tuple[str | None, str | None]:
+    """The string at `key_path` in a TOML document, or a reason there is none."""
+    try:
+        node = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        return None, f"is not parseable TOML ({exc})"
+    for part in key_path:
+        if not isinstance(node, dict) or part not in node:
+            return None, f"has no `{'.'.join(key_path)}`"
+        node = node[part]
+    if not isinstance(node, str):
+        return None, f"`{'.'.join(key_path)}` is not a string"
+    return node, None
+
+
+def literals(
+    root: pathlib.Path, sites: list[str]
+) -> tuple[dict[str, set[str]], list[str]]:
+    """value -> set of site files carrying it, over every fetch site.
+
+    Plus the findings of the keyed pass, which are about a manifest this tool is
+    unable to READ — a state that must red rather than quietly discover nothing,
+    since discovering nothing is how an unregistered pin passes.
+    """
     found: dict[str, set[str]] = {}
+    keyed_errors: list[str] = []
     for rel in sites:
         text = read_text(root / rel)
         if text is None:
             continue
+        key_path = KEYED_VERSIONS.get(rel.rsplit("/", 1)[-1])
+        if key_path is not None:
+            value, why = keyed_value(text, key_path)
+            if value is None:
+                keyed_errors.append(
+                    f"{rel} is the manifest `{'.'.join(key_path)}` names a fetched "
+                    f"version in, and it {why}. A pin this tool cannot read is a "
+                    f"pin it cannot report as unregistered."
+                )
+            else:
+                found.setdefault(value, set()).add(rel)
         for rx in (RE_DIGEST, RE_BARE_DIGEST, RE_REV):
             for m in rx.finditer(text):
                 lit = m.group(0)
@@ -380,7 +507,7 @@ def literals(root: pathlib.Path, sites: list[str]) -> dict[str, set[str]]:
             if RE_REV.fullmatch(ref):
                 continue  # already discovered as a revision literal
             found.setdefault(f"{m.group('repo')}@{ref}", set()).add(rel)
-    return found
+    return found, keyed_errors
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +518,53 @@ def load_registry(path: pathlib.Path) -> list[dict]:
     with path.open("rb") as fh:
         data = tomllib.load(fh)
     return data.get("pin", [])
+
+
+def check_bound_by(
+    root: pathlib.Path,
+    files: list[str],
+    pid: str,
+    bound_by: str,
+    bound_key: str,
+    declared: set[str],
+) -> list[str]:
+    """The three things a binder must supply, none of which the defect can.
+
+    `judged_by` is the shape being reused: a named file believed on its own word
+    is prose, and this project has shipped that five times. So the claim is
+    checked rather than read. A pin whose sites have silently drifted apart
+    cannot produce a checker that reads its key and names every one of them, and
+    a binding nobody runs is the UNRUN mode wearing a field's clothes.
+    """
+    errors: list[str] = []
+    text = read_text(root / bound_by)
+    if text is None:
+        return [
+            f"{pid}: `bound_by` names {bound_by}, which is not a readable file "
+            f"in this repo"
+        ]
+    if bound_key not in text:
+        errors.append(
+            f"{pid}: `bound_by` names {bound_by}, which never reads "
+            f"`{bound_key}` — a binder that does not read the key binds nothing, "
+            f"and the sites below would agree only by intention"
+        )
+    unnamed = sorted(s for s in declared if s not in text)
+    if unnamed:
+        errors.append(
+            f"{pid}: {bound_by} never names {', '.join(unnamed)}, which this "
+            f"entry declares as site(s). What discovery cannot see, the binder "
+            f"has to hold equal — a site no binder names is held by nobody."
+        )
+    if not any(
+        f.startswith(".github/workflows/") and bound_by in (read_text(root / f) or "")
+        for f in files
+    ):
+        errors.append(
+            f"{pid}: no workflow runs {bound_by}, so this pin's binding is "
+            f"declared and never runs"
+        )
+    return errors
 
 
 def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[str]]:
@@ -423,7 +597,8 @@ def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[s
             f"reach. Add the pattern (and the pins) rather than the exception."
         )
 
-    discovered = literals(root, sites)
+    discovered, keyed_errors = literals(root, sites)
+    errors.extend(keyed_errors)
     by_value = {p.get("value"): p for p in registry}
 
     # Every registry entry is well-formed and still describes its files.
@@ -496,8 +671,43 @@ def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[s
         value, declared = pin.get("value"), set(pin.get("sites", []))
         if not value:
             continue
+
+        # Which arm this entry is on is read off the VALUE, so it is never a
+        # choice. A shaped value is found wherever it sits and gets nothing from
+        # declaring a binder; an unshaped one is found nowhere and cannot be left
+        # resting on `sites` alone, because that claim would be unfalsifiable.
+        bound_by, bound_key = pin.get("bound_by"), pin.get("bound_key")
+        stated = False
+        if has_pin_shape(value):
+            if bound_by or bound_key:
+                errors.append(
+                    f"{pid}: declares `bound_by`, which exists for a value the "
+                    f"shape scan cannot see — {value} has a pin shape and is "
+                    f"discovered wherever it sits. The arm is decided by the "
+                    f"value; an entry does not get to pick the weaker one."
+                )
+        elif not (bound_by and bound_key):
+            errors.append(
+                f"{pid}: {value} carries no pin shape — nothing discovers it, so "
+                f"`sites` alone is a claim no check can test. Name `bound_by`, "
+                f"the checker that holds those sites equal, and `bound_key`, the "
+                f"key it reads the value under."
+            )
+        else:
+            stated = True
+            errors.extend(
+                check_bound_by(root, files, pid, bound_by, bound_key, declared)
+            )
+
         actual = discovered.get(value, set())
         for missing in sorted(declared - actual):
+            # A stated site is verified directly: the value has to STAND there,
+            # as a whole token. That is the drift the registry exists to catch —
+            # four sites holding one toolchain, and a bump that moves two of them.
+            if stated:
+                text = read_text(root / missing)
+                if text is not None and literal_at(text, value):
+                    continue
             errors.append(
                 f"{pid}: declares site {missing} but the value {value} is not "
                 f"there any more — the registry drifted from the file"

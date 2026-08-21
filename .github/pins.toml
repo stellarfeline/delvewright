@@ -35,6 +35,98 @@
 # It is not a watch list an author writes: the online check derives the watched
 # source directories from those packages in the upstream tree, and the offline
 # check reds if a `cargo build … -p <pkg>` in a site is missing from `builds`.
+#
+# `bound_by` + `bound_key` are for a value the shape scan cannot see. A hash or a
+# ref is found wherever it sits, so `sites` is both the discovery record and the
+# decision; a VERSION STRING carries no shape distinguishing it from data, so the
+# decision is owed exactly where discovery is impossible. Such an entry names the
+# checker that holds its sites equal and the key that checker reads the value
+# under, and check-pins.py verifies all three things a drifted pin could not
+# supply: the file really reads that key, it really names every declared site,
+# and a workflow really runs it. Every declared site is then asserted to carry
+# the value as a whole token.
+#
+# WHICH PAIR OF FIELDS AN ENTRY OWES IS NOT A CHOICE. The arm is read off the
+# value: a value with a pin shape may not declare `bound_by` (it would be the
+# weaker claim about an object that supports the stronger one), and a value
+# without one may not omit it (`sites` alone would be untestable). Where the
+# fetch itself is keyed — rustup reads `[toolchain] channel` and downloads it —
+# discovery reaches the site anyway, and that is what keeps an unregistered
+# version-string pin a red rather than a silence.
+
+# ---------------------------------------------------------------------------
+# The toolchain this repository is built with
+# ---------------------------------------------------------------------------
+# Named by VERSION rather than by bytes, so it is the entry that reaches both
+# ways: discovery finds it at rust-toolchain.toml, the one site where the string
+# CAUSES a fetch, and `bound_by` covers the three that restate it.
+
+[[pin]]
+id = "rust-toolchain"
+value = "1.97.1"
+sites = [
+    "crates/compiler/Cargo.toml",
+    "crates/dsl/Cargo.toml",
+    "rust-toolchain.toml",
+    "versions.toml",
+]
+policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "rust_toolchain"
+why = """
+The Rust toolchain every artifact this project ships is built with. The channel
+in rust-toolchain.toml is the copy rustup obeys — it binds inside git worktrees
+too, and no workflow overrides it, so CI and a creator's own clone build on the
+same compiler. versions.toml restates it and both published manifests carry it as
+their `rust-version` floor; validation/check-versions.sh holds those four equal,
+and tools/check-reference-versions.py holds the two crate READMEs' "Rust 1.97.1
+or newer" line equal to them in turn.
+
+HELD FOR one instrument, constant across time and machines. ADR-0006's
+double-build gate compares two compiles made by the SAME binary, so it cannot see
+a toolchain change at all; what makes a byte-identity result from one month
+comparable to the next is that this string did not move. The same goes for every
+measured figure in docs/reference/distribution-size.md, each taken "on rustc
+1.97.1" — moving the pin silently re-reads all of them against a different
+instrument.
+
+DRIFT COSTS three things, none of which reds where the change was made.
+`cargo clippy -D warnings` is a required status check, so a toolchain carrying
+new lints reds every open pull request at once, for work unrelated to any of
+them. A codegen or float-formatting change moves emitted bytes with nothing
+anywhere saying the instrument moved. And a `rust-version` looser than what
+anybody has actually built on is an untested promise, discovered by a stranger
+running `cargo install`.
+
+RIGHT TO MOVE — and it is allowed to move, because a released delve reproduces
+through its own pinned engine (versions.toml + OCI) rather than through eternal
+byte-stable emission, so freezing this forever was never the requirement. The
+terms: a bump is its own explicit, proof-carrying round and never a side effect
+of another change, and it moves all four sites in one commit, which
+check-versions.sh already refuses to let anyone do by halves.
+
+POLICY `immutable`. rust-lang never republishes a point release, so 1.97.1 names
+a fixed set of published artifacts rather than a moving ref, and rustup verifies
+their bytes against its own signed manifests — the content-addressing is one
+layer down, held by the publisher. Whether 1.97.1 is still CURRENT is a
+supply-chain question with a different owner, which this gate declines rather
+than answers. Not `floating`: that is for a ref that moves on purpose, and this
+one does not move. Not `track` or `release`: both judge a pin against the history
+of a repository this project builds, and rust-lang/rust is not one.
+
+THE SHAPE SCAN CANNOT SEE IT. A semantic version carries nothing that separates
+it from data: 1.97.1 stands in five other tracked files as a measurement someone
+recorded, and a scan for the literal would call each of them a site. So the two
+obligations a registry entry carries come apart here — nothing discovers the
+value, and the decision is owed for exactly that reason — and each is met by its
+own means. rust-toolchain.toml is discovered by its KEY, because rustup fetches
+what `[toolchain] channel` names and that file exists for nothing else; an
+unregistered toolchain is therefore a red like any other pin. The three sites
+that RESTATE the value are covered by `bound_by`: check-versions.sh reads it as
+[engine].rust_toolchain and holds the channel, both `rust-version` floors and the
+manifest equal, ci.yml runs it, and check-pins.py verifies each of those three
+facts and then that the value stands as a whole token at every site.
+"""
 
 # ---------------------------------------------------------------------------
 # Our own history
