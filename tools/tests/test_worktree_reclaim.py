@@ -14,8 +14,8 @@ test, rather than a mocked-out function that a refactor could silently re-bind.
 
 ## Binding count for the build-output ladder
 
-44 tests here, of which 10 cover `decide_target`. Run against the version that
-preceded it, **9 of those 10 go red** — which is what says they bind to the new
+45 tests here, of which 11 cover `decide_target`. Run against the version that
+preceded it, **10 of those 11 go red** — which is what says they bind to the new
 behaviour rather than passing for an unrelated reason.
 
 The tenth is the finding, and it is worth more than the nine. It is
@@ -770,6 +770,32 @@ def test_a_lease_covers_the_scratch_directory_beside_the_tree(fx, tmp_path):
     out = sweep(fx, fake_gh(tmp_path, OPEN), "--apply", "--targets-only")
     assert scratch_target.exists(), "a claimed worker's scratch build output must survive"
     assert "scratch directory beside a claimed tree" in verdict_for(out, scratch_target)[1]
+
+
+def test_a_kept_row_never_claims_the_remote_said_something_it_was_not_asked(fx, tmp_path):
+    """"The work has not landed" is a claim ABOUT THE REMOTE, and it is unearned
+    when the remote could not be asked. A row that prints the two as one fact is
+    the shape this whole tool exists to refuse, at the smallest scale: an absent
+    answer wearing the clothes of a negative one."""
+    wt = fx.worktree("wt-open", "inflight")
+    t = make_target(wt)
+
+    # asked, and answered -> the row may name the answer
+    v, why = verdict_for(sweep(fx, fake_gh(tmp_path, OPEN)), t)
+    assert v == "KEEP" and "is OPEN" in why
+
+    # could not be asked -> the row must say so instead
+    v, why = verdict_for(sweep(fx, broken_gh(tmp_path)), t)
+    assert v == "KEEP"
+    assert "could not be asked" in why
+    assert "has not landed" not in why
+
+    # detached, so there is nothing to ask about
+    det = fx.worktree("wt-det", detached=True)
+    t2 = make_target(det)
+    v, why = verdict_for(sweep(fx, fake_gh(tmp_path, OPEN)), t2)
+    assert v == "KEEP"
+    assert "no branch" in why and "has not landed" not in why
 
 
 def test_one_target_directory_is_counted_once_however_many_roots_reach_it(fx, tmp_path):

@@ -903,15 +903,28 @@ def decide_target(
         td.reason = f"IDLE — nothing under it modified for {td.idle_hours:.0f}h (window {idle_window:.0f}h), and no build holds its lock"
         return
 
-    if td.tree is not None and td.tree.branch and authority is not None:
+    # What the remote said, kept apart from what it could not be asked. The two
+    # are different facts and the row must not print one as the other: "the work
+    # has not landed" is a claim about the remote, and it is unearned whenever
+    # there was no branch to ask about or the query failed.
+    landing = "the work has not landed"
+    if td.tree is None or not td.tree.branch:
+        landing = "no branch, so the remote holds no verdict about it"
+    elif authority is None:
+        landing = "no pull-request authority was available for its repository"
+    else:
         pr, pr_error = authority.for_branch(td.tree.branch)
-        if not pr_error and pr is not None and pr.get("state") in {"MERGED", "CLOSED"}:
+        if pr_error:
+            landing = f"the remote could not be asked ({pr_error})"
+        elif pr is not None and pr.get("state") in {"MERGED", "CLOSED"}:
             td.verdict = "RECLAIM"
             td.reason = (
                 f"LANDED — pull request #{pr.get('number')} is {pr.get('state')} on the remote, "
                 "so this output rebuilds from what the remote already holds"
             )
             return
+        elif pr is not None:
+            landing = f"pull request #{pr.get('number')} is {pr.get('state')}"
 
     if td.idle_hours is None:
         td.verdict = "KEEP"
@@ -920,7 +933,7 @@ def decide_target(
     td.verdict = "KEEP"
     td.reason = (
         f"still live — a file modified {td.idle_hours:.1f}h ago is inside the "
-        f"{idle_window:.0f}h window, and the work has not landed"
+        f"{idle_window:.0f}h window, and {landing}"
     )
 
 
