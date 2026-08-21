@@ -141,7 +141,7 @@ echo "   created    : $NEW  ($(git -C "$NEW" rev-parse HEAD))"
 # dangles — and a dangling `campaigns` does not crash a worker, it makes it
 # MEASURE ZERO, which is the oldest silent failure in this repository. So the
 # target is resolved to an absolute path here and the absolute path is written.
-CONTENT="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$MAIN/campaigns" 2>/dev/null || true)"
+CONTENT="$(python3 -c 'import os,sys; sys.stdout.reconfigure(newline="\n"); print(os.path.realpath(sys.argv[1]))' "$MAIN/campaigns" 2>/dev/null || true)"
 if [ -n "$CONTENT" ] && [ -d "$CONTENT" ]; then
   ln -sfn "$CONTENT" "$NEW/campaigns"
   echo "   campaigns  : -> $CONTENT"
