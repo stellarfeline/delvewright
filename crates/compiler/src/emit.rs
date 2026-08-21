@@ -862,6 +862,13 @@ pub fn build_with_warnings(
                 // or walls — the water-flow / post-nav-mutation divergence class —
                 // failing the build loudly (DW0314) instead of stranding the bot.
                 crate::nav::verify_exported_routes(&world, &routes)?;
+                // `DW0850`: the volume that completes a `reach` and the footing
+                // a body can reach it from are the same place. Bound HERE, to
+                // the same build event and the same final world the waypoint
+                // proof judges — the endpoint snap searches three blocks and
+                // the completion cube reaches one, so a route can be proven,
+                // exported and walked to a cell that never fires the objective.
+                crate::reach::check_reach_completion(plan, &world, &routes)?;
                 // Stair-orientation proof (DW0430). Nav models a stair
                 // as a full cube, so a reversed stair reads as a legal one-block
                 // jump and every existing proof passes — the delve ships with a
@@ -3193,20 +3200,30 @@ fn emit_functions(
                     // region instead — the anchor cell with ±1 generosity on every
                     // axis (a 3×3×3 box centred on the anchor). v0.2 keeps the
                     // sphere so hello-world / keep-crawl stay byte-identical.
-                    if v03 {
-                        tick.push(format!(
-                            "execute as @a{} if entity @s[x={},dx=2,y={},dy=2,z={},dz=2] run function {ns}:complete_{}",
-                            pending_guard(plan, o, &qa),
-                            pos[0] - 1, pos[1] - 1, pos[2] - 1,
-                            safe_obj_fn(id.as_str())
-                        ));
-                    } else {
-                        tick.push(format!(
-                            "execute as @a{} if entity @s[x={},y={},z={},distance=..{}] run function {ns}:complete_{}",
-                            pending_guard(plan, o, &qa),
-                            pos[0], pos[1], pos[2], radius,
-                            safe_obj_fn(id.as_str())
-                        ));
+                    //
+                    // The volume itself is NOT decided here. `crate::reach` is the
+                    // one authority, and `crate::reach::check_reach_completion`
+                    // proves the party can get inside the very value this selector
+                    // is formatted from — so the string and the proof cannot come
+                    // to disagree about a rule that is invisible in the DSL and
+                    // only shows up as an objective that never fires.
+                    match crate::reach::ReachVolume::of(v03, pos, *radius) {
+                        crate::reach::ReachVolume::Cube { min, .. } => {
+                            tick.push(format!(
+                                "execute as @a{} if entity @s[x={},dx=2,y={},dy=2,z={},dz=2] run function {ns}:complete_{}",
+                                pending_guard(plan, o, &qa),
+                                min[0], min[1], min[2],
+                                safe_obj_fn(id.as_str())
+                            ));
+                        }
+                        crate::reach::ReachVolume::Sphere { centre, radius } => {
+                            tick.push(format!(
+                                "execute as @a{} if entity @s[x={},y={},z={},distance=..{}] run function {ns}:complete_{}",
+                                pending_guard(plan, o, &qa),
+                                centre[0], centre[1], centre[2], radius,
+                                safe_obj_fn(id.as_str())
+                            ));
+                        }
                     }
                 }
                 Objective::Kill { id, wave, .. } => {

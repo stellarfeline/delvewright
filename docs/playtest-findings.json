@@ -16,8 +16,10 @@
       "round": 1,
       "finding": "a reach-anchor's completion volume was a point sphere too tight for a human standing on the altar cell, so arriving did not complete the objective",
       "triage": "capability",
-      "general_form": "reach completion is a region a body can occupy, not a point (closed by construction at dsl 0.3: +/-1 block); nothing re-asserts it on a build",
-      "carrier": null
+      "general_form": "a reach objective's completion volume contains a cell a body can stand in, and the footing the route proof delivers the party to is inside that volume; the emitted volume and the proof read one authority (compiler::reach::ReachVolume), so the selector and the check cannot disagree",
+      "carrier": {"kind": "dw", "code": "DW0850"},
+      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "reach-anchor"}}},
+      "note": "Closed as a property, not as the reported volume. Widening v0.3+ to a 3x3x3 cube fixed the sphere that had been reported and left the same defect reachable by a different number: nav::SNAP_RADIUS is 3 and the cube half-extent is 1, so a reach whose only footing is two or three blocks out routes green (DW0311), exports green (DW0314) and never fires. DW0850 refuses both."
     },
     {
       "id": "hv-02",
@@ -146,8 +148,10 @@
       "round": 3,
       "finding": "a required item was issued per class rather than to the whole party, so players without that class could not complete the objective that consumed it",
       "triage": "capability",
-      "general_form": "an objective gated on an item is completable by every player who must complete it, whatever class they picked",
-      "carrier": null
+      "general_form": "an objective gated on a HELD item is completable by a solo player of every class: the item has a class-blind supply somewhere in the campaign (a give-item at any effect root, a collect, a loot container, a wave drop), or it is in every class kit",
+      "carrier": {"kind": "dw", "code": "DW0849"},
+      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"has": ["requires_item"]}},
+      "note": "The capability half (a kit item's and a give-item's carrier, spec-0018, DSL v0.6) had landed; what had no check was whether the item a gate demands can be brought at all. Quantified over EVERY class for the reason DW0476 states about the flask: a solo player of any class is a supported party."
     },
     {
       "id": "isl-03",
@@ -472,8 +476,11 @@
       "round": 12,
       "finding": "a scene object answered a left-click with a hint but ignored a right-click, so half the players got no answer at all",
       "triage": "capability",
-      "general_form": "an interaction body is bound to the clickable SHAPE of the object at its anchor, not to a single cell, and co-located click triggers merge onto one hitbox rather than racing the ray pick",
-      "carrier": null
+      "general_form": "a sealed body the party presses answers the press, and a left-click reply does not discharge it: pressing a thing is a right-click, so a strike-only answer leaves half the party told nothing. One rule over the whole sealed class (a close-gate seal and a shortcut door alike), read from plan::press_answer_sites",
+      "carrier": {"kind": "dw", "code": "DW0429"},
+      "requires": {"file": "quests.json", "min_dsl_version": "0.11.0"},
+      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "close-gate"}}},
+      "note": "Closed by pointing at a check that landed since, and verified rather than assumed: this campaign's boulder IS a close-gate seal at anchor/boulder carrying only a strike trigger and no sealed_hint, and validating its own quests document raises DW0429 x1 today, reported as grandfathered by the obligation fence because the stage declares 0.8.0. Raised to 0.11.0 the refusal names anchor/boulder itself. The hitbox half of the same beat (an interaction body is the SHAPE of the object at its anchor, and co-located triggers ride one hitbox rather than racing the ray pick) is carried by compiler::pressable with DW0422 and DW0426. Residual, named rather than folded away: DW0429 quantifies over the SEALED class, so a non-sealed scene object that answers a strike and not a use is not covered by it."
     },
     {
       "id": "isl-35",
