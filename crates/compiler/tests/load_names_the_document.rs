@@ -255,19 +255,42 @@ fn a_campaign_path_that_is_not_a_directory_says_so() {
     }
 }
 
-/// State the binding count rather than asserting a property (CLAUDE.md: a green
-/// gate that binds to nothing is vacuous, not a pass). Twelve document names are
-/// reachable by the tests above; a zero here would mean this file proves nothing.
+/// **State the binding count** (CLAUDE.md: a green gate that binds to nothing is
+/// vacuous, not a pass) — and state it as a *measurement*, not as a constant.
+///
+/// Every one of the twelve documents is perturbed here and the ones whose
+/// message names them are counted, so the number printed is what the loader
+/// actually did rather than what this file asserts it should do. A constant
+/// compared against itself would be green on a loader that names nothing.
 #[test]
-fn the_binding_count_is_stated_and_is_not_zero() {
-    assert_eq!(STAGE_FILES.len(), 6);
-    assert_eq!(OPTIONAL_FILES.len(), 5);
-    assert_eq!(NAMEABLE, 12);
-    assert!(NAMEABLE > 0);
+fn the_binding_count_is_measured_and_is_not_zero() {
+    let mut named_itself = Vec::new();
+    for doc in STAGE_FILES.iter().chain(&OPTIONAL_FILES) {
+        let dir = campaign(&format!("count-{doc}"));
+        shadow_with_dir(&dir.join(doc));
+        if let Err(e) = load_campaign_dir(&dir) {
+            if e.to_string().contains(*doc) {
+                named_itself.push(*doc);
+            }
+        }
+    }
+    let dir = campaign("count-walk-record");
+    shadow_with_dir(&dir.join(WALK_RECORD_FILE));
+    if let Err(e) = load_campaign_dir(&dir) {
+        if e.to_string().contains(WALK_RECORD_FILE) {
+            named_itself.push(WALK_RECORD_FILE);
+        }
+    }
+
     eprintln!(
-        "binding count: {NAMEABLE} nameable campaign documents \
-         ({} required, {} optional, 1 walk record) + l10n/<code>.json sidecars",
-        STAGE_FILES.len(),
-        OPTIONAL_FILES.len()
+        "binding count: {} of {NAMEABLE} campaign documents named themselves — {}",
+        named_itself.len(),
+        named_itself.join(", ")
+    );
+    assert_eq!(
+        named_itself.len(),
+        NAMEABLE,
+        "every document this loader reads must be able to name itself; \
+         the ones that did were {named_itself:?}"
     );
 }
