@@ -70,6 +70,7 @@ writes are perfectly legal, and what the engine refuses is holding them at once.
 | `aquatic-locomotion` | `DW0455` | declaring a body that swims |
 | `peaceful-difficulty` | `DW0468` | setting the world to peaceful |
 | `sound-at-actor` | `DW0335` | playing a sound from an actor's position |
+| `a-piece-the-library-does-not-hold` | `DW0856` | binding the hall to a piece whose name is one letter wrong |
 
 Run any of them yourself:
 
