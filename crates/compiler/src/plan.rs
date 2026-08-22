@@ -70,14 +70,260 @@ pub const ISLAND_WATERLINE_Y: i32 = 2;
 /// ashore.
 pub const OCEAN_BASE_Y: i32 = SEA_LEVEL - ISLAND_WATERLINE_Y;
 
-/// The area-origin Y for a campaign's horizon (spec-0013). `void` (default/absent)
-/// keeps [`BASE_Y`], so every pre-0.6 / void campaign stays byte-identical; `ocean`
-/// uses [`OCEAN_BASE_Y`] so the island waterline convention holds.
+/// The area-origin Y for a campaign's horizon. `void` (default/absent) keeps
+/// [`BASE_Y`], so every void campaign stays byte-identical; `ocean` uses
+/// [`OCEAN_BASE_Y`] so the island waterline convention holds.
+///
+/// `valley` keeps [`BASE_Y`] too, and deliberately: its gap floor tops out one
+/// block under [`BASE_Y`], which is the flatland relationship, so a valley
+/// build relocates nothing relative to a void one. Only the surround differs.
 pub fn base_y(campaign: &Campaign) -> i32 {
-    match campaign.world.content.horizon {
-        Some(delvewright_dsl::Horizon::Ocean) => OCEAN_BASE_Y,
-        _ => BASE_Y,
+    match delvewright_dsl::horizon_base(&campaign.world.content.horizon) {
+        delvewright_dsl::HorizonBase::Ocean => OCEAN_BASE_Y,
+        delvewright_dsl::HorizonBase::Void | delvewright_dsl::HorizonBase::Valley => BASE_Y,
     }
+}
+
+/// The rectangle a horizon surround rings, and the authority that stated it.
+///
+/// # The decision this function is
+///
+/// A surround has to know how big the map is, and there are two possible
+/// answers. **The map's declared region**, which a campaign with a site plan
+/// states outright and which nothing may grow — a box outside it is `DW0826`.
+/// Or **the union of what actually got placed**, which is the only answer a
+/// campaign that places `areas[]` by hand can give, because it never states an
+/// extent at all.
+///
+/// Where both exist the region wins, and that is not a convenience. spec-0049
+/// exists to stop extent flowing upward from the parts: the region is the
+/// brief's number flowing DOWN, and a box is never grounds to grow it. A
+/// surround keyed to the placed footprint would reintroduce exactly that flow
+/// one layer out — the mountains would creep inward wherever a plan reserved
+/// space and had not yet filled it, so the act of detailing a place later would
+/// move a mountain that a walk had already been judged against. Keyed to the
+/// region, the landform is fixed the moment the whole is stated, and every
+/// later part is built inside a horizon that was already there.
+///
+/// The vertical extent is deliberately absent. A surround stands on its own
+/// datum ([`crate::horizon::VALLEY_GAP_FLOOR_TOP_Y`]) and rises by its own
+/// param; what the map does above that floor is the map's business.
+pub fn surround_rect(campaign: &Campaign) -> Option<(crate::surround::SceneRect, &'static str)> {
+    if let Some(plan) = campaign.site_plan.as_ref() {
+        let r = &plan.content.region;
+        let max = r.max();
+        return Some((
+            crate::surround::SceneRect {
+                min_x: r.min[0] as i32,
+                min_z: r.min[2] as i32,
+                max_x: max[0] as i32,
+                max_z: max[2] as i32,
+            },
+            "site-plan region",
+        ));
+    }
+    None
+}
+
+/// `DW0855` (build, exit 3): a horizon whose base builds terrain, on a campaign
+/// with no map for that terrain to stand around.
+///
+/// A surround has to ring something, and the only thing it can ring is a
+/// statement of the whole map's extent. A campaign that places `areas[]` by
+/// hand never makes one — and the obvious substitute, the union of what got
+/// placed, is not a statement of extent but an artifact of
+/// [`AREA_SPACING`]: two small areas sit 256 blocks apart with void between
+/// them, so their union is a rectangle that is mostly nothing, and ringing it
+/// generates a mountain range around empty space.
+///
+/// That is not a performance note; it is the reason the refusal is right. It
+/// was measured: the same surround around a site plan's declared 64x64 region
+/// is 14 templates and builds in about ninety seconds, and around the union of
+/// two hand-placed areas it had not finished in ten minutes. The fast answer
+/// and the correct answer are the same answer here, which is usually the sign
+/// that the substitute was never the thing.
+pub const DW_SURROUND_NO_REGION: delvewright_dsl::DwCode =
+    delvewright_dsl::diagnostic::codes::SURROUND_NO_REGION;
+
+/// **The columns of the declared region a piece already floors** — the set the
+/// surround's moat must leave untouched.
+///
+/// A column is floored when anything the plan writes occupies a cell at or
+/// below the gap-floor datum: the piece owns its own ground there, holes and
+/// basements included, and ambient ground poured into it would fill a cellar.
+/// A column whose content is entirely ABOVE the datum is NOT floored — an
+/// elevated storey has the valley floor running on underneath it, which is what
+/// makes a box garden a place rather than a set of boxes.
+///
+/// Read from the placement rectangles rather than from block contents, and the
+/// direction of that approximation is the safe one: an over-claimed column is
+/// left to the piece, so the worst case is a seam the moat does not fill, never
+/// ambient ground written through authored geometry.
+fn ground_columns(
+    areas: &[AreaPlacement],
+    region: &crate::surround::SceneRect,
+) -> BTreeSet<(i32, i32)> {
+    let datum = crate::horizon::VALLEY_GAP_FLOOR_TOP_Y;
+    let mut out = BTreeSet::new();
+    let mut claim = |min: [i32; 3], max: [i32; 3]| {
+        if min[1] > datum {
+            return;
+        }
+        for x in min[0].max(region.min_x)..=max[0].min(region.max_x) {
+            for z in min[2].max(region.min_z)..=max[2].min(region.max_z) {
+                out.insert((x, z));
+            }
+        }
+    };
+    for area in areas {
+        for piece in &area.pieces {
+            let (pmin, pmax) = piece.bbox();
+            claim(pmin, pmax);
+        }
+        for fill in area.mass.iter().chain(&area.seals) {
+            if fill.block.starts_with("minecraft:air") {
+                continue; // a clear authors nothing; it removes
+            }
+            let lo = [
+                fill.from[0].min(fill.to[0]),
+                fill.from[1].min(fill.to[1]),
+                fill.from[2].min(fill.to[2]),
+            ];
+            let hi = [
+                fill.from[0].max(fill.to[0]),
+                fill.from[1].max(fill.to[1]),
+                fill.from[2].max(fill.to[2]),
+            ];
+            claim(lo, hi);
+        }
+    }
+    out
+}
+
+/// Build the horizon's surround, or `None` for a base that declares a world
+/// generator instead of building one.
+///
+/// Seeded from the campaign seed through one named stream
+/// ([`crate::horizon::VALLEY_STREAM`]), so the same documents and the same seed
+/// produce the same mountains (ADR-0006).
+fn build_surround(
+    campaign: &Campaign,
+    seed: u64,
+    areas: &[AreaPlacement],
+) -> Result<Option<SurroundPlan>, PlanError> {
+    use crate::surround::{self, Flora, SurroundPalette, ValleyParams};
+
+    let h = crate::horizon::of_campaign(campaign);
+    if !h.base.has_surround() {
+        return Ok(None);
+    }
+    let Some((scene, authority)) = surround_rect(campaign) else {
+        return Err(PlanError::new(
+            DW_SURROUND_NO_REGION,
+            format!(
+                "`horizon` base `{base}` builds terrain around the map, and this campaign never \
+                 says how big the map is. A surround rings a declared extent — the `region` of a \
+                 site plan — and this campaign places {n} area(s) with `areas[]`, which states \
+                 no extent at all. The union of what happens to get placed is not a substitute: \
+                 areas sit {sp} blocks apart, so that union is mostly the void between them, and \
+                 the horizon would be a mountain range built around empty space. Give the \
+                 campaign a site plan, or set `horizon` to `void` or `ocean`, which need no map \
+                 to be a horizon of.",
+                base = h.base.token(),
+                n = areas.len(),
+                sp = AREA_SPACING,
+            ),
+        ));
+    };
+    let params = ValleyParams {
+        ratio: h.ratio,
+        rim_height: h.rim_height,
+        // The generator carries a second flora and a second palette; the DSL
+        // does not expose them yet (see `HorizonSpec`), so this is the one row
+        // a campaign can reach. Written as a named pair rather than a
+        // `Default` so that adding the surface is one line here and cannot be
+        // done by accident.
+        flora: Flora::Oak,
+        palette: SurroundPalette::StoneGrass,
+    };
+    let valley = surround::generate_valley(
+        solver::stream_seed(seed, crate::horizon::VALLEY_STREAM),
+        scene,
+        crate::horizon::VALLEY_GAP_FLOOR_TOP_Y,
+        &params,
+    )
+    // The build-time restatement of the range fence the validation layer
+    // already applied — the SAME code, because it is the same rule, and a
+    // second code here would be two names for one refusal.
+    .map_err(|m| PlanError::new(delvewright_dsl::diagnostic::codes::HORIZON_PARAM, m))?;
+
+    // **The moat**, and until this call it was a method nothing invoked.
+    //
+    // The surround rings the region a site plan DECLARES, and a plan under-fills
+    // its own region while it is being built — which is correct and is the whole
+    // point of declaring an extent up front. Nobody had looked at what "reserved
+    // and not yet built" looks like from inside, and it looks like a hole: a
+    // perimeter trench of literal void 3 to 12 blocks wide between the built map
+    // and the gap floor, open top to bottom, with 26 full-width transects of the
+    // declared region empty end to end.
+    //
+    // The answer was already written, tested and documented as a ruling on
+    // `ValleySurround::moat`, and had never been wired to anything — a general
+    // mechanism, green in its own unit test, emitting nothing. It belongs to the
+    // surround rather than to `volumes[] role: ground` (which would put the
+    // obligation on every author, for a hole the engine creates) and rather than
+    // to a refusal on an under-filled region (which would forbid the ordinary
+    // state of a plan mid-build, and spec-0049 exists to make that state legal).
+    let mut valley = valley;
+    let (moat_tiles, moat_starts) = valley.moat(&ground_columns(areas, &scene));
+    valley.tiles.extend(moat_tiles);
+    valley.gap_floor_starts.extend(moat_starts);
+
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut templates: Vec<PlacedTemplate> = Vec::new();
+    let mut min = [i32::MAX; 3];
+    let mut max = [i32::MIN; 3];
+    for tile in &valley.tiles {
+        let file = format!("{}.nbt", tile.structure_id);
+        for a in 0..3 {
+            min[a] = min[a].min(tile.pos[a]);
+            max[a] = max[a].max(tile.pos[a] + tile.size[a] - 1);
+        }
+        templates.push(PlacedTemplate {
+            structure_id: tile.structure_id.clone(),
+            structure_file: file.clone(),
+            pos: tile.pos,
+            size: tile.size,
+        });
+        structures.insert(file, tile.bytes.clone());
+    }
+    if templates.is_empty() {
+        return Ok(None);
+    }
+    let binding = SurroundBinding {
+        authority,
+        rect: [scene.min_x, scene.min_z, scene.max_x, scene.max_z],
+        tiles: templates.len(),
+        bands: valley.biome.len(),
+        floor_cells: valley.gap_floor_starts.len(),
+    };
+    Ok(Some(SurroundPlan {
+        piece: PiecePlacement {
+            prefab_id: "surround/valley".to_string(),
+            templates,
+            pos: min,
+            size: [
+                max[0] - min[0] + 1,
+                max[1] - min[1] + 1,
+                max[2] - min[2] + 1,
+            ],
+            rotation: Rotation::None,
+        },
+        structures,
+        biome: valley.biome.clone(),
+        valley,
+        binding,
+    }))
 }
 
 /// A resolved `set-checkpoint` effect (DSL v0.6, spec-0012), collected in
@@ -738,6 +984,94 @@ pub struct Plan<'a> {
     /// independently is how a builder and its observer come to agree about a
     /// world neither describes.
     pub blockout: Option<crate::blockout::Blockout>,
+    /// **The horizon's surround** (spec-0026): compiler-generated terrain
+    /// standing around the map, for a base that builds ground rather than
+    /// declaring a world generator. `None` for `void` and `ocean`, which is
+    /// why nothing about such a build moves.
+    ///
+    /// Deliberately NOT an [`AreaPlacement`]. `plan.areas` is what the boundary
+    /// region derives from, what the relight pass lights, what analysis counts
+    /// and what anchors resolve against — and a surround belongs to none of
+    /// those. It is scenery the map stands in: a body may walk its gap floor,
+    /// and every proof that reads blocks reads it, but it is not a place the
+    /// campaign has content in, and the playable region must not grow to
+    /// enclose a mountain range.
+    ///
+    /// The sites that DO need it opt in by name, and there are exactly three:
+    /// [`Plan::placed_pieces`] (emission and the voxel model),
+    /// [`crate::assembled::placed_blocks`] through that iterator, and the
+    /// biome paint in [`crate::emit`].
+    pub surround: Option<SurroundPlan>,
+}
+
+/// A compiler-generated horizon surround, planned.
+pub struct SurroundPlan {
+    /// The surround as **one placed piece**. However many structure templates
+    /// the annulus ships as — and it is many, because it is far past the
+    /// vanilla 48-per-axis template cap — it is one piece, on exactly the terms
+    /// [`PiecePlacement::templates`] already states: tiling is a packaging fact
+    /// about a file format, absorbed at the one place a `.nbt` filename is
+    /// reachable from.
+    pub piece: PiecePlacement,
+    /// The generated structure bytes, keyed by each template's
+    /// `structure_file`. These files never exist on disk — the structure reader
+    /// merges this map before it touches the prefab library.
+    pub structures: BTreeMap<String, Vec<u8>>,
+    /// Bootstrap `/fillbiome` rectangles: vanilla's own tint, foliage,
+    /// ambience and sky channel, which is why the surround needs no resource
+    /// pack to read as a cherry grove or a windswept forest.
+    pub biome: Vec<crate::surround::BiomeRect>,
+    /// The valley model behind the tiles. The un-climbability proof and the
+    /// establishing camera read it; nothing else may.
+    pub valley: crate::surround::ValleySurround,
+    /// The rectangle the surround was built around, and **which authority
+    /// stated it** — the binding this feature's gate reports, with its
+    /// denominator.
+    pub binding: SurroundBinding,
+}
+
+/// Which authority fixed the rectangle a surround rings, and how much of the
+/// world it turned into terrain. Printed with every surround build, because a
+/// surround that ringed the wrong rectangle looks exactly like one that ringed
+/// the right one until somebody walks it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurroundBinding {
+    /// `site-plan-region` when the campaign states a whole-map region, or
+    /// `placed-footprint` when it places areas by hand and the union of those
+    /// footprints is the only statement of extent it has.
+    pub authority: &'static str,
+    /// The rectangle itself, inclusive: `[min_x, min_z, max_x, max_z]`.
+    pub rect: [i32; 4],
+    /// Structure templates the annulus ships as — the terrain's own
+    /// denominator. Zero is a finding: a surround that built no template is a
+    /// horizon that ringed nothing.
+    pub tiles: usize,
+    /// Biome rectangles painted.
+    pub bands: usize,
+    /// Standable cells on the gap floor — the START set of the un-climbability
+    /// proof, and therefore that proof's denominator. A proof that flooded from
+    /// nowhere passes for free, so this number is stated beside its verdict
+    /// rather than left to be inferred from a green.
+    pub floor_cells: usize,
+}
+
+impl SurroundBinding {
+    /// The one line a build prints for the surround, on the same terms every
+    /// other binding line in this compiler states its own.
+    pub fn line(&self) -> String {
+        format!(
+            "surround: {} templates and {} biome bands around [{}, {}]..[{}, {}] stated by \
+             the {}, with {} standable gap-floor cells the climb proof floods from",
+            self.tiles,
+            self.bands,
+            self.rect[0],
+            self.rect[1],
+            self.rect[2],
+            self.rect[3],
+            self.authority,
+            self.floor_cells,
+        )
+    }
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -1464,10 +1798,9 @@ fn check_ocean_waterline(
     areas: &[AreaPlacement],
     prefabs: &PrefabRegistry,
 ) -> Result<WaterlineBinding, PlanError> {
-    if !matches!(
-        campaign.world.content.horizon,
-        Some(delvewright_dsl::Horizon::Ocean)
-    ) {
+    if delvewright_dsl::horizon_base(&campaign.world.content.horizon)
+        != delvewright_dsl::HorizonBase::Ocean
+    {
         return Ok(WaterlineBinding::NOT_AN_OCEAN);
     }
     let mut binding = WaterlineBinding {
@@ -2213,6 +2546,19 @@ impl<'a> Plan<'a> {
             }
         }
 
+        // ---- the horizon's surround (spec-0026) ----
+        //
+        // After the blockout, and that order is the whole point: the surround
+        // rings the map the derivation just produced, not a footprint that
+        // predates it. `surround_rect` states which authority fixed the
+        // rectangle, and for a site-plan campaign that authority is the plan's
+        // own region — so the landform is fixed the moment the whole is stated
+        // and cannot be moved later by detailing a part.
+        //
+        // A base with no surround gets `None` and nothing below runs, so a
+        // `void` or `ocean` build does not move by a byte.
+        let surround = build_surround(campaign, seed, &areas)?;
+
         Ok(Self {
             campaign,
             namespace,
@@ -2246,7 +2592,29 @@ impl<'a> Plan<'a> {
             strict_ancestor_steps,
             massing_bounds,
             blockout,
+            surround,
         })
+    }
+
+    /// **Every placed piece in this build**, area pieces and the horizon
+    /// surround alike.
+    ///
+    /// The one iterator every PLACEMENT site reads — the structure files that
+    /// ship, the chunks that forceload, the `/place template` lines, the
+    /// placement sentinels, and the voxel model the proofs run over. It exists
+    /// so that "the surround is placed like any other piece" is one fact in one
+    /// place rather than five parallel additions, four of which the next
+    /// placement site would forget.
+    ///
+    /// Deliberately NOT the iterator for anything that reasons about CONTENT:
+    /// the boundary region, the relight scope, the anchor table and analysis
+    /// read `areas` and must go on reading `areas`, because a mountain is not
+    /// somewhere the campaign happens.
+    pub fn placed_pieces(&self) -> impl Iterator<Item = &PiecePlacement> {
+        self.areas
+            .iter()
+            .flat_map(|a| a.pieces.iter())
+            .chain(self.surround.iter().map(|s| &s.piece))
     }
 
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
