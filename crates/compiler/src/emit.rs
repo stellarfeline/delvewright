@@ -15456,8 +15456,8 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// spec-0016 §1: the **two options really differ**.
 ///
 /// Right-clicking a bonfire offers exactly *rest and save* and *save only*, and
-/// save-only does nothing but move the checkpoint. That is a runtime claim about two functions, and this drives both
-/// on a live server through the flask — the one restored resource a PackTest
+/// save-only does nothing but move the checkpoint. That is a runtime claim about
+/// two functions, and this drives both on a live server through the flask — the one restored resource a PackTest
 /// dummy can actually observe.
 ///
 /// **Why the flask and not health.** PackTest fake players are immune to
