@@ -50,10 +50,22 @@ that exists only to be stamped by `fragment`. The annex is deliberately plain:
 its job is the ASSEMBLY, and a tileset with interesting rooms would make the
 placement harder to read without binding one more unit. Each tile carries one
 anchor at the middle of its floor, which is what gives a camera pointed into the
-annex something the campaign declares to frame. Its anchors are named for their role —
-`anchor/hearth` is where you come back to life, `anchor/muster` is where a wave
-forms up — and the generator prints that role into the piece's metadata, so the
-piece explains itself without the campaign in hand.
+annex something the campaign declares to frame. Its anchors are named for their
+purpose — `anchor/hearth` is where you come back to life, `anchor/muster` is
+where a wave forms up — and the generator prints a one-line `note` beside each
+one, so the piece explains itself without the campaign in hand.
+
+One place in the hall is found rather than named, and it is the only one: the
+cell a body arrives at. `anchor/arrival` is named like every other place and is
+the entry because it declares the entry **role**; ten cells down the same floor
+stands an anchor called `spawn`, which is the compatibility spelling the
+compiler falls back to for a piece older than that role, and which nothing in
+the campaign binds. The pair is the element: with the role declared the party
+arrives at `anchor/arrival`, and taking the role away moves `setworldspawn`, the
+first-join placement, the checkpoint seed, both class-apply teleports and the
+first player-POV frame onto the decoy, in a campaign that still builds. A gallery
+element that cannot fail when the surface it covers is removed is coverage in
+name only.
 
 ## What the engine refuses
 
