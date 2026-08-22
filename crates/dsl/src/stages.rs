@@ -4,7 +4,7 @@
 //! objective/effect types) parse successfully but are rejected by validation
 //! ([`crate::validate`]) with code `DW0141`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1244,6 +1244,61 @@ pub struct QuestPlanContent {
     /// flag in the campaign.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub branch_points: Vec<BranchPoint>,
+}
+
+impl QuestPlanContent {
+    /// **The ONE authority on which quests are the spine**: the finale and every
+    /// quest its `depends_on` chain transitively demands — the quests a body
+    /// cannot reach the finale without.
+    ///
+    /// The capability belongs here, on the stage-4 document, because the spine is
+    /// a fact about the quest plan and about nothing else. It had grown two
+    /// derivations of the same closure in two files — one inline in
+    /// [`crate::validate`]'s `DW0132` convergence check, one a private
+    /// `mandatory_quests` in [`crate::layout`] read by the layout binding and by
+    /// the critical-path spine obligation. Both were correct and neither said it
+    /// was the authority, which is exactly the shape a later clean merge turns
+    /// into two rules that disagree.
+    ///
+    /// **Why the closure is taken over the raw `depends_on` edges, unfiltered.**
+    /// The `validate` copy first dropped every dep naming a quest the plan does
+    /// not declare. That filtering is not this function's question: a dangling
+    /// `depends_on` is `DW0112`'s finding, and silently pruning it here would
+    /// make the set disagree with the document it is derived from. So an id the
+    /// plan does not declare is reported in the spine and expands no further —
+    /// and the one reader that could care, `DW0132`, only ever asks whether a
+    /// **declared** quest is a member, so an undeclared member cannot change its
+    /// verdict.
+    ///
+    /// Cycle-safe by construction (a quest already in the set is not expanded
+    /// again), so a plan `DW0130` will refuse still yields a set rather than
+    /// hanging.
+    ///
+    /// **Not the same question as the `mandatory` field**, and the name says so
+    /// deliberately. Today the two sets always coincide, because `DW0132` demands
+    /// every declared quest be a transitive dependency of the finale and `DW0133`
+    /// demands every quest set `mandatory: true`. If `mandatory: false` ever
+    /// becomes legal those coincide no longer, and this function keeps answering
+    /// the graph question it has always answered.
+    #[must_use]
+    pub fn spine(&self) -> BTreeSet<&str> {
+        let deps: BTreeMap<&str, &[QuestId]> = self
+            .quests
+            .iter()
+            .map(|q| (q.id.as_str(), q.depends_on.as_slice()))
+            .collect();
+        let mut spine: BTreeSet<&str> = BTreeSet::new();
+        let mut stack = vec![self.finale.as_str()];
+        while let Some(q) = stack.pop() {
+            if !spine.insert(q) {
+                continue;
+            }
+            for dep in deps.get(q).copied().unwrap_or(&[]) {
+                stack.push(dep.as_str());
+            }
+        }
+        spine
+    }
 }
 
 /// One declared story fork (DSL v0.8, spec-0025).
@@ -7781,5 +7836,113 @@ fn campaign_effect_deep<'a>(
         for (j, inner) in list.iter().enumerate() {
             campaign_effect_deep(inner, &format!("{path}/{pseg}/{j}"), site, f);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The spine authority (`QuestPlanContent::spine`)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod spine_tests {
+    use super::QuestPlanContent;
+
+    /// Build a plan from `(id, deps)` pairs plus a finale. JSON rather than a
+    /// struct literal on purpose: a field added to `PlannedQuest` later must not
+    /// red these tests for a reason that has nothing to do with the spine.
+    fn plan(finale: &str, quests: &[(&str, &[&str])]) -> QuestPlanContent {
+        let quests: Vec<serde_json::Value> = quests
+            .iter()
+            .map(|(id, deps)| {
+                serde_json::json!({
+                    "id": id,
+                    "goal": "g",
+                    "area": "area/keep",
+                    "npcs": [],
+                    "depends_on": deps,
+                    "mandatory": true,
+                    "act": 1,
+                })
+            })
+            .collect();
+        serde_json::from_value(serde_json::json!({
+            "finale": finale,
+            "quests": quests,
+        }))
+        .expect("plan fixture parses")
+    }
+
+    fn sorted(p: &QuestPlanContent) -> Vec<String> {
+        p.spine().into_iter().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn a_chain_is_wholly_spine() {
+        let p = plan(
+            "quest/c",
+            &[
+                ("quest/a", &[]),
+                ("quest/b", &["quest/a"]),
+                ("quest/c", &["quest/b"]),
+            ],
+        );
+        assert_eq!(sorted(&p), ["quest/a", "quest/b", "quest/c"]);
+    }
+
+    #[test]
+    fn a_quest_the_finale_does_not_depend_on_is_off_the_spine() {
+        // Exactly the `DW0132` shape: the plan does not converge, and the spine
+        // is the half that does. The authority answers, it does not refuse — the
+        // refusal is `validate`'s, built on this answer.
+        let p = plan("quest/end", &[("quest/end", &[]), ("quest/side-trip", &[])]);
+        assert_eq!(sorted(&p), ["quest/end"]);
+    }
+
+    #[test]
+    fn a_diamond_counts_the_join_once() {
+        let p = plan(
+            "quest/d",
+            &[
+                ("quest/a", &[]),
+                ("quest/b", &["quest/a"]),
+                ("quest/c", &["quest/a"]),
+                ("quest/d", &["quest/b", "quest/c"]),
+            ],
+        );
+        assert_eq!(sorted(&p), ["quest/a", "quest/b", "quest/c", "quest/d"]);
+    }
+
+    #[test]
+    fn a_cycle_terminates_and_yields_a_set() {
+        // `DW0130` refuses this plan, but the authority is asked before that
+        // verdict is known (the layout binding prints on an erroring campaign),
+        // so it must terminate rather than hang.
+        let p = plan(
+            "quest/b",
+            &[("quest/a", &["quest/b"]), ("quest/b", &["quest/a"])],
+        );
+        assert_eq!(sorted(&p), ["quest/a", "quest/b"]);
+    }
+
+    #[test]
+    fn a_dangling_dependency_is_reported_and_expands_no_further() {
+        // The deliberate difference between the two derivations this function
+        // replaced. `validate` pruned undeclared ids before walking; the
+        // authority does not, because pruning them would make the set disagree
+        // with the document, and naming an id the plan does not declare is
+        // `DW0112`'s finding rather than the spine's.
+        let p = plan("quest/end", &[("quest/end", &["quest/ghost"])]);
+        assert_eq!(sorted(&p), ["quest/end", "quest/ghost"]);
+    }
+
+    #[test]
+    fn an_undeclared_finale_is_the_whole_spine() {
+        // `DW0131`'s shape. The answer is honest about the document: nothing the
+        // plan declares is on the spine of a finale it never declared.
+        let p = plan(
+            "quest/ghost",
+            &[("quest/a", &[]), ("quest/b", &["quest/a"])],
+        );
+        assert_eq!(sorted(&p), ["quest/ghost"]);
     }
 }
