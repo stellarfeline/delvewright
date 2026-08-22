@@ -1,12 +1,6 @@
 {
-  "added": [
-    "site-plan.en:packtest-datapack/data/gallery/function/pt_camp_drive.mcfunction"
-  ],
-  "changed": [
-    "site-plan.en:packtest-datapack/data/gallery/test/campaign.mcfunction"
-  ],
-  "classes": {
-    "PackTest": 2
-  },
+  "added": [],
+  "changed": [],
+  "classes": {},
   "removed": []
 }

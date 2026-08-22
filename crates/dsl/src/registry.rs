@@ -178,6 +178,27 @@ pub trait AnchorRegistry {
         false
     }
 
+    /// Whether a prefab with this id exists in the metadata surface, when this
+    /// registry is in a position to answer: `Some(true)`/`Some(false)` from a
+    /// registry that IS the whole library, `None` from one that is not.
+    ///
+    /// [`Self::anchors_for`] cannot answer this and must not be made to. Its
+    /// `None` is deliberately lenient — *this registry has not heard of the
+    /// piece, so defer* — and every anchor proof in `validate` reads it that
+    /// way, skipping the area rather than refusing it. That leniency is
+    /// correct for a partial registry and catastrophic for a complete one: a
+    /// mistyped `prefab` then removes the area from the anchor index, and the
+    /// per-area anchor proof (`DW0142`) over every quest in it examines
+    /// nothing and passes. The two questions are different and they are asked
+    /// separately for exactly that reason (`DW0856`).
+    ///
+    /// The default is `None` — the safe answer for a test double or a subset
+    /// registry, which refuses nothing it cannot vouch for. The compiler's
+    /// `PrefabRegistry` loads a whole `prefabs/` directory and answers.
+    fn has_prefab(&self, _prefab: &PrefabId) -> Option<bool> {
+        None
+    }
+
     /// The declared lighting for a prefab, if known.
     fn lighting_for(&self, _prefab: &PrefabId) -> Option<Lighting> {
         None
@@ -588,6 +609,15 @@ impl AnchorRegistry for VendoredAnchorRegistry {
 
     fn has_pool(&self, pool: &PoolId) -> bool {
         self.pools.contains(pool.as_str())
+    }
+
+    /// Closed, exactly as [`Self::has_pool`] already is: the embedded metadata
+    /// is the whole library this registry stands for, so a piece it does not
+    /// hold does not exist as far as anything validating against it is
+    /// concerned. Answering `None` here would leave the crate's own validation
+    /// entry point unable to see the defect it validates for.
+    fn has_prefab(&self, prefab: &PrefabId) -> Option<bool> {
+        Some(self.by_prefab.contains_key(prefab.as_str()))
     }
 }
 
