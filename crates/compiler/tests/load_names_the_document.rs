@@ -268,18 +268,18 @@ fn the_binding_count_is_measured_and_is_not_zero() {
     for doc in STAGE_FILES.iter().chain(&OPTIONAL_FILES) {
         let dir = campaign(&format!("count-{doc}"));
         shadow_with_dir(&dir.join(doc));
-        if let Err(e) = load_campaign_dir(&dir) {
-            if e.to_string().contains(*doc) {
-                named_itself.push(*doc);
-            }
+        if let Err(e) = load_campaign_dir(&dir)
+            && e.to_string().contains(*doc)
+        {
+            named_itself.push(*doc);
         }
     }
     let dir = campaign("count-walk-record");
     shadow_with_dir(&dir.join(WALK_RECORD_FILE));
-    if let Err(e) = load_campaign_dir(&dir) {
-        if e.to_string().contains(WALK_RECORD_FILE) {
-            named_itself.push(WALK_RECORD_FILE);
-        }
+    if let Err(e) = load_campaign_dir(&dir)
+        && e.to_string().contains(WALK_RECORD_FILE)
+    {
+        named_itself.push(WALK_RECORD_FILE);
     }
 
     eprintln!(
