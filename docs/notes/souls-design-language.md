@@ -37,9 +37,8 @@ it is tied to a named developer quote.
 
 ### 1.1 What the shape actually is
 
-The owner's ruling — two routes between rest points, the short one sealed,
-opened permanently from the far side — is the correct primitive. The series'
-own vocabulary for it:
+The primitive is two routes between rest points, the short one sealed, opened
+permanently from the far side. The series' own vocabulary for it:
 
 - **The one-way door.** A door barred from the far side; you arrive at its back
   and lift the bar. DS1 Depths→Blighttown; DS3 Road of Sacrifices (a door
@@ -176,9 +175,9 @@ phrasing.
 
 ## 2. 初见杀 — the first-encounter kill, taxonomy
 
-The owner's ruling (spec-0016 §3) is right: the un-telegraphed first kill is
-core vocabulary. What the research sharpens is *which axis* separates a beloved
-one from a resented one — and it is **not** telegraphing.
+The un-telegraphed first kill is core vocabulary (spec-0016 §3). What the
+research sharpens is *which axis* separates a beloved one from a resented
+one — and it is **not** telegraphing.
 
 ### 2.1 The A/B pair that defines the line
 

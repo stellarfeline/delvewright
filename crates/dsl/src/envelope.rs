@@ -14,7 +14,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.15.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.16.0";
 
 /// The `dsl_version` that introduces the **`open-way`** effect (spec-0042 §2.4):
 /// a campaign opening a placed piece's contingent way, with the geometry, the
@@ -76,6 +76,23 @@ pub const SITE_PLAN_SINCE: &str = "0.14.0";
 /// the ordering wants reachable.
 pub const DETAIL_PLAN_SINCE: &str = "0.15.0";
 
+/// The `dsl_version` at which the stage-1 `horizon` is the spec-0026 **horizon
+/// library**: the object form `{base, …params}`, and every shorthand beyond the
+/// `"void"`/`"ocean"` pair that predates it.
+///
+/// The **hand-written name** for `0.16.0`, written rather than derived for the
+/// reason [`RESERVED_DSL_VERSIONS`] gives: `is_v16` follows from the number, so
+/// two branches claiming `0.16.0` would produce the same anchor and the
+/// uniqueness gate would read one claim where there are two. A name an author
+/// chose cannot agree by accident.
+///
+/// It is a version of its own rather than a field added at
+/// [`DETAIL_PLAN_SINCE`], because a version names one surface: this one is the
+/// ground and the sky a map stands in, which is orthogonal to how the map
+/// itself is stated. A campaign declaring 0.15.0 details its places and still
+/// has no way to say what surrounds them.
+pub const HORIZON_LIBRARY_SINCE: &str = "0.16.0";
+
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
 /// (spec-0008) adds dialogue state, props, narration, live-threat tuning, NPC
@@ -89,8 +106,8 @@ pub const DETAIL_PLAN_SINCE: &str = "0.15.0";
 /// effect and the `narrate` `art` style — alongside the actors/sequence surface
 /// from sibling PRs; v0.7 (spec-0020) adds the per-quest `cast` ledger; v0.8
 /// (spec-0025) adds declared stage-4 `branch_points`, the per-node `happening`
-/// declaration and the named `campaign-complete` `ending`, and (spec-0016 §1
-/// owner rulings) the bonfire rest interaction — the `bonfire` effect's
+/// declaration and the named `campaign-complete` `ending`, and (spec-0016 §1)
+/// the bonfire rest interaction — the `bonfire` effect's
 /// authorable option strings and the class-kit `flask`; v0.9 adds
 /// declared elite/boss `drops[]` and the `collect` `dropped_by`; v0.10
 /// (spec-0031) adds **runtime state** — the stage-5 `state[]` declaration, the
@@ -111,7 +128,10 @@ pub const DETAIL_PLAN_SINCE: &str = "0.15.0";
 /// embedding of that graph and the whole map's design of record; v0.15
 /// (spec-0050) adds the `detail-plan`, which piece stands in which of those
 /// places — a document with no coordinate, no extent and no seam in it, so that
-/// a part cannot move the box the whole gave it.
+/// a part cannot move the box the whole gave it; v0.16 (spec-0026) generalizes
+/// the stage-1 `horizon` into the horizon library — a base and its params
+/// rather than one of two names — and lands `valley`, the first base that
+/// builds terrain instead of picking a world generator.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 ///
@@ -140,7 +160,7 @@ pub const DETAIL_PLAN_SINCE: &str = "0.15.0";
 /// through one set of rules.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
     "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
-    "0.12.0", "0.13.0", "0.14.0", "0.15.0",
+    "0.12.0", "0.13.0", "0.14.0", "0.15.0", "0.16.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -251,6 +271,7 @@ fn ordinal(version: &str) -> u32 {
         "0.13.0" => 13,
         "0.14.0" => 14,
         "0.15.0" => 15,
+        "0.16.0" => 16,
         _ => 0,
     }
 }
@@ -511,6 +532,21 @@ pub fn is_v14(version: &str) -> bool {
 /// campaign without one binds zero of them and says so.
 pub fn is_v15(version: &str) -> bool {
     ordinal(version) >= 15
+}
+
+/// True if `version` enables the **horizon library** (spec-0026,
+/// [`HORIZON_LIBRARY_SINCE`]): the stage-1 `horizon` as a base plus that base's
+/// params — the object form `{base, …params}`, and every string shorthand
+/// beyond the `"void"`/`"ocean"` pair that predates it.
+///
+/// Additive on the wire and additive in emission: a campaign below this version
+/// may still write `"void"` or `"ocean"`, those two parse to exactly the bases
+/// they always named, and nothing about such a build moves. What the version
+/// buys is the ability to say something the old surface had no spelling for —
+/// `valley`, whose surround is generated terrain rather than a world-generator
+/// setting, and the params that shape it.
+pub fn is_v16(version: &str) -> bool {
+    ordinal(version) >= 16
 }
 
 /// Which stage a document belongs to.

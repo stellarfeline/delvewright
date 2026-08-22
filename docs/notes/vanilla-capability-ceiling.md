@@ -78,5 +78,5 @@ format — curated 2–3h quest adventures for 1–4 players — the ceiling bin
 entirely on **presentation** (cutscenes, bespoke creatures), not on quest structure,
 classes, bosses, or UI, where 1.21.11's dialog system raises the bar well above the
 classic command-map era. If a future delve concept dies specifically on the
-presentation ceiling, that's ADR-0003's revisit trigger — a deliberate owner decision,
+presentation ceiling, that's ADR-0003's revisit trigger — a deliberate decision,
 not a drift.

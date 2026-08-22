@@ -40,7 +40,7 @@ order a player would:
 | `area/annex` (in `world.json`) | a three-tile chain assembled from `pool/gallery-annex` — what binds the piece verbs |
 | `overlays/` | parameter points — settings that take one value per world |
 | `probes/` | documents the engine **refuses**, each naming the diagnostic |
-| `baseline/` | the committed emission index and the expected-warnings ledger |
+| `baseline/` | the committed emission index, the expected-warnings ledger, and the review delta — which names the commit it was measured from, so it can be recomputed rather than believed |
 
 The hall itself is generated, not committed: one 31 × 8 × 31 stone room split by
 a barred wall, with three doors in it and a mezzanine in the far half whose
@@ -70,6 +70,8 @@ writes are perfectly legal, and what the engine refuses is holding them at once.
 | `aquatic-locomotion` | `DW0455` | declaring a body that swims |
 | `peaceful-difficulty` | `DW0468` | setting the world to peaceful |
 | `sound-at-actor` | `DW0335` | playing a sound from an actor's position |
+| `a-piece-the-library-does-not-hold` | `DW0856` | binding the hall to a piece whose name is one letter wrong |
+| `a-gate-two-areas-provide` | `DW0857` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
 
 Run any of them yourself:
 

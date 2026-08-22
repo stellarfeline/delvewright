@@ -1,6 +1,6 @@
 {
   "binds": [
-    "Horizon::ocean"
+    "HorizonBase::ocean"
   ],
   "note": "A sea backdrop places areas on the sea-level datum instead of the void one, so it is a different world for the same campaign and cannot coexist with `void`. It is also the only point of this domain where the two sea proofs have anything to look at: `validation/fluid-escape.json` (`DW0318`, water that leaves the built volume) and `validation/sea-seepage.json` (`DW0851`, water that comes into it) both ship here with real denominators, and the hall's closed hull is why the second reports zero cells of contact face rather than staying silent."
 }

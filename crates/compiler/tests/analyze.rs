@@ -29,6 +29,12 @@ impl AnchorRegistry for ForceDark<'_> {
     fn has_pool(&self, pool: &PoolId) -> bool {
         self.0.has_pool(pool)
     }
+    /// Delegated like the rest: this wrapper changes lighting and nothing else,
+    /// and an undelegated existence answer would quietly make the wrapped run
+    /// less checked than the unwrapped one.
+    fn has_prefab(&self, prefab: &PrefabId) -> Option<bool> {
+        self.0.has_prefab(prefab)
+    }
     fn lighting_for(&self, _prefab: &PrefabId) -> Option<Lighting> {
         Some(Lighting {
             profile: LightingProfile::Dark,

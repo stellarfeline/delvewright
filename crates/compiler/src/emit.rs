@@ -247,11 +247,10 @@ pub fn check_template_extents(
         placed: 0,
         checked: 0,
     };
-    for area in &plan.areas {
-        for (piece, template) in area
-            .pieces
-            .iter()
-            .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
+    for (piece, template) in plan
+        .placed_pieces()
+        .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
+    {
         {
             binding.placed += 1;
             let Some(bytes) = structures.get(&template.structure_file) else {
@@ -537,6 +536,22 @@ pub fn build_with_warnings(
         if let Some(b) = &plan.blockout {
             eprintln!("{}", b.binding.line());
         }
+        // What the horizon built, and — the half that matters — which authority
+        // stated the rectangle it built around. A surround that ringed the
+        // placed footprint and one that ringed the declared region look
+        // identical from outside, right up until somebody details a place and
+        // the mountains move. So the line names the authority, and the zeros are
+        // findings rather than silences.
+        if let Some(surround) = &plan.surround {
+            eprintln!("{}", surround.binding.line());
+            if surround.binding.floor_cells == 0 {
+                eprintln!(
+                    "surround binding 0: the horizon built terrain but no standable gap-floor \
+                     cell, so the un-climbability proof flooded from nowhere and its green means \
+                     nothing. A surround with no floor is a wall around a hole."
+                );
+            }
+        }
         if let Some(battery) = crate::blockout::check(plan, &blocks) {
             eprintln!("{}", battery.binding.line());
             if let Some((code, refusal)) = battery.refusal() {
@@ -774,6 +789,47 @@ pub fn build_with_warnings(
                 )
                 .ledger(),
             );
+
+            // **The surround bounds the map, proven rather than promised**
+            // (`DW0854`). The generator guarantees that no surround column
+            // stands exactly one block above the gap-floor datum, so the
+            // floor's own walkable component is bounded above by the datum and
+            // the first thing outward of it is a two-block riser, which
+            // vanilla's auto-step and jump cannot take. That is an argument
+            // about the generator; this is a measurement of the world.
+            //
+            // It has to be a second measurement, because a great deal happens
+            // between the two: gravity settles, a stage-7 edit script may carve,
+            // a palette may change, and any of those can put a riser on the
+            // slope the generator never wrote. So the proof floods the SAME nav
+            // model every route proof uses, from the surround's own gap-floor
+            // cells, and asks whether anything it reaches lies outward of the
+            // crest line — sharing none of the generator's arithmetic, which is
+            // what makes it an observer rather than a restatement.
+            //
+            // Its binding is on the plan (`SurroundBinding::floor_cells`) and is
+            // printed with every surround build, because a flood that started
+            // from nowhere passes for free and looks exactly like this one.
+            if let Some(surround) = &plan.surround
+                && let Err(cell) = surround.valley.verify_unclimbable(&world)
+            {
+                {
+                    return Err(BuildFailure::Diagnostic {
+                        code: crate::surround::DW_VALLEY_CLIMB,
+                        message: format!(
+                            "the surround's inner slope has grown a standable staircase: a walk \
+                             starting on the gap floor stands at [{}, {}, {}], outward of the \
+                             crest line, so the landform no longer bounds the map. The generator \
+                             leaves nothing standing one block over the gap floor and keeps trees \
+                             off the inner wall, so a step up from the floor was put back by \
+                             something later — an edit batch, a gravity settle, or a palette \
+                             whose blocks are a different height. It flooded from {} standable \
+                             gap-floor cells",
+                            cell[0], cell[1], cell[2], surround.binding.floor_cells,
+                        ),
+                    });
+                }
+            }
 
             crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan)).map_err(
                 |e| BuildFailure::Diagnostic {
@@ -1194,14 +1250,12 @@ pub fn build_with_warnings(
 
     // structures (one `.nbt` per distinct structure id, even if reused across
     // several placed pieces — the insert is idempotent, same bytes)
-    for area in &plan.areas {
-        for template in area.pieces.iter().flat_map(|p| &p.templates) {
-            if let Some(bytes) = structures.get(&template.structure_file) {
-                out.insert(
-                    format!("datapack/data/{ns}/structure/{}.nbt", template.structure_id),
-                    bytes.clone(),
-                );
-            }
+    for template in plan.placed_pieces().flat_map(|p| &p.templates) {
+        if let Some(bytes) = structures.get(&template.structure_file) {
+            out.insert(
+                format!("datapack/data/{ns}/structure/{}.nbt", template.structure_id),
+                bytes.clone(),
+            );
         }
     }
 
@@ -1209,13 +1263,11 @@ pub fn build_with_warnings(
     // Placement sentinels: one known block per distinct structure, so the
     // runtime can verify each `place template` landed (see `setup` emission).
     let mut sentinels: Sentinels = BTreeMap::new();
-    for area in &plan.areas {
-        for template in area.pieces.iter().flat_map(|p| &p.templates) {
-            if let Some(bytes) = structures.get(&template.structure_file)
-                && let Some(s) = structure_sentinel(bytes)
-            {
-                sentinels.insert(template.structure_file.clone(), s);
-            }
+    for template in plan.placed_pieces().flat_map(|p| &p.templates) {
+        if let Some(bytes) = structures.get(&template.structure_file)
+            && let Some(s) = structure_sentinel(bytes)
+        {
+            sentinels.insert(template.structure_file.clone(), s);
         }
     }
     // Trap flag gating (DSL v0.6): resolve the authored trigger hardware for every
@@ -2778,14 +2830,12 @@ fn emit_functions(
     // therefore NOT done here: setup only seals + forceloads, and the tick
     // function retries `place_all` + `place_verify` (sentinel-block checks)
     // until every piece is confirmed, then runs `setup_finish` exactly once.
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            let (min, max) = piece.bbox();
-            setup.push(format!(
-                "forceload add {} {} {} {}",
-                min[0], min[2], max[0], max[2]
-            ));
-        }
+    for piece in plan.placed_pieces() {
+        let (min, max) = piece.bbox();
+        setup.push(format!(
+            "forceload add {} {} {} {}",
+            min[0], min[2], max[0], max[2]
+        ));
     }
     // Stage-7 edit writes may land outside the piece bboxes (a leaning canopy,
     // a fragment stamped beside a piece) — forceload each batch's write AABB
@@ -2831,8 +2881,8 @@ fn emit_functions(
 
     // --- place_all: idempotent template placement, retried from tick ---
     let mut place_all: Vec<String> = Vec::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
+    for piece in plan.placed_pieces() {
+        {
             let rot = match piece.rotation.token() {
                 Some(t) => format!(" {t}"),
                 None => String::new(),
@@ -2876,15 +2926,16 @@ fn emit_functions(
         ));
         sentinel_count += 1;
     }
-    for area in &plan.areas {
-        // One sentinel per TEMPLATE. A `place template` can fail for one tile
-        // of a zone and land for the rest — a chunk that has not loaded yet is
-        // exactly how that happens — so a per-piece sentinel would report a
-        // zone placed when eight ninths of it was there.
-        for (piece, template) in area
-            .pieces
-            .iter()
-            .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
+    // One sentinel per TEMPLATE. A `place template` can fail for one tile of a
+    // zone and land for the rest — a chunk that has not loaded yet is exactly
+    // how that happens — so a per-piece sentinel would report a zone placed
+    // when eight ninths of it was there. The surround is the extreme case: it
+    // is one piece of hundreds of templates, spread over more chunks than
+    // anything else in the build.
+    for (piece, template) in plan
+        .placed_pieces()
+        .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
+    {
         {
             if let Some((local, block)) = sentinels.get(&template.structure_file) {
                 let w = piece.rotation.transform(*local);
@@ -2937,6 +2988,46 @@ fn emit_functions(
                 m.from[0], m.from[1], m.from[2], m.to[0], m.to[1], m.to[2], m.block
             ));
         }
+    }
+    // **The horizon's biome paint** (spec-0026): `/fillbiome` over the
+    // surround's columns.
+    //
+    // This is vanilla's own channel — the one that decides grass and foliage
+    // tint, water colour, ambient sound, particles and sky — so a cherry grove
+    // reads as a cherry grove with no resource pack anywhere in the delve, and
+    // the shipped world stays a vanilla world (ADR-0003).
+    //
+    // In `setup_finish` because the chunks provably exist by here: `place_verify`
+    // has already confirmed every template landed, and `fillbiome` into an
+    // unloaded chunk is the same silent no-op `place template` is.
+    //
+    // `max_block_modifications` (default 32768) is raised to the largest band's
+    // volume for the pass and restored afterwards, because a band is painted in
+    // ONE command and a command the server truncates leaves a horizon painted
+    // half one colour. Empty for a surround-less horizon → byte-identical.
+    if let Some(surround) = &plan.surround
+        && !surround.biome.is_empty()
+    {
+        let volume = |r: &crate::surround::BiomeRect| {
+            i64::from(r.max[0] - r.min[0] + 1)
+                * i64::from(r.max[1] - r.min[1] + 1)
+                * i64::from(r.max[2] - r.min[2] + 1)
+        };
+        let limit = surround
+            .biome
+            .iter()
+            .map(volume)
+            .max()
+            .unwrap_or(0)
+            .clamp(32768, i64::from(i32::MAX));
+        setup.push(format!("gamerule max_block_modifications {limit}"));
+        for r in &surround.biome {
+            setup.push(format!(
+                "fillbiome {} {} {} {} {} {} {}",
+                r.min[0], r.min[1], r.min[2], r.max[0], r.max[1], r.max[2], r.biome
+            ));
+        }
+        setup.push("gamerule max_block_modifications 32768".to_string());
     }
     // Stage-7 world edits (spec-0017): the edit script's runtime materialization,
     // applied after the socket seals and before the relight fixtures — the exact
@@ -3241,7 +3332,7 @@ fn emit_functions(
     // consumed with no effect. A human clicks again and never knows; a validation
     // bot clicks once and times out.
     //
-    // The reset stays unconditional on purpose (owner ruling): a trigger fired
+    // The reset stays unconditional on purpose: a trigger fired
     // long before its quest was armed is DISCARDED, never banked. Banking would
     // auto-complete the objective the instant the quest armed, with no real click
     // — a worse failure than the one it would fix, because it fabricates player
@@ -9284,7 +9375,7 @@ fn campaign_captures_striker(c: &delvewright_dsl::Campaign) -> bool {
 const WARDEN_MAX_ANGER: i32 = 150;
 
 /// The lines that lock an unleashed twin's aggression onto the player who struck
-/// the trigger (owner directive, round 8): a hostile that a player *provoked* must
+/// the trigger: a hostile that a player *provoked* must
 /// come for that player, not wander off looking for someone.
 ///
 /// **Only species with a proven vanilla primitive get one.** `minecraft:warden`
@@ -10272,7 +10363,7 @@ fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String
         }
         let mut body: Vec<String> = Vec::new();
         body.push(format!("scoreboard players set #trig_{id} dw.sys 1"));
-        // Striker capture (owner directive, round 8). The click record is still on
+        // Striker capture. The click record is still on
         // the hitbox here — `env_trigger_tick` clears every record only after every
         // trigger has been offered it — so this is the one place the acting player's
         // UUID is knowable. Parked in storage rather than passed as an argument
@@ -11250,7 +11341,7 @@ const NIGHT_VISION_FLICKER_SECONDS: u32 = 10;
 
 /// The lease every `effect give` hands out, in seconds.
 ///
-/// **The camera-coverage guarantee** (owner ruling, island round 16): a vision
+/// **The camera-coverage guarantee**: a vision
 /// effect the compiler grants must outlast any authored camera it can overlap,
 /// with vanilla's flicker window to spare.
 ///
@@ -14372,7 +14463,7 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// spec-0022 PackTests: the **saturation contract** and the collapse, asserted
 /// on a live pinned server.
 ///
-/// The volley test is the runtime half of the owner's ruling. It
+/// The volley test is the runtime half of the saturation contract. It
 /// runs the REAL emitted salvo function and then asserts, per standable
 /// kill-zone cell, that a projectile exists on the exact trajectory that reaches
 /// it — so "the volley blankets its zone" is checked in the game, not just in
@@ -15455,10 +15546,9 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
 
 /// spec-0016 §1: the **two options really differ**.
 ///
-/// The owner's ruling is that right-clicking a bonfire offers exactly *rest and
-/// save* and *save only*, and that save-only does nothing but move the
-/// checkpoint. That is a runtime claim about two functions, and this drives both
-/// on a live server through the flask — the one restored resource a PackTest
+/// Right-clicking a bonfire offers exactly *rest and save* and *save only*, and
+/// save-only does nothing but move the checkpoint. That is a runtime claim about
+/// two functions, and this drives both on a live server through the flask — the one restored resource a PackTest
 /// dummy can actually observe.
 ///
 /// **Why the flask and not health.** PackTest fake players are immune to
@@ -19674,10 +19764,8 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // (`plan::OCEAN_BASE_Y` = 60) so island pieces read as land ringed by the sea. No structures (generate-structures=false) or mobs (gamerule
     // spawn_mobs false); the sea is pure backdrop. The string is a fixed literal,
     // so both horizons stay deterministic (ADR-0006).
-    let ocean = matches!(
-        plan.campaign.world.content.horizon,
-        Some(delvewright_dsl::Horizon::Ocean)
-    );
+    let ocean = delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon)
+        == delvewright_dsl::HorizonBase::Ocean;
     let generator_settings = if ocean {
         "{\"biome\":\"minecraft:ocean\",\"layers\":[{\"block\":\"minecraft:bedrock\",\"height\":1},{\"block\":\"minecraft:stone\",\"height\":118},{\"block\":\"minecraft:water\",\"height\":8}]}"
     } else {

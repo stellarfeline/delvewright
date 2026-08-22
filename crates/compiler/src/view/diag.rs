@@ -21,7 +21,7 @@ pub const DW_RENDER: &str = "DW0723";
 // take the next unused number from the catalog in `docs/reference/compiler.md`
 // rather than from the highest constant here.
 /// The contact sheet's ordering is not a total order over the candidates: the
-/// score RANKS the page and never gates it (spec-0028 §3, owner ruling), so an
+/// score RANKS the page and never gates it (spec-0028 §3), so an
 /// ordering that drops, duplicates or overruns a candidate is refused.
 pub const DW_RANK_ORDER: &str = "DW0725";
 /// A contact sheet's score set bound to fewer candidates than the sheet holds —

@@ -714,7 +714,7 @@ impl LayoutBinding {
         b.nodes = graph.nodes.len();
         b.edges = graph.edges.len();
         b.beats = graph.beats.len();
-        let spine = mandatory_quests(c);
+        let spine = c.quest_plan.content.spine();
         b.spine_beats = graph
             .beats
             .iter()
@@ -1380,7 +1380,7 @@ fn critical_path(
         visited.insert(last.0.as_str());
     }
     // The spine obligation, and the zero binding that goes with it.
-    let spine = mandatory_quests(c);
+    let spine = c.quest_plan.content.spine();
     let mut required = 0usize;
     for beat in &graph.beats {
         if !spine.contains(beat.quest.0.as_str()) {
@@ -1423,29 +1423,6 @@ fn collect_grants(grants: &Grants, visited: &BTreeSet<&str>, held: &mut BTreeSet
             held.extend(given.iter().cloned());
         }
     }
-}
-
-/// The quests a body cannot reach the finale without: the finale and everything
-/// its `depends_on` chain demands.
-fn mandatory_quests(c: &Campaign) -> BTreeSet<&str> {
-    let deps: BTreeMap<&str, &[QuestId]> = c
-        .quest_plan
-        .content
-        .quests
-        .iter()
-        .map(|q| (q.id.0.as_str(), q.depends_on.as_slice()))
-        .collect();
-    let mut spine: BTreeSet<&str> = BTreeSet::new();
-    let mut stack = vec![c.quest_plan.content.finale.0.as_str()];
-    while let Some(q) = stack.pop() {
-        if !spine.insert(q) {
-            continue;
-        }
-        for dep in deps.get(q).copied().unwrap_or(&[]) {
-            stack.push(dep.0.as_str());
-        }
-    }
-    spine
 }
 
 /// `DW0819`: a one-way edge strands.

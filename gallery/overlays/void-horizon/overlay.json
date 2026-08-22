@@ -1,7 +1,7 @@
 {
   "binds": [
     "WorldContent.horizon",
-    "Horizon::void"
+    "HorizonBase::void"
   ],
   "note": "The default, written out. A world that DECLARES `void` and one that omits `horizon` compile to the same bytes, and only one of them has said anything — so the surface needs an author who writes it."
 }

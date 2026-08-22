@@ -133,7 +133,7 @@ INTERACTION_SITES = {
         "supplies the ANSWER, in the general effect vocabulary, so the reply is "
         "l10n-inventoried and flag-gated by construction. Empty for a campaign with "
         "no shortcut — byte-identical output. Shape 3, closed rather than catalogued. "
-        "v0.11 closed the other half, and the owner's ruling decided WHO closes it: "
+        "v0.11 closed the other half, and WHO closes it is settled: "
         "the answer is the general verb, and from 0.11.0 the CAMPAIGN must write "
         "it — an unanswered SEALED BODY is `DW0429`, door and `close-gate` wall "
         "alike, not a line the engine invents. A baked default would be the "
@@ -246,6 +246,19 @@ STRUCTURAL_TWINS = {
         "one affordance grammar for every mechanism the party can switch off'. The "
         "grammar is stated; the TYPE is copied. Each also emits its own interaction "
         "body (check A)."
+    ),
+    ("HorizonSpec", "ResolvedHorizon"): (
+        "ACCEPTED. Not one class typed twice but one class in its two STATES, and "
+        "the check cannot see the difference because it compares field NAMES and "
+        "the difference is entirely in the types: every param on `HorizonSpec` is "
+        "`Option<T>` because the wire form must be able to say 'unset', and every "
+        "param on `ResolvedHorizon` is `T` because the resolved view must not. "
+        "Sharing the type would mean one of the two lying — either downstream "
+        "unwrapping an `Option` that has already been resolved, which is where a "
+        "default gets applied twice and differently, or the wire form losing its "
+        "ability to distinguish an omitted param from one written at its default. "
+        "No capability is stranded: `Horizon::resolved` is the single crossing "
+        "between them and every consumer reads the resolved side."
     ),
     ("AnchorSubject", "CameraTarget", "CameraWaypoint"): (
         "ACCEPTED. Three camera-geometry types that coincidentally share "
