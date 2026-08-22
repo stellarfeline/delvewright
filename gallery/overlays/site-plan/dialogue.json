@@ -1,0 +1,93 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/curator-root",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "objective": "obj/hear-the-curator",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "Read me one."
+              }
+            ],
+            "text": "Every case in this hall has a label, and every label is read to somebody."
+          }
+        ],
+        "npc": "npc/curator",
+        "root": "dlg/curator-root"
+      },
+      {
+        "nodes": [
+          {
+            "id": "dlg/factor-root",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "objective": "obj/reach-the-counter",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "What is it worth?"
+              }
+            ],
+            "text": "Everything on the counter is priced. The emeralds are the hall's, not mine."
+          }
+        ],
+        "npc": "npc/factor",
+        "root": "dlg/factor-root"
+      },
+      {
+        "nodes": [
+          {
+            "id": "dlg/warden-root",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "objective": "obj/clear-the-muster",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "Is it cleared?"
+              }
+            ],
+            "text": "The muster formed up here and did not stay formed."
+          }
+        ],
+        "npc": "npc/warden",
+        "root": "dlg/warden-root"
+      },
+      {
+        "nodes": [
+          {
+            "id": "dlg/marshal-root",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "objective": "obj/climb-the-loft",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "Show me."
+              }
+            ],
+            "text": "From up here the whole hall is one picture."
+          }
+        ],
+        "npc": "npc/marshal",
+        "root": "dlg/marshal-root"
+      }
+    ]
+  },
+  "dsl_version": "0.14.0",
+  "stage": "dialogue"
+}

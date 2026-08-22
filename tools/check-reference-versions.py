@@ -104,8 +104,10 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
 
+from lib import mdtable  # noqa: E402
 from publishable import DerivationError, readmes  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -158,6 +160,12 @@ MC_VERSION_RE = re.compile(r'(?ms)^\[minecraft\]\s*$.*?^version\s*=\s*"([^"]+)"'
 
 # The DW0102 catalog row restates the same set by hand:
 #   | `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,…,0.9.0}`). |
+#
+# It is looked for among the rows a TABLE holds, not anywhere in the file. A
+# blank line ends a pipe table, so a row under one renders as a paragraph of
+# literal pipe characters — it would restate the set for this gate and show a
+# reader nothing. `compiler.md` carried twenty-one such rows at once.
+DOC_DW0102_ROW = re.compile(r"^\|\s*`DW0102`\s*\|")
 DOC_DW0102_RE = re.compile(r"\|\s*`DW0102`\s*\|[^|]*?not in `\{([^}]*)\}`")
 
 QUOTED_RE = re.compile(r'"([^"]+)"')
@@ -463,7 +471,34 @@ def main() -> int:
             + "".join(f"\n      {d}" for d in detail)
         )
 
-    m = DOC_DW0102_RE.search(doc_text)
+    catalog_rows, detached_rows = mdtable.rows_matching(doc_text, DOC_DW0102_ROW)
+    m = next(
+        (
+            found
+            for found in (DOC_DW0102_RE.search(r.line) for r in catalog_rows)
+            if found
+        ),
+        None,
+    )
+    if detached_rows:
+        # Said before `fail_shape`, because `fail_shape`'s remedy is "update the
+        # regex" and that is the wrong repair here: the pattern is right and the
+        # document is broken. A gate that names a remedy owes the RIGHT one.
+        lines = "\n".join(
+            f"      {DOC.name}:{lineno}  {line[:88]}" for lineno, line in detached_rows
+        )
+        print(
+            "error: the `DW0102` catalog row is in no table:\n"
+            f"{lines}\n"
+            "       A blank line above it ends the pipe table, so the page a "
+            "reader opens shows a\n"
+            "       paragraph of literal pipe characters and the supported set "
+            "is stated to nobody.\n"
+            "       Delete that blank line. Do NOT loosen DOC_DW0102_RE — the "
+            "pattern is correct.",
+            file=sys.stderr,
+        )
+        return 1
     if m is None:
         return fail_shape(
             "the `DW0102` catalog row's ``not in `{…}``` set", DOC, "DOC_DW0102_RE"

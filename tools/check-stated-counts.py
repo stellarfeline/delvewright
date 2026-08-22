@@ -84,6 +84,10 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+from lib import mdtable  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # --------------------------------------------------------------------- numbers
@@ -222,14 +226,39 @@ def library_program_ids(root: pathlib.Path) -> list[str]:
 
 
 def index_table_rows(root: pathlib.Path) -> list[tuple[str, str]]:
-    """`(first cell, program id)` for every row of the §2c idiom index table."""
+    """`(first cell, program id)` for every row of the §2c idiom index table.
+
+    Read as a table, not swept for a row pattern: §2c's index is what a creator
+    opens to find a technique, and a blank line ends a pipe table — so a row
+    below one renders as a paragraph of literal pipe characters and indexes
+    nothing, while still answering "is this program in the table" here. A row
+    the section holds outside any table is a red naming its line.
+    """
     # Fences first, then the section: a `# comment` line inside a shell block
     # is indistinguishable from an H1, and would end §2c above its own table.
+    # Both keep line numbers, so a finding can name the line in the real file.
     body = section_of(
         strip_code_fences((root / _GRAMMAR_MD).read_text(encoding="utf-8")),
         _INDEX_SECTION,
     )
-    rows = [(m["n"], m["id"]) for m in _INDEX_ROW_RE.finditer(body)]
+    in_table, detached = mdtable.rows_matching(body, _INDEX_ROW_RE)
+    if detached:
+        raise LookupError(
+            f"{_GRAMMAR_MD} §2c: "
+            + "; ".join(
+                f"line {lineno} is an index row that no table contains "
+                f"({line[:70]})"
+                for lineno, line in detached
+            )
+            + ". A blank line above it ended the table, so a creator reading "
+            "§2c sees a paragraph of literal pipe characters where the entry "
+            "should be."
+        )
+    rows = [
+        (m["n"], m["id"])
+        for m in (_INDEX_ROW_RE.match(r.line.strip()) for r in in_table)
+        if m
+    ]
     if not rows:
         raise LookupError(
             f"{_GRAMMAR_MD} §2c: the idiom index table did not parse — zero "

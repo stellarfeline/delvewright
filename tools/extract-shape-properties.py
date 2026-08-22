@@ -102,7 +102,7 @@ def main():
     if scanned == 0:
         sys.exit("refusing: the jar has no blockstate definitions — wrong file?")
 
-    out = json.dumps(table, indent=2, sort_keys=True) + "\n"
+    out = json.dumps(table, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     Path(out_path).write_text(out)
     print(
         f"{len(table)} blocks with multipart (shape-carrying) properties, "

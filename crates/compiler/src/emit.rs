@@ -536,6 +536,57 @@ pub fn build_with_warnings(
         }
         None => crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid),
     };
+
+    // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
+    //
+    // **Bound here, and here is the only door.** This is the one function that
+    // turns a `Plan` into a datapack, so a site-plan world cannot be built,
+    // packaged or shipped without being judged against the plan it was derived
+    // from. There is no flag, no subcommand and no line in a document to
+    // remember; a campaign with no site plan gets `None` and nothing runs, which
+    // is why every other campaign's output is byte-identical.
+    //
+    // It runs over the world model above — the same occupancy every other proof
+    // in this function is taken under, edits and relight included — because a
+    // battery that re-derived its own world would be judging a world nobody
+    // ships. `DW0836`/`DW0837`/`DW0838` refuse (exit 3); `DW0821` and `DW0822`
+    // are advisories that travel to the walk sheet, and the binding line is
+    // stated whether anything was found or not.
+    {
+        let blocks = match &edit_replay {
+            Some(er) => er.assembled.blocks.clone(),
+            None => crate::assembled::assembled_blocks(plan, structures),
+        };
+        // The three hashes a walk record names its subject and its instrument
+        // by (spec-0050 §2) — the two authored documents that are its freshness
+        // key, and the derived massing the drift advisory reads —
+        // printed by the one function that turns a `Plan` into a datapack, so a
+        // creator who has just built the thing they are about to walk has the
+        // numbers in front of them. The engine is named by its REVISION, never
+        // by its version string — two engines a hundred commits apart report the
+        // same version.
+        if let Some(h) = crate::detail::Hashes::of(plan.campaign) {
+            eprintln!("{}", h.line());
+        }
+        // What the DERIVATION bound to, beside what its observer did. Printing
+        // only the battery's line stated what was examined and never what was
+        // built — and at stage 6 the difference is the whole reading: `detailed`
+        // is how much of this map is a building and how much is still massing.
+        if let Some(b) = &plan.blockout {
+            eprintln!("{}", b.binding.line());
+        }
+        if let Some(battery) = crate::blockout::check(plan, &blocks) {
+            eprintln!("{}", battery.binding.line());
+            if let Some((code, refusal)) = battery.refusal() {
+                return Err(BuildFailure::Diagnostic {
+                    code: *code,
+                    message: refusal.message.clone(),
+                });
+            }
+            warnings.extend(battery.advisories());
+        }
+    }
+
     // Visual-tier player-POV shots (spec-0003): first-person cameras along the
     // proven critical-path routes. Filled inside the world block below (they need
     // the routes); empty for a campaign with no walked leg, so its render plan
@@ -565,6 +616,12 @@ pub fn build_with_warnings(
     // that assembles a world — including a bone-dry one, which then ships a
     // ledger reading zero rather than nothing at all.
     let mut fluid_escape_ledger: Option<serde_json::Value> = None;
+    // The sea-seepage proof's binding ledger (`compiler::nav`, `DW0851`): how much
+    // open face the built volume presents to the ambient sea, how far the sea gets
+    // in, and how much of the walk region it covers. Filled by every campaign that
+    // assembles a world — a `horizon: void` one included, which then ships a
+    // ledger saying `"horizon": "void"` and zeroes, rather than nothing at all.
+    let mut sea_seepage_ledger: Option<serde_json::Value> = None;
     // The lethal-volume proofs' binding ledger (`compiler::lethal`), filled inside
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
@@ -742,6 +799,20 @@ pub fn build_with_warnings(
                 });
             }
 
+            // Measured here for the LEDGER only, on the same terms as the fluid
+            // escape above: the refusal itself lives inside
+            // `verify_boundary_safety`, which owns the sequence, and this call
+            // cannot disagree with it because the measurement is pure and reads
+            // the same sets. A pass owes the numbers as much as a failure does —
+            // `contact_face_cells: 0` is a watertight hull saying so.
+            sea_seepage_ledger = Some(
+                crate::nav::measure_sea_seepage(
+                    &world,
+                    &world.reachable_walkable_rooted(&crate::edit::anchor_starts(plan)),
+                )
+                .ledger(),
+            );
+
             crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan)).map_err(
                 |e| BuildFailure::Diagnostic {
                     code: e.code,
@@ -867,6 +938,13 @@ pub fn build_with_warnings(
                 // or walls — the water-flow / post-nav-mutation divergence class —
                 // failing the build loudly (DW0314) instead of stranding the bot.
                 crate::nav::verify_exported_routes(&world, &routes)?;
+                // `DW0850`: the volume that completes a `reach` and the footing
+                // a body can reach it from are the same place. Bound HERE, to
+                // the same build event and the same final world the waypoint
+                // proof judges — the endpoint snap searches three blocks and
+                // the completion cube reaches one, so a route can be proven,
+                // exported and walked to a cell that never fires the objective.
+                crate::reach::check_reach_completion(plan, &world, &routes)?;
                 // Stair-orientation proof (DW0430). Nav models a stair
                 // as a full cube, so a reversed stair reads as a legal one-block
                 // jump and every existing proof passes — the delve ships with a
@@ -1187,6 +1265,20 @@ pub fn build_with_warnings(
         &branch_transport,
         stake_table.as_ref(),
     );
+    // `DW0852` over the FINAL function list — after every emitter has had its say,
+    // so a later pass that rewrote a judge cannot slip past a check that ran
+    // earlier. The ledger is UNCONDITIONAL, on the `fluid-escape.json` terms and
+    // not the `gate-seal.json` ones: this file is what the staging gate reads as
+    // this row's binding count, and an absent file there is reported as
+    // MISSING-CHECK — "nobody ran it" — where the truth about a campaign with no
+    // stealth beat is "nothing here can carry the defect". Those are different
+    // facts and the gate can only tell them apart if the file exists and says
+    // zero.
+    let audit = audit_stealth_judges(&functions, plan.stealth_beats.len());
+    if let Some((code, message)) = audit.finding() {
+        return Err(BuildFailure::Diagnostic { code, message });
+    }
+    put_json(&mut out, "validation/stealth-judge.json", &audit.ledger());
     for (name, body) in &functions {
         insert_unique(
             &mut out,
@@ -1525,6 +1617,13 @@ pub fn build_with_warnings(
     // assembles no world at all.
     if let Some(ledger) = &fluid_escape_ledger {
         put_json(&mut out, "validation/fluid-escape.json", ledger);
+    }
+    // The sea-seepage binding ledger (`DW0851`): the horizon, the open contact
+    // face the built volume presents to the ambient sea, how far the sea reaches
+    // inside it, and how much of the walk region it submerges or wades. `None`
+    // only for a campaign that assembles no world at all.
+    if let Some(ledger) = &sea_seepage_ledger {
+        put_json(&mut out, "validation/sea-seepage.json", ledger);
     }
     if let Some(ledger) = &gate_seal_ledger {
         put_json(&mut out, "validation/gate-seal.json", ledger);
@@ -2839,16 +2938,19 @@ fn emit_functions(
     // area binding one, whose lone piece has all its sockets unmated and so gets
     // a wall fill per connector.
     for area in &plan.areas {
-        for seal in &area.seals {
+        // The area's own mass first — a derived blockout's blocks (spec-0049 §5)
+        // arrive as region writes rather than in a `.nbt`, in the same order the
+        // compile-time model applied them (`crate::assembled::placed_blocks`), so
+        // the world the server builds is the world every proof was taken over.
+        // Empty for every prefab-placed area → byte-identical setup.
+        //
+        // Each write is already inside vanilla's `/fill` cap: the derivation
+        // splits at the point of writing, because a `fill` the server refuses
+        // fails in a function nobody reads.
+        for m in area.mass.iter().chain(&area.seals) {
             setup.push(format!(
                 "fill {} {} {} {} {} {} {}",
-                seal.from[0],
-                seal.from[1],
-                seal.from[2],
-                seal.to[0],
-                seal.to[1],
-                seal.to[2],
-                seal.block
+                m.from[0], m.from[1], m.from[2], m.to[0], m.to[1], m.to[2], m.block
             ));
         }
     }
@@ -3180,26 +3282,26 @@ fn emit_functions(
                         Some(ResolvedAnchor::Gate { from, .. }) => *from,
                         None => continue,
                     };
-                    // v0.3 (M2 fix 8): a point-radius `distance=..R` sphere was too
-                    // tight for a human standing on the altar cell. Test a block
-                    // region instead — the anchor cell with ±1 generosity on every
-                    // axis (a 3×3×3 box centred on the anchor). v0.2 keeps the
-                    // sphere so hello-world / keep-crawl stay byte-identical.
-                    if v03 {
-                        tick.push(format!(
-                            "execute as @a{} if entity @s[x={},dx=2,y={},dy=2,z={},dz=2] run function {ns}:complete_{}",
-                            pending_guard(plan, o, &qa),
-                            pos[0] - 1, pos[1] - 1, pos[2] - 1,
-                            safe_obj_fn(id.as_str())
-                        ));
-                    } else {
-                        tick.push(format!(
-                            "execute as @a{} if entity @s[x={},y={},z={},distance=..{}] run function {ns}:complete_{}",
-                            pending_guard(plan, o, &qa),
-                            pos[0], pos[1], pos[2], radius,
-                            safe_obj_fn(id.as_str())
-                        ));
-                    }
+                    // The completion volume is `crate::reach::reach_completion`'s
+                    // and nothing else's. It used to be spelled out here, as a
+                    // fixed ±1 box that dropped the authored `radius` on the floor
+                    // while the harness went on reading it; see that function for
+                    // what the disagreement cost. The selector's extent is
+                    // FORMATTED from the value rather than restated beside it, so
+                    // a change to the rule cannot leave a stale `dx=2` here.
+                    //
+                    // The same value reaches two other readers and neither
+                    // re-derives it: `Step::Reach` carries it into
+                    // `critical-path.json` for the harness, and
+                    // `crate::reach::check_reach_completion` proves the party can
+                    // get inside it. v0.2 keeps the sphere, so hello-world /
+                    // keep-crawl stay byte-identical.
+                    tick.push(format!(
+                        "execute as @a{} if entity @s[{}] run function {ns}:complete_{}",
+                        pending_guard(plan, o, &qa),
+                        crate::reach::reach_completion(pos, *radius, v03).selector_args(),
+                        safe_obj_fn(id.as_str())
+                    ));
                 }
                 Objective::Kill { id, wave, .. } => {
                     tick.push(format!(
@@ -8035,6 +8137,184 @@ fn emit_lethal_functions(plan: &Plan) -> Vec<(String, String)> {
     fns
 }
 
+/// `DW0852`: **a stealth judge asks a player for something other than where they
+/// are.**
+///
+/// A stealth beat is hiding, and hiding is a place. `emit_stealth_functions` has
+/// promised that since v0.6 — *"zone presence alone = hidden"*, in its own doc
+/// comment — because the alternative collides with the spectator cutscene camera
+/// and, more to the point, because a beat that demands a posture is a beat that
+/// demands something the fiction never asked for. A playtester met that as a
+/// stealth scene that quietly required crouching, which nothing in the story had
+/// said.
+///
+/// A promise in a doc comment is a doc line, and this project's own doctrine says
+/// a doc line is not an invocation. This is the invocation: it reads the FINAL
+/// emitted function list — not one emitter's return value, so a later pass that
+/// rewrote a judge would not slip past — and holds every per-player test to
+/// **position arguments and nothing else**.
+///
+/// ## Why an allowlist, and why it is scoped to the eval function
+///
+/// The rule is stated as *which selector arguments may appear* (`x`/`dx`/`y`/`dy`
+/// /`z`/`dz`), never as a list of forbidden ones. A denylist of `nbt`, `predicate`
+/// and friends is the wrong question asked correctly: the next demand on a player
+/// will be spelled some way nobody has thought of, and a denylist answers "not one
+/// of the six I knew about" with an honest no.
+///
+/// It examines `stealth_eval_*`, the per-player judge, and deliberately not
+/// `stealth_tick_*`, whose `@a[tag=!dw_cutscene]` is non-positional and correct:
+/// skipping a player watching a cinematic is the grace clock being frozen, not a
+/// demand made of that player. The distinction is between *who is judged* and
+/// *what the judgement asks for*, and only the second is this rule's business.
+///
+/// ## What stops it going quiet
+///
+/// The count of judges it found must equal the count of beats the plan holds. A
+/// rename that made the judge functions invisible to this scan would otherwise
+/// examine zero, find nothing, and pass — the truncated-input vacuity mode, where
+/// the number is neither zero nor wrong but is about a smaller world than the one
+/// the check claims to cover.
+pub const DW_STEALTH_JUDGE_NOT_POSITIONAL: DwCode = DwCode::every_version("DW0852");
+
+/// The selector arguments a stealth judge's per-player test may use: the box, and
+/// nothing else. Sorted, and an allowlist rather than a denylist — see
+/// [`DW_STEALTH_JUDGE_NOT_POSITIONAL`].
+const STEALTH_JUDGE_ARGS: [&str; 6] = ["dx", "dy", "dz", "x", "y", "z"];
+
+/// **What the stealth-judge audit looked at**, so its verdict reads as a
+/// measurement rather than a silence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StealthJudgeAudit {
+    /// Stealth beats the plan holds — the denominator `judges` must equal.
+    pub beats: usize,
+    /// `stealth_eval_*` functions found in the emitted set.
+    pub judges: usize,
+    /// Per-player `if entity @s[…]` tests across all of them. This is the
+    /// binding count: zero means no judge asks anything of anybody.
+    pub examined: usize,
+    /// Every selector argument any of those tests used, sorted and deduped —
+    /// printed whether or not it is a finding, so a reader sees the vocabulary
+    /// rather than a verdict about it.
+    pub arguments: Vec<String>,
+    /// The violations: `(function, offending argument)`, sorted.
+    pub offenders: Vec<(String, String)>,
+    /// True when the judge count and the beat count disagree — this scan was
+    /// looking at a smaller world than it claims to cover.
+    pub scan_incomplete: bool,
+}
+
+/// Audit the emitted stealth judges. Pure over the emitted function list, so the
+/// rule is unit-testable against a fabricated judge as well as against a real one.
+pub fn audit_stealth_judges(functions: &[(String, String)], beats: usize) -> StealthJudgeAudit {
+    let mut judges = 0usize;
+    let mut examined = 0usize;
+    let mut arguments: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut offenders: std::collections::BTreeSet<(String, String)> =
+        std::collections::BTreeSet::new();
+    for (name, body) in functions {
+        if !name.starts_with("stealth_eval_") {
+            continue;
+        }
+        judges += 1;
+        for line in body.lines() {
+            let Some(open) = line.find("if entity @s[") else {
+                continue;
+            };
+            let start = open + "if entity @s[".len();
+            let Some(len) = line[start..].find(']') else {
+                continue;
+            };
+            examined += 1;
+            for arg in line[start..start + len].split(',') {
+                let key = arg.split('=').next().unwrap_or("").trim().to_string();
+                if key.is_empty() {
+                    continue;
+                }
+                if !STEALTH_JUDGE_ARGS.contains(&key.as_str()) {
+                    offenders.insert((name.clone(), key.clone()));
+                }
+                arguments.insert(key);
+            }
+        }
+    }
+    StealthJudgeAudit {
+        beats,
+        judges,
+        examined,
+        arguments: arguments.into_iter().collect(),
+        offenders: offenders.into_iter().collect(),
+        scan_incomplete: judges != beats,
+    }
+}
+
+impl StealthJudgeAudit {
+    /// The `DW0852` violation, or `None`.
+    pub fn finding(&self) -> Option<(DwCode, String)> {
+        if self.scan_incomplete {
+            return Some((
+                DW_STEALTH_JUDGE_NOT_POSITIONAL,
+                format!(
+                    "internal invariant violation: the stealth-judge audit found {} \
+                     `stealth_eval_*` function(s) for {} declared stealth beat(s), so it was \
+                     examining a smaller world than it claims to cover and its pass would have \
+                     meant nothing. Something renamed or dropped the per-player judge. This is a \
+                     compiler bug; stop and escalate.",
+                    self.judges, self.beats
+                ),
+            ));
+        }
+        if self.offenders.is_empty() {
+            return None;
+        }
+        let listing: Vec<String> = self
+            .offenders
+            .iter()
+            .map(|(f, a)| format!("`{f}` uses `{a}`"))
+            .collect();
+        Some((
+            DW_STEALTH_JUDGE_NOT_POSITIONAL,
+            format!(
+                "a stealth judge asks a player for something other than where they are: {}. \
+                 A stealth beat is HIDING, and hiding is a place — presence in a declared zone \
+                 is the whole of it, which is what `emit_stealth_functions` has promised since \
+                 v0.6, and what a playtester met the other way round: a scene that quietly \
+                 required crouching when nothing in the story had asked for it. The per-player \
+                 test may use {} and nothing else, and a selector argument outside that set is \
+                 a demand made of the player whatever it is spelled. Examined {} per-player \
+                 test(s) across {} judge(s) for {} declared beat(s), using {}. If a beat \
+                 genuinely needs a posture or an item, that is a DSL surface to propose, not a \
+                 predicate to add here — do NOT widen this list.",
+                listing.join(", "),
+                STEALTH_JUDGE_ARGS.join("/"),
+                self.examined,
+                self.judges,
+                self.beats,
+                self.arguments.join(", "),
+            ),
+        ))
+    }
+
+    /// The binding ledger (`validation/stealth-judge.json`), emitted by **every**
+    /// campaign — a stealth-less one ships zeroes rather than nothing at all. The
+    /// staging gate reads this file as this rule's binding count, and it reports an
+    /// absent file as *nobody ran the check*, which is not what "this campaign
+    /// fields no stealth" means. A zero here is read against the beats the
+    /// campaign declares: zero beats and zero tests is INAPPLICABLE, beats with no
+    /// tests is UNBOUND, and both are said out loud.
+    pub fn ledger(&self) -> serde_json::Value {
+        serde_json::json!({
+            "beats": self.beats,
+            "judges": self.judges,
+            "examined": self.examined,
+            "arguments": self.arguments,
+            "allowed_arguments": STEALTH_JUDGE_ARGS,
+            "offenders": self.offenders.iter().map(|(f, a)| serde_json::json!({"function": f, "argument": a})).collect::<Vec<_>>(),
+            "verdict": if self.finding().is_some() { "fail" } else { "pass" },
+        })
+    }
+}
+
 /// Generate the stealth-beat functions (DSL v0.6, spec-0014; no sneak
 /// requirement — holding sneak collides with the
 /// spectator cutscene camera). For each beat: an `arm` that activates the
@@ -12499,8 +12779,9 @@ fn emit_packtest(
     //     therefore drives one coherent per-branch path per phase, serialized
     //     through the vanilla scheduler.
     //
-    // Campaigns with no branch points and a synchronous ending keep the original
-    // single-tick template byte for byte.
+    // Both shapes open with the SAME full progression re-baseline
+    // ([`campaign_progression_baseline`]) — see that function for the defect
+    // that cost this its own intermittent red.
     let (pin, sel) = pin_dummy("dw_t_camp");
     let party = plan::PARTY;
     let branches: Vec<crate::branch::RealizedBranch> = crate::branch::realize(c)
@@ -12518,20 +12799,15 @@ fn emit_packtest(
             .map(|q| q.id.as_str())
             .collect();
         let tail = quests_ending_tail(c, &quests, moves, actor_moves);
-        // Baseline + drive. Actively establish the asserted baseline — on the
-        // shared-batch server "never set" is not 0. spec-0018: the whole chain is
+        // Baseline + drive. The baseline is the WHOLE progression surface
+        // ([`campaign_progression_baseline`]), not just the score this template
+        // asserts: the chain it drives is guarded, so a term a sibling left set
+        // silently turns the drive into a no-op. spec-0018: the whole chain is
         // PARTY state, so the baseline, the activation and the assert all address
         // `#party`; the dummy is still what DRIVES it (`execute as {sel} run …`),
         // which is exactly the multiplayer claim — one player's action advances
         // the party.
-        let mut drive: Vec<String> = Vec::new();
-        drive.push(format!("scoreboard players set {party} {comp_obj} 0"));
-        for qid in campaign_start_quests(c) {
-            drive.push(format!(
-                "scoreboard players set {party} {} 1",
-                quest_active_score(qid)
-            ));
-        }
+        let mut drive: Vec<String> = campaign_progression_baseline(c, &comp_obj);
         for q in &c.quests.content.quests {
             for o in &q.objectives {
                 drive.push(format!(
@@ -12546,42 +12822,51 @@ fn emit_packtest(
             artifact_title(c)
         ));
         body.push("# @dummy".to_string());
-        if tail == 0 {
-            body.push("# @timeout 100".to_string());
-            body.push(String::new());
-            body.push(format!("function {ns}:setup"));
-            // Pin this test's own dummy and drive the whole chain on it alone (see
-            // `pin_dummy`): `@a`-wide quest/objective writes would land on every
-            // sibling test's dummy in the batch, and the closing `@p` assert could
-            // read a foreign one.
-            body.push(pin);
-            body.extend(drive);
-            body.push(format!(
-                "assert score {party} {comp_obj} matches {comp_val}"
-            ));
+        // The baseline + drive live in `pt_camp_drive`, a suite `function/`
+        // called on the drive tick, in BOTH shapes — the scheduled-ending one
+        // because its template spans ticks, and the synchronous one because of
+        // the pair below.
+        //
+        // `tests/packtest_batch.rs::party_state_across_ticks_is_owned` reads each
+        // template's OWN text and demands that a `#party` score awaited across
+        // ticks be touched by exactly one template. The whole-ledger baseline
+        // ([`campaign_progression_baseline`]) touches every progression score, so
+        // written inline it would refuse any campaign whose suite also awaits one
+        // of them across ticks — `sched_arrive_flag`, emitted for a `move-npc`
+        // whose `on_arrive` sets a flag, awaits exactly that. There would then be
+        // NO green state: `DW0807` demands the baseline and that test refuses it.
+        // Hoisting is the state that satisfies both, so it is unconditional
+        // rather than a property of the ending's shape. The hoisted writes stay
+        // atomic-with-the-drive either way — one mcfunction, one tick.
+        let (close, timeout) = if tail == 0 {
+            (
+                format!("assert score {party} {comp_obj} matches {comp_val}"),
+                100,
+            )
         } else {
             // Scheduled ending: the ending lands `tail` ticks after the terminal
-            // drive, so the template awaits it (never a weaker assert — `await`
-            // fails the test at timeout exactly as `assert` fails it on the
-            // spot). The template now spans ticks, so its body may touch no
-            // `#party` score a sibling template also touches
-            // (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`):
-            // the baseline + drive — shared quest/flag state, written and
-            // consumed atomically within one tick, exactly as in the single-tick
-            // form — is hoisted into `pt_camp_drive`, leaving the awaited
-            // completion objective (owned by this template alone) as the
-            // template's only cross-tick surface.
-            body.push(format!("# @timeout {}", 100 + tail));
-            body.push(String::new());
-            body.push(format!("function {ns}:setup"));
-            body.push(pin);
-            body.push(format!("function {ns}:pt_camp_drive"));
-            body.push(format!("await score {party} {comp_obj} matches {comp_val}"));
-            out.insert(
-                format!("packtest-datapack/data/{ns}/function/pt_camp_drive.mcfunction"),
-                lines(&drive).into_bytes(),
-            );
-        }
+            // drive, so the template awaits it — never a weaker assert, since
+            // `await` fails the test at timeout exactly as `assert` fails it on
+            // the spot.
+            (
+                format!("await score {party} {comp_obj} matches {comp_val}"),
+                100 + tail,
+            )
+        };
+        body.push(format!("# @timeout {timeout}"));
+        body.push(String::new());
+        body.push(format!("function {ns}:setup"));
+        // Pin this test's own dummy and drive the whole chain on it alone (see
+        // `pin_dummy`): `@a`-wide quest/objective writes would land on every
+        // sibling test's dummy in the batch, and the closing `@p` assert could
+        // read a foreign one.
+        body.push(pin);
+        body.push(format!("function {ns}:pt_camp_drive"));
+        body.push(close);
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/pt_camp_drive.mcfunction"),
+            lines(&drive).into_bytes(),
+        );
         out.insert(
             format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
             lines(&body).into_bytes(),
@@ -12772,6 +13057,87 @@ fn emit_packtest(
 /// function plus the completion write itself.
 const CAMPAIGN_PHASE_MARGIN_TICKS: u32 = 20;
 
+/// The campaign-playthrough template's opening baseline: **the whole party
+/// progression ledger, set to the campaign's start state**, in one place for
+/// both shapes of that template.
+///
+/// The completion objective, every declared flag, and every quest's
+/// active/complete score plus every objective score go to 0; then the
+/// campaign-start quests go active. What follows it is a drive of the real
+/// completion functions, so the template plays the campaign from its beginning
+/// rather than from wherever the batch happens to have left it.
+///
+/// ## Why the whole ledger, and not just the score the template asserts
+///
+/// The chain the drive runs is **guarded**: `check_q_<quest>` fires
+/// `complete_q_<quest>` only `unless score #party dw.q_<quest> matches 1`, which
+/// is right for the shipped campaign (a quest completes once) and fatal for a
+/// template that re-drives it. `#party` is batch-global (spec-0018), and the
+/// suite's own siblings reach that ledger through the campaign's real `tick` —
+/// so one sibling calling `function <ns>:tick` while another sibling's dummies
+/// stand in a `reach` volume can complete the terminal quest outright. The
+/// campaign template then zeroes only `dw.campaign`, drives every objective, and
+/// every `check_q_*` declines: **the drive becomes a silent no-op and the assert
+/// reads 0 on tick 0**.
+///
+/// Measured, on the shipped bytes of `souls-bonfire`: PackTest runs the suite as
+/// one batch in a RANDOMISED order, and in the order that reproduced it
+/// `verb_kill` (which runs the real `tick`, completing `obj/slay` and starting
+/// the closing cutscene, whose camera every dummy in the batch then spectates)
+/// and `v04_interact_cleanup`/`verb_interact` (which complete `obj/door`) landed
+/// before `campaign`; the next server tick completed `obj/shrine` on the
+/// spectating dummies, `check_q_trial` fired, and `dw.campaign` was already
+/// decided. The template that ran afterwards could not re-drive any of it.
+///
+/// The branch shape of the template has always done this — its phases re-run the
+/// same campaign, so it met the wall on its second phase and fixed it there.
+/// This is that fix reaching the shape that meets the wall through a *sibling*
+/// instead of through its own second phase, and it is one function rather than
+/// two spellings on purpose: a hand-rolled subset of a baseline is how a gate
+/// gets a hole (`crate::batchstate`, `DW0807`).
+///
+/// ## Why this is not a new order-dependence
+///
+/// Every term zeroed here is written again by the drive that follows it, in the
+/// same atomic `mcfunction` — the template body in the single-tick shape,
+/// `pt_camp_drive` in the scheduled-ending shape, `pt_camp_run_<i>` in the
+/// branch shape. Vanilla runs a function to completion before any other
+/// function, so no sibling can observe the zeroed intermediate state.
+fn campaign_progression_baseline(c: &delvewright_dsl::Campaign, comp_obj: &str) -> Vec<String> {
+    let party = plan::PARTY;
+    let mut b: Vec<String> = Vec::new();
+    b.push(format!("scoreboard players set {party} {comp_obj} 0"));
+    for f in declared_flags(c) {
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            plan::flag_score(&f)
+        ));
+    }
+    for q in &c.quests.content.quests {
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            quest_score(q.id.as_str())
+        ));
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            quest_active_score(q.id.as_str())
+        ));
+        for o in &q.objectives {
+            b.push(format!(
+                "scoreboard players set {party} {} 0",
+                obj_score(o.id().as_str())
+            ));
+        }
+    }
+    for qid in campaign_start_quests(c) {
+        b.push(format!(
+            "scoreboard players set {party} {} 1",
+            quest_active_score(qid)
+        ));
+    }
+    b
+}
+
 /// The branch-aware campaign mechanism test: ONE template that
 /// drives each reachable branch's coherent path as its own phase, serialized
 /// through the vanilla scheduler, and awaits one verdict per phase.
@@ -12785,11 +13151,10 @@ const CAMPAIGN_PHASE_MARGIN_TICKS: u32 = 20;
 /// control. Phases are strictly ordered by construction: phase *i*'s scheduled
 /// check is what starts phase *i + 1*.
 ///
-/// Each phase (`pt_camp_run_<i>`) re-baselines the WHOLE progression surface
-/// (completion objective, every flag, every quest active/complete score, every
-/// objective score — a fresh coherent run; a prior phase's terminal quest would
+/// Each phase (`pt_camp_run_<i>`) opens with the WHOLE progression re-baseline
+/// ([`campaign_progression_baseline`] — a prior phase's terminal quest would
 /// otherwise stay `dw.q_* = 1` and its completion-guarded `on_complete` never
-/// re-fire), sets the campaign-start quests active, then drives ONLY this
+/// re-fire), then drives ONLY this
 /// branch's path in play order. A `talk-to` step whose branch-scripted option
 /// sets flags has those flags emulated immediately before its drive — the
 /// option handler is UI-bound, and this is where the real playthrough sets
@@ -12828,35 +13193,7 @@ fn emit_branch_campaign_packtest(
             "# coherent path only (its scripted dialogue choices emulated as the flags".to_string(),
         );
         run.push("# those options set, at their real path positions).".to_string());
-        run.push(format!("scoreboard players set {party} {comp_obj} 0"));
-        for f in declared_flags(c) {
-            run.push(format!(
-                "scoreboard players set {party} {} 0",
-                plan::flag_score(&f)
-            ));
-        }
-        for q in &c.quests.content.quests {
-            run.push(format!(
-                "scoreboard players set {party} {} 0",
-                quest_score(q.id.as_str())
-            ));
-            run.push(format!(
-                "scoreboard players set {party} {} 0",
-                quest_active_score(q.id.as_str())
-            ));
-            for o in &q.objectives {
-                run.push(format!(
-                    "scoreboard players set {party} {} 0",
-                    obj_score(o.id().as_str())
-                ));
-            }
-        }
-        for qid in campaign_start_quests(c) {
-            run.push(format!(
-                "scoreboard players set {party} {} 1",
-                quest_active_score(qid)
-            ));
-        }
+        run.extend(campaign_progression_baseline(c, comp_obj));
         for step in &r.path {
             if let Some(opt) = step.talk_option {
                 for f in option_sets_flags(plan, &step.objective, opt) {
@@ -19720,9 +20057,14 @@ fn critical_path_json(
                     "action": "talk-to", "objective": objective_id, "npc": npc_id,
                     "pos": pos, "command": command
                 }),
-                Step::Reach { objective_id, anchor_id, pos, radius } => json!({
+                // `completion` is the volume the server adjudicates in, not a
+                // second description of it: it comes off the same
+                // `plan::reach_completion` call the tick line is formatted from.
+                // `radius` stays beside it as the AUTHORED number, which is a
+                // different fact and is what a report cites.
+                Step::Reach { objective_id, anchor_id, pos, radius, completion } => json!({
                     "action": "reach", "objective": objective_id, "anchor": anchor_id,
-                    "pos": pos, "radius": radius
+                    "pos": pos, "radius": radius, "completion": completion.to_json()
                 }),
                 Step::Kill { objective_id, wave_id, pos, tag, count } => json!({
                     "action": "kill", "objective": objective_id, "wave": wave_id,

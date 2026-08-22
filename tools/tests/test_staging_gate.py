@@ -271,6 +271,306 @@ def test_the_fence_is_checked_before_the_binding_count(gate, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# The blockout: a pre-detail site-plan subject (spec-0049)
+#
+# The conflict this answers: spec-0049 stages a whole-map walk BEFORE any
+# content exists, and the gate's zero-binding verdicts redded precisely
+# because no content exists — no green state, and the remedy each red named
+# was the one thing the spec forbids doing first. The repair is a verdict the
+# OBJECT determines: a site-plan campaign whose build the compiler records as
+# derived massing, with no detail-plan document anywhere, may carry
+# OUT-OF-STAGE for a row whose class measures zero at both binding and
+# precondition. Nothing an operator types reaches it, and every test below
+# drives it in both directions.
+# ---------------------------------------------------------------------------
+
+
+def make_blockout_campaign(tmp_path, *, objectives=None, detail_plan=False):
+    d = make_campaign(
+        tmp_path,
+        objectives=objectives if objectives is not None else [{"type": "talk-to"}],
+        dsl_version="0.14.0",
+    )
+    (d / "site-plan.json").write_text(
+        json.dumps({"dsl_version": "0.14.0", "stage": "site-plan", "content": {"boxes": []}})
+    )
+    if detail_plan:
+        (d / "detail-plan.json").write_text(
+            json.dumps({"dsl_version": "0.15.0", "stage": "detail-plan", "content": {}})
+        )
+    return d
+
+
+def make_blockout_build(tmp_path, *, validation=None, inputs=("quests.json", "site-plan.json")):
+    b = make_build(tmp_path, validation=validation)
+    (b / "manifest.json").write_text(
+        json.dumps({"inputs": {k: "0" * 8 for k in inputs}, "outputs": {}})
+    )
+    return b
+
+
+# An identity-shaped probe over a class the subject declares zero of.
+IDENTITY_ZERO_ROW = {
+    "id": "z",
+    "finding": "f",
+    "carrier": {"kind": "dw", "code": LIVE_CODE},
+    "binding": {
+        "kind": "dsl",
+        "files": ["quests.json"],
+        "match": {"eq": {"type": "volley"}},
+    },
+}
+
+
+def adjudicate_on(gate, camp, build, row):
+    return gate.adjudicate(row, gate.Engine(), gate.Subject(camp, build))
+
+
+def test_an_identity_zero_on_a_blockout_is_out_of_stage_not_red(gate, tmp_path):
+    """The probe selects the class by identity, so its zero counts the class
+    itself: a measured double zero on a build that does not claim to be
+    finished. Non-red, but never silent — the id lands in the token."""
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(tmp_path)
+    r = adjudicate_on(gate, camp, build, IDENTITY_ZERO_ROW)
+    assert r["verdict"] == "OUT-OF-STAGE"
+    assert r["verdict"] not in gate.RED_VERDICTS
+    assert r["binding"] == 0 and r["precondition"] == 0
+
+
+def test_the_same_zero_on_an_assembled_campaign_stays_red(gate, tmp_path):
+    """Absence on a build that claims to be finished is the news, exactly as
+    before this verdict existed. Assembled adjudication is byte-for-byte the
+    old behaviour."""
+    r = run(gate, tmp_path, IDENTITY_ZERO_ROW, objectives=[{"type": "talk-to"}])
+    assert r["verdict"] == "UNBOUND"
+
+
+def test_a_detail_plan_document_ends_the_blockout_stage(gate, tmp_path):
+    """The verdict is about a stage, never about a campaign: the day the
+    campaign details, every OUT-OF-STAGE row reverts to red."""
+    camp = make_blockout_campaign(tmp_path, detail_plan=True)
+    build = make_blockout_build(tmp_path)
+    r = adjudicate_on(gate, camp, build, IDENTITY_ZERO_ROW)
+    assert r["verdict"] == "UNBOUND"
+
+
+def test_a_manifest_not_compiled_from_the_site_plan_fails_closed(gate, tmp_path):
+    """The stage claim needs the compiler's own record. A build whose manifest
+    does not list the site plan among its inputs gets no blockout verdict,
+    whatever the campaign directory says."""
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(tmp_path, inputs=("quests.json",))
+    r = adjudicate_on(gate, camp, build, IDENTITY_ZERO_ROW)
+    assert r["verdict"] == "UNBOUND"
+
+
+def test_a_nonzero_precondition_stays_red_on_a_blockout(gate, tmp_path):
+    """The quietly-lost direction: objects that could carry the defect exist
+    (the precondition measures non-zero), and the check is inert over them.
+    A blockout buys no forgiveness for that."""
+    row = dict(
+        IDENTITY_ZERO_ROW,
+        id="lost",
+        applies_when={
+            "kind": "dsl",
+            "files": ["quests.json"],
+            "match": {"eq": {"type": "talk-to"}},
+        },
+    )
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(tmp_path)
+    r = adjudicate_on(gate, camp, build, row)
+    assert r["verdict"] == "UNBOUND"
+    assert r["precondition"] == 1
+
+
+def test_a_measured_double_zero_is_out_of_stage_only_at_pre_detail(gate, tmp_path):
+    row = dict(
+        IDENTITY_ZERO_ROW,
+        id="dz",
+        applies_when={
+            "kind": "dsl",
+            "files": ["quests.json"],
+            "match": {"eq": {"type": "interact"}},
+        },
+    )
+    blockout = tmp_path / "blockout"
+    blockout.mkdir()
+    camp = make_blockout_campaign(blockout)
+    build = make_blockout_build(blockout)
+    assert adjudicate_on(gate, camp, build, row)["verdict"] == "OUT-OF-STAGE"
+    r = run(gate, tmp_path, row, objectives=[{"type": "talk-to"}])
+    assert r["verdict"] == "INAPPLICABLE"
+    assert r["verdict"] in gate.RED_VERDICTS
+
+
+def test_a_declaration_shaped_zero_without_a_probe_stays_red_on_a_blockout(gate, tmp_path):
+    """A `has` predicate can be narrower than its carriers (the island's floor
+    gate counted `tier`, not actors), so its zero is ambiguous and the stage
+    cannot answer it. The gate keeps refusing to guess, blockout or not."""
+    row = dict(
+        IDENTITY_ZERO_ROW,
+        id="decl",
+        binding={
+            "kind": "dsl",
+            "files": ["quests.json"],
+            "match": {"has": ["container"]},
+        },
+    )
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(tmp_path)
+    r = adjudicate_on(gate, camp, build, row)
+    assert r["verdict"] == "UNBOUND"
+    assert "never measured" in r["detail"]
+
+
+def test_an_unemitted_artifact_with_declared_objects_is_missing_check(gate, tmp_path):
+    """combat-plan.json absent while the campaign stages fights: the build
+    lost its ledger. Red on every subject, blockout included."""
+    row = dict(
+        IDENTITY_ZERO_ROW,
+        id="art",
+        carrier={"kind": "dw", "code": LIVE_CODE},
+        binding={"kind": "artifact", "file": "combat-plan.json", "path": "fights.total"},
+        applies_when={
+            "kind": "dsl",
+            "files": ["quests.json"],
+            "match": {"eq": {"type": "talk-to"}},
+        },
+    )
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(tmp_path)
+    r = adjudicate_on(gate, camp, build, row)
+    assert r["verdict"] == "MISSING-CHECK"
+    assert "emitted no ledger" in r["detail"]
+
+
+def test_an_unemitted_artifact_whose_class_measures_zero_is_explained(gate, tmp_path):
+    """The compiler emits these ledgers only over objects that exist, so a
+    measured-zero precondition explains the absence: INAPPLICABLE on an
+    assembled subject (still red), OUT-OF-STAGE on a blockout."""
+    row = dict(
+        IDENTITY_ZERO_ROW,
+        id="art0",
+        binding={"kind": "artifact", "file": "combat-plan.json", "path": "fights.total"},
+        applies_when={
+            "kind": "dsl",
+            "files": ["quests.json"],
+            "match": {"eq": {"type": "volley"}},
+        },
+    )
+    blockout = tmp_path / "blockout"
+    blockout.mkdir()
+    camp = make_blockout_campaign(blockout)
+    build = make_blockout_build(blockout)
+    assert adjudicate_on(gate, camp, build, row)["verdict"] == "OUT-OF-STAGE"
+    r = run(gate, tmp_path, row, objectives=[{"type": "talk-to"}])
+    assert r["verdict"] == "INAPPLICABLE"
+
+
+def test_an_unemitted_artifact_without_a_probe_is_still_missing_check(gate, tmp_path):
+    row = dict(
+        IDENTITY_ZERO_ROW,
+        id="artn",
+        binding={"kind": "artifact", "file": "combat-plan.json", "path": "fights.total"},
+    )
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(tmp_path)
+    assert adjudicate_on(gate, camp, build, row)["verdict"] == "MISSING-CHECK"
+
+
+def test_a_blockout_buys_nothing_for_the_other_reds(gate, tmp_path):
+    """NO-GENERAL-FORM and UNFENCED are about the ledger and the engine, not
+    about this build's content; the stage cannot touch them."""
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(tmp_path)
+    ngf = {"id": "ngf", "finding": "f", "carrier": None}
+    assert adjudicate_on(gate, camp, build, ngf)["verdict"] == "NO-GENERAL-FORM"
+    fenced = dict(
+        IDENTITY_ZERO_ROW,
+        id="fence",
+        requires={"file": "quests.json", "min_dsl_version": "99.0.0"},
+    )
+    assert adjudicate_on(gate, camp, build, fenced)["verdict"] == "UNFENCED"
+
+
+def test_a_row_may_not_declare_its_own_binding_as_its_precondition(gate, tmp_path):
+    """The self-grant guard: an exemption a row can grant itself is not a
+    gate."""
+    bad = tmp_path / "l.json"
+    probe = {
+        "kind": "dsl",
+        "files": ["quests.json"],
+        "match": {"eq": {"type": "volley"}},
+    }
+    bad.write_text(
+        json.dumps(
+            {
+                "findings": [
+                    {
+                        "id": "x",
+                        "finding": "f",
+                        "carrier": {"kind": "dw", "code": LIVE_CODE},
+                        "binding": probe,
+                        "applies_when": probe,
+                    }
+                ]
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="grant itself"):
+        gate.load_ledger(bad)
+
+
+def test_a_green_blockout_mints_a_token_the_verifier_announces(gate, tmp_path):
+    """End to end: the gate passes an honestly-empty blockout, the token names
+    the out-of-stage classes, and the boot banner reads them aloud — the
+    owner is told the session's scope where the session starts."""
+    camp = make_blockout_campaign(tmp_path, objectives=[{"type": "interact"}])
+    tree = make_blockout_build(tmp_path)
+    ledger = tmp_path / "led.json"
+    ledger.write_text(
+        json.dumps({"findings": [dict(BOUND_ROW, id="ok"), dict(IDENTITY_ZERO_ROW, id="oos")]})
+    )
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+         "--ledger", str(ledger)],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "OUT-OF-STAGE" in proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert token["pre_detail"] is True
+    assert token["out_of_stage"] == ["oos"]
+    assert token["out_of_stage_count"] == 1
+    r = verify(tree)
+    assert r.returncode == 0
+    assert "BLOCKOUT WALK" in r.stderr
+    assert "cannot exercise: 1" in r.stderr
+
+
+def test_an_assembled_token_gets_no_blockout_banner(gate, tmp_path):
+    r = verify(admitted_tree(tmp_path, gate))
+    assert r.returncode == 0
+    assert "BLOCKOUT WALK" not in r.stderr
+
+
+def test_strict_fails_on_out_of_stage_rows(gate, tmp_path):
+    """The absolute floor treats OUT-OF-STAGE like DECLARED-UNCOVERABLE."""
+    camp = make_blockout_campaign(tmp_path, objectives=[{"type": "interact"}])
+    tree = make_blockout_build(tmp_path)
+    ledger = tmp_path / "led.json"
+    ledger.write_text(json.dumps({"findings": [dict(IDENTITY_ZERO_ROW, id="oos")]}))
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+         "--ledger", str(ledger), "--strict"],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 1
+
+
+# ---------------------------------------------------------------------------
 # A campaign that cannot be measured at all
 # ---------------------------------------------------------------------------
 

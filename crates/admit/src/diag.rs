@@ -24,6 +24,13 @@
 //! owns: `DW0782` (the contract disagrees with the blocks) and `DW0783` (the
 //! door did not judge this piece, and what it therefore did not examine).
 //!
+//! and the footprint-class door (spec-0050 §5), which declares **no code of its
+//! own**: `DW0848` and `DW0812` are `delvewright_dsl::prefab`'s and
+//! `delvewright_dsl::metrics`', because the rule is theirs and this crate is one
+//! of its two doors. The code travels with the finding rather than being
+//! restamped here — a `DW0812` message printed under a `DW0848` heading is the
+//! plausible-and-wrong shape, and it is what caught this.
+//!
 //! Diagnostics go to **stderr** so stdout stays reserved for machine-readable
 //! reports (audit report, curation report, palette dumps).
 

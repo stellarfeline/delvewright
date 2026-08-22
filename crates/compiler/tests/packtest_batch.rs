@@ -32,11 +32,24 @@
 //! any sibling used one.
 //!
 //! So the obligation is inverted rather than widened, and it moves to the party
-//! that can discharge it: a template that runs the real `tick` and asserts on a
-//! gated outcome must WRITE every `#party` term that gate reads, whoever else
+//! that can discharge it: a template that DRIVES the outcome it asserts on must
+//! WRITE every `#party` term the gates on that outcome's path read, whoever else
 //! touches it. That is `delvewright_compiler::batchstate` (`DW0807`), bound in
 //! the emitter over the shipped bytes and asserted here by
 //! `every_template_owns_the_gate_it_asserts_on`.
+//!
+//! **"Drives" is not "ticks", and reading it as `tick` left the hole open.** The
+//! campaign-playthrough template calls `complete_<objective>` directly, is
+//! decided by `check_q_<quest>`'s `unless score #party dw.q_<quest> matches 1`
+//! one dispatch below that, and asserts a score written two dispatches below in
+//! `campaign_complete` — so a check built from `tick`'s own lines and one level
+//! of writes did not count it, let alone judge it, and it shipped an
+//! intermittent whose message is the batch model's own signature (*Expected
+//! #party dw.campaign to match 1, but got 0 on tick 0*). The repair is on both
+//! sides: `emit::campaign_progression_baseline` re-baselines the whole party
+//! ledger, and `batchstate` reads writes transitively, treats any gated dispatch
+//! on the drive's path as a gate, counts `await` as an assertion, and inlines a
+//! template's own hoisted helper functions before judging.
 
 mod common;
 
@@ -626,6 +639,13 @@ fn every_template_owns_the_gate_it_asserts_on() {
                 assert!(
                     b.templates > 0,
                     "{suite}: the batch-state check examined zero templates"
+                );
+                // The denominator, printed rather than assumed: a widening of
+                // this check is only reviewable against the population it
+                // examined before and after.
+                eprintln!(
+                    "batch-state binding [{suite}]: templates={} driving={} judged={}",
+                    b.templates, b.driving, b.judged
                 );
                 judged_total += b.judged;
             }

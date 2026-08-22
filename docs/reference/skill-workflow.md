@@ -133,10 +133,60 @@ forbidden zone). `campaigns/` is a symlink to `../delvewright-campaigns/`.
 
 | File | What it is |
 |---|---|
-| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one; `delvec validate` covers every stage document a campaign directory holds) | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
+| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one), and the optional map-pipeline documents a campaign planned as a whole map carries (`geometry-brief.json`, `layout-graph.json`, `site-plan.json`); `delvec validate` covers every stage document a campaign directory holds | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
 | `DESIGN.md` | the single authoritative design document; every round conformance-reviews against it |
 | `GENERATION.md` | prompt verbatim, date, `dsl_version`, decisions, the **posture note**, the chronicle citation table, the **findings ledger** |
 | `README.md` | the storybook — reader-facing, background only, opens with the engine-version marker |
+
+### A campaign whose map is a site plan
+
+Such a campaign writes **three documents the six-stage loop does not have**, and
+the skill carries the pipeline as a workflow step rather than as a note: a
+`geometry-brief` (the whole's written design reduced to checkable numbers), a
+`layout-graph` (the space as places and connections, before any coordinate
+exists) and a `site-plan` (the geometric embedding, and the whole map's design of
+record). They are authored in that order and the order is not advice — a plan
+validates only against a graph and a brief, and there is no blockout document at
+all, so no later stage can reach green first. The geometry is derived by
+`delvec build`, which also runs the battery over the bytes it laid.
+
+`tools/check-skill-version.py` binds this in the direction that actually drifts:
+every campaign stage document the engine defines must be named in the skill, with
+`Stage::name` as the denominator. Every other gate on that pair asks whether the
+skill's claims are real; this one asks whether the engine's surfaces are driven,
+which is the question a skill written once and an engine that keeps moving needs
+somebody to ask.
+
+A campaign has **one placement authority**. The usual one is `areas[]`, which
+seats prefab pieces; a campaign planned as a whole map hands the space to its
+site plan instead, and then three things about the six stage JSONs are different
+and none of them is optional:
+
+- **`world.areas` is empty.** Declaring both is refused (`DW0839`) — `areas[]`
+  seats pieces on the compiler's fixed stride and the plan seats the derived
+  blockout in its own region, so a world with both has two answers to every
+  question about where something is.
+- **The campaign's one area is `area/site`.** NPCs stand in it and planned
+  quests belong to it; there is no other.
+- **Content binds to anchors nobody authored.** The blockout is derived, so
+  there is no prefab metadata to name an anchor: the derivation synthesizes one
+  per place (`anchor/node-<place>`), a gate region over every barred connection
+  (`anchor/seam-<edge>`), the far-side affordance's footing on a one-sided one
+  (`anchor/unlock-<edge>`), and the campaign's `spawn`. Those are the names to
+  write, and validation resolves against exactly the set the derivation places.
+  Every barred connection must be opened by something naming its seam
+  (`DW0818`).
+
+Nothing else about authoring changes: the quest, gate and shortcut surfaces are
+the ones every other campaign uses, and they do not know the difference.
+
+**The numbers such a campaign is built to are the metrics table's**, and they are
+provisional until the metrics gym has been walked — every build says so
+(`DW0813`). `delvec metrics --gym <dir>` generates that gym: a site-plan campaign
+built from the table itself, and the only artifact a walk can calibrate the
+standard on. It reports what the table defines that it instantiates nothing of
+(`DW0840`), against the whole table, so a standard nothing can be built from is
+visible rather than assumed walked.
 
 ## 6. Tools come in two classes
 

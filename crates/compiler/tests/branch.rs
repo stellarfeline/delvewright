@@ -50,6 +50,8 @@ fn campaign_with(patch: impl Fn(&mut Value, &mut Value, &mut Value)) -> Campaign
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
     })
     .expect("fixture must parse")
 }
@@ -437,6 +439,8 @@ fn pre_08_campaign_raises_no_branch_diagnostics() {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
     })
     .expect("hello-world parses");
     // The version scope now lives on the codes, so it is the FENCE that must be

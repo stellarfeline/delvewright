@@ -1,0 +1,21 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "finale": "quest/walk-the-whole",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/site",
+        "depends_on": [],
+        "goal": "Get the keeper to open the cell door and walk out the far side.",
+        "id": "quest/walk-the-whole",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.14.0",
+  "stage": "quest-plan"
+}

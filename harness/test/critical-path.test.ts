@@ -1,18 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  CRITICAL_PATH_FORMAT_VERSION,
   CriticalPathParseError,
+  insideCompletion,
   parseCriticalPath,
   parseCriticalPathJson,
+  reachGoal,
   SUPPORTED_DSL_VERSIONS,
 } from "../src/critical-path.ts";
+import type { ReachCompletion } from "../src/critical-path.ts";
 
 // The canonical spec-0002 example (amended 2026-07-30), as a fresh object per call
 // so tests can mutate.
 function validRaw(): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 2,
+    format_version: 3,
     campaign_id: "hello-world",
     steps: [
       {
@@ -33,6 +37,7 @@ function validRaw(): Record<string, unknown> {
         anchor: "anchor/exit",
         pos: [8, 65, 24],
         radius: 2,
+        completion: { kind: "cube", lo: [6, 63, 22], hi: [10, 67, 26] },
       },
       {
         action: "assert-complete",
@@ -67,6 +72,7 @@ test("parses the canonical spec-0002 critical path", () => {
     anchor: "anchor/exit",
     pos: [8, 65, 24],
     radius: 2,
+    completion: { kind: "cube", lo: [6, 63, 22], hi: [10, 67, 26] },
   });
   assert.deepEqual(done, {
     action: "assert-complete",
@@ -88,6 +94,7 @@ test("parses an optional transport marker on a step (gap 8)", () => {
     anchor: "anchor/exit",
     pos: [8, 65, 24],
     radius: 2,
+    completion: { kind: "cube", lo: [6, 63, 22], hi: [10, 67, 26] },
     transport: [261, 65, 4],
   };
   const path = parseCriticalPath(raw);
@@ -107,6 +114,7 @@ test("rejects a malformed transport marker with a precise pointer", () => {
     anchor: "anchor/exit",
     pos: [8, 65, 24],
     radius: 2,
+    completion: { kind: "cube", lo: [6, 63, 22], hi: [10, 67, 26] },
     transport: [1, 2],
   };
   assert.throws(
@@ -314,6 +322,7 @@ test("parses a sneak-marked walking step (gap 7)", () => {
     anchor: "anchor/vault",
     pos: [8, 65, 24],
     radius: 2,
+    completion: { kind: "cube", lo: [6, 63, 22], hi: [10, 67, 26] },
     sneak: true,
   };
   const path = parseCriticalPath(raw);
@@ -329,6 +338,7 @@ test("normalizes sneak:false to an absent key (default off)", () => {
     anchor: "anchor/exit",
     pos: [8, 65, 24],
     radius: 2,
+    completion: { kind: "cube", lo: [6, 63, 22], hi: [10, 67, 26] },
     sneak: false,
   };
   const path = parseCriticalPath(raw);
@@ -344,6 +354,7 @@ test("rejects a non-boolean sneak with a precise pointer", () => {
     anchor: "anchor/exit",
     pos: [8, 65, 24],
     radius: 2,
+    completion: { kind: "cube", lo: [6, 63, 22], hi: [10, 67, 26] },
     sneak: "yes",
   };
   assert.throws(
@@ -379,6 +390,7 @@ test("rejects a non-positive cutscene_seconds with a precise pointer", () => {
     anchor: "anchor/exit",
     pos: [8, 65, 24],
     radius: 2,
+    completion: { kind: "cube", lo: [6, 63, 22], hi: [10, 67, 26] },
     cutscene_seconds: 0,
   };
   assert.throws(
@@ -474,7 +486,7 @@ test("rejects a non-integer assert-complete scoreboard value", () => {
 
 test("parses format_version and every objective-bearing step's objective id", () => {
   const path = parseCriticalPath(validRaw());
-  assert.equal(path.formatVersion, 2);
+  assert.equal(path.formatVersion, CRITICAL_PATH_FORMAT_VERSION);
   assert.equal((path.steps[1] as { objective: string }).objective, "obj/greet");
   assert.equal((path.steps[2] as { objective: string }).objective, "obj/exit");
   // The framing steps prove no objective and carry no id.
@@ -495,7 +507,7 @@ test("rejects a path with no format_version — it predates the oracle and is un
 
 test("rejects an unknown format_version rather than guessing the shape", () => {
   const raw = validRaw();
-  raw["format_version"] = 3;
+  raw["format_version"] = 2; // the previous contract: no `completion` on a reach step
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) =>
@@ -583,5 +595,86 @@ test("a rest step with a negative bonfire index is rejected", () => {
     () => parseCriticalPath(raw),
     (err: unknown) =>
       err instanceof CriticalPathParseError && err.pointer === "/steps/1/bonfire",
+  );
+});
+
+// --- the reach completion volume (the two readers of one authored value) -----
+//
+// `radius` is authored once and was read by two parties that stopped agreeing:
+// from DSL v0.3 the datapack adjudicated a fixed ±1 cube and ignored `radius`,
+// while this harness went on aiming `radius - 1` blocks from the anchor. On a
+// `radius: 3` reach that is a goal two blocks out against a box one block wide —
+// the bot is entitled to stop outside the region and then wait forever on a
+// completion that cannot fire. The compiler now emits the volume and the line
+// that adjudicates it from one value; these tests hold the harness's half.
+
+test("a reach step without `completion` is refused, not guessed at", () => {
+  const raw = validRaw();
+  const step = (raw["steps"] as Record<string, unknown>[])[2]!;
+  delete step["completion"];
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError && /completion/.test(err.message),
+    "an artifact that does not say what the server adjudicates must be refused — " +
+      "a fallback here would be the harness keeping its own completion model alive",
+  );
+});
+
+test("the walk goal is derived from the server's volume, never from the authored radius", () => {
+  // The live shape: the gallery authors `radius: 3` and the server adjudicates a
+  // cube of half-extent 3. The old rule (`radius - 1` against a ±1 box) put the
+  // goal two blocks outside the region.
+  const cube: ReachCompletion = { kind: "cube", lo: [20, 62, 6], hi: [26, 68, 12] };
+  const goal = reachGoal(cube);
+  assert.deepEqual(goal.pos, [23, 65, 9], "aims at the middle of the volume");
+  assert.equal(goal.range, 2, "one block tighter than the volume's half-extent");
+  // Every point the goal admits is inside the volume the server tests. This is
+  // the property that was false before, and it is the whole of the repair.
+  for (const dx of [-goal.range, 0, goal.range]) {
+    for (const dz of [-goal.range, 0, goal.range]) {
+      assert.ok(
+        insideCompletion([goal.pos[0] + dx + 0.5, goal.pos[1], goal.pos[2] + dz + 0.5], cube),
+        `goal corner (${dx}, ${dz}) must land inside the completion volume`,
+      );
+    }
+  }
+});
+
+test("the pre-v0.3 sphere keeps its own goal rule", () => {
+  const sphere: ReachCompletion = { kind: "sphere", pos: [8, 65, 24], radius: 2 };
+  const goal = reachGoal(sphere);
+  assert.deepEqual(goal.pos, [8, 65, 24]);
+  assert.equal(goal.range, 1);
+  assert.ok(insideCompletion([8.5, 65, 24.5], sphere));
+  assert.ok(!insideCompletion([12, 65, 24], sphere));
+});
+
+test("a one-block completion volume still admits a goal that lands in it", () => {
+  // `radius: 1` is the floor: the ±1 cube that closed the original "too tight to
+  // stand on the altar cell" finding. The goal must not collapse to an exact-cell
+  // demand the pathfinder cannot honour.
+  const cube: ReachCompletion = { kind: "cube", lo: [7, 64, 23], hi: [9, 66, 25] };
+  const goal = reachGoal(cube);
+  assert.deepEqual(goal.pos, [8, 65, 24]);
+  assert.equal(goal.range, 1);
+  assert.ok(insideCompletion([8.5, 65, 24.5], cube));
+});
+
+test("insideCompletion reads a cube as whole blocks, the way the selector does", () => {
+  const cube: ReachCompletion = { kind: "cube", lo: [6, 63, 22], hi: [10, 67, 26] };
+  // `x=6,dx=4` covers blocks 6..=10, i.e. continuous 6.0 .. 11.0.
+  assert.ok(insideCompletion([10.9, 63, 22], cube), "the far block is inside");
+  assert.ok(!insideCompletion([11.1, 63, 22], cube), "one block past it is not");
+  assert.ok(!insideCompletion([5.9, 63, 22], cube), "and neither is one block before");
+});
+
+test("a completion of an unknown kind is a structural fault, never coerced", () => {
+  const raw = validRaw();
+  const step = (raw["steps"] as Record<string, unknown>[])[2]!;
+  step["completion"] = { kind: "ellipsoid", lo: [0, 0, 0], hi: [1, 1, 1] };
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) => err instanceof CriticalPathParseError && /kind/.test(err.message),
   );
 });

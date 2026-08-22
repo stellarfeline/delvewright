@@ -109,61 +109,68 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
     // prefab library and what the admission procedure runs on every piece — and
     // it is bound in EVERY arm, because the arm it was missing from is the one a
     // composed zone arrives through.
-    let (mut rep, diags, door) = if nbt.extension().and_then(|s| s.to_str()) == Some("json") {
-        let (set, tiles) = match read_zone(nbt) {
-            Ok(pair) => pair,
-            Err(e) => return input_err(&e, json),
+    let (mut rep, diags, door, footprint) =
+        if nbt.extension().and_then(|s| s.to_str()) == Some("json") {
+            let (set, tiles) = match read_zone(nbt) {
+                Ok(pair) => pair,
+                Err(e) => return input_err(&e, json),
+            };
+            let asset = nbt.display().to_string();
+            let (rep, diags) = audit::audit_tile_set(&asset, set.size, &tiles, &allow);
+            // The contract a manifest declares is zone-relative — its boxes and its
+            // anchors are stated in the coordinates of the assembled building, not
+            // of any tile — so the checker's two arguments exist at zone scale
+            // exactly as they do for one template. Tiling is packaging.
+            let grid = settling::zone_grid(set.size, &tiles);
+            let door = Door::open(&grid, tiles.len(), nbt);
+            (rep, diags, door, audit::footprint_class(nbt))
+        } else {
+            // ...and pointing it at ONE tile of a set is refused. The verdict would
+            // be correct about that file and would be read as a verdict about the
+            // zone — a gate bound to a fifth of what it is believed to cover, which
+            // is the shape that stays green for a year.
+            if let Err(code) = refuse_fragment(
+                nbt,
+                "audit",
+                "return a verdict over one file that reads as a verdict over the zone",
+                json,
+            ) {
+                return code;
+            }
+            // Read and parsed ONCE, for both the palette audit and the door. When
+            // the door had its own `if let Ok(bytes) = read(..)`, unreadable and
+            // unparseable bytes were two more ways for it to fall through in
+            // silence; sharing the bytes is what makes those two cases stop
+            // existing rather than stop mattering.
+            let bytes = match std::fs::read(nbt) {
+                Ok(b) => b,
+                Err(e) => return input_err(&format!("cannot read {}: {e}", nbt.display()), json),
+            };
+            let structure = match Structure::read(&bytes) {
+                Ok(s) => s,
+                Err(e) => return input_err(&format!("cannot parse {}: {e}", nbt.display()), json),
+            };
+            let (rep, diags) = audit(&nbt.display().to_string(), &structure, &allow);
+            let meta_path = nbt.with_extension("json");
+            let door = Door::open(&delvewright_admit::spatial::grid(&structure), 1, &meta_path);
+            (rep, diags, door, audit::footprint_class(&meta_path))
         };
-        let asset = nbt.display().to_string();
-        let (rep, diags) = audit::audit_tile_set(&asset, set.size, &tiles, &allow);
-        // The contract a manifest declares is zone-relative — its boxes and its
-        // anchors are stated in the coordinates of the assembled building, not
-        // of any tile — so the checker's two arguments exist at zone scale
-        // exactly as they do for one template. Tiling is packaging.
-        let grid = settling::zone_grid(set.size, &tiles);
-        let door = Door::open(&grid, tiles.len(), nbt);
-        (rep, diags, door)
-    } else {
-        // ...and pointing it at ONE tile of a set is refused. The verdict would
-        // be correct about that file and would be read as a verdict about the
-        // zone — a gate bound to a fifth of what it is believed to cover, which
-        // is the shape that stays green for a year.
-        if let Err(code) = refuse_fragment(
-            nbt,
-            "audit",
-            "return a verdict over one file that reads as a verdict over the zone",
-            json,
-        ) {
-            return code;
-        }
-        // Read and parsed ONCE, for both the palette audit and the door. When
-        // the door had its own `if let Ok(bytes) = read(..)`, unreadable and
-        // unparseable bytes were two more ways for it to fall through in
-        // silence; sharing the bytes is what makes those two cases stop
-        // existing rather than stop mattering.
-        let bytes = match std::fs::read(nbt) {
-            Ok(b) => b,
-            Err(e) => return input_err(&format!("cannot read {}: {e}", nbt.display()), json),
-        };
-        let structure = match Structure::read(&bytes) {
-            Ok(s) => s,
-            Err(e) => return input_err(&format!("cannot parse {}: {e}", nbt.display()), json),
-        };
-        let (rep, diags) = audit(&nbt.display().to_string(), &structure, &allow);
-        let door = Door::open(
-            &delvewright_admit::spatial::grid(&structure),
-            1,
-            &nbt.with_extension("json"),
-        );
-        (rep, diags, door)
-    };
     for d in &diags {
         d.print(json);
     }
     for d in &door.diagnostics() {
         d.print(json);
     }
-    let contract_failed = door.is_refusal();
+    // `DW0848` (spec-0050 §5), bound to `audit` for the reason the contract door
+    // is: `audit` is what CI runs over the prefab library and what the admission
+    // procedure runs on every piece, so a claim about what a piece is FOR cannot
+    // enter the library unjudged. The binding line is stated whether or not
+    // anything declared a class.
+    if let Some(d) = &footprint.finding {
+        d.print(json);
+    }
+    eprintln!("{}", footprint.line());
+    let contract_failed = door.is_refusal() || footprint.is_refusal();
     rep.record_contract_door(&door);
     let out_json = rep.to_json();
     if let Some(p) = report {

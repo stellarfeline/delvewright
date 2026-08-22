@@ -1,0 +1,269 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "boxes": [
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          4,
+          8
+        ],
+        "node": "node/landing"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          12,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          13,
+          4
+        ],
+        "node": "node/hall"
+      },
+      {
+        "ceiling": "open",
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/loft"
+        },
+        "min": [
+          26,
+          8
+        ],
+        "node": "node/loft"
+      },
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          13,
+          21
+        ],
+        "node": "node/cell"
+      },
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          4,
+          21
+        ],
+        "node": "node/exit"
+      }
+    ],
+    "datums": [
+      {
+        "id": "datum/grade",
+        "note": "The plane the delve opens on, and the one every place but the loft stands at.",
+        "y": 64
+      },
+      {
+        "id": "datum/loft",
+        "y": 69
+      }
+    ],
+    "identities": [
+      {
+        "cmp": "eq",
+        "fact": "fact/site-span",
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/site-depth",
+        "measure": {
+          "axis": "z",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/hall-span",
+        "measure": {
+          "axis": "x",
+          "node": "node/hall",
+          "of": "box-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/loft-datum",
+        "measure": {
+          "datum": "datum/loft",
+          "of": "datum-y"
+        }
+      }
+    ],
+    "lighting": {
+      "fixture": "torch",
+      "min_light": 7
+    },
+    "region": {
+      "extent": [
+        64,
+        32,
+        64
+      ],
+      "min": [
+        0,
+        56,
+        0
+      ]
+    },
+    "seams": [
+      {
+        "at": [
+          10,
+          64
+        ],
+        "edge": "edge/landing-hall",
+        "face": "east",
+        "opening": "arch"
+      },
+      {
+        "at": [
+          10,
+          69
+        ],
+        "edge": "edge/hall-loft",
+        "face": "east",
+        "opening": "arch",
+        "stair_in": "node/hall"
+      },
+      {
+        "at": [
+          13,
+          69
+        ],
+        "edge": "edge/loft-drop",
+        "face": "west",
+        "opening": "arch"
+      },
+      {
+        "at": [
+          15,
+          64
+        ],
+        "edge": "edge/hall-cell",
+        "face": "south",
+        "opening": "arch"
+      },
+      {
+        "at": [
+          23,
+          64
+        ],
+        "edge": "edge/cell-exit",
+        "face": "west",
+        "opening": "arch"
+      }
+    ],
+    "sightlines": [
+      {
+        "edge": "edge/loft-sightline",
+        "from": [
+          7,
+          65,
+          11
+        ],
+        "to": [
+          29,
+          70,
+          11
+        ]
+      }
+    ],
+    "views": [
+      {
+        "eye": [
+          32,
+          92,
+          60
+        ],
+        "id": "view/the-approach",
+        "look_at": [
+          18,
+          68,
+          14
+        ],
+        "note": "The silhouette as a body walking in from the south first meets it."
+      }
+    ],
+    "volumes": [
+      {
+        "id": "volume/bedrock",
+        "note": "The rock every place is set into.",
+        "region": {
+          "extent": [
+            64,
+            7,
+            64
+          ],
+          "min": [
+            0,
+            56,
+            0
+          ]
+        },
+        "role": "massif"
+      },
+      {
+        "id": "volume/sky",
+        "note": "The air the loft's silhouette needs kept empty.",
+        "region": {
+          "extent": [
+            64,
+            14,
+            64
+          ],
+          "min": [
+            0,
+            74,
+            0
+          ]
+        },
+        "role": "clearance"
+      }
+    ]
+  },
+  "dsl_version": "0.14.0",
+  "stage": "site-plan"
+}

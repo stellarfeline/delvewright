@@ -1,0 +1,33 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "facts": [
+      {
+        "id": "fact/site-span",
+        "note": "The whole map is sixty-four blocks east to west, which is as far as a party should have to walk without arriving somewhere.",
+        "unit": "blocks",
+        "value": 64.0
+      },
+      {
+        "id": "fact/site-depth",
+        "note": "Sixty-four blocks north to south as well: the site is square, so no approach is the long way round.",
+        "unit": "blocks",
+        "value": 64.0
+      },
+      {
+        "id": "fact/hall-span",
+        "note": "The hall is twelve blocks wide — wide enough that the stair up to the loft costs a third of it and is felt.",
+        "unit": "blocks",
+        "value": 12.0
+      },
+      {
+        "id": "fact/loft-datum",
+        "note": "The loft stands five blocks over the hall floor, which is the whole of the height a body can fall from by design.",
+        "unit": "blocks",
+        "value": 69.0
+      }
+    ]
+  },
+  "dsl_version": "0.14.0",
+  "stage": "geometry-brief"
+}

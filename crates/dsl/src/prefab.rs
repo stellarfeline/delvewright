@@ -159,6 +159,22 @@ pub struct PrefabMeta {
     /// as an absent `lighting` block differs from `unmeasured`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spatial_contract: Option<SpatialContract>,
+    /// **The size class of box this piece is built to fill** — a name from the
+    /// metrics table's `size-class.*` ladder (spec-0050 §5).
+    ///
+    /// Optional for the library at large, and that is deliberate rather than
+    /// lax: every piece in the library predates the field, and `DW0848` binds
+    /// only where the claim is made. What is *not* optional is the claim being
+    /// true — a piece declaring a class its own bytes could serve no box of is
+    /// refused at admission and again wherever a detail plan consumes it, so a
+    /// pre-check-era piece cannot be consumed unjudged.
+    ///
+    /// Absent means what absence means everywhere in this document: the claim is
+    /// not made. A piece bound by a `details[]` row is still checked for exact
+    /// frame equality (`DW0843`) whether or not it declares — that is the
+    /// consumer's exact check, and this is the library's approximate one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub footprint_class: Option<String>,
     /// Every top-level key this version does not model, kept verbatim so that
     /// reading and writing the document is not the same as editing it.
     ///
@@ -204,6 +220,105 @@ pub struct SpatialContract {
     /// The author's acknowledgement that this piece is mostly out-of-walk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_body_majority_ack: Option<String>,
+}
+
+/// `DW0848`: a piece's declared footprint class disagrees with its bytes.
+pub const DW_FOOTPRINT_CLASS: crate::DwCode = crate::DwCode::every_version("DW0848");
+
+/// **Judge a piece's declared `footprint_class` against its own structure
+/// size.**
+///
+/// One authority with two doors, on the pattern spec-0036 §1c fixed for the
+/// spatial contract: `delve-admit audit` asks it at the admission event, where
+/// the library's integrity lives, and `delvewright_compiler::detail` asks it
+/// again wherever a `detail-plan` row consumes the piece. Two implementations
+/// that agreed until they did not is the failure this shape removes.
+///
+/// What it asks, and each half is a fact about the geometry rather than a
+/// preference:
+///
+/// 1. **The name is in the table** — otherwise `DW0812`, as for any document
+///    naming a table entry.
+/// 2. **The horizontal extents could be a box of that class.** A detail frame's
+///    footprint IS its box's footprint (`Frame::of` grows the play space
+///    downward only), so a piece whose `x` or `z` falls outside the class's
+///    `min_footprint..=max_footprint` could fill no box of it.
+/// 3. **They sit on the kit grid.** A site-plan box's extent is a multiple of
+///    the grid quantum (`DW0825`), so a piece off the grid could fill no box at
+///    all, of any class.
+/// 4. **The height leaves the class its clearance.** A frame is the play space
+///    plus one floor course, so a piece under `min_clearance + 1` is short of
+///    the shallowest box of its class.
+///
+/// Returns `None` for a piece that declares no class — which is the honest
+/// answer, and why the caller states how many pieces declared one against how
+/// many it examined.
+#[must_use]
+pub fn check_footprint_class(
+    meta: &PrefabMeta,
+    stage: &str,
+    path: &str,
+    reads: &mut crate::metrics::Reads,
+) -> Option<crate::Diagnostic> {
+    let named = meta.footprint_class.as_deref()?;
+    let table = crate::metrics::Metrics::table();
+    let entry = match table.resolve(crate::metrics::MetricKind::SizeClass, named) {
+        Ok(e) => e,
+        Err(unknown) => return Some(unknown.diagnostic(stage, path)),
+    };
+    let crate::metrics::MetricValue::SizeClass(class) = *entry.value(reads) else {
+        return None; // an internal table defect, which `Metrics::self_check` owns.
+    };
+    let size = meta.size();
+    let grid = table.grid(reads);
+    let q = grid.map_or(1, |g| i64::from(g.quantum).max(1));
+    let (sx, sy, sz) = (i64::from(size[0]), i64::from(size[1]), i64::from(size[2]));
+    let (minf, maxf) = (class.min_footprint, class.max_footprint);
+    let mut why: Vec<String> = Vec::new();
+    if sx < i64::from(minf[0]) || sx > i64::from(maxf[0]) {
+        why.push(format!(
+            "its x extent is {sx}, and a `{named}` box is {}..={} on x",
+            minf[0], maxf[0]
+        ));
+    }
+    if sz < i64::from(minf[1]) || sz > i64::from(maxf[1]) {
+        why.push(format!(
+            "its z extent is {sz}, and a `{named}` box is {}..={} on z",
+            minf[1], maxf[1]
+        ));
+    }
+    if sx % q != 0 || sz % q != 0 {
+        why.push(format!(
+            "its footprint {sx}x{sz} is off the kit grid, whose quantum is {q} — every site-plan \
+             box's extent is a multiple of it (`DW0825`)"
+        ));
+    }
+    let least = i64::from(class.min_clearance) + 1;
+    if sy < least {
+        why.push(format!(
+            "it is {sy} cells tall, and the shallowest `{named}` frame is {least} — {} of \
+             clearance plus the one floor course a piece owns",
+            class.min_clearance
+        ));
+    }
+    if why.is_empty() {
+        return None;
+    }
+    Some(crate::Diagnostic::error(
+        DW_FOOTPRINT_CLASS,
+        stage,
+        path,
+        format!(
+            "`{id}` declares `footprint_class: \"{named}\"` and its own bytes could serve no box \
+             of that class: {why}. The declaration is a claim about what this piece is FOR, and a \
+             site plan hands a piece the exact frame of the box it fills — so a piece whose \
+             extents no box of the class can have is a piece no `details[]` row could ever bind. \
+             Either correct the class name, or rebuild the piece to a frame of the class it \
+             claims. Structure size is {sx}x{sy}x{sz}.",
+            id = meta.prefab_id,
+            why = why.join("; "),
+        ),
+    ))
 }
 
 /// One face of the piece's face contract.
@@ -768,6 +883,10 @@ impl PrefabMeta {
             license: Some(license),
             waterline_y: None,
             spatial_contract: None,
+            // A freshly admitted piece makes no claim about which size class of
+            // box it fills, and inventing one from its bytes would be the
+            // inference this document does not do: the claim is the author's.
+            footprint_class: None,
             extra: BTreeMap::new(),
         }
     }

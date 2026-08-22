@@ -1,0 +1,8 @@
+{
+  "blockout_sha256": "36828f9bf3f22dfa6eacc5d1120ceb202b2e7f9e6fff14ebfb59675a930bac12",
+  "engine_revision": "unstamped",
+  "findings": [],
+  "layout_graph_sha256": "5507ddd3f658c49e0e0fbda8fc0e3a131c2df5e4619393fcf78ad83e6b093910",
+  "site_plan_sha256": "566730e5aa99c0f0f76c6e68cb2b9d480c8e5db710895a3ee0136a8fc84787b5",
+  "verdict": "passed"
+}

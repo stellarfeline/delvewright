@@ -117,7 +117,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -143,6 +143,11 @@
     {
       "code": "DW0543",
       "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
       "stage": "prefabs"
     },
     {
@@ -314,7 +319,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -340,6 +345,11 @@
     {
       "code": "DW0543",
       "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
       "stage": "prefabs"
     },
     {
@@ -511,7 +521,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -537,6 +547,11 @@
     {
       "code": "DW0543",
       "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
       "stage": "prefabs"
     },
     {
@@ -713,7 +728,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -739,6 +754,11 @@
     {
       "code": "DW0543",
       "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
       "stage": "prefabs"
     },
     {
@@ -910,7 +930,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -936,6 +956,11 @@
     {
       "code": "DW0543",
       "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
       "stage": "prefabs"
     },
     {
@@ -987,6 +1012,83 @@
       "code": "DW0477",
       "pointer": "/content/actors/2/tier",
       "stage": "quests"
+    }
+  ],
+  "site-plan.en": [
+    {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "10 of the 10 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "stage": "site-plan:"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-cell-b.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-cell.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-end.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-entry.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/curator",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/factor",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/marshal",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/warden",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    },
+    {
+      "code": "DW0821",
+      "pointer": "/content/sightlines[edge/loft-sightline]",
+      "stage": "site-plan"
+    },
+    {
+      "code": "DW0822",
+      "pointer": "/content/boxes",
+      "stage": "site-plan"
     }
   ],
   "void-horizon.en": [
@@ -1107,7 +1209,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional \u2014 the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
       "stage": "layout-graph:"
     },
     {
@@ -1133,6 +1235,11 @@
     {
       "code": "DW0543",
       "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-yard.json",
       "stage": "prefabs"
     },
     {

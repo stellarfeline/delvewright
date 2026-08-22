@@ -78,6 +78,42 @@ def test_a_complete_record_passes_and_the_counts_split_by_kind(gate, capsys):
     assert "1 artifact-bound + 1 instrument-bound" in out
 
 
+def test_a_declaration_detached_from_its_table_does_not_declare(gate, capsys):
+    """The escape this gate was open to. A blank line ends a pipe table, so a
+    bounds row under one renders as a paragraph of literal pipes — the verdict
+    is undeclared on the page and was declared to the parser. Both halves must
+    now be true at once: the row is named as unreadable, AND the verdict it was
+    standing in for is reported undeclared."""
+    write(
+        gate,
+        "trial-0001-x.md",
+        RUBRIC
+        + bounds([("R1 run 0", "artifact-bound", "elevation")])
+        + "\n| R2 run 0 | artifact-bound | gate report |\n",
+    )
+    assert gate.main() == 1
+    captured = capsys.readouterr()
+    out = captured.out + captured.err
+    assert "is a table row that no table contains" in out
+    assert "R2 run 0 is judged but declares no instrument bound" in out
+
+
+def test_the_same_declaration_attached_is_a_declaration(gate):
+    """The other direction, so the red above is about the blank line alone."""
+    write(
+        gate,
+        "trial-0001-x.md",
+        RUBRIC
+        + bounds(
+            [
+                ("R1 run 0", "artifact-bound", "elevation"),
+                ("R2 run 0", "artifact-bound", "gate report"),
+            ]
+        ),
+    )
+    assert gate.main() == 0
+
+
 def test_a_judged_verdict_with_no_declaration_reds(gate):
     write(gate, "trial-0001-x.md", RUBRIC + bounds([("R1 run 0", "artifact-bound", "elevation")]))
     assert gate.main() == 1  # R2 run 0 is judged and undeclared

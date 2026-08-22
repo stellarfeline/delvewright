@@ -40,6 +40,10 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib import mdtable  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 IR = ROOT / "crates/grammar/src/ir.rs"
 GEOM = ROOT / "crates/grammar/src/geom.rs"
@@ -147,23 +151,32 @@ LEDGER_ROW = re.compile(
 )
 
 
-def ledger() -> dict[tuple[str, str], tuple[str, str]]:
-    """The §2e table of `docs/reference/grammar.md`.
+def ledger() -> tuple[dict[tuple[str, str], tuple[str, str]], list[tuple[int, str]]]:
+    """The §2e table of `docs/reference/grammar.md`, and the rows outside it.
 
     `(type, field) -> (version, fence)`, where *fence* is `—` at the floor, a
     `*_SINCE` constant name, or `via Type.field` for a field only reachable
     through another ledgered one.
+
+    The section is read as tables by `tools/lib/mdtable.py` rather than swept
+    for a row pattern. A blank line ends a pipe table, so a ledger row under one
+    renders as a paragraph of literal pipe characters — it fenced a field for
+    this gate and for nobody reading the page. Such a row comes back separately,
+    to be reported by line rather than counted.
     """
     text = REFERENCE.read_text()
     start = text.find("## 2e.")
     if start < 0:
         sys.exit("FAIL: docs/reference/grammar.md has no `## 2e.` section to hold the ledger")
+    lineno_of_section = text.count("\n", 0, start) + 1
     end = text.find("\n## ", start + 1)
     section = text[start : end if end > 0 else len(text)]
-    return {
-        (t, f): (v, fence.strip("` "))
-        for t, f, v, fence in LEDGER_ROW.findall(section)
-    }
+    rows, detached = mdtable.rows_matching(section, LEDGER_ROW)
+    out: dict[tuple[str, str], tuple[str, str]] = {}
+    for row in rows:
+        m = LEDGER_ROW.match(row.line.strip())
+        out[(m.group(1), m.group(2))] = (m.group(3), m.group(4).strip("` "))
+    return out, [(lineno_of_section + n - 1, line) for n, line in detached]
 
 
 def main() -> int:
@@ -216,7 +229,14 @@ def main() -> int:
 
     # --- Gate 2: the version ledger, both directions. ---------------------
     fields = optional_fields()
-    rows = ledger()
+    rows, detached_rows = ledger()
+    for lineno, line in detached_rows:
+        failures.append(
+            f"docs/reference/grammar.md:{lineno} is a §2e ledger row that no "
+            f"table contains — a blank line above it ended the table, so the "
+            f"page shows a paragraph of literal pipe characters and the field "
+            f"it fences is unfenced for every reader:\n    {line[:100]}"
+        )
     for key in fields:
         if key not in rows:
             failures.append(

@@ -405,6 +405,22 @@ validation/          # docker compose: headless server + bot, same image as CI &
   against the cases its author had met. So a gate that names a remedy owes a check
   that the remedy is **reachable**, and where two gates guard one artifact, they
   are read together or not at all.
+- **A checker reads a document the way its CONSUMER reads it.** A gate over a
+  repository document is only as true as its parse: where its reading differs
+  from the reading the document actually gets, the gate passes on something no
+  reader can see. Measured rather than supposed — a sweep of 37 gates found 33
+  reading a document some other consumer also parses, 12 of those reading
+  markdown, and **8 blind to the renderer's own rule that a blank line ends a
+  table**. The defect was already live: **21 diagnostic rows in four detached
+  blocks** in this file's own authoritative behaviour record, drawn by a renderer
+  as paragraphs of literal pipe characters, and counted as documented by the gate
+  that guards them. The repair was five deleted blank lines.
+  Two obligations follow. The reading is **cross-checked against a real
+  implementation of the format** and that comparison is committed, not asserted —
+  here, an independent renderer agreeing on 1930 rows across 129 files with zero
+  disagreement. And the parse rule is **one shared authority**, never a private
+  copy per gate: eight private copies of a general mechanism is the shape this
+  file already refuses, and a gate keeps only its own row pattern.
 - **A command whose response nobody reads cannot fail.** A site that
   issues a command to a server and discards the reply is asserting an effect it
   has not established, and it stays green forever: `delve-admit`'s gallery

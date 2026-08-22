@@ -143,6 +143,30 @@ struct Piece {
     /// edge joins two of its own spaces makes a complete claim about its
     /// inside and none about its sides, so it contracts and faces nothing.
     contracted: bool,
+    /// **Whether this piece was placed by an ALLOCATION rather than by a
+    /// mating** — that is, whether it stands in the one area a site plan has.
+    ///
+    /// Such a piece is never a neighbour here, and the reason is the one
+    /// `FaceBinding::finding` already gives its reader in prose: a site plan
+    /// cuts its ways at stage 4, on faces two boxes already share, and proves
+    /// them over the built bytes with `DW0836`. Nothing in that world was ever
+    /// asked to mate with anything.
+    ///
+    /// The distinction only started to matter at stage 6, and it matters in two
+    /// ways that a narrower predicate catches only one of. A derived blockout box
+    /// is a `PiecePlacement` the registry has never heard of, and the party plane
+    /// a detail piece's face opens onto lies inside that box's SHELL bbox — so
+    /// without this, every detailed place is refused `DW0780` for failing to mate
+    /// with a shell that is not a building. And two DETAIL pieces stacked
+    /// vertically mate through the horizontal party plane directly, where this
+    /// check demands equal classes and spec-0050 §3's table requires `drop`
+    /// leaving against `walk` landing, and `stair` in the hosting box against
+    /// `walk` in the other. A `drop` between two bound places would have
+    /// satisfied `DW0844` and then hard-failed here.
+    ///
+    /// Both are the same fact — the ways of that world are allocated — so both
+    /// answer to one predicate rather than to a list.
+    allocated: bool,
 }
 
 /// The verdict of the mating check: how many declared faces met another placed
@@ -168,10 +192,29 @@ pub struct FaceBinding {
 
 impl FaceBinding {
     /// The advisory a zero binding owes its reader, or `None`.
-    pub fn finding(&self, pieces: usize) -> Option<Diagnostic> {
+    ///
+    /// `allocated` says the world's ways were **allocated rather than mated** —
+    /// a site-plan campaign (spec-0049), whose seams are cut by the plan on
+    /// faces two boxes already share and proved over the built bytes by
+    /// `DW0836`. The zero is still stated, because a count only means something
+    /// when the run that found nothing prints it too; what changes is that the
+    /// reader is told where the question moved to instead of being told nothing
+    /// proves the world fits together, which in that world is false.
+    pub fn finding(&self, pieces: usize, allocated: bool) -> Option<Diagnostic> {
         if self.bound > 0 {
             return None;
         }
+        let tail = if allocated {
+            "This world's placement authority is a SITE PLAN, so no piece was ever asked to mate \
+             with another: its ways are allocated at stage 4, on faces two boxes already share, \
+             and proved over the built bytes by `DW0836`. The zero above is the honest count of a \
+             question this world does not ask, not a proof that went missing."
+        } else {
+            "Nothing here proves that the pieces of this world fit together. A piece without a \
+             contract makes no claim about its own sides at all; a piece whose contract declares \
+             only interior edges has made its claim and offers a neighbour nothing to disagree \
+             with."
+        };
         Some(Diagnostic::warning(
             DW_FACE_UNBOUND,
             "world",
@@ -179,11 +222,7 @@ impl FaceBinding {
             format!(
                 "the piece-mating check examined ZERO abutting faces: of {pieces} placed piece(s), \
                  {} with a spatial contract, {} of those with a face, and {} face(s) declared \
-                 in all — none of which touches another placed piece. Nothing here \
-                 proves that the pieces of this world fit together. A piece without a contract \
-                 makes no claim about its own sides at all; a piece whose contract declares only \
-                 interior edges has made its claim and offers a neighbour nothing to disagree \
-                 with",
+                 in all — none of which touches another placed piece. {tail}",
                 self.contracted, self.faced, self.declared
             ),
         ))
@@ -229,6 +268,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                 contracted: prefabs
                     .get(&placement.prefab_id)
                     .is_some_and(|m| m.spatial_contract.is_some()),
+                allocated: area.area_id == delvewright_dsl::SITE_AREA,
             });
         }
     }
@@ -245,6 +285,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
             // Which other placed piece owns the cells just beyond this opening?
             let Some((j, neighbour)) = pieces.iter().enumerate().find(|(j, other)| {
                 *j != i
+                    && !other.allocated
                     && plane >= other.min[axis]
                     && plane <= other.max[axis]
                     && (0..3).all(|a| {

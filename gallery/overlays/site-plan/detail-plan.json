@@ -1,0 +1,21 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "details": [
+      {
+        "anchors": {
+          "anchor/node-exit": "yard-stone"
+        },
+        "piece": "prefab/gallery-yard",
+        "place": "node/exit"
+      }
+    ],
+    "palette": {
+      "role/floor": "minecraft:polished_andesite",
+      "role/furniture": "minecraft:chiseled_stone_bricks",
+      "role/wall": "minecraft:polished_blackstone_bricks"
+    }
+  },
+  "dsl_version": "0.15.0",
+  "stage": "detail-plan"
+}

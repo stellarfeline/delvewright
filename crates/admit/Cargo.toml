@@ -40,6 +40,12 @@ flate2 = "1"
 # against the exact set the conversion strip enforces). The orchestrator owns the
 # `dw.note` server-log harvester (the gallery emits a compatible layout so its
 # notes round-trip through the same parser).
+# The prefab metadata document's own definition. Reached through
+# `delvewright-schem`'s re-export everywhere it is only a TYPE; named directly
+# where a CHECK over that document is asked (`check_footprint_class`, spec-0050
+# §5), because that check takes the metrics-read ledger and a re-export of a
+# ledger through a third crate would be a second path to one authority.
+delvewright-dsl = { path = "../dsl" }
 delvewright-schem = { path = "../schem" }
 
 # The spatial contract has ONE checker (spec-0036 §1c) and this is its second

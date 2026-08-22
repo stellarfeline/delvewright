@@ -228,7 +228,7 @@ def main():
             )
 
     with open(args.out, "w", newline="\n") as f:
-        json.dump(table, f, indent=2, sort_keys=True)
+        json.dump(table, f, indent=2, sort_keys=True, ensure_ascii=False)
         f.write("\n")
 
     print(

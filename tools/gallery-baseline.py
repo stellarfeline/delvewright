@@ -47,6 +47,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gallery_domain  # noqa: E402
+from gallery_domain import build_id, overlays  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 GALLERY = REPO / "gallery"
 BASELINE = GALLERY / "baseline"
@@ -69,6 +73,31 @@ ANY_WARNING_RE = re.compile(r"^(DW\d{4}) \[warning\] ")
 def die(msg: str) -> None:
     print(f"error: {msg}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def write_canonical(path: Path, obj) -> None:
+    """Write one baseline file in `delvec fmt` canonical form.
+
+    `ensure_ascii=False` is the load-bearing argument and it is why this is a
+    function rather than four call sites. Python's default escapes every
+    non-ASCII character, so an em-dash inside a warning pointer landed in
+    `warnings.json` as `\\u2014` — and that single habit was the ONLY reason any
+    of `gallery/baseline/` was outside canonical form, which in turn was the only
+    reason anyone could argue that a generated artifact needs an exemption from
+    `tools/check-json-canonical.py`. A generated file that is already canonical
+    needs no exemption, and cannot be used as cover by a file that merely never
+    was (CLAUDE.md: an opt-out must be secured by a property the defect cannot
+    supply — so the better move is to leave no opt-out to secure).
+
+    The header does not hash `baseline/` (see `header`), so making these bytes
+    canonical moves no header field and is not a determinism finding to anyone
+    reading the diff afterwards. The three sibling files were already canonical;
+    only `warnings.json` carried non-ASCII at all.
+    """
+    path.write_text(
+        json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 def tree_hash(root: Path, skip: set[str]) -> str:
@@ -110,24 +139,9 @@ def declared_languages() -> list[str]:
     return list(world["content"].get("languages") or [])
 
 
-def overlays() -> list[str]:
-    d = GALLERY / "overlays"
-    return sorted(p.name for p in d.iterdir() if p.is_dir()) if d.is_dir() else []
-
-
 def materialise(overlay: str | None, dest: Path) -> None:
-    shutil.copytree(GALLERY, dest, dirs_exist_ok=True)
-    for junk in ("baseline", "overlays", "probes"):
-        shutil.rmtree(dest / junk, ignore_errors=True)
-    if overlay:
-        src = GALLERY / "overlays" / overlay
-        for f in src.iterdir():
-            if f.name == "overlay.json":
-                continue
-            if f.is_dir():
-                shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
-            else:
-                shutil.copy2(f, dest / f.name)
+    """One point of the domain as a campaign directory — `gallery_domain` decides what that means."""
+    gallery_domain.materialise(dest, GALLERY / "overlays" / overlay if overlay else None)
 
 
 def build_one(delvec: Path, prefabs: Path, overlay: str | None, lang: str, work: Path):
@@ -163,10 +177,6 @@ def build_one(delvec: Path, prefabs: Path, overlay: str | None, lang: str, work:
                 f"  {stripped[:200]}"
             )
     return manifest, rows
-
-
-def build_id(overlay: str | None, lang: str) -> str:
-    return f"{overlay or 'primary'}.{lang}"
 
 
 def coverage_counts(delvec: Path) -> dict:
@@ -309,15 +319,11 @@ def main() -> int:
             else {}
         )
         BASELINE.mkdir(parents=True, exist_ok=True)
-        (BASELINE / "header.json").write_text(json.dumps(hdr, indent=2, sort_keys=True) + "\n")
-        (BASELINE / "manifests.json").write_text(
-            json.dumps(manifests, indent=2, sort_keys=True) + "\n"
-        )
-        (BASELINE / "warnings.json").write_text(
-            json.dumps(warnings, indent=2, sort_keys=True) + "\n"
-        )
+        write_canonical(BASELINE / "header.json", hdr)
+        write_canonical(BASELINE / "manifests.json", manifests)
+        write_canonical(BASELINE / "warnings.json", warnings)
         delta = compute_delta(old, manifests)
-        (BASELINE / "delta.json").write_text(json.dumps(delta, indent=2, sort_keys=True) + "\n")
+        write_canonical(BASELINE / "delta.json", delta)
         # The noise-commit guard, and the qualifiers matter. An empty delta means
         # emission did not move; that is only a noise commit if the HEADER did not
         # move either. A change to what the header covers — a new delvec, a

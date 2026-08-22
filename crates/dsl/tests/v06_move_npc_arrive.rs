@@ -63,6 +63,8 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         world_edits: None,
         geometry_brief: None,
         layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
     }
 }
 

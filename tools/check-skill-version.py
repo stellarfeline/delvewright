@@ -72,7 +72,30 @@ WHAT IS CHECKED
    out from under step 9, is exactly the drift a version range is supposed to
    make impossible.
 
+5. **Every campaign stage document the ENGINE defines, the skill names.** Checks
+   2-4 all run one way — is what the skill CLAIMS real? — and that is the
+   direction that does not drift. A skill is written once and the engine moves,
+   so the live failure is the engine growing an authoring surface the skill never
+   learned, and nothing in this repo noticed: the map pipeline (spec-0049) landed
+   `geometry-brief`, `layout-graph` and `site-plan` while the skill went on
+   describing a six-stage loop, so an agent driving it authored campaigns with no
+   way to say where anything was. The denominator is `Stage::name` in
+   `crates/dsl/src/envelope.rs` — the crate's own one enumeration, the same one
+   `delvec schema --stage all` exports from — so a stage added tomorrow is an
+   unmentioned stage the moment it lands. There is no exemption list: a stage
+   deliberately outside `/new-delve` says so IN the skill, because a list of
+   stages nobody has to write is how the silence came back.
+
 WHAT THIS GATE DOES *NOT* PROVE
+
+Check 5 asks only that each stage is NAMED, as a whole token, somewhere in the
+skill. It cannot tell a workflow step from a passing mention, and four of the ten
+stage names (`world`, `classes`, `quests`, `dialogue`) are ordinary English words
+that a skill about campaigns would contain by accident. That is deliberate and
+the trade is stated rather than hidden: the surfaces this check exists for arrive
+with compound names nobody writes incidentally, and demanding a stricter form —
+backticks, a `.json` suffix — would red six stages the skill already covers and
+buy a cosmetic edit instead of a workflow.
 
 A floor that has become **too low**. If the skill starts driving a subcommand
 that only appeared in `delvec` 1.1.0 while the window still says `>=1.0.0`, check
@@ -89,10 +112,14 @@ rely on states which single engine anybody has run. Do not read a green here as
 BINDING COUNT
 
 Every run prints what it examined: `delvec` mentions found in the skill's code
-spans, subcommand references checked (and how many distinct), and long-flag
-references checked. **Zero subcommand references is a FAILURE, not a pass** — it
-means the extraction stopped matching the skill's prose and checks 2-3 are all
-that is left standing. A gate that binds to nothing is vacuous.
+spans, subcommand references checked (and how many distinct), long-flag
+references checked, and how many of the engine's campaign stage documents the
+skill names — stated as a fraction, because a coverage count without its
+denominator is about a smaller world than the tool claims to cover. **Zero
+subcommand references is a FAILURE, not a pass** — it means the extraction
+stopped matching the skill's prose and checks 2-3 are all that is left standing.
+**Zero stage documents parsed is likewise a FAILURE**: check 5 would then be
+silent about every surface at once. A gate that binds to nothing is vacuous.
 
 Deterministic, offline, no dependencies (Python 3 stdlib). Run from anywhere:
 
@@ -111,6 +138,12 @@ REPO = Path(__file__).resolve().parent.parent
 SKILL = REPO / ".claude" / "skills" / "new-delve" / "SKILL.md"
 COMPILER_CARGO_TOML = REPO / "crates" / "compiler" / "Cargo.toml"
 COMPILER_MAIN_RS = REPO / "crates" / "compiler" / "src" / "main.rs"
+ENVELOPE_RS = REPO / "crates" / "dsl" / "src" / "envelope.rs"
+
+# `Stage::World => "world",` — the arms of `Stage::name`, which is the ONE
+# enumeration of the campaign's stage documents and the same one
+# `delvec schema --stage all` exports from.
+STAGE_ARM_RE = re.compile(r'Stage::\w+\s*=>\s*"([a-z][a-z0-9-]*)"')
 
 SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
@@ -455,8 +488,19 @@ def engine_version() -> str:
     return match.group(1)
 
 
+def stage_names() -> list[str]:
+    """Every campaign stage document the engine defines, in document order.
+
+    Read out of `Stage::name`'s match arms, which is the crate's own one
+    enumeration and the same one `delvec schema --stage all` exports from —
+    parsed textually for the same reason check 4 parses the clap enums: this gate
+    is stdlib-only and offline, so it never builds the compiler to ask it.
+    """
+    return STAGE_ARM_RE.findall(ENVELOPE_RS.read_text(encoding="utf-8"))
+
+
 def main() -> int:
-    for path in (SKILL, COMPILER_CARGO_TOML, COMPILER_MAIN_RS):
+    for path in (SKILL, COMPILER_CARGO_TOML, COMPILER_MAIN_RS, ENVELOPE_RS):
         if not path.is_file():
             print(f"check-skill-version: FAIL — {path} is missing", file=sys.stderr)
             return 2
@@ -617,7 +661,51 @@ def main() -> int:
                     f"{', '.join('--' + f for f in sorted(globals_))}"
                 )
 
+    # -- 5. every stage the ENGINE defines, the skill knows how to author -----
+    #
+    # The other direction, and the one nothing checked. Checks 2-4 all ask
+    # whether what the SKILL claims exists in the engine — a skill naming a
+    # subcommand that was renamed out from under it. Nothing asked the reverse:
+    # a whole authoring pipeline the engine has and the skill is silent about.
+    # That is a check which can only fail in the direction that does not drift.
+    # Skills are written once and the engine moves, so the live failure is
+    # always the engine growing a surface the skill never learned — the map
+    # pipeline (spec-0049) landed three campaign stage documents and the skill
+    # went on describing a six-stage loop, so an agent driving it authored
+    # campaigns that could not state where anything was.
+    #
+    # The denominator is the engine's own enumeration, so a stage added tomorrow
+    # is an unmentioned stage the moment it lands.
+    stages = stage_names()
+    unmentioned = [
+        s for s in stages if not re.search(rf"(?<![\w-]){re.escape(s)}(?![\w-])", markdown)
+    ]
+    for s in unmentioned:
+        findings.append(
+            f"the engine defines the campaign stage document `{s}.json` and the "
+            f"skill never mentions it. An authoring surface the skill is silent "
+            f"about is a surface no /new-delve run will ever write, however "
+            f"complete the engine's side is — and nothing else in this repo "
+            f"notices, because every other gate asks whether the SKILL's claims "
+            f"exist rather than whether the ENGINE's surfaces are driven.\n"
+            f"    {ENVELOPE_RS.relative_to(REPO)} `Stage::name` defines: "
+            f"{', '.join(stages)}\n"
+            f"    Add the stage to the skill's workflow — where in the loop it is "
+            f"authored, what it states, and which check refuses a campaign that "
+            f"skips it. If the stage is deliberately not part of /new-delve, say "
+            f"so IN the skill; there is no exemption list here, because a list "
+            f"of stages nobody has to write is how the silence came back."
+        )
+
     # -- vacuity guard -------------------------------------------------------
+    if not stages:
+        print(
+            f"check-skill-version: FAIL — parsed 0 stage documents from "
+            f"{ENVELOPE_RS.relative_to(REPO)}; the `Stage::name` match-arm shape "
+            "this gate keys off has changed. Fix the parser, do not drop the gate",
+            file=sys.stderr,
+        )
+        return 1
     if sub_refs == 0:
         print(
             "check-skill-version: FAIL — extracted 0 delvec subcommand references "
@@ -631,7 +719,9 @@ def main() -> int:
     binding = (
         f"{len(calls)} delvec mention(s) in code spans, {sub_refs} subcommand "
         f"reference(s) over {len(seen)} distinct subcommand(s) "
-        f"({', '.join(sorted(seen))}), {flag_refs} long-flag reference(s)"
+        f"({', '.join(sorted(seen))}), {flag_refs} long-flag reference(s), and "
+        f"{len(stages) - len(unmentioned)} of the engine's {len(stages)} campaign "
+        f"stage document(s) named in the skill"
     )
 
     if findings:

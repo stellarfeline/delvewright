@@ -33,6 +33,92 @@ use delvewright_schem::nbt::Nbt;
 use delvewright_schem::split::TilePart;
 use serde::Serialize;
 
+// ---------------------------------------------------------------------------
+// `DW0848` — the declared footprint class, at the admission event
+// ---------------------------------------------------------------------------
+
+/// What the footprint-class check examined, so its silence is a stated zero
+/// rather than an unstated one.
+pub struct FootprintVerdict {
+    /// The finding, if the declaration and the bytes disagree.
+    pub finding: Option<Diagnostic>,
+    /// 1 when the piece declares a class, 0 when it does not.
+    pub declared: usize,
+    /// 1 when a declaration document was read at all.
+    pub examined: usize,
+}
+
+impl FootprintVerdict {
+    /// True when this refuses the admission.
+    pub fn is_refusal(&self) -> bool {
+        self.finding.as_ref().is_some_and(Diagnostic::is_error)
+    }
+
+    /// The binding line — stated whether or not anything was declared.
+    pub fn line(&self) -> String {
+        format!(
+            "footprint class binding: {d} declared class(es) judged over {e} declaration \
+             document(s) read.",
+            d = self.declared,
+            e = self.examined,
+        )
+    }
+}
+
+/// **Judge a piece's declared `footprint_class` against its own bytes**
+/// (spec-0050 §5), at the event where the library's integrity lives.
+///
+/// The rule itself lives in `delvewright_dsl::prefab::check_footprint_class` and
+/// is asked identically by the compiler wherever a `detail-plan` row consumes the
+/// piece. One authority, two doors, on the pattern spec-0036 §1c fixed for the
+/// spatial contract: two implementations that agreed until they did not is the
+/// failure that shape removes.
+///
+/// A piece with no declaration document, or one that does not parse, is the
+/// contract door's finding (`DW0783`) and not restated here — two diagnostics for
+/// one defect is what a second reader of the same absence produces.
+pub fn footprint_class(meta_path: &std::path::Path) -> FootprintVerdict {
+    let Ok(Some(meta)) = delvewright_schem::prefab::PrefabMeta::read(meta_path) else {
+        return FootprintVerdict {
+            finding: None,
+            declared: 0,
+            examined: 0,
+        };
+    };
+    if meta.footprint_class.is_none() {
+        return FootprintVerdict {
+            finding: None,
+            declared: 0,
+            examined: 1,
+        };
+    }
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let finding = delvewright_schem::prefab::check_footprint_class(
+        &meta,
+        "prefabs",
+        &meta_path.display().to_string(),
+        &mut reads,
+    )
+    .map(|d| {
+        // The rule answers under two codes — its own, and `DW0812` where the
+        // name is not in the metrics table at all — so the code travels with the
+        // finding. Restamping every finding as `DW0848` printed `DW0812`'s
+        // message under a `DW0848` heading: nothing errored, and the answer was
+        // plausible and wrong.
+        let code = if d.code == delvewright_dsl::metrics::DW_METRIC_UNKNOWN {
+            delvewright_dsl::metrics::DW_METRIC_UNKNOWN.id()
+        } else {
+            delvewright_schem::prefab::DW_FOOTPRINT_CLASS.id()
+        };
+        Diagnostic::error(code, d.message)
+    });
+    FootprintVerdict {
+        finding,
+        declared: 1,
+        examined: 1,
+    }
+}
+
 /// Block **names** (namespace-stripped) that hard-fail the admission audit: the
 /// command blocks and the structure block. (Jigsaw is a legitimate socket; bare
 /// spawners are caught by the allowlist — see the module docs.)

@@ -23,7 +23,7 @@ Expected SHA-256 of that source (pinned in PROVENANCE.md):
 ## Transform
 
 `sorted(set("minecraft:" + id for id in registries["sound_event"]))`, then
-`json.dumps(indent=2, sort_keys=True) + "\n"` — identical shape to the item and
+`json.dumps(indent=2, sort_keys=True, ensure_ascii=False) + "\n"` — identical shape to the item and
 entity registries. 1838 ids for 1.21.11.
 
     python3 tools/extract-sound-registry.py registries.min.json \
@@ -58,7 +58,7 @@ def main(argv: list[str]) -> int:
     data = json.loads(raw)
     events = data["sound_event"]
     ids = sorted({f"minecraft:{e}" for e in events})
-    out = json.dumps(ids, indent=2, sort_keys=True) + "\n"
+    out = json.dumps(ids, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     out_path.write_text(out, encoding="utf-8")
     sys.stderr.write(f"wrote {len(ids)} sound-event ids to {out_path}\n")
     return 0

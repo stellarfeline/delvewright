@@ -189,6 +189,19 @@ prefixed_id!(
     /// name, taken from the whole map's written brief. Unique within the brief;
     /// a site plan's `identities[]` bind to these.
     FactId, "fact");
+prefixed_id!(
+    /// Site-plan datum id: `datum/<kebab>` (spec-0049 §4.1). A named ground
+    /// plane a box's floor sits on. Unique within the site plan.
+    DatumId, "datum");
+prefixed_id!(
+    /// Site-plan volume id: `volume/<kebab>` (spec-0049 §4.1). A mass the WHOLE
+    /// owns — the mountain a cave system is inside, the ground under a village,
+    /// the sky a silhouette needs kept empty. Unique within the site plan.
+    VolumeId, "volume");
+prefixed_id!(
+    /// Site-plan view id: `view/<kebab>` (spec-0049 §4.1). A named exterior
+    /// vantage the walk judges the silhouette from. Unique within the site plan.
+    ViewId, "view");
 
 /// Campaign id: a bare kebab-case token (no type prefix).
 #[derive(
