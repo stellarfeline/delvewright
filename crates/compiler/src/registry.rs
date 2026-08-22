@@ -321,8 +321,7 @@ impl DamageTypeRegistry {
 /// below to read only what they read.
 pub use delvewright_dsl::prefab::{
     Anchor as AnchorMeta, Connector, GateAnchor, PrefabMeta, Region,
-    SpatialContract as SpatialContractMeta,
-    StructureMeta,
+    SpatialContract as SpatialContractMeta, StructureMeta,
 };
 /// A face of the piece's face contract, and its opening. The opening is an
 /// ordinary [`Region`]; assembly reads it as one.
@@ -558,7 +557,11 @@ impl PrefabRegistry {
         if let Some(prefab) = &area.prefab {
             return vec![prefab.as_str().to_string()];
         }
-        match area.prefab_pool.as_ref().and_then(|p| self.pool(p.as_str())) {
+        match area
+            .prefab_pool
+            .as_ref()
+            .and_then(|p| self.pool(p.as_str()))
+        {
             Some(members) => members.iter().map(|m| m.prefab.clone()).collect(),
             None => Vec::new(),
         }

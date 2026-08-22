@@ -29,9 +29,9 @@ use delvewright_dsl::{
 use crate::flow::objectives_in_order;
 use crate::reach::{ReachCompletion, reach_completion};
 use crate::registry::{AnchorMeta, PrefabRegistry};
-use delvewright_dsl::prefab::{GateAnchor, PrefabMeta};
 use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
 use delvewright_dsl::DwCode;
+use delvewright_dsl::prefab::{GateAnchor, PrefabMeta};
 
 /// World-space distance between successive area origins.
 pub const AREA_SPACING: i32 = 256;

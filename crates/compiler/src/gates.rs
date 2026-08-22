@@ -11,8 +11,8 @@
 use delvewright_dsl::{Campaign, Diagnostic};
 
 use crate::registry::PrefabRegistry;
-use std::collections::BTreeSet;
 use delvewright_dsl::DwCode;
+use std::collections::BTreeSet;
 
 /// `DW0343`: a `close-gate` targets a gate anchor that declares no fill `block` in
 /// its prefab metadata (or is not a gate region), so the compiler cannot seal it.
@@ -199,10 +199,20 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
     // a `close-gate` inside a `sequence` step used to be blamed on the sequence.
     delvewright_dsl::for_each_campaign_effect(c, &mut |path, _site, e| {
         if let Some(a) = e.close_gate_anchor() {
-            d.extend(diag(a.as_str(), "close-gate", true, format!("{path}/anchor")));
+            d.extend(diag(
+                a.as_str(),
+                "close-gate",
+                true,
+                format!("{path}/anchor"),
+            ));
         }
         if let Some(a) = e.open_gate_anchor() {
-            d.extend(diag(a.as_str(), "open-gate", false, format!("{path}/anchor")));
+            d.extend(diag(
+                a.as_str(),
+                "open-gate",
+                false,
+                format!("{path}/anchor"),
+            ));
         }
     });
     // spec-0016 §2: a shortcut's gate is cleared `replace <block>` on unlock and is
