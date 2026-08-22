@@ -72,6 +72,10 @@ pub const DW_CAST_PRE_07: DwCode = DwCode::every_version("DW0465");
 pub const DW_CAST_UNCHANGED_FIRST: DwCode = DwCode::every_version("DW0466");
 /// An NPC's dialogue never changes across the whole story (warning).
 pub const DW_CAST_STALE: DwCode = DwCode::every_version("DW0467");
+/// A `talk-to` objective whose NPC opens nothing that can complete it, at any
+/// scene the ledger can present while that objective is live (see
+/// [`check_talk_answerable`]).
+pub const DW_CAST_UNANSWERABLE: DwCode = DwCode::every_version("DW0858");
 /// A cast clause no runtime state can select: at every state satisfying its own
 /// gate, a later clause of the same quest also passes and overrides it, so its
 /// scene is unreachable by construction (see [`check_clause_liveness`]).
@@ -427,6 +431,182 @@ pub fn check_cast(c: &Campaign) -> Vec<Diagnostic> {
 
     diags.extend(check_unchanged_and_staleness(c, &order));
     diags.extend(check_clause_liveness(c));
+    diags.extend(check_talk_answerable(c, &order));
+    diags
+}
+
+// ---------------------------------------------------------------------------
+// An objective that cannot be completed is refused (DW0858)
+// ---------------------------------------------------------------------------
+
+/// Every quest that can still be live while `quest` is — a sound
+/// over-approximation, used to bound which cast scenes an objective in `quest`
+/// could ever be answered by.
+///
+/// Two exclusions, and both are facts about the emitted dispatch rather than
+/// guesses:
+///
+/// * **Anything ranked before `quest` in [`quest_dag_order`]** cannot govern,
+///   because clauses accumulate in that order and the LAST one whose quest has
+///   begun wins — so as long as `quest` declares this NPC at all, its own clause
+///   overrides every earlier one. (The caller only applies the rule when `quest`
+///   does declare one; an NPC `quest` puts offstage has no body to right-click,
+///   which is [`check_placement_position`]'s question.)
+/// * **Anything whose trigger chain waits on `quest` itself.** `dw.qa_*` is set
+///   when a quest starts, so a quest that only opens once `quest` COMPLETES
+///   cannot have begun while an objective of `quest` is still pending — and an
+///   objective is what has to complete first.
+fn concurrent_quests<'a>(c: &'a Campaign, quest: &str, order: &'a [String]) -> BTreeSet<&'a str> {
+    // Quests transitively unlocked by `quest` completing.
+    let mut blocked: BTreeSet<&str> = BTreeSet::new();
+    loop {
+        let mut changed = false;
+        for q in &c.quests.content.quests {
+            if let delvewright_dsl::Trigger::QuestComplete { quest: src } = &q.trigger
+                && (src.as_str() == quest || blocked.contains(src.as_str()))
+                && blocked.insert(q.id.as_str())
+            {
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let rank = order.iter().position(|q| q == quest);
+    order
+        .iter()
+        .enumerate()
+        .filter(|(i, q)| rank.is_none_or(|r| *i >= r) && !blocked.contains(q.as_str()))
+        .map(|(_, q)| q.as_str())
+        .collect()
+}
+
+/// **An objective that cannot be completed is refused** (`DW0858`).
+///
+/// A `talk-to` objective is finished by pressing a dialogue button. The cast
+/// ledger decides what an NPC's right-click opens beat by beat, and `"none"`
+/// opens nothing at all — the emitted `dw.cast` dispatch writes no clause for a
+/// silent scene, so the interaction is consumed and the tree never appears. A
+/// quest that declares its own NPC silent and then asks the player to talk to
+/// them has written a beat the player walks up to, presses, and cannot pass.
+///
+/// Why the checks next door do not see it, and why this is not one of them:
+///
+/// * `DW0123` measures reachability **from the dialogue tree's entry points** —
+///   the stage-6 `root` plus every ledger root, all of them at once. It answers
+///   "does a completing option exist anywhere in this tree", never "is that
+///   option on screen during the beat that needs it". A campaign can be green
+///   there and unwalkable here, which is exactly the shape this catches.
+/// * `DW0467` notices an NPC that offers the same thing in **every** quest. That
+///   is a staleness lint about a whole story, it is a warning because a static
+///   background character is legal, and it says nothing about whether any
+///   objective depends on the conversation. Silence in the one quest that needs
+///   it does not trip it at all.
+/// * The deep fixpoint's `DW0203` is cast-blind by construction: it is monotone
+///   and has no notion of *when*, whereas the ledger is entirely about when.
+///   [`crate::flow::Flow`] consults the ledger only in its replay
+///   (`skips`/`DW0205`), which is the one place a moment exists.
+///
+/// The rule is therefore the CONJUNCTION and nothing wider: an objective that
+/// requires this conversation, and no scene the ledger can present while that
+/// objective is live opening a tree from which an option completing it is
+/// reachable. A silent scene on its own stays legal — an NPC with nothing to say
+/// during a quest they are not part of is ordinary and common.
+///
+/// Inert on a campaign with no ledger (pre-0.7): with no clause to consult there
+/// is no scene to be wrong about, and `DW0123` keeps its old verdict unchanged.
+fn check_talk_answerable(c: &Campaign, order: &[String]) -> Vec<Diagnostic> {
+    use delvewright_dsl::Objective;
+
+    let mut diags = Vec::new();
+    let casts = npc_casts(c);
+
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        let mut live: Option<BTreeSet<&str>> = None;
+        for (oi, obj) in q.objectives.iter().enumerate() {
+            let Objective::TalkTo { id, npc, .. } = obj else {
+                continue;
+            };
+            let Some(cast) = casts.get(npc.as_str()) else {
+                continue; // no ledger for this npc: DW0123 owns the question
+            };
+            // Only judge a quest that declares this NPC itself. Where it does
+            // not, the body is absent or the campaign is pre-ledger, and another
+            // proof owns that.
+            if !cast.by_quest.iter().any(|cl| cl.quest == q.id.as_str()) {
+                continue;
+            }
+            let Some(tree) = c.dialogue.content.tree_for(npc.as_str()) else {
+                continue; // DW0122: the npc has no tree at all
+            };
+            let live = live.get_or_insert_with(|| concurrent_quests(c, q.id.as_str(), order));
+
+            let mut roots: Vec<&str> = Vec::new();
+            let mut silent = 0usize;
+            let mut barks = 0usize;
+            for cl in &cast.by_quest {
+                if !live.contains(cl.quest.as_str()) {
+                    continue;
+                }
+                match cast
+                    .scenes
+                    .iter()
+                    .find(|s| s.index == cl.scene)
+                    .map(|s| &s.action)
+                {
+                    Some(SceneAction::Root(r)) => roots.push(r.as_str()),
+                    Some(SceneAction::Silent) => silent += 1,
+                    Some(SceneAction::Barks(_)) => barks += 1,
+                    None => {}
+                }
+            }
+            if tree.completes_from(&roots).contains(id.as_str()) {
+                continue;
+            }
+
+            let offered = if roots.is_empty() {
+                let mut what = Vec::new();
+                if silent > 0 {
+                    what.push(format!("{silent} silent scene(s) (`\"none\"`)"));
+                }
+                if barks > 0 {
+                    what.push(format!("{barks} bark pool(s)"));
+                }
+                if what.is_empty() {
+                    "no scene at all".to_string()
+                } else {
+                    format!("only {}", what.join(" and "))
+                }
+            } else {
+                format!(
+                    "only scene(s) rooted at {} — none of which reaches an option completing it",
+                    roots
+                        .iter()
+                        .map(|r| format!("`{r}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+
+            diags.push(Diagnostic::error(
+                DW_CAST_UNANSWERABLE,
+                "quests",
+                format!("/content/quests/{qi}/objectives/{oi}"),
+                format!(
+                    "`talk-to` objective `{id}` cannot be completed: while it is live, npc \
+                     `{npc}`'s `cast` ledger offers {offered}. A silent scene consumes \
+                     the right-click and opens nothing, and a bark pool never claims to advance \
+                     anything — so the player walks up, presses, and the beat does not pass. Give \
+                     `{npc}` a `dialogue` root in quest `{}`'s `cast` whose tree reaches \
+                     an option with a `complete-objective` effect for `{id}`, or drop the \
+                     objective. (`DW0123` is green here on purpose: the completing option exists \
+                     in the tree, it is just not what right-click opens during this beat.)",
+                    q.id
+                ),
+            ));
+        }
+    }
     diags
 }
 
