@@ -18,12 +18,17 @@
 //!   interior-lighting obligations (wired by the caller, not here).
 //! - The inner slopes are proven un-climbable **empirically** (a nav flood from
 //!   the gap floor must never cross the crest line), not by slope-angle
-//!   promise. This module additionally guarantees it *by construction*: every
-//!   surround surface height is quantized to even steps, so no two adjacent
-//!   columns ever differ by exactly 1 — with vanilla's 1-block auto-step/jump
-//!   there is no standable staircase anywhere on the annulus. The generator
-//!   runs its own flood proof (`assert_inner_slopes_unclimbable`) so a
-//!   violation dies here, long before the compiler's authoritative nav gate.
+//!   promise. This module additionally guarantees it *by construction*, and the
+//!   construction is one sentence long: **no column stands exactly one block
+//!   above the gap-floor datum.** Everything is at the floor or below it, or at
+//!   least two above it, and a two-block riser is the one thing vanilla's
+//!   auto-step and jump cannot take — so the flood never leaves the floor and
+//!   the shape of the landform above the barrier is nobody's business but the
+//!   landform's. See [`column_profile`] for the argument and for the
+//!   measurement that retired the far stronger even-step rule this replaced.
+//!   The generator runs its own flood proof
+//!   (`assert_inner_slopes_unclimbable`) so a violation dies here, long before
+//!   the compiler's authoritative nav gate.
 //! - Determinism (ADR-0006): everything derives from one `u64` stream seed via
 //!   the in-house position-addressed value-noise family (`edit::value_noise`,
 //!   `edit::hash01`) and [`crate::Splitmix64`]. No wall clock, no unseeded RNG,
@@ -339,6 +344,51 @@ const RIDGE_FREQ: f64 = 0.03;
 /// Ridge floor: no rim segment degenerates below 0.3× `rim_height`
 /// (dossier §2.2 — the ring never opens into a walkable gap).
 const RIDGE_FLOOR: f64 = 0.3;
+/// Gamma on the ridge before it scales `rim_height`, so the declared rim is a
+/// height the crest REACHES rather than twice what it delivers.
+///
+/// Measured over the gallery's annulus (21,504 columns): the raw ridged
+/// multifractal has median 0.327, p90 0.636, max 0.949 — a distribution
+/// concentrated at the bottom, which is what put a rim declared 48 at a
+/// measured crest median of 24. At this gamma the same field gives a crest
+/// median near 0.72x and peaks at the declared height. A gamma rather than a
+/// rescale-and-clamp deliberately: a clamp turns the top of the distribution
+/// into a plateau at exactly `rim_height`, and a flat crest is the terrace
+/// read arriving at the skyline.
+const RIDGE_GAMMA: f64 = 0.45;
+/// The one height no surround column may stand at, stated as the height the rim
+/// starts from: everything is at the gap-floor datum or below it, or at least
+/// this far above it. See [`column_profile`] for why that is the whole
+/// by-construction half of the un-climbability guarantee.
+const BARRIER: i32 = 2;
+/// Fine-relief noise over the swept rim profile (see [`relief`]).
+const DETAIL_FREQ: f64 = 0.07;
+/// Relief amplitude as a fraction of the column's own height...
+const DETAIL_REL: f64 = 0.16;
+/// ...plus this fraction of `rim_height`, faded in with the slope, so a
+/// shoulder is broken ground and the floor's edge is not churned.
+const DETAIL_ABS: f64 = 0.06;
+/// Gap-floor hollows: the deepest a hollow sinks below the datum...
+const GAP_RELIEF_DEPTH: f64 = 2.0;
+/// ...the noise frequency that shapes them...
+const GAP_RELIEF_FREQ: f64 = 0.055;
+/// ...and the noise value below which the floor starts to sink at all, so most
+/// of it stays at the datum and the hollows read as hollows rather than swell.
+const GAP_RELIEF_GATE: f64 = 0.42;
+/// Blocks of gap floor either side of the declared region that stay exactly at
+/// the datum, so a piece's own ground and the moat seam meet a flat band.
+const GAP_FLAT_MARGIN: f64 = 4.0;
+/// Blocks of soil under a grassed annulus surface. ONE, and the number is the
+/// whole of the "terraced embankment" read: a riser exposes what is under the
+/// grass it drops from, so three blocks of dirt under every grass column drew a
+/// brown course under every green one all the way up the rim. Under one block
+/// of soil the rock is what a face shows, which is what a hillside shows. The
+/// gap floor keeps a deeper soil because nothing ever exposes it.
+const SOIL_DEPTH: i32 = 1;
+/// Soil depth on the gap floor and the moat, where no face is ever exposed.
+const FLOOR_SOIL_DEPTH: i32 = 3;
+/// The drop to a neighbour at which a column sheds its soil and shows rock.
+const SOIL_SHED_DROP: i32 = 5;
 /// Normalized annulus progress at which the outer decay begins.
 const DECAY_START: f64 = 0.5;
 /// Fraction of the core height still standing at the outer tile edge.
@@ -411,6 +461,8 @@ const SALT_DECOR_GATE: u64 = 151;
 const SALT_DECOR_PICK: u64 = 155;
 const SALT_TREE_HEIGHT: u64 = 43;
 const SALT_TREE_KEEP: u64 = 45;
+const SALT_DETAIL: u64 = 81; // +1 for the second octave
+const SALT_GAP_RELIEF: u64 = 85;
 
 // ---------------------------------------------------------------------------
 // Flora / palette tables (parallel by construction — criterion 6)
@@ -575,9 +627,66 @@ enum Zone {
     Outer,
 }
 
-/// Surface height ABOVE the gap floor at a column, plus its zone. Heights are
-/// quantized to even steps — the by-construction half of the un-climbability
-/// guarantee (see the module doc). A pure function of its arguments (ADR-0006).
+/// Fine relief over the swept rim profile, in [−1, 1]: two octaves of the same
+/// value noise, so a hillside is broken ground rather than a cone of
+/// revolution with a ridge painted on it.
+fn relief(seed: u64, x: i32, z: i32) -> f64 {
+    let a = value_noise(seed, x, 0, z, DETAIL_FREQ, SALT_DETAIL);
+    let b = value_noise(seed, x, 0, z, DETAIL_FREQ * 2.0, SALT_DETAIL + 1);
+    2.0 * (0.65 * a + 0.35 * b) - 1.0
+}
+
+/// How far the gap floor sinks below its datum at a column (0 or negative).
+///
+/// The floor of a valley is not a bowling green, and it does not have to be a
+/// plane for anything here to hold: the un-climbability rule is about what
+/// stands ABOVE the datum ([`BARRIER`]), so the floor may dip as deeply as it
+/// likes and a body simply walks down into the hollow and back out. What it
+/// may never do is RISE, because a rise of exactly one is the one step a body
+/// can take.
+///
+/// Faded to nothing within [`GAP_FLAT_MARGIN`] of the declared region, so the
+/// band a piece's own ground meets stays exactly at the datum and the moat
+/// seam is flat on both sides.
+fn gap_relief(seed: u64, scene: &SceneRect, x: i32, z: i32) -> i32 {
+    let d = rect_distance(scene, x, z);
+    let fade = smoothstep01((d - GAP_FLAT_MARGIN) / GAP_FLAT_MARGIN);
+    let n = value_noise(seed, x, 0, z, GAP_RELIEF_FREQ, SALT_GAP_RELIEF);
+    // Only the low tail of the noise digs; most of the floor stays at the datum.
+    let t = ((GAP_RELIEF_GATE - n) / GAP_RELIEF_GATE).clamp(0.0, 1.0);
+    -(GAP_RELIEF_DEPTH * fade * t).round() as i32
+}
+
+/// Surface height relative to the gap-floor datum at a column, plus its zone.
+/// A pure function of its arguments (ADR-0006).
+///
+/// # The one height this may never return
+///
+/// **No column stands exactly [`BARRIER`] − 1 = one block above the datum.**
+/// Every column is at the datum or below it — the floor and the hollows in it —
+/// or at least two above it, which is the rim. That single fact is the whole
+/// by-construction half of the un-climbability guarantee, and it is worth
+/// stating why it is enough where a much stronger rule used to stand.
+///
+/// A flood from the gap floor climbs by at most one block a step. The floor's
+/// own connected component is therefore everything at or below the datum
+/// (walking down into a hollow and back out is free), and it is bounded above
+/// by the datum. The first thing outward of it stands at least two blocks
+/// higher, and a two-block riser is the one vanilla's auto-step and jump cannot
+/// take. So the flood never leaves the floor, and **nothing above the barrier
+/// is reachable at all** — which is why nothing above the barrier owes the
+/// landform any constraint on its shape.
+///
+/// The rule this replaces quantized EVERY surround height to even steps, which
+/// is sufficient and far stronger than necessary: it forbids a one-block
+/// difference between two columns 40 blocks up a mountainside no body can stand
+/// on. Measured on the shipped bytes of the gallery's valley, the flood reached
+/// 4,537 cells and **every one of them at the datum** — not one column, anywhere
+/// on the annulus, one block up. The whole of the quantization above the barrier
+/// was buying a property that was already free, and paying for it with the only
+/// thing that makes terrain read as terrain: a surface with more than two values
+/// in it. `DW0854` is untouched and still proves the property over the assembled
+/// bytes; what changed is the size of the promise the generator makes to it.
 fn column_profile(
     seed: u64,
     scene: &SceneRect,
@@ -588,7 +697,7 @@ fn column_profile(
 ) -> (Zone, i32) {
     let dw = warped_distance(seed, scene, x, z);
     if dw < GAP_WIDTH {
-        return (Zone::Gap, 0);
+        return (Zone::Gap, gap_relief(seed, scene, x, z));
     }
     let zone = if dw <= GAP_WIDTH + SLOPE_RUN {
         Zone::Inner
@@ -596,7 +705,15 @@ fn column_profile(
         Zone::Outer
     };
     let s = smoothstep01((dw - GAP_WIDTH) / SLOPE_RUN);
-    let r = RIDGE_FLOOR + (1.0 - RIDGE_FLOOR) * ridged(seed, x, z);
+    // The ridge, remapped so that `rim_height` is a height the crest actually
+    // REACHES. The raw ridged multifractal is concentrated low — median 0.33
+    // over the gallery's annulus, so a rim declared 48 crested at a median of
+    // 24 and the parameter named twice what it delivered. The gamma pulls the
+    // body of the distribution up without flattening its top into a plateau:
+    // the peaks arrive at `rim_height`, the typical crest at about three
+    // quarters of it, and a saddle still bottoms out at `RIDGE_FLOOR`×.
+    let rn = ridged(seed, x, z).clamp(0.0, 1.0).powf(RIDGE_GAMMA);
+    let r = RIDGE_FLOOR + (1.0 - RIDGE_FLOOR) * rn;
     // Outer decay keys on how far BEYOND the crest the column sits, relative
     // to the band remaining past it. A band-floored axis has no room past
     // the crest, so its rim ends full-height at the tile edge — the perimeter
@@ -611,9 +728,24 @@ fn column_profile(
     } else {
         1.0
     };
-    let h = (f64::from(rim_height) * s * r * decay).max(0.0);
-    let hq = 2 * (h / 2.0).floor() as i32;
-    (zone, hq.max(0))
+    let base = f64::from(rim_height) * s * r * decay;
+    // Relief scaled by the column's own height plus a slope-faded absolute
+    // term, so a tall shoulder is broken and the floor's edge is not.
+    let amp = DETAIL_REL * base + DETAIL_ABS * f64::from(rim_height) * s;
+    // Clamped one under `rim_height`, because the barrier shift below adds one:
+    // the crest tops out AT the declared rim and never over it, which is what
+    // keeps the build-range fence in `generate_valley` exact rather than
+    // approximate.
+    let h = (base + amp * relief(seed, x, z)).clamp(0.0, f64::from(rim_height) - 1.0);
+    // The barrier, and nothing else. Below one block the column IS the floor;
+    // at or above it the rim starts, and it starts two blocks up so the floor
+    // has nothing to step onto.
+    let hq = if h < 1.0 {
+        0
+    } else {
+        ((h + 1.0).round() as i32).max(BARRIER)
+    };
+    (zone, hq)
 }
 
 // ---------------------------------------------------------------------------
@@ -868,7 +1000,7 @@ pub fn generate_valley(
         }
         // Grass shoulders only (surface material is flora-independent, so the
         // domain — and thus tree POSITIONS — is identical across floras).
-        surface_is_grass(seed, &scene, params.ratio, x, z)
+        surface_is_grass(seed, &scene, params.ratio, &columns, x, z)
     };
     let mut tree_cells: BTreeMap<[i32; 3], &'static str> = BTreeMap::new();
     for (tx, tz) in poisson_columns(seed, &outer, TREE_SPACING, &crest_domain) {
@@ -912,7 +1044,7 @@ pub fn generate_valley(
                 }
             }
         }
-        surface_is_grass(seed, &scene, params.ratio, x, z)
+        surface_is_grass(seed, &scene, params.ratio, &columns, x, z)
     };
     for (tx, tz) in poisson_columns(inner_seed, &outer, TREE_SPACING, &inner_domain) {
         if tree_cells.contains_key(&[tx, floor_top_y + columns[&(tx, tz)].1 + 1, tz]) {
@@ -933,12 +1065,26 @@ pub fn generate_valley(
             &flora,
         );
     }
-    // Clip stray canopy: never over the gap floor or the scene.
+    // Clip stray canopy: never over the gap floor or the scene, and **never
+    // INSIDE the ground**.
+    //
+    // A canopy is a ball of radius 2 around its trunk, so on any slope some of
+    // its cells sit over columns whose own surface is higher than the ball. The
+    // tile painter writes terrain first and copies tree cells over it, so such
+    // a cell REPLACED the surface block of the hillside it was buried in: 1,165
+    // leaf blocks resting directly on ground, and 307 columns whose top block
+    // was a leaf over exposed dirt. Nothing was wrong with the climb proof — a
+    // leaf is a full solid at the same height as the block it replaced, so the
+    // geometry never moved and `DW0854` had nothing to say — which is exactly
+    // why it survived: the defect was entirely in what the surface LOOKS like.
+    //
+    // Clipped here rather than in the painter so the proof below floods the set
+    // that ships, and so there is one place a canopy cell is decided.
     tree_cells.retain(|c, _| {
-        in_annulus(&scene, params.ratio, c[0], c[2])
-            && columns
-                .get(&(c[0], c[2]))
-                .is_some_and(|(zone, _)| *zone != Zone::Gap)
+        columns
+            .get(&(c[0], c[2]))
+            .is_some_and(|&(zone, h)| zone != Zone::Gap && c[1] > floor_top_y + h)
+            && in_annulus(&scene, params.ratio, c[0], c[2])
     });
 
     // --- 3. Understory decor — in the GENERATION phase, not the tile
@@ -952,7 +1098,7 @@ pub fn generate_valley(
             continue; // gap floor stays bare — the region-margin walk is clean
         }
         let surf = floor_top_y + h;
-        if !surface_is_grass(seed, &scene, params.ratio, x, z)
+        if !surface_is_grass(seed, &scene, params.ratio, &columns, x, z)
             || tree_cells.contains_key(&[x, surf + 1, z])
         {
             continue;
@@ -1003,7 +1149,11 @@ pub fn generate_valley(
     let gap_floor_starts: Vec<[i32; 3]> = columns
         .iter()
         .filter(|(_, (zone, _))| *zone == Zone::Gap)
-        .map(|(&(x, z), _)| [x, floor_top_y + 1, z])
+        // The floor's own height, not the datum: a hollow's feet cell is lower,
+        // and a start cell floating over one is a start the flood discards —
+        // which is how a proof quietly comes to flood from fewer cells than it
+        // says it does.
+        .map(|(&(x, z), &(_, h))| [x, floor_top_y + h + 1, z])
         .collect();
 
     Ok(ValleySurround {
@@ -1018,13 +1168,46 @@ pub fn generate_valley(
     })
 }
 
+/// The steepest drop from a column to one of its four neighbours, in blocks.
+/// A column off the annulus is not a drop — the outer perimeter ends in void,
+/// and calling that a cliff would strip the whole outer edge of its soil.
+fn max_drop(columns: &BTreeMap<(i32, i32), (Zone, i32)>, x: i32, z: i32) -> i32 {
+    let Some(&(_, h)) = columns.get(&(x, z)) else {
+        return 0;
+    };
+    let mut drop = 0;
+    for (nx, nz) in [(x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)] {
+        if let Some(&(_, nh)) = columns.get(&(nx, nz)) {
+            drop = drop.max(h - nh);
+        }
+    }
+    drop
+}
+
 /// Whether the surface material at a column is grass (vs bare rock). Shared by
 /// the surface painter and the tree domain; deliberately flora-independent
 /// (identical across floras, so tree positions and surface ids never fork).
-fn surface_is_grass(seed: u64, scene: &SceneRect, ratio: f64, x: i32, z: i32) -> bool {
+///
+/// **Steepness decides before the noise does.** Soil does not sit on a face
+/// that drops [`SOIL_SHED_DROP`] blocks to its neighbour, and this is the rule
+/// that stops a broken hillside reading as a lawn draped over stairs: the noise
+/// alone paints grass and rock in patches that ignore the shape underneath, so
+/// a scarp came out green and a shoulder came out grey for reasons a viewer can
+/// see are unrelated to the ground.
+fn surface_is_grass(
+    seed: u64,
+    scene: &SceneRect,
+    ratio: f64,
+    columns: &BTreeMap<(i32, i32), (Zone, i32)>,
+    x: i32,
+    z: i32,
+) -> bool {
     let dw = warped_distance(seed, scene, x, z);
     if dw < GAP_WIDTH {
         return true;
+    }
+    if max_drop(columns, x, z) >= SOIL_SHED_DROP {
+        return false;
     }
     if dw <= GAP_WIDTH + SLOPE_RUN {
         // Rockier as the wall climbs: grassy foot, crag top — softened,
@@ -1174,7 +1357,7 @@ fn tile_stack(
                 continue;
             };
             let surf = floor_top_y + h;
-            let grass = surface_is_grass(seed, scene, params.ratio, x, z);
+            let grass = surface_is_grass(seed, scene, params.ratio, columns, x, z);
             for y in y_min..=surf {
                 let name = if y == surf {
                     match (zone, grass) {
@@ -1188,7 +1371,14 @@ fn tile_stack(
                         (_, true) => "minecraft:grass_block",
                         (_, false) => pick(&ROCK, value_noise(seed, x, y, z, 0.13, SALT_ROCK_BAND)),
                     }
-                } else if grass && surf - y <= 3 {
+                } else if grass
+                    && surf - y
+                        <= if zone == Zone::Gap {
+                            FLOOR_SOIL_DEPTH
+                        } else {
+                            SOIL_DEPTH
+                        }
+                {
                     "minecraft:dirt"
                 } else {
                     pick(&ROCK, value_noise(seed, x, y, z, 0.13, SALT_ROCK_BAND))
@@ -1338,6 +1528,19 @@ fn assert_inner_slopes_unclimbable(
     tree_cells: &BTreeMap<[i32; 3], &'static str>,
     decor_cells: &BTreeMap<[i32; 3], &'static str>,
 ) {
+    // The by-construction promise, asserted over the heightfield that was
+    // actually produced rather than argued from `column_profile`'s source. It
+    // is one line because the promise is one line, and it is here rather than
+    // only in a unit test because a test proves it for the scenes its author
+    // chose and this proves it for the scene being built.
+    for (&(x, z), &(_, h)) in columns {
+        assert!(
+            h != BARRIER - 1,
+            "valley surround invariant: column ({x},{z}) stands {h} block(s) above the \
+             gap-floor datum — the one height the landform may never occupy, because it \
+             is the one a body on the floor can step onto (seed {seed}, ratio {ratio})"
+        );
+    }
     // Per-column extra solids from everything stamped over the terrain —
     // trees AND decor — classified by the one collision model the assembled
     // world uses: a no-collision tuft must contribute nothing here, and a
@@ -1404,7 +1607,7 @@ fn assert_inner_slopes_unclimbable(
                     dw <= GAP_WIDTH + SLOPE_RUN,
                     "valley surround invariant: gap floor reaches beyond the crest line at \
                      [{nx}, {ny}, {nz}] (warped d {dw:.1}) — the inner slope grew a standable \
-                     staircase; the even-step quantization or the tree clip regressed \
+                     staircase; the barrier rule or the tree clip regressed \
                      (seed {seed}, scene {scene:?}, ratio {ratio})"
                 );
                 frontier.push([nx, ny, nz]);
@@ -1482,28 +1685,66 @@ mod tests {
 
     #[test]
     fn no_one_block_riser_exists_and_ridge_never_opens() {
-        // The by-construction invariant behind DW0854: no two adjacent
-        // annulus columns may ever differ by exactly 1 (the only riser a
-        // vanilla step/jump climbs) — every surface height is quantized to
-        // even steps.
+        // The by-construction invariant behind DW0854, and it is a statement
+        // about ONE height rather than about every pair: no annulus column
+        // stands exactly one block above the gap-floor datum, so the floor's
+        // own walkable component — everything at the datum or in a hollow
+        // below it — has nothing anywhere it can step onto.
+        //
+        // Also counted, because a rule that forbids one value is vacuous if
+        // the field never produced that value anyway: how much of the surface
+        // is NOT even-quantized. Under the rule this replaced that number was
+        // zero by construction and the landform had two heights in it.
         let s = scene();
         let heights = |x: i32, z: i32| -> Option<i32> {
             in_annulus(&s, 2.5, x, z).then(|| column_profile(9, &s, 2.5, 48, x, z).1)
         };
+        let (mut examined, mut odd, mut one_steps) = (0u32, 0u32, 0u32);
         for x in -80..=175 {
             for z in -80..=175 {
                 let Some(h) = heights(x, z) else { continue };
+                examined += 1;
+                if h.rem_euclid(2) == 1 {
+                    odd += 1;
+                }
+                assert_ne!(
+                    h,
+                    BARRIER - 1,
+                    "({x},{z}) stands one block over the datum — the one height the \
+                     barrier rule forbids"
+                );
                 for (nx, nz) in [(x + 1, z), (x, z + 1)] {
-                    if let Some(nh) = heights(nx, nz) {
-                        assert_ne!(
-                            (h - nh).abs(),
-                            1,
-                            "1-block riser between ({x},{z})={h} and ({nx},{nz})={nh}"
+                    if let Some(nh) = heights(nx, nz)
+                        && (h - nh).abs() == 1
+                    {
+                        one_steps += 1;
+                        // A one-block difference is now legal, and the rule is
+                        // that it never CROSSES the barrier: two floor cells
+                        // may differ by one (walking into a hollow), two rim
+                        // cells may differ by one (nobody is there), and a
+                        // floor cell and a rim cell may not, which follows
+                        // from no column standing at +1 at all.
+                        assert_eq!(
+                            h <= 0,
+                            nh <= 0,
+                            "a 1-block riser crosses the barrier between ({x},{z})={h} and \
+                             ({nx},{nz})={nh}"
                         );
                     }
                 }
             }
         }
+        assert!(examined > 20_000, "examined only {examined} column(s)");
+        assert!(
+            odd * 10 > examined,
+            "only {odd} of {examined} column(s) sit at an odd height — the surface is \
+             still effectively two-valued, so this rule bought nothing"
+        );
+        assert!(
+            one_steps > 1_000,
+            "only {one_steps} one-block risers exist: the field is still quantized in \
+             all but name"
+        );
         // Along the crest line the rim never degenerates to a walkable gap:
         // sample the ring at the slope end and require a hard minimum.
         let mut min_crest = i32::MAX;
