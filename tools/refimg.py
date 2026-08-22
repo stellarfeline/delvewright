@@ -7,15 +7,29 @@ a picture rather than against prose. It is not a render — a render is a candid
 prefab imaged by `delve-render`, which happens later, at contact-sheet curation.
 Two stages, two producers; do not conflate them.
 
-Generation-time working material only. Ref images are local, gitignored, never
-shipped, and never enter the content repo — so image-model output licensing never
-touches a shipped asset (ADR-0013), and nothing here can move a delve's bytes
-(ADR-0006). This tool is human-in-the-loop: it is never called from a build.
+Output lands in a gitignored working directory (`.refimg/` by default), which is
+where a DRAFT belongs. An APPROVED reference goes somewhere else: it is copied
+into the campaign it belongs to — `design/concept/` for one scene,
+`design/reference/` for a whole map, beside its sidecar in either case — and
+committed with the campaign in the content repo, because an approval that lives
+only in a gitignored directory is bound to nothing, and a later round authoring
+against it goes blind. Either way nothing here can move a delve's bytes
+(ADR-0006): a reference image is drawn for a human to judge a design by, and no
+part of the toolchain places, reads or compiles one. This tool is
+human-in-the-loop: it is never called from a build.
 
 Config lives in the gitignored `delvewright.local.toml` under `[refimg]`; see the
 commented convention block in `delvewright.toml` and `docs/reference/tools.md`.
 The API key NEVER enters a file: `api_key_env` names an environment variable,
 read at call time, never stored, printed, or logged.
+
+The FRAME — the shape and size of the picture — is per CALL, not per
+installation: a series of views of one subject wants a different frame per view,
+because a straight-down site plan is not 16:9. `--aspect-ratio` and
+`--image-size` (and `--resolution` on the providers that frame that way)
+override config for one call, and the resolved value is recorded in the sidecar,
+so a view is reproducible from what the repository holds rather than from a
+config file nobody kept.
 
 Absent config falls back to nothing (the tool says what to add and exits 2);
 MALFORMED config is a hard error. A typo must never silently downgrade the
@@ -27,6 +41,13 @@ Usage:
     tools/refimg.py --prompt "a sea-gate barbican at dusk, ..." --out .refimg/z1
     tools/refimg.py --prompt-file zone2.txt --style-code A1B2C3D4 --seed 42
     tools/refimg.py --prompt "..." --dry-run     # show the request, call nothing
+
+    # a multi-view reference: view 1 from the prompt alone, every later view
+    # anchored on VIEW 1 and framed for what it shows
+    tools/refimg.py --prompt-file v1-front.txt --aspect-ratio 16:9 --out .refimg/v1
+    tools/refimg.py --prompt-file v3-plan.txt  --aspect-ratio 1:1 \
+        --chain-from "$(python3 -c 'import json;print(json.load(open(".refimg/v1.json"))["id"])')" \
+        --out .refimg/v3
 """
 
 from __future__ import annotations
@@ -64,6 +85,11 @@ PROVIDERS = {
         # web UI. Reference images are the fallback anchor here.
         "anchors": ("code", "images"),
         "seed": True,
+        # This wire frames a picture by naming the pixels outright; it has no
+        # aspect-ratio or size vocabulary at all. Declared rather than inferred
+        # from the wire shape, for the same reason `anchors` is: what a provider
+        # CAN honour is a capability, and a flag it cannot honour is refused.
+        "frame": ("resolution",),
     },
     "gemini-native": {
         # The Interactions API, NOT the OpenAI-compatibility layer: that layer has
@@ -87,6 +113,9 @@ PROVIDERS = {
         # rather than re-describing a look.
         "anchors": ("images", "chain"),
         "seed": True,
+        # `response_format` carries both, and neither has a pixel spelling — a
+        # `--resolution` handed to this provider would have nowhere to go.
+        "frame": ("aspect_ratio", "image_size"),
     },
 }
 
@@ -99,6 +128,18 @@ RENDERING_SPEEDS = ("TURBO", "DEFAULT", "QUALITY")
 IMAGE_SIZES = ("512", "1K", "2K", "4K")
 ASPECT_RATIOS = ("1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4",
                  "9:16", "16:9", "21:9", "1:8", "8:1", "1:4", "4:1")
+
+# The frame keys, their defaults, and the closed value sets they have one.
+# `resolution` is a free WxH string: no provider here publishes its full list,
+# and inventing one would refuse frames the service accepts — so it is passed
+# through, while the two that DO have published literals are validated.
+FRAME_KEYS = ("aspect_ratio", "image_size", "resolution")
+FRAME_DEFAULTS = {"aspect_ratio": "16:9", "image_size": "2K"}
+FRAME_CHOICES = {"aspect_ratio": ASPECT_RATIOS, "image_size": IMAGE_SIZES}
+
+
+def frame_flag(key: str) -> str:
+    return "--" + key.replace("_", "-")
 
 
 class ConfigError(Exception):
@@ -146,19 +187,63 @@ def load_config() -> dict:
         )
     cfg["rendering_speed"] = speed
 
-    if cfg["provider"] == "gemini-native":
-        size = cfg.get("image_size", "2K")
-        if size not in IMAGE_SIZES:
+    # Frame keys are validated against the CONFIGURED provider's own frame
+    # vocabulary rather than against a provider named here, so a provider added
+    # to the table above is validated by declaring `frame` and nothing else.
+    for key in PROVIDERS[cfg["provider"]]["frame"]:
+        choices = FRAME_CHOICES.get(key)
+        if choices is None or key not in cfg:
+            continue
+        if cfg[key] not in choices:
+            hint = " (There is no \"0.5K\" — the SDK's own literals are the authority.)" \
+                if key == "image_size" else ""
             raise ConfigError(
-                f"[{SECTION}].image_size = {size!r}; allowed: {', '.join(IMAGE_SIZES)}. "
-                f"(There is no \"0.5K\" — the SDK's own literals are the authority.)"
-            )
-        ratio = cfg.get("aspect_ratio", "16:9")
-        if ratio not in ASPECT_RATIOS:
-            raise ConfigError(
-                f"[{SECTION}].aspect_ratio = {ratio!r}; allowed: {', '.join(ASPECT_RATIOS)}."
+                f"[{SECTION}].{key} = {cfg[key]!r}; allowed: {', '.join(choices)}.{hint}"
             )
     return cfg
+
+
+def resolve_frame(cfg: dict, args) -> dict[str, str]:
+    """The frame this call actually asks for: flag first, config second, default last.
+
+    ONE authority, because the wire and the sidecar must agree. A frame the
+    sidecar reports and the request did not carry is worse than no record at all
+    — the series looks reproducible and is not — and that is exactly what
+    reading config in one place and the flag in another produces.
+
+    Capability refusal is the same rule the anchors follow: a frame flag the
+    configured provider has no vocabulary for is an ERROR. A dropped frame does
+    not fail, it returns a correctly-styled picture of the wrong shape, and
+    nothing downstream can tell that from the picture that was asked for.
+    """
+    provider = PROVIDERS[cfg["provider"]]
+    taken = provider["frame"]
+    frame: dict[str, str] = {}
+    for key in FRAME_KEYS:
+        given = getattr(args, key, None)
+        if key not in taken:
+            if given is not None:
+                raise SystemExit(
+                    f"{frame_flag(key)}: provider {cfg['provider']!r} has no {key} — it "
+                    f"frames a picture with {', '.join(frame_flag(k) for k in taken)}. "
+                    f"Refused rather than dropped: a dropped frame comes back as a "
+                    f"picture of the wrong shape with no error anywhere."
+                )
+            continue
+        value = given if given is not None else cfg.get(key)
+        if value is None:
+            value = FRAME_DEFAULTS.get(key)
+        if value is None:
+            continue
+        choices = FRAME_CHOICES.get(key)
+        if choices is not None and value not in choices:
+            # Only a FLAG reaches this: a config value was already refused as a
+            # hard error by `load_config`, which exits 2 rather than 1.
+            raise SystemExit(
+                f"{frame_flag(key)} = {value!r}; allowed: {', '.join(choices)}."
+            )
+        frame[key] = value
+    return frame
 
 
 def multipart(fields: dict[str, str], files: list[tuple[str, Path]]) -> tuple[bytes, str]:
@@ -182,13 +267,15 @@ def multipart(fields: dict[str, str], files: list[tuple[str, Path]]) -> tuple[by
     return bytes(out), f"multipart/form-data; boundary={boundary}"
 
 
-def build_request(cfg: dict, args) -> tuple[dict, list[tuple[str, Path]]]:
+def build_request(cfg: dict, args, frame: dict[str, str]) -> tuple[dict, list[tuple[str, Path]]]:
     """Return the provider-shaped fields plus the reference images to attach.
 
     Capability refusals live here rather than at the wire: a flag the configured
     provider cannot honour is an ERROR, never a silently dropped parameter. The
     whole reason this tool exists is that a dropped anchor produces N unrelated
-    pictures with no error anywhere.
+    pictures with no error anywhere. `frame` arrives already resolved and
+    already refused against this provider (`resolve_frame`), so every key in it
+    has a place on this wire by construction.
     """
     provider = PROVIDERS[cfg["provider"]]
 
@@ -231,9 +318,8 @@ def build_request(cfg: dict, args) -> tuple[dict, list[tuple[str, Path]]]:
             "rendering_speed": args.rendering_speed or cfg["rendering_speed"],
             "num_images": str(args.count),
         }
-        resolution = args.resolution or cfg.get("resolution")
-        if resolution:
-            fields["resolution"] = resolution
+        if frame.get("resolution"):
+            fields["resolution"] = frame["resolution"]
         if args.seed is not None:
             fields["seed"] = str(args.seed)
         if args.style_code:
@@ -253,8 +339,7 @@ def build_request(cfg: dict, args) -> tuple[dict, list[tuple[str, Path]]]:
         "input": inputs,
         "response_format": {
             "type": "image",
-            "aspect_ratio": cfg.get("aspect_ratio", "16:9"),
-            "image_size": cfg.get("image_size", "2K"),
+            **frame,
             # NO `delivery`. The SDK's generated types carry it ("inline"|"uri"),
             # but the endpoint answers `400 Image delivery mode is not supported`
             # for this model — the SDK types are a SUPERSET of what the service
@@ -377,7 +462,15 @@ def save(result: dict, out: Path, request: dict | None = None) -> list[Path]:
     # reading an interaction id to chain from stays `d["id"]` everywhere.
     doc: dict = dict(_redacted(result))
     if request is not None:
-        doc["request"] = _redacted(request)
+        # NOT redacted, and the asymmetry is the point. `_redacted` is a rule
+        # about the RESPONSE, where an oversized string is image bytes or a
+        # thought signature — "no identifier is megabytes". The request record
+        # holds only things WE wrote: the prompt, the style note, the frame, and
+        # anchors named by provenance (a path, an id). A reference prompt runs to
+        # thousands of words, so applying the response's size rule here elided
+        # the one field the record exists for and left a series unreproducible
+        # while looking complete.
+        doc["request"] = request
     meta.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
     written = [meta]
 
@@ -440,7 +533,7 @@ def save(result: dict, out: Path, request: dict | None = None) -> list[Path]:
     return written
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--prompt")
@@ -459,10 +552,21 @@ def main() -> int:
                          "across a series while the prompt varies per zone")
     ap.add_argument("--count", type=int, default=1)
     ap.add_argument("--rendering-speed", choices=RENDERING_SPEEDS)
-    ap.add_argument("--resolution")
+    # The three frame flags. No argparse `choices=`: the capability refusal is
+    # the more useful message and must come FIRST — telling someone their ratio
+    # is misspelt when their provider has no ratio at all sends them to fix the
+    # wrong thing. Validation therefore lives in `resolve_frame`, once.
+    ap.add_argument("--aspect-ratio", metavar="W:H",
+                    help="frame this call, overriding config — the per-view frame of a "
+                         f"multi-view series. One of: {', '.join(ASPECT_RATIOS)}")
+    ap.add_argument("--image-size", metavar="SIZE",
+                    help=f"frame size, overriding config. One of: {', '.join(IMAGE_SIZES)}")
+    ap.add_argument("--resolution", metavar="WxH",
+                    help="frame in pixels, overriding config — the frame vocabulary of "
+                         "the providers that have no aspect ratio")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the request that would be sent; call nothing, need no key")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if args.prompt_file:
         args.prompt = args.prompt_file.read_text().strip()
@@ -473,7 +577,8 @@ def main() -> int:
         print(f"refimg: {exc}", file=sys.stderr)
         return 2
 
-    fields, files = build_request(cfg, args)
+    frame = resolve_frame(cfg, args)
+    fields, files = build_request(cfg, args, frame)
 
     if args.dry_run:
         print(f"POST {cfg.get('endpoint') or PROVIDERS[cfg['provider']]['endpoint']}")
@@ -507,8 +612,11 @@ def main() -> int:
         "prompt": args.prompt,
         "style_note": getattr(args, "style_note", None),
         "seed": args.seed,
-        "aspect_ratio": cfg.get("aspect_ratio"),
-        "image_size": cfg.get("image_size"),
+        # The RESOLVED frame, not the configured one: what was asked for is what
+        # is recorded. All three keys are always present, `null` where this
+        # provider has no such vocabulary, so a sidecar reader never has to
+        # decide whether an absent key means "not asked for" or "not written".
+        **{key: frame.get(key) for key in FRAME_KEYS},
         "chain_from": getattr(args, "chain_from", None),
         "reference_images": [str(rp) for _, rp in files],
     }
