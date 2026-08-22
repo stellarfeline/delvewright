@@ -374,13 +374,14 @@ pub fn collision_top_16(name: &str) -> u8 {
 
 /// Vanilla's **no-collision vegetation class**: blocks whose collision shape is
 /// EMPTY — a walker passes straight through and stands on whatever is below
-/// (they are visual/light-model content only). Found by the hollow-vigil
-/// construction round (task #157): the pre-fix fallback modelled these as full
-/// cubes, so a `short_grass` tuft on a valley terrace became a phantom
-/// standable cell that split a 2-block riser into two climbable 1-block steps
-/// — `DW0854` fired on a world that is NOT climbable in vanilla
-/// (rejects-valid), and, worse, any walkability proof that ever stood a player
-/// ON a tuft/flower cell was unsound (accepts-invalid).
+/// (they are visual/light-model content only).
+///
+/// Modelling one as a full cube makes its cell a phantom standable surface,
+/// and that is wrong in both directions. A `short_grass` tuft on a valley
+/// terrace splits a deliberate 2-block riser into two climbable 1-block steps,
+/// so `DW0854` refuses a landform vanilla cannot climb (rejects-valid); and,
+/// worse, any walkability proof that stands a body ON a tuft or flower cell is
+/// unsound (accepts-invalid).
 ///
 /// The list is the **class**, not the three ids the valley generator happens
 /// to scatter (fixing only those would be folklore). Sources: Minecraft Java
@@ -2399,13 +2400,12 @@ mod tests {
         assert_eq!(collision_top_16("minecraft:oak_stairs[facing=north]"), 16);
     }
 
-    /// Task #157 (hollow-vigil round finding 1): vanilla no-collision
-    /// vegetation has an EMPTY collision shape — modelling it as a full cube
-    /// created phantom standable cells (a tuft split a valley terrace's
-    /// 2-block riser into two climbable 1-block steps → false `DW0854`) and
-    /// let walkability proofs stand players on flowers (unsound). The class is
-    /// pinned here so no future palette id regresses to the full-cube
-    /// fallback silently.
+    /// Vanilla no-collision vegetation has an EMPTY collision shape.
+    /// Modelling it as a full cube creates phantom standable cells — a tuft
+    /// splits a valley terrace's 2-block riser into two climbable 1-block
+    /// steps, which is a false `DW0854` — and lets a walkability proof stand a
+    /// body on a flower, which is unsound. The class is pinned here so no
+    /// future palette id regresses to the full-cube fallback silently.
     #[test]
     fn no_collision_plants_have_an_empty_collision_shape() {
         for id in [

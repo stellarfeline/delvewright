@@ -169,9 +169,9 @@ impl ValleySurround {
         in_annulus(&self.scene, self.ratio, x, z)
     }
 
-    /// The scene-rect interior MOAT fill (spec-0026 amendment, task #157
-    /// rounds 3–4 — planner ruling): scene-rect columns no piece FLOORS
-    /// receive ambient gap-floor ground at `floor_top_y` with the gap floor's
+    /// The scene-rect interior MOAT fill (spec-0026 amendment): scene-rect
+    /// columns no piece FLOORS receive ambient gap-floor ground at
+    /// `floor_top_y` with the gap floor's
     /// own surface treatment (the noise is world-coordinate-keyed, so the
     /// dapple runs seamlessly from the annulus gap floor through the moat),
     /// making the box-garden floor continuous from gap floor to every piece
@@ -262,15 +262,16 @@ impl ValleySurround {
         Ok(())
     }
 
-    /// The establishing-vista camera for the render plan (spec-0026 §6; task
-    /// #157 rounds 2–3): eye at a WALKABLE cell inside the scene — the
+    /// The establishing-vista camera for the render plan (spec-0026 §6): eye
+    /// at a WALKABLE cell inside the scene — the
     /// campaign spawn when the caller has one, else the scene centre — at
     /// player eye height, aimed at MID-RIM on the nearest crest line, with a
     /// per-shot vertical FOV derived from the geometry so the frame's bottom
     /// edge reaches the gap floor (elevation ≤ −15°) and its top edge clears
-    /// the crest top by ≥ 8° of sky, clamped to ≤ 110° (planner ruling: a
-    /// spawn eye 40 blocks from a 48-high rim subtends ~52° — no fixed FOV
-    /// can frame floor + crest + sky). Deterministic: scene bbox + walk
+    /// the crest top by ≥ 8° of sky, clamped to ≤ 110°. It is derived rather
+    /// than fixed because no fixed value works: a spawn eye 40 blocks from a
+    /// 48-high rim subtends about 52°, and one frame has to hold floor, crest
+    /// and sky at once. Deterministic: scene bbox + walk
     /// plane + the pinned band tables; nearest side wins, ties in the fixed
     /// order +x, −x, +z, −z; angles go through the same `atan2`+`round3`
     /// idiom the render plan's `aim` already uses.
@@ -350,10 +351,10 @@ const TILE_Y: i32 = 48;
 /// Poisson-disk radius for the tree layer, in blocks — the density knob, and
 /// the only one. Everything else about the flora layer is geometry.
 ///
-/// Measured sweep on the `hello-room` valley fixture (task #176): canopy
-/// coverage over the surround's occupied columns, with the multi-seed sampler
-/// in place. Recorded here so the next change to this number starts from the
-/// curve instead of re-deriving it.
+/// Measured sweep on the `hello-room` valley fixture: canopy coverage over
+/// the surround's occupied columns, with the multi-seed sampler in place.
+/// Recorded here so the next change to this number starts from the curve
+/// instead of re-deriving it.
 ///
 /// | radius | trees | canopy |
 /// |--------|-------|--------|
@@ -365,7 +366,7 @@ const TILE_Y: i32 = 48;
 ///
 /// 4.0 is a PROPOSAL, not a proof: half-covered, so the crest silhouette still
 /// reads and the grove still has gaps to walk through. Density is an aesthetic
-/// call and belongs to the owner. What bounds it mechanically is
+/// call rather than a mechanical one. What bounds it mechanically is
 /// `DW_VALLEY_CLIMB`, and that stays green across this whole range — a denser
 /// canopy grows no standable staircase, proven per build by the nav flood over
 /// the emitted world rather than assumed here.
@@ -379,15 +380,15 @@ const POISSON_K: usize = 20;
 const TREE_CREST_MARGIN: f64 = 1.0;
 /// Understory decor density on grass cells (gap floor stays bare).
 const DECOR_DENSITY: f64 = 0.12;
-/// Vista frame requirements (task #157 round 3, planner ruling): the frame's
-/// bottom edge must reach this elevation (gap floor in frame)…
+/// Vista frame requirements: the frame's bottom edge must reach this
+/// elevation (gap floor in frame)…
 const VISTA_FLOOR_ELEV_DEG: f64 = -15.0;
 /// …its top edge must clear the crest top by this margin of sky…
 const VISTA_SKY_MARGIN_DEG: f64 = 8.0;
 /// …and the derived vertical FOV never exceeds this.
 const VISTA_MAX_FOV_DEG: f64 = 110.0;
-/// Per-axis FLOOR on the annulus band width (owner ruling, 2026-08-04): a
-/// legal surround always contains a full gap + slope rim on every axis —
+/// Per-axis FLOOR on the annulus band width: a legal surround always
+/// contains a full gap + slope rim on every axis —
 /// `ratio` controls spaciousness above this floor, never below it. The
 /// valley simply grows to contain any scene shape (hollow-vigil's 94×27
 /// short axis gets the floor while the long axis keeps its proportional
@@ -492,8 +493,8 @@ fn rect_distance(scene: &SceneRect, x: i32, z: i32) -> f64 {
 }
 
 /// Half-extents of the annulus per axis: `(ratio − 1)/2 ×` the scene extent,
-/// floored at [`ANNULUS_BAND_FLOOR`] (owner ruling, 2026-08-04) so every
-/// axis carries the full gap + slope rim regardless of the scene's shape.
+/// floored at [`ANNULUS_BAND_FLOOR`] so every axis carries the full gap +
+/// slope rim regardless of the scene's shape.
 fn annulus_sides(scene: &SceneRect, ratio: f64) -> (f64, f64) {
     let w = (scene.max_x - scene.min_x + 1) as f64;
     let d = (scene.max_z - scene.min_z + 1) as f64;
@@ -597,10 +598,9 @@ fn column_profile(
     let s = smoothstep01((dw - GAP_WIDTH) / SLOPE_RUN);
     let r = RIDGE_FLOOR + (1.0 - RIDGE_FLOOR) * ridged(seed, x, z);
     // Outer decay keys on how far BEYOND the crest the column sits, relative
-    // to the band remaining past it. A band-floored axis (owner ruling,
-    // 2026-08-04) has no room past the crest, so its rim ends full-height at
-    // the tile edge — the perimeter is unreachable crest-top, never a
-    // walkable shelf over the void.
+    // to the band remaining past it. A band-floored axis has no room past
+    // the crest, so its rim ends full-height at the tile edge — the perimeter
+    // is unreachable crest-top, never a walkable shelf over the void.
     let d = rect_distance(scene, x, z);
     let p = annulus_progress(scene, ratio, x, z);
     let band = if p > 1e-9 { d / p } else { f64::MAX };
@@ -662,7 +662,7 @@ fn poisson_columns(
         true
     };
 
-    // Seeding: EVERY in-domain lattice column, not the first one (task #176).
+    // Seeding: EVERY in-domain lattice column, never a single one.
     //
     // Bridson grows from its active list through jumps in `[r, 2r)`, so a run
     // seeded from ONE point only ever samples the part of the domain reachable
@@ -673,8 +673,8 @@ fn poisson_columns(
     // the crest pass had 147 eligible columns and returned **0** — its single
     // lattice scan found no in-domain column at all and the sampler exited
     // before its first jump — and the inner-slope pass had 481 eligible and
-    // returned **7**. Seven trees in a whole valley is what the owner saw and
-    // called a quarry (#176); the density constant was never the cause.
+    // returned **7**. Seven trees in a whole valley reads as a quarry, and
+    // the density constant is not what put them there.
     //
     // Scanning the whole lattice in the same fixed order costs one extra
     // domain evaluation per lattice cell and is exactly as deterministic: the
@@ -745,10 +745,10 @@ fn poisson_columns(
 /// from the flora table, so oak and cherry builds stamp byte-parallel
 /// geometry.
 /// `(cx, cz)` is the canopy centre — the trunk itself for a straight tree, or
-/// the greenfield lean idiom for a slope tree (task #157 round 2: inner-slope
-/// trees lean their canopy two columns toward the VALLEY, so no leaf platform
-/// ever sits within hop-on/hop-off range of two different upslope terraces —
-/// the empirical flood proof remains the authority).
+/// the greenfield lean idiom for a slope tree: an inner-slope tree leans its
+/// canopy two columns toward the VALLEY, so no leaf platform ever sits within
+/// hop-on/hop-off range of two different upslope terraces. The empirical flood
+/// proof is the authority either way.
 #[allow(clippy::too_many_arguments)]
 fn stamp_tree(
     cells: &mut BTreeMap<[i32; 3], &'static str>,
@@ -877,8 +877,8 @@ pub fn generate_valley(
         let trunk_h = 4 + (hash01(seed, tx, 0, tz, SALT_TREE_HEIGHT) > 0.6) as i32;
         stamp_tree(&mut tree_cells, tx, base_y, tz, trunk_h, tx, tz, &flora);
     }
-    // Inner-slope blossom (task #157 round 2: the vista must show the flora
-    // between the walk plane and the crest, not just past it). A second
+    // Inner-slope blossom — the vista must show the flora between the walk
+    // plane and the crest, not only past it. A second
     // Poisson pass over the inner slopes (every band carries the full rim
     // under the band floor), thinned
     // sparse-near-the-floor → denser-upslope, every tree leaning its canopy
@@ -943,9 +943,9 @@ pub fn generate_valley(
 
     // --- 3. Understory decor — in the GENERATION phase, not the tile
     // slicer, so the un-climbability proof below runs over the finished tile
-    // contents and can never diverge from what ships (task #157: the decor
-    // used to be stamped after the proof had run, which is exactly how the
-    // generator's own proof and the compiler's DW0854 came to disagree).
+    // contents and can never diverge from what ships. Decor stamped AFTER
+    // the proof runs is decor the proof did not see, which is exactly how the
+    // generator's own proof and the compiler's DW0854 come to disagree.
     let mut decor_cells: BTreeMap<[i32; 3], &'static str> = BTreeMap::new();
     for (&(x, z), &(zone, h)) in &columns {
         if zone == Zone::Gap {
@@ -1027,8 +1027,8 @@ fn surface_is_grass(seed: u64, scene: &SceneRect, ratio: f64, x: i32, z: i32) ->
         return true;
     }
     if dw <= GAP_WIDTH + SLOPE_RUN {
-        // Rockier as the wall climbs: grassy foot, crag top. Softened for the
-        // blossom round (#157: the inner slope carries trees now).
+        // Rockier as the wall climbs: grassy foot, crag top — softened,
+        // because the inner slope carries trees.
         let s = ((dw - GAP_WIDTH) / SLOPE_RUN).clamp(0.0, 1.0);
         value_noise(seed, x, 0, z, 0.11, SALT_ROCK_SPECKLE) > 0.30 + 0.35 * s
     } else {
@@ -1340,8 +1340,8 @@ fn assert_inner_slopes_unclimbable(
 ) {
     // Per-column extra solids from everything stamped over the terrain —
     // trees AND decor — classified by the one collision model the assembled
-    // world uses (task #157: a no-collision tuft must contribute nothing
-    // here, and a future decor palette with real collision must be seen).
+    // world uses: a no-collision tuft must contribute nothing here, and a
+    // decor palette with real collision must be seen.
     let mut extra: BTreeMap<(i32, i32), BTreeSet<i32>> = BTreeMap::new();
     for (c, name) in tree_cells.iter().chain(decor_cells.iter()) {
         if crate::assembled::is_thin_decoration(name) {
@@ -1526,8 +1526,8 @@ mod tests {
         );
     }
 
-    /// The annulus band floor (owner ruling, 2026-08-04), on hollow-vigil's
-    /// proportions (94×27): the short axis's proportional band (20) is under
+    /// The annulus band floor, on hollow-vigil's proportions (94×27): the
+    /// short axis's proportional band (20) is under
     /// gap + slope, so it takes the floor (30) and carries the SAME full rim
     /// as every other axis — walkable gap floor, rising slope, crest — and
     /// the whole surround holds the nav-flood proof over its serialized
@@ -1575,9 +1575,8 @@ mod tests {
         }
     }
 
-    /// Task #157 round 2: blossom must be IN the player's view — trees stand
-    /// on the inner slopes (between walk plane and crest), not only past the
-    /// crest.
+    /// Blossom must be IN the player's view — trees stand on the inner
+    /// slopes (between walk plane and crest), not only past the crest.
     #[test]
     fn blossom_reaches_the_inner_slope() {
         let s = scene();
@@ -1608,11 +1607,11 @@ mod tests {
         );
     }
 
-    /// Task #176 (owner playtest): the cherry valley "reads as a quarry".
+    /// A cherry valley with too few trees reads as a quarry.
     ///
-    /// The test above was green throughout and could not have caught it — it
-    /// asserts that inner blossom EXISTS, and seven trees in an entire valley
-    /// do exist. This binds the QUANTITY instead: canopy coverage over the
+    /// The test above cannot catch that — it asserts that inner blossom
+    /// EXISTS, and seven trees in an entire valley do exist. This binds the
+    /// QUANTITY instead: canopy coverage over the
     /// columns the surround actually occupies. That is the measurement the
     /// finding asked for, and the only thing that separates a grove from a
     /// quarry with a shrub on it.
@@ -1686,7 +1685,7 @@ mod tests {
         assert!(
             pct >= 12.0,
             "canopy covers only {pct:.1}% of {} surround columns, from {} trees — \
-             the valley reads as a quarry (task #176). A collapse of this size is \
+             the valley reads as a quarry. A collapse of this size is \
              the tree SAMPLER failing to reach its own domain, not a density knob: \
              check that `poisson_columns` still seeds from EVERY in-domain lattice \
              column, because one seed point cannot cover a ring",
@@ -1764,7 +1763,7 @@ mod tests {
     #[test]
     fn trees_stay_on_the_mountains() {
         // 树在山上: slopes and crest — NEVER the gap floor, never the scene
-        // (inner-slope trees are legal since the blossom round, task #157).
+        // (inner-slope trees are legal; the gap floor and the scene are not).
         let v = generate_valley(17, scene(), 62, &ValleyParams::default()).unwrap();
         for t in &v.tiles {
             let d: fastnbt::Value = fastnbt::from_bytes(&gunzip(&t.bytes)).unwrap();
@@ -1798,8 +1797,9 @@ mod tests {
         let v = generate_valley(31, s, 62, &ValleyParams::default()).unwrap();
         // EVERY decoded cell enters the model — decor included — and the one
         // real collision classifier (`occupancy_of`) decides what is ground
-        // (task #157 regression: a manual "skip the tufts" list here once
-        // masked the phantom-standable-plant defect; never pre-filter again).
+        // A manual "skip the tufts" list here would mask exactly the
+        // phantom-standable-plant defect this proves against, so nothing is
+        // pre-filtered.
         let world = decoded_world(&v, &[]);
         if let Err(cell) = v.verify_unclimbable(&world) {
             panic!("gap floor escapes the valley at {cell:?}");
@@ -1870,10 +1870,10 @@ mod tests {
         );
     }
 
-    /// Task #157 round 3: the vista's derived vertical FOV frames floor AND
-    /// crest-top on the hollow-vigil proportions — asserted arithmetically
-    /// (the planner's measured failure: a spawn eye 40 blocks from a 48-high
-    /// rim subtends ~52°; no fixed FOV frames floor + crest + sky).
+    /// The vista's derived vertical FOV frames floor AND crest-top on the
+    /// hollow-vigil proportions, asserted arithmetically — because no FIXED
+    /// FOV can: a spawn eye 40 blocks from a 48-high rim subtends about 52°,
+    /// and one frame has to hold floor, crest and sky at once.
     #[test]
     fn vista_fov_frames_floor_and_crest_on_hollow_proportions() {
         let s = SceneRect {
@@ -1904,8 +1904,8 @@ mod tests {
         );
     }
 
-    /// Task #157 round 3 (planner ruling): the scene-rect void moat — columns
-    /// with zero piece-authored blocks receive gap-floor ground; authored
+    /// The scene-rect void moat: columns with zero piece-authored blocks
+    /// receive gap-floor ground; authored
     /// columns are untouched; the surface dapple continues the gap floor's
     /// own pattern; byte-deterministic.
     #[test]

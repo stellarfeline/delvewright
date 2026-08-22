@@ -368,12 +368,12 @@ pub fn passes_light(name: &str) -> bool {
         || id.ends_with("_pressure_plate")
         || id.ends_with("_carpet")
         || id.ends_with("_fence_gate")
-        // The occupancy-coupling invariant, class-level (task #157): every
+        // The occupancy-coupling invariant, at the class level: every
         // no-collision plant is nav-passable — a walker's FEET can occupy a
         // tuft/flower/crop cell — so the light model must not call it opaque
-        // (vanilla: filterLight = 0 for the whole class). Before this, a
-        // scattered flower was a full opaque cube, so the walkable cell inside
-        // it measured light 0 and DW0210 reported darkness that was not real.
+        // (vanilla: filterLight = 0 for the whole class). An opaque flower
+        // measures light 0 in a cell a body may legally stand in, which is a
+        // DW0210 darkness that is not there.
         || crate::assembled::is_no_collision_plant(id)
 }
 
@@ -1720,7 +1720,7 @@ mod tests {
         ] {
             assert!(passes_light(id), "{id} is filterLight=0 in vanilla");
         }
-        // No-collision vegetation (task #157): nav-passable feet cells, all
+        // No-collision vegetation: nav-passable feet cells, all
         // filterLight=0 in vanilla — the class, not a per-generator id list.
         for id in [
             "minecraft:pink_petals",
