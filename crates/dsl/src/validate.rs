@@ -1419,19 +1419,21 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
     // Finale convergence: every quest must be a transitive dependency of the
     // finale (the plan converges on the finale). See README (spec ambiguity).
-    let mut reach: BTreeSet<&str> = BTreeSet::new();
-    let mut stack = vec![plan.finale.as_str()];
-    while let Some(cur) = stack.pop() {
-        if reach.insert(cur)
-            && let Some(deps) = edges.get(cur)
-        {
-            stack.extend(deps.iter().copied());
-        }
-    }
+    //
+    // The spine is asked of [`QuestPlanContent::spine`], which is the ONE
+    // authority on it — the same function the layout binding and the
+    // critical-path spine obligation read. This check used to derive the closure
+    // itself, over `edges` (deps pruned to declared quests) rather than over the
+    // raw `depends_on`; both derivations were correct and neither was named, so
+    // nothing would have caught them drifting apart. The two sets differ only by
+    // ids the plan does not declare, which is `DW0112`'s finding and not this
+    // one's, and which cannot move this verdict because the membership below is
+    // only ever asked about a DECLARED quest.
+    let reach = plan.spine();
     for (i, q) in plan.quests.iter().enumerate() {
         if !reach.contains(q.id.as_str()) {
             d.push(Diagnostic::error(
-                codes::FINALE_UNREACHABLE,
+                codes::PLAN_NOT_CONVERGENT,
                 "quest-plan",
                 format!("/content/quests/{i}"),
                 format!(
