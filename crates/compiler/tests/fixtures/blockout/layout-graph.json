@@ -68,6 +68,12 @@
         "b": "node/loft",
         "class": "vision",
         "id": "edge/loft-sightline"
+      },
+      {
+        "a": "node/cell",
+        "b": "node/undercroft",
+        "class": "stair",
+        "id": "edge/cell-undercroft"
       }
     ],
     "entry": "node/landing",
@@ -99,6 +105,12 @@
       {
         "id": "node/exit",
         "intent": "goal-chamber",
+        "size_class": "alcove"
+      },
+      {
+        "id": "node/undercroft",
+        "intent": "cache",
+        "note": "Under the cell, entered by a hole punched in its floor — the one place on the map a body reaches by climbing DOWN into it.",
         "size_class": "alcove"
       }
     ]

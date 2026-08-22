@@ -258,7 +258,12 @@ pub fn panorama_from_plan(
     opts: &PanoramaOptions,
 ) -> Result<(String, Vec<u8>), Diagnostic> {
     let plan = scene::parse_plan(plan_json)?;
-    let (min, max) = (plan.layout_aabb.min, plan.layout_aabb.max);
+    // The whole-map frame is of the WHOLE map, ground included. The layout AABB
+    // is the pieces; on a `valley` those pieces sit in a landform several times
+    // their size that the compiler built and the save contains, so a camera
+    // solved from the layout alone frames a box inside a mountain range and
+    // loads none of it.
+    let (min, max) = scene::framed_extent(&plan.layout_aabb, plan.horizon);
     let cam = frame(min, max, opts.bearing);
     let bearing = opts.bearing.name();
     // File name == scene `name`, so Chunky's own save lands back on this file and

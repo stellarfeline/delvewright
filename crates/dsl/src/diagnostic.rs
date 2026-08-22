@@ -269,8 +269,19 @@ pub mod codes {
     pub const PLAN_CYCLE: DwCode = DwCode::every_version("DW0130");
     /// `finale` is not a declared quest.
     pub const FINALE_UNKNOWN: DwCode = DwCode::every_version("DW0131");
-    /// `finale` is not the convergent sink of the plan.
-    pub const FINALE_UNREACHABLE: DwCode = DwCode::every_version("DW0132");
+    /// `finale` is not the convergent sink of the plan: some declared quest is
+    /// not a transitive dependency of it.
+    ///
+    /// **The name deliberately does not contain `FINALE_UNREACHABLE`, which
+    /// belongs to `DW0201`.** That code says the finale can never complete; this
+    /// one says nothing at all about the finale being reachable — in the fixture
+    /// that raises it the finale completes perfectly well and a side trip hangs
+    /// off the plan. Both are `DwCode`, so nothing but the name distinguishes
+    /// them at a call site, and `tools/check-dw-codes.py` credits a bare
+    /// constant name mentioned in a crate's tests to **that crate's** code — so
+    /// one shared name would buy coverage for whichever rule the file happens to
+    /// sit next to.
+    pub const PLAN_NOT_CONVERGENT: DwCode = DwCode::every_version("DW0132");
     /// Non-mandatory quest (reserved in v0).
     pub const NON_MANDATORY: DwCode = DwCode::every_version("DW0133");
     /// Objective `after` cycle.
@@ -530,6 +541,28 @@ pub mod codes {
     /// (v0.6) `boundary.margin` outside the `0..=64` range (spec-0013):
     /// validation-tier (exit 1).
     pub const BOUNDARY_MARGIN: DwCode = DwCode::every_version("DW0321");
+    /// A stage-1 `horizon` param is out of range, or is a param of a base other
+    /// than the one declared (spec-0026): validation-tier (exit 1).
+    ///
+    /// `Since(16)` because it can only fire on a declaration the surface below
+    /// 0.16.0 has no spelling for — the two names that predate the horizon
+    /// library carry no params at all, so a campaign that never opted in binds
+    /// zero of this.
+    pub const HORIZON_PARAM: DwCode = DwCode::since("DW0853", 16);
+    /// A `horizon` whose base BUILDS terrain, on a campaign that states no
+    /// extent for that terrain to stand around (spec-0026): validation-tier
+    /// (exit 1).
+    ///
+    /// A surround rings a declared extent — a site plan's `region`. A campaign
+    /// that seats its pieces with `areas[]` declares none, and the union of
+    /// whatever gets placed is not a substitute: it is an artifact of the
+    /// compiler's fixed area stride, mostly the void between areas, so ringing
+    /// it builds a mountain range around empty space.
+    ///
+    /// `Since(16)` for the same reason as `DW0853`: only a base introduced with
+    /// the horizon library can build terrain, so a campaign that never opted in
+    /// binds zero of this.
+    pub const SURROUND_NO_REGION: DwCode = DwCode::since("DW0855", 16);
     /// (v0.6) A `sequence` effect is nested inside another `sequence` (directly, or
     /// reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse
     /// (spec-0014). Flatten the inner steps into the outer timeline.

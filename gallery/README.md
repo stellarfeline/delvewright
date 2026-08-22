@@ -40,7 +40,7 @@ order a player would:
 | `area/annex` (in `world.json`) | a three-tile chain assembled from `pool/gallery-annex` — what binds the piece verbs |
 | `overlays/` | parameter points — settings that take one value per world |
 | `probes/` | documents the engine **refuses**, each naming the diagnostic |
-| `baseline/` | the committed emission index and the expected-warnings ledger |
+| `baseline/` | the committed emission index, the expected-warnings ledger, and the review delta — which names the commit it was measured from, so it can be recomputed rather than believed |
 
 The hall itself is generated, not committed: one 31 × 8 × 31 stone room split by
 a barred wall, with three doors in it and a mezzanine in the far half whose

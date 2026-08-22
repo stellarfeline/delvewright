@@ -20,6 +20,14 @@ instance is the second of its kind in this file and the first fix was a fourth
 qualifier. `baseline_matches` is the single question; the tests below drive it
 and `report_mismatch` directly, so a future manifest field or a fourth recorded
 document cannot re-open the hole without reddening one of them.
+
+The same defect then turned up one level up, and the later tests bind that too.
+The shared question compared the documents the baseline RECORDS — which is
+itself an enumeration, and it excluded `delta.json`. So a tree whose review
+artifact was stale or hand-edited was refused by nothing; and the moment
+anything did refuse it, `--write` would have called the repair a noise commit,
+leaving the pair with no green state again. The question now weighs every
+document a write PRODUCES, derived rather than listed.
 """
 
 from __future__ import annotations
@@ -244,10 +252,119 @@ def test_versions_toml_is_an_emission_input_and_a_lookalike_is_not():
 
 
 def test_delta_json_is_not_one_of_the_recorded_documents():
-    """It is the review artifact OF a write, not a record of the tree.
+    """It is not a record of the tree — it is a record of the tree RELATIVE TO A COMMIT.
 
-    Counting it would make every rewrite look like it recorded something, which
-    is the noise-commit guard going quiet.
+    So it cannot be compared against a measurement of the tree alone, which is
+    why `RECORDED` — the set a mismatch is CLASSIFIED against — excludes it, and
+    why nothing about that changes when the pair's shared question widens below.
     """
     assert "delta.json" not in GB.RECORDED
     assert set(GB.RECORDED) == {"header.json", "manifests.json", "warnings.json"}
+
+
+def test_the_shared_question_weighs_every_produced_document_including_the_delta():
+    """`PRODUCED`, not `RECORDED`, is what both arms compare — and it is DERIVED.
+
+    Comparing `RECORDED` at the guard was the same enumeration defect one level
+    up from the one this file's first repair retired: it left `delta.json`
+    guarded by nothing at all, and made a delta-only defect unrepairable once
+    anything did guard it (see the test below). A fifth produced document joins
+    both arms by being produced, with nothing to remember.
+    """
+    assert set(GB.PRODUCED) == set(GB.RECORDED) | set(GB.DERIVED)
+    assert "delta.json" in GB.PRODUCED
+    assert GB.PRODUCED == GB.RECORDED + GB.DERIVED
+
+
+def _produced(base: str = "b" * 40) -> dict:
+    t = _measured()
+    return {
+        "header.json": t["header"],
+        "manifests.json": t["manifests"],
+        "warnings.json": t["warnings"],
+        "delta.json": GB.review_delta(base, {}, t["manifests"]),
+    }
+
+
+def test_a_delta_only_defect_is_a_verify_red_and_a_permitted_write():
+    """The state the pair had no answer for, asserted as the pair property.
+
+    Every recorded document matches, so the old guard saw nothing move and
+    `--write` would have refused the repair as a noise commit — while a check
+    that recomputes the delta reds. No green state existed for a tree whose
+    review artifact was stale or hand-edited, which is exactly the shape
+    CLAUDE.md names when one gate's prescription is another gate's refusal.
+    """
+    on_disk = _produced()
+    produced = copy.deepcopy(on_disk)
+    on_disk["delta.json"]["changed"] = ["primary.en:datapack/data/gallery/function/tick.mcfunction"]
+
+    # The recorded documents are untouched, so the old question says "nothing moved".
+    assert GB.baseline_matches(
+        GB.recorded_triple(on_disk), GB.recorded_triple(produced)
+    ) is True
+    # The shared question sees it, so verify reds and `--write` lands.
+    assert GB.baseline_matches(on_disk, produced) is False
+
+    with pytest.raises(SystemExit) as e:
+        GB.report_delta_mismatch(on_disk["delta.json"], produced["delta.json"])
+    assert e.value.code == 1
+
+
+def test_the_delta_mismatch_verdict_names_the_base_and_the_path(capsys):
+    on_disk = _produced()
+    produced = copy.deepcopy(on_disk)
+    on_disk["delta.json"]["changed"] = ["primary.en:gone.mcfunction"]
+    with pytest.raises(SystemExit):
+        GB.report_delta_mismatch(on_disk["delta.json"], produced["delta.json"])
+    err = capsys.readouterr().err
+    assert "REVIEW DELTA" in err
+    assert "b" * 40 in err, "a finding that hides which two states it compared is half a finding"
+    assert "gone.mcfunction" in err
+    assert "DETERMINISM FINDING" not in err and "EMISSION CHANGE" not in err
+
+
+def test_a_repeated_write_against_the_same_base_is_idempotent():
+    """Why including the delta in the guard cannot make an ordinary rerun look dirty.
+
+    The basis used to be whatever was on disk, so a second `--write` re-based the
+    artifact onto its own first output: running it twice before committing
+    silently changed what the file claimed, and a write that moved only the
+    header rewrote it to empty and destroyed the record of the last real emission
+    change. Measured from a commit, the same tree produces the same document.
+    """
+    manifests = _measured()["manifests"]
+    once = GB.review_delta("a" * 40, {}, manifests)
+    twice = GB.review_delta("a" * 40, {}, manifests)
+    assert once == twice
+    assert once["base_commit"] == "a" * 40
+
+
+def test_the_delta_denominator_is_the_union_and_not_the_delta_itself():
+    """A zero binding must mean *nothing was weighed*, never *nothing moved*.
+
+    An honest delta is empty whenever a change moves a recorded input without
+    moving an emitted byte — the commonest legitimate baseline update, and the
+    one the live tree is in. Using the delta's own length as the binding count
+    would call that vacuous and red every such change.
+    """
+    manifests = _measured()["manifests"]
+    unchanged = GB.review_delta("a" * 40, manifests, manifests)
+    assert not (unchanged["added"] + unchanged["removed"] + unchanged["changed"])
+    assert GB.delta_binding(manifests, manifests) == 1
+    assert GB.delta_binding({}, {}) == 0
+
+
+def test_a_delta_that_does_not_name_its_base_is_unfalsifiable_and_says_so():
+    """The migration case, and the reason the field is asserted rather than defaulted.
+
+    A file with no base names one state and leaves the other nowhere, so nothing
+    can recompute it — which is what `gallery/baseline/delta.json` was for as long
+    as it existed. Guessing a base would make the check green over a claim it had
+    invented, which is worse than the state it replaces.
+    """
+    assert GB.base_of({"added": [], "removed": [], "changed": []}) is None
+    assert GB.base_of({"base_commit": "HEAD~1"}) is None
+    assert GB.base_of({"base_commit": "A" * 40}) is None, "a sha is lowercase hex or it is not one"
+    assert GB.base_of(None) is None
+    assert GB.base_of({"base_commit": "c" * 40}) == "c" * 40

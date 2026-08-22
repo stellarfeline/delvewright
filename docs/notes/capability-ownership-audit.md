@@ -277,7 +277,7 @@ binding**, because a gate that matched nothing is vacuous, not a pass.
 |---|---|
 | A — every `summon minecraft:interaction`, keyed by enclosing fn | 13 sites |
 | B — every compiler-baked player-facing English string | 3 constants (spec-0029 moved two behind `dsl::chrome`) |
-| C — DSL structs declared separately with an identical field set | 2 groups |
+| C — DSL structs declared separately with an identical field set | 3 groups (`HorizonSpec`/`ResolvedHorizon` joined at spec-0026: one class in its two states, `Option<T>` on the wire and `T` once resolved, which the check cannot see because it compares field names) |
 | D — cross-cutting modifier absent from some variants of a tagged enum | 6 (enum, field) pairs (`QuestEffect.happening` left the ledger at spec-0031 — see finding 12, which is still open) |
 | E — every `Vec<QuestEffect>` bundle is reachable by some enumeration | 11 `Vec<QuestEffect>` fields |
 | F — every story-node construction supplies a `happening` an author can set | 5 `happening: None` sites (4 test, 1 budgeted continuation beat) |
