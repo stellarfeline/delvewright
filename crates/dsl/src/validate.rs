@@ -4542,6 +4542,42 @@ fn prefab_binding(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagno
             )),
             _ => {}
         }
+        // A bound PIECE must resolve against the prefab-metadata surface, on
+        // exactly the terms the pool arm below already demands. The asymmetry
+        // this replaces was not a missing message — it was a missing message
+        // that TOOK A PROOF WITH IT. An area whose prefab the registry does not
+        // hold contributes no set to [`AnchorProviders`], and every per-area
+        // anchor check reads a missing set as *defer to the compiler* and
+        // skips. So one mistyped character in `world.json` turned seven
+        // `DW0142` refusals into silence on the gallery, and left the campaign
+        // green in a way that is strictly less checked than a correct name —
+        // the unbound vacuity mode, one keystroke away.
+        //
+        // `has_prefab` is asked rather than `anchors_for` because only the
+        // first distinguishes *the library does not hold this* from *this
+        // registry cannot say*: a subset registry answers `None` and nothing is
+        // refused on its word.
+        if let Some(prefab) = &a.prefab
+            && prefab.is_valid_syntax()
+            && anchors.has_prefab(prefab) == Some(false)
+        {
+            d.push(Diagnostic::error(
+                codes::PREFAB_UNKNOWN,
+                "world",
+                format!("/content/areas/{i}/prefab"),
+                format!(
+                    "area `{}` binds `prefab` `{prefab}`, which is not declared in the prefab \
+                     metadata — bind a piece that exists in the prefabs dir, or add `{prefab}` \
+                     to the prefab library. This is a prefab-library/naming issue, not a \
+                     quest-logic one. It is refused rather than deferred because an area whose \
+                     piece is absent declares NO anchors, so every anchor a quest in this area \
+                     names would be accepted without being examined — a misspelling here \
+                     switches the anchor proof (`DW0142`) off for the whole area instead of \
+                     failing it",
+                    a.id
+                ),
+            ));
+        }
         // A bound pool must resolve against the prefab-metadata surface.
         if let Some(pool) = &a.prefab_pool
             && pool.is_valid_syntax()

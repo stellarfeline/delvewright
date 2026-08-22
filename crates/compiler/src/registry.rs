@@ -592,6 +592,16 @@ impl AnchorRegistry for PrefabRegistry {
         self.pools.contains(pool.as_str())
     }
 
+    /// This registry IS the library — every `*.json` in the prefabs dir the run
+    /// was pointed at — so it answers, and `Some(false)` means the piece is not
+    /// there (`DW0856`). A file that failed to parse is `DW0346` and is absent
+    /// from `by_id`, so it answers `Some(false)` too; that is the intended
+    /// order, since the campaign's binding really cannot be honoured and both
+    /// diagnostics are reported together.
+    fn has_prefab(&self, prefab: &PrefabId) -> Option<bool> {
+        Some(self.by_id.contains_key(prefab.as_str()))
+    }
+
     fn lighting_for(&self, prefab: &PrefabId) -> Option<Lighting> {
         self.by_id
             .get(prefab.as_str())
