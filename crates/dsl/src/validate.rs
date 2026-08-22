@@ -1433,7 +1433,7 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, q) in plan.quests.iter().enumerate() {
         if !reach.contains(q.id.as_str()) {
             d.push(Diagnostic::error(
-                codes::FINALE_UNREACHABLE,
+                codes::PLAN_NOT_CONVERGENT,
                 "quest-plan",
                 format!("/content/quests/{i}"),
                 format!(

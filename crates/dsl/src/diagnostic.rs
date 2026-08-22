@@ -269,8 +269,19 @@ pub mod codes {
     pub const PLAN_CYCLE: DwCode = DwCode::every_version("DW0130");
     /// `finale` is not a declared quest.
     pub const FINALE_UNKNOWN: DwCode = DwCode::every_version("DW0131");
-    /// `finale` is not the convergent sink of the plan.
-    pub const FINALE_UNREACHABLE: DwCode = DwCode::every_version("DW0132");
+    /// `finale` is not the convergent sink of the plan: some declared quest is
+    /// not a transitive dependency of it.
+    ///
+    /// **The name deliberately does not contain `FINALE_UNREACHABLE`, which
+    /// belongs to `DW0201`.** That code says the finale can never complete; this
+    /// one says nothing at all about the finale being reachable — in the fixture
+    /// that raises it the finale completes perfectly well and a side trip hangs
+    /// off the plan. Both are `DwCode`, so nothing but the name distinguishes
+    /// them at a call site, and `tools/check-dw-codes.py` credits a bare
+    /// constant name mentioned in a crate's tests to **that crate's** code — so
+    /// one shared name would buy coverage for whichever rule the file happens to
+    /// sit next to.
+    pub const PLAN_NOT_CONVERGENT: DwCode = DwCode::every_version("DW0132");
     /// Non-mandatory quest (reserved in v0).
     pub const NON_MANDATORY: DwCode = DwCode::every_version("DW0133");
     /// Objective `after` cycle.
