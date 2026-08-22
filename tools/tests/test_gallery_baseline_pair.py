@@ -60,7 +60,7 @@ def _measured() -> dict:
         "manifests": {
             "primary.en": {
                 "campaign_id": "gallery",
-                "content_sha": "f28f15394eef6813a88122137e3050b1da28c6f9",
+                "content_sha": "1" * 40,  # a fixture value, never the real pin (check-pins)
                 "delvec_version": "1.1.0",
                 "dsl_version": "0.12.0",
                 "inputs": {"world.json": "c" * 64},
