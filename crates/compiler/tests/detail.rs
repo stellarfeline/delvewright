@@ -1199,6 +1199,68 @@ fn the_stage_five_battery_is_green_over_a_detailed_world() {
     );
 }
 
+/// **Which of a derived area's two anchor producers wins, measured rather than
+/// commented.**
+///
+/// The derivation names `anchor/node-…` at the massing's own footing; a piece
+/// standing in that box then owes the same name, and where the piece stands is
+/// the truth — so the detail plan's anchors are seated AFTER the derivation's
+/// and overwrite them. That is what keeps a campaign's stage-3 vocabulary
+/// working across a detailing edit without a quest touching it.
+///
+/// It is asserted here because the two producers a plan seats through point
+/// opposite ways, and only a comment said so. A prefab-placed area is
+/// first-wins (`AnchorTable::declare`): a pool can seat one anchor-bearing
+/// piece twice, and `DW0498` reports the first carrier. The derived path is
+/// last-wins (`AnchorTable::place`). Collapsing them into one rule compiles
+/// and leaves every existing test passing, while every detailed place's anchor
+/// moves silently back onto the massing — a quest that walks to `node/exit`
+/// then walks somewhere nobody authored.
+///
+/// The control is the second half: the same name on the UNdetailed map. If the
+/// two cells were equal the assertion above would hold for the wrong reason,
+/// and the test would be green under either rule.
+#[test]
+fn a_detail_pieces_anchor_overwrites_the_derivations_footing() {
+    let tmp = tempdir("anchor-precedence");
+    let d = detailed(&tmp, &["node/exit"]);
+    let reg = PrefabRegistry::load_dir(&d.prefabs).expect("the piece library loads");
+    let key = (
+        delvewright_dsl::SITE_AREA.to_string(),
+        "anchor/node-exit".to_string(),
+    );
+
+    let at = |plan: &Plan<'_>| match plan.anchors.get(&key) {
+        Some(delvewright_compiler::plan::ResolvedAnchor::Point { pos, .. }) => *pos,
+        _ => panic!("a place's own anchor is a cell to stand on"),
+    };
+
+    let detailed_c = campaign_at(&d.campaign);
+    let detailed_at = at(&Plan::build(&detailed_c, &reg).expect("the detailed campaign plans"));
+
+    let bare_c = campaign_at(&blockout_dir());
+    let bare_at = at(&Plan::build(&bare_c, &reg).expect("the undetailed campaign plans"));
+
+    assert_ne!(
+        detailed_at, bare_at,
+        "the control: if the piece's seat and the massing's footing were the \
+         same cell, this test could not tell the two seating rules apart"
+    );
+
+    let a = detail::allocation(&detailed_c, &NodeId("node/exit".into()))
+        .expect("`node/exit` is a place this map has");
+    assert!(
+        (0..3).all(|i| {
+            i64::from(detailed_at[i]) >= a.world_min[i]
+                && i64::from(detailed_at[i]) < a.world_min[i] + a.extent[i]
+        }),
+        "the resolved cell is inside the piece's own frame, not on the \
+         massing's footing: {detailed_at:?} vs the frame at {:?} + {:?}",
+        a.world_min,
+        a.extent
+    );
+}
+
 /// **The derivation stops writing inside a bound frame, and nowhere else.**
 ///
 /// The world a bound campaign masses is the unbound one MINUS exactly the frame,
