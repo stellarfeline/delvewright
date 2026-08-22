@@ -290,16 +290,25 @@ impl WorldDifficulty {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum Horizon {
-    /// String shorthand — `"ocean"` is `{base:"ocean"}`, and `"cherry-valley"`
-    /// is `{base:"valley", flora:"cherry", palette:"stone-petal"}`.
+    /// String shorthand — `"void"` and `"ocean"`, the surface that predates the
+    /// horizon library, unchanged.
     Name(HorizonName),
     /// The object form `{base, …params}`.
     Spec(HorizonSpec),
 }
 
-/// A horizon string shorthand. `void` and `ocean` name their bases; every other
-/// name is a **parameter row** — a spelling for a base plus a set of params,
-/// never a code path of its own.
+/// A horizon string shorthand.
+///
+/// The two names here are the whole of the surface that predates the horizon
+/// library, and they are kept **as spellings**, unchanged and byte-identical,
+/// so every campaign ever written goes on compiling. Nothing new is added to
+/// this list: a base is declared as `{base: …}`, with its params beside it.
+///
+/// That is a deliberate narrowing. A name like `cherry-valley` reads as a
+/// thing, and the whole claim of this design is that it is not one — it is a
+/// valley with two params set. A spelling that hides which params it sets makes
+/// that claim unverifiable by looking at the document, and the shorthand buys
+/// three saved keystrokes for it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum HorizonName {
@@ -308,11 +317,6 @@ pub enum HorizonName {
     Void,
     /// A superflat sea backdrop; pieces read as land ringed by an open ocean.
     Ocean,
-    /// A mountain-ringed valley floor.
-    Valley,
-    /// `{base:"valley", flora:"cherry", palette:"stone-petal"}` — a parameter
-    /// row, not a base: the compiler holds no cherry code path.
-    CherryValley,
 }
 
 /// What surrounds the map. Each base carries its own params on
@@ -460,19 +464,10 @@ impl ResolvedHorizon {
 
 impl Horizon {
     /// Desugar either wire form to the one resolved view, defaults applied.
-    /// `"cherry-valley"` resolves exactly as `{base:"valley", flora:"cherry",
-    /// palette:"stone-petal"}` — the same struct with the same values, which is
-    /// what makes cherry a parameter row rather than a second generator.
     pub fn resolved(&self) -> ResolvedHorizon {
         match self {
             Horizon::Name(HorizonName::Void) => ResolvedHorizon::of_base(HorizonBase::Void),
             Horizon::Name(HorizonName::Ocean) => ResolvedHorizon::of_base(HorizonBase::Ocean),
-            Horizon::Name(HorizonName::Valley) => ResolvedHorizon::of_base(HorizonBase::Valley),
-            Horizon::Name(HorizonName::CherryValley) => ResolvedHorizon {
-                flora: HorizonFlora::Cherry,
-                palette: HorizonPalette::StonePetal,
-                ..ResolvedHorizon::of_base(HorizonBase::Valley)
-            },
             Horizon::Spec(s) => ResolvedHorizon {
                 base: s.base,
                 ratio: s.ratio.unwrap_or(horizon_defaults::RATIO),
@@ -488,15 +483,12 @@ impl Horizon {
         self.resolved().base
     }
 
-    /// True when this declaration needs the horizon-library surface: the object
-    /// form, or any shorthand beyond the `"void"`/`"ocean"` pair that predates
-    /// it. A campaign below [`HORIZON_LIBRARY_SINCE`](crate::HORIZON_LIBRARY_SINCE)
-    /// may still write those two, and its emission does not move.
+    /// True when this declaration needs the horizon-library surface — which is
+    /// exactly the object form. A campaign below
+    /// [`HORIZON_LIBRARY_SINCE`](crate::HORIZON_LIBRARY_SINCE) may still write
+    /// the two shorthands, and its emission does not move.
     pub fn needs_horizon_library(&self) -> bool {
-        !matches!(
-            self,
-            Horizon::Name(HorizonName::Void) | Horizon::Name(HorizonName::Ocean)
-        )
+        matches!(self, Horizon::Spec(_))
     }
 }
 

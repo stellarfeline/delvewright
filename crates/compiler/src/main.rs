@@ -1113,6 +1113,16 @@ fn read_structures(
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    // The horizon surround's tiles first: the compiler GENERATED those bytes, so
+    // their `structure_file` keys name nothing on disk and the loop below would
+    // fail to find every one of them. Inserted first so a prefab that somehow
+    // shared a filename would still win — a file an author shipped is never
+    // silently replaced by one the engine made up.
+    if let Some(surround) = &plan.surround {
+        for (file, bytes) in &surround.structures {
+            structures.insert(file.clone(), bytes.clone());
+        }
+    }
     // Placed pieces, plus any structure a stage-7 `fragment` verb stamps that
     // no piece placed (spec-0017) — the replay needs those bytes too.
     let mut files: Vec<String> = Vec::new();

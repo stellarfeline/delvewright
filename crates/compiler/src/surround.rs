@@ -118,11 +118,15 @@ pub struct SurroundTile {
     pub size: [i32; 3],
 }
 
-/// `DW0369` (build, exit 3): the valley's inner slopes grew a standable
-/// staircase — a nav walk flood from the gap floor reached a column outward of
-/// the crest line, so the surround no longer bounds the delve. Proven over the
-/// assembled world (spec-0026 §5: empirical, never a slope-angle promise).
-pub const DW_VALLEY_CLIMB: &str = "DW0369";
+/// `DW0854` (build, exit 3): the surround's inner slope has grown a standable
+/// staircase — a nav walk flood starting on the gap floor reached a column
+/// outward of the crest line, so the landform no longer bounds the map.
+///
+/// Proven over the assembled bytes rather than argued from the generator's own
+/// quantization, because everything between the two — gravity settling, a
+/// stage-7 edit script, a palette change — can put back the riser the generator
+/// never wrote.
+pub const DW_VALLEY_CLIMB: delvewright_dsl::DwCode = delvewright_dsl::DwCode::since("DW0854", 16);
 
 /// A biome-paint rectangle for the bootstrap `/fillbiome` pass (vanilla-native
 /// tint/ambience channel; spec-0026 §1 layering paragraph).

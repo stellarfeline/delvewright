@@ -868,6 +868,38 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
             }
         }
     }
+    // The horizon's surround, after every area (spec-0026): terrain the compiler
+    // generated rather than a prefab an author bound, entering the voxel model
+    // on exactly the terms a placed piece does — so gravity settling, the
+    // occupancy model, relight, the fluid model, boundary safety and the
+    // snapshot renderer all see the landform without one of them being taught a
+    // new horizon.
+    //
+    // AFTER, not before: the surround stands OUTSIDE the map's declared
+    // rectangle by construction, so the two cannot contend for a cell — and if
+    // they ever do, the map wins the argument, because the map is the thing the
+    // campaign is about. `None` for a base with no surround, so this runs zero
+    // times and such a world is byte-identical.
+    if let Some(surround) = &plan.surround {
+        for template in &surround.piece.templates {
+            let Some(bytes) = structures.get(&template.structure_file) else {
+                continue;
+            };
+            for (local, name, open) in structure_cells_stateful(bytes) {
+                let cell = [
+                    template.pos[0] + local[0],
+                    template.pos[1] + local[1],
+                    template.pos[2] + local[2],
+                ];
+                if is_fence_gate(&name) && open == Some(true) {
+                    open_gates.insert(cell);
+                } else {
+                    open_gates.remove(&cell);
+                }
+                blocks.insert(cell, name);
+            }
+        }
+    }
     // **The base world holds every gate threshold open, and that is a choice about
     // the BASE world only.**
     //
