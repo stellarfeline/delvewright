@@ -2,12 +2,19 @@
 """No repository artifact carries an identifier a reader cannot resolve.
 
 The sanctioned identifiers are ADR numbers, spec numbers and DW codes
-(CLAUDE.md *Privacy in repo artifacts*). A task id, a pull-request number and a
-dated attribution are not among them: a stranger cannot resolve any of the
-three, and the third additionally records who decided something and when they
-said it. A citation is also how a present-tense page turns into a changelog —
-the sentence stops saying what the software IS and starts saying where the
-behaviour came from.
+(CLAUDE.md *Privacy in repo artifacts*). A task id, a pull-request number, a
+dated attribution and a role attribution are not among them: a stranger cannot
+resolve any of the four, and the last two additionally record who decided
+something and when they said it. A citation is also how a present-tense page
+turns into a changelog — the sentence stops saying what the software IS and
+starts saying where the behaviour came from.
+
+The rule names WHO before it names WHEN, so the two are separate findings. A
+person cue that exists only to QUALIFY a date cannot see `(owner ruling)` at
+all, which makes deleting the date a green — and deleting the date is precisely
+the wrong repair, because it removes the half a reader could at least place. So
+a person bound to a decision is a finding on its own, and the repair for both is
+the same one: state the rule impersonally, as a fact about the software.
 
 This is a RATCHET, not a one-off tidy. The count refilled twice in the week the
 first sweep ran, because merged branches carry their own citations in and no
@@ -88,10 +95,12 @@ CSS_COLOUR = re.compile(r"^#(?:\d{3}|\d{4}|\d{6}|\d{8})$")
 
 ISO_DATE = re.compile(r"\b20\d\d-[01]\d-[0-3]\d\b")
 
-# A date is an attribution when it sits beside a person or a decision. A date
-# that is a plain fact — an upstream release, the day a licence was verified, an
-# ADR's own `Date:` header — is not: ADRs are the one place history legitimately
-# lives, and a licence date is evidence a reader may need to re-check.
+# A date is an attribution when it sits beside a person or a decision — EITHER
+# half is enough, because the date is already the unresolvable identifier and
+# the cue only has to say that somebody is attached to it. A date that is a
+# plain fact — an upstream release, the day a licence was verified, an ADR's own
+# `Date:` header — is not: ADRs are the one place history legitimately lives,
+# and a licence date is evidence a reader may need to re-check.
 # The cue list is deliberately short. Two words that read as attributions here
 # are ordinary nouns elsewhere in this repository — a *route planner*, a
 # *licence verdict* — and a gate that reds correct prose teaches the people who
@@ -103,10 +112,52 @@ ATTRIBUTION_CUE = re.compile(
 )
 ATTRIBUTION_WINDOW = 120
 
+# A role attribution is the same sentence with the date taken out, and it is a
+# finding for the half of the rule that comes FIRST: no repository artifact
+# records who decided something. `(owner ruling)`, `(owner directive, round 8)`,
+# `she ruled it not a defect`, `the owner's decision` — each names a person as
+# the authority a statement rests on, which is exactly what "state a rule
+# impersonally, as a fact about the software" forbids.
+#
+# Here BOTH halves are required, and BOUND to each other: a person word and a
+# decision word, adjacent or one word apart. That binding is the whole of the
+# false-positive defence, and it has to be, because either half alone is
+# ordinary English about this software — *the campaign owner*, *a decision taken
+# once at the start*, *specs stay historical decision records*, *an architecture
+# decision record*. None of those pairs a person with a decision, and none of
+# them is a finding.
+#
+# The two lists carry plurals and `ATTRIBUTION_CUE` above does not, which is a
+# measured difference rather than an oversight: bound, `owner decisions` is an
+# attribution; unbound, the word `decisions` reaches any date within 120
+# characters, and CLAUDE.md's own `Founding decisions live in docs/adr/ … the
+# kickoff handoff (docs/handoff-2026-07-29.md)` is then a dated attribution on
+# the strength of a date inside a path a reader can open. The binding is what
+# makes the wider list safe.
+PERSON_CUE = r"(?:owners?|she|hers?|his|reviewers?)"
+DECISION_CUE = r"(?:rulings?|ruled|decisions?|decided|directives?)"
+
+# The gap tolerates ONE word (`the owner's plane ruling`, `the owner has ruled`)
+# and no more: at two the phrase stops being an attribution and starts being a
+# sentence that happens to contain both words (`flagged for the owner rather
+# than decided here`). It crosses a line end, because prose wraps and a pattern
+# clipped to one line goes quiet on `(owner` / newline / `directive)`. It never
+# crosses a BLANK line, for the same reason `is_attribution` does not: an
+# attribution binds inside a paragraph and nowhere further.
+_GAP = r"(?:[ \t\-—]|\n(?!\s*\n))+"
+ROLE_ATTRIBUTION = re.compile(
+    r"(?i)(?<![\w\-])" + PERSON_CUE + r"(?:['’]s)?(?![\w])"
+    + _GAP + r"(?:[\w\-]+" + _GAP + r")?" + DECISION_CUE + r"(?![\w])"
+    r"|(?<![\w\-])" + DECISION_CUE + r"(?![\w])"
+    + _GAP + r"(?:of|by|from)" + _GAP + r"(?:the" + _GAP + r")?"
+    + PERSON_CUE + r"(?:['’]s)?(?![\w])"
+)
+
 KINDS: dict[str, re.Pattern[str]] = {
     "task-id": TASK_ID,
     "pr-number": PR_NUMBER,
     "dated-attribution": ISO_DATE,
+    "role-attribution": ROLE_ATTRIBUTION,
 }
 
 # Extensions that are text but whose content is not prose an agent reads.
@@ -363,7 +414,9 @@ def main(argv: list[str] | None = None) -> int:
         print("\ncheck-unsanctioned-identifiers: FAIL — a citation a reader cannot resolve.")
         print("The sanctioned identifiers are ADR numbers, spec numbers and DW codes.")
         print("Keep the OBLIGATION as a plain present-tense fact, or delete the sentence;")
-        print("do not replace the citation with a note about what it used to assert.\n")
+        print("do not replace the citation with a note about what it used to assert.")
+        print("A role-attribution names WHO decided. Deleting the date is not the repair:")
+        print("state the rule impersonally, as a fact about the software.\n")
         print("\n".join(over))
     if under:
         print("\ncheck-unsanctioned-identifiers: FAIL — the floor has fallen and did not "

@@ -332,7 +332,7 @@ pub fn check_fixtures(out: &BuildOutput) -> Result<FixtureGate, BuildFailure> {
                              (`{FIXTURE_TAG}` — an affordance hitbox, its hardware, a stake \
                              marker, a cutscene return mark) or belongs to a body that carries \
                              it (`{BORNE_TAG}` — an NPC's dialogue hitbox, which travels with \
-                             its speaker per the owner's cargo-lift ruling). Region verbs \
+                             its speaker). Region verbs \
                              quantify over a box and cannot ask a type; the class is the only \
                              thing they can read. Command: `{}`.",
                             if fixture { "BOTH" } else { "no" },

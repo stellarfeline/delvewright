@@ -140,11 +140,10 @@ wholesale and never merged** for carrying unrequested extras.
 **Obligation.** Unrequested change is a rejection cause on its own, independent of
 whether the change is good. Re-do the round from the sanctioned mechanisms.
 
-## Rule 6 — execute an owner ruling as stated; generalizing it is a proposal
+## Rule 6 — execute a ruling as stated; generalizing it is a proposal
 
-Round 16 read the owner's ruling on one beat as a campaign-wide 3–4 second
-ceiling and set the blinding beat to 4 s. Her correction: that beat gets **no
-pause at all** — the giant standing up blind *is* the signal. The ceiling governs
+Round 16 read a ruling on one beat as a campaign-wide 3–4 second ceiling and set
+the blinding beat to 4 s. The correction: that beat gets **no pause at all** — the giant standing up blind *is* the signal. The ceiling governs
 places where a reading pause exists; it was never a target.
 
 **Obligation.** Apply a ruling at the scope it was given. If a wider rule seems
@@ -187,7 +186,7 @@ round summary must say rather than fold away. The `applies_when` probe names
 *which* zero a zero is; it never changes the verdict.
 
 **The first permitted non-red** is rule 2's own escape, no wider: a row may close
-`DECLARED-UNCOVERABLE` with a `disposition` (`no-machine-form` / `owner-ruled`)
+`DECLARED-UNCOVERABLE` with a `disposition` (`no-machine-form` / `not-a-defect`)
 **and** a substantive justification. Sixteen island rows qualify and every one is
 a judgement — prose register, pacing, whether a space reads as open. A bare
 label buys nothing; the gate checks the justification is there and says

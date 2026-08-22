@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Score candidate RENDERS against a REFERENCE IMAGE, to order a contact sheet.
 
-The score RANKS the contact sheet; it NEVER gates it (owner ruling, spec-0028
-§3). Cross-domain calibration between a painterly reference and a voxel render
+The score RANKS the contact sheet; it NEVER gates it (spec-0028 §3). Cross-domain calibration between a painterly reference and a voxel render
 is unproven, so a number here may decide where a candidate sits on the page and
 may never decide whether it is on the page. This tool therefore emits ONE SCORE
 PER CANDIDATE and nothing else — no threshold, no `keep`, no `reject`. The

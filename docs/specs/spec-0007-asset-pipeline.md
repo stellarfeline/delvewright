@@ -196,7 +196,7 @@ browse; `GENERATION.md` stays the behind-the-scenes record).
       minimums met (or explicit shortfalls) before download begins.
 - [ ] Verification: every candidate has a catalog card (description + structured
       tags + style-fit verdict + categories filled) before download — agent-ruled
-      where galleries are fetchable, owner-ruled (URL + expected-style shortlist)
+      where galleries are fetchable, hand-ruled (URL + expected-style shortlist)
       for anti-bot sites; cards committed to the content repo `catalog/`.
 - [ ] Owner gallery-walk verdicts (dw.note) round-trip into the catalog cards.
 - [x] Gallery world: one command, candidates placed + labeled; dw.note verdicts

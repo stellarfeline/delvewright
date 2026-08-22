@@ -397,7 +397,7 @@ fn collect_staged(plan: &Plan, spawns: &BTreeMap<String, Vec<[i32; 3]>>) -> Vec<
 }
 
 /// The diagnostic text: what is staged, where the sun gets in, and the two fixes
-/// — plus the one the owner ruled out.
+/// — plus the one that is forbidden.
 fn burn_message(body: &Staged, sunlit: [i32; 3]) -> String {
     let Staged {
         owner,
@@ -433,8 +433,8 @@ fn burn_message(body: &Staged, sunlit: [i32; 3]) -> String {
          is decided by the sun instead: this is the Barrowmere gate yard, where two of three \
          footmen died to sunlight in under twenty seconds with every proof green. {head}Fix the \
          content: {remedy} Do NOT use `set-time` — the delve's hour is a pacing decision the \
-         author made, and moving it to save a mob spends a beat (owner ruling, recorded on the \
-         `equipment.head` DSL field itself).",
+         author made, and moving it to save a mob spends a beat; the \
+         sanctioned fix is recorded on the `equipment.head` DSL field itself.",
         at[0], at[1], at[2], sunlit[0], sunlit[1], sunlit[2],
     )
 }
