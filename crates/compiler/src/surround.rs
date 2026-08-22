@@ -2273,7 +2273,7 @@ mod tests {
     /// `DW0854` (spec-0026 §5): carving a 1-block staircase up the inner slope
     /// is caught by the empirical nav flood — the check reads assembled
     /// geometry, so a post-generation change (an edit batch, a settle) cannot
-    /// sneak a climbable wall past the even-step construction.
+    /// sneak a climbable wall past the barrier the generator constructs.
     #[test]
     fn a_carved_staircase_up_the_inner_slope_is_dw0369() {
         assert_eq!(DW_VALLEY_CLIMB.id(), "DW0854");
