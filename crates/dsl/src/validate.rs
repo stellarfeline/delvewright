@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, is_v11, is_v12, is_v13, is_v14, is_v15,
+    is_v10, is_v11, is_v12, is_v13, is_v14, is_v15, is_v16,
 };
 use crate::ids::is_kebab;
 use crate::metrics::Metrics;
@@ -1552,6 +1552,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v13(c, d);
     reserved_v14(c, d);
     reserved_v15(c, d);
+    reserved_v16(c, d);
     press_answer_checks(c, d);
     press_obligation_checks(c, d);
 }
@@ -1661,6 +1662,146 @@ fn reserved_v15(c: &Campaign, d: &mut Vec<Diagnostic>) {
              ordering, and it is why the two are separate versions rather than one."
         ),
     ));
+}
+
+/// The spec-0026 **horizon library** exists only at `dsl_version` 0.16.0, and
+/// its params are range-checked here.
+///
+/// Unlike its four neighbours this fences a FIELD rather than a document, so
+/// the two halves are different questions. The fence asks whether the
+/// declaration needs the new surface at all — `"void"` and `"ocean"` predate it
+/// and stay writable at 0.6.0, byte-identical, which is what keeps every shipped
+/// campaign compiling. The param check asks whether what was written is
+/// buildable, and it runs only above the fence, because below it there is
+/// nothing to check.
+fn reserved_v16(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::stages::{HorizonBase, horizon_defaults};
+
+    let Some(h) = c.world.content.horizon.as_ref() else {
+        return;
+    };
+    let version = c.world.dsl_version.as_str();
+    if !is_v16(version) {
+        if h.needs_horizon_library() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "world",
+                "/content/horizon",
+                format!(
+                    "this `horizon` needs dsl_version 0.16.0 and the world stage declares \
+                     `{version}` — raise this stage's `dsl_version` to 0.16.0, or write \
+                     `\"void\"` or `\"ocean\"`, which are the two the older surface had. A \
+                     horizon below 0.16.0 is one of those two names and nothing else: there is \
+                     no object form and no base that builds terrain."
+                ),
+            ));
+        }
+        return;
+    }
+
+    let r = h.resolved();
+
+    // Params foreign to the declared base. The wire shape is flat — one schema
+    // rather than one per base — so this is where a param finds out it is not
+    // for the base beside it. Silently ignoring it is the worse answer: an
+    // author who wrote `rim_height` on an `ocean` believes something is being
+    // read.
+    if let crate::stages::Horizon::Spec(spec) = h {
+        let mut foreign: Vec<&str> = Vec::new();
+        if !matches!(r.base, HorizonBase::Valley) {
+            if spec.ratio.is_some() {
+                foreign.push("ratio");
+            }
+            if spec.rim_height.is_some() {
+                foreign.push("rim_height");
+            }
+        }
+        for name in foreign {
+            d.push(Diagnostic::error(
+                codes::HORIZON_PARAM,
+                "world",
+                format!("/content/horizon/{name}"),
+                format!(
+                    "`{name}` is a `valley` param and this horizon declares base `{base}`, which \
+                     reads nothing from it. Remove it, or declare `base: \"valley\"` — a param \
+                     nothing reads is a statement the author believes is taking effect.",
+                    base = r.base.token()
+                ),
+            ));
+        }
+    }
+
+    // A base that BUILDS terrain needs a map to build it around, and the only
+    // statement of a whole map's extent this engine has is a site plan's
+    // `region`. Refused here rather than at the build, because it is a fact
+    // about the documents: nothing has to be placed to know that nothing states
+    // an extent.
+    if r.base.has_surround() && c.site_plan.is_none() {
+        d.push(Diagnostic::error(
+            codes::SURROUND_NO_REGION,
+            "world",
+            "/content/horizon/base",
+            format!(
+                "`horizon` base `{base}` builds terrain around the map, and this campaign never \
+                 says how big the map is. A surround rings a DECLARED extent — the `region` of a \
+                 site plan — and this campaign has no site plan, so its only statement of where \
+                 anything is is `areas[]`. The union of whatever those place is not a \
+                 substitute: areas sit on the compiler's fixed stride with void between them, so \
+                 that union is mostly nothing and the horizon would be a mountain range built \
+                 around empty space. Give the campaign a site plan, or set `horizon` to `void` \
+                 or `ocean`, which need no map to be a horizon of.",
+                base = r.base.token()
+            ),
+        ));
+    }
+
+    // Ranges. Checked on the RESOLVED view so a shorthand is judged by the same
+    // rule as the object form it desugars to.
+    if r.base.has_surround() {
+        if !(horizon_defaults::RATIO_MIN..=horizon_defaults::RATIO_MAX).contains(&r.ratio)
+            || !r.ratio.is_finite()
+        {
+            d.push(Diagnostic::error(
+                codes::HORIZON_PARAM,
+                "world",
+                "/content/horizon/ratio",
+                format!(
+                    "`ratio` = {} is out of range — set it within {}..={} ({} is the default). \
+                     It is the surround's total footprint as a multiple of the \
+                     map's: under {} there is no room for a gap floor and a slope run \
+                     both, and over {} the surround is mostly terrain no body reaches, at a cost \
+                     that is all shipped bytes.",
+                    r.ratio,
+                    horizon_defaults::RATIO_MIN,
+                    horizon_defaults::RATIO_MAX,
+                    horizon_defaults::RATIO,
+                    horizon_defaults::RATIO_MIN,
+                    horizon_defaults::RATIO_MAX,
+                ),
+            ));
+        }
+        if !(horizon_defaults::RIM_HEIGHT_MIN..=horizon_defaults::RIM_HEIGHT_MAX)
+            .contains(&r.rim_height)
+        {
+            d.push(Diagnostic::error(
+                codes::HORIZON_PARAM,
+                "world",
+                "/content/horizon/rim_height",
+                format!(
+                    "`rim_height` = {} is out of range — set it within {}..={} ({} is the \
+                     default). It is the crest's height over the gap floor: under {} \
+                     the rim does not close the horizon from a body standing on that floor, and \
+                     over {} the surround stops fitting under whatever the map puts above it.",
+                    r.rim_height,
+                    horizon_defaults::RIM_HEIGHT_MIN,
+                    horizon_defaults::RIM_HEIGHT_MAX,
+                    horizon_defaults::RIM_HEIGHT,
+                    horizon_defaults::RIM_HEIGHT_MIN,
+                    horizon_defaults::RIM_HEIGHT_MAX,
+                ),
+            ));
+        }
+    }
 }
 
 fn reserved_v12(c: &Campaign, d: &mut Vec<Diagnostic>) {
@@ -3126,8 +3267,6 @@ fn reserved_v06_effect_flags(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// and the actor staging verbs; gated on the quests stage). The per-effect
 /// `requires_flags` gate is handled separately in [`reserved_v06_effect_flags`].
 fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    use crate::stages::Horizon;
-
     // --- Stage 1: horizon / boundary (spec-0013), gated on the world stage ---
     if !is_v06(c.world.dsl_version.as_str()) {
         if c.world.content.horizon.is_some() {
@@ -3220,18 +3359,34 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     .to_string(),
             ));
         }
-        // `horizon: "ocean"` without a return rule strands wanderers in an infinite sea.
-        if matches!(c.world.content.horizon, Some(Horizon::Ocean))
+        // A horizon whose ambient a body can ENTER needs a return rule. The
+        // question is the ambient's, never the base's name: an ocean is an
+        // infinite swimmable sea, and a valley's gap floor is walkable ground
+        // that runs to the foot of the rim. `void` is the only base a body
+        // cannot enter, because there is nothing out there to stand on.
+        let entered_base = match crate::stages::horizon_base(&c.world.content.horizon) {
+            crate::stages::HorizonBase::Void => None,
+            crate::stages::HorizonBase::Ocean => Some((
+                "ocean",
+                "an infinite swimmable sea with no return rule lets players wander off the map",
+            )),
+            crate::stages::HorizonBase::Valley => Some((
+                "valley",
+                "the gap floor between the map and the rim is walkable ground, and with no \
+                 return rule a player who steps off the map is simply outside it",
+            )),
+        };
+        if let Some((base, why)) = entered_base
             && c.world.content.boundary.is_none()
         {
             d.push(Diagnostic::error(
                 codes::OCEAN_NO_BOUNDARY,
                 "world",
                 "/content/horizon".to_string(),
-                "`horizon: \"ocean\"` needs a `boundary` — an infinite swimmable sea with no \
-                 return rule lets players wander off the map. Add a `boundary` (a bare `{}` uses \
-                 the default margin), or set `horizon` to `void`"
-                    .to_string(),
+                format!(
+                    "`horizon` base `{base}` needs a `boundary` — {why}. Add a `boundary` (a \
+                     bare `{{}}` uses the default margin), or set `horizon` to `void`"
+                ),
             ));
         }
         // `margin` range check (0..=64).

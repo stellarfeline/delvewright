@@ -366,7 +366,108 @@ pub fn collision_top_16(name: &str) -> u8 {
     if matches!(id, "dirt_path" | "farmland") {
         return 15;
     }
+    if is_no_collision_plant(id) {
+        return 0;
+    }
     FULL_HEIGHT_16
+}
+
+/// Vanilla's **no-collision vegetation class**: blocks whose collision shape is
+/// EMPTY — a walker passes straight through and stands on whatever is below
+/// (they are visual/light-model content only).
+///
+/// Modelling one as a full cube makes its cell a phantom standable surface,
+/// and that is wrong in both directions. A `short_grass` tuft on a valley
+/// terrace splits a deliberate 2-block riser into two climbable 1-block steps,
+/// so `DW0854` refuses a landform vanilla cannot climb (rejects-valid); and,
+/// worse, any walkability proof that stands a body ON a tuft or flower cell is
+/// unsound (accepts-invalid).
+///
+/// The list is the **class**, not the three ids the valley generator happens
+/// to scatter (fixing only those would be folklore). Sources: Minecraft Java
+/// 1.21.11 block shapes — every id here has an empty collision shape.
+/// Deliberately excluded because they DO collide (or attach in ways this model
+/// does not represent): `azalea`/`flowering_azalea`, `big_dripleaf`, `bamboo`,
+/// `cactus`, `chorus_*`, `pointed_dripstone`, `scaffolding`, `sea_pickle`,
+/// `cocoa`, lily `pad` (a platform), all leaves, and anything not certainly
+/// collision-free — the conservative full-cube default keeps those sound.
+pub fn is_no_collision_plant(id: &str) -> bool {
+    id.ends_with("_sapling")
+        || matches!(
+            id,
+            // grasses + ground cover
+            "short_grass"
+                | "tall_grass"
+                | "fern"
+                | "large_fern"
+                | "dead_bush"
+                | "bush"
+                | "firefly_bush"
+                | "short_dry_grass"
+                | "tall_dry_grass"
+                | "seagrass"
+                | "tall_seagrass"
+                | "pink_petals"
+                | "wildflowers"
+                | "leaf_litter"
+                | "hanging_roots"
+                | "mangrove_propagule"
+                // small + tall flowers
+                | "dandelion"
+                | "poppy"
+                | "blue_orchid"
+                | "allium"
+                | "azure_bluet"
+                | "red_tulip"
+                | "orange_tulip"
+                | "white_tulip"
+                | "pink_tulip"
+                | "oxeye_daisy"
+                | "cornflower"
+                | "lily_of_the_valley"
+                | "wither_rose"
+                | "torchflower"
+                | "sunflower"
+                | "lilac"
+                | "rose_bush"
+                | "peony"
+                | "pitcher_plant"
+                // mushrooms + nether flora
+                | "brown_mushroom"
+                | "red_mushroom"
+                | "crimson_fungus"
+                | "warped_fungus"
+                | "crimson_roots"
+                | "warped_roots"
+                | "nether_sprouts"
+                | "nether_wart"
+                // crops
+                | "wheat"
+                | "carrots"
+                | "potatoes"
+                | "beetroots"
+                | "melon_stem"
+                | "pumpkin_stem"
+                | "attached_melon_stem"
+                | "attached_pumpkin_stem"
+                | "torchflower_crop"
+                | "sweet_berry_bush"
+                | "sugar_cane"
+                | "bamboo_sapling"
+                // climbing / hanging plants
+                | "vine"
+                | "glow_lichen"
+                | "spore_blossom"
+                | "small_dripleaf"
+                | "kelp"
+                | "kelp_plant"
+                | "cave_vines"
+                | "cave_vines_plant"
+                | "twisting_vines"
+                | "twisting_vines_plant"
+                | "weeping_vines"
+                | "weeping_vines_plant"
+        )
 }
 
 /// Whether a block is thin enough to be **walked over rather than onto**
@@ -765,6 +866,38 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                     blocks.insert(cell, s.block.clone());
                     open_gates.remove(&cell);
                 }
+            }
+        }
+    }
+    // The horizon's surround, after every area (spec-0026): terrain the compiler
+    // generated rather than a prefab an author bound, entering the voxel model
+    // on exactly the terms a placed piece does — so gravity settling, the
+    // occupancy model, relight, the fluid model, boundary safety and the
+    // snapshot renderer all see the landform without one of them being taught a
+    // new horizon.
+    //
+    // AFTER, not before: the surround stands OUTSIDE the map's declared
+    // rectangle by construction, so the two cannot contend for a cell — and if
+    // they ever do, the map wins the argument, because the map is the thing the
+    // campaign is about. `None` for a base with no surround, so this runs zero
+    // times and such a world is byte-identical.
+    if let Some(surround) = &plan.surround {
+        for template in &surround.piece.templates {
+            let Some(bytes) = structures.get(&template.structure_file) else {
+                continue;
+            };
+            for (local, name, open) in structure_cells_stateful(bytes) {
+                let cell = [
+                    template.pos[0] + local[0],
+                    template.pos[1] + local[1],
+                    template.pos[2] + local[2],
+                ];
+                if is_fence_gate(&name) && open == Some(true) {
+                    open_gates.insert(cell);
+                } else {
+                    open_gates.remove(&cell);
+                }
+                blocks.insert(cell, name);
             }
         }
     }
@@ -2265,6 +2398,73 @@ mod tests {
         // Everything else stays a conservative full cube.
         assert_eq!(collision_top_16("minecraft:stone"), 16);
         assert_eq!(collision_top_16("minecraft:oak_stairs[facing=north]"), 16);
+    }
+
+    /// Vanilla no-collision vegetation has an EMPTY collision shape.
+    /// Modelling it as a full cube creates phantom standable cells — a tuft
+    /// splits a valley terrace's 2-block riser into two climbable 1-block
+    /// steps, which is a false `DW0854` — and lets a walkability proof stand a
+    /// body on a flower, which is unsound. The class is pinned here so no
+    /// future palette id regresses to the full-cube fallback silently.
+    #[test]
+    fn no_collision_plants_have_an_empty_collision_shape() {
+        for id in [
+            "minecraft:short_grass",
+            "minecraft:tall_grass",
+            "minecraft:fern",
+            "minecraft:large_fern",
+            "minecraft:pink_petals",
+            "minecraft:poppy",
+            "minecraft:oxeye_daisy",
+            "minecraft:cornflower",
+            "minecraft:dandelion",
+            "minecraft:dead_bush",
+            "minecraft:oak_sapling",
+            "minecraft:cherry_sapling",
+            "minecraft:wheat[age=7]",
+            "minecraft:sweet_berry_bush",
+            "minecraft:vine",
+            "minecraft:glow_lichen",
+            "minecraft:seagrass",
+            "minecraft:sugar_cane",
+        ] {
+            assert_eq!(collision_top_16(id), 0, "{id} must have no collision");
+            assert!(is_thin_decoration(id), "{id} is walked through");
+        }
+        // The lookalikes that DO collide stay conservative full cubes.
+        for id in [
+            "minecraft:azalea",
+            "minecraft:big_dripleaf",
+            "minecraft:bamboo",
+            "minecraft:cactus",
+            "minecraft:pointed_dripstone",
+            "minecraft:oak_leaves[persistent=true]",
+            "minecraft:sea_pickle",
+        ] {
+            assert_eq!(collision_top_16(id), 16, "{id} must keep collision");
+        }
+    }
+
+    /// The occupancy consequence of the class: a tuft/flower/petal cell is
+    /// passable air for the walker — the standable surface is the block BELOW
+    /// it, never the plant itself.
+    #[test]
+    fn plants_are_not_floors_and_not_obstacles() {
+        let mut b = floor(63, 0, 2, 0, 0);
+        b.insert([0, 64, 0], "minecraft:short_grass".to_string());
+        b.insert([1, 64, 0], "minecraft:pink_petals".to_string());
+        b.insert([2, 64, 0], "minecraft:fern".to_string());
+        let occ = occupancy_of(b, &BTreeSet::new());
+        for c in [[0, 64, 0], [1, 64, 0], [2, 64, 0]] {
+            assert!(
+                !occ.solid.contains(&c) && !occ.tall.contains(&c),
+                "{c:?} must be passable — a plant is not an obstacle"
+            );
+            assert!(
+                !occ.partial.contains_key(&c),
+                "{c:?} must not be a floor level of its own"
+            );
+        }
     }
 
     #[test]

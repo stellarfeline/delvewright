@@ -72,7 +72,13 @@ fn version_line() {
     // optional ones — so a part is structurally unable to move the box the whole
     // gave it, and the only path from a binding to placed bytes is the compiler
     // computing the frame from the site plan inside `Plan::build`.
-    assert!(s.contains("dsl 0.15.0"), "{s}");
+    // 0.16.0 (spec-0026) generalizes the stage-1 `horizon` from one of two names
+    // into a base and that base's params, and lands `valley` — the first base
+    // that BUILDS terrain instead of picking a world generator. The two string
+    // shorthands that predate it stay writable where they always were and their
+    // output does not move; what the version buys is a spelling for something
+    // the old surface had none for.
+    assert!(s.contains("dsl 0.16.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

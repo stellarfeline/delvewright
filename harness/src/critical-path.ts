@@ -97,6 +97,7 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.13.0",
   "0.14.0",
   "0.15.0",
+  "0.16.0",
 ] as const;
 
 /**
