@@ -9,13 +9,12 @@ something and when they said it. A citation is also how a present-tense page
 turns into a changelog — the sentence stops saying what the software IS and
 starts saying where the behaviour came from.
 
-The rule names WHO before it names WHEN, and for a long time only WHEN was
-gated: `(owner ruling, 2026-08-03)` was a finding and `(owner ruling)` was not,
-because the person cue existed solely to tell an attributed date from a harmless
-one. Deleting the date is not the repair — it removes the half a reader could at
-least place. So a person bound to a decision is a finding on its own, and the
-repair for both is the same one: state the rule impersonally, as a fact about
-the software.
+The rule names WHO before it names WHEN, so the two are separate findings. A
+person cue that exists only to QUALIFY a date cannot see `(owner ruling)` at
+all, which makes deleting the date a green — and deleting the date is precisely
+the wrong repair, because it removes the half a reader could at least place. So
+a person bound to a decision is a finding on its own, and the repair for both is
+the same one: state the rule impersonally, as a fact about the software.
 
 This is a RATCHET, not a one-off tidy. The count refilled twice in the week the
 first sweep ran, because merged branches carry their own citations in and no
