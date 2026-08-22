@@ -1261,6 +1261,71 @@ fn a_detail_pieces_anchor_overwrites_the_derivations_footing() {
     );
 }
 
+/// **Detailing the ENTRY place moves where the party arrives, and the role is
+/// what carries it there.**
+///
+/// The pair neither change could have tested. The derivation declares
+/// `AnchorRole::Entry` on the entry node's anchor (spec-0046) — so `spawn` is a
+/// name content may address and not the thing resolution reads — while a
+/// `details[]` row on that same place re-binds the name to the piece's own
+/// seat. Every other test in this file details `node/exit`, so the one place
+/// the two mechanisms meet was never walked.
+///
+/// What is asserted is the whole chain: the role is declared on a derived map,
+/// it still names the owed anchor after detailing, and `Plan::entry_point` —
+/// which drives `setworldspawn`, the class-apply teleport, first-join
+/// placement and the `dw:cp` seed — lands inside the piece's frame rather than
+/// on the massing footing it had before.
+#[test]
+fn detailing_the_entry_place_moves_where_the_party_arrives() {
+    let tmp = tempdir("detailed-entry");
+    let d = detailed(&tmp, &["node/landing"]);
+    let c = campaign_at(&d.campaign);
+    let reg = PrefabRegistry::load_dir(&d.prefabs).expect("the piece library loads");
+    let plan = Plan::build(&c, &reg).expect("the detailed campaign plans");
+    let area = delvewright_dsl::SITE_AREA.to_string();
+
+    assert_eq!(
+        plan.anchors
+            .role_name(&area, delvewright_compiler::plan::AnchorRole::Entry),
+        Some(delvewright_dsl::ENTRY_ANCHOR),
+        "a derived map declares what its entry anchor is for, detailed or not"
+    );
+
+    let a = detail::allocation(&c, &NodeId("node/landing".into()))
+        .expect("`node/landing` is a place this map has");
+    assert!(
+        a.owed_anchors
+            .iter()
+            .any(|n| n == delvewright_dsl::ENTRY_ANCHOR),
+        "the entry place owes the entry name: {:?}",
+        a.owed_anchors
+    );
+
+    let at = plan
+        .entry_point(&area)
+        .expect("the party arrives somewhere");
+    assert!(
+        (0..3).all(|i| {
+            i64::from(at[i]) >= a.world_min[i] && i64::from(at[i]) < a.world_min[i] + a.extent[i]
+        }),
+        "the party arrives inside the piece standing in the entry place: \
+         {at:?} vs the frame at {:?} + {:?}",
+        a.world_min,
+        a.extent
+    );
+
+    let bare_at = Plan::build(&campaign_at(&blockout_dir()), &reg)
+        .expect("the undetailed campaign plans")
+        .entry_point(&area)
+        .expect("the massed map has an entry too");
+    assert_ne!(
+        at, bare_at,
+        "the control: detailing the entry place must actually move the start, \
+         or this test would pass over a resolution that never consulted the piece"
+    );
+}
+
 /// **The derivation stops writing inside a bound frame, and nowhere else.**
 ///
 /// The world a bound campaign masses is the unbound one MINUS exactly the frame,

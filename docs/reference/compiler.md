@@ -5327,7 +5327,7 @@ massing nobody authored):
 
 | Name | What it is |
 |---|---|
-| `spawn` | The entry place's footing, resolved through the compiler's existing entry-anchor alias list. Spelled rather than given a role: the prefab-metadata anchor carries no `role` field on this engine, so a derivation writing one would be writing a fact nothing reads. |
+| `spawn` | The entry place's footing. The derivation **declares** it, exactly as a prefab does: the anchor arrives carrying `"role": "entry"`, so the graph's own `entry` node is what decides, and the spelling is a name content may address rather than the thing resolution reads. |
 | `anchor/node-<place>` | A place's own footing. `node/near-hall` becomes `anchor/node-near-hall`, because a campaign reaches an anchor through `anchor/<kebab>` and `node/<id>` is not a name any document could write. |
 | `anchor/seam-<edge>` | A `barred` seam's gate region, filled at world load with the bar and measured shut by the same gate-seal model a prefab-authored gate is. `open-gate` and `shortcut` address it. |
 | `anchor/unlock-<edge>` | The far-side affordance's footing, on the side a one-sided `barred` seam opens from. Absent on an `either` seam, which needs none. |
