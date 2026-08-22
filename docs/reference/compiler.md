@@ -10,9 +10,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.15.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.16.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.13.0`, `0.14.0`, `0.15.0`** (additive supersets; `0.2.0` output stays
+  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.13.0`, `0.14.0`, `0.15.0`, `0.16.0`** (additive supersets; `0.2.0` output stays
   byte-identical across the later versions). This line is not prose: it is bound
   by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
   (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS` minus
@@ -307,7 +307,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `time` (opt) | `day`/`noon`/`dusk`/`night`/`midnight`/`dawn` (default `noon`; `sunrise` is accepted as a synonym of `dawn`). Dimension-global initial state, emitted in the sealing baseline. Vanilla's `/time set` takes either a keyword or a raw tick count, so the DSL is not limited to the four keywords: the four vanilla states emit their **keyword verbatim** (`time set night`) and the other two emit the equivalent **tick form** (`dusk` -> `time set 12000`, `dawn` -> `time set 23000`). One table maps every state to its argument and its `time query daytime` read-back (`WorldTime::spec`), so the sealed-state PackTest asserts the right value and no shipped campaign's bytes move. `dusk` is the **sunset onset** (12000, the sky visibly going orange), deliberately not 13000 — 13000 is the sun already down, which is exactly what the `night` keyword sets, so it would make `dusk` a synonym rather than its own beat; `dawn` (23000) is the sunrise onset. `dusk`/`dawn` count as night for the sky-light model (`DW0210`), which is the conservative direction (both skies are in fact brighter than midnight). Same enum for the `set-time` effect. | 0.5 / dusk+dawn 0.5 |
 | `weather` (opt) | `clear`/`rain`/`thunder` (default `clear`; `clear` emits nothing — byte-identical to pre-0.5). Dimension-global, emitted after sealing (`weather <kw>`). Rain/thunder attenuate the assembled-light sky term. | 0.5 |
 | `difficulty` (opt) | The delve's combat difficulty: `easy` / `normal` / `hard`. Absent = the compiler's historical **derivation** — `easy` when the campaign fields any wave, `peaceful` when it fields none — which is what keeps every pre-0.6 campaign byte-identical. Declaring it overrides the derivation in BOTH places a difficulty comes from: `server/server.properties` (what the shipped image and every compose profile boot from, via `validation/world-settings-entrypoint.sh`) and a `/difficulty <kw>` appended to the sealing baseline, so the declaration also holds when the datapack alone is dropped into another world. A declaring campaign also emits the `declared_difficulty` PackTest, which asserts the live world's difficulty via the bare `/difficulty` query command (vanilla returns `Difficulty#getId()`: peaceful 0, easy 1, normal 2, hard 3) — so properties, sealing and declaration are proven to agree on a real server. `peaceful` is refused (`DW0468`); fighting actors with no waves and no declaration is the advisory `DW0469`. **Retuning warning:** every combat number in every campaign written before this field was tuned under the implicit `easy`, which HALVES incoming player damage (`min(dmg / 2 + 1, dmg)`) — content that declares `normal` or `hard` must redo that arithmetic, not merely flip the keyword. | 0.6 |
-| `horizon` (opt) | spec-0013: `void` (default/absent, byte-identical to v0.5) or `ocean` — a pinned bedrock/stone/water superflat (sea level y=62), no structures/mobs. Drives `generator-settings` **and the area-origin datum**: ocean areas are placed at y=60 = `sea_level − 2`, so an island piece's authored waterline (local y=2) meets the world ocean and its walk plane (local y=3) is the vanilla-normal one block above the sea. Enforced by `DW0344`. | 0.6 |
+| `horizon` (opt) | The ground and the sky the map stands in. Either a **string shorthand** — `void` (default/absent) or `ocean`, the pair that predates the horizon library and stays writable at 0.6 with byte-identical output — or the **object form** `{base, …params}` (0.16, `DW0141` below it). `void`: nothing outside the placed geometry. `ocean`: a pinned bedrock/stone/water superflat, sea level y=62, no structures or mobs; it drives `generator-settings` **and the area-origin datum**, placing ocean areas at y=60 = `sea_level − 2` so an island piece's authored waterline (local y=2) meets the world ocean and its walk plane is the vanilla-normal one block above the sea (`DW0344`). `valley`: the one base that BUILDS terrain — see *The horizon's surround* below. Params: `ratio` (2.0..=3.0, default 2.5) and `rim_height` (16..=128, default 48), both `valley`-only, both `DW0853` out of range or beside another base. Any horizon whose ambient a body can ENTER — the sea, and a valley's gap floor — needs a `boundary` (`DW0320`); `void` is the only one it cannot, because there is nothing out there to stand on. | 0.6 / library 0.16 |
 | `min_players` (opt, 1..=4) | spec-0018: the party size the delve **requires**. Absent = 1 (a party of one is always legal; every pre-0.6 campaign reads as 1). `>= 2` emits the **lobby gate**: `tick` recomputes the live count into `#lobby dw.sys`, the class-selection dialog driver is prefixed `if score #lobby dw.sys matches <n>..` (so the delve cannot START short-handed), and unclassed players get a self-updating `x / n` actionbar (`{"score":{"name":"#lobby","objective":"dw.sys"}}` — one emitted line, no per-count strings; a compiler default, not an l10n key). Out of range = `DW0356`; a mandatory-n declaration with no n-way division of labour = `DW0358`. `min_players: 1` emits **nothing** (byte-identical). | 0.6 |
 | `boundary {margin?,message?}` (opt) | spec-0013: declares a **derived** playable region (union of final placed-piece AABBs, inflated horizontally by `margin` (`0..=64`, default 16; else `DW0321`), unbounded up, floor = lowest placed block − 8). A 1s clock returns any player outside it to the last checkpoint (`dw:cp`) with an actionbar `message` (l10n `world.boundary.message`, English default when absent) + a soft sound; no damage, no item loss. `horizon:"ocean"` without a `boundary` = `DW0320`. | 0.6 |
 
@@ -682,6 +682,81 @@ common.
 | `views[]` | `{id: view/<kebab>, eye, look_at, note?}` — the named exterior vantages the walk judges the silhouette from, rendered beside the stage-2 reference sheet. Optional; a plan with zero views has that zero stated in the binding line. |
 | `lighting` | `{fixture, min_light}` applied to every enclosed box, so a blockout interior is walkable at night without per-box surface. **The engine's existing area-lighting object**, not a twin of it, so it answers the same range rule with the same code (`DW0196`). |
 | Binding | Every run that carries a plan prints a second line beside the layout-graph one: boxes and **the pairs compared**, seams (stair, drop), datums, whole-owned volumes, identities, sightlines and views. Two zeroes are called out as findings rather than counted: a plan with no view (the walk has no declared vantage) and a plan with no whole-owned volume (the rule keeping the whole's mass out of the places examined nothing). A plan with no identity is `DW0834` in its own right. |
+
+### The horizon's surround (spec-0026)
+
+A horizon is a base and that base's params. Two of the bases — `void` and
+`ocean` — are **world-generator settings**: what lies outside the placed
+geometry is an analytic fact, one superflat layer stack, modelled per column by
+`nav::Ambient`. `valley` is not. Its ground is real blocks in real structure
+templates, generated by `compiler::surround` and placed by the same bootstrap
+that places every other piece — so its *ambient* is `void`, because there is
+nothing analytic out there: everything out there was built.
+
+That difference is the design, not an implementation detail. A surround entering
+as a new `Ambient` variant would owe a new branch to gravity settling, the
+occupancy model, relight, the fluid model, boundary safety and the snapshot
+renderer, and each branch would be a second model of the same ground that could
+disagree with the first. Entering as **placed blocks** it owes none of them:
+every proof already knows how to read a block.
+
+**What it rings.** A surround rings a **declared** extent, which means a site
+plan's `region` — required, non-derivable, and which no box may grow. A campaign
+that seats pieces with `areas[]` states no extent and is refused (`DW0855`); the
+union of what it happens to place is not a substitute, because areas sit on the
+compiler's fixed 256-block stride and that union is mostly the void between them.
+Reading the region rather than the placed pieces is what keeps the landform
+fixed: a part can never push a mountain outward, and space a plan reserved and
+has not yet filled stays reserved instead of being eaten by terrain.
+
+**The shape.** A rectangular annulus whose total footprint is `ratio` times the
+region's on each axis, with three zones outward from the region edge: a flat
+walkable **gap floor**, an **inner slope** rising to the crest line, and the
+**crest band and outer face**, which is where the trees are. The radial profile
+keys on a domain-warped distance from the region rectangle and the rim is a
+ridged multifractal over the compiler's own value noise, so the silhouette reads
+as rock rather than as a box — the curve is in the warp, not in a diagonal
+primitive.
+
+**Un-climbable by construction, and proven anyway.** Every surround surface
+height is quantized to EVEN steps, so no two adjacent columns ever differ by
+exactly 1 and vanilla's 1-block auto-step has nothing to take. `DW0854` proves
+it again over the assembled bytes, because gravity settling, a stage-7 edit
+script and a palette of different-height blocks all happen after the generator
+has finished.
+
+**Not an `AreaPlacement`, deliberately.** `plan.areas` is what the boundary
+region derives from, what relight lights, what anchors resolve against and what
+analysis counts, and a mountain is none of those. The surround is
+`plan.surround`, and the sites that need it opt in through
+`Plan::placed_pieces` — the one iterator every PLACEMENT site reads (shipped
+`.nbt`s, forceload spans, `place_all`, the placement sentinels, the extent check
+and the voxel model).
+
+**One piece, many templates.** The annulus is far past the vanilla 48-per-axis
+template cap, so it ships as many `.nbt` files and is one `PiecePlacement` with
+many `PlacedTemplate`s — the same absorption *A piece's blocks arrive as one
+template or as a tile set* already describes. The bytes are synthesized at build
+time and never exist on disk; the structure reader merges them before it reads
+the prefab library, and a prefab that shared a filename would still win.
+
+**Biome.** Per-band `/fillbiome` in `setup_finish`, where `place_verify` has
+already proved the chunks exist. That is vanilla's own channel for grass and
+foliage tint, water colour, ambience and sky, so the surround reads as its biome
+with no resource pack anywhere in the delve. The modification cap is raised for
+the pass and restored, because a band is painted in one command and a truncated
+command leaves a horizon painted half one colour.
+
+**Binding.** Every surround build prints its templates, biome bands, the
+rectangle and **which authority stated it**, and the standable gap-floor cell
+count the climb proof floods from — a flood that started from nowhere passes for
+free and looks exactly like one that did not.
+
+**Not yet reachable from the DSL**: the generator carries a second flora (cherry
+over `minecraft:cherry_grove`) and a second surface palette, on one code path
+with parallel id tables. Neither is exposed, because the gallery element a second
+flora needs is a second whole-map campaign and a surface lands with its element
+or it does not land.
 
 ### The blockout (derived — there is no document)
 
@@ -3413,7 +3488,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.13.0,0.14.0,0.15.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.13.0,0.14.0,0.15.0,0.16.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
