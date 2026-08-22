@@ -403,7 +403,8 @@ impl LightModel {
         Self::from_blocks(crate::assembled::assembled_blocks(plan, structures))
     }
 
-    /// Build directly from a cell→block map (test entry point; no plan needed).
+    /// Build directly from a cell→block map (test entry point; no plan needed),
+    /// over the box the given cells occupy.
     pub fn from_blocks(blocks: BTreeMap<[i32; 3], String>) -> Self {
         let mut min = [i32::MAX; 3];
         let mut max = [i32::MIN; 3];
@@ -417,6 +418,27 @@ impl LightModel {
             min = [0, 0, 0];
             max = [0, 0, 0];
         }
+        LightModel::from_blocks_within(blocks, min, max)
+    }
+
+    /// Build from a cell→block map over an **explicitly stated** box.
+    ///
+    /// [`Self::from_blocks`] infers the box from the cells it was handed, which
+    /// is right when those cells ARE the world. A caller measuring one piece in
+    /// isolation knows something the cell map cannot say: the piece stands in
+    /// open air, so the sky reaches the cells *beside* it as well as the cells
+    /// above it. Stating a box larger than the piece is how that is expressed —
+    /// the extra cells are absent, therefore air, therefore sky-open, and sky
+    /// light floods inward through every opening exactly as it does in the game.
+    ///
+    /// Inferring the box instead is what makes a roofed-but-open building read
+    /// pitch dark: every one of its cells has a roof above it, none is sky-open,
+    /// and the daylight that reaches it in the game arrives from the side.
+    pub fn from_blocks_within(
+        blocks: BTreeMap<[i32; 3], String>,
+        min: [i32; 3],
+        max: [i32; 3],
+    ) -> Self {
         LightModel { blocks, min, max }
     }
 
@@ -471,7 +493,11 @@ impl LightModel {
     /// through light-passing cells; a cell's value is the max reached. A seed cell
     /// may itself be opaque (a glowstone/shroomlight block) — it still lights its
     /// passing neighbours.
-    fn flood(&self, effective_sky: u8) -> BTreeMap<[i32; 3], u8> {
+    ///
+    /// Public because it is the compiler's ONE light flood, and `delve-admit`'s
+    /// per-piece probe asks the same question of a single prefab. A second copy
+    /// of it is what shipped a probe with no sky term at all.
+    pub fn flood(&self, effective_sky: u8) -> BTreeMap<[i32; 3], u8> {
         let mut light: BTreeMap<[i32; 3], u8> = BTreeMap::new();
         let mut queue: VecDeque<([i32; 3], u8)> = VecDeque::new();
 

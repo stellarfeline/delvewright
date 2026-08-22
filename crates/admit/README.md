@@ -13,11 +13,11 @@ Deterministic (ADR-0006): no wall-clock, no unseeded RNG, no hash-order iteratio
 ```
 delve-admit [--json] <command>
 
-audit    <piece.nbt> [--allowlist <file>] [-o <report.json>]     # CI gate
+audit    <piece.nbt|manifest.json> [--allowlist <file>] [-o <report.json>]   # CI gate
 resolve-jigsaw <piece.nbt>                                       # neutralize foreign worldgen jigsaws
 socket   <piece.nbt> --pos x,y,z --facing <dir> [--opening w,h]  # carve a jigsaw socket
 anchor   <piece.nbt> --name <id> (--pos x,y,z | --region a:b) [--facing d] [--block b]
-lighting <piece.nbt> [--write] [--dark-threshold N]              # static light probe
+lighting <piece.nbt|manifest.json> [--write] [--dark-threshold N]           # static light probe
 catalog validate <card.json>...                                  # catalog card schema
 gallery  <dir> -o <out> [--id <id>] [--cols N]                   # browse world
 curate   <server.log> --layout <gallery-layout.json> [-o <r.json>]
@@ -39,6 +39,14 @@ Two checks over a converted `.nbt`, producing a machine-readable `AuditReport`:
   `delve-schem` conversion strip uses (reused, no drift).
 - **Palette allowlist** (`DW0730`): every palette block name must be in the
   (configurable) allowlist, so a reviewer sees any surprising block.
+
+**A zone that ships as a tile set is one building, and is handed over as its
+manifest.** A zone past the 48-per-axis cap is split into several `.nbt` plus a
+`<base>.json` manifest; `audit` and `lighting` take that manifest, reassemble the
+tiles and judge the zone as one thing — light crosses a packaging plane like any
+other cell, and a contract declared on the zone is zone-relative. Handing any
+whole-piece command **one tile** is `DW0739` (exit 2), because the alternative is
+a confident answer about a fifth of a building.
 
 **Jigsaw is intentionally not hard-forbidden here.** The conversion strip forbids
 jigsaw on *raw community schematics* (contributors don't bring their own sockets);
@@ -70,12 +78,18 @@ resolving after carving would dissolve them).
   the structure-form block entity, and appends the `connectors[]` entry — byte-for-
   byte the shape the generator emits, so the solver mates it like any library piece.
 - **`anchor`** adds a named point/gate anchor to the metadata.
-- **`lighting`** is a **static block-light BFS** (a faithful model of vanilla block
-  light: a 6-neighbour flood decrementing 1 per non-opaque step) measuring the min
-  over walkable floor cells. It is honest — the written `method` marks it a *static
-  estimate*, never a live probe. Validated against the generator's live-probe values
-  on the shipped tileset: exact or within ±2 on all 14 pieces (e.g. keep-gate-room
-  reads 9, matching the live probe exactly).
+- **`lighting`** floods the piece with the **compiler's own light model**
+  (`delvewright_compiler::light`, the one spec-0010 measures the assembled world
+  with) and reports the minimum over the floor cells a body can walk to from a
+  ground-level entrance. The piece is modelled **standing in open air**, so sky
+  light enters through its openings from the side: a colonnade is lit by the sky
+  and not by a lantern. A prefab has no campaign and therefore no hour, so the
+  probe measures at both ends of the engine's sky table — the profile is taken at
+  a clear night, the darkest state the engine models, and the daylight minimum is
+  reported beside it. The report states its **binding** (`standable_cells`,
+  `entry_cells`, `measured_cells`) and the sky each figure was taken at; a binding
+  of zero is `DW0752` and fails the command. It is honest — the written `method`
+  marks it a *static estimate*, never a live probe.
 
 Metadata (`<piece>.json`) is not a shape this crate defines. It is
 `delvewright_schem::prefab::PrefabMeta` (`prefab_id`, `structure`, `anchors`,
@@ -119,4 +133,6 @@ cargo test -p delvewright-admit    # audit fixtures, socket/light, catalog, gall
 ```
 
 Fixtures (`src/fixtures.rs`) are built in code — no network: a clean piece, a
-command-block piece, an NBT-bearing spawner, and a disallowed-palette piece.
+command-block piece, an NBT-bearing spawner, a disallowed-palette piece, and the
+roofed-but-open pair (a pavilion and a colonnade) that a light model without a
+sky term measures as pitch black.

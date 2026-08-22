@@ -189,13 +189,27 @@ fn lighting_of_a_manifest_probes_the_whole_zone() {
     );
     // Every artifact states its binding, and the binding is a subset chain.
     let b = &report["binding"];
-    let (standable, reachable, measured) = (
+    let (standable, measured) = (
         b["standable_cells"].as_u64().unwrap(),
-        b["reachable_cells"].as_u64().unwrap(),
         b["measured_cells"].as_u64().unwrap(),
     );
     assert!(measured > 0, "a zero binding is a finding, not a pass");
-    assert!(measured <= reachable && reachable <= standable, "{b}");
+    assert!(measured <= standable, "{b}");
+    // ...and the sky it assumed, because a light level without one is unreadable.
+    let sky = &report["assumed_sky"];
+    let (profile_sky, daylight) = (
+        sky["profile_taken_at"].as_i64().unwrap(),
+        sky["daylight"].as_i64().unwrap(),
+    );
+    assert!(
+        profile_sky < daylight,
+        "the profile is taken at the darker of the two skies: {sky}"
+    );
+    assert!(
+        report["min_light_daylight"].as_i64().unwrap()
+            >= report["measured_min_light"].as_i64().unwrap(),
+        "more sky is never less light: {report}"
+    );
 }
 
 /// `--write` on a manifest edits the ZONE's own metadata, and leaves the rest of
@@ -229,12 +243,14 @@ fn lighting_write_on_a_manifest_keeps_the_zones_provenance() {
     assert_eq!(after["structure_set"], before["structure_set"]);
     assert_eq!(after["anchors"], before["anchors"]);
     assert_eq!(after["lighting"]["profile"], "lit");
+    let method = after["lighting"]["method"].as_str().unwrap();
     assert!(
-        after["lighting"]["method"]
-            .as_str()
-            .unwrap()
-            .contains("roofed floor cell"),
+        method.contains("floor cell(s) reachable on foot"),
         "the method states the binding the measurement was taken over: {after}"
+    );
+    assert!(
+        method.contains("effective sky") && method.contains("full daylight"),
+        "...and the sky it was taken at, twice over: {after}"
     );
     // ...and no per-tile metadata was manufactured beside it.
     assert!(!dir.join("zone.x0y0z0.json").exists());
