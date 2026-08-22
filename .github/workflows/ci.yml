@@ -946,6 +946,13 @@ jobs:
           # `gallery-baseline.py` classifies a manifest mismatch partly by what the
           # diff touches, and that needs the merge base rather than a shallow head.
           # Which verdicts it can reach is its own business and is not listed here.
+          #
+          # It also RECOMPUTES the review delta from the commit that artifact names
+          # (spec-0039 §5), which reads `gallery/baseline/manifests.json` at an
+          # ancestor commit. A shallow checkout would not have it, and the tool
+          # refuses rather than treating an unreachable commit as an empty
+          # baseline — so this depth is load-bearing for a second gate now, not
+          # only for the classifier.
           fetch-depth: 0
       - uses: Swatinem/rust-cache@v2
         with: { key: gallery }
