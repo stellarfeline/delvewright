@@ -101,20 +101,21 @@ fn the_derived_whole_is_green_and_states_what_it_bound_to() {
             .join("\n")
     );
     let k = b.binding;
-    assert_eq!(k.seams, 5, "five traversal connections are allocated");
+    assert_eq!(k.seams, 6, "six traversal connections are allocated");
     assert_eq!(
-        k.walls, 4,
-        "five seams over four walls — the stair and the fall pierce one wall"
+        k.walls, 5,
+        "six seams over five walls — the stair and the fall pierce one wall, and \
+         the undercroft's own stair pierces the cell's floor"
     );
-    assert_eq!(k.nodes, 5, "five places are proven reached");
+    assert_eq!(k.nodes, 6, "six places are proven reached");
     assert!(
         k.standable > 500,
         "the crossing check classified {} standable cell(s), which is not a map",
         k.standable
     );
-    assert_eq!(k.pairs, 10, "five places make ten unordered pairs");
+    assert_eq!(k.pairs, 15, "six places make fifteen unordered pairs");
     assert_eq!(k.sightlines, 1);
-    assert_eq!(k.identities, 4);
+    assert_eq!(k.identities, 6);
     assert_eq!(
         k.identities_declared_only, 2,
         "the two region-extent identities have no byte-side referent"
@@ -133,9 +134,13 @@ fn the_derivation_states_what_it_massed() {
         .as_ref()
         .expect("a site plan derives a blockout");
     let k = b.binding;
-    assert_eq!(k.boxes, 5);
-    assert_eq!(k.seams, 5);
-    assert_eq!(k.stairs, 1, "one connection is built out of treads");
+    assert_eq!(k.boxes, 6);
+    assert_eq!(k.seams, 6);
+    assert_eq!(
+        k.stairs, 2,
+        "two connections are built out of treads — one across a wall, one down \
+         through a punched floor"
+    );
     assert_eq!(k.barred, 1, "one way is sealed at world load");
     assert_eq!(k.volumes, 2);
     assert!(
@@ -194,7 +199,7 @@ fn a_slid_opening_reddens_dw0836() {
         "the refusal must say which way it disagrees: {m}"
     );
     assert_eq!(
-        b.binding.seams, 5,
+        b.binding.seams, 6,
         "the binding is stated even when the check refuses"
     );
 }
@@ -245,7 +250,7 @@ fn a_bricked_up_place_reddens_dw0837() {
         m.contains("node/exit") && m.contains("standable cell(s)"),
         "the refusal names the place and what it offered: {m}"
     );
-    assert_eq!(b.binding.nodes, 5, "all five places were examined");
+    assert_eq!(b.binding.nodes, 6, "all six places were examined");
 }
 
 /// `DW0838`: walls one course tall, so a body hops between two places somewhere
@@ -276,7 +281,7 @@ fn a_low_wall_reddens_dw0838() {
         m.contains("allocated no seam for") && m.contains("can still walk to"),
         "the refusal names both places and a witness cell: {m}"
     );
-    assert_eq!(b.binding.pairs, 10);
+    assert_eq!(b.binding.pairs, 15);
 }
 
 // ---------------------------------------------------------------------------

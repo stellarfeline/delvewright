@@ -84,6 +84,23 @@
           21
         ],
         "node": "node/exit"
+      },
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "y": 59
+        },
+        "min": [
+          13,
+          21
+        ],
+        "node": "node/undercroft"
       }
     ],
     "datums": [
@@ -129,6 +146,22 @@
         "measure": {
           "datum": "datum/loft",
           "of": "datum-y"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/hall-height",
+        "measure": {
+          "node": "node/hall",
+          "of": "box-height"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/landing-height",
+        "measure": {
+          "node": "node/landing",
+          "of": "box-height"
         }
       }
     ],
@@ -194,6 +227,16 @@
         "edge": "edge/cell-exit",
         "face": "west",
         "opening": "arch"
+      },
+      {
+        "at": [
+          15,
+          22
+        ],
+        "edge": "edge/cell-undercroft",
+        "face": "down",
+        "opening": "passage",
+        "stair_in": "node/undercroft"
       }
     ],
     "sightlines": [
@@ -230,11 +273,11 @@
     "volumes": [
       {
         "id": "volume/bedrock",
-        "note": "The rock every place is set into.",
+        "note": "The rock the map is set on, cut away where the undercroft is sunk into it.",
         "region": {
           "extent": [
             64,
-            7,
+            3,
             64
           ],
           "min": [
