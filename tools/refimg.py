@@ -9,7 +9,8 @@ Two stages, two producers; do not conflate them.
 
 Output lands in a gitignored working directory (`.refimg/` by default), which is
 where a DRAFT belongs. An APPROVED reference goes somewhere else: it is copied
-into the campaign it belongs to — `design/reference/` beside its sidecar — and
+into the campaign it belongs to — `design/concept/` for one scene,
+`design/reference/` for a whole map, beside its sidecar in either case — and
 committed with the campaign in the content repo, because an approval that lives
 only in a gitignored directory is bound to nothing, and a later round authoring
 against it goes blind. Either way nothing here can move a delve's bytes

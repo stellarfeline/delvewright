@@ -38,9 +38,13 @@
 #
 #   consumed by: tools/refimg.py           ·   docs: docs/reference/tools.md
 #
-# Generation-time working material only: ref images are local, gitignored, never
-# shipped and never in the content repo, so image-model output licensing never
-# touches a shipped asset (ADR-0013) and nothing here can move a delve's bytes.
+# Output goes to a gitignored working directory, which is where a DRAFT belongs.
+# An APPROVED reference is copied into the campaign it belongs to — under
+# `design/concept/` for one scene, `design/reference/` for a whole map, beside
+# its sidecar — and committed with the campaign in the content repo. An
+# approval that lives only in a gitignored directory is bound to nothing. Either
+# way nothing here can move a delve's bytes (ADR-0006): no part of the toolchain
+# places, reads or compiles a reference image.
 #
 # NEVER put an API key in this file (or in delvewright.local.toml). `api_key_env`
 # is the NAME of an environment variable, read at call time, never stored or
@@ -52,12 +56,19 @@
 # A provider that cannot honour a flag REFUSES it — `--seed` on a seedless
 # provider is an error, never a dropped parameter.
 #
+# The FRAME below is a DEFAULT. It is a per-call property — a multi-view
+# reference wants a different frame per view — so `--aspect-ratio`,
+# `--image-size` and `--resolution` override it for one call, and the resolved
+# value is written into that image's sidecar. Each provider takes only its own
+# frame vocabulary and refuses the other's.
+#
 # [refimg]
 # provider = "gemini-native"                   # "gemini-native" | "ideogram-v3"
 # model = "gemini-3.1-flash-image"
 # api_key_env = "DELVEWRIGHT_GEMINI_API_KEY"   # one var per provider, not one shared
-# image_size = "2K"                            # gemini: 0.5K | 1K | 2K | 4K
-# aspect_ratio = "16:9"
+# image_size = "2K"                            # gemini: 512 | 1K | 2K | 4K
+# aspect_ratio = "16:9"                        # gemini: 1:1 2:3 3:2 3:4 4:3 4:5
+#                                              #   5:4 9:16 16:9 21:9 1:8 8:1 1:4 4:1
 # timeout_seconds = 180                        # optional (default 180)
 #
 # Ideogram instead — it is the one with a `seed` and a style-CODE anchor, but its
