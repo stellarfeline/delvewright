@@ -558,13 +558,18 @@ manifest.
 metadata it writes. A piece it calls `dark` is dark because the program placed
 no light — the grammar cannot warn you, so this step is where you find out.
 
-The minimum is taken over the **roofed floor a body can walk to from a
-ground-level entrance**, and the report states how many cells that was, out of
-how many are standable in the region box. Those two filters are what make the
-number readable: a free-standing building stands in a box with ground around it,
-and a minimum over the whole box is the unlit outdoors whatever the design does.
-A binding of zero is `DW0752` and fails the step — carve the sockets before
-probing a piece whose only way in is one. `--write` without metadata beside the
+The minimum is taken over the **floor a body can walk to from a ground-level
+entrance**, and the report states how many cells that was, out of how many are
+standable in the region box. That filter is what makes the number readable: the
+region box also holds the sealed voids between a vault and its roof, which no
+lantern reaches and no player ever stands in. The piece is measured standing in
+open air, so sky light reaches under a roof from the side — which is why an
+open-air piece grades like any other, and why a `dark` verdict on a colonnade is
+about the hour rather than about the openings. The profile is taken at a clear
+night, the darkest sky the engine models, and the daylight minimum is printed
+beside it: "black at night, lit by day" is the sentence to act on, and `dark`
+alone is not. A binding of zero is `DW0752` and fails the step — carve the
+sockets before probing a piece whose only way in is one. `--write` without metadata beside the
 piece is `DW0753`: the measurement still prints, but nothing is written, because
 a manufactured `spdx: UNKNOWN` skeleton is worse than an error.
 
