@@ -622,6 +622,25 @@ element of the piece's own contract the anchor lands in — `space:`, `no_body:`
 `via:`, `bar:` or `way:` and the element's name — resolved by whoever wrote the
 document, never by the reader.
 
+A **gate anchor** — the thing `close-gate`, `open-gate`, a `shortcut` and a
+`timed-gate` fill and clear — is declared either way and reads the same. Write
+`region` plus `block` on the anchor, or let a `resolves_to` of `bar:<region>`
+name the bar in the piece's own spatial contract, which already carries the cells
+and the block; an exporter writes the second form, so a piece that declares a
+contract needs nothing else. Both go through one reader, so the two cannot come
+apart. Three things are refused rather than guessed at: an anchor carrying both
+forms where they disagree, a `bar:` naming no bar the contract declares, and a
+bar whose boxes do not fill their own bounding box — a gate is a single box to
+everything that consumes one, and widening a scattered bar to its bounding box
+would fill or delete cells the contract never called bar. Declare such a bar as
+one box, or as boxes that tile one.
+
+A gate-anchor name is unique **per area**. Two of a campaign's areas providing
+one gate-anchor name is `DW0857`: the compiler resolves a gate anchor by name
+across every area and takes the first match, so nothing an author can see says
+which building the verb addresses. Pool members inside one area may share a name
+freely — that is what a pool is.
+
 The **spatial contract** is `{entry, spaces, no_body, edges, faces,
 no_body_majority_ack?}`, every box an inclusive `{from, to}` cell range in the
 coordinates of the building this document describes — the template's own cells
