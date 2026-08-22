@@ -1254,19 +1254,7 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
 
         // Reachability from root.
-        let adj: BTreeMap<&str, Vec<&str>> = tree
-            .nodes
-            .iter()
-            .map(|n| {
-                let outs = n
-                    .options
-                    .iter()
-                    .filter_map(|o| o.next.as_ref().map(|x| x.as_str()))
-                    .collect();
-                (n.id.as_str(), outs)
-            })
-            .collect();
-        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        //
         // Entry points: the tree's own `root`, plus (DSL v0.7, spec-0020) every
         // node some quest's `cast` ledger declares as this NPC's root. A ledger
         // root IS an entry point — right-click opens it directly once that quest
@@ -1274,7 +1262,11 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
         // Without this, retiring a premise root by swapping to a later one would
         // make the later one `DW0120`, and the ledger would be unusable for the
         // exact thing it exists to do.
-        let mut stack = vec![tree.root.as_str()];
+        //
+        // The walk itself is `NpcDialogue::reachable_from` — the one authority,
+        // shared with the cast ledger's `DW0858`, which asks the same question
+        // over a different root set.
+        let mut roots = vec![tree.root.as_str()];
         for q in &c.quests.content.quests {
             for (npc, entry) in &q.cast {
                 if npc.as_str() != tree.npc.as_str() {
@@ -1282,18 +1274,12 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 }
                 for p in entry.placements() {
                     if let Some(crate::stages::CastDialogue::Root(r)) = &p.dialogue {
-                        stack.push(r.as_str());
+                        roots.push(r.as_str());
                     }
                 }
             }
         }
-        while let Some(cur) = stack.pop() {
-            if seen.insert(cur)
-                && let Some(neis) = adj.get(cur)
-            {
-                stack.extend(neis.iter().copied());
-            }
-        }
+        let seen = tree.reachable_from(&roots);
         for (j, node) in tree.nodes.iter().enumerate() {
             if !seen.contains(node.id.as_str()) {
                 d.push(Diagnostic::error(
