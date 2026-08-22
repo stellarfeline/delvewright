@@ -353,6 +353,17 @@ fn no_source_file_outside_the_resolver_matches_an_entry_anchor_name() {
             "\"spawn\"",
             "shot ids in the view index's own fixtures",
         ),
+        // Arrived with the derived-map slice, which this sweep predates: the
+        // gym writes stage documents, and a layout graph's `entry` says which
+        // NODE a map is entered at. That is a question about the graph, and it
+        // is answered before any anchor exists — a map has one entry node
+        // whether or not anything is ever placed in it.
+        (
+            "gym.rs",
+            "\"entry\": entry_node,",
+            "the LAYOUT GRAPH's `entry` field — which node the map is entered \
+             at — which is a different vocabulary from an anchor's name",
+        ),
     ];
 
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
