@@ -1252,6 +1252,11 @@ re-rolled, where one unusable view is re-rolled alone for the cost of one image.
    elevation is not — which is per call and never a config edit.
 
 ```bash
+# the style note, written once and held constant for the whole series
+STYLE="Halgrave, in the same hand throughout: <palette, light, brushwork>. Each
+image is ONE single full-frame view of that place, filling the frame edge to
+edge: never a sheet, never a grid, never a panel, never an inset or a caption."
+
 # view 1 — from the prompt alone, framed as an elevation
 python3 tools/refimg.py --prompt-file v1-front.txt --style-note "$STYLE" \
     --aspect-ratio 16:9 --out .refimg/map-view1-front
