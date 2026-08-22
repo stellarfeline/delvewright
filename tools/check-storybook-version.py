@@ -4,8 +4,7 @@
 A campaign's storybook (`campaigns/<id>/README.md` in the content repo,
 spec-0007) is what a server host reads before running the delve. It must say
 which engine the delve needs — and that statement must be a fact about the
-campaign, not a hand-typed number that drifted three DSL versions ago (owner
-directive).
+campaign, not a hand-typed number that drifted three DSL versions ago.
 
 ## The marker
 
@@ -25,8 +24,8 @@ One line, near the top of the README, in exactly this form:
   second hand-typed copy.
 
 The marker is the ONE piece of internal machinery allowed in a player-facing
-README (owner ruling) — hence the host-facing phrasing. It is
-byte-identical in every localized edition, because it is a version stamp, not
+README — hence the host-facing phrasing. It is byte-identical in every
+localized edition, because it is a version stamp, not
 prose: a translated gloss may follow on the next line, but the stamp itself does
 not get translated (a mistranslated version number is a wrong version number).
 

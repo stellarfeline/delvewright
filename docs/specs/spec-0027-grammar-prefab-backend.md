@@ -105,7 +105,7 @@ authoring loop:
 
 The sheet consumes renders and needs no GPU or client jar, so it runs in CI. It
 orders the page by the spec-0028 §3 similarity score when one is supplied — and
-that score **RANKS only, never gates** (owner ruling): note that §3's word
+that score **RANKS only, never gates**: note that §3's word
 "filter" belongs to the §4 machine gates, which are a *correctness/craft* filter
 on the batch, and not to the similarity score, which may never remove a
 candidate from the owner's page.

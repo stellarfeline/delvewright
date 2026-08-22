@@ -146,7 +146,7 @@ fn boss_tier_wave_with_rest_reseat_is_dw0499() {
 }
 
 /// **Control.** An `elite`-tier wave with `respawns_on_rest: true` stays
-/// silent — only `boss` is the owner-ruled tier, and elite fights are re-seated
+/// silent — only `boss` is the tier the rule covers, and elite fights are re-seated
 /// souls encounters by design (spec-0016 §1's whole contract).
 #[test]
 fn elite_tier_wave_with_rest_reseat_stays_silent() {

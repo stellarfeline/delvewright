@@ -4,9 +4,8 @@ finding's general form is not a live, binding check on THAT build.
 
 ## Why this exists, and why a green ladder does not discharge it
 
-The owner's standing directive: *her playtest is CONTENT QC only; every bug a
-compiler or a test could catch must already be fixed before she touches a
-build.* `nobodys-cave-island` cost her twenty-two rounds of finding
+The standing obligation: a staged build is for CONTENT QC only, so every bug a
+compiler or a test could catch is already fixed before anyone plays it. `nobodys-cave-island` cost her twenty-two rounds of finding
 MECHANICAL defects. The reason the existing ladder cannot promise this is that
 most of those findings were things **no check existed for at the time**. So
 "everything is green" and "she will not find a mechanical bug" are different
@@ -56,8 +55,8 @@ Plus one the ledger's own shape can produce:
 `docs/reference/playtest-methodology.md` rule 2 permits one escape and this
 honours it exactly, no wider: a finding may close with *"a declared, justified
 reason none is possible"*. Such a row carries `disposition` of `no-machine-form`
-(prose quality, a judgement no compiler can make) or `owner-ruled` (she ruled it
-not a defect), plus a `justification` this tool requires to be present and
+(prose quality, a judgement no compiler can make) or `not-a-defect` (judged not
+to be a defect at all), plus a `justification` this tool requires to be present and
 substantive. Those rows do not fail the gate — they are printed in their own
 section with their justification, and their COUNT is in the headline, because
 rule 4 makes each one a standing risk item at every staging review. `--strict`
@@ -156,7 +155,7 @@ RED_VERDICTS = (
 EXEMPT_VERDICTS = ("DECLARED-UNCOVERABLE", "OUT-OF-STAGE")
 PASS_VERDICTS = ("BOUND",)
 
-VALID_DISPOSITIONS = ("no-machine-form", "owner-ruled")
+VALID_DISPOSITIONS = ("no-machine-form", "not-a-defect")
 MIN_JUSTIFICATION = 24  # chars — a justification has to say something
 
 

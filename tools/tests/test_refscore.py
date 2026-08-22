@@ -9,7 +9,7 @@ Two things are proven here, and the second is the one that matters.
    `urlopen`, and the real backends are lazily imported so nothing here loads
    PyTorch.
 
-2. **The score RANKS; it never GATES** (owner ruling, spec-0028 §3). This tool's
+2. **The score RANKS; it never GATES** (spec-0028 §3). This tool's
    half of that is a *shape* obligation: it emits exactly one score per
    candidate and no verdict of any kind. A test asserts the emitted document
    scores every candidate and carries no threshold/keep/reject surface, so the

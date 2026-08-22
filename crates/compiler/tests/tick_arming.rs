@@ -296,7 +296,7 @@ fn a_campaign_declared_out_of_arming_order_still_arms_first() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The other half of the owner's ruling: a trigger fired before its quest is
+/// The other half of the rule: a trigger fired before its quest is
 /// armed is DISCARDED, never banked.
 ///
 /// The reset line carries no guard at all. If it ever grew one, a click fired

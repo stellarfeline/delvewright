@@ -84,7 +84,7 @@ result immediately:
   computed by the LLM from path length at a default dolly speed when the shot
   is authored; convergence is by watching replays, never by measuring the
   creator's wall-clock (command gaps include typing, observing, and retries —
-  noise, not pace; owner ruling).
+  noise, not pace).
 - **`/trigger dw.done`** — the single harvest: the overlay `say`-stamps the
   **entire current proposal** as machine-readable `[DelveShot]` lines (one
   per shot: path, look_at, seconds) — the same log channel and pairing model

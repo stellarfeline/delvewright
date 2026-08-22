@@ -384,7 +384,7 @@ legitimately mostly roof. The honest form is to **demote the majority to a
 measurement in the verdict block and delete `no_body_majority_ack`**, leaving
 §2.6 — which binds every region, one at a time, with a demand each — as the only
 gate over out-of-walk floor. That deletes a `Program` field: a `dsl_version`
-bump and an adoption round on every active campaign, so it is the owner's
+bump and an adoption round on every active campaign, so it is a versioned
 decision and it is recorded here rather than taken.
 
 ### 6.2 An opening is claimed, never discovered
