@@ -3770,7 +3770,7 @@ impl PressAnswer {
 /// **What happens when the campaign leaves a pressable body silent.**
 ///
 /// The policy is a property of the **body class**, not of this function, so
-/// extending an owner ruling from one class to another is a changed arm in
+/// extending the policy from one class to another is a changed arm in
 /// [`press_answer_sites`] rather than a re-architecture. The site that builds the
 /// answers is shared; only this decides who supplies the wording.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

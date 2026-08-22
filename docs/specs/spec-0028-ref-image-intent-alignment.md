@@ -7,8 +7,8 @@
   0012 (skill front-end)
 - **Depends on**: spec-0027 (the builder this step feeds)
 - **Non-goals**: shipping any image; per-block image reconstruction; the
-  all-skills interaction-convention sweep (deferred by owner ruling — this
-  spec implements only this step's own guidance flow).
+  all-skills interaction-convention sweep (deferred — this spec implements
+  only this step's own guidance flow).
 
 ## 1. The step
 
@@ -34,7 +34,7 @@ reconstructed block-for-block (no voxelization path). The grammar program
 remains the artifact of record. Machine use of the image is limited to §3
 ranking.
 
-## 3. Ranking (rank-only, owner ruling)
+## 3. Ranking (rank-only)
 
 Candidate renders (existing deterministic renderer) are scored against the
 reference with the license-verified metrics (open_clip MIT / VQAScore

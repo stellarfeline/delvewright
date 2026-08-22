@@ -730,7 +730,7 @@
       "finding": "a climactic beat was over in seven seconds and read as nothing having happened",
       "general_form": "none: beat duration is a pacing judgement",
       "id": "isl-21",
-      "justification": "How long a beat should last is pacing, and the owner has ruled explicitly (round 16) that any duration ceiling is a ceiling and never a target -- one beat's correct pause is zero. The machine can only prove a pause is not forced dead air the player cannot skip, never that a beat is long enough to land. Standing content-QC item.",
+      "justification": "How long a beat should last is pacing, and any duration ceiling is a ceiling and never a target -- one beat's correct pause is zero. The machine can only prove a pause is not forced dead air the player cannot skip, never that a beat is long enough to land. Standing content-QC item.",
       "round": 5,
       "triage": "content"
     },
@@ -1282,11 +1282,11 @@
     {
       "campaign": "nobodys-cave-island",
       "carrier": null,
-      "disposition": "owner-ruled",
+      "disposition": "not-a-defect",
       "finding": "a request that a hostile species patrol declared routes could not be honoured for that species",
       "general_form": "the constraint is stated to the author rather than discovered: patrol NBT is raider-family only",
       "id": "isl-48",
-      "justification": "Owner-ruled not a defect: lane patrols are Raider NBT and the compiler refuses them on any other species (DW0382), which is the constraint being reported to the author at authoring time rather than found in play. Reported back to the owner in round 14 and not contested. Carried as a ruled row so that a future campaign asking the same question finds the answer here instead of re-asking it.",
+      "justification": "Not a defect: lane patrols are Raider NBT and the compiler refuses them on any other species (DW0382), which is the constraint being reported to the author at authoring time rather than found in play. Reported in round 14 and not contested. Carried as a ruled row so that a future campaign asking the same question finds the answer here instead of re-asking it.",
       "round": 13,
       "triage": "capability"
     },
@@ -1318,9 +1318,9 @@
       "carrier": null,
       "disposition": "no-machine-form",
       "finding": "a stealth beat held the player in roughly ten seconds of forced dead air before it armed",
-      "general_form": "none: a pause is a pacing judgement, and the owner has ruled that the ceiling is never a target",
+      "general_form": "none: a pause is a pacing judgement, and the ceiling is never a target",
       "id": "isl-50",
-      "justification": "Owner ruling (round 16, corrected same day): the reading-pause ceiling governs places where a reading pause exists and is never a target -- the correct value for this beat was zero. A machine form would have to know which pauses are reading pauses, which is the judgement itself. Standing content-QC item.",
+      "justification": "Ruled in round 16 and corrected the same day: the reading-pause ceiling governs places where a reading pause exists and is never a target -- the correct value for this beat was zero. A machine form would have to know which pauses are reading pauses, which is the judgement itself. Standing content-QC item.",
       "round": 15,
       "triage": "content"
     },

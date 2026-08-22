@@ -213,8 +213,7 @@ honored).
 - Block-power polling for quest state (hack; excluded).
 - Look-at / break-attempt triggers (no vanilla primitive; same exclusion as
   spec-0008 §7).
-- Per-area checkpoint respawn / respawn anchors — split out as spec-0012
-  (owner decision 2).
+- Per-area checkpoint respawn / respawn anchors — split out as spec-0012.
 - Trap "balance" tuning beyond `lethality` + payload; randomized/timed traps.
 
 ## Resolved decisions

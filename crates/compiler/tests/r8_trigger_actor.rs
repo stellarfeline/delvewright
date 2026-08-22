@@ -13,7 +13,7 @@
 //!    place the `minecraft:dig_cooldown` brain memory is seeded. Proven on a live
 //!    pinned 1.21.11 server: a bare summon gets `dig_cooldown ttl:1200`, a summon
 //!    with `{}` gets an empty brain and digs itself out of the world in ~5s.
-//! 3. **Aggro lock** (owner directive): a hostile unleashed from a click trigger
+//! 3. **Aggro lock**: a hostile unleashed from a click trigger
 //!    comes for the player who struck it, through the warden's own vanilla `anger`
 //!    NBT — the one species-level aggro primitive that survives a tick on 1.21.11.
 //! 4. **`despawn-actor` `vanish`** relocated to the command source's column (world
