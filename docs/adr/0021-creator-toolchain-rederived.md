@@ -267,7 +267,7 @@ A piece stays non-Rust exactly when one of two things is true:
 - **(a) it is an upstream wheel** — reimplementing it is the reinvention the
   owner forbids: Chunky (GPL-3.0 JAR, invoked out-of-process, never linked),
   mineflayer (TypeScript harness, validation tier only), `delve_skin`'s
-  skinpy/skinview3d lineage (Python, ADR-0018 §3 owner ruling), deepslate
+  skinpy/skinview3d lineage (Python, ADR-0018 §3), deepslate
   (§4);
 - **(b) its runtime is not ours to choose** — browser pages run JS; CI checks
   run where `python3` is the runner's guarantee and cross-platform is

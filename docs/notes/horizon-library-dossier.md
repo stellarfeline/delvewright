@@ -3,7 +3,7 @@
 Research base for spec-0026: five horizons beyond
 `ocean` — sky, flatland, valley, cherry-valley, summit. This dossier holds the
 algorithm survey (with licenses), the MC 1.21.11 constraint audit, the perf
-budget math, and the analyses behind the spec's open owner decisions. The spec
+budget math, and the analyses behind the spec's open decisions. The spec
 is the contract; this file is the evidence.
 
 Terminology is aligned with the M6 macro-terrain research line (journey-graph
@@ -171,8 +171,8 @@ void). Zero new emission machinery.
   of existence at the fog line; conversely every generated block beyond it is
   dead weight on the Pi. This couples `vista_radius` to the shipped
   server.properties `view-distance` — an explicit spec parameter, and the
-  campaign README should state the client floor (owner decision; player-facing
-  docs may carry it per the audience-separation rule).
+  campaign README should state the client floor (player-facing docs may carry
+  it per the audience-separation rule).
 - **PackTest parity**: the toolserver/delve images derive worldgen
   from emitted server.properties. New horizons emit `level-type` +
   `generator-settings` through the same channel and extend

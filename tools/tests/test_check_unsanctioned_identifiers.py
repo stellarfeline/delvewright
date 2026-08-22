@@ -19,8 +19,16 @@ ways a green here could mean nothing:
   * examining zero files reds, because a check that matched nothing must never
     look like a check that passed;
   * the things that merely LOOK like citations — a colour literal, a
-    single-digit row reference, a plain date with nobody attached — do not red,
-    or the gate gets loosened by whoever hits the false positive first.
+    single-digit row reference, a plain date with nobody attached, an ordinary
+    sentence about a decision — do not red, or the gate gets loosened by whoever
+    hits the false positive first.
+
+The last of those carries most of the weight for `role-attribution`, the kind
+that answers the half of the rule the others do not: no repository artifact
+records WHO decided something. A gate that reddened every sentence containing
+the word *decision* would be worse than the gap it closes, so the person half
+and the decision half of the cue must be BOUND to each other, and the tests
+below drive both directions of that binding.
 """
 
 from __future__ import annotations
@@ -128,6 +136,65 @@ def test_a_dated_attribution_is_a_finding(tree, capsys):
     assert "2026-08-03" in out
 
 
+@pytest.mark.parametrize("line", [
+    "The reset stays unconditional on purpose (owner ruling): a trigger fired.\n",
+    "Aggro lock (owner directive, round 8): the hostile comes for the striker.\n",
+    "A corridor-only piece exposes no wave seat (owner decision).\n",
+    "The score RANKS and never gates, per the owner's plane ruling.\n",
+    "A row may close with `owner-ruled` and a justification.\n",
+    "The ceiling is never a target, because the owner has ruled so.\n",
+    "She ruled it not a defect, so the row closes.\n",
+    "The bonfire offers two options, by the ruling of the owner.\n",
+])
+def test_a_dateless_role_attribution_is_a_finding(tree, capsys, line):
+    """The half the gate was blind to. The person cue existed only to tell an
+    attributed date from a harmless one, so removing the date turned a finding
+    green — and removing the date is precisely the wrong repair, because it
+    deletes the half a reader could at least place."""
+    tree.commit({"docs/a.md": line})
+    assert tree.checker().main([]) == 1
+    assert "role-attribution" in capsys.readouterr().out
+
+
+def test_deleting_the_date_does_not_make_an_attribution_green(tree, capsys):
+    """Both spellings of one sentence, in one tree: the dated citation is a
+    finding for the date, the dateless one is a finding for the person."""
+    tree.commit({
+        "docs/a.md": "`requires_item` is HELD (owner ruling, 2026-08-03).\n",
+        "docs/b.md": "`requires_item` is HELD (owner ruling).\n",
+    })
+    assert tree.checker().main([]) == 1
+    out = capsys.readouterr().out
+    assert "docs/a.md:1" in out and "dated-attribution" in out
+    assert "docs/b.md:1" in out and "role-attribution" in out
+
+
+def test_an_attribution_does_not_bind_across_a_blank_line(tree, capsys):
+    """The same paragraph rule `is_attribution` holds. Two unrelated facts, one
+    ending in a role and the next opening on a decision, are not an attribution
+    — and a pattern that crossed the gap would red every page with a heading."""
+    tree.commit({"docs/a.md": "The page the reviewer drives.\n\nDecisions live in an ADR.\n"})
+    assert tree.checker().main([]) == 0
+    assert "OK" in capsys.readouterr().out
+
+
+def test_a_wrapped_attribution_is_still_one(tree, capsys):
+    """Prose wraps, and a pattern clipped to a single line goes quiet on the
+    commonest spelling of the thing it is looking for."""
+    tree.commit({"docs/a.md": "The marker is the one piece of machinery allowed (owner\ndirective).\n"})
+    assert tree.checker().main([]) == 1
+    assert "role-attribution" in capsys.readouterr().out
+
+
+def test_the_message_says_the_repair_is_to_state_the_rule_impersonally(tree, capsys):
+    """A role attribution repaired by deleting the date is not repaired."""
+    tree.commit({"docs/a.md": "Composition is art direction (owner ruling).\n"})
+    assert tree.checker().main([]) == 1
+    out = capsys.readouterr().out
+    assert "impersonally" in out
+    assert "Deleting the date is not the repair" in out
+
+
 def test_a_task_id_is_one_citation_not_two(tree, capsys):
     """`task #41` must not also be billed as pull request 41."""
     tree.commit({"docs/a.md": "See task #41.\n"})
@@ -146,6 +213,43 @@ def test_a_plain_date_is_not_an_attribution(tree, capsys):
         "docs/adr/0009-pin.md": "- **Date**: 2026-07-29\n\n1.21.11 shipped 2025-12-09.\n",
         "docs/ACKNOWLEDGEMENTS.md": "| gl-matrix | MIT | Licence verified 2026-08-14 |\n",
     })
+    assert tree.checker().main([]) == 0
+    assert "OK" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("line", [
+    # Every one of these is ordinary prose in this repository today.
+    "Specs stay historical decision records; this file is what it does today.\n",
+    "An architecture decision record is a sanctioned identifier.\n",
+    "The pool name is a decision taken once, at the start.\n",
+    "The campaign owner's id is stamped into the manifest.\n",
+    "The reviewer opens the contact sheet and picks a candidate.\n",
+    "The route planner ruled out a diagonal, so the grammar has none.\n",
+    "A gate that binds to nothing has decided nothing.\n",
+    "Flagged for the owner rather than decided here.\n",
+    '"Read the far side too," she says.\n',
+    "Her lantern is the only light in the rope room.\n",
+])
+def test_ordinary_prose_about_the_software_is_not_an_attribution(tree, capsys, line):
+    """The half that is easy to skip. A gate that reds every use of the word
+    *decision*, or every sentence with the word *owner* in it, is worse than the
+    gap it closes: it teaches the people who see it that this red means nothing,
+    and the first person to hit it loosens it. None of these pairs a person with
+    a decision, so none of them is a finding."""
+    tree.commit({"docs/a.md": line})
+    assert tree.checker().main([]) == 0
+    assert "OK" in capsys.readouterr().out
+
+
+def test_a_date_inside_a_path_is_not_dated_by_a_nearby_plural(tree, capsys):
+    """Measured, not assumed. The role kind's cue carries plurals because
+    `owner decisions` is an attribution when the two words are bound. Carrying
+    them in the DATED cue instead — where either half alone is enough — makes
+    CLAUDE.md's own sentence a dated attribution on the strength of a date
+    inside a path a reader can open. The plurals live only in the bound halves."""
+    tree.commit({"CLAUDE.md":
+                 "Founding decisions live in `docs/adr/` and originate from the\n"
+                 "kickoff handoff (`docs/handoff-2026-07-29.md`).\n"})
     assert tree.checker().main([]) == 0
     assert "OK" in capsys.readouterr().out
 

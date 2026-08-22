@@ -343,7 +343,7 @@ fn a_line_with_a_real_opening_is_silent() {
     );
 }
 
-/// The capability model, at the level that matters to the owner's ruling:
+/// The capability model, at the level that matters to the rule:
 /// spiders really do climb in vanilla, so the rule may not be "no body crosses a
 /// wall". It is "no body makes a move THIS body cannot make", and the table says
 /// which is which.

@@ -80,8 +80,8 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
     }
 }
 
-/// An un-telegraphed ambush validates clean. This is the owner ruling encoded as
-/// a test: the engine never demands a tell.
+/// An un-telegraphed ambush validates clean. This is the rule encoded as a
+/// test: the engine never demands a tell.
 #[test]
 fn untelegraphed_ambush_validates_clean() {
     let diags = check_campaign(&campaign_with_quests(QUESTS_V06));
