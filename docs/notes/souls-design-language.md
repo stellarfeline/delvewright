@@ -176,8 +176,8 @@ phrasing.
 ## 2. 初见杀 — the first-encounter kill, taxonomy
 
 The un-telegraphed first kill is core vocabulary (spec-0016 §3). What the
-research sharpens is *which axis* separates a beloved
-one from a resented one — and it is **not** telegraphing.
+research sharpens is *which axis* separates a beloved one from a resented
+one — and it is **not** telegraphing.
 
 ### 2.1 The A/B pair that defines the line
 
