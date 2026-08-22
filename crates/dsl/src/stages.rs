@@ -7838,3 +7838,111 @@ fn campaign_effect_deep<'a>(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// The spine authority (`QuestPlanContent::spine`)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod spine_tests {
+    use super::QuestPlanContent;
+
+    /// Build a plan from `(id, deps)` pairs plus a finale. JSON rather than a
+    /// struct literal on purpose: a field added to `PlannedQuest` later must not
+    /// red these tests for a reason that has nothing to do with the spine.
+    fn plan(finale: &str, quests: &[(&str, &[&str])]) -> QuestPlanContent {
+        let quests: Vec<serde_json::Value> = quests
+            .iter()
+            .map(|(id, deps)| {
+                serde_json::json!({
+                    "id": id,
+                    "goal": "g",
+                    "area": "area/keep",
+                    "npcs": [],
+                    "depends_on": deps,
+                    "mandatory": true,
+                    "act": 1,
+                })
+            })
+            .collect();
+        serde_json::from_value(serde_json::json!({
+            "finale": finale,
+            "quests": quests,
+        }))
+        .expect("plan fixture parses")
+    }
+
+    fn sorted(p: &QuestPlanContent) -> Vec<String> {
+        p.spine().into_iter().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn a_chain_is_wholly_spine() {
+        let p = plan(
+            "quest/c",
+            &[
+                ("quest/a", &[]),
+                ("quest/b", &["quest/a"]),
+                ("quest/c", &["quest/b"]),
+            ],
+        );
+        assert_eq!(sorted(&p), ["quest/a", "quest/b", "quest/c"]);
+    }
+
+    #[test]
+    fn a_quest_the_finale_does_not_depend_on_is_off_the_spine() {
+        // Exactly the `DW0132` shape: the plan does not converge, and the spine
+        // is the half that does. The authority answers, it does not refuse — the
+        // refusal is `validate`'s, built on this answer.
+        let p = plan("quest/end", &[("quest/end", &[]), ("quest/side-trip", &[])]);
+        assert_eq!(sorted(&p), ["quest/end"]);
+    }
+
+    #[test]
+    fn a_diamond_counts_the_join_once() {
+        let p = plan(
+            "quest/d",
+            &[
+                ("quest/a", &[]),
+                ("quest/b", &["quest/a"]),
+                ("quest/c", &["quest/a"]),
+                ("quest/d", &["quest/b", "quest/c"]),
+            ],
+        );
+        assert_eq!(sorted(&p), ["quest/a", "quest/b", "quest/c", "quest/d"]);
+    }
+
+    #[test]
+    fn a_cycle_terminates_and_yields_a_set() {
+        // `DW0130` refuses this plan, but the authority is asked before that
+        // verdict is known (the layout binding prints on an erroring campaign),
+        // so it must terminate rather than hang.
+        let p = plan(
+            "quest/b",
+            &[("quest/a", &["quest/b"]), ("quest/b", &["quest/a"])],
+        );
+        assert_eq!(sorted(&p), ["quest/a", "quest/b"]);
+    }
+
+    #[test]
+    fn a_dangling_dependency_is_reported_and_expands_no_further() {
+        // The deliberate difference between the two derivations this function
+        // replaced. `validate` pruned undeclared ids before walking; the
+        // authority does not, because pruning them would make the set disagree
+        // with the document, and naming an id the plan does not declare is
+        // `DW0112`'s finding rather than the spine's.
+        let p = plan("quest/end", &[("quest/end", &["quest/ghost"])]);
+        assert_eq!(sorted(&p), ["quest/end", "quest/ghost"]);
+    }
+
+    #[test]
+    fn an_undeclared_finale_is_the_whole_spine() {
+        // `DW0131`'s shape. The answer is honest about the document: nothing the
+        // plan declares is on the spine of a finale it never declared.
+        let p = plan(
+            "quest/ghost",
+            &[("quest/a", &[]), ("quest/b", &["quest/a"])],
+        );
+        assert_eq!(sorted(&p), ["quest/ghost"]);
+    }
+}
