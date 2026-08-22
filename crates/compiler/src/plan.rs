@@ -144,6 +144,61 @@ pub fn surround_rect(campaign: &Campaign) -> Option<(crate::surround::SceneRect,
 pub const DW_SURROUND_NO_REGION: delvewright_dsl::DwCode =
     delvewright_dsl::diagnostic::codes::SURROUND_NO_REGION;
 
+/// **The columns of the declared region a piece already floors** — the set the
+/// surround's moat must leave untouched.
+///
+/// A column is floored when anything the plan writes occupies a cell at or
+/// below the gap-floor datum: the piece owns its own ground there, holes and
+/// basements included, and ambient ground poured into it would fill a cellar.
+/// A column whose content is entirely ABOVE the datum is NOT floored — an
+/// elevated storey has the valley floor running on underneath it, which is what
+/// makes a box garden a place rather than a set of boxes.
+///
+/// Read from the placement rectangles rather than from block contents, and the
+/// direction of that approximation is the safe one: an over-claimed column is
+/// left to the piece, so the worst case is a seam the moat does not fill, never
+/// ambient ground written through authored geometry.
+fn ground_columns(
+    areas: &[AreaPlacement],
+    region: &crate::surround::SceneRect,
+) -> BTreeSet<(i32, i32)> {
+    let datum = crate::horizon::VALLEY_GAP_FLOOR_TOP_Y;
+    let mut out = BTreeSet::new();
+    let mut claim = |min: [i32; 3], max: [i32; 3]| {
+        if min[1] > datum {
+            return;
+        }
+        for x in min[0].max(region.min_x)..=max[0].min(region.max_x) {
+            for z in min[2].max(region.min_z)..=max[2].min(region.max_z) {
+                out.insert((x, z));
+            }
+        }
+    };
+    for area in areas {
+        for piece in &area.pieces {
+            let (pmin, pmax) = piece.bbox();
+            claim(pmin, pmax);
+        }
+        for fill in area.mass.iter().chain(&area.seals) {
+            if fill.block.starts_with("minecraft:air") {
+                continue; // a clear authors nothing; it removes
+            }
+            let lo = [
+                fill.from[0].min(fill.to[0]),
+                fill.from[1].min(fill.to[1]),
+                fill.from[2].min(fill.to[2]),
+            ];
+            let hi = [
+                fill.from[0].max(fill.to[0]),
+                fill.from[1].max(fill.to[1]),
+                fill.from[2].max(fill.to[2]),
+            ];
+            claim(lo, hi);
+        }
+    }
+    out
+}
+
 /// Build the horizon's surround, or `None` for a base that declares a world
 /// generator instead of building one.
 ///
@@ -200,6 +255,28 @@ fn build_surround(
     // already applied — the SAME code, because it is the same rule, and a
     // second code here would be two names for one refusal.
     .map_err(|m| PlanError::new(delvewright_dsl::diagnostic::codes::HORIZON_PARAM, m))?;
+
+    // **The moat**, and until this call it was a method nothing invoked.
+    //
+    // The surround rings the region a site plan DECLARES, and a plan under-fills
+    // its own region while it is being built — which is correct and is the whole
+    // point of declaring an extent up front. Nobody had looked at what "reserved
+    // and not yet built" looks like from inside, and it looks like a hole: a
+    // perimeter trench of literal void 3 to 12 blocks wide between the built map
+    // and the gap floor, open top to bottom, with 26 full-width transects of the
+    // declared region empty end to end.
+    //
+    // The answer was already written, tested and documented as a ruling on
+    // `ValleySurround::moat`, and had never been wired to anything — a general
+    // mechanism, green in its own unit test, emitting nothing. It belongs to the
+    // surround rather than to `volumes[] role: ground` (which would put the
+    // obligation on every author, for a hole the engine creates) and rather than
+    // to a refusal on an under-filled region (which would forbid the ordinary
+    // state of a plan mid-build, and spec-0049 exists to make that state legal).
+    let mut valley = valley;
+    let (moat_tiles, moat_starts) = valley.moat(&ground_columns(areas, &scene));
+    valley.tiles.extend(moat_tiles);
+    valley.gap_floor_starts.extend(moat_starts);
 
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut templates: Vec<PlacedTemplate> = Vec::new();

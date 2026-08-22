@@ -995,6 +995,22 @@ jobs:
             --build-out gallery-out-en \
             --frames gallery-frames
 
+      # The other half of the render surface, and until this ran nothing in this
+      # repository invoked it. The step above renders FRAMES of declared views
+      # through `snapshot`; this runs the whole-map illustration path — `delvec
+      # scene` and `delvec panorama` — which reads the same `render-plan.json`
+      # through a different reader, and had been refusing every valley campaign
+      # outright for as long as the base existed. It builds one gallery point per
+      # horizon base the engine's own schema declares, so a base added later reds
+      # this until something renders it.
+      - name: the whole-map illustration path runs, on every horizon
+        if: '!cancelled()'
+        run: |
+          python3 tools/check-whole-map-render.py \
+            --delvec target/debug/delvec \
+            --prefabs gallery-prefabs \
+            --work whole-map-render
+
       - name: emission baseline + expected-warnings ledger
         if: '!cancelled()'
         run: |

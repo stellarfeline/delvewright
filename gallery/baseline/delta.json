@@ -1,41 +1,6 @@
 {
-  "added": [
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t0.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t1.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t10.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t11.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t12.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t13.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t2.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t3.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t4.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t5.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t6.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t7.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t8.nbt",
-    "site-plan.en:datapack/data/gallery/structure/horizon/valley/t9.nbt"
-  ],
-  "changed": [
-    "easy.en:creator-datapack/layout.json",
-    "hard.en:creator-datapack/layout.json",
-    "ocean-horizon.en:creator-datapack/layout.json",
-    "primary.en:creator-datapack/layout.json",
-    "primary.zh-cn:creator-datapack/layout.json",
-    "site-plan.en:creator-datapack/layout.json",
-    "site-plan.en:critical-path.json",
-    "site-plan.en:datapack/data/gallery/function/place_all.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/place_verify.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/setup.mcfunction",
-    "site-plan.en:datapack/data/gallery/function/setup_finish.mcfunction",
-    "site-plan.en:render-plan.json",
-    "site-plan.en:validation/critical-path-waypoints.json",
-    "void-horizon.en:creator-datapack/layout.json"
-  ],
-  "classes": {
-    "creator overlay": 7,
-    "datapack function": 18,
-    "other": 2,
-    "validation ledger": 1
-  },
+  "added": [],
+  "changed": [],
+  "classes": {},
   "removed": []
 }

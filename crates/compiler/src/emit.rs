@@ -791,11 +791,12 @@ pub fn build_with_warnings(
             );
 
             // **The surround bounds the map, proven rather than promised**
-            // (`DW0854`). The generator quantizes every surround surface to
-            // even steps so no two adjacent columns differ by exactly 1, which
-            // means vanilla's 1-block auto-step has nothing to take and the
-            // inner slope cannot be climbed. That is an argument about the
-            // generator; this is a measurement of the world.
+            // (`DW0854`). The generator guarantees that no surround column
+            // stands exactly one block above the gap-floor datum, so the
+            // floor's own walkable component is bounded above by the datum and
+            // the first thing outward of it is a two-block riser, which
+            // vanilla's auto-step and jump cannot take. That is an argument
+            // about the generator; this is a measurement of the world.
             //
             // It has to be a second measurement, because a great deal happens
             // between the two: gravity settles, a stage-7 edit script may carve,
@@ -819,8 +820,8 @@ pub fn build_with_warnings(
                             "the surround's inner slope has grown a standable staircase: a walk \
                              starting on the gap floor stands at [{}, {}, {}], outward of the \
                              crest line, so the landform no longer bounds the map. The generator \
-                             quantizes every surround surface to 2-block steps and keeps trees \
-                             off the inner wall, so a 1-block riser there was put back by \
+                             leaves nothing standing one block over the gap floor and keeps trees \
+                             off the inner wall, so a step up from the floor was put back by \
                              something later — an edit batch, a gravity settle, or a palette \
                              whose blocks are a different height. It flooded from {} standable \
                              gap-floor cells",
