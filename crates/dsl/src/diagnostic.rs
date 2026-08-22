@@ -523,6 +523,14 @@ pub mod codes {
     /// (v0.6) `boundary.margin` outside the `0..=64` range (spec-0013):
     /// validation-tier (exit 1).
     pub const BOUNDARY_MARGIN: DwCode = DwCode::every_version("DW0321");
+    /// A stage-1 `horizon` param is out of range, or is a param of a base other
+    /// than the one declared (spec-0026): validation-tier (exit 1).
+    ///
+    /// `Since(16)` because it can only fire on a declaration the surface below
+    /// 0.16.0 has no spelling for — the two names that predate the horizon
+    /// library carry no params at all, so a campaign that never opted in binds
+    /// zero of this.
+    pub const HORIZON_PARAM: DwCode = DwCode::since("DW0853", 16);
     /// (v0.6) A `sequence` effect is nested inside another `sequence` (directly, or
     /// reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse
     /// (spec-0014). Flatten the inner steps into the outer timeline.

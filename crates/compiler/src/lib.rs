@@ -74,6 +74,7 @@ pub mod faces;
 pub mod flow;
 pub mod gates;
 pub mod gym;
+pub mod horizon;
 pub mod integrity;
 pub mod lethal;
 pub mod light;

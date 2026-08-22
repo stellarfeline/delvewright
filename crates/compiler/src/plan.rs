@@ -69,13 +69,17 @@ pub const ISLAND_WATERLINE_Y: i32 = 2;
 /// ashore.
 pub const OCEAN_BASE_Y: i32 = SEA_LEVEL - ISLAND_WATERLINE_Y;
 
-/// The area-origin Y for a campaign's horizon (spec-0013). `void` (default/absent)
-/// keeps [`BASE_Y`], so every pre-0.6 / void campaign stays byte-identical; `ocean`
-/// uses [`OCEAN_BASE_Y`] so the island waterline convention holds.
+/// The area-origin Y for a campaign's horizon. `void` (default/absent) keeps
+/// [`BASE_Y`], so every void campaign stays byte-identical; `ocean` uses
+/// [`OCEAN_BASE_Y`] so the island waterline convention holds.
+///
+/// `valley` keeps [`BASE_Y`] too, and deliberately: its gap floor tops out one
+/// block under [`BASE_Y`], which is the flatland relationship, so a valley
+/// build relocates nothing relative to a void one. Only the surround differs.
 pub fn base_y(campaign: &Campaign) -> i32 {
-    match campaign.world.content.horizon {
-        Some(delvewright_dsl::Horizon::Ocean) => OCEAN_BASE_Y,
-        _ => BASE_Y,
+    match delvewright_dsl::horizon_base(&campaign.world.content.horizon) {
+        delvewright_dsl::HorizonBase::Ocean => OCEAN_BASE_Y,
+        delvewright_dsl::HorizonBase::Void | delvewright_dsl::HorizonBase::Valley => BASE_Y,
     }
 }
 
@@ -1463,10 +1467,9 @@ fn check_ocean_waterline(
     areas: &[AreaPlacement],
     prefabs: &PrefabRegistry,
 ) -> Result<WaterlineBinding, PlanError> {
-    if !matches!(
-        campaign.world.content.horizon,
-        Some(delvewright_dsl::Horizon::Ocean)
-    ) {
+    if delvewright_dsl::horizon_base(&campaign.world.content.horizon)
+        != delvewright_dsl::HorizonBase::Ocean
+    {
         return Ok(WaterlineBinding::NOT_AN_OCEAN);
     }
     let mut binding = WaterlineBinding {

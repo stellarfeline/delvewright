@@ -1086,8 +1086,8 @@ fn edited_assembled(
 /// The `ocean`-horizon sea level to draw as a background plane, or `None` for a
 /// `void`-horizon campaign (see `snapshot::SEA_PLANE_NOTE`).
 fn sea_level_of(campaign: &delvewright_dsl::Campaign) -> Option<i32> {
-    match campaign.world.content.horizon {
-        Some(delvewright_dsl::Horizon::Ocean) => Some(delvewright_compiler::plan::SEA_LEVEL),
+    match delvewright_dsl::horizon_base(&campaign.world.content.horizon) {
+        delvewright_dsl::HorizonBase::Ocean => Some(delvewright_compiler::plan::SEA_LEVEL),
         _ => None,
     }
 }

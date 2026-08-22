@@ -94,7 +94,9 @@
 //! amplified noise), so `delvec scene` uses the stamp to apply its
 //! documented night-vision review emulation to exactly those shots and no others.
 
-use delvewright_dsl::{AreaMitigation, Campaign, Diagnostic, Horizon, LightingProfile, Objective};
+use delvewright_dsl::{
+    AreaMitigation, Campaign, Diagnostic, HorizonBase, LightingProfile, Objective,
+};
 use serde_json::{Value, json};
 
 use crate::nav::{CameraEye, LegRoute, NavError, World};
@@ -941,12 +943,21 @@ pub fn render_plan(
 /// A void horizon emits **no key at all** (not `null`), so every campaign that
 /// declares nothing keeps a byte-identical `render-plan.json`.
 fn horizon_fact(c: &Campaign) -> Option<Value> {
-    match c.world.content.horizon {
-        Some(Horizon::Ocean) => Some(json!({
+    let r = delvewright_dsl::resolved_horizon(&c.world.content.horizon);
+    match r.base {
+        HorizonBase::Ocean => Some(json!({
             "kind": "ocean",
             "sea_level": crate::plan::SEA_LEVEL,
         })),
-        Some(Horizon::Void) | None => None,
+        // A valley's fact is its rim, because that is what a renderer has to
+        // frame: the gap floor is ordinary ground, and the crest is the line
+        // the sky starts above.
+        HorizonBase::Valley => Some(json!({
+            "kind": "valley",
+            "gap_floor_y": crate::horizon::VALLEY_GAP_FLOOR_TOP_Y,
+            "rim_height": r.rim_height,
+        })),
+        HorizonBase::Void => None,
     }
 }
 

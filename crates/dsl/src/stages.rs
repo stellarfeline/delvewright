@@ -77,11 +77,14 @@ pub struct WorldContent {
     /// implicit `easy` must be redone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub difficulty: Option<WorldDifficulty>,
-    /// Scenic horizon (DSL v0.6, spec-0013). Absent or `void` = the void world
-    /// (byte-identical to v0.5). `ocean` swaps the world generator for a
-    /// deterministic superflat sea (bedrock/stone/water, sea level y=62) and drops
-    /// the area datum to y=60 (`sea_level-2`) so island pieces meet the sea at their
-    /// authored waterline. No structures or mobs either way.
+    /// The scenic horizon: the ground and the sky the map stands in
+    /// (spec-0026). Absent or `void` is the void world. `ocean` swaps the world
+    /// generator for a deterministic superflat sea (bedrock/stone/water, sea
+    /// level y=62) and drops the area datum to y=60 so island pieces meet the
+    /// sea at their authored waterline. `valley` rings the map in a generated
+    /// mountain annulus — the one base that builds terrain rather than picking
+    /// a generator. Either a string shorthand or the object form
+    /// `{base, …params}`; see [`Horizon`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub horizon: Option<Horizon>,
     /// Playable-region boundary (DSL v0.6, spec-0013). When present, the compiler
@@ -276,20 +279,239 @@ impl WorldDifficulty {
     }
 }
 
-/// A scenic horizon (DSL v0.6, spec-0013). `void` is the default and is
-/// byte-identical to v0.5 (empty-layer superflat, `minecraft:the_void` biome);
-/// `ocean` selects a pinned bedrock/stone/water superflat with sea level y=62,
-/// pure backdrop with no structures or mobs. The compiler owns the exact
-/// generator-settings; this enum only picks which one.
+/// A scenic horizon (spec-0026). A horizon is a **composition of orthogonal
+/// axes**, not an enum of monoliths: a **base** — what surrounds the map — and
+/// that base's params. The field accepts a plain string shorthand
+/// ([`HorizonName`]) or the object form [`HorizonSpec`] `{base, …params}`.
+///
+/// Consumers never match this wire enum. [`Horizon::resolved`] desugars both
+/// forms into one [`ResolvedHorizon`] with the pinned defaults applied, and
+/// [`horizon_base`] answers the one question most callers have.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Horizon {
+    /// String shorthand — `"ocean"` is `{base:"ocean"}`, and `"cherry-valley"`
+    /// is `{base:"valley", flora:"cherry", palette:"stone-petal"}`.
+    Name(HorizonName),
+    /// The object form `{base, …params}`.
+    Spec(HorizonSpec),
+}
+
+/// A horizon string shorthand. `void` and `ocean` name their bases; every other
+/// name is a **parameter row** — a spelling for a base plus a set of params,
+/// never a code path of its own.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum Horizon {
-    /// The void world (default) — no sky-filling geometry.
+pub enum HorizonName {
+    /// The void world (default) — no sky-filling geometry, no surround.
     #[default]
     Void,
-    /// A superflat sea backdrop; areas are placed on the sea-level datum (y=60) so
-    /// island pieces read as land ringed by the ocean.
+    /// A superflat sea backdrop; pieces read as land ringed by an open ocean.
     Ocean,
+    /// A mountain-ringed valley floor.
+    Valley,
+    /// `{base:"valley", flora:"cherry", palette:"stone-petal"}` — a parameter
+    /// row, not a base: the compiler holds no cherry code path.
+    CherryValley,
+}
+
+/// What surrounds the map. Each base carries its own params on
+/// [`HorizonSpec`], and a param foreign to the declared base is refused rather
+/// than ignored.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum HorizonBase {
+    /// Void superflat; no surround. The default.
+    #[default]
+    Void,
+    /// Pinned water superflat, sea level 62; no surround.
+    Ocean,
+    /// A mountain annulus around a flat gap floor, with void ambient below the
+    /// tile skirt. The one base that generates terrain.
+    Valley,
+}
+
+impl HorizonBase {
+    /// The kebab wire name.
+    pub fn token(self) -> &'static str {
+        match self {
+            HorizonBase::Void => "void",
+            HorizonBase::Ocean => "ocean",
+            HorizonBase::Valley => "valley",
+        }
+    }
+
+    /// Whether this base generates a surround — compiler-built terrain outside
+    /// the map's own extent. `void` and `ocean` are pure ambient and build
+    /// nothing.
+    pub fn has_surround(self) -> bool {
+        matches!(self, HorizonBase::Valley)
+    }
+}
+
+/// The tree and biome layer a `valley` surround plants: it selects the biome
+/// paint and the tree species together, because a cherry grove over a
+/// windswept-forest tint is neither thing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum HorizonFlora {
+    /// Oak trees over `minecraft:windswept_forest`. Default.
+    #[default]
+    Oak,
+    /// Cherry trees over `minecraft:cherry_grove`.
+    Cherry,
+}
+
+/// The surface palette of a `valley` surround.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum HorizonPalette {
+    /// Grey stone crests over grass slopes. Default.
+    #[default]
+    StoneGrass,
+    /// Stone crests over a petal understory.
+    StonePetal,
+}
+
+/// The `horizon` object form: a `base` plus that base's params, all optional
+/// with pinned defaults ([`horizon_defaults`]). The shape is flat rather than
+/// per-base tagged, and a param foreign to the declared base is refused
+/// (`DW0853`) — so an `ocean` cannot quietly carry a `rim_height` that nothing
+/// reads.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HorizonSpec {
+    /// The base — what surrounds the map.
+    pub base: HorizonBase,
+    /// `valley`: the surround's total footprint as a multiple of the map's, on
+    /// each axis (`2.0..=3.0`, default 2.5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ratio: Option<f64>,
+    /// `valley`: crest height of the rim over the gap floor (`16..=128`,
+    /// default 48).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rim_height: Option<i32>,
+    /// `valley`: the tree and biome layer (default `oak`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flora: Option<HorizonFlora>,
+    /// `valley`: the surface palette (default `stone-grass`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub palette: Option<HorizonPalette>,
+}
+
+/// Pinned horizon param defaults. One table, so the doc comments, the resolver
+/// and the diagnostics cannot drift.
+pub mod horizon_defaults {
+    /// `valley.ratio`.
+    pub const RATIO: f64 = 2.5;
+    /// `valley.ratio` lower bound — below 2.0 the annulus has no room for a
+    /// gap floor and a slope run both.
+    pub const RATIO_MIN: f64 = 2.0;
+    /// `valley.ratio` upper bound — above 3.0 the surround is mostly terrain a
+    /// body never reaches, at a cost that is all shipped bytes.
+    pub const RATIO_MAX: f64 = 3.0;
+    /// `valley.rim_height`.
+    pub const RIM_HEIGHT: i32 = 48;
+    /// `valley.rim_height` lower bound — a rim under 16 does not close the
+    /// horizon from a body standing on the gap floor.
+    pub const RIM_HEIGHT_MIN: i32 = 16;
+    /// `valley.rim_height` upper bound — the build range is 384 blocks tall and
+    /// the surround has to fit under whatever the map puts above it.
+    pub const RIM_HEIGHT_MAX: i32 = 128;
+}
+
+/// A horizon with both wire forms desugared and every default applied — the
+/// only view downstream code reads.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedHorizon {
+    /// The base.
+    pub base: HorizonBase,
+    /// `valley.ratio`.
+    pub ratio: f64,
+    /// `valley.rim_height`.
+    pub rim_height: i32,
+    /// `valley.flora`.
+    pub flora: HorizonFlora,
+    /// `valley.palette`.
+    pub palette: HorizonPalette,
+}
+
+impl Default for ResolvedHorizon {
+    fn default() -> Self {
+        ResolvedHorizon {
+            base: HorizonBase::Void,
+            ratio: horizon_defaults::RATIO,
+            rim_height: horizon_defaults::RIM_HEIGHT,
+            flora: HorizonFlora::Oak,
+            palette: HorizonPalette::StoneGrass,
+        }
+    }
+}
+
+impl ResolvedHorizon {
+    /// The resolved horizon of `base` with every param at its pinned default.
+    pub fn of_base(base: HorizonBase) -> Self {
+        ResolvedHorizon {
+            base,
+            ..Default::default()
+        }
+    }
+}
+
+impl Horizon {
+    /// Desugar either wire form to the one resolved view, defaults applied.
+    /// `"cherry-valley"` resolves exactly as `{base:"valley", flora:"cherry",
+    /// palette:"stone-petal"}` — the same struct with the same values, which is
+    /// what makes cherry a parameter row rather than a second generator.
+    pub fn resolved(&self) -> ResolvedHorizon {
+        match self {
+            Horizon::Name(HorizonName::Void) => ResolvedHorizon::of_base(HorizonBase::Void),
+            Horizon::Name(HorizonName::Ocean) => ResolvedHorizon::of_base(HorizonBase::Ocean),
+            Horizon::Name(HorizonName::Valley) => ResolvedHorizon::of_base(HorizonBase::Valley),
+            Horizon::Name(HorizonName::CherryValley) => ResolvedHorizon {
+                flora: HorizonFlora::Cherry,
+                palette: HorizonPalette::StonePetal,
+                ..ResolvedHorizon::of_base(HorizonBase::Valley)
+            },
+            Horizon::Spec(s) => ResolvedHorizon {
+                base: s.base,
+                ratio: s.ratio.unwrap_or(horizon_defaults::RATIO),
+                rim_height: s.rim_height.unwrap_or(horizon_defaults::RIM_HEIGHT),
+                flora: s.flora.unwrap_or_default(),
+                palette: s.palette.unwrap_or_default(),
+            },
+        }
+    }
+
+    /// The resolved base.
+    pub fn base(&self) -> HorizonBase {
+        self.resolved().base
+    }
+
+    /// True when this declaration needs the horizon-library surface: the object
+    /// form, or any shorthand beyond the `"void"`/`"ocean"` pair that predates
+    /// it. A campaign below [`HORIZON_LIBRARY_SINCE`](crate::HORIZON_LIBRARY_SINCE)
+    /// may still write those two, and its emission does not move.
+    pub fn needs_horizon_library(&self) -> bool {
+        !matches!(
+            self,
+            Horizon::Name(HorizonName::Void) | Horizon::Name(HorizonName::Ocean)
+        )
+    }
+}
+
+/// The resolved base of an optional stage-1 `horizon` field — `Void` when
+/// absent. The one helper every downstream consumer (placement, the ambient
+/// model, emission) goes through, so that a new base cannot be forgotten at one
+/// of them.
+pub fn horizon_base(horizon: &Option<Horizon>) -> HorizonBase {
+    horizon.as_ref().map(|h| h.base()).unwrap_or_default()
+}
+
+/// The resolved view of an optional stage-1 `horizon` field, with defaults
+/// applied for an absent one.
+pub fn resolved_horizon(horizon: &Option<Horizon>) -> ResolvedHorizon {
+    horizon.as_ref().map(|h| h.resolved()).unwrap_or_default()
 }
 
 /// The default boundary `margin` (blocks of horizontal breathing room added

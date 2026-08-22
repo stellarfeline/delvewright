@@ -19674,10 +19674,8 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // (`plan::OCEAN_BASE_Y` = 60) so island pieces read as land ringed by the sea. No structures (generate-structures=false) or mobs (gamerule
     // spawn_mobs false); the sea is pure backdrop. The string is a fixed literal,
     // so both horizons stay deterministic (ADR-0006).
-    let ocean = matches!(
-        plan.campaign.world.content.horizon,
-        Some(delvewright_dsl::Horizon::Ocean)
-    );
+    let ocean = delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon)
+        == delvewright_dsl::HorizonBase::Ocean;
     let generator_settings = if ocean {
         "{\"biome\":\"minecraft:ocean\",\"layers\":[{\"block\":\"minecraft:bedrock\",\"height\":1},{\"block\":\"minecraft:stone\",\"height\":118},{\"block\":\"minecraft:water\",\"height\":8}]}"
     } else {

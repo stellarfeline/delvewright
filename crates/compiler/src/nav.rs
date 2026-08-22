@@ -777,12 +777,20 @@ impl Ambient {
     /// that is [`built_volume`], a property of the assembled world under every
     /// horizon (see [`World::built`]).
     pub fn of_plan(plan: &Plan) -> Ambient {
-        match plan.campaign.world.content.horizon {
-            Some(delvewright_dsl::Horizon::Ocean) => Ambient::Ocean(Sea {
+        match delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon) {
+            delvewright_dsl::HorizonBase::Ocean => Ambient::Ocean(Sea {
                 level: crate::plan::SEA_LEVEL,
                 floor_top: crate::plan::SEA_FLOOR_TOP_Y,
             }),
-            _ => Ambient::Void,
+            // A `valley` ambient is void: its ground is not a generator fact
+            // but real placed blocks, so the surround enters this model through
+            // [`built_volume`] like any other piece rather than as an analytic
+            // per-column answer here. That is what lets every existing proof —
+            // gravity, occupancy, relight, boundary safety — see the landform
+            // without one of them being taught a new horizon.
+            delvewright_dsl::HorizonBase::Void | delvewright_dsl::HorizonBase::Valley => {
+                Ambient::Void
+            }
         }
     }
 
