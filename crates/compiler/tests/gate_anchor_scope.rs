@@ -334,7 +334,7 @@ fn two_pool_members_of_one_area_are_not_ambiguous() {
 /// already requires a shortcut's gate anchor to be a NAME some area of the
 /// campaign provides (`DW0350`, over the union of the campaign's areas). What
 /// nothing asked was whether the piece that makes it a GATE is one this campaign
-/// can place: `gate_anchor_block` scanned the whole loaded library.
+/// can place: the registry's gate question scanned the whole loaded library.
 ///
 /// So here `anchor/boulder` is a plain point anchor on the bound
 /// `prefab/hello-room` — the name resolves, the DSL tier is satisfied — and the
