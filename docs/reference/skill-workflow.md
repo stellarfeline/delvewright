@@ -258,12 +258,14 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is what the mutex used to paper over.
 5. ~~**ADR-0016's third version line is undelivered.**~~ **Closed** — the
-   frontmatter carries `version: 1.1.0`, `requires: delvec: ">=1.0.0 <2.0.0"`
-   and `verified_with: 1.1.0`, and `tools/check-skill-version.py` binds all
-   three: the window must contain this repo's engine, `verified_with` must equal
-   `crates/compiler/Cargo.toml`'s version in **both** directions, and every
-   subcommand and long flag the skill names must exist in the clap CLI (today:
-   9 distinct subcommands, 13 flag references). What is still hand-carried is a
+   frontmatter carries `version:`, `requires: delvec:` and `verified_with:`, and
+   `tools/check-skill-version.py` binds all three: the window must contain this
+   repo's engine, `verified_with` must equal `crates/compiler/Cargo.toml`'s
+   version in **both** directions, and every subcommand and long flag the skill
+   names must exist in the clap CLI. The values and the counts are not copied
+   here — the checker prints its own binding count on every run, and a literal
+   restated in prose is false the moment the thing it names moves, with nothing
+   anywhere to notice. What is still hand-carried is a
    floor that has become **too low** — the gate tests the skill against the
    CURRENT CLI, so a subcommand introduced after the declared floor still
    passes, and this repo has only one engine to test against.
