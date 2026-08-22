@@ -378,7 +378,7 @@ pub fn collision_top_16(name: &str) -> u8 {
 /// construction round (task #157): the pre-fix fallback modelled these as full
 /// cubes, so a `short_grass` tuft on a valley terrace became a phantom
 /// standable cell that split a 2-block riser into two climbable 1-block steps
-/// — `DW0369` fired on a world that is NOT climbable in vanilla
+/// — `DW0854` fired on a world that is NOT climbable in vanilla
 /// (rejects-valid), and, worse, any walkability proof that ever stood a player
 /// ON a tuft/flower cell was unsound (accepts-invalid).
 ///
@@ -2402,7 +2402,7 @@ mod tests {
     /// Task #157 (hollow-vigil round finding 1): vanilla no-collision
     /// vegetation has an EMPTY collision shape — modelling it as a full cube
     /// created phantom standable cells (a tuft split a valley terrace's
-    /// 2-block riser into two climbable 1-block steps → false `DW0369`) and
+    /// 2-block riser into two climbable 1-block steps → false `DW0854`) and
     /// let walkability proofs stand players on flowers (unsound). The class is
     /// pinned here so no future palette id regresses to the full-cube
     /// fallback silently.

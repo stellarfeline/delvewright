@@ -107,10 +107,7 @@ pub fn base_y(campaign: &Campaign) -> i32 {
 /// The vertical extent is deliberately absent. A surround stands on its own
 /// datum ([`crate::horizon::VALLEY_GAP_FLOOR_TOP_Y`]) and rises by its own
 /// param; what the map does above that floor is the map's business.
-pub fn surround_rect(
-    campaign: &Campaign,
-    areas: &[AreaPlacement],
-) -> Option<(crate::surround::SceneRect, &'static str)> {
+pub fn surround_rect(campaign: &Campaign) -> Option<(crate::surround::SceneRect, &'static str)> {
     if let Some(plan) = campaign.site_plan.as_ref() {
         let r = &plan.content.region;
         let max = r.max();
@@ -124,22 +121,28 @@ pub fn surround_rect(
             "site-plan region",
         ));
     }
-    let mut rect: Option<crate::surround::SceneRect> = None;
-    for area in areas {
-        let (min, max) = area.bounds();
-        let r = rect.get_or_insert(crate::surround::SceneRect {
-            min_x: min[0],
-            min_z: min[2],
-            max_x: max[0],
-            max_z: max[2],
-        });
-        r.min_x = r.min_x.min(min[0]);
-        r.min_z = r.min_z.min(min[2]);
-        r.max_x = r.max_x.max(max[0]);
-        r.max_z = r.max_z.max(max[2]);
-    }
-    rect.map(|r| (r, "placed footprint"))
+    None
 }
+
+/// `DW0855` (build, exit 3): a horizon whose base builds terrain, on a campaign
+/// with no map for that terrain to stand around.
+///
+/// A surround has to ring something, and the only thing it can ring is a
+/// statement of the whole map's extent. A campaign that places `areas[]` by
+/// hand never makes one — and the obvious substitute, the union of what got
+/// placed, is not a statement of extent but an artifact of
+/// [`AREA_SPACING`]: two small areas sit 256 blocks apart with void between
+/// them, so their union is a rectangle that is mostly nothing, and ringing it
+/// generates a mountain range around empty space.
+///
+/// That is not a performance note; it is the reason the refusal is right. It
+/// was measured: the same surround around a site plan's declared 64x64 region
+/// is 14 templates and builds in about ninety seconds, and around the union of
+/// two hand-placed areas it had not finished in ten minutes. The fast answer
+/// and the correct answer are the same answer here, which is usually the sign
+/// that the substitute was never the thing.
+pub const DW_SURROUND_NO_REGION: delvewright_dsl::DwCode =
+    delvewright_dsl::diagnostic::codes::SURROUND_NO_REGION;
 
 /// Build the horizon's surround, or `None` for a base that declares a world
 /// generator instead of building one.
@@ -158,23 +161,34 @@ fn build_surround(
     if !h.base.has_surround() {
         return Ok(None);
     }
-    let Some((scene, authority)) = surround_rect(campaign, areas) else {
-        // A campaign with neither a region nor a placed piece has no map for a
-        // surround to stand around. Nothing to ring is not an error — it is a
-        // zero binding, and the caller reports it as one.
-        return Ok(None);
+    let Some((scene, authority)) = surround_rect(campaign) else {
+        return Err(PlanError::new(
+            DW_SURROUND_NO_REGION,
+            format!(
+                "`horizon` base `{base}` builds terrain around the map, and this campaign never \
+                 says how big the map is. A surround rings a declared extent — the `region` of a \
+                 site plan — and this campaign places {n} area(s) with `areas[]`, which states \
+                 no extent at all. The union of what happens to get placed is not a substitute: \
+                 areas sit {sp} blocks apart, so that union is mostly the void between them, and \
+                 the horizon would be a mountain range built around empty space. Give the \
+                 campaign a site plan, or set `horizon` to `void` or `ocean`, which need no map \
+                 to be a horizon of.",
+                base = h.base.token(),
+                n = areas.len(),
+                sp = AREA_SPACING,
+            ),
+        ));
     };
     let params = ValleyParams {
         ratio: h.ratio,
         rim_height: h.rim_height,
-        flora: match h.flora {
-            delvewright_dsl::HorizonFlora::Oak => Flora::Oak,
-            delvewright_dsl::HorizonFlora::Cherry => Flora::Cherry,
-        },
-        palette: match h.palette {
-            delvewright_dsl::HorizonPalette::StoneGrass => SurroundPalette::StoneGrass,
-            delvewright_dsl::HorizonPalette::StonePetal => SurroundPalette::StonePetal,
-        },
+        // The generator carries a second flora and a second palette; the DSL
+        // does not expose them yet (see `HorizonSpec`), so this is the one row
+        // a campaign can reach. Written as a named pair rather than a
+        // `Default` so that adding the surface is one line here and cannot be
+        // done by accident.
+        flora: Flora::Oak,
+        palette: SurroundPalette::StoneGrass,
     };
     let valley = surround::generate_valley(
         solver::stream_seed(seed, crate::horizon::VALLEY_STREAM),

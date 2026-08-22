@@ -392,7 +392,7 @@ const VISTA_MAX_FOV_DEG: f64 = 110.0;
 /// valley simply grows to contain any scene shape (hollow-vigil's 94×27
 /// short axis gets the floor while the long axis keeps its proportional
 /// band; asymmetry is accepted and expected), so the rim profile runs
-/// unchanged on every axis and the DW0322/DW0369 proofs hold purely by
+/// unchanged on every axis and the DW0322/DW0854 proofs hold purely by
 /// construction — no degraded geometry, no second proof path.
 const ANNULUS_BAND_FLOOR: f64 = GAP_WIDTH + SLOPE_RUN;
 /// MC 1.21.11 build range (dossier §3).
@@ -800,7 +800,7 @@ fn inward_step(scene: &SceneRect, x: i32, z: i32) -> (i32, i32) {
 /// "horizon/valley")`).
 ///
 /// Errors are returned as strings for the caller to wrap in its diagnostic
-/// (param-range problems belong to DW0366 at validation; this build-time check
+/// (param-range problems belong to DW0853 at validation; this build-time check
 /// is the belt-and-braces re-statement).
 pub fn generate_valley(
     seed: u64,
@@ -810,7 +810,7 @@ pub fn generate_valley(
 ) -> Result<ValleySurround, String> {
     if !(2.0..=3.0).contains(&params.ratio) {
         return Err(format!(
-            "valley `ratio` {} out of range 2..=3 (validation should have raised DW0366)",
+            "valley `ratio` {} out of range 2..=3 (validation should have raised DW0853)",
             params.ratio
         ));
     }
@@ -945,7 +945,7 @@ pub fn generate_valley(
     // slicer, so the un-climbability proof below runs over the finished tile
     // contents and can never diverge from what ships (task #157: the decor
     // used to be stamped after the proof had run, which is exactly how the
-    // generator's own proof and the compiler's DW0369 came to disagree).
+    // generator's own proof and the compiler's DW0854 came to disagree).
     let mut decor_cells: BTreeMap<[i32; 3], &'static str> = BTreeMap::new();
     for (&(x, z), &(zone, h)) in &columns {
         if zone == Zone::Gap {
@@ -1482,7 +1482,7 @@ mod tests {
 
     #[test]
     fn no_one_block_riser_exists_and_ridge_never_opens() {
-        // The by-construction invariant behind DW0369: no two adjacent
+        // The by-construction invariant behind DW0854: no two adjacent
         // annulus columns may ever differ by exactly 1 (the only riser a
         // vanilla step/jump climbs) — every surface height is quantized to
         // even steps.
@@ -1808,7 +1808,7 @@ mod tests {
 
     /// Decode every serialized tile into a blocks map (plus optional doctored
     /// extra cells), classify it with the REAL occupancy model, and wrap it as
-    /// a nav world — the exact path the compiler's DW0369 gate takes.
+    /// a nav world — the exact path the compiler's DW0854 gate takes.
     fn decoded_world(v: &ValleySurround, extra: &[([i32; 3], &str)]) -> crate::nav::World {
         let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
         for t in &v.tiles {
@@ -1832,13 +1832,13 @@ mod tests {
         crate::nav::World::from_occupancy(occ)
     }
 
-    /// `DW0369` (spec-0026 §5): carving a 1-block staircase up the inner slope
+    /// `DW0854` (spec-0026 §5): carving a 1-block staircase up the inner slope
     /// is caught by the empirical nav flood — the check reads assembled
     /// geometry, so a post-generation change (an edit batch, a settle) cannot
     /// sneak a climbable wall past the even-step construction.
     #[test]
     fn a_carved_staircase_up_the_inner_slope_is_dw0369() {
-        assert_eq!(DW_VALLEY_CLIMB, "DW0369");
+        assert_eq!(DW_VALLEY_CLIMB.id(), "DW0854");
         let s = SceneRect {
             min_x: 0,
             min_z: 0,

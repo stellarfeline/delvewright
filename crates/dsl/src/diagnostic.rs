@@ -531,6 +531,20 @@ pub mod codes {
     /// library carry no params at all, so a campaign that never opted in binds
     /// zero of this.
     pub const HORIZON_PARAM: DwCode = DwCode::since("DW0853", 16);
+    /// A `horizon` whose base BUILDS terrain, on a campaign that states no
+    /// extent for that terrain to stand around (spec-0026): validation-tier
+    /// (exit 1).
+    ///
+    /// A surround rings a declared extent — a site plan's `region`. A campaign
+    /// that seats its pieces with `areas[]` declares none, and the union of
+    /// whatever gets placed is not a substitute: it is an artifact of the
+    /// compiler's fixed area stride, mostly the void between areas, so ringing
+    /// it builds a mountain range around empty space.
+    ///
+    /// `Since(16)` for the same reason as `DW0853`: only a base introduced with
+    /// the horizon library can build terrain, so a campaign that never opted in
+    /// binds zero of this.
+    pub const SURROUND_NO_REGION: DwCode = DwCode::since("DW0855", 16);
     /// (v0.6) A `sequence` effect is nested inside another `sequence` (directly, or
     /// reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse
     /// (spec-0014). Flatten the inner steps into the outer timeline.

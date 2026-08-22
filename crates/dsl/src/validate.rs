@@ -1713,12 +1713,6 @@ fn reserved_v16(c: &Campaign, d: &mut Vec<Diagnostic>) {
             if spec.rim_height.is_some() {
                 foreign.push("rim_height");
             }
-            if spec.flora.is_some() {
-                foreign.push("flora");
-            }
-            if spec.palette.is_some() {
-                foreign.push("palette");
-            }
         }
         for name in foreign {
             d.push(Diagnostic::error(
@@ -1733,6 +1727,30 @@ fn reserved_v16(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
+    }
+
+    // A base that BUILDS terrain needs a map to build it around, and the only
+    // statement of a whole map's extent this engine has is a site plan's
+    // `region`. Refused here rather than at the build, because it is a fact
+    // about the documents: nothing has to be placed to know that nothing states
+    // an extent.
+    if r.base.has_surround() && c.site_plan.is_none() {
+        d.push(Diagnostic::error(
+            codes::SURROUND_NO_REGION,
+            "world",
+            "/content/horizon/base",
+            format!(
+                "`horizon` base `{base}` builds terrain around the map, and this campaign never \
+                 says how big the map is. A surround rings a DECLARED extent — the `region` of a \
+                 site plan — and this campaign has no site plan, so its only statement of where \
+                 anything is is `areas[]`. The union of whatever those place is not a \
+                 substitute: areas sit on the compiler's fixed stride with void between them, so \
+                 that union is mostly nothing and the horizon would be a mountain range built \
+                 around empty space. Give the campaign a site plan, or set `horizon` to `void` \
+                 or `ocean`, which need no map to be a horizon of.",
+                base = r.base.token()
+            ),
+        ));
     }
 
     // Ranges. Checked on the RESOLVED view so a shorthand is judged by the same

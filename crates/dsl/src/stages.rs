@@ -353,32 +353,16 @@ impl HorizonBase {
     }
 }
 
-/// The tree and biome layer a `valley` surround plants: it selects the biome
-/// paint and the tree species together, because a cherry grove over a
-/// windswept-forest tint is neither thing.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum HorizonFlora {
-    /// Oak trees over `minecraft:windswept_forest`. Default.
-    #[default]
-    Oak,
-    /// Cherry trees over `minecraft:cherry_grove`.
-    Cherry,
-}
-
-/// The surface palette of a `valley` surround.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum HorizonPalette {
-    /// Grey stone crests over grass slopes. Default.
-    #[default]
-    StoneGrass,
-    /// Stone crests over a petal understory.
-    StonePetal,
-}
-
 /// The `horizon` object form: a `base` plus that base's params, all optional
-/// with pinned defaults ([`horizon_defaults`]). The shape is flat rather than
+/// with pinned defaults ([`horizon_defaults`]).
+///
+/// The `valley` surround generator carries a second flora and a second surface
+/// palette (a cherry grove over `minecraft:cherry_grove`) and **this struct
+/// deliberately does not expose them yet.** Every engine surface owes a gallery
+/// element in the change that lands it, and the element a second flora needs is
+/// a second whole-map campaign — the surround only rings a map that DECLARES
+/// its extent (`DW0855`), so there is no two-file overlay that can write it.
+/// A surface whose element cannot land with it does not land. The shape is flat rather than
 /// per-base tagged, and a param foreign to the declared base is refused
 /// (`DW0853`) — so an `ocean` cannot quietly carry a `rim_height` that nothing
 /// reads.
@@ -395,12 +379,6 @@ pub struct HorizonSpec {
     /// default 48).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rim_height: Option<i32>,
-    /// `valley`: the tree and biome layer (default `oak`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub flora: Option<HorizonFlora>,
-    /// `valley`: the surface palette (default `stone-grass`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub palette: Option<HorizonPalette>,
 }
 
 /// Pinned horizon param defaults. One table, so the doc comments, the resolver
@@ -434,10 +412,6 @@ pub struct ResolvedHorizon {
     pub ratio: f64,
     /// `valley.rim_height`.
     pub rim_height: i32,
-    /// `valley.flora`.
-    pub flora: HorizonFlora,
-    /// `valley.palette`.
-    pub palette: HorizonPalette,
 }
 
 impl Default for ResolvedHorizon {
@@ -446,8 +420,6 @@ impl Default for ResolvedHorizon {
             base: HorizonBase::Void,
             ratio: horizon_defaults::RATIO,
             rim_height: horizon_defaults::RIM_HEIGHT,
-            flora: HorizonFlora::Oak,
-            palette: HorizonPalette::StoneGrass,
         }
     }
 }
@@ -472,8 +444,6 @@ impl Horizon {
                 base: s.base,
                 ratio: s.ratio.unwrap_or(horizon_defaults::RATIO),
                 rim_height: s.rim_height.unwrap_or(horizon_defaults::RIM_HEIGHT),
-                flora: s.flora.unwrap_or_default(),
-                palette: s.palette.unwrap_or_default(),
             },
         }
     }

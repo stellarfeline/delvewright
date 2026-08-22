@@ -551,13 +551,6 @@ pub fn build_with_warnings(
                      nothing. A surround with no floor is a wall around a hole."
                 );
             }
-        } else if crate::horizon::base_of(plan.campaign).has_surround() {
-            eprintln!(
-                "surround binding 0: this campaign declares a horizon base that builds terrain \
-                 and NO terrain was built, because nothing here states an extent for it to ring \
-                 — no site plan and no placed piece. The build is green and the horizon is not \
-                 there."
-            );
         }
         if let Some(battery) = crate::blockout::check(plan, &blocks) {
             eprintln!("{}", battery.binding.line());
