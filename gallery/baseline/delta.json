@@ -148,7 +148,7 @@
     "site-plan.en:datapack/data/gallery/structure/horizon/valley/t8.nbt",
     "site-plan.en:datapack/data/gallery/structure/horizon/valley/t9.nbt"
   ],
-  "base_commit": "002b2dd2696c87efc07c5b8f8ab96824c5a0fd40",
+  "base_commit": "1ce30ec0a82cd254b468b84466c85cb8a60329c8",
   "changed": [
     "easy.en:creator-datapack/layout.json",
     "hard.en:creator-datapack/layout.json",
