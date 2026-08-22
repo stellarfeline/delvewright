@@ -24,15 +24,8 @@
 #   task          what must happen for this entry to be retired, in a few words
 #   reason        why it cannot build today, in one sentence
 #   expect_codes  the complete set of DW error codes the build must emit
-
-[[exclusion]]
-id = "hollow-vigil"
-task = "rewrite the two over-wide dialogue option labels"
-reason = """
-Two dialogue option labels are authored over the 146 px a vanilla dialog button \
-fits (DW0331); vanilla scrolls an over-wide caption back and forth rather than \
-wrapping it, so the fix is a content rewrite of the labels, not an engine change. \
-This gate exists to stop ENGINE changes from breaking campaigns, and hollow-vigil \
-is red for a content reason that predates it.\
-"""
-expect_codes = ["DW0331"]
+#
+# An entry is deleted by the change that makes its campaign build, which is the
+# same change that moves `versions.toml` `[content].sha` onto the content the fix
+# landed in. The job's own binding line is what states how many entries are live;
+# nothing here restates it.

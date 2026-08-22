@@ -10,9 +10,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.15.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.16.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.13.0`, `0.14.0`, `0.15.0`** (additive supersets; `0.2.0` output stays
+  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`, `0.12.0`, `0.13.0`, `0.14.0`, `0.15.0`, `0.16.0`** (additive supersets; `0.2.0` output stays
   byte-identical across the later versions). This line is not prose: it is bound
   by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
   (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS` minus
@@ -307,7 +307,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `time` (opt) | `day`/`noon`/`dusk`/`night`/`midnight`/`dawn` (default `noon`; `sunrise` is accepted as a synonym of `dawn`). Dimension-global initial state, emitted in the sealing baseline. Vanilla's `/time set` takes either a keyword or a raw tick count, so the DSL is not limited to the four keywords: the four vanilla states emit their **keyword verbatim** (`time set night`) and the other two emit the equivalent **tick form** (`dusk` -> `time set 12000`, `dawn` -> `time set 23000`). One table maps every state to its argument and its `time query daytime` read-back (`WorldTime::spec`), so the sealed-state PackTest asserts the right value and no shipped campaign's bytes move. `dusk` is the **sunset onset** (12000, the sky visibly going orange), deliberately not 13000 — 13000 is the sun already down, which is exactly what the `night` keyword sets, so it would make `dusk` a synonym rather than its own beat; `dawn` (23000) is the sunrise onset. `dusk`/`dawn` count as night for the sky-light model (`DW0210`), which is the conservative direction (both skies are in fact brighter than midnight). Same enum for the `set-time` effect. | 0.5 / dusk+dawn 0.5 |
 | `weather` (opt) | `clear`/`rain`/`thunder` (default `clear`; `clear` emits nothing — byte-identical to pre-0.5). Dimension-global, emitted after sealing (`weather <kw>`). Rain/thunder attenuate the assembled-light sky term. | 0.5 |
 | `difficulty` (opt) | The delve's combat difficulty: `easy` / `normal` / `hard`. Absent = the compiler's historical **derivation** — `easy` when the campaign fields any wave, `peaceful` when it fields none — which is what keeps every pre-0.6 campaign byte-identical. Declaring it overrides the derivation in BOTH places a difficulty comes from: `server/server.properties` (what the shipped image and every compose profile boot from, via `validation/world-settings-entrypoint.sh`) and a `/difficulty <kw>` appended to the sealing baseline, so the declaration also holds when the datapack alone is dropped into another world. A declaring campaign also emits the `declared_difficulty` PackTest, which asserts the live world's difficulty via the bare `/difficulty` query command (vanilla returns `Difficulty#getId()`: peaceful 0, easy 1, normal 2, hard 3) — so properties, sealing and declaration are proven to agree on a real server. `peaceful` is refused (`DW0468`); fighting actors with no waves and no declaration is the advisory `DW0469`. **Retuning warning:** every combat number in every campaign written before this field was tuned under the implicit `easy`, which HALVES incoming player damage (`min(dmg / 2 + 1, dmg)`) — content that declares `normal` or `hard` must redo that arithmetic, not merely flip the keyword. | 0.6 |
-| `horizon` (opt) | spec-0013: `void` (default/absent, byte-identical to v0.5) or `ocean` — a pinned bedrock/stone/water superflat (sea level y=62), no structures/mobs. Drives `generator-settings` **and the area-origin datum**: ocean areas are placed at y=60 = `sea_level − 2`, so an island piece's authored waterline (local y=2) meets the world ocean and its walk plane (local y=3) is the vanilla-normal one block above the sea. Enforced by `DW0344`. | 0.6 |
+| `horizon` (opt) | The ground and the sky the map stands in. Either a **string shorthand** — `void` (default/absent) or `ocean`, the pair that predates the horizon library and stays writable at 0.6 with byte-identical output — or the **object form** `{base, …params}` (0.16, `DW0141` below it). `void`: nothing outside the placed geometry. `ocean`: a pinned bedrock/stone/water superflat, sea level y=62, no structures or mobs; it drives `generator-settings` **and the area-origin datum**, placing ocean areas at y=60 = `sea_level − 2` so an island piece's authored waterline (local y=2) meets the world ocean and its walk plane is the vanilla-normal one block above the sea (`DW0344`). `valley`: the one base that BUILDS terrain — see *The horizon's surround* below. Params: `ratio` (2.0..=3.0, default 2.5) and `rim_height` (16..=128, default 48), both `valley`-only, both `DW0853` out of range or beside another base. Any horizon whose ambient a body can ENTER — the sea, and a valley's gap floor — needs a `boundary` (`DW0320`); `void` is the only one it cannot, because there is nothing out there to stand on. | 0.6 / library 0.16 |
 | `min_players` (opt, 1..=4) | spec-0018: the party size the delve **requires**. Absent = 1 (a party of one is always legal; every pre-0.6 campaign reads as 1). `>= 2` emits the **lobby gate**: `tick` recomputes the live count into `#lobby dw.sys`, the class-selection dialog driver is prefixed `if score #lobby dw.sys matches <n>..` (so the delve cannot START short-handed), and unclassed players get a self-updating `x / n` actionbar (`{"score":{"name":"#lobby","objective":"dw.sys"}}` — one emitted line, no per-count strings; a compiler default, not an l10n key). Out of range = `DW0356`; a mandatory-n declaration with no n-way division of labour = `DW0358`. `min_players: 1` emits **nothing** (byte-identical). | 0.6 |
 | `boundary {margin?,message?}` (opt) | spec-0013: declares a **derived** playable region (union of final placed-piece AABBs, inflated horizontally by `margin` (`0..=64`, default 16; else `DW0321`), unbounded up, floor = lowest placed block − 8). A 1s clock returns any player outside it to the last checkpoint (`dw:cp`) with an actionbar `message` (l10n `world.boundary.message`, English default when absent) + a soft sound; no damage, no item loss. `horizon:"ocean"` without a `boundary` = `DW0320`. | 0.6 |
 
@@ -683,6 +683,123 @@ common.
 | `lighting` | `{fixture, min_light}` applied to every enclosed box, so a blockout interior is walkable at night without per-box surface. **The engine's existing area-lighting object**, not a twin of it, so it answers the same range rule with the same code (`DW0196`). |
 | Binding | Every run that carries a plan prints a second line beside the layout-graph one: boxes and **the pairs compared**, seams (stair, drop), datums, whole-owned volumes, identities, sightlines and views. Two zeroes are called out as findings rather than counted: a plan with no view (the walk has no declared vantage) and a plan with no whole-owned volume (the rule keeping the whole's mass out of the places examined nothing). A plan with no identity is `DW0834` in its own right. |
 
+### The horizon's surround (spec-0026)
+
+A horizon is a base and that base's params. Two of the bases — `void` and
+`ocean` — are **world-generator settings**: what lies outside the placed
+geometry is an analytic fact, one superflat layer stack, modelled per column by
+`nav::Ambient`. `valley` is not. Its ground is real blocks in real structure
+templates, generated by `compiler::surround` and placed by the same bootstrap
+that places every other piece — so its *ambient* is `void`, because there is
+nothing analytic out there: everything out there was built.
+
+That difference is the design, not an implementation detail. A surround entering
+as a new `Ambient` variant would owe a new branch to gravity settling, the
+occupancy model, relight, the fluid model, boundary safety and the snapshot
+renderer, and each branch would be a second model of the same ground that could
+disagree with the first. Entering as **placed blocks** it owes none of them:
+every proof already knows how to read a block.
+
+**What it rings.** A surround rings a **declared** extent, which means a site
+plan's `region` — required, non-derivable, and which no box may grow. A campaign
+that seats pieces with `areas[]` states no extent and is refused (`DW0855`); the
+union of what it happens to place is not a substitute, because areas sit on the
+compiler's fixed 256-block stride and that union is mostly the void between them.
+Reading the region rather than the placed pieces is what keeps the landform
+fixed: a part can never push a mountain outward, and space a plan reserved and
+has not yet filled stays reserved instead of being eaten by terrain.
+
+**The shape.** A rectangular annulus whose total footprint is `ratio` times the
+region's on each axis, with three zones outward from the region edge: a flat
+walkable **gap floor**, an **inner slope** rising to the crest line, and the
+**crest band and outer face**, which is where the trees are. The radial profile
+keys on a domain-warped distance from the region rectangle and the rim is a
+ridged multifractal over the compiler's own value noise, so the silhouette reads
+as rock rather than as a box — the curve is in the warp, not in a diagonal
+primitive.
+
+**Un-climbable by construction, and proven anyway.** The construction is one
+sentence: **no surround column stands exactly one block above the gap-floor
+datum.** Everything is at the floor or below it — the floor and the hollows in
+it — or at least two above it, which is the rim. A flood from the gap floor
+climbs at most one block a step, so its component is everything at or below the
+datum and is bounded above by it; the first thing outward stands two blocks
+higher, and a two-block riser is the one thing vanilla's auto-step and jump
+cannot take. Above the barrier the landform's shape is unconstrained, which is
+what lets a hillside be broken ground rather than a two-valued surface.
+`DW0854` proves it again over the assembled bytes, because gravity settling, a
+stage-7 edit script and a palette of different-height blocks all happen after
+the generator has finished.
+
+**The rim's height is the height it is declared at.** `rim_height` is what the
+crest reaches at the ridge peaks; a saddle falls to `RIDGE_FLOOR` times it, and
+a typical crest sits near three quarters. The crest is clamped one under the
+declared rim so the build-range fence is exact rather than approximate.
+
+**The moat.** The surround rings the region a site plan DECLARES, and a plan
+under-fills its own region while it is being built. Every region column no piece
+FLOORS — no block at or below the gap-floor datum — receives the gap floor's own
+ground and surface treatment, as row-strip tiles (`horizon/valley/m<n>`), so the
+box garden's floor is continuous from the rim to every piece footprint. A column
+whose content is entirely ABOVE the datum is filled too: the valley floor runs
+on under an elevated storey. A floored column is untouched — the piece owns its
+ground, holes and basements included.
+
+**Not an `AreaPlacement`, deliberately.** `plan.areas` is what the boundary
+region derives from, what relight lights, what anchors resolve against and what
+analysis counts, and a mountain is none of those. The surround is
+`plan.surround`, and the sites that need it opt in through
+`Plan::placed_pieces` — the one iterator every PLACEMENT site reads (shipped
+`.nbt`s, forceload spans, `place_all`, the placement sentinels, the extent check
+and the voxel model).
+
+**One piece, many templates.** The annulus is far past the vanilla 48-per-axis
+template cap, so it ships as many `.nbt` files and is one `PiecePlacement` with
+many `PlacedTemplate`s — the same absorption *A piece's blocks arrive as one
+template or as a tile set* already describes. The bytes are synthesized at build
+time and never exist on disk; the structure reader merges them before it reads
+the prefab library, and a prefab that shared a filename would still win.
+
+**Biome.** Per-band `/fillbiome` in `setup_finish`, where `place_verify` has
+already proved the chunks exist. That is vanilla's own channel for grass and
+foliage tint, water colour, ambience and sky, so the surround reads as its biome
+with no resource pack anywhere in the delve. The modification cap is raised for
+the pass and restored, because a band is painted in one command and a truncated
+command leaves a horizon painted half one colour.
+
+**Every state it writes is judged against the pin, at the emitter.** A
+structure template carrying a block id 1.21.11 does not have loads that cell as
+**air** — the `.nbt` is well-formed, the build exits 0, the double-build
+byte-identity gate passes, and the terrain simply has holes in it. No count
+moves either: templates, biome bands and gap-floor cells are all counted before
+the game reads a byte. So `serialize_tile` runs every palette entry through
+`delvewright_dsl::blocks::BlockRegistry` — the id, every property name and every
+property value — and dies naming the id and how many cells carry it. It is in
+the emitter rather than in a test for the reason the emitted-command rule gives:
+the creator running the tool does not run `cargo test`. Measured on this
+generator: one rock id changed to a plausible near-miss builds green, emits
+fourteen templates, prints a byte-identical binding line, and ships 2087 cells
+that come up as air.
+
+The same line judges the **connection** half — whether a state omits a
+shape-carrying property, which is what turns a bare fence into a lone post. The
+surround's vocabulary is rock, ground, logs, leaves and ground cover and carries
+no connection class, so it derives nothing from neighbours; the assertion is
+what makes that a fact about the emitted palette rather than a claim, and it
+fired on `pink_petals`, whose `flower_amount`/`facing` are an authored decision
+and are now authored.
+
+**Binding.** Every surround build prints its templates, biome bands, the
+rectangle and **which authority stated it**, and the standable gap-floor cell
+count the climb proof floods from — a flood that started from nowhere passes for
+free and looks exactly like one that did not.
+
+**Not yet reachable from the DSL**: the generator carries a second flora (cherry
+over `minecraft:cherry_grove`) and a second surface palette, on one code path
+with parallel id tables. Neither is exposed, because the gallery element a second
+flora needs is a second whole-map campaign and a surface lands with its element
+or it does not land.
+
 ### The blockout (derived — there is no document)
 
 Stage 5 has no element table because it has no elements: the whole map's mass is
@@ -698,7 +815,7 @@ about it is what it BUILDS, which is fixed:
 |---------|---------|
 | a box | A shell one cell thick around the play space — floor course, four walls to the top of the play space, and a ceiling unless the place is sky-open. The floor is the place's own **accent**, cycled deterministically over the plan's boxes, so the colour under a body's feet names the place it is standing in. Two connected places share the wall between them, written once by each and identical either way. |
 | a seam | A frame of contrasting wall around the opening, and the opening itself cut to air — or filled with the bar, on a `barred` way, which the world-load seal model then measures shut exactly as it measures a prefab-authored gate. |
-| a stair | A stepped run inside the box the plan named, at the **gentlest standard pitch that box affords** — chosen by the same walk over the same table `DW0830` refuses with, so a plan that reached green is a plan this can build. Realized as whole blocks and bottom slabs rather than as the table's `realization` blocks: the occupancy model treats a stair block as a full cube (deliberately conservative), so treads built from stair blocks would present the navigation model a 16/16 jump per course where the table's own `step_16` says the body takes two 8/16 steps and never leaves the ground. The derivation builds the geometry the table describes out of blocks whose top faces the model measures exactly. |
+| a stair | A stepped run inside the box the plan named, at the **gentlest standard pitch the run really has room for** — chosen by the same walk over the same table `DW0830` refuses with. Across a vertical face the treads start against the wall the seam is in and walk the whole footprint, so the span is the host's extent on that axis. Through a punched **floor or ceiling** it is not: the treads start at the hole and leave along one side of it, so what they have is the room on that side plus the hole's own width, and a pitch chosen against the whole extent is chosen against a run the host does not have. **A run is laid whole or not at all** — the courses that would fall off the far wall are never dropped in silence, because a stair with its bottom missing reads as a stair to every later reader and is not one: the body climbs in from above, stands on the treads, and the place counts as reached while nobody can stand on its floor. A climb no standard pitch fits is left unbuilt, which the observer sees as an unreached place (`DW0837`). Realized as whole blocks and bottom slabs rather than as the table's `realization` blocks: the occupancy model treats a stair block as a full cube (deliberately conservative), so treads built from stair blocks would present the navigation model a 16/16 jump per course where the table's own `step_16` says the body takes two 8/16 steps and never leaves the ground. The derivation builds the geometry the table describes out of blocks whose top faces the model measures exactly. |
 | a volume | Plain mass — `massif` and `ground` in their own blocks, `clearance` kept empty. |
 | the order | Volumes, then every shell, then every interior cleared, then every seam's frame, then every stair, and **the openings last**. Two passes are separated on purpose. The interiors: a neighbour's shell may legally stand in the cells over or under a place, and clearing every interior after every shell is what makes *the play space the plan allocated is air* an invariant of the derivation rather than a property of the order two boxes happen to be written in. The openings: a stair arrives AT its seam, so its top course sits directly under or beside the hole, and a course written after the hole was cut fills it back in — cutting last makes *the opening the plan allocated is open* an invariant too, so the massing may do what it likes and the hole is the last word. |
 | lighting | The plan's one `lighting` setting, applied to every enclosed box by the ordinary relight pass. |
@@ -2495,6 +2612,7 @@ a block's collision-box top face in sixteenths, against the 1.21.11 shapes:
 | `snow[layers=N]` | `(N-1)·2 / 16` | `layers=1` (the default) has **no** collision box; `layers=8` is 14/16 |
 | `*_carpet`, `moss_carpet` | 1/16 | `pale_moss_carpet` only when `bottom=true`, else 0 |
 | `dirt_path`, `farmland` | 15/16 | |
+| no-collision vegetation (`assembled::is_no_collision_plant`) | 0/16 | grasses/ferns, every small and tall flower, `pink_petals`/`wildflowers`/`leaf_litter`, saplings, crops, mushrooms and nether flora, kelp/seagrass, vines/`glow_lichen` — vanilla gives them an **empty** collision shape. Modelling them as full cubes makes a plant cell a phantom standable surface, which refuses valid geometry (a tuft on a terrace splits a 2-block riser into two climbable 1-block steps) and, worse, accepts invalid: a walkability proof that stands a body ON a tuft is unsound, and a flower cell measures light 0 as if it were opaque. The list is the **class**, never the ids one generator happens to scatter; lookalikes that DO collide (`azalea`, `big_dripleaf`, `bamboo`, `cactus`, `pointed_dripstone`, `sea_pickle`, leaves, …) deliberately stay conservative full cubes. Fidelity consequence: plant cells no longer dam the water-flood model either — vanilla water flows into and breaks them. |
 | everything else | 16/16 | the conservative default |
 
 A block under 8/16 is **thin decoration**: its cell is passable and is never a
@@ -3412,7 +3530,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.13.0,0.14.0,0.15.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0,0.12.0,0.13.0,0.14.0,0.15.0,0.16.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
@@ -5272,7 +5390,7 @@ half they will be checked against.
 | `DW0830` | **A stair seam cannot be built.** Three shapes of one claim. The seam declares no `stair_in`, so massing that has to stand somewhere stands nowhere. The two floors are the same plane, so the stair climbs nothing — which is a walk that has been called a stair, and is catchable precisely *because* the rise is derived rather than authored. Or `\|rise\|` needs a longer run than the hosting box affords along the seam's normal at **every** standard pitch: the message names the rise, the gentlest pitch's required run and the run available, and the prescription is a longer host, the other host, or closer floors — never a steeper pitch, because the pitches are standards. |
 | `DW0831` | **A drop seam falls outside the drop policy.** The derived fall along the edge's declared direction is zero or negative — a drop that rises is a mislabelled stair, and a drop is one-way only because a body cannot climb back up the way it came — or it exceeds the metrics table's designed-drop cap. A **policy** cap, deliberately far tighter than the survivability fact stored beside it in the player half: a drop is a decision about the shape of the map and should not also be a decision about the party's health. |
 | `DW0832` | **A box violates its node's size class.** Interior footprint on either horizontal axis, or declared headroom, outside the class's range. This is the one place a size class becomes geometry; the class's own playtime weight stays thresholdless (`DW0822`). A sky-open place is not judged on headroom — it has exactly the class minimum by construction. |
-| `DW0833` | **A brief identity does not hold.** An `identities[]` comparison is false. The refusal names **both numbers** and quotes the brief's own sentence, because the author's next action is deciding which of the two to move — and the prescription says where: change the fact *in the brief*, where the design is written down, so the change is a decision somebody took rather than a plan that drifted. Raised here over the plan; **its second call site is the built world**, where the same rule recomputes the same measures from assembled bytes so a derivation defect that moved a datum cannot hide behind a plan-time green. That site belongs to the round that builds the blockout, and nothing here approximates it. |
+| `DW0833` | **A brief identity does not hold.** An `identities[]` comparison is false. The refusal names **both numbers** and quotes the brief's own sentence, because the author's next action is deciding which of the two to move — and the prescription says where: change the fact *in the brief*, where the design is written down, so the change is a decision somebody took rather than a plan that drifted. Raised here over the plan; **its second call site is the built world**, where the same rule recomputes the same measures from assembled bytes so a derivation defect that moved a datum cannot hide behind a plan-time green. That site's own prescription is different and is stated in §5.3: the mass is what disagrees, and the plan's own massing is as likely to be the cause as the derivation. That site belongs to the round that builds the blockout, and nothing here approximates it. |
 | `DW0834` | **The identity gate binds nothing.** Zero `facts[]` in the brief, or zero `identities[]` in the plan: the binding that holds the whole to its written design is empty, which is the vacuity the whole stage exists to prevent — with either side empty the plan may say anything at all and every rule above still passes, because none of them has an opinion about how big the map was meant to be. **Warning (exit 0)**, naming the empty side, so a deliberately minimal plan stays compilable; printed every run, so the emptiness is never quietly a pass. |
 | `DW0835` | **A whole-owned volume enters a box.** A `volumes[]` region intersecting a box's play space, named with both and the intersection. The whole's mass may stand beside a place, under it and over it; inside it, the volume and the place are two authorities writing one cell, which the derivation must never be asked to arbitrate. |
 
@@ -5334,9 +5452,12 @@ the plan declares with what the assembled bytes are. It does not know where the
 derivation put a floor course, how it chose a pitch, or which cells it cleared —
 it knows the plan, resolved by the same `dsl::siteplan` code stage 4 judged, and
 it knows the world. That claim is demonstrated rather than asserted: each of
-`DW0836`, `DW0837` and `DW0838` is reddened in test by a **deliberately perturbed
-derivation** (`blockout::Perturb`), never by hand-authored bytes, and the
+`DW0833`, `DW0836`, `DW0837` and `DW0838` is reddened in test by a **deliberately
+perturbed derivation** (`blockout::Perturb`), never by hand-authored bytes, and the
 production path passes `Perturb::none()` as a literal with a test asserting it.
+`low_ceiling` closes one place a course under its plan's ceiling and moves nothing
+else — no datum, no opening, no footing — so the whole error list under it is
+`DW0833` alone, which is what makes it a defect only the headroom measure can see.
 
 The step rule is the compiler's own (`nav::World::neighbors`), whose visibility
 was widened for this rather than copied — a second step rule would make this the
@@ -5351,6 +5472,9 @@ one proof in the compiler taken under different physics.
 | `DW0839` | **Two placement authorities in one campaign.** A stage-1 world declaring `areas[]` in a campaign that also carries a site plan. `areas[]` seats prefab pieces on the compiler's fixed stride and the site plan seats the derived blockout in its own declared region, so a world with both has two answers to every question about where something is and nothing says which. One or the other, per campaign; both surfaces stay legal at 0.14.0. Validation tier (exit 1), `every_version`. |
 | `DW0851` | **The ambient sea covers the walk region.** A reachable, standable cell of a `horizon: ocean` world whose **head** cell the ambient sea fills once the world loads — the build proves a body stands there and the game gives it a body that swims. `compiler::nav` (`measure_sea_seepage` / `SeaSeepage::finding`), build-tier (exit 3), at the same **two** call sites as `DW0318`/`DW0322`: once per world-edits batch in the stage-8 replay, naming the batch, and once over the finished assembled world at stage 10. **The gap it closes.** The world model holds water in two disjoint places and only one of them reached walkability: `assembled::Occupancy::flooded` is seeded from the assembled BLOCK MAP — prefab-authored sources and waterlogged blocks — while the ambient sea is not in that map at all, and `nav::World::ambient_water` (the only predicate that knew about it) had exactly one reader, the stranding proof's sea *surface*. So the sea never reached `flooded`, never reached `is_occupied`, and never reached `is_standable`: a cell inside a placed piece that the sea was about to fill was proved standable and dry, and the route proof, the wave seating and the exported waypoints all stood on it. **The model**, in four steps. *Seeds*: every non-blocking cell INSIDE the built volume, in the sea's own band (`floor_top < y ≤ level`), 6-adjacent to an ambient sea cell — the contact face. *Flow*: `assembled::flood`, the same function the block map's water runs through (infinite-water source formation, then 7-level decay with infinite downward fall) — deliberately not a second physics, so one room cannot be judged wet by one model and dry by the other. *Confinement*: the one-cell skin of non-built cells around the built volume becomes barrier, so the flow stays inside the content; what leaves it is `DW0318`'s question. *Verdict*: a reachable standable cell whose head cell the flow reaches. **Why the head cell and not the feet.** Feet wet with a dry head is *wading* and vanilla lets a body walk it — the map says ground, the game says shin-deep water, and both are true. A wet head is *swimming*: the map says a body stands here and the game says it cannot, which is a contradiction about one fact and is what a proof may refuse. The line was chosen against a measurement, not in the abstract — the released `nobodys-cave-island` walks a 26-cell strip of its west bank at exactly sea level, every reachable cell it has at or below the waterline, and not one head-deep; a feet-cell verdict refuses that shoreline, which is how a diagnostic gets weakened later by somebody who needs it green. **Runs after `DW0318` and before `DW0322`**, inside `verify_boundary_safety` so no caller has an order to get wrong, and for the same reason the fluid proof runs first: a walk region the sea is about to fill is a false premise of the stranding proof, which then prescribes a shoreline step for a room nobody can walk in. The walk region is computed once and handed to both, so the two cannot judge different sets of cells. **Direction of error**: the seeds enter the flow as *sources* where vanilla would start them one level down, so a wide contact face fills further than the game would — over-marking, which can only turn a proof red, never let a wet cell ship as proven dry. **Not the shoreline**: a shore piece that authors its own water to the waterline (`DW0344`, spec-0048) has it in the block map already, so those cells are `flooded`, not standable, and never reachable. **Binding**: pieces examined, open contact-face cells, cells the sea reaches, walk cells examined, and the wading count — all in the message and in `validation/sea-seepage.json`; none is the length of the finding list, and `contact_face_cells: 0` is a watertight hull saying so rather than a silence. Prescription: close the face, raise the floor clear of sea level, or author the water so the room IS flooded and every proof downstream knows it — never move the path around it. |
 | `DW0852` | **A stealth judge asks a player for something other than where they are.** A `stealth_eval_*` function's per-player `if entity @s[…]` test uses a selector argument outside `x`/`dx`/`y`/`dy`/`z`/`dz`. `compiler::emit` (`audit_stealth_judges` / `StealthJudgeAudit::finding`), build-tier (exit 3), run over the **final** emitted function list — after every emitter has had its say, so a later pass that rewrote a judge cannot slip past a check that ran earlier. A stealth beat is hiding and hiding is a place; `emit_stealth_functions` has said so in its own doc comment since v0.6 (*zone presence alone = hidden*), and a playtester still met a beat that quietly demanded a crouch the fiction had never asked for. A promise in a doc comment is a doc line, and a doc line is not an invocation — this is the invocation. **An allowlist, not a denylist**: the rule names the six arguments a position test may use, because a list of forbidden ones answers *not one of the ones I knew about* to the next demand, honestly and wrongly. **Scoped to the judge, not the dispatcher**: `stealth_tick_*`'s `@a[tag=!dw_cutscene]` is non-positional and correct — skipping a player watching a cinematic freezes the grace clock rather than asking that player for anything — so the rule distinguishes *who is judged* from *what the judgement asks for* and only owns the second. **What stops it going quiet**: the judges it found must equal the beats the plan holds, so a rename that made them invisible reds as an internal-invariant violation instead of examining zero and passing — the truncated-input mode, where the count is neither zero nor wrong but is about a smaller world than the check claims to cover. Binding: beats, judges, per-player tests examined and the argument vocabulary actually used, in the message and in `validation/stealth-judge.json`. A campaign that declares no stealth beat audits nothing and ships no ledger, so a file that exists and reports zero examined tests is a finding rather than an absence. Prescription: if a beat genuinely needs a posture or a held item, that is a DSL surface to propose — never a predicate to add to the judge, and never a widened allowlist. |
+| `DW0853` | **A horizon param is out of range, or belongs to another base.** `delvewright_dsl::validate` (`reserved_v16`), validation tier (exit 1), `Since(16)`. The `horizon` object form is one flat schema rather than one per base, because a tagged union per base would make the common case — a base and nothing else — the awkward one. The price of a flat shape is that a param can sit beside a base that reads nothing from it, and this is that price paid rather than absorbed: an `ocean` carrying a `rim_height` parses perfectly, and the author who wrote it believes something is reading it. The range half is `ratio` (2.0..=3.0) and `rim_height` (16..=128), checked on the **resolved** view so a shorthand is judged by the same rule as the object form it desugars to, with both bounds and the default in the message and the reason for each bound stated — under the `ratio` floor the annulus has no room for a gap floor and a slope run both, over the ceiling it is mostly terrain no body reaches at a cost that is all shipped bytes. **Restated at build time under the same code**, from the generator's own range guard, because one rule with two names is two rules that will disagree. Binding: campaigns declaring a `horizon`, of which those declaring the object form are param-checked. |
+| `DW0854` | **The surround's inner slope has grown a standable staircase.** `compiler::emit`, build tier (exit 3), `Since(16)`, run inside the world block beside the boundary proofs. A walk flood starting on the surround's own gap-floor cells reached a column outward of the crest line, so the landform no longer bounds the map and a body can walk out of the delve over the mountains. **Why it is a check and not an argument.** The generator already guarantees this by construction: no surround column stands exactly one block above the gap-floor datum, so the floor's own walkable component is bounded above by the datum and the first thing outward of it is a two-block riser, which vanilla's auto-step and jump cannot take. But that is a property of what the generator wrote, and between the generator and the world there is a gravity settle, possibly a stage-7 edit script, and a palette whose blocks may be a different height — any of which can put back the riser the generator never wrote. So the proof reads BYTES: it floods the same `nav::World` every route proof uses and asks the same step rule, sharing none of the generator's arithmetic, which is what makes it an observer of the derivation rather than a restatement of it. The generator runs its own flood too, over its finished tile contents, so a violation dies at generation as well — two proofs of one property at two moments, and the later one is the one that is about the shipped world. Binding: standable gap-floor cells the flood starts from, stated on every surround build, because a flood that started from nowhere passes for free and looks exactly like this one. |
+| `DW0855` | **A horizon that builds terrain, on a campaign with no map to build it around.** `delvewright_dsl::validate` (`reserved_v16`), validation tier (exit 1), `Since(16)`, restated at build time under the same code. A surround rings a **declared** extent, and the only statement of a whole map's extent this engine has is a site plan's `region` — which is required, non-derivable, and which no box may grow. A campaign that seats its pieces with `areas[]` states no extent at all. **The substitute is the whole point of the refusal**: the union of whatever `areas[]` happens to place looks like an extent and is not one, because areas sit on the compiler's fixed 256-block stride, so that union is mostly the void between them and ringing it builds a mountain range around empty space. Measured rather than argued: the same surround around the gallery site plan's declared 64x64 region is fourteen templates in about ninety seconds, and around the union of the gallery primary's two hand-placed areas it had not finished in ten minutes. The fast answer and the correct answer are the same answer, which is usually the sign that the substitute was never the thing. Prescription: give the campaign a site plan, or declare `void` or `ocean`, which need no map to be a horizon of — never widen the union. |
 
 `DW0833` and `DW0822` run their **second call sites** here, and the pair is the
 point of each:
@@ -5358,7 +5482,20 @@ point of each:
 - `DW0833` re-measures the brief's identities off the assembled bytes, so a
   derivation defect that moved a datum cannot hide behind a plan-time green — a
   floor laid one block low satisfies every stage-4 rule, because stage 4 never
-  saw a block. **Departure, recorded**: four of the five measures have a
+  saw a block. **`box-height` is measured over the whole footprint**: the tallest
+  stack of clear cells standing over the place's realized walk plane at any
+  column, capped at the declared clearance. The maximum, because every place this
+  derivation builds has a flat ceiling — an unmassed column answers the height,
+  and massing the plan itself put here can only ever answer less, so it cannot
+  inflate the reading. `box-extent` is measured at the **top course** of the play
+  space for the same reason on the horizontal axes: a stair the plan hosts here
+  legitimately stands on the floor, and a measurement taken there reports the
+  room as smaller than it is. **The prescription names both repairs**: a
+  disagreement between plan and bytes is a disagreement about the MASS, and only
+  one of the two things that put mass in a place is a defect — the derivation may
+  have built it wrong, or the plan may have given the place a run of treads it was
+  never given the room for, in which case the repair is to move the seam, host the
+  stair in the other place, or widen the host. **Departure, recorded**: four of the five measures have a
   byte-side referent (a box's built footprint, its built headroom, the distance
   between two built places, a datum's realized walk plane) and `region-extent`
   does not. A region is a declaration the plan's contents must fit inside
