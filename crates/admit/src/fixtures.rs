@@ -66,6 +66,78 @@ pub fn dark_room() -> Structure {
     room([9, 5, 9], &[])
 }
 
+/// A **pavilion**: a full roof carried on four corner pillars, and no walls at
+/// all. There is not one light source in it, and in the game it is daylit from
+/// every side — which is the whole point of the fixture. Every cell of its floor
+/// has a roof above it, so a light model with no sky term sees a sealed box and
+/// measures the piece pitch black at every hour there is.
+///
+/// The class it stands for is not exotic: a colonnade, a portico, a gatehouse
+/// arch, a pier under a deck, a cliff overhang. 5×5 on plan is chosen so the
+/// centre cell is three steps from the open air — far enough that a sealed-edge
+/// model reads zero there, near enough that the vanilla night sky still reaches
+/// it. A deeper pavilion is genuinely black in its middle at midnight, and this
+/// probe must go on saying so.
+pub fn pavilion() -> Structure {
+    let [sx, sy, sz] = [5, 5, 5];
+    let mut cells: Vec<([i32; 3], PaletteEntry, Option<Nbt>)> = Vec::new();
+    for x in 0..sx {
+        for z in 0..sz {
+            for y in [0, sy - 1] {
+                cells.push((
+                    [x, y, z],
+                    PaletteEntry::simple("minecraft:stone_bricks"),
+                    None,
+                ));
+            }
+        }
+    }
+    for (x, z) in [(0, 0), (sx - 1, 0), (0, sz - 1), (sx - 1, sz - 1)] {
+        for y in 1..sy - 1 {
+            cells.push((
+                [x, y, z],
+                PaletteEntry::simple("minecraft:stone_bricks"),
+                None,
+            ));
+        }
+    }
+    synth([sx, sy, sz], &cells)
+}
+
+/// A **colonnade**: a roofed walk one bay deep along a back wall, open down its
+/// whole length. Unlit, like the pavilion — every level it measures is sky.
+///
+/// One bay deep is what makes it the decisive case rather than a matter of
+/// degree: every cell of the walk is a single step from the open air, so under
+/// the vanilla night sky the whole walk sits at the darkness threshold and the
+/// piece is `lit`. With openings treated as a sealed edge the identical geometry
+/// measures zero and the piece is `dark`. Nothing else about the two answers
+/// differs — same cells, same blocks, same binding.
+pub fn colonnade() -> Structure {
+    let [sx, sy, sz] = [7, 5, 2];
+    let mut cells: Vec<([i32; 3], PaletteEntry, Option<Nbt>)> = Vec::new();
+    for x in 0..sx {
+        for z in 0..sz {
+            for y in [0, sy - 1] {
+                cells.push((
+                    [x, y, z],
+                    PaletteEntry::simple("minecraft:stone_bricks"),
+                    None,
+                ));
+            }
+        }
+        // The back wall at z = 0; the walk is the z = 1 bay, open to the world.
+        for y in 1..sy - 1 {
+            cells.push((
+                [x, y, 0],
+                PaletteEntry::simple("minecraft:stone_bricks"),
+                None,
+            ));
+        }
+    }
+    synth([sx, sy, sz], &cells)
+}
+
 /// The clean room plus a hidden **command block** carrying a `Command` — the
 /// code-injection fixture the audit must reject.
 pub fn command_block_piece() -> Structure {

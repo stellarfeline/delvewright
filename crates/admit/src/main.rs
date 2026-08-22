@@ -433,20 +433,26 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
     let zone = Zone::from_tiles(size, &tiles);
     let probe = light::probe(&zone, dark_threshold);
 
-    // The machine-readable line states the BINDING, not only the verdict: a
-    // minimum with no count beside it cannot be read afterwards.
+    // The machine-readable line states the BINDING and the SKY, not only the
+    // verdict: a minimum with no count beside it cannot be read afterwards, and
+    // one with no sky beside it is not a light level at all — the same floor is
+    // bright at noon and black at midnight.
     let report = serde_json::json!({
         "asset": input.display().to_string(),
         "files": tiles.len(),
         "size": size,
         "profile": probe.profile,
         "measured_min_light": probe.measured_min_light,
+        "min_light_daylight": probe.min_light_daylight,
         "darkest_cell": probe.darkest_cell,
         "dark_threshold": probe.dark_threshold,
+        "assumed_sky": {
+            "profile_taken_at": probe.sky_light,
+            "daylight": probe.daylight_sky_light,
+        },
         "binding": {
             "standable_cells": probe.standable_cells,
             "entry_cells": probe.entry_cells,
-            "reachable_cells": probe.reachable_cells,
             "measured_cells": probe.measured_cells,
         },
     });
@@ -471,11 +477,21 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
             .darkest_cell
             .map(|c| format!(" (darkest at {},{},{})", c[0], c[1], c[2]))
             .unwrap_or_default();
+        let by_day = match probe.min_light_daylight {
+            Some(d) if d >= dark_threshold => format!(
+                "; by day it is {} — this is a piece the sky reaches, and it needs a light only \
+                 where the delve reaches night",
+                d
+            ),
+            Some(d) => format!("; still {d} under full daylight"),
+            None => String::new(),
+        };
         Diagnostic::warning(
             DW_DARK,
             format!(
-                "dark interior: min light {} < {} over {} roofed floor cell(s) a player can walk \
-                 to{cell}",
+                "dark interior at sky light {} (a clear night, the darkest the engine models): \
+                 min light {} < {} over {} floor cell(s) a player can walk to{cell}{by_day}",
+                probe.sky_light,
                 probe.measured_min_light.unwrap_or(0),
                 dark_threshold,
                 probe.measured_cells
