@@ -3257,7 +3257,7 @@ fn emit_functions(
     // consumed with no effect. A human clicks again and never knows; a validation
     // bot clicks once and times out.
     //
-    // The reset stays unconditional on purpose (owner ruling): a trigger fired
+    // The reset stays unconditional on purpose: a trigger fired
     // long before its quest was armed is DISCARDED, never banked. Banking would
     // auto-complete the objective the instant the quest armed, with no real click
     // — a worse failure than the one it would fix, because it fabricates player
@@ -9300,7 +9300,7 @@ fn campaign_captures_striker(c: &delvewright_dsl::Campaign) -> bool {
 const WARDEN_MAX_ANGER: i32 = 150;
 
 /// The lines that lock an unleashed twin's aggression onto the player who struck
-/// the trigger (owner directive, round 8): a hostile that a player *provoked* must
+/// the trigger: a hostile that a player *provoked* must
 /// come for that player, not wander off looking for someone.
 ///
 /// **Only species with a proven vanilla primitive get one.** `minecraft:warden`
@@ -10288,7 +10288,7 @@ fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String
         }
         let mut body: Vec<String> = Vec::new();
         body.push(format!("scoreboard players set #trig_{id} dw.sys 1"));
-        // Striker capture (owner directive, round 8). The click record is still on
+        // Striker capture. The click record is still on
         // the hitbox here — `env_trigger_tick` clears every record only after every
         // trigger has been offered it — so this is the one place the acting player's
         // UUID is knowable. Parked in storage rather than passed as an argument
@@ -11267,7 +11267,7 @@ const NIGHT_VISION_FLICKER_SECONDS: u32 = 10;
 
 /// The lease every `effect give` hands out, in seconds.
 ///
-/// **The camera-coverage guarantee** (owner ruling, island round 16): a vision
+/// **The camera-coverage guarantee**: a vision
 /// effect the compiler grants must outlast any authored camera it can overlap,
 /// with vanilla's flicker window to spare.
 ///
@@ -14389,7 +14389,7 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// spec-0022 PackTests: the **saturation contract** and the collapse, asserted
 /// on a live pinned server.
 ///
-/// The volley test is the runtime half of the owner's ruling. It
+/// The volley test is the runtime half of the saturation contract. It
 /// runs the REAL emitted salvo function and then asserts, per standable
 /// kill-zone cell, that a projectile exists on the exact trajectory that reaches
 /// it — so "the volley blankets its zone" is checked in the game, not just in
@@ -15472,10 +15472,9 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
 
 /// spec-0016 §1: the **two options really differ**.
 ///
-/// The owner's ruling is that right-clicking a bonfire offers exactly *rest and
-/// save* and *save only*, and that save-only does nothing but move the
-/// checkpoint. That is a runtime claim about two functions, and this drives both
-/// on a live server through the flask — the one restored resource a PackTest
+/// Right-clicking a bonfire offers exactly *rest and save* and *save only*, and
+/// save-only does nothing but move the checkpoint. That is a runtime claim about
+/// two functions, and this drives both on a live server through the flask — the one restored resource a PackTest
 /// dummy can actually observe.
 ///
 /// **Why the flask and not health.** PackTest fake players are immune to

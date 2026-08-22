@@ -6647,13 +6647,31 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
         ));
     }
 
-    let areas: BTreeSet<&str> = c
+    let mut areas: BTreeSet<&str> = c
         .world
         .content
         .areas
         .iter()
         .map(|a| a.id.as_str())
         .collect();
+    // A site-plan campaign has no `areas[]` — `DW0839` refuses one that does —
+    // and exactly one place instead: the site the plan lays out. A batch names
+    // it like any other area, so it is a declared area id here for the same
+    // reason `areas[]` entries are.
+    //
+    // The third of three area sets in this file, and the only one that used to
+    // omit this. The pair it made was unsatisfiable: `DW0839` REQUIRES a
+    // site-plan campaign to declare no `areas[]`, and every batch of a stage-7
+    // edit script was then checked against a set that could only be empty. So no
+    // site-plan campaign could carry an edit script at all, and the repair the
+    // message prescribes — use one of the world stage's area ids — names a set
+    // the other rule guarantees is empty. Each gate was right on its own terms;
+    // the union had no green state. What it cost is every build-tier check a
+    // stage-7 script is the only route to: content could not reach them from a
+    // site-plan campaign at all.
+    if c.site_plan.is_some() {
+        areas.insert(crate::siteplan::SITE_AREA);
+    }
 
     // Small helpers, each pushing at most one diagnostic.
     fn bad_syntax(d: &mut Vec<Diagnostic>, stage: &str, path: String, what: &str, id: &str) {

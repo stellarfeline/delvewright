@@ -35,6 +35,7 @@ pub use crate::registry::AnchorRole;
 use crate::registry::{AnchorMeta, PrefabRegistry};
 use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
 use delvewright_dsl::DwCode;
+use delvewright_dsl::prefab::{GateAnchor, PrefabMeta};
 
 /// World-space distance between successive area origins.
 pub const AREA_SPACING: i32 = 256;
@@ -1940,7 +1941,9 @@ impl<'a> Plan<'a> {
                     ));
                 }
                 for (name, am) in &meta.anchors {
-                    anchors.declare(&area_id, name, am, || resolve_anchor(origin, am))?;
+                    anchors.declare(&area_id, name, am, || {
+                        resolve_anchor(origin, meta, name, am)
+                    })?;
                     if let Some(dp) = am.dispenser {
                         dispenser_cells.insert(
                             (area_id.clone(), name.clone()),
@@ -2092,7 +2095,9 @@ impl<'a> Plan<'a> {
                     // anchor is carried by exactly one placed piece (fillers are
                     // anchorless connectors), so names do not collide.
                     for (name, am) in &meta.anchors {
-                        anchors.declare(&area_id, name, am, || resolve_piece_anchor(placed, am))?;
+                        anchors.declare(&area_id, name, am, || {
+                            resolve_piece_anchor(placed, meta, name, am)
+                        })?;
                         if let Some(dp) = am.dispenser {
                             dispenser_cells
                                 .entry((area_id.clone(), name.clone()))
@@ -3085,15 +3090,17 @@ fn collect_effect_anchors(e: &QuestEffect, set: &mut BTreeSet<String>) {
 
 /// Resolve a placed-piece anchor to absolute world coords (transforming through
 /// the piece's pos + rotation).
-fn resolve_piece_anchor(placed: &solver::PlacedPiece, am: &AnchorMeta) -> ResolvedAnchor {
-    if let Some(region) = &am.region {
+fn resolve_piece_anchor(
+    placed: &solver::PlacedPiece,
+    meta: &PrefabMeta,
+    name: &str,
+    am: &AnchorMeta,
+) -> ResolvedAnchor {
+    if let Some(gate) = local_gate(meta, name, am) {
         ResolvedAnchor::Gate {
-            from: solver::transform_point(placed, region.from),
-            to: solver::transform_point(placed, region.to),
-            block: am
-                .block
-                .clone()
-                .unwrap_or_else(|| "minecraft:air".to_string()),
+            from: solver::transform_point(placed, gate.from),
+            to: solver::transform_point(placed, gate.to),
+            block: gate.block,
         }
     } else {
         ResolvedAnchor::Point {
@@ -3103,16 +3110,45 @@ fn resolve_piece_anchor(placed: &solver::PlacedPiece, am: &AnchorMeta) -> Resolv
     }
 }
 
-fn resolve_anchor(origin: [i32; 3], am: &AnchorMeta) -> ResolvedAnchor {
-    let add = |p: [i32; 3]| [origin[0] + p[0], origin[1] + p[1], origin[2] + p[2]];
-    if let Some(region) = &am.region {
-        ResolvedAnchor::Gate {
-            from: add(region.from),
-            to: add(region.to),
+/// The piece-local gate box an anchor names, asked of the ONE authority
+/// ([`PrefabMeta::gate_anchor`]) rather than read off `region`/`block` here.
+///
+/// Both resolvers go through this and through nothing else, so the piece-local
+/// answer is computed once and the two differ only in how they carry it into
+/// world space — which is the entire difference between a placed piece and a
+/// single-prefab area, and the only difference there should ever have been.
+///
+/// A gate the authority REFUSES keeps the reading it has always had. The refusal
+/// is a validation finding (`DW0343`) that names the anchor and says why, and a
+/// campaign carrying one does not build; making the planner re-read it as a point
+/// as well would move the emission of a campaign that is being refused anyway,
+/// for no reader's benefit.
+fn local_gate(meta: &PrefabMeta, name: &str, am: &AnchorMeta) -> Option<GateAnchor> {
+    match meta.gate_anchor(name) {
+        Ok(gate) => gate,
+        Err(_) => am.region.as_ref().map(|r| GateAnchor {
+            from: r.from,
+            to: r.to,
             block: am
                 .block
                 .clone()
                 .unwrap_or_else(|| "minecraft:air".to_string()),
+        }),
+    }
+}
+
+fn resolve_anchor(
+    origin: [i32; 3],
+    meta: &PrefabMeta,
+    name: &str,
+    am: &AnchorMeta,
+) -> ResolvedAnchor {
+    let add = |p: [i32; 3]| [origin[0] + p[0], origin[1] + p[1], origin[2] + p[2]];
+    if let Some(gate) = local_gate(meta, name, am) {
+        ResolvedAnchor::Gate {
+            from: add(gate.from),
+            to: add(gate.to),
+            block: gate.block,
         }
     } else {
         ResolvedAnchor::Point {
@@ -3937,7 +3973,7 @@ impl PressAnswer {
 /// **What happens when the campaign leaves a pressable body silent.**
 ///
 /// The policy is a property of the **body class**, not of this function, so
-/// extending an owner ruling from one class to another is a changed arm in
+/// extending the policy from one class to another is a changed arm in
 /// [`press_answer_sites`] rather than a re-architecture. The site that builds the
 /// answers is shared; only this decides who supplies the wording.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

@@ -2504,7 +2504,7 @@ pub struct WaveMob {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<MobEffect>,
     /// Optional worn/held equipment (DSL v0.6). A helmet is the
-    /// sanctioned fix for daylight-burning undead (owner ruling) — never
+    /// sanctioned fix for daylight-burning undead — never
     /// `set-time`. Item ids validate against the pinned 1.21.11 item registry
     /// (`DW0143`, the give-item family); every emitted slot carries drop
     /// chance 0 so players can never farm wave gear (no-grind constitution).

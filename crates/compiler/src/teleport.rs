@@ -7,8 +7,7 @@
 //! and five machinery types by name ([`crate::emit`]'s `LETHAL_EXEMPT_TYPES`),
 //! because a volume drawn across a cutscene dolly would otherwise erase the
 //! camera. The obvious move is to copy that list here. **It is the wrong move,
-//! and copying it would have been silently wrong in the one case the owner ruled
-//! on by name.**
+//! and copying it is silently wrong in the case below.**
 //!
 //! A stage-2 NPC is *two* entities sharing one `dw_npc_<id>` tag: a body and a
 //! co-located `minecraft:interaction` hitbox that carries its dialogue.

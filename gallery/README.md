@@ -71,6 +71,7 @@ writes are perfectly legal, and what the engine refuses is holding them at once.
 | `peaceful-difficulty` | `DW0468` | setting the world to peaceful |
 | `sound-at-actor` | `DW0335` | playing a sound from an actor's position |
 | `a-piece-the-library-does-not-hold` | `DW0856` | binding the hall to a piece whose name is one letter wrong |
+| `a-gate-two-areas-provide` | `DW0857` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
 
 Run any of them yourself:
 

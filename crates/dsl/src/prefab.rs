@@ -616,6 +616,80 @@ impl Anchor {
     }
 }
 
+/// A gate anchor's region and fill block, in **piece-local** coordinates — the
+/// answer [`PrefabMeta::gate_anchor`] gives, and the only shape either reader
+/// works from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GateAnchor {
+    /// Low corner of the region, piece-local.
+    pub from: [i32; 3],
+    /// High corner of the region, piece-local, inclusive.
+    pub to: [i32; 3],
+    /// The block the region is filled with and cleared of.
+    pub block: String,
+}
+
+impl GateAnchor {
+    /// The region as a reader sees it in a diagnostic.
+    fn extent(&self) -> String {
+        format!(
+            "[{},{},{}]..[{},{},{}]",
+            self.from[0], self.from[1], self.from[2], self.to[0], self.to[1], self.to[2]
+        )
+    }
+}
+
+/// The contract-element name a `bar:<region>` [`Anchor::resolves_to`] carries,
+/// and nothing else's. Every other element kind is a place a body stands, looks
+/// through or walks over — not a thing content fills.
+fn bar_name(resolves_to: &str) -> Option<&str> {
+    resolves_to.strip_prefix("bar:")
+}
+
+/// The one box `boxes` exactly fills, or `None` when they do not fill one.
+///
+/// A contract region is a **list** of boxes, and a gate is a **single** box: the
+/// compiler fills it and clears it as one region, and every consumer of a
+/// resolved gate — the assembler that voids it, the seal that rebuilds it, the
+/// nav model that walks through it — is written against two corners. So the
+/// question is not "what box contains these" but "do these BE a box": a bounding
+/// box that the members do not fill would hand every one of those consumers
+/// cells the contract never called bar, and the assembler would delete them.
+///
+/// Exact, not approximate: the members must be pairwise disjoint and their
+/// volumes must sum to the bounding box's. A doorway declared as a lintel row
+/// plus the two jambs under it is one box and passes; a doorway plus a
+/// threshold nub hanging off its corner is not, and is refused.
+fn one_box(boxes: &[Region]) -> Option<Region> {
+    let first = boxes.first()?;
+    let mut from = first.from;
+    let mut to = first.to;
+    for b in &boxes[1..] {
+        for a in 0..3 {
+            from[a] = from[a].min(b.from[a]).min(b.to[a]);
+            to[a] = to[a].max(b.from[a]).max(b.to[a]);
+        }
+    }
+    let vol = |f: [i32; 3], t: [i32; 3]| -> i64 {
+        (0..3)
+            .map(|a| i64::from(t[a] - f[a]) + 1)
+            .try_fold(1i64, |acc, n| if n > 0 { acc.checked_mul(n) } else { None })
+            .unwrap_or(0)
+    };
+    let total: i64 = boxes.iter().map(|b| vol(b.from, b.to)).sum();
+    if total != vol(from, to) {
+        return None;
+    }
+    for (i, a) in boxes.iter().enumerate() {
+        for b in &boxes[i + 1..] {
+            if (0..3).all(|k| a.from[k] <= b.to[k] && b.from[k] <= a.to[k]) {
+                return None;
+            }
+        }
+    }
+    Some(Region { from, to })
+}
+
 /// Where an anchor is — the only part of an anchor an editing tool declares.
 ///
 /// Deliberately a different type from [`Anchor`]: the whole anchor is what a
@@ -912,6 +986,143 @@ impl PrefabMeta {
         anchor.facing = edit.facing;
         anchor.region = edit.region;
         anchor.block = edit.block;
+    }
+
+    /// **The ONE authority on the region and block a gate anchor names**, in
+    /// piece-local coordinates.
+    ///
+    /// A gate anchor is declared in one of two forms, and the compiler must read
+    /// both identically:
+    ///
+    /// * **explicitly** — the anchor carries its own [`region`](Anchor::region)
+    ///   and [`block`](Anchor::block), which is how a hand-authored piece has
+    ///   always written one;
+    /// * **through the piece's spatial contract** — the anchor carries a
+    ///   [`resolves_to`](Anchor::resolves_to) of `bar:<region>`, which is what an
+    ///   exporter writes. The cells and the block already live in that edge's
+    ///   [`ContractBar`], so repeating them on the anchor would be a second
+    ///   authority for one fact, and the exporter rightly does not.
+    ///
+    /// Nothing derived either form from the other, and the whole compiler read
+    /// only the first. A piece declaring its gates the second way therefore had
+    /// no gate at all: the anchor resolved to a bare point, every verb that fills
+    /// or clears a gate was refused (`DW0343`), and the information the refusal
+    /// asked for was sitting in the same document.
+    ///
+    /// Both readers ask this function and nothing else — the planner, which
+    /// resolves the anchor to world cells, and
+    /// [`AnchorRegistry`](crate::AnchorRegistry)'s prefab implementation, which
+    /// answers whether the compiler can fill it — so the two cannot come to
+    /// disagree about what a gate is or where it stands.
+    ///
+    /// Three answers, and the third is the one that earns the `Result`:
+    ///
+    /// * `Ok(None)` — not a gate anchor. A point anchor, a trap anchor, or an
+    ///   anchor whose `resolves_to` names a space, a `no_body` region, a `via`
+    ///   volume or a `way`. None of those is a thing content fills or clears.
+    /// * `Ok(Some(gate))` — a gate, and here is the box and the block.
+    /// * `Err(why)` — declared as a gate and **not resolvable to one fillable
+    ///   box**. Refused rather than guessed, because every alternative writes
+    ///   blocks somewhere the document did not ask for. `why` is a clause the
+    ///   caller folds into its own diagnostic.
+    ///
+    /// A `way` is deliberately not a gate here. Its
+    /// [`opens`](ContractWay::opens) is a direction — `laid` cells are absent as
+    /// built and appear when opened, `cleared` cells stand and are voided — and
+    /// the single-region gate model carries no direction to put it in. Reading
+    /// one as a gate would silently pick a direction for the author.
+    pub fn gate_anchor(&self, name: &str) -> Result<Option<GateAnchor>, String> {
+        let Some(anchor) = self.anchors.get(name) else {
+            return Ok(None);
+        };
+        let contract_bar = match anchor.resolves_to.as_deref().and_then(bar_name) {
+            Some(region) => Some(self.contract_bar(name, region)?),
+            None => None,
+        };
+        match (&anchor.region, contract_bar) {
+            (None, None) => Ok(None),
+            // The contract form. The block is the contract's, which is the block
+            // the piece was actually built out of.
+            (None, Some(bar)) => Ok(Some(bar)),
+            // The explicit form, unchanged since it was the only one. A region
+            // with no `block` is what `DW0343` has always refused: the compiler
+            // is being asked to fill cells with a block nothing names.
+            (Some(region), None) => match &anchor.block {
+                Some(block) => Ok(Some(GateAnchor {
+                    from: region.from,
+                    to: region.to,
+                    block: block.clone(),
+                })),
+                None => Err(format!(
+                    "gate anchor `{name}` declares a `region` and no `block`, so nothing says \
+                     what the region is filled with"
+                )),
+            },
+            // Both forms. Agreement is fine and is what a piece that was
+            // hand-authored and later exported looks like; a disagreement is
+            // refused rather than resolved by precedence, because whichever one
+            // this function preferred would be a rule no reader of the document
+            // could see.
+            (Some(region), Some(bar)) => {
+                let explicit = GateAnchor {
+                    from: region.from,
+                    to: region.to,
+                    block: anchor.block.clone().unwrap_or_default(),
+                };
+                if explicit == bar {
+                    return Ok(Some(bar));
+                }
+                Err(format!(
+                    "gate anchor `{name}` declares a `region` and also resolves into contract bar \
+                     `{bar_region}`, and the two disagree — the anchor says {ea} filled with \
+                     `{eb}`, the bar says {ba} filled with `{bb}`. One place stands in one way: \
+                     delete the anchor's `region`/`block` and let the contract say it, or correct \
+                     the contract",
+                    bar_region = anchor
+                        .resolves_to
+                        .as_deref()
+                        .and_then(bar_name)
+                        .unwrap_or_default(),
+                    ea = explicit.extent(),
+                    eb = explicit.block,
+                    ba = bar.extent(),
+                    bb = bar.block,
+                ))
+            }
+        }
+    }
+
+    /// The bar `region` of this piece's spatial contract, as one fillable box.
+    fn contract_bar(&self, anchor: &str, region: &str) -> Result<GateAnchor, String> {
+        let bar = self
+            .spatial_contract
+            .as_ref()
+            .into_iter()
+            .flat_map(|c| c.edges.iter())
+            .filter_map(|e| e.bar.as_ref())
+            .find(|b| b.region == region)
+            .ok_or_else(|| {
+                format!(
+                    "gate anchor `{anchor}` resolves into contract bar `{region}`, and this \
+                     piece's spatial contract declares no bar of that name — the anchor's \
+                     `resolves_to` is written from the contract, so the two have come apart. \
+                     Re-export the piece"
+                )
+            })?;
+        let one = one_box(&bar.boxes).ok_or_else(|| {
+            format!(
+                "gate anchor `{anchor}` resolves into contract bar `{region}`, whose {n} boxes do \
+                 not fill their own bounding box — so there is no single region the compiler can \
+                 fill or clear without writing blocks into cells the contract does not call bar. \
+                 Declare the bar as one box, or as boxes that tile one",
+                n = bar.boxes.len()
+            )
+        })?;
+        Ok(GateAnchor {
+            from: one.from,
+            to: one.to,
+            block: bar.block.clone(),
+        })
     }
 
     /// Append a socket connector (idempotent by `local_pos` + `facing`).
