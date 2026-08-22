@@ -146,6 +146,92 @@ fn light_probe_calls_lit_room_lit_and_dark_room_dark() {
     assert_eq!(dark.measured_min_light, Some(0));
 }
 
+/// **A roofed-but-open building is not a sealed box.**
+///
+/// The pavilion has no light source in it and a roof over every cell of its
+/// floor, so a model with no sky term measures it at zero everywhere and calls
+/// it `dark` — at exit 0, with a plausible number and a plausible verdict.
+///
+/// The perturbation is chosen so that only the sky term can move it: there is no
+/// emitter in the fixture at all, so every level the probe reports is sky light
+/// and nothing else in the pipeline can supply one. A block-light change, an
+/// opacity change or a binding change all leave this at zero.
+#[test]
+fn a_roofed_but_open_pavilion_is_not_measured_as_a_sealed_box() {
+    let p = light::probe(
+        &Zone::single(&fixtures::pavilion()),
+        light::DEFAULT_DARK_THRESHOLD,
+    );
+    assert!(
+        p.measured_cells > 0,
+        "the pavilion has a floor a body can walk onto"
+    );
+    assert!(
+        p.measured_min_light.unwrap() > 0,
+        "an unlit pavilion under the night sky is not pitch black: the sky reaches \
+         under its roof from every side. min={:?} over {} cell(s)",
+        p.measured_min_light,
+        p.measured_cells
+    );
+    assert!(
+        p.min_light_daylight.unwrap() >= light::DEFAULT_DARK_THRESHOLD,
+        "and by day it is lit, which is the sentence a reviewer needs: min={:?}",
+        p.min_light_daylight
+    );
+    // The verdict states the sky it was taken at, or it states nothing.
+    assert_eq!(p.sky_light, light::night_sky());
+    assert_eq!(p.daylight_sky_light, light::daylight_sky());
+    assert!(p.daylight_sky_light > p.sky_light);
+}
+
+/// The same defect where it changes the **verdict**, not only the number: a
+/// colonnade one bay deep is `lit` under the vanilla night sky and `dark` the
+/// moment its open side is modelled as a wall.
+#[test]
+fn a_colonnade_one_bay_deep_is_lit_by_the_sky_alone() {
+    let p = light::probe(
+        &Zone::single(&fixtures::colonnade()),
+        light::DEFAULT_DARK_THRESHOLD,
+    );
+    assert!(p.measured_cells > 0, "the walk is walkable");
+    assert_eq!(
+        p.profile, "lit",
+        "every cell of the walk is one step from open air (min={:?} over {} cell(s))",
+        p.measured_min_light, p.measured_cells
+    );
+}
+
+/// **An open-air piece can carry a measured profile.** A piece with no roofed
+/// cell anywhere used to bind zero and fail: there was no honest way to grade a
+/// courtyard, a jetty or a meadow, because the only thing the model could say
+/// about an open-sky cell was that no lantern reached it.
+#[test]
+fn an_open_air_piece_is_measurable() {
+    // A bare floor slab: nothing over it anywhere.
+    let mut cells = Vec::new();
+    for x in 0..5 {
+        for z in 0..5 {
+            cells.push((
+                [x, 0, z],
+                delvewright_admit::structure::PaletteEntry::simple("minecraft:stone_bricks"),
+                None,
+            ));
+        }
+    }
+    let yard = delvewright_admit::structure::synth([5, 3, 5], &cells);
+    let p = light::probe(&Zone::single(&yard), light::DEFAULT_DARK_THRESHOLD);
+    assert!(
+        !p.is_unbound(),
+        "an open yard has somewhere to stand and something to measure: {}",
+        p.unbound_reason()
+    );
+    assert_eq!(
+        p.measured_min_light,
+        Some(light::night_sky()),
+        "open ground measures the night sky exactly"
+    );
+}
+
 #[test]
 fn light_probe_writes_estimate_method_into_metadata() {
     let s = fixtures::clean_room();
