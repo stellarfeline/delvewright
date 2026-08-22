@@ -338,7 +338,7 @@ and what it is called, so the scorer's ids cannot drift from the sheet's.
 
 ### The score RANKS; it never GATES
 
-Owner ruling, spec-0028 §3. Cross-domain calibration between a painterly
+Cross-domain calibration between a painterly
 reference image and a voxel render is unproven, so a similarity number may decide
 **where** a candidate sits on the page and never **whether** it is on the page.
 

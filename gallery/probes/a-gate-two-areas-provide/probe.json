@@ -1,0 +1,5 @@
+{
+  "code": "DW0857",
+  "units": [],
+  "why": "The annex is bound to the hall's own piece, so both areas provide `anchor/gate-main`, `anchor/shortcut-door` and the three timed-door anchors — and no gate verb in the campaign can say which building it addresses. The compiler resolves a gate anchor by name across every area and takes the first match, which is whichever area id sorts first, so every one of those six firings would silently act on `area/annex`. It declares no unit: nothing here is an unwritable surface, only a binding that must not compile. What makes it worth committing is what the engine did with it before this refusal existed — nothing. The run exited 0 and printed the same diagnostics byte for byte as a correct one, because the check that guards these verbs (`DW0343`) asks only whether SOME piece declares the anchor with a fill block, and one did. A green meaning *another building satisfies this* is indistinguishable at the call site from a green meaning *this one does*, which is the honest-but-wrong-object family this gallery exists to keep caught."
+}

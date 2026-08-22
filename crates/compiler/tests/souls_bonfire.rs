@@ -265,7 +265,7 @@ fn the_two_answers_dispatch_to_two_different_functions() {
     );
 }
 
-/// **Save only sets the checkpoint. Nothing else.** (Owner ruling, verbatim.)
+/// **Save only sets the checkpoint. Nothing else.**
 /// This is the assertion that keeps the cheap option from quietly growing a
 /// heal, a re-seat or an `on_rest` beat.
 #[test]
@@ -527,7 +527,7 @@ fn bonfire_runtime_behaviour_is_packtested() {
         reseat.contains("assert score #br_bfs dw.sys matches 2"),
         "a met, wiped wave stands again at its authored count after a rest: {reseat}"
     );
-    // The owner's no-chip-through ruling: a SURVIVOR the party chipped must be
+    // No chip-through: a SURVIVOR the party chipped must be
     // removed and replaced, not left standing at whatever health it had. Proven by
     // identity, not arithmetic — the brand cannot survive a re-summon.
     assert!(
@@ -627,8 +627,8 @@ fn the_stationed_reseat_is_packtested() {
     );
 }
 
-/// The owner's ruling is a claim about two options *differing at runtime*, so a
-/// live server has to see the difference. Health cannot carry it — PackTest fake
+/// The two options must *differ at runtime*, so a live server has to see the
+/// difference. Health cannot carry it — PackTest fake
 /// players are immune to `/damage`, so a dummy can never be hurt and therefore
 /// never be seen to be healed — but the flask can: `clear <player> <item> 0`
 /// counts without removing.

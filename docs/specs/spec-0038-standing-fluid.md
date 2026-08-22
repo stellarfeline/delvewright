@@ -108,7 +108,7 @@ a second physics.
 
 ### 2.2 The still-fluid proof — a declared body of fluid (four refusals)
 
-Keyed to the object class the second owner ruling names: **a body of fluid**
+Keyed to the object class the second ruling names: **a body of fluid**
 is any volume the engine wets or drains — a runtime `fill-region` with a
 fluid block, a runtime clear that exposes cells to water, a plane transition
 (§2.3), and the piece-authored water the assembled proofs already hold still
@@ -376,8 +376,8 @@ embedded waterloggable (the fact is measured, its cause is not).
   test on its name alone. The surface is the horizon's flood level (an
   existing engine fact made writable) plus declared bodies; "tide" is a
   campaign's fiction.
-- **A region-scoped water level** ("raise water to y=N inside R"). The owner
-  ruling: a level moves as a plane, and every bounded region has the edge
+- **A region-scoped water level** ("raise water to y=N inside R"). The rule:
+  a level moves as a plane, and every bounded region has the edge
   where the flow appears. The bounded case already has its surface — a §2.6
   region filled/cleared under the §2.2 proofs, which make it justify its own
   edges — so a second, level-shaped spelling of it would be the
@@ -469,7 +469,7 @@ embedded waterloggable (the fact is measured, its cause is not).
 ## 7. Corrections rounds have made to their briefs and to this spec
 
 - The dispatch named "fill/clear + state + gates" as the likely mechanism
-  set; the owner's plane ruling is what disqualified bounded fills as the
+  set; the plane ruling is what disqualified bounded fills as the
   primary surface, and measurement (M3) then showed a bounded lower is not
   merely ugly but **silently undone in 40 s** — the fill-shaped mechanism was
   wrong for the instance, not just inelegant.
