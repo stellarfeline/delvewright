@@ -992,6 +992,66 @@ pub struct NpcDialogue {
     pub nodes: Vec<DialogueNode>,
 }
 
+impl NpcDialogue {
+    /// The ids of the nodes reachable from `roots` by following option `next`
+    /// edges, ignoring every option gate.
+    ///
+    /// **The one authority for "what can this tree show, entered here".** A
+    /// dialogue tree has more than one entry point — the stage-6 `root`, and
+    /// every node a quest's `cast` ledger names as a scene — so "reachable" is
+    /// always relative to a root SET, and each consumer supplies the set its own
+    /// question is about. `DW0120`/`DW0123` ask about every entry point at once;
+    /// the cast ledger's `DW0858` asks about the scenes live during one
+    /// objective. Gates are ignored on purpose: an option's flag gate is
+    /// `DW0191`'s question, not this one's.
+    ///
+    /// Root ids that name no node of this tree contribute nothing (a dangling
+    /// scene root is `DW0464`, and a dangling stage-6 `root` is `DW0121`).
+    pub fn reachable_from<'a>(&'a self, roots: &[&str]) -> BTreeSet<&'a str> {
+        let by_id: BTreeMap<&'a str, &'a DialogueNode> =
+            self.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+        let mut seen: BTreeSet<&'a str> = BTreeSet::new();
+        let mut stack: Vec<&'a str> = roots
+            .iter()
+            .filter_map(|r| by_id.get_key_value(*r).map(|(k, _)| *k))
+            .collect();
+        while let Some(cur) = stack.pop() {
+            if !seen.insert(cur) {
+                continue;
+            }
+            let Some(node) = by_id.get(cur) else { continue };
+            for opt in &node.options {
+                if let Some(next) = &opt.next
+                    && let Some((k, _)) = by_id.get_key_value(next.as_str())
+                {
+                    stack.push(k);
+                }
+            }
+        }
+        seen
+    }
+
+    /// The objective ids some option reachable from `roots` completes — what a
+    /// player entering this tree at those scenes can actually finish.
+    pub fn completes_from<'a>(&'a self, roots: &[&str]) -> BTreeSet<&'a str> {
+        let seen = self.reachable_from(roots);
+        let mut out: BTreeSet<&'a str> = BTreeSet::new();
+        for node in &self.nodes {
+            if !seen.contains(node.id.as_str()) {
+                continue;
+            }
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    if let DialogueEffect::CompleteObjective { objective } = eff {
+                        out.insert(objective.as_str());
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
 /// One dialogue node: text plus branching options.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
