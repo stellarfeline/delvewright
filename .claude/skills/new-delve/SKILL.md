@@ -56,6 +56,27 @@ skipped (ADR-0021 §3).
    before — but confirm it answers here rather than discovering at stage 3 that
    the binary you were handed predates it.
 
+6. **The reference-image provider** — `tools/refimg.py` needs nothing built (it
+   is stdlib Python), and everything it needs is a thing someone else's machine
+   does not have by default. Establish all three HERE, not at the gate that
+   needs them:
+   - a `[refimg]` section in the gitignored `delvewright.local.toml` — copy the
+     commented convention block out of `delvewright.toml`;
+   - the API key **exported in your shell**, in the environment variable
+     `api_key_env` NAMES. The key never enters a file, so it is never in the
+     repo and never in the config — which also means nothing carries it over
+     from the last session;
+   - confirm it answers, without spending a call:
+     `python3 tools/refimg.py --prompt "smoke test" --dry-run`. Absent config
+     exits 2 saying what to add; a malformed one is a hard error.
+
+   This is a **hard stop for a site-plan campaign**: the map pipeline's first
+   act is the whole map's reference, and everything from the geometry brief down
+   is written against it. For an `areas[]` campaign it is the design-alignment
+   gate's tool (step 4b) and the same reasoning applies one gate later. Either
+   way, discovering at the gate that no provider is configured stops the line at
+   the point where stopping is most expensive.
+
 If any step here cannot be completed, say so and stop. Authoring against a
 half-built toolchain produces a campaign whose visual half was never reviewed,
 and nothing downstream will report that.
@@ -708,9 +729,12 @@ written against it.
   **render** is a
   candidate prefab imaged by `delve-render`, and belongs to contact-sheet curation
   later. Two stages, two producers; building prefabs first and rendering them
-  inverts the gate. `tools/refimg.py` draws reference images when a provider is
-  configured (`[refimg]` in `delvewright.local.toml`) — advisory, and it needs a
-  human in the loop for prompt iteration.
+  inverts the gate. `tools/refimg.py` draws reference images (configured at Init
+  step 6) — human-in-the-loop, and prompt iteration is the work. **A subject that
+  needs more than one view is drawn as a sequence of single full-frame views, not
+  as one canvas cut into panels**; that form, its anchor and its per-view frame
+  are written out under *The map pipeline* below, where the whole map uses it,
+  and the same three rules apply to any multi-view subject at this gate.
   When candidate prefabs DO exist and the reviewer is choosing between them, that
   later step has its own tool: `delvec contact-sheet <renders> -o <png>`
   puts them all on one page, optionally ordered by similarity to this gate's
@@ -731,13 +755,16 @@ written against it.
   player walking in experience", and the second question is the one the review
   exists for.
 - **The moment the images are confirmed, they become campaign files.** Copy
-  them to `campaigns/<id>/design/concept/`, one per scene, named for the scene,
-  and write `campaigns/<id>/design/README.md` carrying the approval date, the
-  approved names, and the sentence that every later round is held to: *author
-  from the image, judge against it, present every choice beside it.* Commit them
-  with the campaign. `tools/refimg.py` writes to a gitignored working directory,
-  which is right for a draft and wrong for an approved one — **an approval that
-  lives only in a published page is bound to nothing.**
+  them **and their `.json` sidecars** to `campaigns/<id>/design/concept/`, one per
+  scene, named for the scene, and write `campaigns/<id>/design/README.md`
+  carrying the approval date, the approved names, and the sentence that every
+  later round is held to: *author from the image, judge against it, present every
+  choice beside it.* Commit them with the campaign. `tools/refimg.py` writes to a
+  gitignored working directory, which is right for a draft and wrong for an
+  approved one — **an approval that lives only in a published page is bound to
+  nothing.** The sidecar travels with the image because it is what makes the
+  image re-issuable with one word changed: prompt, style note, resolved frame,
+  anchor id. An image whose prompt is gone can only be replaced, never edited.
 - **Every later step that asks the reviewer to choose reads `design/` FIRST**, and
   presents the choice beside that scene's image, under the approved name, saying
   which element of the image the thing on offer corresponds to. A round that
@@ -1195,6 +1222,77 @@ place with a shape, when the party has to walk somewhere and the walking is the
 content, when there is no prefab that is the building the story is about. Take
 `areas[]` when the campaign is a small number of rooms the piece library already
 has.
+
+**Before any of it: the whole map gets a reference image of its own.** A
+composition program written without one is free invention with no criterion —
+the same defect as parts drawn independently, moved up a level. The whole's
+reference joins the approved set on the same terms as a scene's (step 4b), and
+it comes FIRST, because everything below is written against it.
+
+**The form is several views of the one subject, each its own image, generated in
+sequence.** Front, side, straight-down plan, a named angle — whatever the shape
+needs. **Not several views divided into one canvas**: a fixed canvas cut into
+four spends three quarters of its resolution on gutters and neighbours, and the
+detail a reference exists to preserve is the first thing to go. It also makes the
+unit of judgement wrong — one unusable panel forces the whole sheet to be
+re-rolled, where one unusable view is re-rolled alone for the cost of one image.
+
+1. Write the **style note** once: what this place is, in what hand, plus the
+   sentence that each image is ONE single full-frame view and never a sheet, a
+   grid, a panel or an inset. It is held constant across the series
+   (`--style-note`), and it is recorded in every sidecar, so a later round can
+   extend the series instead of starting one.
+2. **View 1 is generated from the prompt alone**, and confirmed for style before
+   anything else is drawn. Frame it for what it shows.
+3. **Every later view is generated from the prompt plus VIEW 1** — pass view 1's
+   interaction id to `--chain-from`, read out of view 1's sidecar (`.id`).
+   **Anchor every one of them on the FIRST image, never on the one before it**:
+   chaining view to view compounds the drift instead of bounding it. Frame each
+   for what it shows — a straight-down site plan is `--aspect-ratio 1:1`, an
+   elevation is not — which is per call and never a config edit.
+
+```bash
+# view 1 — from the prompt alone, framed as an elevation
+python3 tools/refimg.py --prompt-file v1-front.txt --style-note "$STYLE" \
+    --aspect-ratio 16:9 --out .refimg/map-view1-front
+
+# read view 1's interaction id out of its sidecar — this is the series anchor
+V1=$(python3 -c 'import json;print(json.load(open(".refimg/map-view1-front.json"))["id"])')
+
+# every later view: the same anchor, its own prompt, its own frame
+python3 tools/refimg.py --prompt-file v2-west.txt  --style-note "$STYLE" \
+    --chain-from "$V1" --aspect-ratio 16:9 --out .refimg/map-view2-west
+python3 tools/refimg.py --prompt-file v3-plan.txt  --style-note "$STYLE" \
+    --chain-from "$V1" --aspect-ratio 1:1  --out .refimg/map-view3-plan
+```
+
+`$V1` is the same string in every later call, and that is where the "anchored on
+view 1" claim is checked — the `chain_from` field in the sidecars, not a sentence
+in a report. A frame the configured provider cannot honour is refused rather than
+dropped, so a wrong flag stops the call instead of returning a correctly-styled
+picture of the wrong shape.
+
+**The trade, stated because it is why this step has a check in it.**
+Co-generating views in one canvas is what guaranteed they agreed about the
+*geometry* of the subject; generating them in sequence guarantees only *style*.
+So **the geometric facts live in the written brief, and a drift is checked
+against text rather than eyeballed** — which is exactly what `geometry-brief.json`
+below is, and why reference imagery is style authority and never dimensional
+authority. Read each view against the brief's facts, not against your memory of
+the last picture.
+
+The check this exists to make possible: a zone program once exported as a flat
+chain of rooms with no climb, no belfry and no bell, under the name of the tower
+its campaign was named after, and it survived until somebody held it against the
+zone's own image. A silhouette drawn from three sides is legible enough that the
+same collapse cannot pass.
+
+**When the views are confirmed they become campaign files** — copy them and their
+sidecars to `campaigns/<id>/design/reference/`, named for the view, and commit
+them with the campaign. An approval that lives only in a gitignored working
+directory is bound to nothing, and the sidecar is what makes a view re-issuable
+with one word changed: it carries the prompt, the style note, the resolved frame
+and the anchor id.
 
 Three documents, in this order, each the input the next one needs. **The order is
 not advice — it is the only order that compiles**, and that is deliberate: the
