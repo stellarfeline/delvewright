@@ -1419,19 +1419,21 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
     // Finale convergence: every quest must be a transitive dependency of the
     // finale (the plan converges on the finale). See README (spec ambiguity).
-    let mut reach: BTreeSet<&str> = BTreeSet::new();
-    let mut stack = vec![plan.finale.as_str()];
-    while let Some(cur) = stack.pop() {
-        if reach.insert(cur)
-            && let Some(deps) = edges.get(cur)
-        {
-            stack.extend(deps.iter().copied());
-        }
-    }
+    //
+    // The spine is asked of [`QuestPlanContent::spine`], which is the ONE
+    // authority on it — the same function the layout binding and the
+    // critical-path spine obligation read. This check used to derive the closure
+    // itself, over `edges` (deps pruned to declared quests) rather than over the
+    // raw `depends_on`; both derivations were correct and neither was named, so
+    // nothing would have caught them drifting apart. The two sets differ only by
+    // ids the plan does not declare, which is `DW0112`'s finding and not this
+    // one's, and which cannot move this verdict because the membership below is
+    // only ever asked about a DECLARED quest.
+    let reach = plan.spine();
     for (i, q) in plan.quests.iter().enumerate() {
         if !reach.contains(q.id.as_str()) {
             d.push(Diagnostic::error(
-                codes::FINALE_UNREACHABLE,
+                codes::PLAN_NOT_CONVERGENT,
                 "quest-plan",
                 format!("/content/quests/{i}"),
                 format!(
@@ -4697,6 +4699,42 @@ fn prefab_binding(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagno
             )),
             _ => {}
         }
+        // A bound PIECE must resolve against the prefab-metadata surface, on
+        // exactly the terms the pool arm below already demands. The asymmetry
+        // this replaces was not a missing message — it was a missing message
+        // that TOOK A PROOF WITH IT. An area whose prefab the registry does not
+        // hold contributes no set to [`AnchorProviders`], and every per-area
+        // anchor check reads a missing set as *defer to the compiler* and
+        // skips. So one mistyped character in `world.json` turned seven
+        // `DW0142` refusals into silence on the gallery, and left the campaign
+        // green in a way that is strictly less checked than a correct name —
+        // the unbound vacuity mode, one keystroke away.
+        //
+        // `has_prefab` is asked rather than `anchors_for` because only the
+        // first distinguishes *the library does not hold this* from *this
+        // registry cannot say*: a subset registry answers `None` and nothing is
+        // refused on its word.
+        if let Some(prefab) = &a.prefab
+            && prefab.is_valid_syntax()
+            && anchors.has_prefab(prefab) == Some(false)
+        {
+            d.push(Diagnostic::error(
+                codes::PREFAB_UNKNOWN,
+                "world",
+                format!("/content/areas/{i}/prefab"),
+                format!(
+                    "area `{}` binds `prefab` `{prefab}`, which is not declared in the prefab \
+                     metadata — bind a piece that exists in the prefabs dir, or add `{prefab}` \
+                     to the prefab library. This is a prefab-library/naming issue, not a \
+                     quest-logic one. It is refused rather than deferred because an area whose \
+                     piece is absent declares NO anchors, so every anchor a quest in this area \
+                     names would be accepted without being examined — a misspelling here \
+                     switches the anchor proof (`DW0142`) off for the whole area instead of \
+                     failing it",
+                    a.id
+                ),
+            ));
+        }
         // A bound pool must resolve against the prefab-metadata surface.
         if let Some(pool) = &a.prefab_pool
             && pool.is_valid_syntax()
@@ -6766,13 +6804,31 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
         ));
     }
 
-    let areas: BTreeSet<&str> = c
+    let mut areas: BTreeSet<&str> = c
         .world
         .content
         .areas
         .iter()
         .map(|a| a.id.as_str())
         .collect();
+    // A site-plan campaign has no `areas[]` — `DW0839` refuses one that does —
+    // and exactly one place instead: the site the plan lays out. A batch names
+    // it like any other area, so it is a declared area id here for the same
+    // reason `areas[]` entries are.
+    //
+    // The third of three area sets in this file, and the only one that used to
+    // omit this. The pair it made was unsatisfiable: `DW0839` REQUIRES a
+    // site-plan campaign to declare no `areas[]`, and every batch of a stage-7
+    // edit script was then checked against a set that could only be empty. So no
+    // site-plan campaign could carry an edit script at all, and the repair the
+    // message prescribes — use one of the world stage's area ids — names a set
+    // the other rule guarantees is empty. Each gate was right on its own terms;
+    // the union had no green state. What it cost is every build-tier check a
+    // stage-7 script is the only route to: content could not reach them from a
+    // site-plan campaign at all.
+    if c.site_plan.is_some() {
+        areas.insert(crate::siteplan::SITE_AREA);
+    }
 
     // Small helpers, each pushing at most one diagnostic.
     fn bad_syntax(d: &mut Vec<Diagnostic>, stage: &str, path: String, what: &str, id: &str) {

@@ -26,7 +26,7 @@ that matches no row is **escalated, not improvised**.
 | a named referent that plausibly exists as a **community build** | check licence-gated ingestion first (`delve-schem` + `delve-admit`, spec-0007); fall back to grammar | Availability is luck — the corpus audit found most schematic sources unverifiable or NC-tainted, so ingestion is an opportunistic shortcut, never the plan of record. Everything ingested passes the same audit/socket/lighting admission as generated pieces. |
 | genuinely un-statable by axis-aligned boxes: a **smooth** curve, a diagonal, a profile whose step varies independently of the box, a vault bending on two axes at once, or noise/terrain (§6) | **in-house generator work** (Rust: value-noise fields, 4-5-rule cellular automata, the ported craft passes) — an engine task, not an authoring step | The grammar has no smooth curve, no diagonal, no noise, no terrain, by design. This route costs a worker dispatch and says so up front; it is the one row where "make a prefab" becomes "extend the engine". **Check §6 and `grammar.md` §2c before taking it** — a stepped arch, a gable, a spire, a batter and a tapered vault are all one recursion (idiom 3), two roofs meeting in a valley are that recursion peeling a ring (idiom 3), and any shape with a mirror plane is a rule body written mirrored (idiom 7). All three were mistaken for this row. |
 | terrain or backdrop *around* the playable scene | **surround layer** (`horizon` — ocean/void today; the spec-0026 library when it lands), never a prefab | A surround is analytically known so the proofs can read it; modelling vanilla worldgen was evaluated and rejected (the compiler cannot see server terrain without re-implementing its noise — a folklore hack). |
-| an atmosphere-tier set-piece whose power is composition — scale contrast, approach framing, lighting (T3) | **no current route — escalate to the owner** | Measured, not assumed: the landmark probe showed T3's missing layer is presentation (lighting/fog/camera), not geometry. Composition is art direction (owner ruling) and is M4 design work. Attempting it through any row above produces the geometry and loses the scene. |
+| an atmosphere-tier set-piece whose power is composition — scale contrast, approach framing, lighting (T3) | **no current route — escalate to the owner** | Measured, not assumed: the landmark probe showed T3's missing layer is presentation (lighting/fog/camera), not geometry. Composition is art direction and is M4 design work. Attempting it through any row above produces the geometry and loses the scene. |
 
 And the composition rules — how the routes combine into an area:
 
@@ -621,6 +621,25 @@ pre-wired hardware, each writing only the keys it means. `resolves_to` is which
 element of the piece's own contract the anchor lands in — `space:`, `no_body:`,
 `via:`, `bar:` or `way:` and the element's name — resolved by whoever wrote the
 document, never by the reader.
+
+A **gate anchor** — the thing `close-gate`, `open-gate`, a `shortcut` and a
+`timed-gate` fill and clear — is declared either way and reads the same. Write
+`region` plus `block` on the anchor, or let a `resolves_to` of `bar:<region>`
+name the bar in the piece's own spatial contract, which already carries the cells
+and the block; an exporter writes the second form, so a piece that declares a
+contract needs nothing else. Both go through one reader, so the two cannot come
+apart. Three things are refused rather than guessed at: an anchor carrying both
+forms where they disagree, a `bar:` naming no bar the contract declares, and a
+bar whose boxes do not fill their own bounding box — a gate is a single box to
+everything that consumes one, and widening a scattered bar to its bounding box
+would fill or delete cells the contract never called bar. Declare such a bar as
+one box, or as boxes that tile one.
+
+A gate-anchor name is unique **per area**. Two of a campaign's areas providing
+one gate-anchor name is `DW0857`: the compiler resolves a gate anchor by name
+across every area and takes the first match, so nothing an author can see says
+which building the verb addresses. Pool members inside one area may share a name
+freely — that is what a pool is.
 
 The **spatial contract** is `{entry, spaces, no_body, edges, faces,
 no_body_majority_ack?}`, every box an inclusive `{from, to}` cell range in the

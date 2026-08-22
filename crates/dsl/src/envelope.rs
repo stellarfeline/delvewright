@@ -106,8 +106,8 @@ pub const HORIZON_LIBRARY_SINCE: &str = "0.16.0";
 /// effect and the `narrate` `art` style — alongside the actors/sequence surface
 /// from sibling PRs; v0.7 (spec-0020) adds the per-quest `cast` ledger; v0.8
 /// (spec-0025) adds declared stage-4 `branch_points`, the per-node `happening`
-/// declaration and the named `campaign-complete` `ending`, and (spec-0016 §1
-/// owner rulings) the bonfire rest interaction — the `bonfire` effect's
+/// declaration and the named `campaign-complete` `ending`, and (spec-0016 §1)
+/// the bonfire rest interaction — the `bonfire` effect's
 /// authorable option strings and the class-kit `flask`; v0.9 adds
 /// declared elite/boss `drops[]` and the `collect` `dropped_by`; v0.10
 /// (spec-0031) adds **runtime state** — the stage-5 `state[]` declaration, the

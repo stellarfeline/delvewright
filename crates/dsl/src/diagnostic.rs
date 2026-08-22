@@ -269,8 +269,19 @@ pub mod codes {
     pub const PLAN_CYCLE: DwCode = DwCode::every_version("DW0130");
     /// `finale` is not a declared quest.
     pub const FINALE_UNKNOWN: DwCode = DwCode::every_version("DW0131");
-    /// `finale` is not the convergent sink of the plan.
-    pub const FINALE_UNREACHABLE: DwCode = DwCode::every_version("DW0132");
+    /// `finale` is not the convergent sink of the plan: some declared quest is
+    /// not a transitive dependency of it.
+    ///
+    /// **The name deliberately does not contain `FINALE_UNREACHABLE`, which
+    /// belongs to `DW0201`.** That code says the finale can never complete; this
+    /// one says nothing at all about the finale being reachable — in the fixture
+    /// that raises it the finale completes perfectly well and a side trip hangs
+    /// off the plan. Both are `DwCode`, so nothing but the name distinguishes
+    /// them at a call site, and `tools/check-dw-codes.py` credits a bare
+    /// constant name mentioned in a crate's tests to **that crate's** code — so
+    /// one shared name would buy coverage for whichever rule the file happens to
+    /// sit next to.
+    pub const PLAN_NOT_CONVERGENT: DwCode = DwCode::every_version("DW0132");
     /// Non-mandatory quest (reserved in v0).
     pub const NON_MANDATORY: DwCode = DwCode::every_version("DW0133");
     /// Objective `after` cycle.
@@ -313,6 +324,13 @@ pub mod codes {
     pub const PREFAB_BINDING: DwCode = DwCode::every_version("DW0160");
     /// Area `prefab_pool` references a pool absent from `prefabs/` metadata.
     pub const POOL_UNKNOWN: DwCode = DwCode::every_version("DW0161");
+    /// Area `prefab` names a piece absent from `prefabs/` metadata — the same
+    /// obligation [`POOL_UNKNOWN`] carries on the other arm of the binding. It
+    /// is an error rather than a deferral because an area whose piece is absent
+    /// contributes no anchor set at all, so every per-area anchor proof over it
+    /// is SKIPPED rather than failed: a misspelling here is strictly less
+    /// checked than a correct name.
+    pub const PREFAB_UNKNOWN: DwCode = DwCode::every_version("DW0856");
     /// (v0.6, spec-0017) A stage-7 edit script is structurally invalid: an edit
     /// names a region no earlier `select` in its batch defined, a composition
     /// (`union`/`intersect`/`subtract`) lists too few regions, a box `min`

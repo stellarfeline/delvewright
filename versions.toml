@@ -221,19 +221,28 @@ targets = [
 # reds on a count instead of sweeping as a silent zero. Moving this `sha` without
 # it is a tier-1 red (validation/check-versions.sh).
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip after the re-export that gives seven pieces the connection
-# states their fences, walls, bars and lichen were never written with.
+# Content `main` tip at which `hollow-vigil`'s two over-wide dialogue option
+# labels are rewritten. The campaign builds again, in both the languages its
+# `world.json` declares — which is why moving this pin is the same act as
+# deleting its entry from `.github/campaign-build-exclusions.toml`. An exclusion
+# whose campaign has started building is a stale line that would excuse the next
+# regression, so `tools/build-every-campaign.py` reds on exactly that state: the
+# pin cannot land on its own, and neither can the deletion.
 #
-# This is the pin the shape rule needs. `DW0735` says a state that omits a
-# shape-carrying property drops the geometry the property assembles, and the
-# library sweep (`crates/admit/tests/library.rs`) asks it of every piece already
-# admitted. At the previous pin that sweep is RED: 16 of 366 used palette
-# entries over 32 pieces at the pin — a portcullis that is fifteen isolated iron
-# posts, a meadow boundary that is ten separate cobblestone stubs, cave decals
-# hanging off the face pointing away from the rock. At this pin it is 0 red over
-# 390, and the count moved because writing a connection splits one omitted entry
-# into the several fully-specified ones the piece actually places.
-sha = "f28f15394eef6813a88122137e3050b1da28c6f9"
+# `nobodys-cave-island`'s three checkpoint seats and its storm-shore wave anchor
+# move here as well, so that campaign's emitted bytes move with the pin — the
+# only files that do, and each of them traceable to a line of its `quests.json`.
+# ADR-0006 is about a FIXED content SHA and is unaffected: at this pin every
+# campaign builds byte-identically twice.
+#
+# The prefab library is byte-identical to the previous pin, so the shape rule
+# that pin was taken for is carried here unchanged rather than re-established:
+# `DW0735` says a state that omits a shape-carrying property drops the geometry
+# the property assembles, and the library sweep (`crates/admit/tests/library.rs`)
+# asks it of every admitted piece and finds nothing. That sweep prints its own
+# binding count on every run, which is where the number belongs — a count
+# restated here would be a frozen measurement of an engine that has since moved.
+sha = "f38ed73a12b26231c962f9288cc90806deaca849"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

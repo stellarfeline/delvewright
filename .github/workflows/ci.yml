@@ -943,9 +943,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # `gallery-baseline.py` classifies a manifest mismatch as an emission
-          # change or a determinism finding by what the diff touches, and that
-          # needs the merge base rather than a shallow head.
+          # `gallery-baseline.py` classifies a manifest mismatch partly by what the
+          # diff touches, and that needs the merge base rather than a shallow head.
+          # Which verdicts it can reach is its own business and is not listed here.
           fetch-depth: 0
       - uses: Swatinem/rust-cache@v2
         with: { key: gallery }

@@ -20,7 +20,7 @@
 //! route would be an unprovable promise. The stairs remain walkable both ways, so
 //! the model always has a proven return and nothing can strand (`DW0315`).
 //!
-//! The **tide gate + ferry pier** (r5, owner shortcut ruling): the rope room's
+//! The **tide gate + ferry pier**: the rope room's
 //! south wall carries a sealed sea-door (`anchor/l4-tide-gate`, iron bars — the
 //! sea is visible through it from BF3, and no lever anywhere opens it) giving
 //! onto a walled sea-stair down the tower's south face to a stone ferry pier at

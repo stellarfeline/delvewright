@@ -3,7 +3,7 @@
 //!
 //! # The one rule that governs this module
 //!
-//! **The score RANKS; it never GATES** (owner ruling, spec-0028 §3). Cross-domain
+//! **The score RANKS; it never GATES** (spec-0028 §3). Cross-domain
 //! calibration between a painterly reference image and a voxel render is
 //! unproven, so a similarity number may decide *where* a candidate sits on the
 //! page and may never decide *whether* it is on the page. A low-scoring
@@ -430,7 +430,7 @@ pub fn rank_by_score(candidates: &[Candidate], scores: Option<&ScoreSet>) -> Vec
 
 /// The rank-never-gate guard: `order` must be a permutation of `0..n`.
 ///
-/// This is the machine form of the owner's ruling (spec-0028 §3). Every way an
+/// This is the machine form of that rule (spec-0028 §3). Every way an
 /// ordering can stop being rank-only shows up here as the same defect — a
 /// threshold that drops a candidate shortens the order, a de-duplicating
 /// "best of" repeats an index, an off-by-one loses the last cell. All of them
@@ -467,7 +467,7 @@ pub fn verify_total_order(n: usize, order: &[usize]) -> Result<(), Diagnostic> {
         format!(
             "ranking is not a total order over the candidates: {} dropped, {} duplicated \
              ({} of {} placed). The score RANKS the contact sheet; it NEVER gates it — a \
-             low-scoring candidate is still present, last (owner ruling, spec-0028 §3). \
+             low-scoring candidate is still present, last (spec-0028 §3). \
              Promoting the score to a threshold needs its own owner-approved amendment \
              backed by batch data; do not add one here",
             dropped.len(),

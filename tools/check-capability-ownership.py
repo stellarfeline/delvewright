@@ -133,7 +133,7 @@ INTERACTION_SITES = {
         "supplies the ANSWER, in the general effect vocabulary, so the reply is "
         "l10n-inventoried and flag-gated by construction. Empty for a campaign with "
         "no shortcut — byte-identical output. Shape 3, closed rather than catalogued. "
-        "v0.11 closed the other half, and the owner's ruling decided WHO closes it: "
+        "v0.11 closed the other half, and WHO closes it is settled: "
         "the answer is the general verb, and from 0.11.0 the CAMPAIGN must write "
         "it — an unanswered SEALED BODY is `DW0429`, door and `close-gate` wall "
         "alike, not a line the engine invents. A baked default would be the "
