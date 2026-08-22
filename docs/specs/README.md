@@ -61,3 +61,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0048](spec-0048-a-generated-shore-declares-its-waterline.md) | A generated shore declares its waterline — a program-level datum, verified at export, through to `waterline_y` | Accepted |
 | [spec-0049](spec-0049-a-whole-map-is-walked-before-any-part-is-detailed.md) | A whole map is walked before any part is detailed — the vertical slice to a derived blockout | Accepted |
 | [spec-0050](spec-0050-a-place-is-detailed-inside-the-box-the-whole-gave-it.md) | A place is detailed inside the box the whole gave it — stage 6 of the map pipeline | Accepted |
+| [spec-0052](spec-0052-a-quest-names-a-place-the-graph-declared.md) | A quest names a place the graph declared — the campaign's vocabulary below node granularity | Proposed |
