@@ -25,6 +25,7 @@ use std::collections::BTreeMap;
 use delvewright_compiler::blockout::{self, Perturb};
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::PrefabRegistry;
+use delvewright_dsl::siteplan::PlacedBox;
 use delvewright_dsl::{Campaign, Severity};
 
 /// The site-plan fixture: five places, zero authored geometry.
@@ -282,6 +283,190 @@ fn a_low_wall_reddens_dw0838() {
         "the refusal names both places and a witness cell: {m}"
     );
     assert_eq!(b.binding.pairs, 15);
+}
+
+// ---------------------------------------------------------------------------
+// The headroom measure, and the run a stair really has
+// ---------------------------------------------------------------------------
+
+/// The derived world of the unperturbed fixture, for tests that read blocks
+/// rather than findings.
+fn derived_world() -> (Vec<PlacedBox>, delvewright_compiler::nav::World) {
+    let c = campaign();
+    let reg = prefabs();
+    let plan = Plan::build(&c, &reg).expect("the blockout fixture plans");
+    let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let world = delvewright_compiler::nav::World::from_plan(&plan, &structures);
+    let boxes = plan
+        .blockout
+        .as_ref()
+        .expect("a site plan derives a blockout")
+        .boxes
+        .clone();
+    (boxes, world)
+}
+
+fn box_of<'a>(boxes: &'a [PlacedBox], node: &str) -> &'a PlacedBox {
+    boxes
+        .iter()
+        .find(|b| b.node.0 == node)
+        .unwrap_or_else(|| panic!("`{node}` is a place this fixture has"))
+}
+
+fn cell(c: [i64; 3]) -> [i32; 3] {
+    [c[0] as i32, c[1] as i32, c[2] as i32]
+}
+
+/// **`DW0833`'s headroom is a PLACE, not one column of it.**
+///
+/// The condition is asserted rather than assumed, and that is the whole
+/// discipline of this test: the hall's own centre column carries the derived
+/// stair's treads, because a stair arrives at its seam and walks back through
+/// the middle of the room. Counting upward from `centre()` therefore answered
+/// **0** for a room whose ceiling is exactly where the plan put it. If the
+/// fixture's stair ever moves off the middle this assertion fails rather than
+/// the test quietly becoming vacuous.
+#[test]
+fn the_headroom_measure_reads_the_place_and_not_its_centre_column() {
+    let (boxes, world) = derived_world();
+    let hall = box_of(&boxes, "node/hall");
+    assert!(
+        !world.is_clear(cell(hall.centre())),
+        "the hall's centre column carries the stair's treads — without that this \
+         test proves nothing about which column was read"
+    );
+    let (b, _) = battery_under(Perturb::none());
+    assert!(
+        !errors(&b).contains(&"DW0833".to_string()),
+        "a place whose ceiling is where the plan put it keeps its height \
+         identity, whatever the plan hosts on its floor: {:?}",
+        errors(&b)
+    );
+    assert_eq!(
+        b.binding.identities, 6,
+        "and the height identities were examined rather than skipped"
+    );
+}
+
+/// `DW0833`: a ceiling closed one course into the play space, and nothing else
+/// moved.
+///
+/// The perturbation is chosen so that only the check under test can see it. The
+/// floor stays where the plan put it, so `DW0836`'s realized rise is unmoved;
+/// the place stays walkable, so `DW0837` is unmoved; the openings are untouched,
+/// so `DW0836`'s seam half is unmoved. A headroom check that reddened every box
+/// would pass a test like this by accident, which is why the assertion below is
+/// over the WHOLE error list and not over one code.
+#[test]
+fn a_low_ceiling_reddens_dw0833_on_the_headroom() {
+    let (clean, _) = battery_under(Perturb::none());
+    assert!(
+        !errors(&clean).contains(&"DW0833".to_string()),
+        "the unperturbed derivation keeps the brief's numbers"
+    );
+    let (b, _) = battery_under(Perturb {
+        low_ceiling: Some("node/landing"),
+        ..Perturb::none()
+    });
+    assert_eq!(
+        errors(&b),
+        vec!["DW0833".to_string()],
+        "a course of ceiling is a height defect and nothing else"
+    );
+    let m = message_for(&b, "DW0833");
+    assert!(
+        m.contains("fact/landing-height") && m.contains("measured 3"),
+        "the refusal names the fact and the figure it measured: {m}"
+    );
+    assert!(
+        m.contains("the PLAN may have given this place something to hold"),
+        "and it names BOTH ways the mass can disagree, not only the derivation: {m}"
+    );
+    assert_eq!(
+        b.binding.identities, 6,
+        "the binding is stated even when the check refuses"
+    );
+}
+
+/// **A stair down through a punched floor is a whole run, and a body walks it
+/// to the floor.**
+///
+/// The run of such a stair starts at the hole and leaves along one side of it,
+/// so what it has is the room on that side plus the hole's own width — never the
+/// host's whole extent. Chosen against the extent, the gentle 1:2 standard
+/// "fit" a run the undercroft does not have and the courses that fell off the
+/// far wall were dropped in silence: the ladder lost its bottom two treads, the
+/// body could climb IN from above and stand on the stair, and the battery stayed
+/// green over a room whose floor nobody could reach — because a place counts as
+/// reached the moment a body stands anywhere inside it.
+///
+/// Both halves are asserted, and the first is the one that was silently false:
+/// every course of the climb exists, and the walk plane itself is reachable from
+/// the place above.
+#[test]
+fn a_stair_down_through_a_punched_floor_is_a_whole_run() {
+    let (boxes, world) = derived_world();
+    let under = box_of(&boxes, "node/undercroft");
+    let cellar_above = box_of(&boxes, "node/cell");
+    let (lo, hi) = under.space();
+
+    // Every course of the climb is there: for each block of rise between the
+    // walk plane and the floor the hole is cut in, some cell of the place is
+    // standable at that height. A dropped course is a gap in this ladder.
+    for h in 1..=i64::from(under.clearance) {
+        let y = under.floor + h;
+        let found = (lo[2]..=hi[2])
+            .any(|z| (lo[0]..=hi[0]).any(|x| world.is_standable(cell([x, y, z]))));
+        assert!(
+            found,
+            "no tread stands {h} block(s) over `node/undercroft`'s walk plane — \
+             the run was laid short"
+        );
+    }
+
+    // And the walk plane is reachable from the floor of the place above, which
+    // is what the climb is for.
+    let (alo, ahi) = cellar_above.space();
+    let seeds: Vec<[i32; 3]> = (alo[2]..=ahi[2])
+        .flat_map(|z| (alo[0]..=ahi[0]).map(move |x| [x, alo[1], z]))
+        .map(cell)
+        .filter(|c| world.is_standable(*c))
+        .collect();
+    assert!(
+        !seeds.is_empty(),
+        "the place above offers somewhere to start"
+    );
+    let reached = world.reachable_walkable(&seeds);
+    let landed = (lo[2]..=hi[2])
+        .flat_map(|z| (lo[0]..=hi[0]).map(move |x| [x, under.floor, z]))
+        .any(|c| reached.contains(&cell(c)));
+    assert!(
+        landed,
+        "no body standing on `node/cell`'s floor can reach `node/undercroft`'s \
+         own walk plane over the step rule"
+    );
+}
+
+/// The stair across a VERTICAL face is untouched, and the assertion is over the
+/// blocks rather than over a hash so a reader can see which stair and where.
+///
+/// Such a run starts against the wall the seam is in and walks the whole
+/// footprint, so the span its pitch is chosen against IS the host's extent —
+/// which is what it always was. The hall's climb of five is still the gentle
+/// 1:2 standard, ten courses back from the east wall at x 24, and the eleventh
+/// cell is still room.
+#[test]
+fn the_stair_across_a_wall_still_spends_the_whole_footprint() {
+    let (boxes, world) = derived_world();
+    let hall = box_of(&boxes, "node/hall");
+    assert!(
+        !world.is_clear(cell([15, hall.floor, 10])),
+        "the tenth course of the hall's ramp stands at x 15"
+    );
+    assert!(
+        world.is_standable(cell([14, hall.floor, 10])),
+        "and the cell beyond it is floor: a ten-course run, not eleven"
+    );
 }
 
 // ---------------------------------------------------------------------------
