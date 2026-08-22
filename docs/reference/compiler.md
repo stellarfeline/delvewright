@@ -747,6 +747,28 @@ with no resource pack anywhere in the delve. The modification cap is raised for
 the pass and restored, because a band is painted in one command and a truncated
 command leaves a horizon painted half one colour.
 
+**Every state it writes is judged against the pin, at the emitter.** A
+structure template carrying a block id 1.21.11 does not have loads that cell as
+**air** — the `.nbt` is well-formed, the build exits 0, the double-build
+byte-identity gate passes, and the terrain simply has holes in it. No count
+moves either: templates, biome bands and gap-floor cells are all counted before
+the game reads a byte. So `serialize_tile` runs every palette entry through
+`delvewright_dsl::blocks::BlockRegistry` — the id, every property name and every
+property value — and dies naming the id and how many cells carry it. It is in
+the emitter rather than in a test for the reason the emitted-command rule gives:
+the creator running the tool does not run `cargo test`. Measured on this
+generator: one rock id changed to a plausible near-miss builds green, emits
+fourteen templates, prints a byte-identical binding line, and ships 2087 cells
+that come up as air.
+
+The same line judges the **connection** half — whether a state omits a
+shape-carrying property, which is what turns a bare fence into a lone post. The
+surround's vocabulary is rock, ground, logs, leaves and ground cover and carries
+no connection class, so it derives nothing from neighbours; the assertion is
+what makes that a fact about the emitted palette rather than a claim, and it
+fired on `pink_petals`, whose `flower_amount`/`facing` are an authored decision
+and are now authored.
+
 **Binding.** Every surround build prints its templates, biome bands, the
 rectangle and **which authority stated it**, and the standable gap-floor cell
 count the climb proof floods from — a flood that started from nowhere passes for

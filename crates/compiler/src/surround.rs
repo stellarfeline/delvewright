@@ -42,6 +42,8 @@ use std::io::Write as _;
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 
+use delvewright_dsl::blocks::BlockRegistry;
+
 use crate::edit::{hash01, value_noise};
 use crate::solver::Splitmix64;
 
@@ -442,8 +444,22 @@ fn flora_table(flora: Flora) -> FloraTable {
 fn decor_table(palette: SurroundPalette) -> [(&'static str, f64); 2] {
     match palette {
         SurroundPalette::StoneGrass => [("minecraft:short_grass", 0.7), ("minecraft:fern", 0.3)],
+        // **Fully specified, and it has to be.** `pink_petals` is a multipart
+        // block: its model is assembled from `flower_amount` and `facing`, so a
+        // bare id is not an unopinionated state — vanilla fills it with
+        // `flower_amount=1, facing=north`, which is ONE petal on every cell of
+        // a valley floor that was meant to read as fallen blossom. Unlike a
+        // fence's connections these are an authored decision rather than
+        // something the neighbours imply, so the answer is to author them.
+        //
+        // One state rather than a spread of them, because the two rows are
+        // parallel BY INDEX: `pick` reads the same weights at the same
+        // positions for both floras, which is what makes a same-seed cherry
+        // emission map back to the oak one cell for cell, and what makes
+        // "cherry is a parameter row, not a second generator" a checkable
+        // claim rather than a description.
         SurroundPalette::StonePetal => [
-            ("minecraft:pink_petals", 0.7),
+            ("minecraft:pink_petals[facing=north,flower_amount=4]", 0.7),
             ("minecraft:short_grass", 0.3),
         ],
     }
@@ -1286,6 +1302,7 @@ fn serialize_tile(
     }];
     let mut index: BTreeMap<&'static str, i32> = BTreeMap::new();
     let mut blocks = Vec::new();
+    let mut cells_per_state: Vec<usize> = vec![0];
     for lx in 0..size[0] {
         for ly in 0..size[1] {
             for lz in 0..size[2] {
@@ -1294,9 +1311,11 @@ fn serialize_tile(
                     None => 0,
                     Some(name) => *index.entry(name).or_insert_with(|| {
                         palette.push(palette_entry(name));
+                        cells_per_state.push(0);
                         (palette.len() - 1) as i32
                     }),
                 };
+                cells_per_state[state as usize] += 1;
                 blocks.push(BlockEntry {
                     pos: [lx, ly, lz],
                     state,
@@ -1304,6 +1323,7 @@ fn serialize_tile(
             }
         }
     }
+    assert_palette_is_real(&palette, &cells_per_state);
     let structure = Structure {
         data_version: crate::DATA_VERSION,
         size,
@@ -1317,6 +1337,83 @@ fn serialize_tile(
         .write(Vec::new(), Compression::new(6));
     gz.write_all(&nbt).expect("surround tile gzip");
     gz.finish().expect("surround tile gzip finish")
+}
+
+/// **The block-state rule, at the one place this module turns ids into bytes**
+/// (`delvewright_dsl::blocks`).
+///
+/// A structure template carrying a block id the pinned version does not have
+/// loads that cell as **air**. Nothing errors: the `.nbt` is well-formed, the
+/// generator exits 0, the double-build byte-identity gate passes, and the
+/// terrain simply has holes in it. Nor does any count move — this module's own
+/// binding line reports templates, biome bands and gap-floor cells, and every
+/// one of those numbers is identical whether the id exists or not, because they
+/// are counted before the game ever reads a byte.
+///
+/// It is measured rather than hypothetical, and on this generator: renaming one
+/// of the five rock ids to a plausible near-miss builds green, emits fourteen
+/// templates, prints a byte-identical binding line, and ships **2087 cells** —
+/// a quarter of a percent of the terrain — that come up as air.
+///
+/// So the check is here, in the emitter, and not in a test: the rule this
+/// project already holds for emitted COMMANDS is that the emitter checks,
+/// because the operator running the tool does not run `cargo test`. The states
+/// are compiler constants no author can reach, so a failure is an engine defect
+/// and dies loudly rather than resolving to a diagnostic — the same shape
+/// `prefabs/invariants.rs` uses for the seven generator workspaces, which cannot
+/// depend on this crate and reach the identical registry another way.
+///
+/// Property names and values are judged too, not just ids: the flora tables
+/// write `minecraft:oak_log[axis=y]` and `minecraft:oak_leaves[persistent=true]`,
+/// and a wrong PROPERTY is the same silent air.
+fn assert_palette_is_real(palette: &[PaletteEntry], cells_per_state: &[usize]) {
+    let registry = BlockRegistry::v1_21_11();
+    for (i, entry) in palette.iter().enumerate() {
+        let empty = BTreeMap::new();
+        let properties = entry.properties.as_ref().unwrap_or(&empty);
+        if let Err(e) = registry.validate(&entry.name, properties) {
+            let cells = cells_per_state.get(i).copied().unwrap_or(0);
+            panic!(
+                "surround palette entry {i} is not a state 1.21.11 has: {e}. \
+                 {cells} cell(s) of this tile carry it, and every one of them would load as \
+                 AIR — the build would stay green, the tile count would not move, and the \
+                 terrain would just have holes in it. Fix the id or the property in this \
+                 module's own tables; never widen the registry to admit it."
+            );
+        }
+        // **And the connection half, which is why this module owes no
+        // derivation rather than merely claiming not to.**
+        //
+        // A `multipart` blockstate ASSEMBLES its model out of the properties its
+        // selectors name, so a fence, wall, pane or multiface block written
+        // without them is not an unopinionated state — it is an explicit
+        // disconnection, a lone post where a run of fencing was meant
+        // (`DW0735`). The derivation that answers it computes each property
+        // from the blocks beside the cell and lives in `prefabs/connections.rs`,
+        // source-included by the seven generator workspaces and unreachable from
+        // this crate.
+        //
+        // This generator's vocabulary is rock, ground, logs, leaves and ground
+        // cover — not one of them carries a shape-carrying property — so there
+        // is nothing here to derive. That is asserted rather than described, on
+        // the real palette of every tile written, so the exemption rests on a
+        // property the defect cannot supply: a palette that DID carry a
+        // connection class could not pass this line. Adding such a block to one
+        // of this module's tables is a panic here, not a library of isolated
+        // posts.
+        let omitted = registry.omitted_shape_carrying(&entry.name, properties);
+        assert!(
+            omitted.is_empty(),
+            "surround palette entry {i} (`{}`) is a connection class — it omits the \
+             shape-carrying propert(ies) {omitted:?}, which vanilla will fill with the \
+             DISCONNECTION nobody meant. This module has no connection derivation, because \
+             its vocabulary has never had a connection class in it; the derivation lives in \
+             `prefabs/connections.rs` and this crate cannot reach it. Either drop the block \
+             from this module's tables, or give the surround a real derivation — never write \
+             the default state.",
+            entry.name,
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
