@@ -179,7 +179,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 
 | # | Pass | Crate/module | Fails with |
 |---|------|--------------|-----------|
-| 1 | Load campaign dir (6 stage docs + optional `world-edits.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10) on unreadable dir |
+| 1 | Load campaign dir (6 required stage docs + the 5 optional documents + `walk-record.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10), **naming the document that could not be read** |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1); also `DW0455`, a body-family code refused at declaration time |
 | 4 | l10n sidecar coverage + reserved channels + language-code mapping | `dsl::validate_l10n`, `dsl::validate_marker_channel`, `dsl::validate_tr_sigil`, `dsl::declared_mc_codes` | `DW0180`/`DW0181`/`DW0182`/`DW0183`/`DW0184` (exit 1) |
@@ -195,6 +195,15 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
   short-circuits (exit 1) before analysis; analysis failure (exit 2) before build.
+- **Every load failure names the document it is about**, and keeps its
+  `ErrorKind`, so *absent* and *unreadable* stay distinguishable
+  (`quests.json: No such file or directory` vs `classes.json: Permission
+  denied`). The directory itself is established before any document is read, so
+  an absent campaign directory names the directory rather than reporting a
+  missing `world.json`. An **optional** document is absent only when it is not
+  there: one that exists and cannot be read is a refusal, never a silent
+  absence, because a build that skipped it would be byte-identical to one whose
+  campaign never declared it.
 - The assembled-light gate (`DW0210`/`DW0211`) runs inside the build (it needs the
   placed geometry) but is analysis-tier: `main` maps a `DW02xx` build diagnostic to
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
