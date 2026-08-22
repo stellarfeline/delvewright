@@ -129,6 +129,116 @@ fn proof1_missing_live_npc_is_dw0460() {
     assert!(d.message.contains("quest/one"), "{}", d.message);
 }
 
+// --- DW0858: an objective that cannot be completed is refused --------------
+//
+// `quest/one` carries `obj/talk` on `npc/keeper`, and `quest/two` only opens
+// once `quest/one` completes — so the only scenes live while `obj/talk` is
+// pending are `quest/one`'s own.
+
+/// Every one of these fixtures keeps `DW0123` green: the completing option
+/// really is in the keeper's tree, reachable from the stage-6 `root`. That is
+/// the point — the coverage check measures the tree, and only the ledger check
+/// measures what right-click opens during the beat.
+fn dsl_codes(cast_one: &str, cast_two: &str) -> Vec<String> {
+    delvewright_dsl::check_campaign(&RawCampaign {
+        world: hw("world.json"),
+        npcs: NPCS.to_string(),
+        classes: hw("classes.json"),
+        quest_plan: QUEST_PLAN.to_string(),
+        quests: quests(cast_one, cast_two),
+        dialogue: DIALOGUE.to_string(),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+    })
+    .iter()
+    .map(|d| d.code.clone())
+    .collect()
+}
+
+/// The defect: the quest that asks the player to talk declares that very NPC
+/// silent, so right-click consumes the interaction and opens nothing.
+#[test]
+fn dw0858_a_silent_scene_on_the_asking_quest_is_refused() {
+    let one = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "barring the door", "dialogue": "none" },
+      "npc/scout":  { "at": "anchor/exit", "doing": "watching the road", "dialogue": { "barks": ["Nothing yet."] } }
+    }"#;
+    let d = cast::check_cast(&campaign(one, FULL_TWO))
+        .into_iter()
+        .find(|d| d.code == "DW0858")
+        .expect("a talk-to whose scene opens nothing must be refused");
+    assert!(d.message.contains("obj/talk"), "{}", d.message);
+    assert!(d.message.contains("npc/keeper"), "{}", d.message);
+
+    // Only this repair can catch it: every neighbouring check is green.
+    let dsl = dsl_codes(one, FULL_TWO);
+    assert!(
+        !dsl.contains(&"DW0123".to_string()) && !dsl.contains(&"DW0120".to_string()),
+        "the tree still covers obj/talk from its root, so DW0120/DW0123 must stay green: {dsl:?}"
+    );
+    assert!(
+        !codes(&campaign(one, FULL_TWO)).contains(&"DW0467".to_string()),
+        "the keeper's scene changes between quests, so the staleness lint says nothing"
+    );
+}
+
+/// A bark pool is a scene too, and it advances nothing — the same refusal.
+#[test]
+fn dw0858_a_bark_pool_cannot_answer_an_objective() {
+    let one = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "barring the door", "dialogue": { "barks": ["Halt.", "Still no."] } },
+      "npc/scout":  { "at": "anchor/exit", "doing": "watching the road", "dialogue": { "barks": ["Nothing yet."] } }
+    }"#;
+    let d = cast::check_cast(&campaign(one, FULL_TWO))
+        .into_iter()
+        .find(|d| d.code == "DW0858")
+        .expect("a bark pool cannot complete a talk-to");
+    assert!(d.message.contains("bark pool"), "{}", d.message);
+}
+
+/// A real scene root that simply does not reach the completing option is the
+/// same defect wearing a root's clothes — the message names the root it read.
+#[test]
+fn dw0858_a_scene_root_that_never_reaches_the_option_is_refused() {
+    let one = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "barring the door", "dialogue": "dlg/after" },
+      "npc/scout":  { "at": "anchor/exit", "doing": "watching the road", "dialogue": { "barks": ["Nothing yet."] } }
+    }"#;
+    let d = cast::check_cast(&campaign(one, FULL_TWO))
+        .into_iter()
+        .find(|d| d.code == "DW0858")
+        .expect("a scene root with no completing option must be refused");
+    assert!(d.message.contains("dlg/after"), "{}", d.message);
+}
+
+/// The ordinary silent scene stays legal: an NPC with nothing to say during a
+/// quest whose beats do not go through them is common and correct. Here the
+/// scout is silent in BOTH quests and no objective asks for them.
+#[test]
+fn dw0858_does_not_fire_on_an_ordinary_silent_scene() {
+    let one = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "barring the door", "dialogue": "dlg/greeting" },
+      "npc/scout":  { "at": "anchor/exit", "doing": "asleep at his post", "dialogue": "none" }
+    }"#;
+    let two = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "watching you go", "dialogue": "dlg/after" },
+      "npc/scout":  { "at": "anchor/exit", "doing": "still asleep", "dialogue": "none" }
+    }"#;
+    let diags = cast::check_cast(&campaign(one, two));
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0858"),
+        "a silent scene on an npc no objective names must stay legal: {diags:#?}"
+    );
+    // And the clean ledger the rest of this file uses raises nothing either.
+    assert!(
+        !codes(&campaign(FULL_ONE, FULL_TWO)).contains(&"DW0858".to_string()),
+        "the complete consistent ledger must stay clean"
+    );
+}
+
 // --- proof 2: placement consistency ---------------------------------------
 
 /// A declared `at` the effect history contradicts fails, citing both anchors —
