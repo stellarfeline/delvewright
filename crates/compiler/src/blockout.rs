@@ -636,7 +636,11 @@ fn derive_bound(
         // pass would clear anything laid inside it — the defect has to survive
         // the clear to be a defect at all.
         if perturb.low_ceiling == Some(b.node.0.as_str()) {
-            mass.write([lo[0], hi[1], lo[2]], [hi[0], hi[1], hi[2]], palette::CEILING);
+            mass.write(
+                [lo[0], hi[1], lo[2]],
+                [hi[0], hi[1], hi[2]],
+                palette::CEILING,
+            );
         }
     }
 

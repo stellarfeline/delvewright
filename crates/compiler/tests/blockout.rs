@@ -415,8 +415,8 @@ fn a_stair_down_through_a_punched_floor_is_a_whole_run() {
     // standable at that height. A dropped course is a gap in this ladder.
     for h in 1..=i64::from(under.clearance) {
         let y = under.floor + h;
-        let found = (lo[2]..=hi[2])
-            .any(|z| (lo[0]..=hi[0]).any(|x| world.is_standable(cell([x, y, z]))));
+        let found =
+            (lo[2]..=hi[2]).any(|z| (lo[0]..=hi[0]).any(|x| world.is_standable(cell([x, y, z]))));
         assert!(
             found,
             "no tread stands {h} block(s) over `node/undercroft`'s walk plane — \
