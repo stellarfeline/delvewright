@@ -37,11 +37,12 @@ this point. That row was written by a different tool, on a different machine, at
 different time, which is what makes it a real second observer rather than this
 run agreeing with itself.
 
-A mismatch is NOT classified here. `tools/gallery-baseline.py` decides whether a
-moved manifest is an emission change or an ADR-0006 determinism finding, from the
-diff, and a second answer to that question is exactly the defect this file exists
-to stop being repeated. This refuses, names the differing paths, and sends the
-reader there.
+A mismatch is NOT classified here. `tools/gallery-baseline.py` decides what KIND of
+finding a moved manifest is, and a second answer to that question is exactly the
+defect this file exists to stop being repeated. This refuses, names the differing
+paths, and sends the reader there. Which verdicts exist is deliberately not
+restated: an enumeration written down twice goes stale on one side, and this one
+already has — it gained a third verdict while both copies still said two.
 
 ## The gallery is never STAGED, and this tool does not change that
 
@@ -238,9 +239,9 @@ def main() -> int:
             "it as such.\n"
             + "\n".join(f"  {line}" for line in differing[:40])
             + (f"\n  … and {len(differing) - 40} more" if len(differing) > 40 else "")
-            + "\nWhat kind of finding this is — an emission change or an ADR-0006 determinism "
-            "finding — is decided by `python3 tools/gallery-baseline.py`, from the diff. It is "
-            "deliberately not decided here: one authority per question."
+            + "\nWhat KIND of finding this is is decided by `python3 tools/gallery-baseline.py`, "
+            "which reads both the diff and what the manifests hold. It is deliberately not "
+            "decided here: one authority per question."
         )
 
     print(f"  campaign:   {src.relative_to(REPO) if src.is_relative_to(REPO) else src}")
