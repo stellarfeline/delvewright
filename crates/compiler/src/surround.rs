@@ -4,8 +4,8 @@
 //! This module owns the `valley` base (and its `cherry-valley` parameter row):
 //! a mountain annulus of total footprint `ratio`× the scene's, with a flat gap
 //! floor between the scene edge and the inner slopes, a radial ridged-noise rim,
-//! and a seeded tree layer on the mountains (never in the gap floor or scene —
-//! owner directive: 树在山上). Cherry-valley is **not a code path**: one
+//! and a seeded tree layer on the mountains — never in the gap floor, and never
+//! in the scene. Cherry-valley is **not a code path**: one
 //! generator, with every species/decor id looked up through parallel tables, so
 //! a same-seed cherry build differs from a valley build only in block ids and
 //! the biome id (spec-0026 acceptance criterion 6).
