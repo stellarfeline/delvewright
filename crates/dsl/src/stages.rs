@@ -77,11 +77,14 @@ pub struct WorldContent {
     /// implicit `easy` must be redone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub difficulty: Option<WorldDifficulty>,
-    /// Scenic horizon (DSL v0.6, spec-0013). Absent or `void` = the void world
-    /// (byte-identical to v0.5). `ocean` swaps the world generator for a
-    /// deterministic superflat sea (bedrock/stone/water, sea level y=62) and drops
-    /// the area datum to y=60 (`sea_level-2`) so island pieces meet the sea at their
-    /// authored waterline. No structures or mobs either way.
+    /// The scenic horizon: the ground and the sky the map stands in
+    /// (spec-0026). Absent or `void` is the void world. `ocean` swaps the world
+    /// generator for a deterministic superflat sea (bedrock/stone/water, sea
+    /// level y=62) and drops the area datum to y=60 so island pieces meet the
+    /// sea at their authored waterline. `valley` rings the map in a generated
+    /// mountain annulus — the one base that builds terrain rather than picking
+    /// a generator. Either a string shorthand or the object form
+    /// `{base, …params}`; see [`Horizon`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub horizon: Option<Horizon>,
     /// Playable-region boundary (DSL v0.6, spec-0013). When present, the compiler
@@ -276,20 +279,202 @@ impl WorldDifficulty {
     }
 }
 
-/// A scenic horizon (DSL v0.6, spec-0013). `void` is the default and is
-/// byte-identical to v0.5 (empty-layer superflat, `minecraft:the_void` biome);
-/// `ocean` selects a pinned bedrock/stone/water superflat with sea level y=62,
-/// pure backdrop with no structures or mobs. The compiler owns the exact
-/// generator-settings; this enum only picks which one.
+/// A scenic horizon (spec-0026). A horizon is a **composition of orthogonal
+/// axes**, not an enum of monoliths: a **base** — what surrounds the map — and
+/// that base's params. The field accepts a plain string shorthand
+/// ([`HorizonName`]) or the object form [`HorizonSpec`] `{base, …params}`.
+///
+/// Consumers never match this wire enum. [`Horizon::resolved`] desugars both
+/// forms into one [`ResolvedHorizon`] with the pinned defaults applied, and
+/// [`horizon_base`] answers the one question most callers have.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Horizon {
+    /// A bare base name — `"ocean"` is exactly `{base: "ocean"}`. The two
+    /// bases that predate the horizon library were spelled this way and still
+    /// are, byte-identically; a base added since is spellable this way too,
+    /// because a base with every param at its default has nothing else to say.
+    Name(HorizonBase),
+    /// The object form `{base, …params}`.
+    Spec(HorizonSpec),
+}
+
+/// What surrounds the map.
+///
+/// **One enumeration of bases, reachable two ways.** The shorthand
+/// `horizon: "ocean"` and the object form `horizon: {base: "ocean"}` name this
+/// same variant, which is what stops a base from existing in one spelling and
+/// not the other. A separate list of "names" beside this one would be two
+/// enumerations of the same thing, and the second base added would land in
+/// whichever of them its author was looking at.
+///
+/// What is deliberately NOT here is a name that stands for a base plus a set of
+/// params. Such a name reads as a thing, and the whole claim of this design is
+/// that it is not one — it is a base with params set. A spelling that hides
+/// which params it sets makes that claim unverifiable by looking at the
+/// document, and buys a few saved keystrokes for it. Each base carries its own params on
+/// [`HorizonSpec`], and a param foreign to the declared base is refused rather
+/// than ignored.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum Horizon {
-    /// The void world (default) — no sky-filling geometry.
+pub enum HorizonBase {
+    /// Void superflat; no surround. The default.
     #[default]
     Void,
-    /// A superflat sea backdrop; areas are placed on the sea-level datum (y=60) so
-    /// island pieces read as land ringed by the ocean.
+    /// Pinned water superflat, sea level 62; no surround.
     Ocean,
+    /// A mountain annulus around a flat gap floor, with void ambient below the
+    /// tile skirt. The one base that generates terrain.
+    Valley,
+}
+
+impl HorizonBase {
+    /// The kebab wire name.
+    pub fn token(self) -> &'static str {
+        match self {
+            HorizonBase::Void => "void",
+            HorizonBase::Ocean => "ocean",
+            HorizonBase::Valley => "valley",
+        }
+    }
+
+    /// Whether this base generates a surround — compiler-built terrain outside
+    /// the map's own extent. `void` and `ocean` are pure ambient and build
+    /// nothing.
+    pub fn has_surround(self) -> bool {
+        matches!(self, HorizonBase::Valley)
+    }
+}
+
+/// The `horizon` object form: a `base` plus that base's params, all optional
+/// with pinned defaults ([`horizon_defaults`]).
+///
+/// The `valley` surround generator carries a second flora and a second surface
+/// palette (a cherry grove over `minecraft:cherry_grove`) and **this struct
+/// deliberately does not expose them yet.** Every engine surface owes a gallery
+/// element in the change that lands it, and the element a second flora needs is
+/// a second whole-map campaign — the surround only rings a map that DECLARES
+/// its extent (`DW0855`), so there is no two-file overlay that can write it.
+/// A surface whose element cannot land with it does not land. The shape is flat rather than
+/// per-base tagged, and a param foreign to the declared base is refused
+/// (`DW0853`) — so an `ocean` cannot quietly carry a `rim_height` that nothing
+/// reads.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HorizonSpec {
+    /// The base — what surrounds the map.
+    pub base: HorizonBase,
+    /// `valley`: the surround's total footprint as a multiple of the map's, on
+    /// each axis (`2.0..=3.0`, default 2.5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ratio: Option<f64>,
+    /// `valley`: crest height of the rim over the gap floor (`16..=128`,
+    /// default 48).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rim_height: Option<i32>,
+}
+
+/// Pinned horizon param defaults. One table, so the doc comments, the resolver
+/// and the diagnostics cannot drift.
+pub mod horizon_defaults {
+    /// `valley.ratio`.
+    pub const RATIO: f64 = 2.5;
+    /// `valley.ratio` lower bound — below 2.0 the annulus has no room for a
+    /// gap floor and a slope run both.
+    pub const RATIO_MIN: f64 = 2.0;
+    /// `valley.ratio` upper bound — above 3.0 the surround is mostly terrain a
+    /// body never reaches, at a cost that is all shipped bytes.
+    pub const RATIO_MAX: f64 = 3.0;
+    /// `valley.rim_height`.
+    pub const RIM_HEIGHT: i32 = 48;
+    /// `valley.rim_height` lower bound — a rim under 16 does not close the
+    /// horizon from a body standing on the gap floor.
+    pub const RIM_HEIGHT_MIN: i32 = 16;
+    /// `valley.rim_height` upper bound — the build range is 384 blocks tall and
+    /// the surround has to fit under whatever the map puts above it.
+    pub const RIM_HEIGHT_MAX: i32 = 128;
+}
+
+/// A horizon with both wire forms desugared and every default applied — the
+/// only view downstream code reads.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedHorizon {
+    /// The base.
+    pub base: HorizonBase,
+    /// `valley.ratio`.
+    pub ratio: f64,
+    /// `valley.rim_height`.
+    pub rim_height: i32,
+}
+
+impl Default for ResolvedHorizon {
+    fn default() -> Self {
+        ResolvedHorizon {
+            base: HorizonBase::Void,
+            ratio: horizon_defaults::RATIO,
+            rim_height: horizon_defaults::RIM_HEIGHT,
+        }
+    }
+}
+
+impl ResolvedHorizon {
+    /// The resolved horizon of `base` with every param at its pinned default.
+    pub fn of_base(base: HorizonBase) -> Self {
+        ResolvedHorizon {
+            base,
+            ..Default::default()
+        }
+    }
+}
+
+impl Horizon {
+    /// Desugar either wire form to the one resolved view, defaults applied.
+    pub fn resolved(&self) -> ResolvedHorizon {
+        match self {
+            Horizon::Name(base) => ResolvedHorizon::of_base(*base),
+            Horizon::Spec(s) => ResolvedHorizon {
+                base: s.base,
+                ratio: s.ratio.unwrap_or(horizon_defaults::RATIO),
+                rim_height: s.rim_height.unwrap_or(horizon_defaults::RIM_HEIGHT),
+            },
+        }
+    }
+
+    /// The resolved base.
+    pub fn base(&self) -> HorizonBase {
+        self.resolved().base
+    }
+
+    /// True when this declaration needs the horizon-library surface: the object
+    /// form, or a bare name for a base that did not exist before it.
+    ///
+    /// The two bases that predate the library stay writable as bare names at
+    /// the version that introduced them, and their emission does not move —
+    /// which is what makes this a widening rather than a break. What is fenced
+    /// is saying something the old surface had no spelling for.
+    pub fn needs_horizon_library(&self) -> bool {
+        match self {
+            Horizon::Spec(_) => true,
+            Horizon::Name(base) => match base {
+                HorizonBase::Void | HorizonBase::Ocean => false,
+                HorizonBase::Valley => true,
+            },
+        }
+    }
+}
+
+/// The resolved base of an optional stage-1 `horizon` field — `Void` when
+/// absent. The one helper every downstream consumer (placement, the ambient
+/// model, emission) goes through, so that a new base cannot be forgotten at one
+/// of them.
+pub fn horizon_base(horizon: &Option<Horizon>) -> HorizonBase {
+    horizon.as_ref().map(|h| h.base()).unwrap_or_default()
+}
+
+/// The resolved view of an optional stage-1 `horizon` field, with defaults
+/// applied for an absent one.
+pub fn resolved_horizon(horizon: &Option<Horizon>) -> ResolvedHorizon {
+    horizon.as_ref().map(|h| h.resolved()).unwrap_or_default()
 }
 
 /// The default boundary `margin` (blocks of horizontal breathing room added
@@ -805,6 +990,66 @@ pub struct NpcDialogue {
     pub root: DialogueId,
     /// The dialogue nodes.
     pub nodes: Vec<DialogueNode>,
+}
+
+impl NpcDialogue {
+    /// The ids of the nodes reachable from `roots` by following option `next`
+    /// edges, ignoring every option gate.
+    ///
+    /// **The one authority for "what can this tree show, entered here".** A
+    /// dialogue tree has more than one entry point — the stage-6 `root`, and
+    /// every node a quest's `cast` ledger names as a scene — so "reachable" is
+    /// always relative to a root SET, and each consumer supplies the set its own
+    /// question is about. `DW0120`/`DW0123` ask about every entry point at once;
+    /// the cast ledger's `DW0858` asks about the scenes live during one
+    /// objective. Gates are ignored on purpose: an option's flag gate is
+    /// `DW0191`'s question, not this one's.
+    ///
+    /// Root ids that name no node of this tree contribute nothing (a dangling
+    /// scene root is `DW0464`, and a dangling stage-6 `root` is `DW0121`).
+    pub fn reachable_from<'a>(&'a self, roots: &[&str]) -> BTreeSet<&'a str> {
+        let by_id: BTreeMap<&'a str, &'a DialogueNode> =
+            self.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+        let mut seen: BTreeSet<&'a str> = BTreeSet::new();
+        let mut stack: Vec<&'a str> = roots
+            .iter()
+            .filter_map(|r| by_id.get_key_value(*r).map(|(k, _)| *k))
+            .collect();
+        while let Some(cur) = stack.pop() {
+            if !seen.insert(cur) {
+                continue;
+            }
+            let Some(node) = by_id.get(cur) else { continue };
+            for opt in &node.options {
+                if let Some(next) = &opt.next
+                    && let Some((k, _)) = by_id.get_key_value(next.as_str())
+                {
+                    stack.push(k);
+                }
+            }
+        }
+        seen
+    }
+
+    /// The objective ids some option reachable from `roots` completes — what a
+    /// player entering this tree at those scenes can actually finish.
+    pub fn completes_from<'a>(&'a self, roots: &[&str]) -> BTreeSet<&'a str> {
+        let seen = self.reachable_from(roots);
+        let mut out: BTreeSet<&'a str> = BTreeSet::new();
+        for node in &self.nodes {
+            if !seen.contains(node.id.as_str()) {
+                continue;
+            }
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    if let DialogueEffect::CompleteObjective { objective } = eff {
+                        out.insert(objective.as_str());
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 /// One dialogue node: text plus branching options.

@@ -94,7 +94,9 @@
 //! amplified noise), so `delvec scene` uses the stamp to apply its
 //! documented night-vision review emulation to exactly those shots and no others.
 
-use delvewright_dsl::{AreaMitigation, Campaign, Diagnostic, Horizon, LightingProfile, Objective};
+use delvewright_dsl::{
+    AreaMitigation, Campaign, Diagnostic, HorizonBase, LightingProfile, Objective,
+};
 use serde_json::{Value, json};
 
 use crate::nav::{CameraEye, LegRoute, NavError, World};
@@ -656,6 +658,15 @@ impl<'c> Shots<'c> {
 /// Pure and deterministic: shot order is spawn → per-area interiors + seams →
 /// NPCs → interacts → gates → player-POV, every list plan-ordered or sorted, no
 /// RNG and no clock, so the result rides the ADR-0006 double-build gate.
+/// The world y a body stands on outside the pieces, for a horizon that BUILT
+/// ground, or `None` for one that did not (`void`, `ocean` — nothing outside a
+/// piece but air or the level generator's own sea).
+fn ground_plane(plan: &Plan) -> Option<f64> {
+    plan.surround
+        .as_ref()
+        .map(|s| f64::from(s.valley.floor_top_y + 1))
+}
+
 pub fn render_plan(
     plan: &Plan,
     prefabs: &PrefabRegistry,
@@ -701,11 +712,21 @@ pub fn render_plan(
             // Dollhouse overview: eye above a corner, aimed down at the interior
             // centre. (Renderer strips the ceiling for the matching per-piece
             // interior shot; the Chunky path places a true in-room camera.)
-            let eye = [
-                min[0] as f64 - 1.5,
-                max[1] as f64 + 3.0,
-                min[2] as f64 - 1.5,
-            ];
+            //
+            // **Above the GROUND, not merely above the piece.** The offset is
+            // from the piece and always was, and what changed under it is that
+            // the world outside a piece is no longer guaranteed to be nothing:
+            // a horizon that builds a landform puts real ground at its own walk
+            // plane, and a piece whose top is below that plane is a sunken
+            // storey with terrain over it. At a piece-relative offset the eye
+            // then sits INSIDE the ground and `DW0724` refuses the shot — which
+            // it is right to do, and which no campaign could ever satisfy,
+            // because the occupying block is the world rather than anything an
+            // author placed. Clearing the walk plane is not nudging a camera to
+            // make a picture come out; it is an overview standing over the
+            // ground it is an overview of.
+            let over = ground_plane(plan).map_or(max[1] as f64, |g| (max[1] as f64).max(g));
+            let eye = [min[0] as f64 - 1.5, over + 3.0, min[2] as f64 - 1.5];
             let look = [cx, cy, cz];
             let lit = piece_is_lit(prefabs, &piece.prefab_id);
             let mut expect = vec![
@@ -919,7 +940,7 @@ pub fn render_plan(
         "camera_eye_proof": { "cameras": out.eyes.len(), "pulled_in": out.pulled_in },
         "shots": out.shots,
     });
-    if let Some(h) = horizon_fact(c) {
+    if let Some(h) = horizon_fact(c, plan) {
         root.as_object_mut()
             .expect("render plan root is a JSON object")
             .insert("horizon".to_string(), h);
@@ -941,13 +962,36 @@ pub fn render_plan(
 ///
 /// A void horizon emits **no key at all** (not `null`), so every campaign that
 /// declares nothing keeps a byte-identical `render-plan.json`.
-fn horizon_fact(c: &Campaign) -> Option<Value> {
-    match c.world.content.horizon {
-        Some(Horizon::Ocean) => Some(json!({
+fn horizon_fact(c: &Campaign, plan: &Plan) -> Option<Value> {
+    let r = delvewright_dsl::resolved_horizon(&c.world.content.horizon);
+    let extent = plan.surround.as_ref().map(|s| {
+        let (p, d) = (s.piece.pos, s.piece.size);
+        json!({
+            "min": [p[0], p[1], p[2]],
+            "max": [p[0] + d[0] - 1, p[1] + d[1] - 1, p[2] + d[2] - 1],
+        })
+    });
+    match r.base {
+        HorizonBase::Ocean => Some(json!({
             "kind": "ocean",
             "sea_level": crate::plan::SEA_LEVEL,
         })),
-        Some(Horizon::Void) | None => None,
+        // A valley's fact is its rim, because that is what a renderer has to
+        // frame: the gap floor is ordinary ground, and the crest is the line
+        // the sky starts above.
+        HorizonBase::Valley => Some(json!({
+            "kind": "valley",
+            "gap_floor_y": crate::horizon::VALLEY_GAP_FLOOR_TOP_Y,
+            "rim_height": r.rim_height,
+            // The landform's own world AABB. Stated rather than left to be
+            // inferred, for the same reason the ocean's sea level is: the
+            // render layer cannot see the derivation, and every whole-map frame
+            // has to know how big the ground is. A `valley` whose extent were
+            // absent would frame the pieces and load the pieces' chunks, which
+            // is a delve standing in a void it is surrounded by terrain in.
+            "extent": extent,
+        })),
+        HorizonBase::Void => None,
     }
 }
 
