@@ -219,12 +219,8 @@ impl ValleySurround {
                 for cx in run_start..=x1 {
                     for y in y_min..=self.floor_top_y {
                         let name = if y == self.floor_top_y {
-                            if value_noise(self.seed, cx, y, z, 0.16, SALT_GAP_DAPPLE) > 0.85 {
-                                "minecraft:coarse_dirt"
-                            } else {
-                                "minecraft:grass_block"
-                            }
-                        } else if self.floor_top_y - y <= 3 {
+                            gap_surface(self.seed, cx, y, z)
+                        } else if self.floor_top_y - y <= FLOOR_SOIL_DEPTH {
                             "minecraft:dirt"
                         } else {
                             pick(
@@ -368,23 +364,24 @@ const DETAIL_REL: f64 = 0.16;
 /// ...plus this fraction of `rim_height`, faded in with the slope, so a
 /// shoulder is broken ground and the floor's edge is not churned.
 const DETAIL_ABS: f64 = 0.06;
-/// Gap-floor hollows: the deepest a hollow sinks below the datum...
-const GAP_RELIEF_DEPTH: f64 = 2.0;
-/// ...the noise frequency that shapes them...
-const GAP_RELIEF_FREQ: f64 = 0.055;
-/// ...and the noise value below which the floor starts to sink at all, so most
-/// of it stays at the datum and the hollows read as hollows rather than swell.
-const GAP_RELIEF_GATE: f64 = 0.42;
-/// Blocks of gap floor either side of the declared region that stay exactly at
-/// the datum, so a piece's own ground and the moat seam meet a flat band.
-const GAP_FLAT_MARGIN: f64 = 4.0;
-/// Blocks of soil under a grassed annulus surface. ONE, and the number is the
-/// whole of the "terraced embankment" read: a riser exposes what is under the
-/// grass it drops from, so three blocks of dirt under every grass column drew a
-/// brown course under every green one all the way up the rim. Under one block
-/// of soil the rock is what a face shows, which is what a hillside shows. The
-/// gap floor keeps a deeper soil because nothing ever exposes it.
-const SOIL_DEPTH: i32 = 1;
+/// Frequency of the gap floor's material dapple. LOW, so the coarse ground
+/// comes in patches a body walks across rather than in a per-block stipple.
+const GAP_DAPPLE_FREQ: f64 = 0.07;
+/// Blocks of soil under a grassed annulus surface. **NONE**, and the number is
+/// the whole of the terraced-embankment read.
+///
+/// A riser exposes what is under the grass it drops from. Three blocks of soil
+/// drew a brown course under every green one, all the way up the rim, which is
+/// what made a mountainside read as coursed masonry. Dropping it to one did not
+/// fix that — it turned the band into a dither, because on a wall this steep
+/// EVERY column's side face is exposed, so every one of them showed its single
+/// brown pixel and the slope came out speckled instead of striped.
+///
+/// Zero is also what vanilla's own mountains look like: soil does not lie on a
+/// face at this angle, so what a mountainside shows is grass on top and rock
+/// underneath. The gap floor keeps a real soil profile
+/// ([`FLOOR_SOIL_DEPTH`]) because nothing there is ever exposed.
+const SOIL_DEPTH: i32 = 0;
 /// Soil depth on the gap floor and the moat, where no face is ever exposed.
 const FLOOR_SOIL_DEPTH: i32 = 3;
 /// The drop to a neighbour at which a column sheds its soil and shows rock.
@@ -428,7 +425,7 @@ const POISSON_K: usize = 20;
 /// shorten the un-climbable inner wall. Checked per canopy cell (exact),
 /// not per trunk with a guessed slack.
 const TREE_CREST_MARGIN: f64 = 1.0;
-/// Understory decor density on grass cells (gap floor stays bare).
+/// Understory decor density on grass cells.
 const DECOR_DENSITY: f64 = 0.12;
 /// Vista frame requirements: the frame's bottom edge must reach this
 /// elevation (gap floor in frame)…
@@ -462,7 +459,6 @@ const SALT_DECOR_PICK: u64 = 155;
 const SALT_TREE_HEIGHT: u64 = 43;
 const SALT_TREE_KEEP: u64 = 45;
 const SALT_DETAIL: u64 = 81; // +1 for the second octave
-const SALT_GAP_RELIEF: u64 = 85;
 
 // ---------------------------------------------------------------------------
 // Flora / palette tables (parallel by construction — criterion 6)
@@ -636,25 +632,17 @@ fn relief(seed: u64, x: i32, z: i32) -> f64 {
     2.0 * (0.65 * a + 0.35 * b) - 1.0
 }
 
-/// How far the gap floor sinks below its datum at a column (0 or negative).
-///
-/// The floor of a valley is not a bowling green, and it does not have to be a
-/// plane for anything here to hold: the un-climbability rule is about what
-/// stands ABOVE the datum ([`BARRIER`]), so the floor may dip as deeply as it
-/// likes and a body simply walks down into the hollow and back out. What it
-/// may never do is RISE, because a rise of exactly one is the one step a body
-/// can take.
-///
-/// Faded to nothing within [`GAP_FLAT_MARGIN`] of the declared region, so the
-/// band a piece's own ground meets stays exactly at the datum and the moat
-/// seam is flat on both sides.
-fn gap_relief(seed: u64, scene: &SceneRect, x: i32, z: i32) -> i32 {
-    let d = rect_distance(scene, x, z);
-    let fade = smoothstep01((d - GAP_FLAT_MARGIN) / GAP_FLAT_MARGIN);
-    let n = value_noise(seed, x, 0, z, GAP_RELIEF_FREQ, SALT_GAP_RELIEF);
-    // Only the low tail of the noise digs; most of the floor stays at the datum.
-    let t = ((GAP_RELIEF_GATE - n) / GAP_RELIEF_GATE).clamp(0.0, 1.0);
-    -(GAP_RELIEF_DEPTH * fade * t).round() as i32
+/// The gap floor's surface block at a column: grass, in broad patches of worn
+/// coarse ground. The floor is flat by construction (see [`column_profile`]),
+/// so material is the only thing that keeps it from reading as a lawn, and a
+/// per-block stipple reads as noise rather than as ground — hence a dapple
+/// frequency an order below the one the rock band uses.
+fn gap_surface(seed: u64, x: i32, y: i32, z: i32) -> &'static str {
+    if value_noise(seed, x, y, z, GAP_DAPPLE_FREQ, SALT_GAP_DAPPLE) > 0.62 {
+        "minecraft:coarse_dirt"
+    } else {
+        "minecraft:grass_block"
+    }
 }
 
 /// Surface height relative to the gap-floor datum at a column, plus its zone.
@@ -697,7 +685,18 @@ fn column_profile(
 ) -> (Zone, i32) {
     let dw = warped_distance(seed, scene, x, z);
     if dw < GAP_WIDTH {
-        return (Zone::Gap, gap_relief(seed, scene, x, z));
+        // FLAT, and it was measured rather than assumed. A valley floor is
+        // not a bowling green, and the barrier rule leaves the floor free to
+        // sink as deep as it likes — a body walks down into a hollow and back
+        // out, and only a RISE of exactly one is a step. Hollows were built,
+        // rendered and rejected on the picture: the gap band is twelve blocks
+        // wide, so relief at any frequency that fits inside it lands as a
+        // scatter of isolated one-block pillars rather than as undulation —
+        // and the only way to make the contours long enough to read is to make
+        // them few and straight, which is the terrace this round exists to
+        // remove, moved down onto the floor. The floor's variety is therefore
+        // MATERIAL and cover, not height.
+        return (Zone::Gap, 0);
     }
     let zone = if dw <= GAP_WIDTH + SLOPE_RUN {
         Zone::Inner
@@ -1094,13 +1093,28 @@ pub fn generate_valley(
     // generator's own proof and the compiler's DW0854 come to disagree.
     let mut decor_cells: BTreeMap<[i32; 3], &'static str> = BTreeMap::new();
     for (&(x, z), &(zone, h)) in &columns {
-        if zone == Zone::Gap {
-            continue; // gap floor stays bare — the region-margin walk is clean
-        }
         let surf = floor_top_y + h;
         if !surface_is_grass(seed, &scene, params.ratio, &columns, x, z)
             || tree_cells.contains_key(&[x, surf + 1, z])
         {
+            continue;
+        }
+        // The gap floor stays bare, and the second reason is the one that
+        // decided it.
+        //
+        // The first is the recorded one — the region-margin walk is clean — and
+        // it turns out not to be the obstacle: every entry in `decor_table` is a
+        // THIN decoration, zero collision height, excluded by name from the
+        // flood below and from the assembled world's own step rule, so tufts
+        // would not touch the walk at all. What decided it is that **the draft
+        // renderer draws every non-air block as a full cube**, so a tuft in the
+        // near field is a solid green box: at this density the floor came back
+        // as a field of scattered boxes in every ground-level frame, which is a
+        // worse read than the lawn it was meant to break up and is the read a
+        // reviewer would be shown. Ground cover is not judgeable through this
+        // instrument, so it is not authored against it. The finding belongs to
+        // `delvec snapshot`.
+        if zone == Zone::Gap {
             continue;
         }
         if hash01(seed, x, surf + 1, z, SALT_DECOR_GATE) < DECOR_DENSITY {
@@ -1361,13 +1375,7 @@ fn tile_stack(
             for y in y_min..=surf {
                 let name = if y == surf {
                     match (zone, grass) {
-                        (Zone::Gap, _) => {
-                            if value_noise(seed, x, y, z, 0.16, SALT_GAP_DAPPLE) > 0.85 {
-                                "minecraft:coarse_dirt"
-                            } else {
-                                "minecraft:grass_block"
-                            }
-                        }
+                        (Zone::Gap, _) => gap_surface(seed, x, y, z),
                         (_, true) => "minecraft:grass_block",
                         (_, false) => pick(&ROCK, value_noise(seed, x, y, z, 0.13, SALT_ROCK_BAND)),
                     }

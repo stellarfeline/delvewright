@@ -124,9 +124,15 @@ pub(crate) struct WaterWorld {
 /// the two waters meet in a two-tone seam. A void horizon has no ambient sea and
 /// gets no keys at all, so those scenes stay byte-identical.
 pub(crate) fn water_world(horizon: Option<Horizon>) -> Option<WaterWorld> {
-    horizon.map(|Horizon::Ocean { sea_level }| WaterWorld {
-        height: sea_level as f64 + 1.0 - WATER_SURFACE_GAP,
-    })
+    match horizon {
+        Some(Horizon::Ocean { sea_level }) => Some(WaterWorld {
+            height: sea_level as f64 + 1.0 - WATER_SURFACE_GAP,
+        }),
+        // A valley builds its own ground and stands in no water. Written as an
+        // arm rather than a catch-all so a base added later has to say what it
+        // does here instead of inheriting a silence.
+        Some(Horizon::Valley { .. }) | None => None,
+    }
 }
 
 /// Options for scene emission.
@@ -167,7 +173,7 @@ pub(crate) struct RenderPlan {
     shots: Vec<Shot>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub(crate) struct Aabb {
     pub(crate) min: [i32; 3],
     pub(crate) max: [i32; 3],
@@ -176,12 +182,59 @@ pub(crate) struct Aabb {
 /// The `horizon` fact `render-plan.json` carries (compiler `render_plan::
 /// horizon_fact`). Only the ambients that change what a renderer must draw are
 /// spelled out; `void` is the absent case.
+/// **Every base the compiler can state, and the enumeration is the point.**
+/// `#[serde(tag = "kind")]` has no fallback, so one unknown value fails the
+/// whole document — `delvec panorama` and `delvec scene` refused every valley
+/// campaign outright with `DW0721 … unknown variant "valley", expected "ocean"`,
+/// while the compiler had been writing `{"kind": "valley", …}` for as long as
+/// the base existed. A producer and a consumer of one document, and nothing
+/// compared them; `check-gallery-render.py` ran only `snapshot`, and only on
+/// the primary gallery, which declares no valley.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Horizon {
     /// A superflat sea backdrop. `sea_level` is the Y of the topmost ambient
     /// water block (the compiler's `plan::SEA_LEVEL`).
     Ocean { sea_level: i32 },
+    /// A landform the compiler BUILT and the world save therefore contains.
+    /// Nothing ambient to add — but the ground is real geometry outside the
+    /// layout, so [`Horizon::extent`] is what keeps it in the chunk list and in
+    /// the panorama's subject.
+    Valley {
+        #[allow(dead_code)]
+        gap_floor_y: i32,
+        #[allow(dead_code)]
+        rim_height: i32,
+        extent: Aabb,
+    },
+}
+
+impl Horizon {
+    /// The world AABB of geometry this horizon put in the save, if any. An
+    /// ocean's sea is Chunky's ambient plane rather than blocks, so it has
+    /// none; a valley's landform is blocks, and a frame that leaves it out
+    /// shows a delve standing on nothing.
+    pub(crate) fn extent(self) -> Option<([i32; 3], [i32; 3])> {
+        match self {
+            Horizon::Ocean { .. } => None,
+            Horizon::Valley { extent, .. } => Some((extent.min, extent.max)),
+        }
+    }
+}
+
+/// The union of a layout AABB with whatever ground the horizon built under it —
+/// what a whole-map frame is actually of. One function because a chunk list and
+/// a camera solve owe the same answer, and two readings of "what is in this
+/// picture" is how a camera comes to frame a subject the renderer did not load.
+pub(crate) fn framed_extent(layout: &Aabb, horizon: Option<Horizon>) -> ([i32; 3], [i32; 3]) {
+    let (mut min, mut max) = (layout.min, layout.max);
+    if let Some((hmin, hmax)) = horizon.and_then(Horizon::extent) {
+        for a in 0..3 {
+            min[a] = min[a].min(hmin[a]);
+            max[a] = max[a].max(hmax[a]);
+        }
+    }
+    (min, max)
 }
 
 /// Parse a `render-plan.json` (shared by scene and panorama emission).
@@ -500,7 +553,12 @@ pub fn scenes_from_plan(
 ) -> Result<Vec<(String, Vec<u8>)>, Diagnostic> {
     let plan = parse_plan(plan_json)?;
 
-    let chunks = chunk_list(plan.layout_aabb.min, plan.layout_aabb.max);
+    // The ground the layout stands in is loaded with it. On a `valley` the
+    // landform is real blocks in the save, OUTSIDE the layout AABB — a chunk
+    // list keyed to the layout alone renders a delve floating in nothing while
+    // the mountains sit unloaded on disk.
+    let (fmin, fmax) = framed_extent(&plan.layout_aabb, plan.horizon);
+    let chunks = chunk_list(fmin, fmax);
     let water = water_world(plan.horizon);
     // Y clip with a small margin around the layout so path traces are not culled.
     let y_clip_min = (plan.layout_aabb.min[1] - 8).max(-64);
