@@ -247,6 +247,19 @@ STRUCTURAL_TWINS = {
         "grammar is stated; the TYPE is copied. Each also emits its own interaction "
         "body (check A)."
     ),
+    ("HorizonSpec", "ResolvedHorizon"): (
+        "ACCEPTED. Not one class typed twice but one class in its two STATES, and "
+        "the check cannot see the difference because it compares field NAMES and "
+        "the difference is entirely in the types: every param on `HorizonSpec` is "
+        "`Option<T>` because the wire form must be able to say 'unset', and every "
+        "param on `ResolvedHorizon` is `T` because the resolved view must not. "
+        "Sharing the type would mean one of the two lying — either downstream "
+        "unwrapping an `Option` that has already been resolved, which is where a "
+        "default gets applied twice and differently, or the wire form losing its "
+        "ability to distinguish an omitted param from one written at its default. "
+        "No capability is stranded: `Horizon::resolved` is the single crossing "
+        "between them and every consumer reads the resolved side."
+    ),
     ("AnchorSubject", "CameraTarget", "CameraWaypoint"): (
         "ACCEPTED. Three camera-geometry types that coincidentally share "
         "`{anchor, offset}`: a dolly waypoint, an aim target and its subject are "

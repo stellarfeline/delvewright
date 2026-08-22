@@ -290,36 +290,29 @@ impl WorldDifficulty {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum Horizon {
-    /// String shorthand — `"void"` and `"ocean"`, the surface that predates the
-    /// horizon library, unchanged.
-    Name(HorizonName),
+    /// A bare base name — `"ocean"` is exactly `{base: "ocean"}`. The two
+    /// bases that predate the horizon library were spelled this way and still
+    /// are, byte-identically; a base added since is spellable this way too,
+    /// because a base with every param at its default has nothing else to say.
+    Name(HorizonBase),
     /// The object form `{base, …params}`.
     Spec(HorizonSpec),
 }
 
-/// A horizon string shorthand.
+/// What surrounds the map.
 ///
-/// The two names here are the whole of the surface that predates the horizon
-/// library, and they are kept **as spellings**, unchanged and byte-identical,
-/// so every campaign ever written goes on compiling. Nothing new is added to
-/// this list: a base is declared as `{base: …}`, with its params beside it.
+/// **One enumeration of bases, reachable two ways.** The shorthand
+/// `horizon: "ocean"` and the object form `horizon: {base: "ocean"}` name this
+/// same variant, which is what stops a base from existing in one spelling and
+/// not the other. A separate list of "names" beside this one would be two
+/// enumerations of the same thing, and the second base added would land in
+/// whichever of them its author was looking at.
 ///
-/// That is a deliberate narrowing. A name like `cherry-valley` reads as a
-/// thing, and the whole claim of this design is that it is not one — it is a
-/// valley with two params set. A spelling that hides which params it sets makes
-/// that claim unverifiable by looking at the document, and the shorthand buys
-/// three saved keystrokes for it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum HorizonName {
-    /// The void world (default) — no sky-filling geometry, no surround.
-    #[default]
-    Void,
-    /// A superflat sea backdrop; pieces read as land ringed by an open ocean.
-    Ocean,
-}
-
-/// What surrounds the map. Each base carries its own params on
+/// What is deliberately NOT here is a name that stands for a base plus a set of
+/// params. Such a name reads as a thing, and the whole claim of this design is
+/// that it is not one — it is a base with params set. A spelling that hides
+/// which params it sets makes that claim unverifiable by looking at the
+/// document, and buys a few saved keystrokes for it. Each base carries its own params on
 /// [`HorizonSpec`], and a param foreign to the declared base is refused rather
 /// than ignored.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -438,8 +431,7 @@ impl Horizon {
     /// Desugar either wire form to the one resolved view, defaults applied.
     pub fn resolved(&self) -> ResolvedHorizon {
         match self {
-            Horizon::Name(HorizonName::Void) => ResolvedHorizon::of_base(HorizonBase::Void),
-            Horizon::Name(HorizonName::Ocean) => ResolvedHorizon::of_base(HorizonBase::Ocean),
+            Horizon::Name(base) => ResolvedHorizon::of_base(*base),
             Horizon::Spec(s) => ResolvedHorizon {
                 base: s.base,
                 ratio: s.ratio.unwrap_or(horizon_defaults::RATIO),
@@ -453,12 +445,21 @@ impl Horizon {
         self.resolved().base
     }
 
-    /// True when this declaration needs the horizon-library surface — which is
-    /// exactly the object form. A campaign below
-    /// [`HORIZON_LIBRARY_SINCE`](crate::HORIZON_LIBRARY_SINCE) may still write
-    /// the two shorthands, and its emission does not move.
+    /// True when this declaration needs the horizon-library surface: the object
+    /// form, or a bare name for a base that did not exist before it.
+    ///
+    /// The two bases that predate the library stay writable as bare names at
+    /// the version that introduced them, and their emission does not move —
+    /// which is what makes this a widening rather than a break. What is fenced
+    /// is saying something the old surface had no spelling for.
     pub fn needs_horizon_library(&self) -> bool {
-        matches!(self, Horizon::Spec(_))
+        match self {
+            Horizon::Spec(_) => true,
+            Horizon::Name(base) => match base {
+                HorizonBase::Void | HorizonBase::Ocean => false,
+                HorizonBase::Valley => true,
+            },
+        }
     }
 }
 
