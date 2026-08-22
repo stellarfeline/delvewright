@@ -4,7 +4,7 @@
 //! objective/effect types) parse successfully but are rejected by validation
 //! ([`crate::validate`]) with code `DW0141`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1244,6 +1244,61 @@ pub struct QuestPlanContent {
     /// flag in the campaign.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub branch_points: Vec<BranchPoint>,
+}
+
+impl QuestPlanContent {
+    /// **The ONE authority on which quests are the spine**: the finale and every
+    /// quest its `depends_on` chain transitively demands — the quests a body
+    /// cannot reach the finale without.
+    ///
+    /// The capability belongs here, on the stage-4 document, because the spine is
+    /// a fact about the quest plan and about nothing else. It had grown two
+    /// derivations of the same closure in two files — one inline in
+    /// [`crate::validate`]'s `DW0132` convergence check, one a private
+    /// `mandatory_quests` in [`crate::layout`] read by the layout binding and by
+    /// the critical-path spine obligation. Both were correct and neither said it
+    /// was the authority, which is exactly the shape a later clean merge turns
+    /// into two rules that disagree.
+    ///
+    /// **Why the closure is taken over the raw `depends_on` edges, unfiltered.**
+    /// The `validate` copy first dropped every dep naming a quest the plan does
+    /// not declare. That filtering is not this function's question: a dangling
+    /// `depends_on` is `DW0112`'s finding, and silently pruning it here would
+    /// make the set disagree with the document it is derived from. So an id the
+    /// plan does not declare is reported in the spine and expands no further —
+    /// and the one reader that could care, `DW0132`, only ever asks whether a
+    /// **declared** quest is a member, so an undeclared member cannot change its
+    /// verdict.
+    ///
+    /// Cycle-safe by construction (a quest already in the set is not expanded
+    /// again), so a plan `DW0130` will refuse still yields a set rather than
+    /// hanging.
+    ///
+    /// **Not the same question as the `mandatory` field**, and the name says so
+    /// deliberately. Today the two sets always coincide, because `DW0132` demands
+    /// every declared quest be a transitive dependency of the finale and `DW0133`
+    /// demands every quest set `mandatory: true`. If `mandatory: false` ever
+    /// becomes legal those coincide no longer, and this function keeps answering
+    /// the graph question it has always answered.
+    #[must_use]
+    pub fn spine(&self) -> BTreeSet<&str> {
+        let deps: BTreeMap<&str, &[QuestId]> = self
+            .quests
+            .iter()
+            .map(|q| (q.id.as_str(), q.depends_on.as_slice()))
+            .collect();
+        let mut spine: BTreeSet<&str> = BTreeSet::new();
+        let mut stack = vec![self.finale.as_str()];
+        while let Some(q) = stack.pop() {
+            if !spine.insert(q) {
+                continue;
+            }
+            for dep in deps.get(q).copied().unwrap_or(&[]) {
+                stack.push(dep.as_str());
+            }
+        }
+        spine
+    }
 }
 
 /// One declared story fork (DSL v0.8, spec-0025).
