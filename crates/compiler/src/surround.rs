@@ -173,7 +173,7 @@ impl ValleySurround {
     /// Whether a column is inside the annulus (outside the scene rect, inside
     /// the `ratio`-scaled outer rect).
     pub fn in_annulus(&self, x: i32, z: i32) -> bool {
-        in_annulus(&self.scene, self.ratio, x, z)
+        in_annulus(self.seed, &self.scene, self.ratio, x, z)
     }
 
     /// The scene-rect interior MOAT fill (spec-0026 amendment): scene-rect
@@ -445,6 +445,15 @@ const VISTA_MAX_FOV_DEG: f64 = 110.0;
 /// unchanged on every axis and the DW0322/DW0854 proofs hold purely by
 /// construction — no degraded geometry, no second proof path.
 const ANNULUS_BAND_FLOOR: f64 = GAP_WIDTH + SLOPE_RUN;
+/// Outer-boundary erosion: how far, in normalized annulus progress, the edge
+/// may wander in or out of the outer rectangle.
+const EROSION_AMP: f64 = 0.16;
+/// ...at this noise frequency, so the coast is bays and headlands rather than
+/// a fringe.
+const EROSION_FREQ: f64 = 0.035;
+/// ...and never within this many blocks of the crest line, which is what keeps
+/// a band-floored axis's rim whole (see [`survives_erosion`]).
+const EROSION_KEEP: f64 = 2.0;
 /// MC 1.21.11 build range (dossier §3).
 const WORLD_MIN_Y: i32 = -64;
 const WORLD_MAX_Y: i32 = 319;
@@ -461,6 +470,7 @@ const SALT_DECOR_PICK: u64 = 155;
 const SALT_TREE_HEIGHT: u64 = 43;
 const SALT_TREE_KEEP: u64 = 45;
 const SALT_DETAIL: u64 = 81; // +1 for the second octave
+const SALT_EROSION: u64 = 89;
 
 // ---------------------------------------------------------------------------
 // Flora / palette tables (parallel by construction — criterion 6)
@@ -579,11 +589,42 @@ fn outer_rect(scene: &SceneRect, ratio: f64) -> SceneRect {
     }
 }
 
-fn in_annulus(scene: &SceneRect, ratio: f64, x: i32, z: i32) -> bool {
+fn in_annulus(seed: u64, scene: &SceneRect, ratio: f64, x: i32, z: i32) -> bool {
     let o = outer_rect(scene, ratio);
     let inside_outer = x >= o.min_x && x <= o.max_x && z >= o.min_z && z <= o.max_z;
     let inside_scene = x >= scene.min_x && x <= scene.max_x && z >= scene.min_z && z <= scene.max_z;
-    inside_outer && !inside_scene
+    inside_outer && !inside_scene && survives_erosion(seed, scene, ratio, x, z)
+}
+
+/// Whether a column survives the outer boundary's erosion — the difference
+/// between a landform and a diorama base.
+///
+/// `outer_rect` is a rectangle, so without this the whole landform ends in a
+/// razor-square 90-degree corner over a bare cliff. No player ever reaches it;
+/// every whole-map illustration is of it, which is the one frame a stranger
+/// sees first.
+///
+/// **Eroded only OUTWARD of the crest**, and that bound is what makes it safe
+/// rather than merely careful. On an axis that took [`ANNULUS_BAND_FLOOR`] the
+/// crest sits exactly at the outer edge, so an erosion keyed to the outer
+/// rectangle alone would cut the rim itself and open the ring a body is meant
+/// to be inside. Nothing within [`EROSION_KEEP`] of the crest line is touched,
+/// so a band-floored axis has nothing erodible at all and the rim is intact by
+/// construction rather than by a threshold.
+///
+/// Removing columns can only ever REMOVE standable cells outward of the rim, so
+/// it cannot make anything reachable that was not; the flood proofs are
+/// unaffected, and run over the result regardless.
+fn survives_erosion(seed: u64, scene: &SceneRect, ratio: f64, x: i32, z: i32) -> bool {
+    if warped_distance(seed, scene, x, z) <= GAP_WIDTH + SLOPE_RUN + EROSION_KEEP {
+        return true;
+    }
+    let p = annulus_progress(scene, ratio, x, z);
+    if p <= 1.0 - EROSION_AMP {
+        return true;
+    }
+    let n = value_noise(seed, x, 0, z, EROSION_FREQ, SALT_EROSION);
+    p < 1.0 + EROSION_AMP * (2.0 * n - 1.0)
 }
 
 /// Normalized annulus progress 0..~1.41 (0 at the scene edge, 1 at the outer
@@ -984,7 +1025,7 @@ pub fn generate_valley(
     let mut columns: BTreeMap<(i32, i32), (Zone, i32)> = BTreeMap::new();
     for x in outer.min_x..=outer.max_x {
         for z in outer.min_z..=outer.max_z {
-            if !in_annulus(&scene, params.ratio, x, z) {
+            if !in_annulus(seed, &scene, params.ratio, x, z) {
                 continue;
             }
             columns.insert(
@@ -996,7 +1037,7 @@ pub fn generate_valley(
 
     // --- 2. Tree layer: Poisson columns on the crest band / outer face ----
     let crest_domain = |x: i32, z: i32| -> bool {
-        if !in_annulus(&scene, params.ratio, x, z) {
+        if !in_annulus(seed, &scene, params.ratio, x, z) {
             return false;
         }
         // The WHOLE canopy footprint (radius 2) must clear the crest line —
@@ -1008,7 +1049,7 @@ pub fn generate_valley(
                 if dw <= GAP_WIDTH + SLOPE_RUN + TREE_CREST_MARGIN {
                     return false;
                 }
-                if !in_annulus(&scene, params.ratio, x + dx, z + dz) {
+                if !in_annulus(seed, &scene, params.ratio, x + dx, z + dz) {
                     return false;
                 }
             }
@@ -1033,7 +1074,7 @@ pub fn generate_valley(
     // geometry + hashes only, so they are identical across floras.
     let inner_seed = crate::edit::mix64(seed ^ 0xB105_50F7);
     let inner_domain = |x: i32, z: i32| -> bool {
-        if !in_annulus(&scene, params.ratio, x, z) {
+        if !in_annulus(seed, &scene, params.ratio, x, z) {
             return false;
         }
         let dw = warped_distance(seed, &scene, x, z);
@@ -1051,7 +1092,7 @@ pub fn generate_valley(
         for dx in -2..=2 {
             for dz in -2..=2 {
                 let (nx, nz) = (x + 2 * ix + dx, z + 2 * iz + dz);
-                if !in_annulus(&scene, params.ratio, nx, nz) {
+                if !in_annulus(seed, &scene, params.ratio, nx, nz) {
                     return false;
                 }
                 if warped_distance(seed, &scene, nx, nz) <= GAP_WIDTH + 1.0 {
@@ -1099,7 +1140,7 @@ pub fn generate_valley(
         columns
             .get(&(c[0], c[2]))
             .is_some_and(|&(zone, h)| zone != Zone::Gap && c[1] > floor_top_y + h)
-            && in_annulus(&scene, params.ratio, c[0], c[2])
+            && in_annulus(seed, &scene, params.ratio, c[0], c[2])
     });
 
     // --- 3. Understory decor — in the GENERATION phase, not the tile
@@ -1775,7 +1816,7 @@ mod tests {
         let o = outer_rect(&scene(), 2.5);
         for x in o.min_x..=o.max_x {
             for z in o.min_z..=o.max_z {
-                if in_annulus(&scene(), 2.5, x, z) {
+                if in_annulus(11, &scene(), 2.5, x, z) {
                     assert!(footprints.contains(&(x, z)), "({x},{z}) uncovered");
                 }
             }
@@ -1802,7 +1843,7 @@ mod tests {
         // zero by construction and the landform had two heights in it.
         let s = scene();
         let heights = |x: i32, z: i32| -> Option<i32> {
-            in_annulus(&s, 2.5, x, z).then(|| column_profile(9, &s, 2.5, 48, x, z).1)
+            in_annulus(9, &s, 2.5, x, z).then(|| column_profile(9, &s, 2.5, 48, x, z).1)
         };
         let (mut examined, mut odd, mut one_steps) = (0u32, 0u32, 0u32);
         for x in -80..=175 {
@@ -1856,7 +1897,7 @@ mod tests {
         let o = outer_rect(&s, 2.5);
         for x in o.min_x..=o.max_x {
             for z in o.min_z..=o.max_z {
-                if !in_annulus(&s, 2.5, x, z) {
+                if !in_annulus(9, &s, 2.5, x, z) {
                     continue;
                 }
                 let dw = warped_distance(9, &s, x, z);
@@ -1878,6 +1919,57 @@ mod tests {
     /// as every other axis — walkable gap floor, rising slope, crest — and
     /// the whole surround holds the nav-flood proof over its serialized
     /// tiles. `ratio` controls spaciousness above the floor, never below.
+    /// The outer boundary is eroded, and the erosion never reaches the rim.
+    ///
+    /// Two halves, and both are needed. **It does something**: a constant that
+    /// silently rounds to nothing leaves the landform a rectangle and the check
+    /// green, which is the shape a threshold takes when it has gone inert.
+    /// **It does nothing to the crest**: on an axis that took the band floor the
+    /// crest sits exactly at the outer edge, so an erosion keyed to the outer
+    /// rectangle alone would cut the rim and open the ring — which is why it is
+    /// bounded by the crest line rather than by a margin someone tuned.
+    #[test]
+    fn the_outer_boundary_is_eroded_and_the_rim_is_not() {
+        let s = scene();
+        let o = outer_rect(&s, 2.5);
+        let (mut rect_cols, mut kept, mut crest_cols) = (0u32, 0u32, 0u32);
+        for x in o.min_x..=o.max_x {
+            for z in o.min_z..=o.max_z {
+                let in_scene = x >= s.min_x && x <= s.max_x && z >= s.min_z && z <= s.max_z;
+                if in_scene {
+                    continue;
+                }
+                rect_cols += 1;
+                let alive = in_annulus(9, &s, 2.5, x, z);
+                if alive {
+                    kept += 1;
+                }
+                // Nothing at or inside the crest line may ever be eroded: that
+                // is the rim, and a hole in it is a way out of the delve.
+                let dw = warped_distance(9, &s, x, z);
+                if dw <= GAP_WIDTH + SLOPE_RUN {
+                    crest_cols += 1;
+                    assert!(
+                        alive,
+                        "({x},{z}) is inside the crest line (warped d {dw:.1}) and was \
+                         eroded — the ring has a hole in it"
+                    );
+                }
+            }
+        }
+        assert!(rect_cols > 20_000, "examined only {rect_cols} column(s)");
+        assert!(
+            crest_cols > 1_000,
+            "only {crest_cols} column(s) inside the crest"
+        );
+        let eroded = rect_cols - kept;
+        assert!(
+            eroded * 50 > rect_cols,
+            "{eroded} of {rect_cols} column(s) eroded — the boundary is still the \
+             rectangle it was, so this rule is inert"
+        );
+    }
+
     #[test]
     fn short_axis_band_floors_at_the_full_rim() {
         let s = SceneRect {

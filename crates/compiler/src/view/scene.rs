@@ -173,10 +173,13 @@ pub(crate) struct RenderPlan {
     shots: Vec<Shot>,
 }
 
+/// An inclusive world box. Public because [`Horizon`] carries one: a horizon
+/// that BUILT ground has to say how far the ground reaches, and a whole-map
+/// frame is of the union of that and the layout.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-pub(crate) struct Aabb {
-    pub(crate) min: [i32; 3],
-    pub(crate) max: [i32; 3],
+pub struct Aabb {
+    pub min: [i32; 3],
+    pub max: [i32; 3],
 }
 
 /// The `horizon` fact `render-plan.json` carries (compiler `render_plan::
