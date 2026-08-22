@@ -89,6 +89,22 @@ CONNECTION_RULE_MARKERS = ("connections::resolve(",)
 # Named individually and printed on every run, for the same reason NOT_EMITTERS
 # is: a class exemption is what hid the sixth emitter.
 NOT_CONNECTION_EMITTERS = {
+    "crates/compiler/src/surround.rs": (
+        "the horizon surround generator, and the only NON-fixture entry here. Its vocabulary is "
+        "rock, ground, logs, leaves and ground cover, and not one of those carries a "
+        "shape-carrying property — so there is nothing beside a cell for a connection to be "
+        "derived FROM. What makes that an exemption rather than a claim is that the emitter "
+        "asserts it: `assert_palette_is_real` runs `BlockRegistry::omitted_shape_carrying` over "
+        "the real palette of every tile it writes, and a block that DID carry a connection class "
+        "could not pass that line. The assertion is not decorative — it fired on first run, on "
+        "`minecraft:pink_petals`, which is multipart in `flower_amount`/`facing` and was being "
+        "written bare, so vanilla would have filled a cherry valley floor with one north-facing "
+        "petal per cell. Those two are an authored decision rather than something the neighbours "
+        "imply (the same reason `prefabs/connections.rs` derives a fence but not a fence gate), "
+        "so they are now authored, and the surround owes `connections::resolve` nothing. This "
+        "crate could not call it in any case: the derivation is source-included by the seven "
+        "`prefabs/*` generator workspaces and `delvec` does not depend on them."
+    ),
     "crates/admit/tests/footprint_class.rs": (
         "test fixture for the footprint-class admission door (spec-0050 §5). Its palette is two "
         "states named in one `STATES` constant the file also judges against the pinned registry "

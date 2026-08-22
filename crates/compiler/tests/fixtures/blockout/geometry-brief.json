@@ -25,6 +25,18 @@
         "note": "The loft stands five blocks over the hall floor, which is the whole of the height a body can fall from by design.",
         "unit": "blocks",
         "value": 69.0
+      },
+      {
+        "id": "fact/hall-height",
+        "note": "The hall stands eight blocks to its ceiling, which is what makes the loft read as a level above rather than a shelf.",
+        "unit": "blocks",
+        "value": 8.0
+      },
+      {
+        "id": "fact/landing-height",
+        "note": "The landing is four blocks to its ceiling: low enough that a body arriving reads it as a threshold and not as a room.",
+        "unit": "blocks",
+        "value": 4.0
       }
     ]
   },
