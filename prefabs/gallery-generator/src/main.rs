@@ -1754,12 +1754,17 @@ fn yard_metadata() -> serde_json::Value {
             "data_version": DATA_VERSION,
             "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
         },
+        // `note`, not `role`. `role` is the engine's own closed vocabulary for
+        // what the compiler must FIND without being told a name (spec-0046);
+        // a sentence written there is a malformed value, and `DW0346` skips the
+        // whole file — so this piece would silently not exist. The prose an
+        // anchor carries and the term the engine reads are two keys.
         "anchors": {
             "yard-stone": {
                 "pos": YARD_SEAT,
                 "facing": "north",
                 "resolves_to": "space:yard",
-                "role": "where a body stands when the campaign seats it in this place"
+                "note": "where a body stands when the campaign seats it in this place"
             }
         },
         // The claim about what SIZE of box this piece is for, judged against its
