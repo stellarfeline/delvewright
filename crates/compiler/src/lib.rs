@@ -97,6 +97,7 @@ pub mod snapshot;
 pub mod solver;
 pub mod stairs;
 pub mod stake;
+pub mod surround;
 pub mod teleport;
 pub mod textfit;
 pub mod timeline;
