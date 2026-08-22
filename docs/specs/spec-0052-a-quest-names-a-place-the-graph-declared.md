@@ -3,15 +3,18 @@
 - **Status**: Proposed
 - **Ground**: spec-0049 §5.2 (the synthesized vocabulary), spec-0050 §6 (the
   owed anchors and the re-binding map), and a measured capability gap: a
-  campaign authored under the prefab placement authority references 41
-  distinct anchor names at over two hundred sites — respawn points, wave
-  seats, lethal volumes, cutscene subjects, NPC stations, loot containers —
-  every one declared by its pieces, and not one expressible in a site-plan
-  campaign, whose entire anchor vocabulary is the synthesized set: `spawn`,
-  one anchor per graph node, and the seam and unlock anchors of its barred
-  edges. Moving such a campaign onto the pipeline would flatten every named
-  place to a box centre, which un-writes its spatial script. This spec closes
-  the gap for both authoring orders at once.
+  campaign of eight pieces authored under the prefab placement authority —
+  pieces and quests first, the map to be derived afterwards — references 41
+  distinct anchor names at 176 sites — respawn points, wave seats, lethal
+  volumes, cutscene subjects, NPC stations — every one among its pieces' 187
+  declared anchors, and not one expressible in a site-plan campaign, whose
+  entire anchor vocabulary is the synthesized set: `spawn`, one anchor per
+  graph node, and the seam and unlock anchors of its barred edges. A second
+  campaign on the content mainline, authored under the same authority, shows
+  the same shape at 55 names and 218 sites. Moving such a campaign onto the
+  pipeline would flatten every named place to a box centre, which un-writes
+  its spatial script. This spec closes the gap for both authoring orders at
+  once.
 - **DSL**: one `dsl_version` bump, per-stage fenced in the settled shape. The
   number is allocated at implementation dispatch per the standing allocation
   rule; this spec deliberately names none — a version literal written before
