@@ -313,6 +313,13 @@ pub mod codes {
     pub const PREFAB_BINDING: DwCode = DwCode::every_version("DW0160");
     /// Area `prefab_pool` references a pool absent from `prefabs/` metadata.
     pub const POOL_UNKNOWN: DwCode = DwCode::every_version("DW0161");
+    /// Area `prefab` names a piece absent from `prefabs/` metadata — the same
+    /// obligation [`POOL_UNKNOWN`] carries on the other arm of the binding. It
+    /// is an error rather than a deferral because an area whose piece is absent
+    /// contributes no anchor set at all, so every per-area anchor proof over it
+    /// is SKIPPED rather than failed: a misspelling here is strictly less
+    /// checked than a correct name.
+    pub const PREFAB_UNKNOWN: DwCode = DwCode::every_version("DW0856");
     /// (v0.6, spec-0017) A stage-7 edit script is structurally invalid: an edit
     /// names a region no earlier `select` in its batch defined, a composition
     /// (`union`/`intersect`/`subtract`) lists too few regions, a box `min`
