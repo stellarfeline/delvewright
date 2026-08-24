@@ -192,6 +192,33 @@ impl Delivery {
     }
 }
 
+/// The `DW0864` finding one delivery earns: `Err` at the error tier, `Ok(Some)`
+/// at the advisory tier, `Ok(None)` when the declaration was met.
+///
+/// One authority rather than a `match` at each verb's call site: two call sites
+/// deciding a tier is two rules that agree right up until they do not, and the
+/// tier is the part of this diagnostic a reader has to trust.
+fn placement_finding(
+    bid: &str,
+    ei: usize,
+    verb: &str,
+    d: Delivery,
+) -> Result<Option<Diagnostic>, EditError> {
+    match d.shortfall() {
+        Shortfall::None => Ok(None),
+        Shortfall::Refuse => Err(EditError {
+            code: DW_PLACEMENT_SHORTFALL,
+            message: shortfall_message(bid, verb, d),
+        }),
+        Shortfall::Advise => Ok(Some(Diagnostic::warning(
+            DW_PLACEMENT_SHORTFALL,
+            "world-edits",
+            format!("/content/batches/{bid}/edits/{ei}"),
+            shortfall_message(bid, verb, d),
+        ))),
+    }
+}
+
 /// The `DW0864` message for a short delivery, with every number in it. Shared by
 /// both tiers, so the error and the advisory cannot come to describe the numbers
 /// differently.
@@ -469,21 +496,7 @@ fn replay_with(
                     )?;
                     placements.push(d.record(bid, ei, "scatter"));
                     if enforce {
-                        match d.shortfall() {
-                            Shortfall::None => {}
-                            Shortfall::Refuse => {
-                                return Err(EditError {
-                                    code: DW_PLACEMENT_SHORTFALL,
-                                    message: shortfall_message(bid, "scatter", d),
-                                });
-                            }
-                            Shortfall::Advise => warnings.push(Diagnostic::warning(
-                                DW_PLACEMENT_SHORTFALL,
-                                "world-edits",
-                                format!("/content/batches/{bid}/edits/{ei}"),
-                                shortfall_message(bid, "scatter", d),
-                            )),
-                        }
+                        warnings.extend(placement_finding(bid, ei, "scatter", d)?);
                     }
                 }
                 WorldEdit::Plant {
@@ -507,21 +520,7 @@ fn replay_with(
                     );
                     placements.push(d.record(bid, ei, "plant"));
                     if enforce {
-                        match d.shortfall() {
-                            Shortfall::None => {}
-                            Shortfall::Refuse => {
-                                return Err(EditError {
-                                    code: DW_PLACEMENT_SHORTFALL,
-                                    message: shortfall_message(bid, "plant", d),
-                                });
-                            }
-                            Shortfall::Advise => warnings.push(Diagnostic::warning(
-                                DW_PLACEMENT_SHORTFALL,
-                                "world-edits",
-                                format!("/content/batches/{bid}/edits/{ei}"),
-                                shortfall_message(bid, "plant", d),
-                            )),
-                        }
+                        warnings.extend(placement_finding(bid, ei, "plant", d)?);
                     }
                 }
                 WorldEdit::Fragment {
@@ -2501,9 +2500,27 @@ mod tests {
         // that distinction is the whole finding.
         assert_eq!(missed.domain, cells.len());
         assert!(missed.delivered < 40);
-        let msg = shortfall_message("batch/x", "plant", missed);
-        assert!(msg.contains(&missed.domain.to_string()), "{msg}");
-        assert!(msg.contains(&missed.delivered.to_string()), "{msg}");
+        // The tier a delivery earns, and the CODE it earns it under, through the
+        // one authority both call sites use.
+        assert!(
+            placement_finding("batch/x", 0, "plant", met)
+                .unwrap()
+                .is_none()
+        );
+        let err = placement_finding("batch/x", 0, "plant", missed)
+            .expect_err("a plant short of its declared count is refused");
+        assert_eq!(err.code, DW_PLACEMENT_SHORTFALL);
+        assert_eq!(DW_PLACEMENT_SHORTFALL.id(), "DW0864");
+        assert!(
+            err.message.contains(&missed.domain.to_string()),
+            "{}",
+            err.message
+        );
+        assert!(
+            err.message.contains(&missed.delivered.to_string()),
+            "{}",
+            err.message
+        );
     }
 
     /// **`DW0864`, both tiers on `scatter`.**
@@ -2552,6 +2569,25 @@ mod tests {
         let dressed = run(&air, 1.0);
         assert_eq!(dressed.shortfall(), Shortfall::None);
         assert_eq!(dressed.delivered, dressed.usable);
+
+        // Same code, different tier — the property that makes `DW0864` one rule
+        // rather than two that could drift apart.
+        assert_eq!(
+            placement_finding("batch/x", 0, "scatter", on_the_solid_course)
+                .expect_err("a verb that can act on nothing is refused")
+                .code,
+            DW_PLACEMENT_SHORTFALL
+        );
+        let advisory = placement_finding("batch/x", 0, "scatter", sampled_empty)
+            .expect("an empty sample is not refused")
+            .expect("an empty sample is stated");
+        assert_eq!(advisory.code, DW_PLACEMENT_SHORTFALL);
+        assert_eq!(advisory.severity, delvewright_dsl::Severity::Warning);
+        assert!(
+            placement_finding("batch/x", 0, "scatter", dressed)
+                .unwrap()
+                .is_none()
+        );
     }
 
     /// The ledger states a binding count, and it is COMPUTED from the rows —

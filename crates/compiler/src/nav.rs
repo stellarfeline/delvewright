@@ -970,9 +970,7 @@ pub struct World {
 /// down to a sixteenth; `MAX_JUMP_RISE_16` is the ≈1.2522-block apex), and they
 /// stay private to this module because the step rule is this module's, while the
 /// numbers are the table's.
-use delvewright_dsl::metrics::{
-    FULL_16, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16, PLAYER_HEIGHT, PLAYER_WIDTH,
-};
+use delvewright_dsl::metrics::{FULL_16, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16, PLAYER_WIDTH};
 
 impl World {
     /// Build the occupancy model from the plan's placed pieces and the structure
@@ -2247,14 +2245,23 @@ pub fn cell_center(c: [i32; 3]) -> [f64; 3] {
 ///
 /// **A vertical step is rendered as a step, never as a translation in place.**
 /// See [`step_vertices`]: the rise is folded into the crossing as far as the
-/// body's own hitbox allows, the body then **descends onto** the destination
-/// from an apex, and a drop stays level until its footprint has cleared the
-/// cell it is leaving. A straight lerp between the two cell centres would
-/// instead sweep the body through the *corner* of the step block — the same
-/// "inside the geometry" artifact at a stair that the centring fixes along a
-/// wall.
-fn resample(cells: &[[i32; 3]], speed: f64) -> Vec<[f64; 3]> {
-    resample_body(cells, speed, PLAYER_WIDTH, PLAYER_HEIGHT)
+/// body's own hitbox allows, and a drop stays level until its footprint has
+/// cleared the cell it is leaving. A straight lerp between the two cell centres
+/// would instead sweep the body through the *corner* of the step block — the
+/// same "inside the geometry" artifact at a stair that the centring fixes along
+/// a wall.
+/// The hitbox width of the body a stage-2 NPC actually wears — the one
+/// [`crate::clearance`] judges and a viewer sees, which is what the step shape
+/// has to be sound for. Falls back to the player's own width for an NPC the plan
+/// does not carry, which is the routing footprint and so never widens anything.
+fn npc_render_width(plan: &Plan, npc_id: &str) -> f64 {
+    plan.campaign
+        .npcs
+        .content
+        .npcs
+        .iter()
+        .find(|n| n.id.as_str() == npc_id)
+        .map_or(PLAYER_WIDTH, |n| entity_dims(&npc_body_entity(n)).0)
 }
 
 /// The largest horizontal fraction of a one-cell crossing a body of hitbox
@@ -2264,28 +2271,19 @@ fn resample(cells: &[[i32; 3]], speed: f64) -> Vec<[f64; 3]> {
 ///
 /// Cell centres are 1 apart and the shared face is at 0.5; an AABB of
 /// half-width `w/2` touches it at `0.5 - w/2`. A body 1.0 wide or wider has no
-/// budget at all, which is not a special case to code around: such a body needs
-/// more than one column ([`Footprint::for_dims`]) and could not have been
-/// standing beside a full step block in the first place.
+/// budget at all and gets the old L, which is not a special case to code around:
+/// such a body needs more than one column ([`Footprint::for_dims`]) and could
+/// not have been standing beside a full step block in the first place.
+///
+/// **The width is the body that SHIPS, never the footprint that routed.**
+/// `move-npc` deliberately plans on the player footprint whatever the NPC wears,
+/// and [`crate::clearance`] judges the body vanilla actually summons — so a
+/// sheep-bodied NPC given the player's 0.2 budget is carried a fifth of the way
+/// across while still below its landing and ends up inside the step block. The
+/// routed footprint bounds *where* the body may go; the rendered body bounds
+/// *how fast it may get there*, and `DW0450` is the check that says so.
 fn step_fold(width: f64) -> f64 {
     (0.5 - width / 2.0).max(0.0)
-}
-
-/// How far above the destination surface a step-up's apex may reach for a body
-/// of hitbox `height`: the slack between the body and the whole cells the route
-/// proof cleared for it.
-///
-/// [`World::neighbors_fp`] proves exactly three courses over a step-up — the
-/// source's feet cell and the `ceil(height)` cells above it (`standable_fp`
-/// plus `head_clear_to_jump`), and the destination's own `ceil(height)` cells.
-/// A body whose feet reach `dest + (ceil(height) - height)` still occupies only
-/// those courses; one block higher does not, and nothing proved that cell. So
-/// the hop's height is **derived from the proof**, never chosen: the compiler
-/// renders the largest arc it has actually established, and no larger one.
-fn step_apex(height: f64) -> f64 {
-    // A hair under the slack: at exactly the slack the body's top touches the
-    // first unproven course, and `aabb`-style floors round that touch upward.
-    (height.ceil() - height - 1e-3).max(0.0)
 }
 
 /// The intermediate waypoints a one-cell vertical step inserts between the two
@@ -2299,48 +2297,59 @@ fn step_apex(height: f64) -> f64 {
 /// move a **jump** (it charges it a jump arc and demands jump head clearance),
 /// so the rendered motion was not the move the plan modelled.
 ///
-/// The shape now emitted, and every part of it is derived rather than picked:
+/// The shape now emitted, and the one number in it is derived rather than
+/// picked:
 ///
 /// * **Step up** — rise to the destination surface over the first
-///   [`step_fold`] of the crossing (the body is already moving forward while it
-///   gains the block, and the rise completes exactly as its AABB reaches the
-///   step block's face), carry on to an apex [`step_apex`] above that surface at
-///   mid-crossing, then **descend onto** the destination. The descent is the
-///   half a viewer reads as a hop, and it is horizontal and vertical at once.
+///   [`step_fold`] of the crossing, so the body is already moving forward while
+///   it gains the block and the rise completes exactly as its AABB reaches the
+///   step block's face.
 /// * **Step down** — hold the source height until the body's AABB has cleared
 ///   the cell it is leaving (the last [`step_fold`] of the crossing), then drop
 ///   into the destination while still moving forward.
 ///
 /// Every emitted point stays inside cells `neighbors_fp` proved clear, which is
-/// what the old L bought and is not given up here.
-fn step_vertices(a: [f64; 3], b: [f64; 3], width: f64, height: f64) -> Vec<[f64; 3]> {
+/// what the old L bought and is not given up here. The emitted y-range is the
+/// L's exactly — only *when* the height changes moves — which is what makes the
+/// new shape provably no worse than the shipped one.
+///
+/// **What is deliberately NOT emitted, and why it is a gap in the PROOF rather
+/// than in the rendering.** A body that hops a ledge goes *above* it and comes
+/// down; that reads as a hop, and it is what the route model itself says the
+/// move is (it charges a jump arc and, past the auto-step budget, demands jump
+/// head clearance). No such arc is soundly renderable today, and it was measured
+/// rather than reasoned about: an apex bounded by the slack between the ROUTED
+/// footprint and its whole cells put a villager's real 1.95-tall body into a
+/// solid block, because `move-npc` plans on the player's 1.8 while
+/// [`crate::clearance`] judges the body that ships. Sizing it against the true
+/// body does not rescue it either: at the apex the body straddles both columns,
+/// and the course it reaches over the SOURCE column is cleared only by
+/// `head_clear_to_jump` — which [`World::neighbors_fp`] demands only when the
+/// rise is past the auto-step budget, so a cell-level `+1` off a bottom slab is
+/// a walk-up and nothing above the source was ever asked about. **The route
+/// proof clears the step's endpoints and, for a jump, one head cell; it does not
+/// clear the volume an arc sweeps.** Until it does, the rise folds into the
+/// crossing and stops there.
+fn step_vertices(a: [f64; 3], b: [f64; 3], width: f64) -> Vec<[f64; 3]> {
     let (dx, dz) = (b[0] - a[0], b[2] - a[2]);
     let lerp = |f: f64, y: f64| [a[0] + dx * f, y, a[2] + dz * f];
     let fold = step_fold(width);
     match (b[1] - a[1]).round() as i32 {
-        1 => {
-            let apex = step_apex(height);
-            let mut v = vec![lerp(fold, b[1])];
-            if apex > 0.0 {
-                v.push(lerp(0.5, b[1] + apex));
-            }
-            v
-        }
+        1 => vec![lerp(fold, b[1])],
         -1 => vec![lerp(1.0 - fold, a[1])],
         _ => Vec::new(),
     }
 }
 
 /// [`resample`] for a body of the given hitbox — the footprint the leg was
-/// **routed** under, never the entity's true size: the rendered motion is bounded
-/// by the volume the proof proved, and a body wider or taller than the one that
-/// was routed was never proved anything.
-fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64, height: f64) -> Vec<[f64; 3]> {
+/// **routed** under, since the rendered motion is bounded by the volume the
+/// proof proved and a body the router never saw was never proved anything.
+fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> Vec<[f64; 3]> {
     let mut pts: Vec<[f64; 3]> = Vec::with_capacity(cells.len() * 3);
     for (i, c) in cells.iter().enumerate() {
         let p = cell_center(*c);
         if i > 0 {
-            pts.extend(step_vertices(cell_center(cells[i - 1]), p, width, height));
+            pts.extend(step_vertices(cell_center(cells[i - 1]), p, width));
         }
         pts.push(p);
     }
@@ -2630,7 +2639,11 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
         };
         planned.insert(key.clone(), cells.clone());
         planned_origin.insert(key.clone(), (start, gate.clone()));
-        let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
+        let waypoints = resample_body(
+            &cells,
+            speed.unwrap_or(DEFAULT_SPEED),
+            npc_render_width(plan, npc.as_str()),
+        );
         // Seed: the facing this body already has — the exit yaw of the previous
         // leg **on this branch** if this NPC has walked before, else the yaw its
         // summon gave it (the home anchor's declared facing,
@@ -3082,8 +3095,8 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         // The rendered motion is bounded by the volume the proof proved, so the
         // hop shape uses the SAME hitbox this leg was routed under, never the
         // entity's true size.
-        let (body_w, body_h) = entity_dims(&a.entity);
-        let waypoints = resample_body(&cells, speed.unwrap_or(DEFAULT_SPEED), body_w, body_h);
+        let (body_w, _) = entity_dims(&actor_body_entity(a));
+        let waypoints = resample_body(&cells, speed.unwrap_or(DEFAULT_SPEED), body_w);
         // Seed: the facing the puppet already has — the exit yaw of the previous
         // leg **on this branch**, else the actor's declared spawn `facing`
         // (`emit::actor_facing_yaw`).
@@ -9481,7 +9494,7 @@ mod tests {
 
     /// The full walked path for `cells`, as the emitter would teleport it.
     fn walked(cells: &[[i32; 3]]) -> Vec<[f64; 3]> {
-        resample(cells, DEFAULT_SPEED)
+        resample_body(cells, DEFAULT_SPEED, PLAYER_WIDTH)
     }
 
     /// **Regression (owner, island QA): "the NPC visibly passes through blocks".**
@@ -9566,20 +9579,19 @@ mod tests {
     /// levitating rather than hopping."**
     ///
     /// A one-block step up is rendered as a **step**: the body is already moving
-    /// forward while it gains the block, and it comes down onto the ledge from an
-    /// apex instead of rising in place and sliding across level. The apex is the
-    /// largest one the route proof established, so what bounds it is the first
-    /// course above the destination that no proof covers — this fixture puts a
-    /// ceiling exactly there, so an apex chosen rather than derived clips it.
+    /// forward while it gains the block, instead of rising in place over the cell
+    /// it is standing on and then sliding across level.
     ///
     /// This deliberately REPLACES the older assertion that the step is an L whose
     /// first leg is a pure vertical translation over the source column: that shape
     /// is the finding. What the L bought — the AABB never entering the step block
-    /// — is re-asserted here and is not given up.
+    /// — is re-asserted here and is not given up, and the ceiling sits on the
+    /// first course above the ledge that no proof covers, so a shape that rose
+    /// above its landing would clip it.
     #[test]
     fn a_one_block_step_up_comes_down_onto_the_ledge_and_never_clips_it() {
         let y = 65;
-        let h = PLAYER_HEIGHT;
+        let h = delvewright_dsl::metrics::PLAYER_HEIGHT;
         let cells_tall = h.ceil() as i32; // the routed footprint's clearance, 2
         let mut solid = BTreeSet::new();
         for x in 0..4 {
@@ -9622,13 +9634,20 @@ mod tests {
                 w[1]
             );
         }
-        // It comes DOWN onto the ledge: some segment descends while advancing.
+        // The rise happens while the body ADVANCES, and it never goes above its
+        // landing — the volume an arc would sweep is not one the route proof
+        // clears (see `step_vertices`).
         assert!(
             pts.windows(2).any(|w| {
                 let dh = ((w[1][0] - w[0][0]).powi(2) + (w[1][2] - w[0][2]).powi(2)).sqrt();
-                w[1][1] < w[0][1] - 1e-9 && dh > 1e-9
+                w[1][1] > w[0][1] + 1e-9 && dh > 1e-9
             }),
-            "the step up never descends onto its landing: {pts:?}"
+            "the step up never gains height while advancing: {pts:?}"
+        );
+        let landing = (y + 1) as f64;
+        assert!(
+            pts.iter().all(|w| w[1] <= landing + 1e-9),
+            "a waypoint rose above the ledge it lands on: {pts:?}"
         );
         for w in &pts {
             assert!(
@@ -9675,19 +9694,18 @@ mod tests {
                     cases += 1;
                     let src = [0, y as i32, 0];
                     let dst = [1, (y + rise) as i32, 0];
-                    let pts = resample_body(&[src, dst], DEFAULT_SPEED, width, height);
+                    let pts = resample_body(&[src, dst], DEFAULT_SPEED, width);
                     // (1) The SHAPE: no leg of the emitted polyline changes height
                     // without advancing. This is where the old L's defect lived —
                     // its first leg had a horizontal length of exactly zero.
                     let a = cell_center(src);
                     let b = cell_center(dst);
                     let mut poly = vec![a];
-                    poly.extend(step_vertices(a, b, width, height));
+                    poly.extend(step_vertices(a, b, width));
                     poly.push(b);
                     for w in poly.windows(2) {
                         let dy = (w[1][1] - w[0][1]).abs();
-                        let dh =
-                            ((w[1][0] - w[0][0]).powi(2) + (w[1][2] - w[0][2]).powi(2)).sqrt();
+                        let dh = ((w[1][0] - w[0][0]).powi(2) + (w[1][2] - w[0][2]).powi(2)).sqrt();
                         if dy > 1e-9 {
                             vertical_segments += 1;
                             assert!(
@@ -10361,8 +10379,8 @@ mod tests {
     #[test]
     fn resample_honors_speed_and_lands_exactly_on_target() {
         let cells = [[0, 65, 0], [10, 65, 0]];
-        let slow = resample(&cells, 0.15);
-        let fast = resample(&cells, 1.0);
+        let slow = resample_body(&cells, 0.15, PLAYER_WIDTH);
+        let fast = resample_body(&cells, 1.0, PLAYER_WIDTH);
         // Slower speed → more per-tick waypoints for the same distance.
         assert!(slow.len() > fast.len());
         // Endpoints are the CENTRES of the start/goal cells, not their corners:

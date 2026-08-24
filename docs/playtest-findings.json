@@ -226,12 +226,34 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "world-edits.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "verb": [
+              "scatter",
+              "plant"
+            ]
+          }
+        }
+      },
+      "binding": {
+        "file": "placement-gate.json",
+        "kind": "artifact",
+        "path": "verbs"
+      },
       "campaign": "hollow-vigil",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0864",
+        "kind": "dw"
+      },
       "finding": "a valley staged as a cherry grove held a handful of malformed trees and bare rock in every other direction; the render-shot acceptance proxy passed it",
       "general_form": "a generator's scatter reaches a quantity floor over its whole declared domain, asserted as a number rather than by eye",
       "id": "hv-10",
-      "note": "The quantity-binding generator test cited for this fix is not in this engine tree: no cherry/grove/density generator or assertion exists under prefabs/ or crates/. Whatever closed the instance did not leave a check here, so the class is open for the next campaign that scatters anything.",
+      "note": "Closed 2026-08-24 by DW0864, which states what every placement verb declared and delivered over the DECLARED domain rather than over the usable part of it, and refuses where the shortfall is unambiguous (a `plant` short of its own `count`, or a verb that could act on no cell at all). The earlier note said no such assertion existed anywhere under prefabs/ or crates/ -- that was true, and the class is now carried at BOTH layers: DW0864 for the DSL verbs, and `prefabs/invariants.rs::assert_scatter_reaches_its_target` for the generators, which have no diagnostics. First run found a live instance in the engine's own gallery: a lane scatter over a 406-cell surface-band aimed at the solid course, dressing none of it, counted as coverage for the `scatter` unit. Binding verified non-zero on a real subject: nobodys-cave-island, 4 verbs, 0 short.",
       "round": "cherry-2026-08-05",
       "triage": "content"
     },
@@ -1489,11 +1511,34 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "move-npc",
+              "move-actor"
+            ]
+          }
+        }
+      },
+      "binding": {
+        "file": "traversal-gate.json",
+        "kind": "artifact",
+        "path": "legs"
+      },
       "campaign": "nobodys-cave-island",
-      "carrier": null,
+      "carrier": {
+        "kind": "invariant",
+        "test": "no_walked_step_renders_a_vertical_translation_in_place"
+      },
       "finding": "the route planner renders a one-block step-up as a vertical translation in place, so a body reads as levitating rather than hopping",
       "general_form": "a walked leg's rendered motion matches the move it models; a step-up is animated as a step",
       "id": "isl-58",
+      "note": "Closed 2026-08-24. `nav::step_vertices` folds a step's rise into the crossing as far as the SHIPPED body's hitbox allows, so no emitted leg carries a vertical translation in place; the invariant sweeps the closed space of single-column hitboxes rather than a roster of mob ids. Measured on the released island: 1069 emitted ticks changed height without moving horizontally before, 166 after, and 0 of 12 on the gallery. What is NOT built, and it is a gap in the PROOF: a hop that rises above its landing and comes down. The route proof clears a step's endpoints and, for a jump, one head cell -- never the volume an arc sweeps -- and it clears them for the footprint that ROUTED while `DW0450` judges the body that ships. An apex bounded by the routed footprint put a villager inside a block; measured, not reasoned about. Same carrier and binding as isl-57: a legs count is a derivation of declared walks. Binding verified non-zero on a real subject: nobodys-cave-island, 26 legs.",
       "round": "staging-2026-08-06",
       "triage": "capability"
     },
