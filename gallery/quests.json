@@ -1331,7 +1331,12 @@
               "type": "teleport"
             },
             {
-              "grace_ticks": 40,
+              "style": "subtitle",
+              "text": "Keep out of the light until the march has passed.",
+              "type": "narrate"
+            },
+            {
+              "grace_ticks": 120,
               "on_caught": [
                 {
                   "forbids_flags": [
