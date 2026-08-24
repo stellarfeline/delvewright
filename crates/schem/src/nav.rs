@@ -452,7 +452,12 @@ mod tests {
         let cells = standable_cells(&open);
         assert!(cells.contains(&[0, 1, 0]) && cells.contains(&[2, 2, 0]));
         assert!(
-            connected(&open, &cells, &BTreeSet::from([[0, 1, 0]]), &BTreeSet::from([[2, 2, 0]])),
+            connected(
+                &open,
+                &cells,
+                &BTreeSet::from([[0, 1, 0]]),
+                &BTreeSet::from([[2, 2, 0]])
+            ),
             "open headroom: the jump up is walkable"
         );
 
@@ -463,7 +468,12 @@ mod tests {
             "both ends are standable — the geometry differs only in the swept cell"
         );
         assert!(
-            !connected(&low, &cells, &BTreeSet::from([[0, 1, 0]]), &BTreeSet::from([[2, 2, 0]])),
+            !connected(
+                &low,
+                &cells,
+                &BTreeSet::from([[0, 1, 0]]),
+                &BTreeSet::from([[2, 2, 0]])
+            ),
             "a ceiling two courses over the feet blocks the jump, so no walk connects them"
         );
     }

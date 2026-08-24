@@ -712,7 +712,8 @@ fn the_drowned_ward_is_a_route_both_ways_and_only_through_the_gatehouse() {
     let (entry, exit) = ends(&out.model);
     assert_eq!(entry.len(), 1, "the crossing is one wide: {entry:?}");
     assert!(
-        connected(&out.model, &cells, &entry, &exit) && connected(&out.model, &cells, &exit, &entry),
+        connected(&out.model, &cells, &entry, &exit)
+            && connected(&out.model, &cells, &exit, &entry),
         "the drowned ward is not walkable in both directions"
     );
 
@@ -3035,7 +3036,12 @@ fn the_counterweight_shaft_is_entered_once_and_only_drops() {
         "the junction's doorway cell, and only it, is gone"
     );
     assert!(
-        !connected(&shut.model, &shut_cells, &shut_entry, &tower_shaft_landings(&shut)),
+        !connected(
+            &shut.model,
+            &shut_cells,
+            &shut_entry,
+            &tower_shaft_landings(&shut)
+        ),
         "the junction's doorway was filled and the shaft is still reachable — the \
          way in was never the doorway"
     );
