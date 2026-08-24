@@ -14,7 +14,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.16.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.17.0";
 
 /// The `dsl_version` that introduces the **`open-way`** effect (spec-0042 §2.4):
 /// a campaign opening a placed piece's contingent way, with the geometry, the
@@ -93,6 +93,24 @@ pub const DETAIL_PLAN_SINCE: &str = "0.15.0";
 /// has no way to say what surrounds them.
 pub const HORIZON_LIBRARY_SINCE: &str = "0.16.0";
 
+/// The `dsl_version` at which a stage-4 quest may declare `mandatory: false`
+/// (spec-0051).
+///
+/// The **hand-written name** for `0.17.0`, written rather than derived for the
+/// reason [`RESERVED_DSL_VERSIONS`] gives: `is_v17` follows from the number, so
+/// two branches claiming `0.17.0` would produce the same anchor and the
+/// uniqueness gate would read one claim where there are two. A name an author
+/// chose cannot agree by accident.
+///
+/// It is a version of its own because it does not add a field — the field has
+/// existed since v0 and was refused at every version — it changes what the
+/// **completability proof means**. Below it, `mandatory: false` is `DW0133` and
+/// the proof quantifies over one world; at it, the partition carries proof
+/// weight and the mainline is proven in the skip world (spec-0051 §5). No
+/// committed document carries the value, so every existing campaign compiles
+/// byte-identically and no adoption round is forced.
+pub const OPTIONAL_QUESTS_SINCE: &str = "0.17.0";
+
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
 /// (spec-0008) adds dialogue state, props, narration, live-threat tuning, NPC
@@ -160,7 +178,7 @@ pub const HORIZON_LIBRARY_SINCE: &str = "0.16.0";
 /// through one set of rules.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
     "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
-    "0.12.0", "0.13.0", "0.14.0", "0.15.0", "0.16.0",
+    "0.12.0", "0.13.0", "0.14.0", "0.15.0", "0.16.0", "0.17.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -272,6 +290,7 @@ fn ordinal(version: &str) -> u32 {
         "0.14.0" => 14,
         "0.15.0" => 15,
         "0.16.0" => 16,
+        "0.17.0" => 17,
         _ => 0,
     }
 }
@@ -547,6 +566,21 @@ pub fn is_v15(version: &str) -> bool {
 /// setting, and the params that shape it.
 pub fn is_v16(version: &str) -> bool {
     ordinal(version) >= 16
+}
+
+/// True if `version` enables **optional quests** (spec-0051,
+/// [`OPTIONAL_QUESTS_SINCE`]): a stage-4 quest may declare `mandatory: false`,
+/// and the completability proof partitions on that declaration.
+///
+/// Unlike its neighbours this opens no new field — `mandatory` has existed since
+/// v0 — so nothing about an existing document's parse changes. What the version
+/// buys is a *meaning*: below it every quest is on the critical path by refusal
+/// (`DW0133`), and at it the mainline is proven in the **skip world**, the
+/// replay in which no optional objective is ever completed. Because no document
+/// below this version can carry `mandatory: false`, every campaign that compiled
+/// before compiles byte-identically.
+pub fn is_v17(version: &str) -> bool {
+    ordinal(version) >= 17
 }
 
 /// Which stage a document belongs to.

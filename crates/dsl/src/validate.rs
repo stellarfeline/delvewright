@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
-    Campaign, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, is_v11, is_v12, is_v13, is_v14, is_v15, is_v16,
+    Campaign, OPTIONAL_QUESTS_SINCE, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
+    is_v07, is_v08, is_v09, is_v10, is_v11, is_v12, is_v13, is_v14, is_v15, is_v16, is_v17,
 };
 use crate::ids::is_kebab;
 use crate::metrics::Metrics;
@@ -1345,21 +1345,51 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let plan = &c.quest_plan.content;
     let planned_ids: BTreeSet<&str> = plan.quests.iter().map(|q| q.id.as_str()).collect();
 
-    // Non-mandatory (reserved in v0).
-    for (i, q) in plan.quests.iter().enumerate() {
-        if !q.mandatory {
-            d.push(Diagnostic::error(
-                codes::NON_MANDATORY,
-                "quest-plan",
-                format!("/content/quests/{i}/mandatory"),
-                format!(
-                    "quest `{}` sets `mandatory: false`, which is reserved until M3 — set \
-                     `mandatory: true` (every v0 quest is on the critical path)",
-                    q.id
-                ),
-            ));
+    // Optional quests (spec-0051) are legal at `OPTIONAL_QUESTS_SINCE` and
+    // refused below it, byte-for-byte as they always were.
+    //
+    // The fence is a WELLFORMEDNESS rule, so `DW0133` stays `every_version`
+    // (see [`crate::diagnostic::Binds`]): it judges what the document says
+    // against the version that document declares, and its verdict is a function
+    // of the campaign alone. Fencing it as an obligation would do the opposite
+    // of what is wanted — it would stop rejecting `mandatory: false` in a 0.12
+    // campaign, which is the surface's whole reservation.
+    let optional_ok = is_v17(c.quest_plan.dsl_version.as_str());
+    if !optional_ok {
+        for (i, q) in plan.quests.iter().enumerate() {
+            if !q.mandatory {
+                d.push(Diagnostic::error(
+                    codes::NON_MANDATORY,
+                    "quest-plan",
+                    format!("/content/quests/{i}/mandatory"),
+                    format!(
+                        "quest `{}` sets `mandatory: false`, which requires dsl_version {} and \
+                         this stage declares `{}` — raise this stage's `dsl_version` to {}, or \
+                         set `mandatory: true` (below {} every quest is on the critical path)",
+                        q.id,
+                        OPTIONAL_QUESTS_SINCE,
+                        c.quest_plan.dsl_version,
+                        OPTIONAL_QUESTS_SINCE,
+                        OPTIONAL_QUESTS_SINCE,
+                    ),
+                ));
+            }
         }
     }
+
+    // The partition, once it is legal. `spine()` is the ONE authority on which
+    // quests the finale cannot fire without; `mandatory` is the author's claim
+    // about the same set. Below the fence the two coincide by refusal, so this
+    // is inert on every campaign that predates the surface.
+    let optional: BTreeSet<&str> = if optional_ok {
+        plan.quests
+            .iter()
+            .filter(|q| !q.mandatory)
+            .map(|q| q.id.as_str())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
 
     // Dependency edges (only to existing quests; dangling handled elsewhere).
     let edges: BTreeMap<&str, Vec<&str>> = plan
@@ -1417,6 +1447,17 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // only ever asked about a DECLARED quest.
     let reach = plan.spine();
     for (i, q) in plan.quests.iter().enumerate() {
+        // Below the fence `optional` is empty, so this is every quest and the
+        // message is the one it has always been. At and above it, the rule is
+        // the MANDATORY half of spec-0051 §2.4's mismatch pair: a quest that
+        // claims to be on the critical path and is not reachable from the
+        // finale is still the wiring mistake it always was — it does not
+        // silently become optional content. The other half (an optional quest
+        // the closure does reach) is `DW0866`, because those are opposite
+        // errors and a shared message could prescribe neither.
+        if optional.contains(q.id.as_str()) {
+            continue;
+        }
         if !reach.contains(q.id.as_str()) {
             d.push(Diagnostic::error(
                 codes::PLAN_NOT_CONVERGENT,
@@ -1430,6 +1471,120 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
+    }
+
+    partition(c, &optional, &reach, d);
+}
+
+/// The partition refusals of spec-0051 §8.1–2: the two ways a declared-optional
+/// quest can be a lie about the completion proof.
+///
+/// Both are edge-shaped and both are refused where the author can see the edge.
+/// They are separate codes because they prescribe opposite repairs — one says
+/// *this is not really optional*, the other says *this dependency is not really
+/// mandatory* — and a campaign can trip either without the other.
+///
+/// Inert below [`crate::OPTIONAL_QUESTS_SINCE`]: `optional` is empty there, so
+/// every loop below ranges over nothing. That is what makes the whole of
+/// spec-0051 byte-identical on a campaign that predates it, rather than a
+/// promise that it is.
+fn partition(
+    c: &Campaign,
+    optional: &BTreeSet<&str>,
+    spine: &BTreeSet<&str>,
+    d: &mut Vec<Diagnostic>,
+) {
+    if optional.is_empty() {
+        return;
+    }
+    let plan = &c.quest_plan.content;
+
+    // §8.1 — the finale leans on it. An optional quest the finale cannot fire
+    // without is not optional; the declaration would be a lie the proof then
+    // rests on. Covers the finale itself: `spine()` contains it, so a finale
+    // declared `mandatory: false` lands here rather than needing its own rule.
+    for (i, q) in plan.quests.iter().enumerate() {
+        if !optional.contains(q.id.as_str()) || !spine.contains(q.id.as_str()) {
+            continue;
+        }
+        let how = if q.id.as_str() == plan.finale.as_str() {
+            "it IS the finale".to_string()
+        } else {
+            format!("finale `{}` transitively depends on it", plan.finale)
+        };
+        d.push(Diagnostic::error(
+            codes::OPTIONAL_ON_SPINE,
+            "quest-plan",
+            format!("/content/quests/{i}/mandatory"),
+            format!(
+                "quest `{}` declares `mandatory: false`, but {} — so the delve cannot be \
+                 completed without it and calling it optional would be a claim the \
+                 completability proof then rests on. Set `mandatory: true`, or cut the \
+                 `depends_on` chain that puts it in the finale's closure. Do not leave it for \
+                 the proof to sort out: the skip world is exactly the world in which this \
+                 quest is never played, and the finale never fires there",
+                q.id, how
+            ),
+        ));
+    }
+
+    // §8.2 — the mainline hangs off it. Refused at the EDGE, naming the edge,
+    // for both edge kinds a quest has: the stage-4 `depends_on` graph and the
+    // stage-5 `quest-complete` trigger. One rule ("a mandatory quest may not
+    // wait on elective content"), so one code; the message names which edge.
+    for (i, q) in plan.quests.iter().enumerate() {
+        if optional.contains(q.id.as_str()) {
+            continue; // optional-on-optional and optional-on-mandatory are legal (§4)
+        }
+        for (j, dep) in q.depends_on.iter().enumerate() {
+            if !optional.contains(dep.as_str()) {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::MANDATORY_ON_OPTIONAL,
+                "quest-plan",
+                format!("/content/quests/{i}/depends_on/{j}"),
+                format!(
+                    "mandatory quest `{}` declares `depends_on` `{}`, which is optional — a \
+                     quest on the critical path cannot wait on content the party may never \
+                     play, so this edge makes the mainline unreachable in the skip world. \
+                     Either mark `{}` mandatory, or drop the edge and attach `{}` to the \
+                     spine some other way",
+                    q.id, dep, dep, dep
+                ),
+            ));
+        }
+    }
+
+    // The same rule over the stage-5 activation edge. `depends_on` orders the
+    // plan; the trigger is what actually arms the quest at runtime, and nothing
+    // ties the two together (a `quest-complete` trigger is resolved against the
+    // stage-5 quest set, never against stage 4). So a campaign can spell this
+    // edge with the trigger alone, and the `depends_on` loop above would not
+    // see it.
+    let declared: BTreeSet<&str> = plan.quests.iter().map(|q| q.id.as_str()).collect();
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        if optional.contains(q.id.as_str()) || !declared.contains(q.id.as_str()) {
+            continue;
+        }
+        let crate::stages::Trigger::QuestComplete { quest } = &q.trigger else {
+            continue;
+        };
+        if !optional.contains(quest.as_str()) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::MANDATORY_ON_OPTIONAL,
+            "quests",
+            format!("/content/quests/{i}/trigger/quest"),
+            format!(
+                "mandatory quest `{}` is triggered by the completion of `{}`, which is \
+                 optional — the party may never complete `{}`, so `{}` would never activate \
+                 and the mainline would stop there. Trigger `{}` from a mandatory quest, or \
+                 mark `{}` mandatory",
+                q.id, quest, quest, q.id, q.id, quest
+            ),
+        ));
     }
 }
 
