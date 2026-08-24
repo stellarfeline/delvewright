@@ -163,6 +163,76 @@ fn a_name_one_area_provides_still_resolves_from_another() {
     });
 }
 
+/// **`DW0859`: the arm no scope settles.** Four areas. `area/annex` is where the
+/// beat plays and `area/hall` is where the NPC lives, and **neither provides the
+/// name** — while `area/keep` and `area/south` both do. So the cast row names a
+/// place two buildings answer to, with nothing to break the tie: resolving it
+/// would settle which building the body stands in by whichever area id sorts
+/// first.
+///
+/// This is the shape that has no area to be scoped to, which is why it is a
+/// refusal rather than a resolution. It is refused at the build tier because
+/// that is the only place the provider set is complete — a pool area defers its
+/// anchors to the solver, so the DSL tier cannot see the second provider.
+#[test]
+fn a_reference_no_scope_settles_is_dw0859() {
+    let dir = std::env::temp_dir().join("dw-anchor-scope-ambiguous");
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(
+        &common::compiler_fixtures_dir().join("talkto-cast-pos"),
+        &dir,
+    );
+    common::patch_file(&dir.join("world.json"), |w| {
+        let areas = w["content"]["areas"].as_array_mut().expect("areas[]");
+        // `area/keep` (areas[0]) keeps `prefab/hello-room`: it provides the name
+        // and carries the entry the campaign starts from.
+        areas.push(json!({ "id": "area/hall",  "name": "The Hall",
+                           "prefab": "prefab/keep-room-small-a" }));
+        areas.push(json!({ "id": "area/annex", "name": "The Annex",
+                           "prefab": "prefab/keep-room-small-b" }));
+        areas.push(json!({ "id": "area/south", "name": "The South Range",
+                           "prefab": "prefab/hello-room" }));
+    });
+    // The NPC lives in the hall, at a name the hall actually provides.
+    common::patch_file(&dir.join("npcs.json"), |n| {
+        for x in n["content"]["npcs"].as_array_mut().expect("npcs[]") {
+            if x["id"] == "npc/keeper" {
+                x["area"] = json!("area/hall");
+                x["anchor"] = json!("anchor/npc-stand");
+            }
+        }
+    });
+    // …and the beat plays in the annex, which provides neither.
+    common::patch_file(&dir.join("quest-plan.json"), |p| {
+        for q in p["content"]["quests"].as_array_mut().expect("quests[]") {
+            if q["id"] == "quest/ask" {
+                q["area"] = json!("area/annex");
+            }
+        }
+    });
+
+    let loaded = load_campaign_dir(&dir).expect("fixture loads");
+    let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let reg = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("library loads");
+    let err = Plan::build(&campaign, &reg)
+        .err()
+        .expect("a reference no scope settles must be refused, not resolved");
+
+    assert_eq!(
+        err.code, "DW0859",
+        "the refusal must be the anchor-ambiguity code, not a generic build error: {err:#?}"
+    );
+    for expected in ["area/keep", "area/south", "area/annex", "area/hall", NAME] {
+        assert!(
+            err.message.contains(expected),
+            "the message must name the providers and both scopes that failed to settle it \
+             (missing `{expected}`): {}",
+            err.message
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// **The authority states a binding count that is measured, not written down
 /// beside the thing it counts.** `providers` is the question the by-name lookups
 /// never asked; a constant here would be the vacuity the count exists to expose.
