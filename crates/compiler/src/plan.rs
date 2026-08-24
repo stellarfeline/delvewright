@@ -1932,6 +1932,122 @@ impl AnchorTable {
             })
             .map(|name| (*name).to_string())
     }
+
+    /// Every area that provides `name`, in `BTreeMap` order.
+    ///
+    /// The question the by-name lookups never asked. **The scope of uniqueness
+    /// for an anchor name is the AREA** (`DW0857`), so more than one provider
+    /// means the name *alone* does not pick out a place in the world — and a
+    /// lookup that answers anyway has asked an honest question about the wrong
+    /// object.
+    pub fn providers(&self, name: &str) -> Vec<&str> {
+        self.at
+            .keys()
+            .filter(|(_, n)| n == name)
+            .map(|(a, _)| a.as_str())
+            .collect()
+    }
+
+    /// **The one authority for what an anchor reference means.**
+    ///
+    /// Resolution is *scoped*, because a name is an identity within an area and
+    /// nowhere wider. The rule, and it is the DSL tier's own rule rather than a
+    /// new one — `dsl::validate` resolves every reference against the anchors of
+    /// the quest's own area and makes exactly one exception, a camera, which may
+    /// fly anywhere:
+    ///
+    /// 1. A reference that belongs to an area resolves **in that area**. This is
+    ///    the step the by-name lookups skipped, and it is the whole defect: the
+    ///    area was always in the key and the lookup threw it away.
+    /// 2. Otherwise the name may still cross — **what is refused is the
+    ///    ambiguity, not the crossing** — so a name exactly one area provides
+    ///    resolves from anywhere, exactly as it always did.
+    /// 3. A name more than one *other* area provides is [`AnchorHit::Ambiguous`].
+    ///    Nothing an author can see says which building is meant, and picking
+    ///    the first would settle it by whichever area id sorts first.
+    ///
+    /// Callers never see a guess: the ambiguous arm is a refusal
+    /// ([`crate::gates::DW_ANCHOR_AMBIGUOUS`]), so a campaign that builds has no
+    /// reference this function had to choose for.
+    pub fn resolve(&self, scope: AnchorScope<'_>, name: &str) -> AnchorHit<'_> {
+        // 1. The referring area owns the name if it provides it.
+        if let AnchorScope::Area(area) = scope
+            && let Some((key, anchor)) = self
+                .at
+                .get_key_value(&(area.to_string(), name.to_string()))
+        {
+            return AnchorHit::Found {
+                area: key.0.as_str(),
+                anchor,
+            };
+        }
+        // 2/3. Crossing is allowed while it is unambiguous.
+        let mut across = self.at.iter().filter(|((_, n), _)| n == name);
+        match (across.next(), across.next()) {
+            (None, _) => AnchorHit::Missing,
+            (Some(((area, _), anchor)), None) => AnchorHit::Found {
+                area: area.as_str(),
+                anchor,
+            },
+            (Some(((a, _), _)), Some(((b, _), _))) => {
+                let mut areas = vec![a.as_str(), b.as_str()];
+                areas.extend(across.map(|((x, _), _)| x.as_str()));
+                AnchorHit::Ambiguous(areas)
+            }
+        }
+    }
+
+    /// [`AnchorTable::resolve`] reduced to a cell, for the callers that only
+    /// want a position. An ambiguous reference yields `None` rather than a
+    /// guess — the campaign carrying one is refused at validation, so this arm
+    /// is unreachable in a build.
+    pub fn point_scoped(&self, scope: AnchorScope<'_>, name: &str) -> Option<[i32; 3]> {
+        match self.resolve(scope, name) {
+            AnchorHit::Found { anchor, .. } => Some(match anchor {
+                ResolvedAnchor::Point { pos, .. } => *pos,
+                ResolvedAnchor::Gate { from, .. } => *from,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// The scope an anchor reference resolves in.
+///
+/// Not a qualifier an author writes — that was considered and refused, because
+/// an author naming which area they meant *is* the area-scoped resolution the
+/// compiler should have been doing all along. The scope is derived from the
+/// referring object: a quest's area, an NPC's area, or the absence of one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnchorScope<'a> {
+    /// The reference belongs to this area and resolves there first.
+    Area(&'a str),
+    /// Global **by design**, matching the DSL tier's own two exceptions: an
+    /// environment trigger (triggers are global) and a cutscene camera (a camera
+    /// legitimately flies across areas). Such a reference has no area to be
+    /// scoped to, so an ambiguous name is refused rather than guessed.
+    Global,
+}
+
+/// What [`AnchorTable::resolve`] found.
+///
+/// Deliberately not `Debug`: printing a hit would mean printing a
+/// [`ResolvedAnchor`], and a derived `Debug` on a type the emitter reads is how
+/// a content key acquires a field nobody meant to put in it.
+pub enum AnchorHit<'a> {
+    /// Exactly one place is meant, and this is the area it lives in.
+    Found {
+        /// The area the name resolved in — the referring area when it provided
+        /// the name, otherwise the single area that does.
+        area: &'a str,
+        /// The resolved anchor itself.
+        anchor: &'a ResolvedAnchor,
+    },
+    /// More than one area provides the name and the reference's own scope does
+    /// not settle it. The areas, in `BTreeMap` order, for the diagnostic.
+    Ambiguous(Vec<&'a str>),
+    /// No placed piece provides the name at all (`DW0142` / `DW0360`).
+    Missing,
 }
 
 /// Ocean-horizon waterline invariant (DW0344). In a `horizon: ocean` world every
