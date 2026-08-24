@@ -320,8 +320,8 @@ impl DamageTypeRegistry {
 /// is not a reason to re-declare the fields — it is a reason for the accessors
 /// below to read only what they read.
 pub use delvewright_dsl::prefab::{
-    Anchor as AnchorMeta, Connector, PrefabMeta, Region, SpatialContract as SpatialContractMeta,
-    StructureMeta,
+    Anchor as AnchorMeta, AnchorRole, Connector, GateAnchor, PrefabMeta, Region,
+    SpatialContract as SpatialContractMeta, StructureMeta,
 };
 /// A face of the piece's face contract, and its opening. The opening is an
 /// ordinary [`Region`]; assembly reads it as one.
@@ -523,35 +523,48 @@ impl PrefabRegistry {
         self.pool_members.get(pool_id).map(|v| v.as_slice())
     }
 
-    /// Classify how the loaded prefabs provide a gate anchor for the `close-gate`
-    /// block-declared check (`DW0343`). `close-gate` fills the region with the block
-    /// the anchor declares, so a blockless (or non-region) anchor cannot be sealed:
+    /// **What one piece says about a gate anchor**, asked of the ONE authority
+    /// ([`PrefabMeta::gate_anchor`]) so that this crate never reads
+    /// `region`/`block` off an anchor itself.
     ///
-    /// - `None` — no loaded prefab declares `anchor_name` as a **gate region**
-    ///   (it is a point anchor, a trap anchor, or unknown): nothing to seal.
-    /// - `Some(false)` — at least one region-provider declares the anchor but omits
-    ///   `block`: the compiler cannot know what to fill with (and the solver may
-    ///   place that blockless member).
-    /// - `Some(true)` — every prefab that declares this anchor as a gate region also
-    ///   declares a fill `block`.
-    ///
-    /// Gate anchors resolve globally (like `open-gate`), so the scan is over every
-    /// prefab — the conservative "all region-providers must declare a block" rule
-    /// guarantees whichever member the solver places can be sealed.
-    pub fn gate_anchor_block(&self, anchor_name: &str) -> Option<bool> {
-        let mut any_region = false;
-        let mut all_have_block = true;
-        for meta in self.by_id.values() {
-            if let Some(am) = meta.anchors.get(anchor_name)
-                && am.region.is_some()
-            {
-                any_region = true;
-                if am.block.is_none() {
-                    all_have_block = false;
-                }
-            }
+    /// `Ok(None)` covers both "this piece does not declare the name" and "it
+    /// declares it, and it is not a gate" — neither is something content can
+    /// fill, and no caller has ever needed to tell them apart.
+    pub fn gate_anchor_in(
+        &self,
+        prefab_id: &str,
+        anchor_name: &str,
+    ) -> Result<Option<GateAnchor>, String> {
+        match self.by_id.get(prefab_id) {
+            Some(meta) => meta.gate_anchor(anchor_name),
+            None => Ok(None),
         }
-        any_region.then_some(all_have_block)
+    }
+
+    /// The prefab ids `area` can place: its bare `prefab`, or every member of
+    /// its `prefab_pool`.
+    ///
+    /// **The denominator every campaign-scoped question about pieces owes.** The
+    /// gate-anchor check used to scan `by_id` — the whole library, every `*.json`
+    /// in the prefabs dir — and so answered about pieces this campaign cannot
+    /// place. Two pieces belonging to no area of the campaign declared an anchor
+    /// of the name a shortcut addressed, and `DW0343` passed on their word: a
+    /// gate check that answered `yes` about a different building. The rule the
+    /// old doc comment stated — *whichever member the solver places can be
+    /// sealed* — was right, and the code asked it of a larger world than the
+    /// solver draws from.
+    pub fn area_pieces(&self, area: &delvewright_dsl::Area) -> Vec<String> {
+        if let Some(prefab) = &area.prefab {
+            return vec![prefab.as_str().to_string()];
+        }
+        match area
+            .prefab_pool
+            .as_ref()
+            .and_then(|p| self.pool(p.as_str()))
+        {
+            Some(members) => members.iter().map(|m| m.prefab.clone()).collect(),
+            None => Vec::new(),
+        }
     }
 
     /// The trigger block declared by the `anchor/trap` marker `anchor_name`, if any
@@ -590,6 +603,16 @@ impl AnchorRegistry for PrefabRegistry {
 
     fn has_pool(&self, pool: &PoolId) -> bool {
         self.pools.contains(pool.as_str())
+    }
+
+    /// This registry IS the library — every `*.json` in the prefabs dir the run
+    /// was pointed at — so it answers, and `Some(false)` means the piece is not
+    /// there (`DW0856`). A file that failed to parse is `DW0346` and is absent
+    /// from `by_id`, so it answers `Some(false)` too; that is the intended
+    /// order, since the campaign's binding really cannot be honoured and both
+    /// diagnostics are reported together.
+    fn has_prefab(&self, prefab: &PrefabId) -> Option<bool> {
+        Some(self.by_id.contains_key(prefab.as_str()))
     }
 
     fn lighting_for(&self, prefab: &PrefabId) -> Option<Lighting> {

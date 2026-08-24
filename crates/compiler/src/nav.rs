@@ -777,12 +777,20 @@ impl Ambient {
     /// that is [`built_volume`], a property of the assembled world under every
     /// horizon (see [`World::built`]).
     pub fn of_plan(plan: &Plan) -> Ambient {
-        match plan.campaign.world.content.horizon {
-            Some(delvewright_dsl::Horizon::Ocean) => Ambient::Ocean(Sea {
+        match delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon) {
+            delvewright_dsl::HorizonBase::Ocean => Ambient::Ocean(Sea {
                 level: crate::plan::SEA_LEVEL,
                 floor_top: crate::plan::SEA_FLOOR_TOP_Y,
             }),
-            _ => Ambient::Void,
+            // A `valley` ambient is void: its ground is not a generator fact
+            // but real placed blocks, so the surround enters this model through
+            // [`built_volume`] like any other piece rather than as an analytic
+            // per-column answer here. That is what lets every existing proof —
+            // gravity, occupancy, relight, boundary safety — see the landform
+            // without one of them being taught a new horizon.
+            delvewright_dsl::HorizonBase::Void | delvewright_dsl::HorizonBase::Valley => {
+                Ambient::Void
+            }
         }
     }
 
@@ -2634,6 +2642,13 @@ fn actor_of<'a>(plan: &'a Plan, actor_id: &str) -> Option<&'a delvewright_dsl::A
 
 /// Resolve an anchor name to a world point by scanning every area (first match) —
 /// actors carry no area, so their anchors resolve globally like `open-gate`.
+///
+/// **First match is only an answer while one area provides the name.** A gate
+/// verb whose anchor two areas provide is refused (`DW0857`), because the answer
+/// there is whichever area id sorts first and nothing at the call site can tell
+/// that from the right one. No such refusal guards an ACTOR's anchor yet, and a
+/// released campaign already carries a point anchor two of its areas provide —
+/// so widening it is a version-fenced obligation rather than a repair.
 fn actor_anchor_pos(plan: &Plan, anchor: &str) -> Option<[i32; 3]> {
     for ((_, name), resolved) in &plan.anchors {
         if name == anchor {
@@ -6485,15 +6500,10 @@ pub fn check_traps(plan: &Plan, world: &World, moves: &[MovePlan]) -> Result<(),
         return Ok(());
     }
     let required = world.required_path_cells(plan, moves);
-    let spawn_starts: Vec<[i32; 3]> = plan
-        .anchors
-        .iter()
-        .filter(|((_, name), _)| crate::plan::is_entry_anchor_name(name))
-        .filter_map(|(_, a)| match a {
-            ResolvedAnchor::Point { pos, .. } => Some(*pos),
-            ResolvedAnchor::Gate { .. } => None,
-        })
-        .collect();
+    // Every area's entry point, through the one resolver (`Plan::entry_points`).
+    // This used to sweep the anchor map for a literal name, which counted no
+    // island-tileset area at all — an honest question about the wrong key.
+    let spawn_starts: Vec<[i32; 3]> = plan.entry_points().collect();
     let legs = world.walked_legs_sealed(plan);
     verify_traps(world, &plan.traps, &required, &spawn_starts, &legs)
 }

@@ -171,7 +171,7 @@ fn unhelmeted_zombie_under_open_sky_at_noon_is_dw0496() {
     );
     assert!(
         message.contains("set-time"),
-        "must forbid the fix the owner ruled out: {message}"
+        "must forbid the fix that is not sanctioned: {message}"
     );
 }
 
@@ -205,8 +205,8 @@ fn roofing_the_arena_clears_dw0496() {
 
 // --- green: the conditions that must each be necessary ----------------------
 
-/// Night is not a burning hour. (Not a *prescription* — the owner ruled
-/// `set-time` out — but the rule must not fire on a delve authored at night.)
+/// Night is not a burning hour. (Not a *prescription* — `set-time` is
+/// forbidden — but the rule must not fire on a delve authored at night.)
 #[test]
 fn a_night_world_is_silent() {
     let tmp = TempCampaign::new("night");

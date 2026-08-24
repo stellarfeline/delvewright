@@ -120,6 +120,10 @@ pub struct Anchor {
     pub pos: [i32; 3],
     /// The facing, declared or derived.
     pub facing: Facing,
+    /// What the mark said the anchor is for, carried through to the exported
+    /// metadata (spec-0046). `None` for a mark that declared none, which is
+    /// nearly all of them.
+    pub role: Option<crate::export::AnchorRole>,
     /// The rule that declared it. Provenance for review, and the other half of
     /// a collision report.
     pub declared_by: String,
@@ -1668,6 +1672,7 @@ impl<'a> Expander<'a> {
                 cell[2] - origin[2],
             ],
             facing,
+            role: mark.role,
             declared_by: symbol.to_string(),
         };
         if let Some(first) = self.anchors.get(&name) {

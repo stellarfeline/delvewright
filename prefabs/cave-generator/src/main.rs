@@ -1911,7 +1911,7 @@ fn specs() -> Vec<Spec> {
             // wall the 1-wide return corridor. The flock is hosted by
             // cave-cavern, which has a genuine side alcove for it. Removing the
             // `anchor/wave` entirely makes that mistake unrepresentable — a
-            // corridor-only piece exposes no wave seat (owner decision).
+            // corridor-only piece exposes no wave seat.
             modules: vec![],
             stair: false,
             anchors: vec![("anchor/npc-stand", a_pos([3, 1, 4], Some("north")))],
@@ -1985,7 +1985,7 @@ fn specs() -> Vec<Spec> {
             anchors: vec![
                 ("anchor/boss", a_pos([6, 1, 10], Some("north"))),
                 ("anchor/objective", a_pos([6, 1, 12], Some("north"))),
-                // The flock's spawn-wave home (owner decision): a genuine
+                // The flock's spawn-wave home: a genuine
                 // side alcove in the east of the 13×6×15 cavern. The proven path runs
                 // down the x=6 centreline (north door z0 → boss z10..12); every cell
                 // of the x≥9 strip is ≥3 Chebyshev from that line, and the open cavern

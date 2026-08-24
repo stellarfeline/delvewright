@@ -22,11 +22,12 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::block::BlockState;
+use crate::export::AnchorRole;
 use crate::geom::{Axis, Mirror, Orientation};
 use crate::version::{
-    BIND_SINCE, CONTRACT_SINCE, INCLUDE_SINCE, LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE,
-    MIRROR_SINCE, WAY_SINCE, has_bind, has_contract, has_include, has_local_frame, has_mirror,
-    has_way, is_supported_version,
+    ANCHOR_ROLE_SINCE, BIND_SINCE, CONTRACT_SINCE, INCLUDE_SINCE, LATEST_PROGRAM_VERSION,
+    LOCAL_FRAME_SINCE, MIRROR_SINCE, WAY_SINCE, has_anchor_role, has_bind, has_contract,
+    has_include, has_local_frame, has_mirror, has_way, is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -763,6 +764,20 @@ pub struct Mark {
     /// Name completion.
     #[serde(default, skip_serializing_if = "is_default")]
     pub index: MarkIndex,
+    /// **What the anchor is for** — the role the compiler resolves it by,
+    /// written through to the exported anchor's metadata (spec-0046).
+    ///
+    /// The anchor's *key* is untouched by this: it stays `anchor/<stem>`, which
+    /// is the invariant above and is why the role exists at all. The one place
+    /// a campaign does not name an anchor is the cell a body arrives at — the
+    /// compiler has to find that one — and it used to find it by matching a
+    /// reserved spelling, which no exported key can ever be. A generated zone
+    /// could therefore not declare an entry point at all; now it says so.
+    ///
+    /// Absent on every mark that is just a named place, which is nearly all of
+    /// them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<AnchorRole>,
 }
 
 impl Mark {
@@ -773,7 +788,14 @@ impl Mark {
             at,
             facing: None,
             index: MarkIndex::Unique,
+            role: None,
         }
+    }
+
+    /// Declare what this mark's anchor is for ([`Mark::role`]).
+    pub fn role(mut self, role: AnchorRole) -> Mark {
+        self.role = Some(role);
+        self
     }
 
     /// Declare the facing explicitly instead of deriving it.
@@ -2301,6 +2323,17 @@ impl Program {
                 self.check_node(symbol, body, in_split)
             }
             Node::Mark { mark, body } => {
+                // The fence before the shape checks, as `claim`'s and `bind`'s
+                // are: a document that may not write the field at all is
+                // answered with the version it declares.
+                if mark.role.is_some() && !has_anchor_role(&self.version) {
+                    return Err(ProgramError::FencedConstruct {
+                        construct: "a `role` on a mark",
+                        since: ANCHOR_ROLE_SINCE,
+                        declared: self.version.clone(),
+                        written_by: format!("rule {symbol:?}"),
+                    });
+                }
                 if !is_kebab(&mark.anchor) {
                     return Err(ProgramError::BadAnchorName {
                         symbol: symbol.to_string(),

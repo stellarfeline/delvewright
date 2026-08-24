@@ -15,12 +15,71 @@ instead of diffing noise — a baseline taken by a different delvec is not a
 regression, it is a measurement of two different things, and reporting it as a
 file-by-file diff buries the one fact the reader needs.
 
-## Two verdicts from one mismatch, because they mean opposite things
+## Three verdicts from one mismatch, because they mean different things
 
-- the change touches `gallery/` or `crates/` — an **emission change**: regenerate
-  the baseline in this change, or explain the drift;
-- it touches neither — a **determinism finding** (ADR-0006), named as such. The
-  baseline is thereby a standing cross-machine determinism probe, for free.
+- **no emitted path moved at all**, and the manifest differs anyway — a
+  **declared input moved**. A manifest is not its outputs: `content_sha`, the
+  pinned versions and the whole `inputs` index are SIBLINGS of `outputs`, so a
+  manifest can differ while every emitted byte is identical. Reported first
+  because it is the one the other two cannot describe: a pure content re-pin
+  came out as a determinism finding that then listed zero differing paths,
+  because the delta walks `outputs` and the thing that moved was next to it.
+- the change touches an input that can reach emission (`EMISSION_INPUTS`) — an
+  **emission change**: regenerate the baseline in this change, or explain the
+  drift;
+- it touches none of them — a **determinism finding** (ADR-0006), named as such.
+  The baseline is thereby a standing cross-machine determinism probe, for free.
+
+## The two arms are ONE rule (CLAUDE.md: the defect belongs to the PAIR)
+
+`--write` refuses a noise commit by asking exactly the question the verify arm
+asks — `baseline_matches`: *does `gallery/baseline/` already hold, byte for byte,
+every document a write would produce?* — and nothing else. So **`--write`
+refuses if and only if verify passes**, and no tree can be refused by both arms.
+
+That is a repair to the pair rather than to either half. The previous shape
+ENUMERATED what to compare — emission, then the header, then, one fix later, the
+warning ledger — and was unsatisfiable for anything the enumeration had not met.
+It met one: a pure content re-pin moves the recorded `content_sha`, which is in
+none of the three, so verify refused the tree and `--write` refused the
+regeneration it had just prescribed. Enumerating is the defect; comparing the
+writer's own output cannot go stale, and a fifth produced document joins both
+arms by being produced.
+
+The guard also runs BEFORE the write, so a refusal leaves the tree untouched and
+the exit status and the effect agree.
+
+## The review delta, and why it is measured from a COMMIT
+
+`delta.json` answers *what emission does this change move, relative to the point
+it branched from* — the question its reader has, and the one spec-0039 §5 says
+CI must be able to recompute. Recomputing it needs the OTHER side of the
+comparison, and no document under `gallery/baseline/` holds it: a delta is a
+statement about a transition, and a directory records a state. So the artifact
+**names the commit it was measured from** (`base_commit`) and the other side is
+read out of git at that commit. That is the whole reconciliation between two
+facts that had never been read together: `delta.json` is not a record of the
+tree — it is a record of the tree *relative to a named point* — which is exactly
+why it is not in `RECORDED` and exactly why it can still be checked.
+
+Two consequences fall out, and both were live defects:
+
+- The base used to be *whatever happened to be on disk*, so the artifact was a
+  function of the write rather than of the tree. Running `--write` twice before
+  committing silently re-based it onto its own first output, and a write that
+  moved only the header rewrote it to empty — destroying the record of the last
+  real emission change while every gate stayed green. Measured from a commit, a
+  repeated write is idempotent and nothing can be blanked by accident.
+- It becomes checkable at all. `base_commit` is a commit on the base branch, so
+  it survives the squash that discards the branch, and the claim stays true on
+  `main` for as long as the manifests do not move.
+
+What this establishes and what it does not: the delta is proved truthful about
+the transition it DECLARES. The declaration itself is `--write`'s policy
+(`--base`, default `origin/main`), so a base deliberately mis-declared by hand is
+not what this catches — staleness and hand-editing are, and those are what
+spec-0039 asks for. The base is asserted to be an ancestor of `HEAD`, so it can
+never name a commit this history does not contain.
 
 ## The warnings ledger
 
@@ -30,9 +89,14 @@ quietly absorb "warns differently now".
 
 ## Binding count
 
-Every run states builds compared, output paths compared, and warning rows
-checked. Comparing zero builds or zero paths is a red: a baseline that matched
-nothing is vacuous, not a pass.
+Every run states builds compared, output paths compared, warning rows checked,
+recorded manifest values compared, and emitted paths weighed against the review
+base — the last two being denominators for comparisons that had no stated
+binding at all while they were invisible. Comparing zero of any of them is a
+red: a baseline that matched nothing is vacuous, not a pass. The delta's own
+length is NOT that denominator: an honest delta is empty whenever a change moves
+a recorded input without moving an emitted byte, so counting it would make the
+commonest legitimate update look vacuous.
 """
 
 from __future__ import annotations
@@ -48,8 +112,10 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import gallery_domain  # noqa: E402
 from gallery_domain import build_id, overlays  # noqa: E402
+from gitbase import BaseUnresolved, resolve_base  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 GALLERY = REPO / "gallery"
@@ -68,6 +134,48 @@ BASELINE = GALLERY / "baseline"
 # and does not parse is a red, never a skip.
 WARNING_RE = re.compile(r"^(DW\d{4}) \[warning\] (\S+) (.+?): ")
 ANY_WARNING_RE = re.compile(r"^(DW\d{4}) \[warning\] ")
+
+# What this baseline RECORDS about the tree, in the order a reader meets it.
+# This set decides how a mismatch is CLASSIFIED — header, then emission, then the
+# warning ledger — and nothing else.
+#
+# `delta.json` is deliberately absent, and the reason is unchanged: it is not a
+# record of the tree. It is a record of the tree RELATIVE TO A NAMED COMMIT, so
+# it cannot be compared against a measurement of the tree alone, and treating it
+# as a record would make it a second vote on facts `manifests.json` already
+# holds.
+RECORDED = ("header.json", "manifests.json", "warnings.json")
+
+# The review artifact: derived from `RECORDED` plus the commit it names.
+DERIVED = ("delta.json",)
+
+# Every document a write produces, which is what BOTH arms compare — see the
+# module docstring. Derived from the two sets above rather than written out, so
+# a fifth produced document joins the verify comparison AND the noise-commit
+# guard by being produced, with nothing to remember.
+#
+# This is what replaced `RECORDED` at the guard. Comparing `RECORDED` there was
+# itself an enumeration, one level up from the one it had just retired: a tree
+# whose recorded documents were all correct and whose review delta was stale or
+# hand-edited was refused by nothing, and — once anything DID refuse it — could
+# not be repaired, because `--write` would have called the repair a noise commit.
+# The pair has no satisfiable state unless both arms weigh every produced byte.
+PRODUCED = RECORDED + DERIVED
+
+# The paths whose content can reach a byte the compiler emits OR records, so a
+# manifest mismatch alongside a change to one of them is an ordinary consequence
+# rather than a violation of ADR-0006. Membership is decided by that question and
+# by nothing else.
+#
+# `versions.toml` is here because the compiler READS it at build time and records
+# `content_sha`, `dsl_version` and `mc_version` out of it into every manifest
+# (see its `[content]` block). Without it a pure content re-pin was reported as a
+# determinism finding — a change to a declared input, named as the one thing it
+# is not.
+#
+# Widening this set makes nothing easier to ship: BOTH verdicts refuse, so it
+# decides only what the reader is told the finding IS.
+EMISSION_INPUTS = ("gallery/", "crates/", "versions.toml")
 
 
 def die(msg: str) -> None:
@@ -255,18 +363,104 @@ def header(delvec: Path, prefabs: Path) -> dict:
     }
 
 
-def classify(paths: list[str]) -> str:
-    """Emission change, or determinism finding — decided by what the diff touches."""
+def classify() -> str:
+    """Emission change, or determinism finding — decided by what the diff touches.
+
+    Took the differing paths as an argument and never read them; the argument
+    said the verdict depended on what moved, and it depends only on what the
+    change touched.
+    """
     r = subprocess.run(
         ["git", "-C", str(REPO), "diff", "--name-only", "origin/main...HEAD"],
         capture_output=True,
         text=True,
     )
     changed = r.stdout.splitlines() if r.returncode == 0 else []
-    touched = [c for c in changed if c.startswith("gallery/") or c.startswith("crates/")]
+    touched = [c for c in changed if any(under(c, p) for p in EMISSION_INPUTS)]
     if touched:
         return "emission-change"
     return "determinism-finding"
+
+
+def under(path: str, prefix: str) -> bool:
+    """`path` IS `prefix`, or lies inside it — never merely starts with its text.
+
+    A bare `startswith("versions.toml")` also claims `versions.toml.bak`, and a
+    prefix rule that quietly widens is how a determinism finding would get
+    renamed by a file nobody meant to name.
+    """
+    return path == prefix.rstrip("/") or path.startswith(prefix.rstrip("/") + "/")
+
+
+# --------------------------------------------------------------- the review base
+
+
+def git(*args: str) -> tuple[int, str]:
+    r = subprocess.run(
+        ["git", "-C", str(REPO), *args], capture_output=True, text=True
+    )
+    return r.returncode, r.stdout
+
+
+def review_base(base_ref: str) -> str:
+    """The commit a fresh `delta.json` is measured from: `merge-base(base_ref, HEAD)`.
+
+    The point this tree branched from, so the artifact answers *what emission
+    does this change move* rather than *what did the last invocation of this tool
+    happen to move*. On the base branch itself it degenerates to `HEAD`, which is
+    honest: nothing is being proposed, so nothing is being moved.
+
+    Resolved only by `--write`. Verify never re-derives it — it reads the commit
+    the artifact NAMES, which is what makes the recomputation independent of
+    whether `origin/main` has moved since.
+    """
+    try:
+        sha = resolve_base(REPO, base_ref, "gallery-baseline")
+    except BaseUnresolved as e:
+        die(e.message)
+    code, out = git("merge-base", sha, "HEAD")
+    if code != 0 or not out.strip():
+        die(
+            f"no merge base between {base_ref!r} and HEAD, so there is no point "
+            "to measure the review delta from. `delta.json` is a statement about "
+            "a transition and cannot be written without both of its ends."
+        )
+    return out.strip()
+
+
+def manifests_at(sha: str) -> dict:
+    """`gallery/baseline/manifests.json` as of `sha` — `{}` only when it was not there.
+
+    The two failure modes are separated deliberately. A commit this checkout does
+    not have and a commit that predates the baseline both make `git show` exit
+    non-zero, and collapsing them would answer *the baseline was empty then* to a
+    question that was really *I cannot see that commit* — a plausible wrong number
+    of exactly the shape this project keeps paying for. A shallow clone reaches
+    the first case, and it dies.
+    """
+    if git("rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}")[0] != 0:
+        die(
+            f"the review delta names commit `{sha}`, which is not in this "
+            "checkout, so it cannot be recomputed. Fetch the history it came "
+            "from — a shallow checkout is the usual cause — rather than "
+            "regenerating, which would only record a base the next reader "
+            "cannot see either."
+        )
+    code, out = git("show", f"{sha}:gallery/baseline/manifests.json")
+    return json.loads(out) if code == 0 else {}
+
+
+def warnings_at(sha: str) -> dict:
+    code, out = git("show", f"{sha}:gallery/baseline/warnings.json")
+    return json.loads(out) if code == 0 else {}
+
+
+def base_of(delta: dict | None) -> str | None:
+    """The commit a committed `delta.json` claims to be measured from, if it says."""
+    if not isinstance(delta, dict):
+        return None
+    sha = delta.get("base_commit")
+    return sha if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) else None
 
 
 def main() -> int:
@@ -274,6 +468,15 @@ def main() -> int:
     ap.add_argument("--delvec", default=str(REPO / "target/release/delvec"))
     ap.add_argument("--prefabs", required=True)
     ap.add_argument("--write", action="store_true", help="regenerate the baseline")
+    ap.add_argument(
+        "--base",
+        default="origin/main",
+        help=(
+            "the branch a fresh review delta is measured from; its merge base "
+            "with HEAD is recorded in `delta.json`. Read only by `--write` — "
+            "verify uses the commit the artifact already names."
+        ),
+    )
     args = ap.parse_args()
 
     delvec, prefabs = Path(args.delvec), Path(args.prefabs)
@@ -294,78 +497,191 @@ def main() -> int:
         shutil.rmtree(work, ignore_errors=True)
 
     hdr = header(delvec, prefabs)
+    on_disk = read_baseline()
+
+    # The review delta's other end. `--write` chooses it (the merge base with
+    # `--base`); verify is HANDED it by the artifact, so a recomputation asks
+    # about the transition the file claims rather than about wherever the base
+    # branch has since moved to — the difference between recomputing a claim and
+    # re-deciding it.
+    if args.write:
+        base_sha = review_base(args.base)
+    else:
+        if on_disk is None:
+            missing = ", ".join(
+                f"`gallery/baseline/{n}`" for n in PRODUCED if not (BASELINE / n).is_file()
+            )
+            die(f"the baseline is incomplete — {missing} missing. Run this with `--write`.")
+        base_sha = base_of(on_disk["delta.json"])
+        if base_sha is None:
+            die(
+                "`gallery/baseline/delta.json` does not name the commit it was "
+                "measured from, so nothing can recompute it and its claim about "
+                "what this change moves is unfalsifiable (spec-0039 §5 asks for "
+                "exactly that recomputation). Regenerate it with `--write`."
+            )
+        if base_sha is not None and git("merge-base", "--is-ancestor", base_sha, "HEAD")[0] != 0:
+            die(
+                f"the review delta names commit `{base_sha}` as its base, and "
+                "that commit is not an ancestor of HEAD. A delta measured from "
+                "somewhere outside this history describes a transition this tree "
+                "never made. Regenerate it with `--write`."
+            )
+
+    base_manifests = manifests_at(base_sha) if base_sha else {}
+    delta = review_delta(base_sha, base_manifests, manifests) if base_sha else None
+
+    measured = {"header": hdr, "manifests": manifests, "warnings": warnings}
+    produced = {
+        "header.json": hdr,
+        "manifests.json": manifests,
+        "warnings.json": warnings,
+        "delta.json": delta,
+    }
+    assert set(produced) == set(PRODUCED), "the writer's output and `PRODUCED` disagree"
+
     n_paths = sum(len(m.get("outputs") or m.get("files") or {}) for m in manifests.values())
     n_warn = sum(len(v) for v in warnings.values())
+    n_fields = field_count(manifests)
+    n_delta = delta_binding(base_manifests, manifests) if base_sha else 0
     print(
         f"gallery baseline: {len(manifests)} build(s), {n_paths} emitted path(s), "
-        f"{n_warn} warning row(s)."
+        f"{n_warn} warning row(s), {n_fields} recorded manifest value(s); review "
+        f"delta measured over {n_delta} emitted path(s) against `{(base_sha or '-')[:12]}`."
     )
-    if not manifests or n_paths == 0:
+    if not manifests or n_paths == 0 or n_fields == 0 or n_delta == 0:
         die(
-            "the baseline compared ZERO builds or ZERO emitted paths. A baseline "
-            "that matched nothing is vacuous, not a pass."
+            "the baseline compared ZERO builds, ZERO emitted paths, ZERO "
+            "recorded manifest values, or weighed ZERO emitted paths for the "
+            "review delta. A baseline that matched nothing is vacuous, not a "
+            "pass."
         )
 
+    committed = recorded_triple(on_disk) if on_disk else None
+
     if args.write:
-        old = json.loads((BASELINE / "manifests.json").read_text()) if (BASELINE / "manifests.json").is_file() else {}
-        old_hdr = (
-            json.loads((BASELINE / "header.json").read_text())
-            if (BASELINE / "header.json").is_file()
-            else {}
-        )
-        old_warnings = (
-            json.loads((BASELINE / "warnings.json").read_text())
-            if (BASELINE / "warnings.json").is_file()
-            else {}
-        )
-        BASELINE.mkdir(parents=True, exist_ok=True)
-        write_canonical(BASELINE / "header.json", hdr)
-        write_canonical(BASELINE / "manifests.json", manifests)
-        write_canonical(BASELINE / "warnings.json", warnings)
-        delta = compute_delta(old, manifests)
-        write_canonical(BASELINE / "delta.json", delta)
-        # The noise-commit guard, and the qualifiers matter. An empty delta means
-        # emission did not move; that is only a noise commit if the HEADER did not
-        # move either. A change to what the header covers — a new delvec, a
-        # regenerated piece, a narrowed source-hash scope — legitimately rewrites
-        # the baseline while emitting the same bytes, and refusing it would leave
-        # the tree with a header nothing could ever bring back into agreement.
+        # The noise-commit guard, and it asks ONE question: does
+        # `gallery/baseline/` already hold every document this write would
+        # produce? That is exactly the question the verify arm asks
+        # (`baseline_matches`), so this arm refuses if and only if that arm
+        # passes, and no tree is refused by both.
         #
-        # The WARNING LEDGER is the third thing this baseline holds, and leaving
-        # it out of the guard made the two halves of this tool contradict each
-        # other: the verify path refused a tree whose warnings had moved and said
-        # "regenerate with --write", and --write refused the regeneration as a
-        # noise commit because emission and header had not moved. Unsatisfiable
-        # in both directions, and reachable by an ordinary merge — a pass that
-        # stopped emitting a duplicated advisory moves warnings and nothing else.
-        if old and old_hdr == hdr and old_warnings == warnings and not any(
-            delta[k] for k in ("added", "removed", "changed")
-        ):
+        # It replaces an ENUMERATION — empty output delta, unchanged header,
+        # unchanged warning ledger — which was correct about the three things its
+        # authors had met and silent about the fourth. `content_sha` is a sibling
+        # of `outputs`, in no header and no warning row, so a pure content re-pin
+        # moved something this baseline records while all three qualifiers held:
+        # verify refused the tree and prescribed `--write`, and `--write` refused
+        # the regeneration as noise. CLAUDE.md: when one gate's prescription is
+        # another gate's refusal, the defect belongs to the PAIR — so the repair
+        # is one shared question, not a fourth qualifier.
+        #
+        # The question weighs the WRITER'S OUTPUT rather than the recorded
+        # documents, which is the same repair applied one level up: comparing
+        # `RECORDED` here left the review delta guarded by nothing, and a tree
+        # whose delta alone was wrong could not be repaired at all — verify would
+        # have prescribed `--write` and `--write` would have called the repair
+        # noise. Measured from a commit rather than from disk, the delta is
+        # idempotent under a repeated write, so including it cannot make an
+        # ordinary rerun look like it moved something.
+        #
+        # It runs BEFORE the write. The old order wrote all four files and then
+        # refused, so the exit status and the effect on disk disagreed and a
+        # caller under `set -e` could not tell; worse, a genuinely-noise rewrite
+        # blanked `delta.json`, destroying the review artifact of the last real
+        # change, and the operator's undo is the `git checkout` this project has
+        # already been bitten by. Guarding first makes a refusal a no-op.
+        if baseline_matches(on_disk, produced):
             die(
-                "the baseline was rewritten with an EMPTY delta, an UNCHANGED "
-                "header and an UNCHANGED warning ledger — nothing this baseline "
-                "records moved, so this is a noise commit. A baseline update is "
-                "never split from the change that caused it (§5)."
+                "nothing under `gallery/baseline/` would move: every document "
+                "this write produces — header, manifests, warning ledger and the "
+                "review delta — already equals what this run measured, so this "
+                "rewrite is a noise commit. A baseline update is never split "
+                "from the change that caused it (§5). Nothing was written."
             )
+        BASELINE.mkdir(parents=True, exist_ok=True)
+        for name in PRODUCED:
+            write_canonical(BASELINE / name, produced[name])
+        old_warnings = warnings_at(base_sha)
         moved = warning_delta(old_warnings, warnings) if old_warnings != warnings else []
+        fields = manifest_field_delta(base_manifests, manifests) if base_manifests else []
         print(
-            f"wrote {BASELINE}: {len(delta['added'])} added, "
+            f"wrote {BASELINE} against `{base_sha[:12]}`: {len(delta['added'])} added, "
             f"{len(delta['removed'])} removed, {len(delta['changed'])} changed path(s); "
-            f"{len(moved)} warning row(s) at a new count."
+            f"{len(moved)} warning row(s) at a new count; "
+            f"{len(fields)} recorded manifest value(s) moved."
         )
-        for line in moved:
+        for line in moved + fields:
             print(line)
         return 0
 
-    for name in ("header.json", "manifests.json", "warnings.json"):
-        if not (BASELINE / name).is_file():
-            die(f"`gallery/baseline/{name}` is missing — run this with `--write`")
-    committed_hdr = json.loads((BASELINE / "header.json").read_text())
-    if committed_hdr != hdr:
+    if not baseline_matches(on_disk, produced):
+        # Classify against what the baseline RECORDS first: a drift in the tree
+        # is a bigger fact than a stale review note, and `report_mismatch` is the
+        # one authority on naming it. Only when every recorded document already
+        # agrees is the review delta the sole remaining difference, and it gets
+        # its own verdict rather than being folded into a message about emission.
+        if not baseline_matches(committed, measured):
+            report_mismatch(committed, measured)  # never returns
+        report_delta_mismatch(on_disk["delta.json"], delta)  # never returns
+    print(
+        "baseline: header, manifests and warning ledger all match, and the "
+        f"review delta recomputes identically from `{base_sha[:12]}`."
+    )
+    return 0
+
+
+def baseline_matches(committed: dict | None, measured: dict) -> bool:
+    """The ONE question both arms ask: does what is on disk already equal what a
+    write would produce?
+
+    Verify passes exactly when this is true; `--write` refuses exactly when it is
+    true. That is the whole of the pair's agreement, and it lives in one function
+    so it cannot become two enumerations that drift apart — which is what it was,
+    and what made a pure content re-pin unsatisfiable in both directions.
+
+    Deliberately a plain equality over whatever it is handed, and it is handed the
+    writer's whole output. It has no list of documents inside it, so it cannot
+    have a hole for a document nobody thought to add to a list.
+
+    A missing baseline is not a match: there is nothing to have recorded
+    anything, so verify reds (asking for `--write`) and `--write` lands.
+    """
+    return committed is not None and committed == measured
+
+
+def read_baseline() -> dict | None:
+    """The documents `gallery/baseline/` holds, or `None` if ANY is absent.
+
+    All of `PRODUCED` or none of it. A partial baseline cannot answer whether
+    anything moved, and answering anyway would be a guard reporting a fact about
+    a smaller world than the one it claims to cover.
+    """
+    if not all((BASELINE / n).is_file() for n in PRODUCED):
+        return None
+    return {n: json.loads((BASELINE / n).read_text()) for n in PRODUCED}
+
+
+def recorded_triple(files: dict) -> dict:
+    """The `RECORDED` documents of a baseline file map, keyed as `report_mismatch` reads them."""
+    return {n.removesuffix(".json"): files[n] for n in RECORDED}
+
+
+def report_mismatch(committed: dict, measured: dict) -> None:
+    """Name the mismatch and refuse. NEVER RETURNS.
+
+    Reached only when `baseline_matches` is false, and it must die on every path
+    through it: a fall-through here is a verify that reds nothing while `--write`
+    refuses to regenerate — the pair's unsatisfiable state re-entering through
+    the reporting rather than through the rule.
+    """
+    hdr, manifests = measured["header"], measured["manifests"]
+    warnings = measured["warnings"]
+    if committed["header"] != hdr:
         diffs = [
-            f"  {k}: baseline `{committed_hdr.get(k)}` vs this tree `{hdr.get(k)}`"
-            for k in sorted(set(committed_hdr) | set(hdr))
-            if committed_hdr.get(k) != hdr.get(k)
+            f"  {k}: baseline `{committed['header'].get(k)}` vs this tree `{hdr.get(k)}`"
+            for k in sorted(set(committed["header"]) | set(hdr))
+            if committed["header"].get(k) != hdr.get(k)
         ]
         die(
             "the committed baseline was taken over DIFFERENT INPUTS, so a "
@@ -373,35 +689,98 @@ def main() -> int:
             + "\n".join(diffs)
             + "\nRegenerate it with `--write` in the same change that moved them."
         )
-    committed = json.loads((BASELINE / "manifests.json").read_text())
-    if committed != manifests:
-        delta = compute_delta(committed, manifests)
+    if committed["manifests"] != manifests:
+        delta = compute_delta(committed["manifests"], manifests)
         differing = delta["added"] + delta["removed"] + delta["changed"]
-        verdict = classify(differing)
-        if verdict == "determinism-finding":
+        fields = manifest_field_delta(committed["manifests"], manifests)
+        if not differing:
+            # The third verdict. Every emitted path is present and byte-identical
+            # and the manifest still differs, so this is neither an emission
+            # change nor a determinism finding — a DECLARED INPUT moved, and the
+            # manifest records it beside the outputs rather than inside them.
+            # Said first, and said in its own words, because the two verdicts
+            # below cannot describe it: reported as a determinism finding, this
+            # printed the gravest message this file has over a list of zero paths.
             die(
-                "DETERMINISM FINDING (ADR-0006): this change touches neither "
-                "`gallery/` nor `crates/`, and the gallery's emission moved "
-                "anyway. Same DSL + same seed must give byte-identical output.\n"
+                "A DECLARED INPUT MOVED: every emitted path is present and "
+                "byte-identical, and the manifest differs anyway — a manifest "
+                "records more than its outputs. This is NOT a determinism "
+                "finding and NOT an emission change; the baseline has gone stale "
+                "against an input this change declares. Regenerate it with "
+                "`--write` in this same change.\n" + "\n".join(fields)
+            )
+        extra = ("\nAnd these recorded values moved with it:\n" + "\n".join(fields)) if fields else ""
+        if classify() == "determinism-finding":
+            die(
+                "DETERMINISM FINDING (ADR-0006): this change touches none of "
+                f"{', '.join('`' + p + '`' for p in EMISSION_INPUTS)}, and the "
+                "gallery's emission moved anyway. Same DSL + same seed must give "
+                "byte-identical output.\n"
                 + "\n".join(f"  {p}" for p in differing)
+                + extra
             )
         die(
             "EMISSION CHANGE: the gallery's emitted bytes moved. Regenerate the "
             "baseline in this same change (`--write`) and confirm every path "
             "class below is a consequence this change claims to have.\n"
             + "\n".join(f"  {p}" for p in differing)
+            + extra
         )
-    committed_warnings = json.loads((BASELINE / "warnings.json").read_text())
-    if committed_warnings != warnings:
+    if committed["warnings"] != warnings:
         die(
             "the emitted warning set no longer equals the committed ledger. A new "
             "or vanished warning is a red: 'still green' must never quietly "
             "absorb 'warns differently now' (§4.3). Regenerate with `--write` "
             "only once every row below is a consequence this change claims to "
-            "have.\n" + "\n".join(warning_delta(committed_warnings, warnings))
+            "have.\n" + "\n".join(warning_delta(committed["warnings"], warnings))
         )
-    print("baseline: header, manifests and warning ledger all match.")
-    return 0
+    die(
+        "the committed baseline differs from what this run measured, and no "
+        "component comparison could say how. That is this file failing to "
+        "REPORT, never a pass — and it is the one state in which `--write` is "
+        "still the right next act."
+    )
+
+
+def report_delta_mismatch(committed: dict, recomputed: dict) -> None:
+    """The review artifact does not tell the truth about this tree. NEVER RETURNS.
+
+    Reached only when every RECORDED document already matches, so nothing about
+    the tree is in question and exactly one thing is: `delta.json` claims a set
+    of moved paths that recomputing from the commit it names does not produce.
+    Two ways to get here and the message names both, because the remedy is the
+    same and the finding is not: the file was hand-edited, or `manifests.json`
+    moved in a later commit that did not regenerate it — which is the state
+    spec-0039 §5 calls stale, and the reason it asks for this check at all.
+    """
+    base = committed.get("base_commit")
+    lines = []
+    for key in ("added", "removed", "changed"):
+        was, now = set(committed.get(key) or []), set(recomputed.get(key) or [])
+        for p in sorted(now - was):
+            lines.append(f"  + {key}: `{p}` — moved, and the delta does not say so")
+        for p in sorted(was - now):
+            lines.append(f"  - {key}: `{p}` — claimed by the delta, and did not move")
+    if committed.get("classes") != recomputed.get("classes"):
+        lines.append(
+            f"  ~ classes: delta says {committed.get('classes')}, "
+            f"recomputed {recomputed.get('classes')}"
+        )
+    if not lines:
+        lines.append(
+            f"  (every path agrees; the documents differ elsewhere: "
+            f"{sorted(set(committed) | set(recomputed))})"
+        )
+    die(
+        "THE REVIEW DELTA IS NOT TRUE OF THIS TREE. Every document the baseline "
+        "records matches, so this is not a drift in emission — it is "
+        f"`gallery/baseline/delta.json` disagreeing with what recomputing it from "
+        f"`{base}`, the commit it names, produces. Either it was hand-edited, or "
+        "`manifests.json` moved afterwards without it. A reviewer reads this file "
+        "to ask whether every path class listed is a consequence this change "
+        "claims to have, and an untrue answer is worse than none. Regenerate it "
+        "with `--write`.\n" + "\n".join(lines)
+    )
 
 
 def warning_delta(old: dict, new: dict) -> list[str]:
@@ -448,11 +827,74 @@ def warning_delta(old: dict, new: dict) -> list[str]:
     return lines
 
 
+def field_count(manifests: dict) -> int:
+    """How many recorded-but-not-emitted manifest values this run compares.
+
+    The denominator for the third verdict, stated for the same reason the other
+    two are: a comparison that examined nothing is vacuous, not a pass — and this
+    one examined nothing at all for as long as it did not exist. Counted at the
+    leaf, so each `inputs` entry is its own recorded value, because that is the
+    granularity `manifest_field_delta` names them at.
+    """
+    n = 0
+    for man in manifests.values():
+        for k, v in man.items():
+            if k == "outputs":
+                continue
+            n += len(v) if isinstance(v, dict) else 1
+    return n
+
+
+def manifest_field_delta(old: dict, new: dict) -> list[str]:
+    """Every recorded-but-not-emitted manifest value whose content moved, named.
+
+    A manifest is not its outputs. `content_sha`, the pinned `delvec_version` /
+    `dsl_version` / `mc_version`, `campaign_id`, `resource_pack_sha1` and the
+    whole `inputs` index are SIBLINGS of `outputs` — so a manifest can differ
+    while every emitted byte is identical, and `compute_delta`, which walks
+    `outputs`, then correctly reports nothing at all. That empty list beside a
+    real mismatch is how a pure content re-pin was announced as a determinism
+    finding over zero differing paths.
+
+    Named rather than dumped: two seven-build manifests printed whole is not a
+    reading anyone takes a finding from. `inputs` is descended one level so an
+    entry is named by the file it indexes, which is what the compiler recorded.
+    """
+    lines: list[str] = []
+    for bid in sorted(set(old) | set(new)):
+        if bid not in new:
+            lines.append(f"  - build `{bid}`: in the baseline, not built by this run")
+            continue
+        if bid not in old:
+            lines.append(f"  + build `{bid}`: built by this run, not in the baseline")
+            continue
+        a, b = old[bid], new[bid]
+        for k in sorted((set(a) | set(b)) - {"outputs"}):
+            av, bv = a.get(k), b.get(k)
+            if av == bv:
+                continue
+            if isinstance(av, dict) and isinstance(bv, dict):
+                for sub in sorted(set(av) | set(bv)):
+                    if av.get(sub) != bv.get(sub):
+                        lines.append(
+                            f"  ~ {bid}.{k}[{sub}]: baseline `{av.get(sub)}` "
+                            f"vs this tree `{bv.get(sub)}`"
+                        )
+                continue
+            lines.append(f"  ~ {bid}.{k}: baseline `{av}` vs this tree `{bv}`")
+    return lines
+
+
 def compute_delta(old: dict, new: dict) -> dict:
     """Every added/removed/changed emitted path, grouped by output class.
 
     The review artifact, and it opens with the question its reader answers: *is
     every path class listed here a consequence this change claims to have?*
+
+    It walks `outputs` and NOTHING else, deliberately — it is about emitted
+    bytes. Every other thing a manifest records is `manifest_field_delta`'s, and
+    the two are read together: this one empty while the manifests differ is not
+    "no difference", it is "the difference is not in emission".
     """
     def files(m: dict) -> dict:
         out = {}
@@ -484,6 +926,35 @@ def compute_delta(old: dict, new: dict) -> dict:
     for p in added + removed + changed:
         classes[klass(p)] = classes.get(klass(p), 0) + 1
     return {"added": added, "removed": removed, "changed": changed, "classes": classes}
+
+
+def review_delta(base_sha: str, old: dict, new: dict) -> dict:
+    """`compute_delta` plus the commit `old` was read from — the committed artifact.
+
+    Naming the base is what turns a review note into a checkable claim: a reader
+    of `gallery/baseline/delta.json` can say which two states it compares, and so
+    can a gate. Without it the file asserts a difference between one state that
+    is present and one that is nowhere.
+    """
+    return {"base_commit": base_sha, **compute_delta(old, new)}
+
+
+def delta_binding(old: dict, new: dict) -> int:
+    """Emitted paths weighed to produce the review delta — its denominator.
+
+    The union of both sides, never the delta's own length. An honest delta is
+    empty whenever a change moves a recorded input without moving an emitted
+    byte, so a zero there is the commonest legitimate result; a zero HERE means
+    the comparison had nothing on either side and the artifact is vacuous.
+    """
+    def files(m: dict) -> set[str]:
+        return {
+            f"{bid}:{p}"
+            for bid, man in m.items()
+            for p in (man.get("outputs") or man.get("files") or {})
+        }
+
+    return len(files(old) | files(new))
 
 
 if __name__ == "__main__":

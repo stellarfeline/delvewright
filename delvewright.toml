@@ -88,7 +88,7 @@
 #
 #   consumed by: tools/refscore.py         ·   docs: docs/reference/tools.md
 #
-# THE SCORE RANKS; IT NEVER GATES (owner ruling). Cross-domain calibration
+# THE SCORE RANKS; IT NEVER GATES. Cross-domain calibration
 # between a painterly reference and a voxel render is unproven, so a number here
 # decides where a candidate sits on the page, never whether it is on the page. A
 # low-scoring candidate is still present, last. `delvec contact-sheet`

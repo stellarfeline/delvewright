@@ -28,9 +28,14 @@ use delvewright_dsl::{
 
 use crate::flow::objectives_in_order;
 use crate::reach::{ReachCompletion, reach_completion};
+/// The anchor-role vocabulary, re-exported where the resolution lives: a
+/// consumer asking this module for an entry point should not have to know that
+/// the term is declared in the prefab-metadata document type.
+pub use crate::registry::AnchorRole;
 use crate::registry::{AnchorMeta, PrefabRegistry};
 use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
 use delvewright_dsl::DwCode;
+use delvewright_dsl::prefab::{GateAnchor, PrefabMeta};
 
 /// World-space distance between successive area origins.
 pub const AREA_SPACING: i32 = 256;
@@ -69,14 +74,260 @@ pub const ISLAND_WATERLINE_Y: i32 = 2;
 /// ashore.
 pub const OCEAN_BASE_Y: i32 = SEA_LEVEL - ISLAND_WATERLINE_Y;
 
-/// The area-origin Y for a campaign's horizon (spec-0013). `void` (default/absent)
-/// keeps [`BASE_Y`], so every pre-0.6 / void campaign stays byte-identical; `ocean`
-/// uses [`OCEAN_BASE_Y`] so the island waterline convention holds.
+/// The area-origin Y for a campaign's horizon. `void` (default/absent) keeps
+/// [`BASE_Y`], so every void campaign stays byte-identical; `ocean` uses
+/// [`OCEAN_BASE_Y`] so the island waterline convention holds.
+///
+/// `valley` keeps [`BASE_Y`] too, and deliberately: its gap floor tops out one
+/// block under [`BASE_Y`], which is the flatland relationship, so a valley
+/// build relocates nothing relative to a void one. Only the surround differs.
 pub fn base_y(campaign: &Campaign) -> i32 {
-    match campaign.world.content.horizon {
-        Some(delvewright_dsl::Horizon::Ocean) => OCEAN_BASE_Y,
-        _ => BASE_Y,
+    match delvewright_dsl::horizon_base(&campaign.world.content.horizon) {
+        delvewright_dsl::HorizonBase::Ocean => OCEAN_BASE_Y,
+        delvewright_dsl::HorizonBase::Void | delvewright_dsl::HorizonBase::Valley => BASE_Y,
     }
+}
+
+/// The rectangle a horizon surround rings, and the authority that stated it.
+///
+/// # The decision this function is
+///
+/// A surround has to know how big the map is, and there are two possible
+/// answers. **The map's declared region**, which a campaign with a site plan
+/// states outright and which nothing may grow — a box outside it is `DW0826`.
+/// Or **the union of what actually got placed**, which is the only answer a
+/// campaign that places `areas[]` by hand can give, because it never states an
+/// extent at all.
+///
+/// Where both exist the region wins, and that is not a convenience. spec-0049
+/// exists to stop extent flowing upward from the parts: the region is the
+/// brief's number flowing DOWN, and a box is never grounds to grow it. A
+/// surround keyed to the placed footprint would reintroduce exactly that flow
+/// one layer out — the mountains would creep inward wherever a plan reserved
+/// space and had not yet filled it, so the act of detailing a place later would
+/// move a mountain that a walk had already been judged against. Keyed to the
+/// region, the landform is fixed the moment the whole is stated, and every
+/// later part is built inside a horizon that was already there.
+///
+/// The vertical extent is deliberately absent. A surround stands on its own
+/// datum ([`crate::horizon::VALLEY_GAP_FLOOR_TOP_Y`]) and rises by its own
+/// param; what the map does above that floor is the map's business.
+pub fn surround_rect(campaign: &Campaign) -> Option<(crate::surround::SceneRect, &'static str)> {
+    if let Some(plan) = campaign.site_plan.as_ref() {
+        let r = &plan.content.region;
+        let max = r.max();
+        return Some((
+            crate::surround::SceneRect {
+                min_x: r.min[0] as i32,
+                min_z: r.min[2] as i32,
+                max_x: max[0] as i32,
+                max_z: max[2] as i32,
+            },
+            "site-plan region",
+        ));
+    }
+    None
+}
+
+/// `DW0855` (build, exit 3): a horizon whose base builds terrain, on a campaign
+/// with no map for that terrain to stand around.
+///
+/// A surround has to ring something, and the only thing it can ring is a
+/// statement of the whole map's extent. A campaign that places `areas[]` by
+/// hand never makes one — and the obvious substitute, the union of what got
+/// placed, is not a statement of extent but an artifact of
+/// [`AREA_SPACING`]: two small areas sit 256 blocks apart with void between
+/// them, so their union is a rectangle that is mostly nothing, and ringing it
+/// generates a mountain range around empty space.
+///
+/// That is not a performance note; it is the reason the refusal is right. It
+/// was measured: the same surround around a site plan's declared 64x64 region
+/// is 14 templates and builds in about ninety seconds, and around the union of
+/// two hand-placed areas it had not finished in ten minutes. The fast answer
+/// and the correct answer are the same answer here, which is usually the sign
+/// that the substitute was never the thing.
+pub const DW_SURROUND_NO_REGION: delvewright_dsl::DwCode =
+    delvewright_dsl::diagnostic::codes::SURROUND_NO_REGION;
+
+/// **The columns of the declared region a piece already floors** — the set the
+/// surround's moat must leave untouched.
+///
+/// A column is floored when anything the plan writes occupies a cell at or
+/// below the gap-floor datum: the piece owns its own ground there, holes and
+/// basements included, and ambient ground poured into it would fill a cellar.
+/// A column whose content is entirely ABOVE the datum is NOT floored — an
+/// elevated storey has the valley floor running on underneath it, which is what
+/// makes a box garden a place rather than a set of boxes.
+///
+/// Read from the placement rectangles rather than from block contents, and the
+/// direction of that approximation is the safe one: an over-claimed column is
+/// left to the piece, so the worst case is a seam the moat does not fill, never
+/// ambient ground written through authored geometry.
+fn ground_columns(
+    areas: &[AreaPlacement],
+    region: &crate::surround::SceneRect,
+) -> BTreeSet<(i32, i32)> {
+    let datum = crate::horizon::VALLEY_GAP_FLOOR_TOP_Y;
+    let mut out = BTreeSet::new();
+    let mut claim = |min: [i32; 3], max: [i32; 3]| {
+        if min[1] > datum {
+            return;
+        }
+        for x in min[0].max(region.min_x)..=max[0].min(region.max_x) {
+            for z in min[2].max(region.min_z)..=max[2].min(region.max_z) {
+                out.insert((x, z));
+            }
+        }
+    };
+    for area in areas {
+        for piece in &area.pieces {
+            let (pmin, pmax) = piece.bbox();
+            claim(pmin, pmax);
+        }
+        for fill in area.mass.iter().chain(&area.seals) {
+            if fill.block.starts_with("minecraft:air") {
+                continue; // a clear authors nothing; it removes
+            }
+            let lo = [
+                fill.from[0].min(fill.to[0]),
+                fill.from[1].min(fill.to[1]),
+                fill.from[2].min(fill.to[2]),
+            ];
+            let hi = [
+                fill.from[0].max(fill.to[0]),
+                fill.from[1].max(fill.to[1]),
+                fill.from[2].max(fill.to[2]),
+            ];
+            claim(lo, hi);
+        }
+    }
+    out
+}
+
+/// Build the horizon's surround, or `None` for a base that declares a world
+/// generator instead of building one.
+///
+/// Seeded from the campaign seed through one named stream
+/// ([`crate::horizon::VALLEY_STREAM`]), so the same documents and the same seed
+/// produce the same mountains (ADR-0006).
+fn build_surround(
+    campaign: &Campaign,
+    seed: u64,
+    areas: &[AreaPlacement],
+) -> Result<Option<SurroundPlan>, PlanError> {
+    use crate::surround::{self, Flora, SurroundPalette, ValleyParams};
+
+    let h = crate::horizon::of_campaign(campaign);
+    if !h.base.has_surround() {
+        return Ok(None);
+    }
+    let Some((scene, authority)) = surround_rect(campaign) else {
+        return Err(PlanError::new(
+            DW_SURROUND_NO_REGION,
+            format!(
+                "`horizon` base `{base}` builds terrain around the map, and this campaign never \
+                 says how big the map is. A surround rings a declared extent — the `region` of a \
+                 site plan — and this campaign places {n} area(s) with `areas[]`, which states \
+                 no extent at all. The union of what happens to get placed is not a substitute: \
+                 areas sit {sp} blocks apart, so that union is mostly the void between them, and \
+                 the horizon would be a mountain range built around empty space. Give the \
+                 campaign a site plan, or set `horizon` to `void` or `ocean`, which need no map \
+                 to be a horizon of.",
+                base = h.base.token(),
+                n = areas.len(),
+                sp = AREA_SPACING,
+            ),
+        ));
+    };
+    let params = ValleyParams {
+        ratio: h.ratio,
+        rim_height: h.rim_height,
+        // The generator carries a second flora and a second palette; the DSL
+        // does not expose them yet (see `HorizonSpec`), so this is the one row
+        // a campaign can reach. Written as a named pair rather than a
+        // `Default` so that adding the surface is one line here and cannot be
+        // done by accident.
+        flora: Flora::Oak,
+        palette: SurroundPalette::StoneGrass,
+    };
+    let valley = surround::generate_valley(
+        solver::stream_seed(seed, crate::horizon::VALLEY_STREAM),
+        scene,
+        crate::horizon::VALLEY_GAP_FLOOR_TOP_Y,
+        &params,
+    )
+    // The build-time restatement of the range fence the validation layer
+    // already applied — the SAME code, because it is the same rule, and a
+    // second code here would be two names for one refusal.
+    .map_err(|m| PlanError::new(delvewright_dsl::diagnostic::codes::HORIZON_PARAM, m))?;
+
+    // **The moat**, and until this call it was a method nothing invoked.
+    //
+    // The surround rings the region a site plan DECLARES, and a plan under-fills
+    // its own region while it is being built — which is correct and is the whole
+    // point of declaring an extent up front. Nobody had looked at what "reserved
+    // and not yet built" looks like from inside, and it looks like a hole: a
+    // perimeter trench of literal void 3 to 12 blocks wide between the built map
+    // and the gap floor, open top to bottom, with 26 full-width transects of the
+    // declared region empty end to end.
+    //
+    // The answer was already written, tested and documented as a ruling on
+    // `ValleySurround::moat`, and had never been wired to anything — a general
+    // mechanism, green in its own unit test, emitting nothing. It belongs to the
+    // surround rather than to `volumes[] role: ground` (which would put the
+    // obligation on every author, for a hole the engine creates) and rather than
+    // to a refusal on an under-filled region (which would forbid the ordinary
+    // state of a plan mid-build, and spec-0049 exists to make that state legal).
+    let mut valley = valley;
+    let (moat_tiles, moat_starts) = valley.moat(&ground_columns(areas, &scene));
+    valley.tiles.extend(moat_tiles);
+    valley.gap_floor_starts.extend(moat_starts);
+
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut templates: Vec<PlacedTemplate> = Vec::new();
+    let mut min = [i32::MAX; 3];
+    let mut max = [i32::MIN; 3];
+    for tile in &valley.tiles {
+        let file = format!("{}.nbt", tile.structure_id);
+        for a in 0..3 {
+            min[a] = min[a].min(tile.pos[a]);
+            max[a] = max[a].max(tile.pos[a] + tile.size[a] - 1);
+        }
+        templates.push(PlacedTemplate {
+            structure_id: tile.structure_id.clone(),
+            structure_file: file.clone(),
+            pos: tile.pos,
+            size: tile.size,
+        });
+        structures.insert(file, tile.bytes.clone());
+    }
+    if templates.is_empty() {
+        return Ok(None);
+    }
+    let binding = SurroundBinding {
+        authority,
+        rect: [scene.min_x, scene.min_z, scene.max_x, scene.max_z],
+        tiles: templates.len(),
+        bands: valley.biome.len(),
+        floor_cells: valley.gap_floor_starts.len(),
+    };
+    Ok(Some(SurroundPlan {
+        piece: PiecePlacement {
+            prefab_id: "surround/valley".to_string(),
+            templates,
+            pos: min,
+            size: [
+                max[0] - min[0] + 1,
+                max[1] - min[1] + 1,
+                max[2] - min[2] + 1,
+            ],
+            rotation: Rotation::None,
+        },
+        structures,
+        biome: valley.biome.clone(),
+        valley,
+        binding,
+    }))
 }
 
 /// A resolved `set-checkpoint` effect (DSL v0.6, spec-0012), collected in
@@ -613,8 +864,10 @@ pub struct Plan<'a> {
     /// carrier. Reported by [`crate::emit::build_with_warnings`], which prepends
     /// them to the build's own advisories; never fatal.
     pub warnings: Vec<Diagnostic>,
-    /// Resolved absolute anchors, keyed by `(area_id, anchor_name)`.
-    pub anchors: BTreeMap<(String, String), ResolvedAnchor>,
+    /// Resolved absolute anchors, keyed by `(area_id, anchor_name)`, plus the
+    /// roles their pieces declared ([`AnchorTable`]). Derefs to the map, so a
+    /// consumer that knows the name it wants reads it as one.
+    pub anchors: AnchorTable,
     /// Class selection plan (n starts at 1).
     pub classes: Vec<ClassPlan>,
     /// Per-NPC dialogue plan.
@@ -737,6 +990,94 @@ pub struct Plan<'a> {
     /// independently is how a builder and its observer come to agree about a
     /// world neither describes.
     pub blockout: Option<crate::blockout::Blockout>,
+    /// **The horizon's surround** (spec-0026): compiler-generated terrain
+    /// standing around the map, for a base that builds ground rather than
+    /// declaring a world generator. `None` for `void` and `ocean`, which is
+    /// why nothing about such a build moves.
+    ///
+    /// Deliberately NOT an [`AreaPlacement`]. `plan.areas` is what the boundary
+    /// region derives from, what the relight pass lights, what analysis counts
+    /// and what anchors resolve against — and a surround belongs to none of
+    /// those. It is scenery the map stands in: a body may walk its gap floor,
+    /// and every proof that reads blocks reads it, but it is not a place the
+    /// campaign has content in, and the playable region must not grow to
+    /// enclose a mountain range.
+    ///
+    /// The sites that DO need it opt in by name, and there are exactly three:
+    /// [`Plan::placed_pieces`] (emission and the voxel model),
+    /// [`crate::assembled::placed_blocks`] through that iterator, and the
+    /// biome paint in [`crate::emit`].
+    pub surround: Option<SurroundPlan>,
+}
+
+/// A compiler-generated horizon surround, planned.
+pub struct SurroundPlan {
+    /// The surround as **one placed piece**. However many structure templates
+    /// the annulus ships as — and it is many, because it is far past the
+    /// vanilla 48-per-axis template cap — it is one piece, on exactly the terms
+    /// [`PiecePlacement::templates`] already states: tiling is a packaging fact
+    /// about a file format, absorbed at the one place a `.nbt` filename is
+    /// reachable from.
+    pub piece: PiecePlacement,
+    /// The generated structure bytes, keyed by each template's
+    /// `structure_file`. These files never exist on disk — the structure reader
+    /// merges this map before it touches the prefab library.
+    pub structures: BTreeMap<String, Vec<u8>>,
+    /// Bootstrap `/fillbiome` rectangles: vanilla's own tint, foliage,
+    /// ambience and sky channel, which is why the surround needs no resource
+    /// pack to read as a cherry grove or a windswept forest.
+    pub biome: Vec<crate::surround::BiomeRect>,
+    /// The valley model behind the tiles. The un-climbability proof and the
+    /// establishing camera read it; nothing else may.
+    pub valley: crate::surround::ValleySurround,
+    /// The rectangle the surround was built around, and **which authority
+    /// stated it** — the binding this feature's gate reports, with its
+    /// denominator.
+    pub binding: SurroundBinding,
+}
+
+/// Which authority fixed the rectangle a surround rings, and how much of the
+/// world it turned into terrain. Printed with every surround build, because a
+/// surround that ringed the wrong rectangle looks exactly like one that ringed
+/// the right one until somebody walks it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurroundBinding {
+    /// `site-plan-region` when the campaign states a whole-map region, or
+    /// `placed-footprint` when it places areas by hand and the union of those
+    /// footprints is the only statement of extent it has.
+    pub authority: &'static str,
+    /// The rectangle itself, inclusive: `[min_x, min_z, max_x, max_z]`.
+    pub rect: [i32; 4],
+    /// Structure templates the annulus ships as — the terrain's own
+    /// denominator. Zero is a finding: a surround that built no template is a
+    /// horizon that ringed nothing.
+    pub tiles: usize,
+    /// Biome rectangles painted.
+    pub bands: usize,
+    /// Standable cells on the gap floor — the START set of the un-climbability
+    /// proof, and therefore that proof's denominator. A proof that flooded from
+    /// nowhere passes for free, so this number is stated beside its verdict
+    /// rather than left to be inferred from a green.
+    pub floor_cells: usize,
+}
+
+impl SurroundBinding {
+    /// The one line a build prints for the surround, on the same terms every
+    /// other binding line in this compiler states its own.
+    pub fn line(&self) -> String {
+        format!(
+            "surround: {} templates and {} biome bands around [{}, {}]..[{}, {}] stated by \
+             the {}, with {} standable gap-floor cells the climb proof floods from",
+            self.tiles,
+            self.bands,
+            self.rect[0],
+            self.rect[1],
+            self.rect[2],
+            self.rect[3],
+            self.authority,
+            self.floor_cells,
+        )
+    }
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -1385,37 +1726,212 @@ pub const DW_OCEAN_WATERLINE: DwCode = DwCode::every_version("DW0344");
 /// the build floor — inside solid stone. Silent before; a hard build error now.
 pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345");
 
+/// `DW0804`: two anchors in one area declare [`AnchorRole::Entry`].
+///
+/// An area has **one** place the party arrives at. Two claims to it is a
+/// question the compiler cannot answer and must not answer quietly: picking
+/// first-wins (by piece order, or by the `BTreeMap` order of two anchor names
+/// nobody chose for their sort) is how a spawn that moved becomes a mystery
+/// nothing in the build output mentions.
+///
+/// Only reachable through a declared role. Two anchors *named* `spawn` and
+/// `entry` in one area are the pre-role compatibility case and stay ordered by
+/// [`ENTRY_ANCHOR_NAMES`], because that ordering is what every shipped piece was
+/// admitted under and refusing it now would red a library nobody has touched.
+pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::every_version("DW0804");
+
 /// The prefab-metadata anchor names that mark a campaign's **entry point**, in
-/// resolution order. One concept, two spellings in the shipped tileset library:
-/// the keep/cave/test tilesets name it `spawn`, the island tileset names it
-/// `entry`. The compiler owns the resolution (CLAUDE.md: never leave a layer
-/// boundary to downstream folklore) — every consumer goes through
-/// [`Plan::entry_point`] / `emit::campaign_spawn`, and a campaign that resolves
-/// none of these names fails the build with [`DW_NO_ENTRY_ANCHOR`].
+/// resolution order — the **fallback**, not the mechanism (spec-0046).
+///
+/// The mechanism is [`AnchorRole::Entry`], declared on the anchor by whoever
+/// authored the piece. This list is what an area resolves through when **no**
+/// anchor in it declares that role: one concept, two spellings in the shipped
+/// tileset library (the keep/cave/test tilesets name it `spawn`, the island
+/// tileset names it `entry`), and it exists so that a piece admitted before the
+/// role existed keeps resolving without being edited.
+///
+/// It is not a second authoring surface. A piece written today declares the
+/// role; nothing new should be added here, and the list is deleted when every
+/// producer declares one.
 pub const ENTRY_ANCHOR_NAMES: [&str; 2] = ["spawn", "entry"];
 
-/// Is `name` one of the entry-anchor spellings ([`ENTRY_ANCHOR_NAMES`])?
+/// The plan's resolved anchors, **and what the pieces said they were for**.
 ///
-/// The membership half of the resolution, for the one consumer that sweeps every
-/// anchor asking "is this an entry?" rather than looking one up by area. It
-/// exists so that consumer cannot spell the question itself: matching a literal
-/// is how the alias list came to be bypassed three times over.
-pub fn is_entry_anchor_name(name: &str) -> bool {
-    ENTRY_ANCHOR_NAMES.contains(&name)
+/// A campaign addresses an anchor by name, so for everything a campaign speaks
+/// about, a `BTreeMap<(area, name), ResolvedAnchor>` is the whole story — which
+/// is why this derefs to one and every consumer that knows the name it wants
+/// reads it exactly as before.
+///
+/// The entry point is the one place a campaign never names: the compiler has to
+/// *find* it. Finding it by matching a spelling made it a fact about the
+/// producer that wrote the piece rather than about the piece, and one producer
+/// — the grammar back end, whose anchor keys are always `anchor/<stem>` — could
+/// not spell either name at all. So the piece declares a role, this table
+/// indexes it while the anchors are being resolved, and
+/// [`AnchorTable::entry_anchor`] is the one place that decides.
+///
+/// The index is keyed by role rather than shaped around the entry: a second
+/// role costs a variant of [`AnchorRole`] and nothing here, and its
+/// one-per-area refusal is the same refusal.
+#[derive(Default)]
+pub struct AnchorTable {
+    at: BTreeMap<(String, String), ResolvedAnchor>,
+    /// `(area, role)` → the name of the anchor that declared it. At most one
+    /// per pair, by [`DW_TWO_ENTRY_ANCHORS`].
+    roles: BTreeMap<(String, AnchorRole), String>,
 }
 
-/// One area's **entry anchor**, resolved through [`ENTRY_ANCHOR_NAMES`] in order.
-///
-/// The lookup half, taken over a raw anchor map so that `Plan::build` can use the
-/// same resolution while it is still assembling one — a consumer that cannot
-/// reach [`Plan::entry_point`] yet must not be left to re-spell the question.
-pub fn entry_anchor<'a>(
-    anchors: &'a BTreeMap<(String, String), ResolvedAnchor>,
-    area: &str,
-) -> Option<&'a ResolvedAnchor> {
-    ENTRY_ANCHOR_NAMES
-        .iter()
-        .find_map(|name| anchors.get(&(area.to_string(), (*name).to_string())))
+impl std::ops::Deref for AnchorTable {
+    type Target = BTreeMap<(String, String), ResolvedAnchor>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.at
+    }
+}
+
+/// Iterating the table is iterating the map — `Deref` does not reach a `for`
+/// loop, and every sweep over `plan.anchors` is one.
+impl<'a> IntoIterator for &'a AnchorTable {
+    type Item = (&'a (String, String), &'a ResolvedAnchor);
+    type IntoIter = std::collections::btree_map::Iter<'a, (String, String), ResolvedAnchor>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.at.iter()
+    }
+}
+
+impl AnchorTable {
+    /// Resolve one anchor a placed piece declared, and record any role it
+    /// declared with it.
+    ///
+    /// First-wins on the position, matching the pool path's own
+    /// `or_insert_with`: a pool that seats the same anchor-bearing prefab twice
+    /// keeps the first carrier (and raises `DW0498` about it). The role index
+    /// follows the same rule for the same name, and refuses a **different**
+    /// name claiming a role this area has already given away.
+    fn declare(
+        &mut self,
+        area: &str,
+        name: &str,
+        meta: &AnchorMeta,
+        resolve: impl FnOnce() -> ResolvedAnchor,
+    ) -> Result<(), PlanError> {
+        self.at
+            .entry((area.to_string(), name.to_string()))
+            .or_insert_with(resolve);
+        if let Some(role) = meta.role {
+            self.record_role(area, name, role)?;
+        }
+        Ok(())
+    }
+
+    /// Seat one anchor the **derivation** produced — a site plan's synthesized
+    /// vocabulary (`crate::blockout`) and the pieces a detail plan stands in it
+    /// (`crate::detail`).
+    ///
+    /// **Last-wins, and that is the difference from [`AnchorTable::declare`].**
+    /// A prefab-placed area resolves first-wins because a pool can seat the same
+    /// anchor-bearing piece twice and the first carrier is the one `DW0498`
+    /// reports. A derived area is the other way round on purpose: the derivation
+    /// names `anchor/node-…` at the massing's own footing, and a detail piece
+    /// standing there is then the truth about where that place is, so it
+    /// overwrites. Collapsing the two rules into one would silently move a
+    /// detailed place's anchor back onto the massing.
+    ///
+    /// The role index is the *same* rule in both, because what an anchor is for
+    /// is a property of the anchor rather than of the producer. A derived area
+    /// cannot reach [`DW_TWO_ENTRY_ANCHORS`]: the derivation is one producer
+    /// holding one name-keyed map, so it has nowhere to write a second claim.
+    /// The refusal exists for a prefab **library**, where two independently
+    /// authored pieces can each claim the same role in one area.
+    fn place(
+        &mut self,
+        area: &str,
+        name: &str,
+        resolved: ResolvedAnchor,
+        role: Option<AnchorRole>,
+    ) -> Result<(), PlanError> {
+        self.at
+            .insert((area.to_string(), name.to_string()), resolved);
+        if let Some(role) = role {
+            self.record_role(area, name, role)?;
+        }
+        Ok(())
+    }
+
+    /// Record that `name` is the anchor `area` gave `role` to — the one place
+    /// the role index is written, so the refusal below cannot be bypassed by
+    /// arriving through a different producer.
+    fn record_role(&mut self, area: &str, name: &str, role: AnchorRole) -> Result<(), PlanError> {
+        let held = self
+            .roles
+            .entry((area.to_string(), role))
+            .or_insert_with(|| name.to_string());
+        if held != name {
+            return Err(PlanError::new(
+                DW_TWO_ENTRY_ANCHORS,
+                format!(
+                    "area `{area}` declares the anchor role `{role}` twice: `{held}` and \
+                     `{name}` both carry `\"role\": \"{role}\"` in their prefab metadata. An \
+                     area has one place the party arrives at, and the compiler will not pick \
+                     between two — a silently-chosen spawn is a moved start nothing reports. \
+                     Fix it in the prefab metadata that declares the anchors: keep the role \
+                     on the one cell the party should arrive at and drop the `role` key from \
+                     the other (the anchor itself stays, and content can still bind it by \
+                     name). If the two anchors are in two pieces of one `prefab_pool`, only \
+                     the piece that seeds the layout should carry it. Do NOT resolve this by \
+                     renaming an anchor to `spawn` or `entry` — the name list is a \
+                     compatibility fallback for pieces that predate the role, and it is not \
+                     consulted at all once an area declares one"
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The name of the anchor `area` gave `role` to, if any.
+    pub fn role_name(&self, area: &str, role: AnchorRole) -> Option<&str> {
+        self.roles
+            .get(&(area.to_string(), role))
+            .map(String::as_str)
+    }
+
+    /// One area's **entry anchor**: the anchor declaring [`AnchorRole::Entry`],
+    /// or — when the area declares none — the first of [`ENTRY_ANCHOR_NAMES`]
+    /// it carries.
+    ///
+    /// **The single resolver.** Every consumer of an entry point reaches it
+    /// through this or through the [`Plan`] methods below, and none matches an
+    /// anchor name itself: the three that once did (inter-area transport, the
+    /// POV shot planner, the trap-safety start set) each asked an honest
+    /// question about the wrong key and got an honest `None`, so every
+    /// island-tileset area was silently never transported into, never framed
+    /// and never counted as a place a player can start from.
+    ///
+    /// Role first is what makes the fallback safe to keep: an area that
+    /// declares the role is never reached by a name, so a piece cannot acquire
+    /// the campaign's start by calling one of its anchors `entry` for its own
+    /// reasons.
+    pub fn entry_anchor(&self, area: &str) -> Option<&ResolvedAnchor> {
+        self.entry_anchor_name(area)
+            .and_then(|name| self.at.get(&(area.to_string(), name.to_string())))
+    }
+
+    /// The **name** of `area`'s entry anchor, resolved the same way — for the
+    /// gate-deadlock proof, which reads its start node out of prefab metadata
+    /// rather than out of the resolved map and must not re-spell the question.
+    pub fn entry_anchor_name(&self, area: &str) -> Option<String> {
+        if let Some(name) = self.role_name(area, AnchorRole::Entry) {
+            return Some(name.to_string());
+        }
+        ENTRY_ANCHOR_NAMES
+            .iter()
+            .find(|name| {
+                self.at
+                    .contains_key(&(area.to_string(), (*name).to_string()))
+            })
+            .map(|name| (*name).to_string())
+    }
 }
 
 /// Ocean-horizon waterline invariant (DW0344). In a `horizon: ocean` world every
@@ -1463,10 +1979,9 @@ fn check_ocean_waterline(
     areas: &[AreaPlacement],
     prefabs: &PrefabRegistry,
 ) -> Result<WaterlineBinding, PlanError> {
-    if !matches!(
-        campaign.world.content.horizon,
-        Some(delvewright_dsl::Horizon::Ocean)
-    ) {
+    if delvewright_dsl::horizon_base(&campaign.world.content.horizon)
+        != delvewright_dsl::HorizonBase::Ocean
+    {
         return Ok(WaterlineBinding::NOT_AN_OCEAN);
     }
     let mut binding = WaterlineBinding {
@@ -1712,7 +2227,7 @@ impl<'a> Plan<'a> {
         let mut areas = Vec::new();
         // Advisory placement findings, in area order (`DW0498`, `crate::pool`).
         let mut warnings: Vec<Diagnostic> = Vec::new();
-        let mut anchors: BTreeMap<(String, String), ResolvedAnchor> = BTreeMap::new();
+        let mut anchors = AnchorTable::default();
         // v0.6 (spec-0011): the absolute dispenser socket cell for each `anchor/trap`
         // marker that declares one, keyed like `anchors`. Empty for a campaign with no
         // trap hardware.
@@ -1759,7 +2274,9 @@ impl<'a> Plan<'a> {
                     ));
                 }
                 for (name, am) in &meta.anchors {
-                    anchors.insert((area_id.clone(), name.clone()), resolve_anchor(origin, am));
+                    anchors.declare(&area_id, name, am, || {
+                        resolve_anchor(origin, meta, name, am)
+                    })?;
                     if let Some(dp) = am.dispenser {
                         dispenser_cells.insert(
                             (area_id.clone(), name.clone()),
@@ -1911,9 +2428,9 @@ impl<'a> Plan<'a> {
                     // anchor is carried by exactly one placed piece (fillers are
                     // anchorless connectors), so names do not collide.
                     for (name, am) in &meta.anchors {
-                        anchors
-                            .entry((area_id.clone(), name.clone()))
-                            .or_insert_with(|| resolve_piece_anchor(placed, am));
+                        anchors.declare(&area_id, name, am, || {
+                            resolve_piece_anchor(placed, meta, name, am)
+                        })?;
                         if let Some(dp) = am.dispenser {
                             dispenser_cells
                                 .entry((area_id.clone(), name.clone()))
@@ -1966,8 +2483,13 @@ impl<'a> Plan<'a> {
         let blockout = match crate::blockout::derive_with(campaign, &mut blockout_reads, perturb) {
             None => None,
             Some((mut placement, derived)) => {
-                for (name, resolved) in derived.anchors() {
-                    anchors.insert((placement.area_id.clone(), name.to_string()), resolved);
+                // The derivation is a producer of anchors exactly as a prefab
+                // is, so it says what each one is FOR (spec-0046): the entry
+                // node's anchor arrives carrying `AnchorRole::Entry`, and the
+                // spelling `siteplan::ENTRY_ANCHOR` gives it stops being what
+                // resolves it.
+                for (name, resolved, role) in derived.anchors() {
+                    anchors.place(&placement.area_id, name, resolved, role)?;
                 }
                 // ---- the detail plan's pieces (spec-0050 §1) ----
                 //
@@ -1987,10 +2509,12 @@ impl<'a> Plan<'a> {
                 let detailing = crate::detail::place(campaign, prefabs);
                 placement.pieces.extend(detailing.pieces);
                 for (name, pos, facing) in detailing.anchors {
-                    anchors.insert(
-                        (placement.area_id.clone(), name),
+                    anchors.place(
+                        &placement.area_id,
+                        &name,
                         ResolvedAnchor::Point { pos, facing },
-                    );
+                        None,
+                    )?;
                 }
                 areas.push(placement);
                 Some(derived)
@@ -2005,6 +2529,7 @@ impl<'a> Plan<'a> {
             check_gate_reachability(
                 campaign,
                 &area.area_id,
+                anchors.entry_anchor_name(&area.area_id).as_deref(),
                 &area.pieces,
                 prefabs,
                 severed.get(&area.area_id),
@@ -2209,6 +2734,19 @@ impl<'a> Plan<'a> {
             }
         }
 
+        // ---- the horizon's surround (spec-0026) ----
+        //
+        // After the blockout, and that order is the whole point: the surround
+        // rings the map the derivation just produced, not a footprint that
+        // predates it. `surround_rect` states which authority fixed the
+        // rectangle, and for a site-plan campaign that authority is the plan's
+        // own region — so the landform is fixed the moment the whole is stated
+        // and cannot be moved later by detailing a part.
+        //
+        // A base with no surround gets `None` and nothing below runs, so a
+        // `void` or `ocean` build does not move by a byte.
+        let surround = build_surround(campaign, seed, &areas)?;
+
         Ok(Self {
             campaign,
             namespace,
@@ -2242,7 +2780,29 @@ impl<'a> Plan<'a> {
             strict_ancestor_steps,
             massing_bounds,
             blockout,
+            surround,
         })
+    }
+
+    /// **Every placed piece in this build**, area pieces and the horizon
+    /// surround alike.
+    ///
+    /// The one iterator every PLACEMENT site reads — the structure files that
+    /// ship, the chunks that forceload, the `/place template` lines, the
+    /// placement sentinels, and the voxel model the proofs run over. It exists
+    /// so that "the surround is placed like any other piece" is one fact in one
+    /// place rather than five parallel additions, four of which the next
+    /// placement site would forget.
+    ///
+    /// Deliberately NOT the iterator for anything that reasons about CONTENT:
+    /// the boundary region, the relight scope, the anchor table and analysis
+    /// read `areas` and must go on reading `areas`, because a mountain is not
+    /// somewhere the campaign happens.
+    pub fn placed_pieces(&self) -> impl Iterator<Item = &PiecePlacement> {
+        self.areas
+            .iter()
+            .flat_map(|a| a.pieces.iter())
+            .chain(self.surround.iter().map(|s| &s.piece))
     }
 
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -2315,14 +2875,15 @@ impl<'a> Plan<'a> {
     }
 
     /// One area's **entry point** — the cell a body arrives at when it enters
-    /// this area — resolved through [`ENTRY_ANCHOR_NAMES`].
+    /// this area — resolved through [`AnchorTable::entry_anchor`].
     ///
     /// The single place a consumer asks "where does the party start here". Every
-    /// consumer goes through this or [`entry_anchor`]; none matches an anchor
-    /// name itself. A gate anchor is not an entry point (there is no cell to
-    /// stand on), so it resolves to `None` rather than to a plane.
+    /// consumer goes through this, [`Plan::entry_point_facing`] or
+    /// [`Plan::entry_points`]; none matches an anchor name itself. A gate anchor
+    /// is not an entry point (there is no cell to stand on), so it resolves to
+    /// `None` rather than to a plane.
     pub fn entry_point(&self, area: &str) -> Option<[i32; 3]> {
-        match entry_anchor(&self.anchors, area) {
+        match self.anchors.entry_anchor(area) {
             Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
             _ => None,
         }
@@ -2331,10 +2892,24 @@ impl<'a> Plan<'a> {
     /// One area's entry point with the facing it was declared with — the POV
     /// planner needs the direction as well as the cell.
     pub fn entry_point_facing(&self, area: &str) -> Option<([i32; 3], Option<String>)> {
-        match entry_anchor(&self.anchors, area) {
+        match self.anchors.entry_anchor(area) {
             Some(ResolvedAnchor::Point { pos, facing }) => Some((*pos, facing.clone())),
             _ => None,
         }
+    }
+
+    /// **Every** area's entry point, in area order — the cells a body can begin
+    /// a walk from.
+    ///
+    /// The sweep half of the question, for the consumer that wants the whole
+    /// start set rather than one area's (the trap-safety proof roots its
+    /// disarm-reachability search here). It exists so that consumer cannot ask
+    /// the question itself: it used to sweep the anchor map for a literal name,
+    /// which is how every island-tileset area went uncounted.
+    pub fn entry_points(&self) -> impl Iterator<Item = [i32; 3]> + '_ {
+        self.areas
+            .iter()
+            .filter_map(|area| self.entry_point(&area.area_id))
     }
 
     /// The area an NPC or quest belongs to.
@@ -2883,15 +3458,17 @@ fn collect_effect_anchors(e: &QuestEffect, set: &mut BTreeSet<String>) {
 
 /// Resolve a placed-piece anchor to absolute world coords (transforming through
 /// the piece's pos + rotation).
-fn resolve_piece_anchor(placed: &solver::PlacedPiece, am: &AnchorMeta) -> ResolvedAnchor {
-    if let Some(region) = &am.region {
+fn resolve_piece_anchor(
+    placed: &solver::PlacedPiece,
+    meta: &PrefabMeta,
+    name: &str,
+    am: &AnchorMeta,
+) -> ResolvedAnchor {
+    if let Some(gate) = local_gate(meta, name, am) {
         ResolvedAnchor::Gate {
-            from: solver::transform_point(placed, region.from),
-            to: solver::transform_point(placed, region.to),
-            block: am
-                .block
-                .clone()
-                .unwrap_or_else(|| "minecraft:air".to_string()),
+            from: solver::transform_point(placed, gate.from),
+            to: solver::transform_point(placed, gate.to),
+            block: gate.block,
         }
     } else {
         ResolvedAnchor::Point {
@@ -2901,16 +3478,45 @@ fn resolve_piece_anchor(placed: &solver::PlacedPiece, am: &AnchorMeta) -> Resolv
     }
 }
 
-fn resolve_anchor(origin: [i32; 3], am: &AnchorMeta) -> ResolvedAnchor {
-    let add = |p: [i32; 3]| [origin[0] + p[0], origin[1] + p[1], origin[2] + p[2]];
-    if let Some(region) = &am.region {
-        ResolvedAnchor::Gate {
-            from: add(region.from),
-            to: add(region.to),
+/// The piece-local gate box an anchor names, asked of the ONE authority
+/// ([`PrefabMeta::gate_anchor`]) rather than read off `region`/`block` here.
+///
+/// Both resolvers go through this and through nothing else, so the piece-local
+/// answer is computed once and the two differ only in how they carry it into
+/// world space — which is the entire difference between a placed piece and a
+/// single-prefab area, and the only difference there should ever have been.
+///
+/// A gate the authority REFUSES keeps the reading it has always had. The refusal
+/// is a validation finding (`DW0343`) that names the anchor and says why, and a
+/// campaign carrying one does not build; making the planner re-read it as a point
+/// as well would move the emission of a campaign that is being refused anyway,
+/// for no reader's benefit.
+fn local_gate(meta: &PrefabMeta, name: &str, am: &AnchorMeta) -> Option<GateAnchor> {
+    match meta.gate_anchor(name) {
+        Ok(gate) => gate,
+        Err(_) => am.region.as_ref().map(|r| GateAnchor {
+            from: r.from,
+            to: r.to,
             block: am
                 .block
                 .clone()
                 .unwrap_or_else(|| "minecraft:air".to_string()),
+        }),
+    }
+}
+
+fn resolve_anchor(
+    origin: [i32; 3],
+    meta: &PrefabMeta,
+    name: &str,
+    am: &AnchorMeta,
+) -> ResolvedAnchor {
+    let add = |p: [i32; 3]| [origin[0] + p[0], origin[1] + p[1], origin[2] + p[2]];
+    if let Some(gate) = local_gate(meta, name, am) {
+        ResolvedAnchor::Gate {
+            from: add(gate.from),
+            to: add(gate.to),
+            block: gate.block,
         }
     } else {
         ResolvedAnchor::Point {
@@ -3018,7 +3624,7 @@ pub struct CriticalPath {
 /// a `QuestEffect::Cutscene`).
 fn build_critical_path(
     campaign: &Campaign,
-    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    anchors: &AnchorTable,
     npcs: &[NpcPlan],
     flow: &crate::flow::Flow<'_>,
     path: &crate::flow::Playthrough,
@@ -3318,7 +3924,7 @@ fn build_critical_path(
         let (prev_id, prev_area, prev_idx) = &pair[0];
         let (_, next_area, _) = &pair[1];
         if prev_area != next_area
-            && let Some(ResolvedAnchor::Point { pos, .. }) = entry_anchor(anchors, next_area)
+            && let Some(ResolvedAnchor::Point { pos, .. }) = anchors.entry_anchor(next_area)
         {
             transport.insert(prev_id.clone(), *pos);
             transport_by_step[*prev_idx] = Some(*pos);
@@ -3735,7 +4341,7 @@ impl PressAnswer {
 /// **What happens when the campaign leaves a pressable body silent.**
 ///
 /// The policy is a property of the **body class**, not of this function, so
-/// extending an owner ruling from one class to another is a changed arm in
+/// extending the policy from one class to another is a changed arm in
 /// [`press_answer_sites`] rather than a re-architecture. The site that builds the
 /// answers is shared; only this decides who supplies the wording.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -4866,11 +5472,18 @@ struct WorldSocket {
 type Node = (usize, u8);
 
 /// Verify every objective anchored in `area_id` is reachable from the area's
-/// `spawn` using only gates already opened by earlier objectives in the DAG order
-/// ([`DW_GATE_DEADLOCK`]). No-op for areas without gates.
+/// entry point using only gates already opened by earlier objectives in the DAG
+/// order ([`DW_GATE_DEADLOCK`]). No-op for areas without gates.
+///
+/// `entry` is the anchor name [`AnchorTable::entry_anchor_name`] resolved for
+/// this area — handed in rather than looked up, because this proof reads its
+/// start node out of prefab metadata (it needs the *piece* the anchor sits in,
+/// which the resolved map does not record) and a second lookup here would be a
+/// second place that decides what an entry is.
 fn check_gate_reachability(
     campaign: &Campaign,
     area_id: &str,
+    entry: Option<&str>,
     pieces: &[PiecePlacement],
     registry: &PrefabRegistry,
     severed: Option<&BTreeSet<[i32; 3]>>,
@@ -4905,13 +5518,10 @@ fn check_gate_reachability(
     let sockets = world_sockets(pieces, registry);
     let adj = build_adjacency(&sockets, pieces, registry, &gates, severed);
 
-    // The entry piece, resolved through the same alias list every other consumer
-    // uses (`spawn`, then `entry`) — the gate-deadlock proof must start where the
-    // player actually starts, and the island tileset spells that anchor `entry`.
-    let Some(spawn) = ENTRY_ANCHOR_NAMES
-        .iter()
-        .find_map(|name| anchor_node(pieces, registry, name, &gates))
-    else {
+    // The entry piece: the anchor the ONE resolver picked for this area. The
+    // proof must start where the player actually starts, and what an entry is
+    // is not this function's question.
+    let Some(spawn) = entry.and_then(|name| anchor_node(pieces, registry, name, &gates)) else {
         return Ok(()); // no entry anchor in this area → DW0345 reports it at build
     };
 

@@ -70,7 +70,7 @@ use delvewright_dsl::siteplan::{
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, NodeId};
 use serde::Serialize;
 
-use crate::plan::{AreaPlacement, PiecePlacement, ResolvedAnchor};
+use crate::plan::{AnchorRole, AreaPlacement, PiecePlacement, ResolvedAnchor};
 use crate::solver::{Rotation, SealFill};
 
 /// The blockout's legibility palette (spec-0049 §5.1).
@@ -193,12 +193,20 @@ impl Blockout {
         })
     }
 
-    /// The synthesized spatial vocabulary, ready to seat in a plan's anchor map.
+    /// The synthesized spatial vocabulary, ready to seat in a plan's anchor map
+    /// — each name, where it is, and **what it is for** where that is a question
+    /// the compiler has to answer without being told the name (spec-0046).
     ///
     /// Consumed once, by [`crate::plan::Plan::build`]; a second consumer would
     /// be a second area claiming the same cells, which is why this hands out
     /// owned values rather than a borrow anything could hold.
-    pub fn anchors(&self) -> Vec<(&str, ResolvedAnchor)> {
+    ///
+    /// The role travels with the anchor rather than being recovered by the
+    /// consumer comparing a name against [`ENTRY_ANCHOR`]: this derivation is
+    /// the producer that knows which node the graph calls its entry, and a
+    /// consumer that re-derived it from a spelling would be the second place
+    /// deciding what an entry is — the exact thing spec-0046 removes.
+    pub fn anchors(&self) -> Vec<(&str, ResolvedAnchor, Option<AnchorRole>)> {
         self.synthesized
             .iter()
             .map(|(name, spec)| {
@@ -213,7 +221,11 @@ impl Blockout {
                         block: block.clone(),
                     },
                 };
-                (name.as_str(), resolved)
+                // `derive` writes exactly one anchor under this name, and only
+                // for the graph's entry node — so the comparison is reading
+                // back this module's own single claim, not re-answering it.
+                let role = (name == ENTRY_ANCHOR).then_some(AnchorRole::Entry);
+                (name.as_str(), resolved, role)
             })
             .collect()
     }
@@ -631,6 +643,17 @@ fn derive_bound(
             palette::AIR
         };
         mass.write(lo, hi, block);
+        // A ceiling laid one course into the play space. Written here rather
+        // than in (2) because (2)'s course sits ABOVE the play space and this
+        // pass would clear anything laid inside it — the defect has to survive
+        // the clear to be a defect at all.
+        if perturb.low_ceiling == Some(b.node.0.as_str()) {
+            mass.write(
+                [lo[0], hi[1], lo[2]],
+                [hi[0], hi[1], hi[2]],
+                palette::CEILING,
+            );
+        }
     }
 
     // (4) Every seam's frame.
@@ -717,9 +740,10 @@ fn derive_bound(
                 AnchorSpec::Point(narrow(footing(&mass, host, unlock_cell(s, host)))),
             );
         }
-        // The entry. Spelled rather than given a role — see
-        // `delvewright_dsl::siteplan::ENTRY_ANCHOR` for why, and for what
-        // spec-0046 will replace it with.
+        // The entry. `ENTRY_ANCHOR` is the name it stands under; what makes it
+        // the entry is the role `Blockout::anchors` hands out with it
+        // (spec-0046), which is what the compiler resolves. The graph says
+        // which node this is, so nothing downstream has to read a spelling.
         if let Some(b) = by_node.get(graph.entry.0.as_str()).copied() {
             anchors.insert(
                 ENTRY_ANCHOR.to_string(),
@@ -953,46 +977,71 @@ fn tread(
 
     // The run is horizontal. Across a vertical face it is spent along that
     // face's normal; through a floor or a ceiling it may run either way, so the
-    // host's longer horizontal axis is what it has. Same rule `DW0830` measures
-    // the plan against.
-    let (run_axis, available) = if s.normal_axis == 1 {
+    // host's longer horizontal axis is what it has. Same axis rule `DW0830`
+    // measures the plan against.
+    let run_axis = if s.normal_axis == 1 {
         let ex = host.foot[1] - host.foot[0] + 1;
         let ez = host.foot[3] - host.foot[2] + 1;
-        if ex >= ez { (0usize, ex) } else { (2usize, ez) }
+        if ex >= ez { 0usize } else { 2 }
     } else {
-        let a = s.normal_axis;
-        (
-            a,
-            if a == 0 {
-                host.foot[1] - host.foot[0] + 1
-            } else {
-                host.foot[3] - host.foot[2] + 1
-            },
-        )
+        s.normal_axis
     };
+
+    // **Where the run starts, how it walks, and how much of it there really
+    // is** — one decision, because the third answer depends on the first two.
+    //
+    // **The stair arrives AT its seam**, so the top course is the one the body
+    // steps off from and the run walks back into the room. Across a vertical
+    // face that is the course against the wall, and the run walks the whole
+    // footprint, so the host's extent on this axis IS what it affords.
+    //
+    // Through a FLOOR or a CEILING it is the course under the hole, and the run
+    // leaves along whichever side of the hole the host has more of — so what
+    // the treads have is the room on THAT side plus the hole's own width, never
+    // the host's whole extent. Measuring the extent here measures the room on
+    // both sides of a stair that only ever runs down one, which is a run the
+    // host does not have; a pitch chosen against it does not fit, and the
+    // courses that fall off the far wall are a stair with its bottom missing.
+    let (start, step, available) = if s.normal_axis == 1 {
+        let (olo_r, ohi_r) = (
+            olo[run_axis].max(lo[run_axis]),
+            ohi[run_axis].min(hi[run_axis]),
+        );
+        if olo_r > ohi_r {
+            return false; // the hole is not over this host — `DW0828`'s finding.
+        }
+        let width = ohi_r - olo_r + 1;
+        let room_lo = olo_r - lo[run_axis];
+        let room_hi = hi[run_axis] - ohi_r;
+        if room_lo >= room_hi {
+            (ohi_r, -1, room_lo + width)
+        } else {
+            (olo_r, 1, room_hi + width)
+        }
+    } else if s.plane > host.foot[if run_axis == 0 { 1 } else { 3 }] {
+        (hi[run_axis], -1, hi[run_axis] - lo[run_axis] + 1)
+    } else {
+        (lo[run_axis], 1, hi[run_axis] - lo[run_axis] + 1)
+    };
+
     let Some(pitch) = gentlest_pitch(table, reads, climb, available) else {
         return false; // `DW0830` refused this plan; there is no standard to build.
     };
     let courses = ceil_div(climb * i64::from(pitch.run), i64::from(pitch.rise)).max(1);
 
-    // **The stair arrives AT its seam**, so the top course is the one the body
-    // steps off from and the run walks back into the room. Across a vertical
-    // face that is the course against the wall; through a floor it is the course
-    // under the hole, and the run leaves along whichever side of the hole the
-    // host has more of.
-    let (start, step) = if s.normal_axis == 1 {
-        let room_lo = olo[run_axis] - lo[run_axis];
-        let room_hi = hi[run_axis] - ohi[run_axis];
-        if room_lo >= room_hi {
-            (ohi[run_axis], -1)
-        } else {
-            (olo[run_axis], 1)
-        }
-    } else if s.plane > host.foot[if run_axis == 0 { 1 } else { 3 }] {
-        (hi[run_axis], -1)
-    } else {
-        (lo[run_axis], 1)
-    };
+    // **A run is laid whole or not at all.** `gentlest_pitch` was asked for a
+    // standard that fits exactly this span and `courses` is that standard's own
+    // arithmetic over the same climb, so this cannot fire — it is kept because
+    // of what the alternative was. Laying the courses that DO fit and stopping
+    // silently builds a stair whose bottom is missing, which reads as a stair to
+    // every later reader and is not one: the body climbs into the place from
+    // above and can never stand on its floor, and NOTHING says so, because a
+    // place is "reached" the moment a body stands anywhere inside it. Refusing
+    // instead leaves the climb unbuilt, which is a state the observer can see —
+    // an unreached place is `DW0837`.
+    if courses > available {
+        return false;
+    }
 
     // Which cells across the run the treads occupy: the opening's own width,
     // clipped to the host. A stair the width of its doorway is what a body can
@@ -1016,9 +1065,10 @@ fn tread(
             continue;
         }
         let at = start + step * k;
-        if at < lo[run_axis] || at > hi[run_axis] {
-            break;
-        }
+        debug_assert!(
+            at >= lo[run_axis] && at <= hi[run_axis],
+            "the run was proven to fit the host before a block was written"
+        );
         let whole = h16 / 16;
         let half = h16 % 16 != 0;
         let mut a = [0i64; 3];
@@ -2095,7 +2145,14 @@ fn identities(
                     "the BUILT world does not keep `{f}`: measured {measured}, and the brief asks for \
                  {cmp} {want}{unit}. The brief's sentence was: \"{note}\". The plan itself keeps \
                  this identity — stage 4 said so over the same comparison — so what disagrees is \
-                 the mass, and the repair is in the derivation rather than in the campaign. This \
+                 the MASS. Two things put mass in a place and only one of them is a defect: the \
+                 derivation may have built it wrong — a course laid low, a ceiling somewhere the \
+                 plan did not put it — or the PLAN may have given this place something to hold, a \
+                 stair's treads most often, that stands in the space the brief's number claims. \
+                 So read the measured figure against what the plan asked this place to carry \
+                 before touching the derivation: where a place is paying for a run of treads it \
+                 was never given the room for, the repair is in the plan — move the seam, host \
+                 the stair in the other place, or give this one the footprint the run costs. This \
                  is the second of the identity's two call sites, and it exists exactly so that a \
                  derivation defect which moved a datum cannot hide behind a plan-time green.",
                     f = id.fact,
@@ -2178,26 +2235,55 @@ fn built_span(b: &PlacedBox, world: &crate::nav::World, axis: usize) -> Option<(
 }
 
 /// A place's built headroom over its realized walk plane, capped at what the
-/// plan declares.
+/// plan declares: **the tallest stack of clear cells standing over that plane at
+/// any column of the footprint.**
 ///
 /// The cap is what makes a sky-open place answerable: an open place makes no
 /// claim on the air above its own headroom, so counting upward past it would be
 /// measuring the sky. A closed place never reaches the cap unless its ceiling is
 /// where the plan put it, which is the disagreement this measure exists to find.
+///
+/// # Over the footprint, and not at one column
+///
+/// This counted upward from the box's CENTRE, which is the one cell a plan is
+/// most likely to have put something in: a stair hosted here arrives at its seam
+/// and walks back through the middle of the room, so on the fixture's own hall
+/// the centre column is a tread and the measure answered **0** for a room whose
+/// ceiling is exactly where the plan put it. Nothing about that answer was wrong
+/// as arithmetic and everything about the question was — the identity asks how
+/// tall the place is, and a column is not a place.
+///
+/// The maximum, rather than the minimum or a sample: a place this derivation
+/// builds has a FLAT ceiling, so every column carrying no massing answers the
+/// same number and that number IS the height. Massing the plan itself put here —
+/// treads, most often — only ever answers *less*, so it cannot inflate the
+/// reading, and the minimum would have the mirror-image defect of the centre
+/// column with none of its luck. What the maximum does not promise is that a
+/// body has this much air EVERYWHERE in the place; nothing asks that, and
+/// `DW0837` is what proves a place walkable.
+///
+/// The sibling measure had already met this and said so: [`built_extent`] moved
+/// to the top course of the play space precisely because a stair the plan hosts
+/// stands on the floor. This is that reasoning arriving on the vertical axis,
+/// where the top course is not available to hide in.
 fn built_height(b: &PlacedBox, boxes: &[PlacedBox], world: &crate::nav::World) -> Option<i64> {
     let plane = built_plane(b, boxes, world)?;
-    let mut n = 0i64;
     let cap = i64::from(b.clearance);
-    let mut c = b.centre();
-    c[1] = plane;
-    while n < cap {
-        if !world.is_clear(narrow(c)) {
-            break;
+    let (lo, hi) = b.space();
+    let mut best = 0i64;
+    for z in lo[2]..=hi[2] {
+        for x in lo[0]..=hi[0] {
+            let mut n = 0i64;
+            while n < cap && world.is_clear(narrow([x, plane + n, z])) {
+                n += 1;
+            }
+            if n >= cap {
+                return Some(cap);
+            }
+            best = best.max(n);
         }
-        n += 1;
-        c[1] += 1;
     }
-    Some(n)
+    Some(best)
 }
 
 /// The centre of a place's built interior, on the two horizontal axes.
@@ -2341,6 +2427,13 @@ pub struct Perturb {
     /// Leave this place's interior solid. Reddens `DW0837`: the place exists,
     /// its seams are cut, and there is nowhere in it to stand.
     pub brick_up: Option<&'static str>,
+    /// Close this place one course lower than the plan put its ceiling, leaving
+    /// its floor, its walls and every opening exactly where they are. Reddens
+    /// `DW0833`'s second call site on a `box-height` identity and NOTHING else —
+    /// no datum moves, so `DW0836`'s realized rise is untouched, and the place
+    /// stays walkable, so `DW0837` is untouched. That narrowness is the point:
+    /// it is a defect only the headroom measure can see.
+    pub low_ceiling: Option<&'static str>,
 }
 
 impl Perturb {
@@ -2352,6 +2445,7 @@ impl Perturb {
             sink: None,
             short_walls: false,
             brick_up: None,
+            low_ceiling: None,
         }
     }
 

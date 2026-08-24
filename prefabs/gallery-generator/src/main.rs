@@ -64,20 +64,39 @@ const DIVIDER_Z: i32 = 15;
 /// prefab-declared gate anchor opens.
 const GATES: [(i32, i32); 5] = [(14, 15), (24, 25), (4, 5), (9, 10), (19, 20)];
 
-/// What an anchor is FOR, in one line, printed into the metadata so a creator
-/// reading the piece can tell the roles apart without reading the campaign.
+/// One named place in the hall.
+///
+/// Two of its keys read as the same question and are not. **`note` is prose for
+/// a person** — one line saying what the gallery does with this place, printed
+/// so a creator reading the piece can tell the anchors apart without the
+/// campaign in hand, and read by nothing. **`role` is a term in the engine's
+/// own closed vocabulary** (`AnchorRole`), which the compiler resolves when it
+/// has to find a place without being told its name.
+///
+/// They are separate keys because they answer to separate readers, and the one
+/// time they shared a name it cost this: the prose sat under `role` while the
+/// engine modelled no such key, so it landed in the anchor's unknown-key
+/// catch-all and every build reported it as `DW0543`. The moment `role` became
+/// a modelled enum, the sentence stopped being an unknown key and became a
+/// malformed value — which skips the WHOLE file (`DW0346`), taking the three
+/// gate anchors with it and surfacing as three `DW0343`s that named the gates
+/// and never mentioned the cause.
 struct Anchor {
     name: &'static str,
     /// A point anchor: the cell a body stands in.
     pos: [i32; 3],
-    /// The compass facing a body placed here takes, when the role has one.
+    /// The compass facing a body placed here takes, where the place has one.
     facing: Option<&'static str>,
     /// The block a `trap` at this anchor triggers on. Declared only where a trap
     /// really sits, and it is what makes a FLAG-GATED trap sound (`DW0363`): a
     /// gate removes the trigger from the world while it is shut, which is safe
     /// for a plate or a wire and destroys a trapped chest's inventory.
     trigger_block: Option<&'static str>,
-    role: &'static str,
+    /// Prose, for a person reading the piece. See the type's own note.
+    note: &'static str,
+    /// A term of the engine's vocabulary, for the compiler. `None` on every
+    /// place the compiler is always told the name of, which is all but one.
+    role: Option<&'static str>,
 }
 
 /// A region anchor — a gate. `from`/`to` are inclusive local corners and the
@@ -86,162 +105,223 @@ struct GateAnchor {
     name: &'static str,
     from: [i32; 3],
     to: [i32; 3],
-    role: &'static str,
+    note: &'static str,
 }
 
 /// **The anchor inventory, written once.**
 ///
-/// Named by ROLE rather than by coordinate. A grid of `anchor/plot-7`s would
+/// Named by PURPOSE rather than by coordinate. A grid of `anchor/plot-7`s would
 /// bind exactly the same units and tell a reader nothing, and legibility is a
 /// property the gallery is required to have, not a nicety: the point of the
 /// artifact is that a creator can go from an element to the surface it
 /// exercises. So every anchor here says what the gallery does with it.
 const ANCHORS: &[Anchor] = &[
+    // The arrival, and the DECOY that stands behind it. Read as a pair: they are
+    // the gallery's one instance of *how the compiler finds a place it was never
+    // told the name of*, and neither of them means anything without the other.
+    //
+    // `anchor/arrival` is named like every other place in the hall — for what the
+    // gallery does with it — and it is the entry only because it SAYS it is. That
+    // is the whole of spec-0046: the name is the piece author's business, the role
+    // is the engine's, and a producer whose anchor keys are always `anchor/<stem>`
+    // (the grammar back end) can declare an entry without being able to spell one.
     Anchor {
-        name: "spawn",
+        name: "anchor/arrival",
         pos: [15, 1, 2],
         facing: Some("south"),
         trigger_block: None,
-        role: "where the party arrives",
+        note: "where the party arrives — the entry, declared by ROLE and not by name",
+        role: Some("entry"),
+    },
+    // `spawn` is one of the two compatibility spellings the compiler falls back to
+    // for a piece that predates the role (`ENTRY_ANCHOR_NAMES`), and it is the
+    // first of them, so it is what the fallback finds. It stands ten cells west of
+    // the real arrival, on the same strip of floor, and NOTHING in the campaign
+    // binds it.
+    //
+    // It is here so that the precedence is a fact this campaign proves rather than
+    // a sentence in a doc comment. With the role declared, the entry is
+    // `anchor/arrival` and this anchor is inert. Delete the `role` above and the
+    // resolver falls back to this name: `setworldspawn`, the class-apply teleport,
+    // the first-join placement, the `dw:cp` seed and the POV planner's first frame
+    // all move ten blocks west, together, in the emitted datapack. That is the
+    // perturbation this element exists to answer — a gallery element that cannot
+    // fail when the surface it covers is removed is coverage in name only.
+    //
+    // Where it stands is chosen so that the perturbed campaign still BUILDS, and
+    // both halves of that were measured rather than guessed. Ten cells down the
+    // near hall's centre line is far enough that every seated body visibly moves;
+    // it is still dead ahead of `anchor/shortcut-door`, which is what keeps
+    // `DW0374`'s proof true (opening the shortcut must shorten the walk from the
+    // campaign entry to its own unlock). A decoy at the mouth of one of the other
+    // four gates — `[5, 1, 2]` was tried — reds that proof instead, and a
+    // perturbation that refuses the build proves the point by destroying the
+    // evidence: nothing can then be counted path by path.
+    Anchor {
+        name: "spawn",
+        pos: [15, 1, 12],
+        facing: Some("south"),
+        trigger_block: None,
+        note: "the compatibility spelling, standing where the party must NOT arrive: \
+               what the entry falls back to if the arrival stops declaring its role",
+        role: None,
     },
     Anchor {
         name: "anchor/lectern",
         pos: [10, 1, 5],
         facing: Some("north"),
         trigger_block: None,
-        role: "the speaking part: dialogue, barks, the cast ledger",
+        note: "the speaking part: dialogue, barks, the cast ledger",
+        role: None,
     },
     Anchor {
         name: "anchor/warden",
         pos: [20, 1, 5],
         facing: Some("north"),
         trigger_block: None,
-        role: "the second speaking part, so a root SWAP has somewhere to go",
+        note: "the second speaking part, so a root SWAP has somewhere to go",
+        role: None,
     },
     Anchor {
         name: "anchor/pedestal",
         pos: [15, 1, 9],
         facing: Some("north"),
         trigger_block: None,
-        role: "the thing a player presses: interact objectives and click triggers",
+        note: "the thing a player presses: interact objectives and click triggers",
+        role: None,
     },
     Anchor {
         name: "anchor/hearth",
         pos: [5, 1, 9],
         facing: Some("east"),
         trigger_block: None,
-        role: "the respawn point — a bonfire and a plain checkpoint alike",
+        note: "the respawn point — a bonfire and a plain checkpoint alike",
+        role: None,
     },
     Anchor {
         name: "anchor/stall",
         pos: [23, 1, 9],
         facing: Some("west"),
         trigger_block: None,
-        role: "the shop counter: offers, stakes, forfeits",
+        note: "the shop counter: offers, stakes, forfeits",
+        role: None,
     },
     Anchor {
         name: "anchor/counter",
         pos: [26, 1, 9],
         facing: Some("west"),
         trigger_block: None,
-        role: "the shop affordance. Three blocks EAST of the stall: clear of \
+        note: "the shop affordance. Three blocks EAST of the stall: clear of \
                the vendor body (DW0359), and standing where the critical path \
                already looks, so the POV shot that ends at the counter frames \
                something the campaign declares instead of empty floor",
+        role: None,
     },
     Anchor {
         name: "anchor/muster",
         pos: [15, 1, 19],
         facing: Some("south"),
         trigger_block: None,
-        role: "where a wave is seated and a lane begins",
+        note: "where a wave is seated and a lane begins",
+        role: None,
     },
     Anchor {
         name: "anchor/march",
         pos: [15, 1, 24],
         facing: Some("south"),
         trigger_block: Some("minecraft:stone_pressure_plate"),
-        role: "the far end of a lane's march",
+        note: "the far end of a lane's march",
+        role: None,
     },
     Anchor {
         name: "anchor/west-bay",
         pos: [5, 1, 22],
         facing: Some("east"),
         trigger_block: Some("minecraft:tripwire[attached=true]"),
-        role: "a room-sized volume: lethal boxes, teleport boxes, region edits",
+        note: "a room-sized volume: lethal boxes, teleport boxes, region edits",
+        role: None,
     },
     Anchor {
         name: "anchor/east-bay",
         pos: [25, 1, 22],
         facing: Some("west"),
         trigger_block: None,
-        role: "the second volume, so a pair of region verbs never share a box",
+        note: "the second volume, so a pair of region verbs never share a box",
+        role: None,
     },
     Anchor {
         name: "anchor/pocket",
         pos: [26, 1, 3],
         facing: Some("west"),
         trigger_block: None,
-        role: "inside the barrier pocket. Its only way in is the full-cube course \
+        note: "inside the barrier pocket. Its only way in is the full-cube course \
                in the wall line, so a body that walks here has crossed a line its \
                species is not allowed through — which is the whole of what a \
                `traversal` declaration answers. Off the critical path on purpose: \
                blocking geometry on the route makes the build's render plan and \
                the one `snapshot` derives disagree",
+        role: None,
     },
     Anchor {
         name: "anchor/rafters",
         pos: [21, 1, 27],
         facing: Some("west"),
         trigger_block: None,
-        role: "where the ambush stages, 24 blocks from the hearth because a body \
+        note: "where the ambush stages, 24 blocks from the hearth because a body \
                inside a respawn point's aggro radius is DW0478",
+        role: None,
     },
     Anchor {
         name: "anchor/lane-west",
         pos: [5, 1, 26],
         facing: Some("east"),
         trigger_block: None,
-        role: "one end of the patrol lane — 20 blocks from its partner, because a \
+        note: "one end of the patrol lane — 20 blocks from its partner, because a \
                leg under 12 is one vanilla re-rolls off the lane (DW0386)",
+        role: None,
     },
     Anchor {
         name: "anchor/lane-east",
         pos: [25, 1, 26],
         facing: Some("west"),
         trigger_block: None,
-        role: "the other end of the patrol lane",
+        note: "the other end of the patrol lane",
+        role: None,
     },
     Anchor {
         name: "anchor/west-pit",
         pos: [9, 1, 22],
         facing: None,
         trigger_block: None,
-        role: "a killing volume with nothing posted in it (DW0511)",
+        note: "a killing volume with nothing posted in it (DW0511)",
+        role: None,
     },
     Anchor {
         name: "anchor/east-pit",
         pos: [21, 1, 22],
         facing: None,
         trigger_block: None,
-        role: "the second killing volume, so the two never share a box",
+        note: "the second killing volume, so the two never share a box",
+        role: None,
     },
     Anchor {
         name: "anchor/vantage",
         pos: [15, 1, 27],
         facing: Some("north"),
         trigger_block: None,
-        role: "where a camera stands to look back down the hall",
+        note: "where a camera stands to look back down the hall",
+        role: None,
     },
     Anchor {
         name: "anchor/loft",
         pos: [19, LOFT_TOP_Y + 1, 18],
         facing: Some("south"),
         trigger_block: None,
-        role: "on top of the mezzanine, which the broken flight is the ONLY way \
+        note: "on top of the mezzanine, which the broken flight is the ONLY way \
                onto. Three courses above the floor and a body steps one, so \
                anything staged here is content the campaign has to open a way to \
                — which is what makes the way load-bearing instead of scenery",
+        role: None,
     },
     // Kept clear of the outer wall on purpose: a POV camera stands on an anchor
     // and looks along the leg it is walking, so an anchor one or two blocks from
@@ -251,7 +331,8 @@ const ANCHORS: &[Anchor] = &[
         pos: [11, 1, 25],
         facing: Some("south"),
         trigger_block: None,
-        role: "the finale: the last thing a player reaches",
+        note: "the finale: the last thing a player reaches",
+        role: None,
     },
 ];
 
@@ -269,14 +350,16 @@ const CONTAINERS: &[Anchor] = &[
         pos: [16, 1, 9],
         facing: Some("north"),
         trigger_block: None,
-        role: "the case a `collect` objective is filled from",
+        note: "the case a `collect` objective is filled from",
+        role: None,
     },
     Anchor {
         name: "anchor/reliquary",
         pos: [16, 1, 27],
         facing: Some("north"),
         trigger_block: None,
-        role: "the chest a `loot` declaration fills",
+        note: "the chest a `loot` declaration fills",
+        role: None,
     },
 ];
 
@@ -292,7 +375,8 @@ const SOLID_ANCHORS: &[Anchor] = &[Anchor {
     pos: [25, 5, 22],
     facing: None,
     trigger_block: None,
-    role: "the stone canopy a `collapse` brings down onto the east bay floor",
+    note: "the stone canopy a `collapse` brings down onto the east bay floor",
+    role: None,
 }];
 
 /// The canopy the collapse anchor points at: `(x0, x1, y, z0, z1)`, inclusive.
@@ -347,13 +431,13 @@ const GATE_ANCHORS: &[GateAnchor] = &[
         name: "anchor/gate-main",
         from: [4, 1, DIVIDER_Z],
         to: [5, 3, DIVIDER_Z],
-        role: "the long way through, off in the west corner: opened by quest progress",
+        note: "the long way through, off in the west corner: opened by quest progress",
     },
     GateAnchor {
         name: "anchor/shortcut-door",
         from: [14, 1, DIVIDER_Z],
         to: [15, 3, DIVIDER_Z],
-        role: "the souls shortcut: dead ahead of spawn, barred until it is unlocked \
+        note: "the souls shortcut: dead ahead of spawn, barred until it is unlocked \
                from the far side — which is what makes opening it SHORTEN the walk \
                (DW0374), where a second door beside the long one would not",
     },
@@ -361,7 +445,7 @@ const GATE_ANCHORS: &[GateAnchor] = &[
         name: "anchor/timed-door",
         from: [24, 1, DIVIDER_Z],
         to: [25, 3, DIVIDER_Z],
-        role: "the gate on a clock: opens and re-seals on its own cycle",
+        note: "the gate on a clock: opens and re-seals on its own cycle",
     },
     // Three clocked gates, not one, and the LETHAL one is last. A per-object
     // mechanic's defects only exist at cardinality ≥2 — the runtime suite bound
@@ -374,7 +458,7 @@ const GATE_ANCHORS: &[GateAnchor] = &[
         name: "anchor/timed-door-mid",
         from: [9, 1, DIVIDER_Z],
         to: [10, 3, DIVIDER_Z],
-        role: "the second gate on a clock, carrying nothing special — it is here so \
+        note: "the second gate on a clock, carrying nothing special — it is here so \
                the suite has a middle member to skip, which is how one-of-N coverage \
                shows up at all",
     },
@@ -382,7 +466,7 @@ const GATE_ANCHORS: &[GateAnchor] = &[
         name: "anchor/timed-door-inner",
         from: [19, 1, DIVIDER_Z],
         to: [20, 3, DIVIDER_Z],
-        role: "the LAST gate on a clock, and the only one that crushes: the \
+        note: "the LAST gate on a clock, and the only one that crushes: the \
                consequential member, declared last, where a walk that stops at the \
                first member never reaches it",
     },
@@ -996,14 +1080,17 @@ fn metadata() -> serde_json::Value {
         if let Some(t) = a.trigger_block {
             m.insert("trigger_block".into(), json!(t));
         }
-        m.insert("role".into(), json!(a.role));
+        m.insert("note".into(), json!(a.note));
+        if let Some(role) = a.role {
+            m.insert("role".into(), json!(role));
+        }
         anchors.insert(a.name.into(), Value::Object(m));
     }
     for g in GATE_ANCHORS {
         let mut m = Map::new();
         m.insert("region".into(), json!({ "from": g.from, "to": g.to }));
         m.insert("block".into(), json!("minecraft:iron_bars"));
-        m.insert("role".into(), json!(g.role));
+        m.insert("note".into(), json!(g.note));
         anchors.insert(g.name.into(), Value::Object(m));
     }
     json!({
@@ -1190,10 +1277,20 @@ struct AnnexTile {
     /// binds zero targets and the camera checks nothing by having been aimed —
     /// see [`ANNEX_ANCHOR_POS`].
     anchor: &'static str,
-    /// What that anchor is FOR, printed into the metadata beside it (the same
-    /// `role` key the hall's anchors carry) so a piece explains itself without
-    /// the campaign in hand.
-    anchor_role: &'static str,
+    /// Prose about that anchor, printed into the metadata beside it (the same
+    /// `note` key the hall's anchors carry) so a piece explains itself without
+    /// the campaign in hand. Read by nobody but a person.
+    anchor_note: &'static str,
+    /// The term of the ENGINE's anchor vocabulary that anchor declares, if any.
+    ///
+    /// This is the tileset the compiler has to FIND its way into: an annex
+    /// tile's anchor key is `anchor/<stem>`, which can spell neither `spawn`
+    /// nor `entry`, so before the role existed `area/annex` resolved no entry
+    /// point at all — every consumer that wanted one asked an honest question
+    /// about the wrong key and got an honest `None`. Not to be confused with
+    /// [`AnnexTile::role`] one field up, which is this tile's place in the
+    /// template POOL and means nothing outside it.
+    anchor_role: Option<&'static str>,
 }
 
 /// The cell every annex tile's anchor stands in: the middle of the floor, one
@@ -1209,7 +1306,8 @@ const ANNEX_TILES: &[AnnexTile] = &[
         role: "entry",
         weight: 1,
         anchor: "anchor/annex-threshold",
-        anchor_role: "where the annex is entered — the entry tile's floor centre",
+        anchor_note: "where the annex is entered — the entry tile's floor centre",
+        anchor_role: Some("entry"),
     },
     AnnexTile {
         id: "gallery-annex-cell",
@@ -1218,7 +1316,8 @@ const ANNEX_TILES: &[AnnexTile] = &[
         role: "connector",
         weight: 2,
         anchor: "anchor/annex-first-bay",
-        anchor_role: "the floor centre of the first bay the chain threads through",
+        anchor_note: "the floor centre of the first bay the chain threads through",
+        anchor_role: None,
     },
     // A SECOND two-socket variant, and the reason is `reseed-piece`: it re-rolls
     // a placed piece against the pool and refuses when no OTHER member can
@@ -1232,7 +1331,8 @@ const ANNEX_TILES: &[AnnexTile] = &[
         role: "connector",
         weight: 1,
         anchor: "anchor/annex-second-bay",
-        anchor_role: "the floor centre of the second bay the chain threads through",
+        anchor_note: "the floor centre of the second bay the chain threads through",
+        anchor_role: None,
     },
     AnnexTile {
         id: "gallery-annex-end",
@@ -1241,7 +1341,8 @@ const ANNEX_TILES: &[AnnexTile] = &[
         role: "terminal",
         weight: 1,
         anchor: "anchor/annex-cap",
-        anchor_role: "the floor centre of the tile that caps the chain",
+        anchor_note: "the floor centre of the tile that caps the chain",
+        anchor_role: None,
     },
 ];
 
@@ -1349,7 +1450,10 @@ fn annex_anchors(t: &AnnexTile) -> serde_json::Value {
     use serde_json::{json, Map, Value};
     let mut m = Map::new();
     m.insert("pos".into(), json!(ANNEX_ANCHOR_POS));
-    m.insert("role".into(), json!(t.anchor_role));
+    m.insert("note".into(), json!(t.anchor_note));
+    if let Some(role) = t.anchor_role {
+        m.insert("role".into(), json!(role));
+    }
     let mut anchors = Map::new();
     anchors.insert(t.anchor.into(), Value::Object(m));
     Value::Object(anchors)
@@ -1692,12 +1796,17 @@ fn yard_metadata() -> serde_json::Value {
             "data_version": DATA_VERSION,
             "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
         },
+        // `note`, not `role`. `role` is the engine's own closed vocabulary for
+        // what the compiler must FIND without being told a name (spec-0046);
+        // a sentence written there is a malformed value, and `DW0346` skips the
+        // whole file — so this piece would silently not exist. The prose an
+        // anchor carries and the term the engine reads are two keys.
         "anchors": {
             "yard-stone": {
                 "pos": YARD_SEAT,
                 "facing": "north",
                 "resolves_to": "space:yard",
-                "role": "where a body stands when the campaign seats it in this place"
+                "note": "where a body stands when the campaign seats it in this place"
             }
         },
         // The claim about what SIZE of box this piece is for, judged against its

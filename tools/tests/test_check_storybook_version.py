@@ -1,7 +1,6 @@
 """The storybook version gate (`tools/check-storybook-version.py`).
 
-The drift this pins (owner directive): a campaign's storybook is what
-a server host reads before running the delve, and the one internal fact it is
+The drift this pins: a campaign's storybook is what a server host reads before running the delve, and the one internal fact it is
 allowed to carry — which engine the delve needs — is a hand-typed number. Hand-
 typed numbers go stale the moment a campaign adopts a new `dsl_version`, and a
 stale one is worse than none: it tells a host on an old engine to go ahead.
