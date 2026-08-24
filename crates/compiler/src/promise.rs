@@ -38,16 +38,26 @@
 //!   authored prose the emitter drops on the floor, with nothing anywhere
 //!   saying so.
 //!
-//! # Every version, deliberately
+//! # Three obligations behind a fence, one contradiction in front of it
 //!
-//! All four judge what the document SAYS — a required field absent, or two
-//! authored fields contradicting each other — which is [`Binds::EveryVersion`]'s
-//! own stated category. None of them requires a campaign to HAVE anything it
-//! could not have had at any version: `title`, `hint` and `item_name` are all
-//! v0.3/v0.8 surface, and every campaign that declares an objective could
-//! always have written them. Measured before choosing, over every campaign blob
-//! reachable from the content repository: see the module tests and the round's
-//! blast-radius record.
+//! [`DW_PROMPT_UNSHOWN`] judges what the document SAYS — a `hint` that asks to be
+//! shown and an absent `title` that guarantees it will not be — which is
+//! `Binds::EveryVersion`'s own stated category, *a contradiction between two
+//! authored fields*. It requires nothing a campaign could not always have had:
+//! a document with no `hint` cannot violate it at any version.
+//!
+//! The other three **require the campaign to HAVE something**, which is the
+//! other category and the one that owes a fence. The doctrine's test — *could
+//! this go from green to red on a campaign whose own documents did not change?*
+//! — answers yes for all three, and it answered yes in practice on the first run:
+//! `keep-vertical` (0.3.0) and `souls-td-lanes` (0.6.0) are engine fixtures that
+//! declare an old version, carry a `kill` objective from before the announcement
+//! surface existed, and are entitled to keep compiling unchanged. That is what
+//! the fence is for, and editing them to satisfy a new obligation would destroy
+//! the version they exist to pin.
+//!
+//! [`PROMISE_SINCE`] states which version, and why it is that one rather than the
+//! number that happened to make the tests pass.
 //!
 //! # What these rules deliberately do NOT claim
 //!
@@ -80,7 +90,7 @@ use delvewright_dsl::{Campaign, Diagnostic, DwCode, Objective, QuestEffect};
 /// `(arming offset − prompt offset) + grace_ticks`, in ticks, on the arming's own
 /// timeline. `needed` is [`READ_LEAD_TICKS`] plus [`READ_TICKS_PER_CHAR`] per
 /// character of that prompt.
-pub const DW_CLOCK_UNREAD: DwCode = DwCode::every_version("DW0860");
+pub const DW_CLOCK_UNREAD: DwCode = DwCode::since("DW0860", PROMISE_SINCE);
 
 /// `DW0861`: a `collect` that **adopts a prefab container** and does not identify
 /// its target to the party — no `title`, so nothing is announced, or no
@@ -92,7 +102,7 @@ pub const DW_CLOCK_UNREAD: DwCode = DwCode::every_version("DW0860");
 /// objective activates, whereas an adopted container is — in
 /// [`Objective::Collect::container`]'s own words — *scenery the player has been
 /// walking past since minute one*.
-pub const DW_ADOPTED_CONTAINER_UNMARKED: DwCode = DwCode::every_version("DW0861");
+pub const DW_ADOPTED_CONTAINER_UNMARKED: DwCode = DwCode::since("DW0861", PROMISE_SINCE);
 
 /// `DW0862`: an objective authors a `hint` and no `title`, so the emitter shows
 /// **neither** and the prompt reaches no player.
@@ -117,7 +127,27 @@ pub const DW_PROMPT_UNSHOWN: DwCode = DwCode::every_version("DW0862");
 /// rod, an `interact` a lantern or its authored prop, a `collect` a chest, a
 /// `talk-to` a named body. A wave is bodies that appear somewhere, and the
 /// objective's own two lines are the only thing that can say where.
-pub const DW_FIGHT_UNSIGNED: DwCode = DwCode::every_version("DW0863");
+pub const DW_FIGHT_UNSIGNED: DwCode = DwCode::since("DW0863", PROMISE_SINCE);
+
+/// The `dsl_version` minor ordinal at which the three obligation-shaped rules in
+/// this module start binding: **`0.8.0`**.
+///
+/// Not the number that made the fixtures pass — that would have been anything
+/// above 6 — but the version at which an objective was first *required to say
+/// what it is*. `DW0481` binds from 0.8.0 and demands a `happening` on every
+/// objective: what this beat does to the story. These three are the same forcing
+/// function turned to face the player rather than the story, so they sit on the
+/// same line: from 0.8.0 an objective owes an account of itself in both
+/// directions, and below it owes neither.
+///
+/// The measurement that had to be cleared, over all 39 `quests.json` documents
+/// this repository ships plus every campaign blob in the content repository:
+/// exactly two documents violate a rule here without being a probe that means to
+/// — `crates/dsl/fixtures/valid/keep-vertical` at `0.3.0` and
+/// `crates/compiler/tests/fixtures/souls-td-lanes` at `0.6.0`, both `DW0863`.
+/// Both are grandfathered here. No campaign at any version violates any of the
+/// four.
+pub const PROMISE_SINCE: u32 = 8;
 
 /// Ticks allowed for a line to appear and the eye to reach it, before any of it
 /// is read. One second at 20 tps.
