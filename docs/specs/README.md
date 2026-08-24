@@ -48,7 +48,7 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0035](spec-0035-block-palette-selection.md) | Block palette selection — a screened shelf with a visual leaf | Proposed |
 | [spec-0036](spec-0036-spatial-contract.md) | The spatial contract — spaces, edges, levels, closure, and coverage | Proposed |
 | [spec-0037](spec-0037-named-partitions.md) | Named partitions — what the citadel concept asks of the grammar | Proposed |
-| [spec-0038](spec-0038-standing-fluid.md) | Standing fluid — declared bodies, and the flood level as runtime state | Proposed |
+| [spec-0038](spec-0038-standing-fluid.md) | Standing fluid — declared bodies, and the flood level as runtime state | Accepted |
 | [spec-0039](spec-0039-gallery-campaign.md) | The gallery campaign — every declared DSL surface, bound in one artifact | Accepted |
 | [spec-0040](spec-0040-map-composition.md) | Map composition — how a whole map gets its appearance | Superseded (ADR-0022) |
 | [spec-0041](spec-0041-instanced-claims-and-exterior-transit.md) | Instanced claims, and the climb that leaves the piece | Proposed |

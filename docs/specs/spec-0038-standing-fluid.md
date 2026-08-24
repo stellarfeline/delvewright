@@ -1,6 +1,6 @@
 # spec-0038: Standing fluid — declared bodies, and the flood level as runtime state
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Basis**: the engine supports a dynamic world; the
   commissioning instance is a citadel on a tidal rock whose sea level answers
   what the party has done, opening some routes and closing others. Two further
