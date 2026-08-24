@@ -62,9 +62,16 @@ pub const SCHEMA: &str = "delvewright.prefab-viewer/2";
 /// a second copy of the one number every other camera in this engine reads.
 pub const EYE_HEIGHT: f32 = delvewright_dsl::metrics::PLAYER_EYE_HEIGHT as f32;
 
-/// Anchor name stems that mean "the party's way in", in precedence order. The
-/// first one a prefab declares becomes the page's default point of view, because
-/// the first question a reviewer asks is what the place looks like on arrival.
+/// Anchor name stems that mean "the party's way in", in precedence order — the
+/// **guess**, consulted only when the piece does not say.
+///
+/// What a piece says is [`delvewright_dsl::prefab::AnchorRole::Entry`] on the
+/// anchor, and the page prefers it: an anchor that declares the role IS the way
+/// in, and a stem is a reading of a name its author chose for other reasons.
+/// The guess stays because most pieces in the library predate the role and a
+/// reviewer opening one of them should still arrive at its door — and it is
+/// wider than the compiler's own fallback on purpose, because being wrong here
+/// costs an opening camera rather than a world.
 pub const WAY_IN_STEMS: [&str; 4] = ["spawn", "entry", "entrance", "threshold"];
 
 /// The vendored renderer, and the two texture ids it is patched to ask for.
@@ -111,6 +118,10 @@ struct AnchorOut {
     from: Option<[i32; 3]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     to: Option<[i32; 3]>,
+    /// What the piece said this anchor is for, when it said anything — the
+    /// page's first answer to "which of these is the way in".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    role: Option<String>,
     /// True for a jigsaw socket rather than a declared anchor. A socket's facing
     /// points *out* of the piece, so its point of view looks the other way.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -508,6 +519,7 @@ fn collect_anchors(meta: Option<&PrefabMeta>) -> Vec<AnchorOut> {
             facing: a.facing.clone(),
             from: a.region.as_ref().map(|r| r.from),
             to: a.region.as_ref().map(|r| r.to),
+            role: a.role.map(|r| r.to_string()),
             socket: false,
         });
     }
@@ -518,6 +530,7 @@ fn collect_anchors(meta: Option<&PrefabMeta>) -> Vec<AnchorOut> {
             facing: Some(c.facing.clone()),
             from: None,
             to: None,
+            role: None,
             socket: true,
         });
     }

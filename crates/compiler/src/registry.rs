@@ -320,7 +320,7 @@ impl DamageTypeRegistry {
 /// is not a reason to re-declare the fields — it is a reason for the accessors
 /// below to read only what they read.
 pub use delvewright_dsl::prefab::{
-    Anchor as AnchorMeta, Connector, GateAnchor, PrefabMeta, Region,
+    Anchor as AnchorMeta, AnchorRole, Connector, GateAnchor, PrefabMeta, Region,
     SpatialContract as SpatialContractMeta, StructureMeta,
 };
 /// A face of the piece's face contract, and its opening. The opening is an

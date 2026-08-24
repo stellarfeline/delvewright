@@ -70,7 +70,7 @@ use delvewright_dsl::siteplan::{
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, NodeId};
 use serde::Serialize;
 
-use crate::plan::{AreaPlacement, PiecePlacement, ResolvedAnchor};
+use crate::plan::{AnchorRole, AreaPlacement, PiecePlacement, ResolvedAnchor};
 use crate::solver::{Rotation, SealFill};
 
 /// The blockout's legibility palette (spec-0049 §5.1).
@@ -193,12 +193,20 @@ impl Blockout {
         })
     }
 
-    /// The synthesized spatial vocabulary, ready to seat in a plan's anchor map.
+    /// The synthesized spatial vocabulary, ready to seat in a plan's anchor map
+    /// — each name, where it is, and **what it is for** where that is a question
+    /// the compiler has to answer without being told the name (spec-0046).
     ///
     /// Consumed once, by [`crate::plan::Plan::build`]; a second consumer would
     /// be a second area claiming the same cells, which is why this hands out
     /// owned values rather than a borrow anything could hold.
-    pub fn anchors(&self) -> Vec<(&str, ResolvedAnchor)> {
+    ///
+    /// The role travels with the anchor rather than being recovered by the
+    /// consumer comparing a name against [`ENTRY_ANCHOR`]: this derivation is
+    /// the producer that knows which node the graph calls its entry, and a
+    /// consumer that re-derived it from a spelling would be the second place
+    /// deciding what an entry is — the exact thing spec-0046 removes.
+    pub fn anchors(&self) -> Vec<(&str, ResolvedAnchor, Option<AnchorRole>)> {
         self.synthesized
             .iter()
             .map(|(name, spec)| {
@@ -213,7 +221,11 @@ impl Blockout {
                         block: block.clone(),
                     },
                 };
-                (name.as_str(), resolved)
+                // `derive` writes exactly one anchor under this name, and only
+                // for the graph's entry node — so the comparison is reading
+                // back this module's own single claim, not re-answering it.
+                let role = (name == ENTRY_ANCHOR).then_some(AnchorRole::Entry);
+                (name.as_str(), resolved, role)
             })
             .collect()
     }
@@ -728,9 +740,10 @@ fn derive_bound(
                 AnchorSpec::Point(narrow(footing(&mass, host, unlock_cell(s, host)))),
             );
         }
-        // The entry. Spelled rather than given a role — see
-        // `delvewright_dsl::siteplan::ENTRY_ANCHOR` for why, and for what
-        // spec-0046 will replace it with.
+        // The entry. `ENTRY_ANCHOR` is the name it stands under; what makes it
+        // the entry is the role `Blockout::anchors` hands out with it
+        // (spec-0046), which is what the compiler resolves. The graph says
+        // which node this is, so nothing downstream has to read a spelling.
         if let Some(b) = by_node.get(graph.entry.0.as_str()).copied() {
             anchors.insert(
                 ENTRY_ANCHOR.to_string(),
