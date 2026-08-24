@@ -4230,6 +4230,44 @@ was never compared against anybody's stated intent.
 | `DW0468` | `world.difficulty` is `peaceful`. Refused, not honoured: on peaceful the server calls `checkDespawn` on every entity as it ticks it and **discards every hostile-category mob** — being `/summon`ed, `NoAI` or `PersistenceRequired` saves none of them — so every wave, hostile actor and ambush in the campaign would silently cease to exist. The keyword parses (it is a variant precisely so this diagnostic can exist instead of a serde "unknown variant") and validation rejects it. Validation-tier (exit 1), `dsl::validate`. Prescription: declare `easy`, `normal` or `hard`; for a genuinely combat-free delve, omit `difficulty` entirely — a campaign with no waves already ships peaceful by derivation. |
 | `DW0469` | (**warning**; exit 0) A campaign stages actors meant to **fight** — unleashed into a real-AI twin, or declared `vulnerable` — but declares no `waves[]` and no `world.difficulty`, so it ships the derived `difficulty=peaceful` and a monster among them is discarded on the tick it spawns. "Meant to fight" is read off the campaign's own declarations (`unleash-actor`, `vulnerable`), never guessed from the species: the pinned entity registry is a membership set with no mob-category data, so *is this a monster* is exactly the question the compiler cannot answer — which is why this is advisory. Prescription: declare `world.difficulty`. |
 
+### DW0860–DW0863 — an objective keeps the promise its prompt makes (`compiler::promise`; error; exit 1)
+
+An objective carries exactly two player-facing strings — `title` and `hint` — and
+these four rules are the whole of what the compiler asserts about them. They exist
+because four playtest findings on two campaigns turned out to be one defect class:
+what the game tells the party and what the machine requires are not the same thing.
+
+One emitter fact is load-bearing under three of the four and is not visible in the
+schema: the activation announcement is emitted **only for a titled objective**, and
+the hint's line is nested inside that guard. An objective with no `title` therefore
+announces nothing at all — no chat line, no cue sound, and its wayfinding marker is
+summoned nameless — and an objective with a `hint` and no `title` shows *neither*.
+
+All four are `every_version`: each judges what the document says, which is
+`Binds::EveryVersion`'s own category, so the fence has nothing to grandfather.
+Every run prints a binding line naming what it examined, zeroes included.
+
+| Code | Meaning |
+|------|---------|
+| `DW0860` | **A failure clock nothing explained.** A `begin-stealth` with a non-empty `on_caught` is a clock: a player outside every zone for `grace_ticks` is punished by that bundle. It is refused when no `narrate` fires at or before the arming in the same effect bundle, or when the interval between the last such line and the clock's first bite is shorter than that line takes to read. The interval is `(arming offset − prompt offset) + grace_ticks` on the arming's own timeline, so a `sequence` step's `at_ticks` counts toward it; the reading floor is `20 + 2 × characters` ticks — one second to appear, then ten characters a second, which at five characters a word is 120 wpm. **The prompt the clock races is the LAST one before it**, not the sum of the bundle and not the longest: three mutually exclusive branch retellings of one beat are ordinary authoring and must not accumulate into a refusal, and the line still being read when the clock starts is the instruction. Prose in `on_caught` does not satisfy it — that line is read after the punishment. **Binding: `begin-stealth` effects with a non-empty `on_caught`**, over every effect root (the population is enumerated from `dsl::for_each_effect_root`, which asserts it reached all of them, never from a remembered list of places effects live). A `timed-gate` is deliberately out of scope: it arms at world load, not at a beat, so no prompt can precede it — what the party is owed there is the chance to watch it (`DW0388`) and a window worth reading (`DW0378`). Prescription: put a `narrate` before the arming saying what is now being asked, and give the clock time for it. Do NOT shorten the line to fit the clock. |
+| `DW0861` | **An adopted container nothing distinguishes.** A `collect` that sets `container` adopts a chest or barrel the prefab already placed, and is refused without both a `title` and an `item_name`. Adoption is what creates the ambiguity: the compiler's own chest at `anchor` is a new object that appears the tick the objective activates, whereas an adopted container is scenery the party has been walking past since the beat began, identical to every other barrel the piece put down, and the compiler adds nothing to it. The announcement and the name on the stack inside are then the only two things that can tell one box from its neighbours. **Binding: `collect` objectives with `container` set** — a `collect` that conjures its own chest is not this rule's subject. Prescription: give the objective a `title` and an `item_name`. Do NOT reach for `fill_count`: padding makes the right box read full, it does not say which box is right. |
+| `DW0862` | **A prompt the emitter will never show.** An objective authors a `hint` and no `title`. Because the announcement is guarded on the title and the hint is nested inside it, the party is shown neither — while the hint is still inventoried for translation and rendered into every language sidecar, so nothing anywhere reports that a translated, shipped line is never on a screen. **Binding: every objective.** An objective with *neither* string is not refused: this is a rule about a prompt that was written and is not shown, not about one nobody wrote. Prescription: give the objective a `title`; the hint is an announcement's second line, not an announcement. Do NOT delete the hint to clear it — that silences the beat rather than fixing it. |
+| `DW0863` | **A fight nothing points at.** A `kill` objective without both a `title` and a `hint`. A fight is the one objective kind the compiler leaves nothing in the world to find: `activation_commands` emits no command for it, no marker is summoned, no prop is placed, no name is written, and the render plan falls back to the literal phrase `the fight` because none exists. Every other kind leaves something standing — a `reach-anchor` a glowing end rod, an `interact` a lantern or its authored prop, a `collect` a chest, a `talk-to` a named body. So the objective's own two lines are the only thing that can say where the wave arrives. **Binding: `kill` objectives.** Prescription: write both lines, and let the hint say where. Do NOT rely on the wave's anchor being near the previous beat — nothing proves that, and nothing shows the party an anchor. |
+
+**What these deliberately do not claim.** The ledger's general form behind `DW0862`
+is *an objective's prompt names the place and the act that actually complete it*,
+and that is not what is proven: a machine cannot read prose for whether it names
+the right place. What is proven is the necessary condition — that the prompt
+reaches a player at all. The stronger reading was built and measured: keying "the
+place" to the objective's quest's declared `area` finds three objectives on a live
+campaign, and all three are correct — a quest booked in one area whose objective is
+*travelling to* the next names the destination on purpose. A quest's `area` is
+where the beat is booked, not where each objective completes, so it is not a sound
+proxy for the place. Likewise `DW0861` proves that the party is told what to look
+for and what they have found, not that the target is visually distinguishable from
+its neighbours; and the ledger's second disjunct — *or every copy satisfies it* —
+is not expressible at all, because `container` names one anchor.
+
 ### DW047x — combat winnability (`compiler::combat`; spec-0023)
 
 The arithmetic half of spec-0023's three combat proofs. The ruling behind them:
