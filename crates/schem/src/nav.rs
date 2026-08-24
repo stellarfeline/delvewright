@@ -323,6 +323,46 @@ mod tests {
         Grid { size, solid }
     }
 
+    /// The geometry the compiler's step rule refuses
+    /// (`delvewright_compiler::nav`, `step_up_needs_head_clearance_to_jump`),
+    /// stated here so the two answers can be read side by side. Feet at
+    /// `[0,1,0]`, a floor one course higher at `x = 1,2`, and — when
+    /// `low_ceiling` — a block on the cell the jumping body's head sweeps
+    /// through (`[0,3,0]`). The compiler shifts the same shape up to `y = 64`;
+    /// only the origin differs.
+    fn head_bonk(low_ceiling: bool) -> Grid {
+        let mut solid = BTreeSet::from([[0, 0, 0], [1, 1, 0], [2, 1, 0]]);
+        if low_ceiling {
+            solid.insert([0, 3, 0]);
+        }
+        Grid {
+            size: [3, 6, 1],
+            solid,
+        }
+    }
+
+    #[test]
+    fn a_full_block_rise_is_a_jump_and_needs_the_swept_head_cell_clear() {
+        let open = head_bonk(false);
+        let cells = standable_cells(&open);
+        assert!(cells.contains(&[0, 1, 0]) && cells.contains(&[2, 2, 0]));
+        assert!(
+            connected(&cells, &BTreeSet::from([[0, 1, 0]]), &BTreeSet::from([[2, 2, 0]])),
+            "open headroom: the jump up is walkable"
+        );
+
+        let low = head_bonk(true);
+        let cells = standable_cells(&low);
+        assert!(
+            cells.contains(&[0, 1, 0]) && cells.contains(&[2, 2, 0]),
+            "both ends are standable — the geometry differs only in the swept cell"
+        );
+        assert!(
+            !connected(&cells, &BTreeSet::from([[0, 1, 0]]), &BTreeSet::from([[2, 2, 0]])),
+            "a ceiling two courses over the feet blocks the jump, so no walk connects them"
+        );
+    }
+
     #[test]
     fn a_body_stands_on_a_floor_and_not_in_it() {
         let g = field([3, 4, 3]);
