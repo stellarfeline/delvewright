@@ -36,6 +36,11 @@ use crate::light::LightProbe;
 /// beside it cannot be read afterwards — a `lit` taken over four cells and a
 /// `lit` taken over four thousand are the same word.
 ///
+/// It also states the **sky the profile was taken at**, and the daylight figure
+/// beside it. A floor's light is not one number — the middle of a pavilion is
+/// bright at noon and black at midnight — so a level with no sky written beside
+/// it is unreadable in exactly the way an unstated binding is.
+///
 /// A probe that bound to nothing is never written; the caller refuses first
 /// (`DW0752`), because "unbound" is a finding about the piece and not a
 /// lighting profile.
@@ -44,12 +49,24 @@ pub fn set_lighting_from_probe(doc: &mut PrefabMeta, p: &LightProbe) {
         !p.is_unbound(),
         "an unbound probe is a finding, not a profile"
     );
+    let daylight = p
+        .min_light_daylight
+        .map(|d| format!("{d}"))
+        .unwrap_or_else(|| "n/a".to_string());
     let method = Some(format!(
-        "static block-light BFS estimate (delve-admit): min over {} roofed floor cell(s) \
-         reachable on foot from {} ground-level entry cell(s), of {} standable in the region \
-         box; openings treated as sealed edge (sky-light=0). NOT a live-server probe; \
-         dark_threshold={}. Re-probe live for borderline pieces.",
-        p.measured_cells, p.entry_cells, p.standable_cells, p.dark_threshold
+        "static light estimate (delve-admit, the compiler's block+sky flood): min over {} floor \
+         cell(s) reachable on foot from {} ground-level entry cell(s), of {} standable in the \
+         region box; the piece stands in open air, so sky light enters through its openings. \
+         Taken at effective sky {} (a clear night, the darkest the engine models); under full \
+         daylight (sky {}) the same minimum is {}. NOT a live-server probe; dark_threshold={}. \
+         Re-probe live for borderline pieces.",
+        p.measured_cells,
+        p.entry_cells,
+        p.standable_cells,
+        p.sky_light,
+        p.daylight_sky_light,
+        daylight,
+        p.dark_threshold
     ));
     doc.lighting = Some(match (p.profile, p.measured_min_light) {
         ("dark", Some(m)) => Lighting {

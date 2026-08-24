@@ -12,8 +12,8 @@ use delvewright_grammar::expand::Anchor;
 use delvewright_grammar::ir::{AxisSpec, Node, Reorient};
 use delvewright_grammar::library::castle;
 use delvewright_grammar::{
-    Axis, Box3, ExpandError, ExpandOptions, Facing, Mark, MarkAt, Program, ProgramError, Side,
-    expand,
+    AnchorRole, Axis, Box3, ExpandError, ExpandOptions, Facing, Mark, MarkAt, Program,
+    ProgramError, Side, expand, export_prefab,
 };
 
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
@@ -492,4 +492,84 @@ fn strip_marks(node: Node) -> Node {
         }
         other => other,
     }
+}
+
+// ---------------------------------------------------------------------------
+// What a mark's anchor is FOR (spec-0046)
+// ---------------------------------------------------------------------------
+
+/// **The gap this closes.** Every anchor this back end exports is keyed
+/// `anchor/<stem>` — deliberately, so a mark cannot name an anchor the DSL could
+/// not reference — and the compiler used to find a campaign's entry point by
+/// matching the bare names `spawn` and `entry`. No exported key can ever be one
+/// of those, so a generated zone could not declare an entry point at all.
+///
+/// The role is what a program says instead, and the key is untouched: this test
+/// asserts BOTH halves, because a fix that let the exporter write a bare key
+/// would satisfy the first and lose the invariant.
+#[test]
+fn a_mark_declares_what_its_anchor_is_for_without_touching_the_key() {
+    let program = marking(vec![
+        Mark::new("landing", MarkAt::FloorCenter).role(AnchorRole::Entry),
+        Mark::new("watch", MarkAt::CornerMin),
+    ]);
+    let export = export_prefab(
+        &program,
+        Box3::at_origin([5, 4, 5]),
+        &ExpandOptions::seeded(3),
+        "role-zone",
+    )
+    .expect("the zone exports");
+
+    let landing = &export.metadata.anchors["anchor/landing"];
+    assert_eq!(landing.role, Some(AnchorRole::Entry));
+    assert_eq!(
+        export.metadata.anchors["anchor/watch"].role, None,
+        "a mark that declares no role writes none"
+    );
+    for key in export.metadata.anchors.keys() {
+        assert!(
+            key.starts_with("anchor/"),
+            "a mark must not be able to name an anchor the DSL could not \
+             reference, role or no role: {key:?}"
+        );
+    }
+
+    // ...and the role is written where a reader of the document meets it.
+    let json = serde_json::to_string(&export.metadata).unwrap();
+    assert!(json.contains(r#""role":"entry""#), "{json}");
+}
+
+/// A role is `1.8.0` surface, so a document that declares less is refused where
+/// it is written rather than expanded with the field quietly dropped — the whole
+/// reason an optional field owes a fence (`grammar.md` §2e).
+#[test]
+fn a_role_written_below_its_version_is_refused_by_name() {
+    let program = marking(vec![
+        Mark::new("landing", MarkAt::FloorCenter).role(AnchorRole::Entry),
+    ])
+    .at_version("1.7.0");
+    match program.validate() {
+        Err(ProgramError::FencedConstruct {
+            construct,
+            since,
+            declared,
+            ..
+        }) => {
+            assert!(construct.contains("role"), "{construct}");
+            assert_eq!(since, "1.8.0");
+            assert_eq!(declared, "1.7.0");
+        }
+        other => panic!("a fenced field must be refused, not dropped: {other:?}"),
+    }
+
+    // The same program at the version that has the field is fine, so the
+    // refusal above is about the fence and not about the program.
+    assert!(
+        marking(vec![
+            Mark::new("landing", MarkAt::FloorCenter).role(AnchorRole::Entry)
+        ])
+        .validate()
+        .is_ok()
+    );
 }

@@ -483,6 +483,49 @@ pub struct PieceTemplate<'a> {
     pub size: [i32; 3],
 }
 
+/// **What an anchor is FOR**, when the compiler has to find it without being
+/// told its name (spec-0046).
+///
+/// A closed vocabulary the compiler owns, and deliberately small: a role is
+/// added by the change that teaches the compiler to resolve it, never by a
+/// producer that wants a label. Deserialising is therefore the whole
+/// validation — a term this engine does not know is a `serde` error naming the
+/// terms it does, which the prefab registry reports as `DW0346` against the
+/// file that wrote it, rather than a string ridden through into a resolution
+/// that silently never matches.
+///
+/// Distinct from [`ContractWay::role`], which is a *palette* role in a
+/// program's own vocabulary and means nothing outside it. This one is the
+/// engine's vocabulary, which is exactly why it is closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AnchorRole {
+    /// **The cell a body arrives at when it enters the area this piece is
+    /// placed in.** One per area: `setworldspawn`, the class-apply teleport,
+    /// first-join placement, inter-area transport, the POV planner's first
+    /// frame and the trap-safety start set all resolve it.
+    Entry,
+}
+
+impl AnchorRole {
+    /// Every term in the vocabulary, in declaration order — what a refusal
+    /// lists, so the message cannot drift from the type.
+    pub const ALL: &'static [AnchorRole] = &[AnchorRole::Entry];
+
+    /// The term as it is written in a document.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AnchorRole::Entry => "entry",
+        }
+    }
+}
+
+impl std::fmt::Display for AnchorRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// One entry of the `anchors` map.
 ///
 /// A point anchor carries `pos` (+ optionally `facing`); a gate anchor carries a
@@ -498,6 +541,23 @@ pub struct Anchor {
     /// Cardinal facing keyword.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub facing: Option<String>,
+    /// **What this anchor is for**, when the compiler has to find it without
+    /// being told its name (spec-0046).
+    ///
+    /// A campaign addresses an anchor by its name, and for everything a
+    /// campaign addresses that is the whole story. The entry point is the one
+    /// place a campaign does *not* name — the compiler has to find it — and
+    /// finding it by matching a spelling is a fact about the producer that
+    /// wrote the piece rather than about the piece. So the piece declares it,
+    /// every producer can write it, and none has to agree with another about
+    /// how it is spelled.
+    ///
+    /// Absent on every piece that predates the role, which is what keeps the
+    /// shipped library building byte-for-byte what it built before: the
+    /// compiler falls back to the name list when no anchor in an area declares
+    /// a role.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<AnchorRole>,
     /// Local cell range, for a gate anchor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub region: Option<Region>,
@@ -547,6 +607,12 @@ impl Anchor {
             facing: Some(facing.into()),
             ..Anchor::default()
         }
+    }
+
+    /// Declare what this anchor is for ([`Anchor::role`]).
+    pub fn with_role(mut self, role: AnchorRole) -> Anchor {
+        self.role = Some(role);
+        self
     }
 }
 
@@ -1425,5 +1491,44 @@ mod tests {
         assert!(!json.contains("null"), "{json}");
         assert!(json.contains("\"connectors\": []"), "{json}");
         assert_eq!(PrefabMeta::from_json(&json).unwrap(), meta);
+    }
+
+    /// The role vocabulary is closed **by the type**, so a term this engine does
+    /// not know is a parse failure naming the terms it does — not a string
+    /// carried into a resolution that then silently never matches.
+    ///
+    /// The mechanism is worth pinning rather than assuming: [`Anchor`] carries
+    /// a `#[serde(flatten)]` catch-all, which buffers the whole object, and a
+    /// buffered unknown enum variant is easy to believe would land in `extra`
+    /// instead of erroring. It does not.
+    #[test]
+    fn a_role_outside_the_vocabulary_is_refused_by_name() {
+        let anchor: Anchor =
+            serde_json::from_str(r#"{"pos": [1, 2, 3], "role": "entry"}"#).unwrap();
+        assert_eq!(anchor.role, Some(AnchorRole::Entry));
+        assert!(anchor.extra.is_empty(), "a modelled key is not `extra`");
+
+        let err = serde_json::from_str::<Anchor>(r#"{"pos": [1, 2, 3], "role": "spawn"}"#)
+            .expect_err("`spawn` is a NAME, and was never a role");
+        let msg = err.to_string();
+        assert!(msg.contains("unknown variant"), "{msg}");
+        for role in AnchorRole::ALL {
+            assert!(
+                msg.contains(role.as_str()),
+                "the refusal lists `{role}`: {msg}"
+            );
+        }
+    }
+
+    /// An anchor that declares no role writes no key, which is what keeps every
+    /// piece in the shipped library byte-for-byte what it was (spec-0046 §4.5).
+    #[test]
+    fn an_anchor_without_a_role_writes_no_role_key() {
+        let plain = serde_json::to_string(&Anchor::point([1, 2, 3], "north")).unwrap();
+        assert!(!plain.contains("role"), "{plain}");
+        let declared =
+            serde_json::to_string(&Anchor::point([1, 2, 3], "north").with_role(AnchorRole::Entry))
+                .unwrap();
+        assert!(declared.contains(r#""role":"entry""#), "{declared}");
     }
 }

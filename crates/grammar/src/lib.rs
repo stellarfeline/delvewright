@@ -132,7 +132,8 @@ pub use expand::{
 };
 pub use explain::GuardLeaf;
 pub use export::{
-    AnchorMetadata, ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash,
+    AnchorMetadata, AnchorRole, ExportError, PrefabExport, PrefabMetadata, export_prefab,
+    program_hash,
 };
 pub use gates::{Gate, Report, judge};
 pub use geom::{Axis, Box3, Orientation};

@@ -1,6 +1,6 @@
 # spec-0052: A quest names a place the graph declared — the campaign's vocabulary below node granularity
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Ground**: spec-0049 §5.2 (the synthesized vocabulary), spec-0050 §6 (the
   owed anchors and the re-binding map), and a measured capability gap: a
   campaign of eight pieces authored under the prefab placement authority —
