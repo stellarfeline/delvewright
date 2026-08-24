@@ -1972,9 +1972,8 @@ impl AnchorTable {
     pub fn resolve(&self, scope: AnchorScope<'_>, name: &str) -> AnchorHit<'_> {
         // 1. The referring area owns the name if it provides it.
         if let AnchorScope::Area(area) = scope
-            && let Some((key, anchor)) = self
-                .at
-                .get_key_value(&(area.to_string(), name.to_string()))
+            && let Some((key, anchor)) =
+                self.at.get_key_value(&(area.to_string(), name.to_string()))
         {
             return AnchorHit::Found {
                 area: key.0.as_str(),
@@ -3878,18 +3877,49 @@ fn build_critical_path(
                         flags_at.get(si).unwrap_or(&BTreeSet::new()),
                     ) {
                         Some(crate::cast::Station::At(anchor)) => {
-                            cast_point(anchors, home_area, anchor).ok_or_else(|| {
-                                PlanError::new(
-                                    DW_BUILD,
-                                    format!(
-                                        "internal invariant violation: quest `{qid}` casts npc \
-                                     `{npc}` at `{anchor}`, which resolves to no world position \
-                                     at build time — `DW0464` (dangling cast anchor) / `DW0142` \
-                                     should have named it in validation. This is a compiler bug; \
-                                     stop and escalate"
-                                    ),
-                                )
-                            })?
+                            match cast_point(anchors, area, home_area, anchor) {
+                                CastStation::At(a, pos) => (a, pos),
+                                // Not a compiler bug: the campaign named a place
+                                // whose name more than one building answers to,
+                                // and neither the beat's area nor the NPC's home
+                                // is one of them. Picking would settle it by
+                                // whichever area id sorts first.
+                                CastStation::Ambiguous(areas) => {
+                                    return Err(PlanError::new(
+                                        crate::gates::DW_ANCHOR_AMBIGUOUS,
+                                        format!(
+                                            "quest `{qid}` casts npc `{npc}` at `{anchor}`, and \
+                                             {n} of this campaign's areas provide that name \
+                                             ({list}) — neither the area this beat plays in \
+                                             (`{area}`) nor the npc's own area (`{home_area}`) is \
+                                             among them, so nothing an author can see says which \
+                                             building the body is standing in. An anchor name is \
+                                             unique per AREA, which is the scope every anchor \
+                                             reference resolves in. Rename the anchor in all but \
+                                             one of these areas, or cast the npc at a name the \
+                                             beat's own area provides",
+                                            n = areas.len(),
+                                            list = areas
+                                                .iter()
+                                                .map(|a| format!("`{a}`"))
+                                                .collect::<Vec<_>>()
+                                                .join(", "),
+                                        ),
+                                    ));
+                                }
+                                CastStation::Missing => {
+                                    return Err(PlanError::new(
+                                        DW_BUILD,
+                                        format!(
+                                            "internal invariant violation: quest `{qid}` casts \
+                                     npc `{npc}` at `{anchor}`, which resolves to no world \
+                                     position at build time — `DW0464` (dangling cast anchor) / \
+                                     `DW0142` should have named it in validation. This is a \
+                                     compiler bug; stop and escalate"
+                                        ),
+                                    ));
+                                }
+                            }
                         }
                         Some(crate::cast::Station::Absent(kind)) => {
                             return Err(PlanError::new(
@@ -4085,30 +4115,67 @@ fn build_critical_path(
     })
 }
 
-/// Resolve a **cast-ledger** anchor to `(area, cell)`: the NPC's own area first,
-/// then by name across areas.
+/// Where a cast-ledger anchor put a body.
+enum CastStation {
+    /// The area it resolved in, and the cell.
+    At(String, [i32; 3]),
+    /// More than one area provides the name and neither the beat's area nor the
+    /// NPC's home settles it. The areas, for the diagnostic.
+    Ambiguous(Vec<String>),
+    /// No placed piece provides the name.
+    Missing,
+}
+
+/// Resolve a **cast-ledger** anchor to `(area, cell)`: **the area the beat
+/// happens in** first, then the NPC's declared home, then an unambiguous
+/// crossing.
 ///
-/// The two-step lookup is [`crate::crosshair`]'s, over the same ledger and for
-/// the same reason: a `move-npc` may station a body in an area the NPC was never
-/// declared in, and the ledger is allowed to say so. Returning the area the
-/// anchor actually resolved in — not the NPC's home area — is what keeps the
-/// inter-area transport map coherent with the position the step now carries.
+/// A cast row says *in this quest, this body stands here*, and the quest has an
+/// area — so that is the scope the name is an identity in, exactly as the
+/// `reach-anchor` beside it resolves through [`point_of`]. Reading the NPC's
+/// home area first instead is what made a station a fact about the NPC rather
+/// than about the beat: measured on a campaign of eight zones, one NPC is
+/// declared at `anchor/lampman` in his home zone and cast at `anchor/lampman` in
+/// seven others, and **two** zones provide that name. Every beat resolved to the
+/// home cell, so the escort's destination was the cell he already stood on and
+/// the one zone that has its own station for him was never used.
+///
+/// Home stays as the second step rather than being dropped, and that is the
+/// half that keeps this from being a widening: a `move-npc` may station a body
+/// in an area the NPC was never declared in, and the ledger is allowed to say
+/// so. A beat whose own area does not provide the name still finds the home
+/// station exactly as before, so only the beat whose area **does** provide it
+/// moves — which is the beat that was answering about the wrong building.
+///
+/// Returning the area the anchor actually resolved in — not the NPC's home area
+/// — is what keeps the inter-area transport map coherent with the position the
+/// step now carries.
 fn cast_point(
-    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    anchors: &AnchorTable,
+    beat_area: &str,
     home_area: &str,
     anchor: &str,
-) -> Option<(String, [i32; 3])> {
+) -> CastStation {
     let cell = |r: &ResolvedAnchor| match r {
         ResolvedAnchor::Point { pos, .. } => *pos,
         ResolvedAnchor::Gate { from, .. } => *from,
     };
-    if let Some(r) = anchors.get(&(home_area.to_string(), anchor.to_string())) {
-        return Some((home_area.to_string(), cell(r)));
+    // The beat's own area owns the name; the NPC's home is the declared
+    // fallback. Both are strict `(area, name)` lookups — no guessing here.
+    for area in [beat_area, home_area] {
+        if let Some(r) = anchors.get(&(area.to_string(), anchor.to_string())) {
+            return CastStation::At(area.to_string(), cell(r));
+        }
     }
-    anchors
-        .iter()
-        .find(|((_, n), _)| n == anchor)
-        .map(|((a, _), r)| (a.clone(), cell(r)))
+    // Neither scope provides it: a genuine crossing, allowed while it is
+    // unambiguous, through the one authority.
+    match anchors.resolve(AnchorScope::Global, anchor) {
+        AnchorHit::Found { area, anchor: r } => CastStation::At(area.to_string(), cell(r)),
+        AnchorHit::Ambiguous(areas) => {
+            CastStation::Ambiguous(areas.into_iter().map(str::to_string).collect())
+        }
+        AnchorHit::Missing => CastStation::Missing,
+    }
 }
 
 /// Resolve an anchor name to a point cell by scanning every area's resolved
