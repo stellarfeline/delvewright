@@ -1,6 +1,6 @@
 # spec-0051: Optional is a claim about the proof — the mainline neither needs it nor fears it
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Question**: the engine refuses `mandatory: false` unconditionally ("every v0
   quest is on the critical path"), and its own catalog row says the surface is
   *reserved*, not rejected — so elective content cannot be expressed at all, and
