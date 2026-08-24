@@ -62,3 +62,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0049](spec-0049-a-whole-map-is-walked-before-any-part-is-detailed.md) | A whole map is walked before any part is detailed — the vertical slice to a derived blockout | Accepted |
 | [spec-0050](spec-0050-a-place-is-detailed-inside-the-box-the-whole-gave-it.md) | A place is detailed inside the box the whole gave it — stage 6 of the map pipeline | Accepted |
 | [spec-0051](spec-0051-optional-is-a-claim-about-the-proof.md) | Optional is a claim about the proof — the mainline neither needs it nor fears it | Accepted |
+| [spec-0052](spec-0052-a-quest-names-a-place-the-graph-declared.md) | A quest names a place the graph declared — the campaign's vocabulary below node granularity | Accepted |
