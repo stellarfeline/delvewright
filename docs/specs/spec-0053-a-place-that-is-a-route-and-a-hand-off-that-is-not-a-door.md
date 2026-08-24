@@ -1,6 +1,6 @@
 # spec-0053: A place that is a route, and a hand-off that is not a door
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Ground**: spec-0049 §11 reserves its own falsifier — *"the first campaign
   brief this vocabulary cannot state without a workaround is the evidence."*
   This spec records that falsifier being met, decides what it demands, and

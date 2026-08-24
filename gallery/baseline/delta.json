@@ -1,7 +1,16 @@
 {
   "added": [],
-  "base_commit": "11cd7c4c43ebcde21de0051bcc177532c10c8d77",
-  "changed": [],
-  "classes": {},
+  "base_commit": "89e5297e159484d55bf24672ad7623164d6a8662",
+  "changed": [
+    "easy.en:creator-datapack/layout.json",
+    "hard.en:creator-datapack/layout.json",
+    "ocean-horizon.en:creator-datapack/layout.json",
+    "primary.en:creator-datapack/layout.json",
+    "primary.zh-cn:creator-datapack/layout.json",
+    "void-horizon.en:creator-datapack/layout.json"
+  ],
+  "classes": {
+    "creator overlay": 6
+  },
   "removed": []
 }

@@ -28,6 +28,10 @@ use delvewright_dsl::{
 
 use crate::flow::objectives_in_order;
 use crate::reach::{ReachCompletion, reach_completion};
+/// The anchor-role vocabulary, re-exported where the resolution lives: a
+/// consumer asking this module for an entry point should not have to know that
+/// the term is declared in the prefab-metadata document type.
+pub use crate::registry::AnchorRole;
 use crate::registry::{AnchorMeta, PrefabRegistry};
 use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
 use delvewright_dsl::DwCode;
@@ -860,8 +864,10 @@ pub struct Plan<'a> {
     /// carrier. Reported by [`crate::emit::build_with_warnings`], which prepends
     /// them to the build's own advisories; never fatal.
     pub warnings: Vec<Diagnostic>,
-    /// Resolved absolute anchors, keyed by `(area_id, anchor_name)`.
-    pub anchors: BTreeMap<(String, String), ResolvedAnchor>,
+    /// Resolved absolute anchors, keyed by `(area_id, anchor_name)`, plus the
+    /// roles their pieces declared ([`AnchorTable`]). Derefs to the map, so a
+    /// consumer that knows the name it wants reads it as one.
+    pub anchors: AnchorTable,
     /// Class selection plan (n starts at 1).
     pub classes: Vec<ClassPlan>,
     /// Per-NPC dialogue plan.
@@ -1720,37 +1726,212 @@ pub const DW_OCEAN_WATERLINE: DwCode = DwCode::every_version("DW0344");
 /// the build floor — inside solid stone. Silent before; a hard build error now.
 pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345");
 
+/// `DW0804`: two anchors in one area declare [`AnchorRole::Entry`].
+///
+/// An area has **one** place the party arrives at. Two claims to it is a
+/// question the compiler cannot answer and must not answer quietly: picking
+/// first-wins (by piece order, or by the `BTreeMap` order of two anchor names
+/// nobody chose for their sort) is how a spawn that moved becomes a mystery
+/// nothing in the build output mentions.
+///
+/// Only reachable through a declared role. Two anchors *named* `spawn` and
+/// `entry` in one area are the pre-role compatibility case and stay ordered by
+/// [`ENTRY_ANCHOR_NAMES`], because that ordering is what every shipped piece was
+/// admitted under and refusing it now would red a library nobody has touched.
+pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::every_version("DW0804");
+
 /// The prefab-metadata anchor names that mark a campaign's **entry point**, in
-/// resolution order. One concept, two spellings in the shipped tileset library:
-/// the keep/cave/test tilesets name it `spawn`, the island tileset names it
-/// `entry`. The compiler owns the resolution (CLAUDE.md: never leave a layer
-/// boundary to downstream folklore) — every consumer goes through
-/// [`Plan::entry_point`] / `emit::campaign_spawn`, and a campaign that resolves
-/// none of these names fails the build with [`DW_NO_ENTRY_ANCHOR`].
+/// resolution order — the **fallback**, not the mechanism (spec-0046).
+///
+/// The mechanism is [`AnchorRole::Entry`], declared on the anchor by whoever
+/// authored the piece. This list is what an area resolves through when **no**
+/// anchor in it declares that role: one concept, two spellings in the shipped
+/// tileset library (the keep/cave/test tilesets name it `spawn`, the island
+/// tileset names it `entry`), and it exists so that a piece admitted before the
+/// role existed keeps resolving without being edited.
+///
+/// It is not a second authoring surface. A piece written today declares the
+/// role; nothing new should be added here, and the list is deleted when every
+/// producer declares one.
 pub const ENTRY_ANCHOR_NAMES: [&str; 2] = ["spawn", "entry"];
 
-/// Is `name` one of the entry-anchor spellings ([`ENTRY_ANCHOR_NAMES`])?
+/// The plan's resolved anchors, **and what the pieces said they were for**.
 ///
-/// The membership half of the resolution, for the one consumer that sweeps every
-/// anchor asking "is this an entry?" rather than looking one up by area. It
-/// exists so that consumer cannot spell the question itself: matching a literal
-/// is how the alias list came to be bypassed three times over.
-pub fn is_entry_anchor_name(name: &str) -> bool {
-    ENTRY_ANCHOR_NAMES.contains(&name)
+/// A campaign addresses an anchor by name, so for everything a campaign speaks
+/// about, a `BTreeMap<(area, name), ResolvedAnchor>` is the whole story — which
+/// is why this derefs to one and every consumer that knows the name it wants
+/// reads it exactly as before.
+///
+/// The entry point is the one place a campaign never names: the compiler has to
+/// *find* it. Finding it by matching a spelling made it a fact about the
+/// producer that wrote the piece rather than about the piece, and one producer
+/// — the grammar back end, whose anchor keys are always `anchor/<stem>` — could
+/// not spell either name at all. So the piece declares a role, this table
+/// indexes it while the anchors are being resolved, and
+/// [`AnchorTable::entry_anchor`] is the one place that decides.
+///
+/// The index is keyed by role rather than shaped around the entry: a second
+/// role costs a variant of [`AnchorRole`] and nothing here, and its
+/// one-per-area refusal is the same refusal.
+#[derive(Default)]
+pub struct AnchorTable {
+    at: BTreeMap<(String, String), ResolvedAnchor>,
+    /// `(area, role)` → the name of the anchor that declared it. At most one
+    /// per pair, by [`DW_TWO_ENTRY_ANCHORS`].
+    roles: BTreeMap<(String, AnchorRole), String>,
 }
 
-/// One area's **entry anchor**, resolved through [`ENTRY_ANCHOR_NAMES`] in order.
-///
-/// The lookup half, taken over a raw anchor map so that `Plan::build` can use the
-/// same resolution while it is still assembling one — a consumer that cannot
-/// reach [`Plan::entry_point`] yet must not be left to re-spell the question.
-pub fn entry_anchor<'a>(
-    anchors: &'a BTreeMap<(String, String), ResolvedAnchor>,
-    area: &str,
-) -> Option<&'a ResolvedAnchor> {
-    ENTRY_ANCHOR_NAMES
-        .iter()
-        .find_map(|name| anchors.get(&(area.to_string(), (*name).to_string())))
+impl std::ops::Deref for AnchorTable {
+    type Target = BTreeMap<(String, String), ResolvedAnchor>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.at
+    }
+}
+
+/// Iterating the table is iterating the map — `Deref` does not reach a `for`
+/// loop, and every sweep over `plan.anchors` is one.
+impl<'a> IntoIterator for &'a AnchorTable {
+    type Item = (&'a (String, String), &'a ResolvedAnchor);
+    type IntoIter = std::collections::btree_map::Iter<'a, (String, String), ResolvedAnchor>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.at.iter()
+    }
+}
+
+impl AnchorTable {
+    /// Resolve one anchor a placed piece declared, and record any role it
+    /// declared with it.
+    ///
+    /// First-wins on the position, matching the pool path's own
+    /// `or_insert_with`: a pool that seats the same anchor-bearing prefab twice
+    /// keeps the first carrier (and raises `DW0498` about it). The role index
+    /// follows the same rule for the same name, and refuses a **different**
+    /// name claiming a role this area has already given away.
+    fn declare(
+        &mut self,
+        area: &str,
+        name: &str,
+        meta: &AnchorMeta,
+        resolve: impl FnOnce() -> ResolvedAnchor,
+    ) -> Result<(), PlanError> {
+        self.at
+            .entry((area.to_string(), name.to_string()))
+            .or_insert_with(resolve);
+        if let Some(role) = meta.role {
+            self.record_role(area, name, role)?;
+        }
+        Ok(())
+    }
+
+    /// Seat one anchor the **derivation** produced — a site plan's synthesized
+    /// vocabulary (`crate::blockout`) and the pieces a detail plan stands in it
+    /// (`crate::detail`).
+    ///
+    /// **Last-wins, and that is the difference from [`AnchorTable::declare`].**
+    /// A prefab-placed area resolves first-wins because a pool can seat the same
+    /// anchor-bearing piece twice and the first carrier is the one `DW0498`
+    /// reports. A derived area is the other way round on purpose: the derivation
+    /// names `anchor/node-…` at the massing's own footing, and a detail piece
+    /// standing there is then the truth about where that place is, so it
+    /// overwrites. Collapsing the two rules into one would silently move a
+    /// detailed place's anchor back onto the massing.
+    ///
+    /// The role index is the *same* rule in both, because what an anchor is for
+    /// is a property of the anchor rather than of the producer. A derived area
+    /// cannot reach [`DW_TWO_ENTRY_ANCHORS`]: the derivation is one producer
+    /// holding one name-keyed map, so it has nowhere to write a second claim.
+    /// The refusal exists for a prefab **library**, where two independently
+    /// authored pieces can each claim the same role in one area.
+    fn place(
+        &mut self,
+        area: &str,
+        name: &str,
+        resolved: ResolvedAnchor,
+        role: Option<AnchorRole>,
+    ) -> Result<(), PlanError> {
+        self.at
+            .insert((area.to_string(), name.to_string()), resolved);
+        if let Some(role) = role {
+            self.record_role(area, name, role)?;
+        }
+        Ok(())
+    }
+
+    /// Record that `name` is the anchor `area` gave `role` to — the one place
+    /// the role index is written, so the refusal below cannot be bypassed by
+    /// arriving through a different producer.
+    fn record_role(&mut self, area: &str, name: &str, role: AnchorRole) -> Result<(), PlanError> {
+        let held = self
+            .roles
+            .entry((area.to_string(), role))
+            .or_insert_with(|| name.to_string());
+        if held != name {
+            return Err(PlanError::new(
+                DW_TWO_ENTRY_ANCHORS,
+                format!(
+                    "area `{area}` declares the anchor role `{role}` twice: `{held}` and \
+                     `{name}` both carry `\"role\": \"{role}\"` in their prefab metadata. An \
+                     area has one place the party arrives at, and the compiler will not pick \
+                     between two — a silently-chosen spawn is a moved start nothing reports. \
+                     Fix it in the prefab metadata that declares the anchors: keep the role \
+                     on the one cell the party should arrive at and drop the `role` key from \
+                     the other (the anchor itself stays, and content can still bind it by \
+                     name). If the two anchors are in two pieces of one `prefab_pool`, only \
+                     the piece that seeds the layout should carry it. Do NOT resolve this by \
+                     renaming an anchor to `spawn` or `entry` — the name list is a \
+                     compatibility fallback for pieces that predate the role, and it is not \
+                     consulted at all once an area declares one"
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The name of the anchor `area` gave `role` to, if any.
+    pub fn role_name(&self, area: &str, role: AnchorRole) -> Option<&str> {
+        self.roles
+            .get(&(area.to_string(), role))
+            .map(String::as_str)
+    }
+
+    /// One area's **entry anchor**: the anchor declaring [`AnchorRole::Entry`],
+    /// or — when the area declares none — the first of [`ENTRY_ANCHOR_NAMES`]
+    /// it carries.
+    ///
+    /// **The single resolver.** Every consumer of an entry point reaches it
+    /// through this or through the [`Plan`] methods below, and none matches an
+    /// anchor name itself: the three that once did (inter-area transport, the
+    /// POV shot planner, the trap-safety start set) each asked an honest
+    /// question about the wrong key and got an honest `None`, so every
+    /// island-tileset area was silently never transported into, never framed
+    /// and never counted as a place a player can start from.
+    ///
+    /// Role first is what makes the fallback safe to keep: an area that
+    /// declares the role is never reached by a name, so a piece cannot acquire
+    /// the campaign's start by calling one of its anchors `entry` for its own
+    /// reasons.
+    pub fn entry_anchor(&self, area: &str) -> Option<&ResolvedAnchor> {
+        self.entry_anchor_name(area)
+            .and_then(|name| self.at.get(&(area.to_string(), name.to_string())))
+    }
+
+    /// The **name** of `area`'s entry anchor, resolved the same way — for the
+    /// gate-deadlock proof, which reads its start node out of prefab metadata
+    /// rather than out of the resolved map and must not re-spell the question.
+    pub fn entry_anchor_name(&self, area: &str) -> Option<String> {
+        if let Some(name) = self.role_name(area, AnchorRole::Entry) {
+            return Some(name.to_string());
+        }
+        ENTRY_ANCHOR_NAMES
+            .iter()
+            .find(|name| {
+                self.at
+                    .contains_key(&(area.to_string(), (*name).to_string()))
+            })
+            .map(|name| (*name).to_string())
+    }
 }
 
 /// Ocean-horizon waterline invariant (DW0344). In a `horizon: ocean` world every
@@ -2046,7 +2227,7 @@ impl<'a> Plan<'a> {
         let mut areas = Vec::new();
         // Advisory placement findings, in area order (`DW0498`, `crate::pool`).
         let mut warnings: Vec<Diagnostic> = Vec::new();
-        let mut anchors: BTreeMap<(String, String), ResolvedAnchor> = BTreeMap::new();
+        let mut anchors = AnchorTable::default();
         // v0.6 (spec-0011): the absolute dispenser socket cell for each `anchor/trap`
         // marker that declares one, keyed like `anchors`. Empty for a campaign with no
         // trap hardware.
@@ -2093,10 +2274,9 @@ impl<'a> Plan<'a> {
                     ));
                 }
                 for (name, am) in &meta.anchors {
-                    anchors.insert(
-                        (area_id.clone(), name.clone()),
-                        resolve_anchor(origin, meta, name, am),
-                    );
+                    anchors.declare(&area_id, name, am, || {
+                        resolve_anchor(origin, meta, name, am)
+                    })?;
                     if let Some(dp) = am.dispenser {
                         dispenser_cells.insert(
                             (area_id.clone(), name.clone()),
@@ -2248,9 +2428,9 @@ impl<'a> Plan<'a> {
                     // anchor is carried by exactly one placed piece (fillers are
                     // anchorless connectors), so names do not collide.
                     for (name, am) in &meta.anchors {
-                        anchors
-                            .entry((area_id.clone(), name.clone()))
-                            .or_insert_with(|| resolve_piece_anchor(placed, meta, name, am));
+                        anchors.declare(&area_id, name, am, || {
+                            resolve_piece_anchor(placed, meta, name, am)
+                        })?;
                         if let Some(dp) = am.dispenser {
                             dispenser_cells
                                 .entry((area_id.clone(), name.clone()))
@@ -2303,8 +2483,13 @@ impl<'a> Plan<'a> {
         let blockout = match crate::blockout::derive_with(campaign, &mut blockout_reads, perturb) {
             None => None,
             Some((mut placement, derived)) => {
-                for (name, resolved) in derived.anchors() {
-                    anchors.insert((placement.area_id.clone(), name.to_string()), resolved);
+                // The derivation is a producer of anchors exactly as a prefab
+                // is, so it says what each one is FOR (spec-0046): the entry
+                // node's anchor arrives carrying `AnchorRole::Entry`, and the
+                // spelling `siteplan::ENTRY_ANCHOR` gives it stops being what
+                // resolves it.
+                for (name, resolved, role) in derived.anchors() {
+                    anchors.place(&placement.area_id, name, resolved, role)?;
                 }
                 // ---- the detail plan's pieces (spec-0050 §1) ----
                 //
@@ -2324,10 +2509,12 @@ impl<'a> Plan<'a> {
                 let detailing = crate::detail::place(campaign, prefabs);
                 placement.pieces.extend(detailing.pieces);
                 for (name, pos, facing) in detailing.anchors {
-                    anchors.insert(
-                        (placement.area_id.clone(), name),
+                    anchors.place(
+                        &placement.area_id,
+                        &name,
                         ResolvedAnchor::Point { pos, facing },
-                    );
+                        None,
+                    )?;
                 }
                 areas.push(placement);
                 Some(derived)
@@ -2342,6 +2529,7 @@ impl<'a> Plan<'a> {
             check_gate_reachability(
                 campaign,
                 &area.area_id,
+                anchors.entry_anchor_name(&area.area_id).as_deref(),
                 &area.pieces,
                 prefabs,
                 severed.get(&area.area_id),
@@ -2687,14 +2875,15 @@ impl<'a> Plan<'a> {
     }
 
     /// One area's **entry point** — the cell a body arrives at when it enters
-    /// this area — resolved through [`ENTRY_ANCHOR_NAMES`].
+    /// this area — resolved through [`AnchorTable::entry_anchor`].
     ///
     /// The single place a consumer asks "where does the party start here". Every
-    /// consumer goes through this or [`entry_anchor`]; none matches an anchor
-    /// name itself. A gate anchor is not an entry point (there is no cell to
-    /// stand on), so it resolves to `None` rather than to a plane.
+    /// consumer goes through this, [`Plan::entry_point_facing`] or
+    /// [`Plan::entry_points`]; none matches an anchor name itself. A gate anchor
+    /// is not an entry point (there is no cell to stand on), so it resolves to
+    /// `None` rather than to a plane.
     pub fn entry_point(&self, area: &str) -> Option<[i32; 3]> {
-        match entry_anchor(&self.anchors, area) {
+        match self.anchors.entry_anchor(area) {
             Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
             _ => None,
         }
@@ -2703,10 +2892,24 @@ impl<'a> Plan<'a> {
     /// One area's entry point with the facing it was declared with — the POV
     /// planner needs the direction as well as the cell.
     pub fn entry_point_facing(&self, area: &str) -> Option<([i32; 3], Option<String>)> {
-        match entry_anchor(&self.anchors, area) {
+        match self.anchors.entry_anchor(area) {
             Some(ResolvedAnchor::Point { pos, facing }) => Some((*pos, facing.clone())),
             _ => None,
         }
+    }
+
+    /// **Every** area's entry point, in area order — the cells a body can begin
+    /// a walk from.
+    ///
+    /// The sweep half of the question, for the consumer that wants the whole
+    /// start set rather than one area's (the trap-safety proof roots its
+    /// disarm-reachability search here). It exists so that consumer cannot ask
+    /// the question itself: it used to sweep the anchor map for a literal name,
+    /// which is how every island-tileset area went uncounted.
+    pub fn entry_points(&self) -> impl Iterator<Item = [i32; 3]> + '_ {
+        self.areas
+            .iter()
+            .filter_map(|area| self.entry_point(&area.area_id))
     }
 
     /// The area an NPC or quest belongs to.
@@ -3421,7 +3624,7 @@ pub struct CriticalPath {
 /// a `QuestEffect::Cutscene`).
 fn build_critical_path(
     campaign: &Campaign,
-    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    anchors: &AnchorTable,
     npcs: &[NpcPlan],
     flow: &crate::flow::Flow<'_>,
     path: &crate::flow::Playthrough,
@@ -3721,7 +3924,7 @@ fn build_critical_path(
         let (prev_id, prev_area, prev_idx) = &pair[0];
         let (_, next_area, _) = &pair[1];
         if prev_area != next_area
-            && let Some(ResolvedAnchor::Point { pos, .. }) = entry_anchor(anchors, next_area)
+            && let Some(ResolvedAnchor::Point { pos, .. }) = anchors.entry_anchor(next_area)
         {
             transport.insert(prev_id.clone(), *pos);
             transport_by_step[*prev_idx] = Some(*pos);
@@ -5269,11 +5472,18 @@ struct WorldSocket {
 type Node = (usize, u8);
 
 /// Verify every objective anchored in `area_id` is reachable from the area's
-/// `spawn` using only gates already opened by earlier objectives in the DAG order
-/// ([`DW_GATE_DEADLOCK`]). No-op for areas without gates.
+/// entry point using only gates already opened by earlier objectives in the DAG
+/// order ([`DW_GATE_DEADLOCK`]). No-op for areas without gates.
+///
+/// `entry` is the anchor name [`AnchorTable::entry_anchor_name`] resolved for
+/// this area — handed in rather than looked up, because this proof reads its
+/// start node out of prefab metadata (it needs the *piece* the anchor sits in,
+/// which the resolved map does not record) and a second lookup here would be a
+/// second place that decides what an entry is.
 fn check_gate_reachability(
     campaign: &Campaign,
     area_id: &str,
+    entry: Option<&str>,
     pieces: &[PiecePlacement],
     registry: &PrefabRegistry,
     severed: Option<&BTreeSet<[i32; 3]>>,
@@ -5308,13 +5518,10 @@ fn check_gate_reachability(
     let sockets = world_sockets(pieces, registry);
     let adj = build_adjacency(&sockets, pieces, registry, &gates, severed);
 
-    // The entry piece, resolved through the same alias list every other consumer
-    // uses (`spawn`, then `entry`) — the gate-deadlock proof must start where the
-    // player actually starts, and the island tileset spells that anchor `entry`.
-    let Some(spawn) = ENTRY_ANCHOR_NAMES
-        .iter()
-        .find_map(|name| anchor_node(pieces, registry, name, &gates))
-    else {
+    // The entry piece: the anchor the ONE resolver picked for this area. The
+    // proof must start where the player actually starts, and what an entry is
+    // is not this function's question.
+    let Some(spawn) = entry.and_then(|name| anchor_node(pieces, registry, name, &gates)) else {
         return Ok(()); // no entry anchor in this area → DW0345 reports it at build
     };
 
