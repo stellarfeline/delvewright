@@ -1966,9 +1966,20 @@ impl AnchorTable {
     ///    Nothing an author can see says which building is meant, and picking
     ///    the first would settle it by whichever area id sorts first.
     ///
-    /// Callers never see a guess: the ambiguous arm is a refusal
-    /// ([`crate::gates::DW_ANCHOR_AMBIGUOUS`]), so a campaign that builds has no
-    /// reference this function had to choose for.
+    /// A caller that goes through this function never sees a guess: the
+    /// ambiguous arm is [`AnchorHit::Ambiguous`], which the cast path raises as
+    /// [`crate::gates::DW_ANCHOR_AMBIGUOUS`].
+    ///
+    /// **That is not yet true of the compiler as a whole, and the gap is stated
+    /// rather than implied.** One site raises `DW0859` today. The remaining
+    /// by-name helpers — `point_any`, `zone_box`, `gate_region_block_any` and
+    /// the emitter's `anchor_point_any` — still take the first match across
+    /// areas, because the objects they resolve for have no area to be scoped to:
+    /// measured from `schema --stage all`, **59 anchor-bearing object schemas
+    /// carry an anchor reference and exactly one of them (`Npc`) carries an
+    /// `area`**. Closing the rest is a DSL surface question — those objects must
+    /// first be able to say which area they belong to — not a compiler one, so
+    /// it is a version-ledger change and is deliberately not made here.
     pub fn resolve(&self, scope: AnchorScope<'_>, name: &str) -> AnchorHit<'_> {
         // 1. The referring area owns the name if it provides it.
         if let AnchorScope::Area(area) = scope
