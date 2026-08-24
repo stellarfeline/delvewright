@@ -1975,9 +1975,15 @@ impl AnchorTable {
     /// by-name helpers — `point_any`, `zone_box`, `gate_region_block_any` and
     /// the emitter's `anchor_point_any` — still take the first match across
     /// areas, because the objects they resolve for have no area to be scoped to:
-    /// measured from `schema --stage all`, **59 anchor-bearing object schemas
-    /// carry an anchor reference and exactly one of them (`Npc`) carries an
-    /// `area`**. Closing the rest is a DSL surface question — those objects must
+    /// measured from `schema --stage all`, **exactly one anchor-bearing object
+    /// schema (`Npc`) carries an `area`** — the half that reproduces on every
+    /// counting basis tried. **The denominator does not, and saying so is the
+    /// point:** an independent round counting from the same export got 21 named
+    /// schemas carrying a typed reference, 46 counting inline sub-schemas and 41
+    /// reaching one transitively, and no basis it tried reproduces a single
+    /// agreed total. The claim is therefore stated at the strength of the
+    /// evidence — the fact that holds, not a number two methods disagree about.
+    /// Closing the rest is a DSL surface question — those objects must
     /// first be able to say which area they belong to — not a compiler one, so
     /// it is a version-ledger change and is deliberately not made here.
     pub fn resolve(&self, scope: AnchorScope<'_>, name: &str) -> AnchorHit<'_> {
