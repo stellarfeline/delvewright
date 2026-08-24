@@ -62,3 +62,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0049](spec-0049-a-whole-map-is-walked-before-any-part-is-detailed.md) | A whole map is walked before any part is detailed — the vertical slice to a derived blockout | Accepted |
 | [spec-0050](spec-0050-a-place-is-detailed-inside-the-box-the-whole-gave-it.md) | A place is detailed inside the box the whole gave it — stage 6 of the map pipeline | Accepted |
 | [spec-0051](spec-0051-optional-is-a-claim-about-the-proof.md) | Optional is a claim about the proof — the mainline neither needs it nor fears it | Accepted |
+| [spec-0055](spec-0055-the-scope-belongs-to-the-object.md) | The scope belongs to the object — an anchor reference resolves where its object stands | Proposed |
