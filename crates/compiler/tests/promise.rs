@@ -134,7 +134,8 @@ fn hint_without_title_is_dw0862() {
 /// wrote. Pins the boundary so a later widening is a decision rather than drift.
 #[test]
 fn an_objective_with_no_prompt_at_all_is_not_dw0862() {
-    let obj = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2 }"#;
+    let obj =
+        r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2 }"#;
     let got = codes(&campaign(obj, DONE));
     assert!(
         !got.iter().any(|c| c == "DW0862"),
@@ -253,7 +254,11 @@ fn a_failure_clock_with_no_prompt_is_dw0860() {
         .find(|d| d.code == promise::DW_CLOCK_UNREAD)
         .expect("an unexplained failure clock must be refused");
     assert_eq!(d.code, "DW0860");
-    assert!(d.message.contains("no `narrate` fires before it"), "{}", d.message);
+    assert!(
+        d.message.contains("no `narrate` fires before it"),
+        "{}",
+        d.message
+    );
     assert!(d.message.contains("40"), "{}", d.message);
 }
 
@@ -280,7 +285,11 @@ fn a_prompt_inside_on_caught_does_not_satisfy_dw0860() {
 fn the_clock_must_outlast_the_reading() {
     let text = "Keep out of the light until the march has passed.";
     let needed = promise::read_ticks(text);
-    assert_eq!(needed, 20 + 2 * 49, "49 characters at 2 ticks, after 20 to appear");
+    assert_eq!(
+        needed,
+        20 + 2 * 49,
+        "49 characters at 2 ticks, after 20 to appear"
+    );
 
     let bundle = |grace: u32| {
         format!(
@@ -370,7 +379,10 @@ fn a_stealth_beat_that_punishes_nothing_is_not_a_failure_clock() {
         "zones": [ { "anchor": "anchor/exit", "extent": [4, 3, 4] } ], "on_caught": [] }"#;
     let (d, b) = promise::check(&campaign(CLEAN_REACH, bundle));
     assert!(!d.iter().any(|x| x.code == "DW0860"), "{d:#?}");
-    assert_eq!(b.failure_clocks, 0, "a consequence-free beat is not a clock");
+    assert_eq!(
+        b.failure_clocks, 0,
+        "a consequence-free beat is not a clock"
+    );
 }
 
 // --- the binding is measured, never asserted as a constant -----------------
@@ -425,7 +437,11 @@ fn every_rule_fires_on_its_own_perturbation() {
                  "hint": "The gate stands open." }"#,
             DONE,
         ),
-        ("DW0863", r#"{ "type": "kill", "id": "obj/purge", "wave": "wave/garrison" }"#, DONE),
+        (
+            "DW0863",
+            r#"{ "type": "kill", "id": "obj/purge", "wave": "wave/garrison" }"#,
+            DONE,
+        ),
     ];
     let fired = cases
         .iter()
@@ -440,6 +456,12 @@ fn every_rule_fires_on_its_own_perturbation() {
     // ...and the unperturbed document names none of them, so the count above is
     // about the perturbation rather than about the fixture.
     let base = codes(&campaign(CLEAN_REACH, DONE));
-    let leaked = cases.iter().filter(|(c, _, _)| base.iter().any(|b| b == c)).count();
-    assert_eq!(leaked, 0, "the clean fixture must raise none of the four: {base:?}");
+    let leaked = cases
+        .iter()
+        .filter(|(c, _, _)| base.iter().any(|b| b == c))
+        .count();
+    assert_eq!(
+        leaked, 0,
+        "the clean fixture must raise none of the four: {base:?}"
+    );
 }

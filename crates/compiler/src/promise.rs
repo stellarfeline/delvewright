@@ -64,7 +64,7 @@
 //! objective completes, so it is not a sound proxy, and the sound one (resolving
 //! each objective's anchor to its area) is a different subsystem's question.
 
-use delvewright_dsl::{Campaign, Diagnostic, DwCode, NarrateStyle, Objective, QuestEffect};
+use delvewright_dsl::{Campaign, Diagnostic, DwCode, Objective, QuestEffect};
 
 /// `DW0860`: a **failure clock** — a `begin-stealth` that answers exposure with
 /// an `on_caught` bundle — armed with no prompt before it, or with too little
@@ -439,8 +439,7 @@ fn note(
         // Every narrate channel is a prompt: chat, title, subtitle, actionbar and
         // art all put authored words in front of the party. The channel changes
         // where the words sit, never whether they have to be read.
-        QuestEffect::Narrate { text, style, .. } => {
-            let _: Option<&NarrateStyle> = style.as_ref();
+        QuestEffect::Narrate { text, .. } => {
             prompts.push(Prompt {
                 at,
                 ord: here,
