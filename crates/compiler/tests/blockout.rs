@@ -605,14 +605,29 @@ fn the_synthesized_vocabulary_carries_the_unchanged_quest_layer() {
     let plan = Plan::build(&c, &reg).expect("plans");
     let area = delvewright_dsl::SITE_AREA.to_string();
 
-    // The entry, resolved through the compiler's own alias list rather than by
+    // The entry, resolved through the compiler's ONE resolver rather than by
     // this module spelling a name.
-    let entry = delvewright_compiler::plan::entry_anchor(&plan.anchors, &area)
+    let entry = plan
+        .anchors
+        .entry_anchor(&area)
         .expect("the entry place carries the campaign's spawn");
     let delvewright_compiler::plan::ResolvedAnchor::Point { pos, .. } = entry else {
         panic!("an entry is a place to stand, not a region");
     };
     assert_eq!(*pos, [7, 64, 11], "the entry stands on the landing's floor");
+
+    // ...and on a DERIVED map it resolves by the declared role (spec-0046), not
+    // by the spelling. This pair belongs to neither change on its own: the
+    // derivation named its entry `spawn` precisely because the role did not
+    // exist yet, and a spelling nobody resolves through is the state that has
+    // to be asserted rather than assumed — deleting the role would leave this
+    // test green on the fallback and silently reinstate the folklore.
+    assert_eq!(
+        plan.anchors
+            .role_name(&area, delvewright_compiler::plan::AnchorRole::Entry),
+        Some(delvewright_dsl::ENTRY_ANCHOR),
+        "the derivation declares what its entry anchor is FOR"
+    );
 
     // One anchor per place, one gate region per barred way, one unlock anchor
     // for the way that opens from one side only.

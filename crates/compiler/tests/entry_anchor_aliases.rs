@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use delvewright_compiler::commands::CommandTree;
 use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::{self, Plan};
+use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 use serde_json::Value;
@@ -156,18 +156,37 @@ fn entry_point_resolves_either_spelling_to_one_cell() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The alias list is a **membership** question as well as a lookup, because one
-/// consumer (the trap-safety start set) sweeps every anchor and asks "is this an
-/// entry?" rather than looking one up by area. Both spellings answer yes; an
-/// ordinary anchor answers no.
+/// The resolution is a **sweep** as well as a lookup, because one consumer (the
+/// trap-safety start set) wants every cell a player can start from rather than
+/// one area's. It goes through the same resolver, so both spellings are counted
+/// and an ordinary anchor never is.
 #[test]
-fn every_alias_is_recognised_as_an_entry_anchor_name() {
-    for name in plan::ENTRY_ANCHOR_NAMES {
-        assert!(
-            plan::is_entry_anchor_name(name),
-            "`{name}` is in the alias list and must be recognised as one"
-        );
-    }
-    assert!(!plan::is_entry_anchor_name("anchor/exit"));
-    assert!(!plan::is_entry_anchor_name("anchor/boss"));
+fn the_start_set_is_every_area_entry_and_nothing_else() {
+    let dir = prefabs_spelling_entry("sweep");
+    let shipped = with_plan(&common::prefabs_dir(), |p| {
+        p.entry_points().collect::<Vec<_>>()
+    });
+    let renamed = with_plan(&dir, |p| p.entry_points().collect::<Vec<_>>());
+    assert_eq!(
+        shipped, renamed,
+        "the start set does not depend on how a piece spells its entry anchor"
+    );
+    assert!(
+        shipped.contains(&LANDING_SPAWN),
+        "the landing's entry is a place a player can start from: {shipped:?}"
+    );
+    assert_eq!(
+        shipped.len(),
+        2,
+        "one start per area, and this campaign has two: {shipped:?}"
+    );
+    let exit = with_plan(&common::prefabs_dir(), |p| {
+        p.point("area/landing", "anchor/exit")
+            .expect("fixture drift: `cave-shore` declares an exit anchor")
+    });
+    assert!(
+        !shipped.contains(&exit),
+        "an ordinary anchor is not a start: {shipped:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }

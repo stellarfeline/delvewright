@@ -131,17 +131,14 @@ pub const DW_TWO_AUTHORITIES: DwCode = DwCode::every_version("DW0839");
 /// and a second name for it would be a second way to spell one thing.
 pub const SITE_AREA: &str = "area/site";
 
-/// The anchor name the campaign's **entry** resolves through.
+/// The anchor name the campaign's **entry** stands under.
 ///
-/// `spawn` and not a role, and the difference is recorded rather than implied:
-/// spec-0049 §5.2 says the entry node's anchor carries the declared entry *role*
-/// per spec-0046, and spec-0046 is Accepted and **not implemented** — the
-/// prefab-metadata `Anchor` carries no `role` field on this engine, so a
-/// derivation writing one would be writing a fact nothing reads. What ships is
-/// [`crate::siteplan`]'s counterpart of the compiler's `ENTRY_ANCHOR_NAMES`
-/// resolution: the derivation names the entry node's anchor with a spelling that
-/// resolution already answers to. When spec-0046 lands, this becomes a role and
-/// the spelling stops mattering — which is the whole point of that spec.
+/// A *name*, and only a name: what makes this anchor the entry is the declared
+/// entry **role** (spec-0046) the derivation gives it, which is the one thing
+/// the compiler's resolution consults. The spelling survives because a
+/// site-plan campaign's quests and NPCs may address the entry cell like any
+/// other anchor, and `spawn` is the word the rest of the vocabulary already
+/// uses; nothing resolves through it.
 pub const ENTRY_ANCHOR: &str = "spawn";
 
 /// The anchor at a place's floor centre — where quests, NPCs and waves in a

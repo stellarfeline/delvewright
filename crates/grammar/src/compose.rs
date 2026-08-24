@@ -456,6 +456,13 @@ fn node(prefix: &str, renames: &AnchorRenames<'_>, node: &Node) -> Node {
                 at: at(prefix, &mark.at),
                 facing: mark.facing,
                 index: mark.index,
+                // The role travels with the mark unchanged: it is a fact about
+                // the place, and composing a piece into a bigger one does not
+                // change what the place is for. What it can do is put two
+                // entries in one area, which is `DW0804` at build time and is
+                // the compiler's to judge — the include site cannot see the
+                // area the caller will bind this zone to.
+                role: mark.role,
             },
             body: Box::new(self::node(prefix, renames, body)),
         },
