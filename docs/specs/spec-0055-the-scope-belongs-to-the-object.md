@@ -120,9 +120,10 @@ belongs to — **a thing that stands in the world** — never to a verb:
 - **Absent means today**: no declaration, no behaviour change, byte-for-byte.
   `EnvTrigger` in particular keeps its global default; the field only adds a
   spelling for the case that is currently a refusal.
-- **Fenced at `dsl_version 0.17.0`** (allocated to this surface; the
-  implementation appends the ledger row and the `*_SINCE` constant — this
-  spec edits no ledger). A quests document declaring an earlier version and
+- **Fenced at the `dsl_version` its implementation allocates.** This spec holds
+  no number: a version is not held in front of a line with no scheduled work,
+  and the implementation appends the ledger row and the `*_SINCE` constant when
+  it lands — this spec edits no ledger. A quests document declaring an earlier version and
   carrying the key is refused by the existing claim fence; earlier documents
   without it compile unchanged forever.
 
@@ -212,9 +213,10 @@ unsatisfiable before it, so the implementation follows that landing.
    **Debt**: after implementation the export shows the optional `area` on
    exactly the nine §3 classes and on nothing else new — asserted from the
    export, never from the source.
-2. **Debt**: a quests document declaring `0.16.0` and carrying `area` on any
-   §3 class is refused by the claim fence with a named code; the same
-   document at `0.17.0` is accepted. One test asserts both directions.
+2. **Debt**: a quests document declaring the version below this surface and
+   carrying `area` on any §3 class is refused by the claim fence with a named
+   code; the same document at the adopting version is accepted. One test
+   asserts both directions.
 3. **Debt (the motivating red→green)**: a fixture in which two areas provide
    one name — a trap referencing it is refused undeclared, and builds with
    `area` declared, in the same test.
