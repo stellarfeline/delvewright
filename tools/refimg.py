@@ -142,6 +142,22 @@ def frame_flag(key: str) -> str:
     return "--" + key.replace("_", "-")
 
 
+class MissingConfig(Exception):
+    """No config at all, or no `[refimg]` section in it.
+
+    A separate class from `ConfigError` because the two are different findings —
+    nothing was written vs something was written wrong — but they leave by the
+    SAME exit. Both are "this installation cannot draw an image", both print what
+    to add, and both return 2 — which is what this module's docstring, this tool's
+    row in `docs/reference/tools.md` and the skill's Init step each state, and
+    what `tools/refscore.py` — which states the same convention in the same
+    words — actually does. A bare `SystemExit` carrying a message leaves with 1,
+    so a creator following the Init step and checking the documented code saw a
+    number no document names, and could not tell an unconfigured installation
+    from a failed call.
+    """
+
+
 class ConfigError(Exception):
     """Malformed configuration. Never recovered from — see the module docstring."""
 
@@ -153,7 +169,7 @@ def repo_root() -> Path:
 def load_config() -> dict:
     path = repo_root() / LOCAL_CONFIG_FILE
     if not path.exists():
-        raise SystemExit(
+        raise MissingConfig(
             f"no {LOCAL_CONFIG_FILE} — create it with a [{SECTION}] section.\n"
             f"See the commented convention block in delvewright.toml."
         )
@@ -161,7 +177,7 @@ def load_config() -> dict:
         data = tomllib.load(fh)
     cfg = data.get(SECTION)
     if not cfg:
-        raise SystemExit(
+        raise MissingConfig(
             f"{LOCAL_CONFIG_FILE} has no [{SECTION}] section.\n"
             f"See the commented convention block in delvewright.toml."
         )
@@ -573,7 +589,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         cfg = load_config()
-    except ConfigError as exc:
+    except (MissingConfig, ConfigError) as exc:
         print(f"refimg: {exc}", file=sys.stderr)
         return 2
 

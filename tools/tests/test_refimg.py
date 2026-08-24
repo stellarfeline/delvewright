@@ -91,10 +91,27 @@ def run(argv):
 # ---------------------------------------------------------------------------
 
 
-def test_absent_config_says_what_to_add(root, capsys):
-    with pytest.raises(SystemExit) as exc:
-        run(["--prompt", "x", "--dry-run"])
-    assert t.LOCAL_CONFIG_FILE in str(exc.value)
+def test_absent_config_says_what_to_add_and_exits_2(root, capsys):
+    """The exit CODE is pinned here, not only the message.
+
+    The tool raised a bare `SystemExit` on absent config, so it left with 1 —
+    while its own module docstring, its row in `docs/reference/tools.md` and the
+    skill's Init step all said 2, and `tools/refscore.py`, which states the same
+    convention in the same words, does exit 2. The old assertion covered the
+    message alone, so nothing held the tool to the number a creator following
+    the Init step is told to check for. Strengthened, not relaxed: the message
+    is still asserted, and the code is asserted as well.
+    """
+    assert run(["--prompt", "x", "--dry-run"]) == 2
+    assert t.LOCAL_CONFIG_FILE in capsys.readouterr().err
+
+
+def test_a_config_with_no_refimg_section_leaves_the_same_way(root, capsys):
+    """Nothing written and nothing written for THIS tool are one finding: the
+    installation cannot draw an image, and it is told what to add."""
+    (root / t.LOCAL_CONFIG_FILE).write_text('[refscore]\nbackend = "stub"\n')
+    assert run(["--prompt", "x", "--dry-run"]) == 2
+    assert t.SECTION in capsys.readouterr().err
 
 
 def test_a_frame_typo_in_config_is_a_hard_error(root, capsys):
