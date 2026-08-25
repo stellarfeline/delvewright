@@ -216,10 +216,13 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
                 "gate anchor `{anchor}` declares no fill `block` in the prefab metadata of any \
                  piece this campaign's areas can place (or is not a gate region){why}. \
                  `close-gate` fills the region with the anchor's declared block (the dual of \
-                 `open-gate`), and a `shortcut` clears exactly that block on unlock. Declare the \
-                 gate on an anchor of a piece an area binds — either as a `region` plus a \
-                 `block`, or as a `resolves_to` of `bar:<region>` whose bar the piece's spatial \
-                 contract carries — or remove the verb."
+                 `open-gate`), and a `shortcut` clears exactly that block on unlock. \
+                 Prescription: {} — or remove the verb.",
+                delvewright_dsl::Placement::of(c).anchor_remedy(
+                    "declare the gate on an anchor of a piece an area binds — either as a \
+                     `region` plus a `block`, or as a `resolves_to` of `bar:<region>` whose bar \
+                     the piece's spatial contract carries"
+                )
             ),
         )]
     };

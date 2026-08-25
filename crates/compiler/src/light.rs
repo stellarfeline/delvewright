@@ -877,6 +877,9 @@ pub fn relight(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Relight {
 pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Relight {
     let c = plan.campaign;
     let sky = darkest_effective_sky(c);
+    // Which surfaces this campaign HAS to declare lighting on, asked once. A
+    // refusal below prescribes only those; see `delvewright_dsl::placement`.
+    let placement = delvewright_dsl::Placement::of(c);
 
     // The base assembled geometry (nav) and required-path cells fixtures must avoid.
     let nav = World::from_occupancy(crate::assembled::occupancy_of(
@@ -985,6 +988,7 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
                         &reachable,
                         &required,
                         &area.area_id,
+                        placement,
                         spec,
                         sky,
                         amin,
@@ -995,9 +999,14 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
                 None => {
                     // Measured-darkness gate over the assembled reachable walkable cells.
                     let night_vision = dsl_area.is_some_and(area_night_vision);
-                    if let Some(diag) =
-                        measure_undeclared(&model, &reachable, sky, night_vision, &area.area_id)
-                    {
+                    if let Some(diag) = measure_undeclared(
+                        &model,
+                        &reachable,
+                        sky,
+                        night_vision,
+                        &area.area_id,
+                        placement,
+                    ) {
                         out.diagnostics.push(diag);
                     }
                 }
@@ -1011,7 +1020,8 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
         // same pass was about to place three cells away. Ordering is the whole of
         // the difference — the set and the gate are the same either way.
         if !detailed.is_empty()
-            && let Some(diag) = measure_undeclared(&model, &detailed, sky, false, &area.area_id)
+            && let Some(diag) =
+                measure_undeclared(&model, &detailed, sky, false, &area.area_id, placement)
         {
             out.diagnostics.push(diag);
         }
@@ -1033,6 +1043,7 @@ pub(crate) fn relight_area(
     reachable: &BTreeSet<[i32; 3]>,
     required: &BTreeSet<[i32; 3]>,
     area_id: &str,
+    placement: delvewright_dsl::Placement,
     spec: AreaLighting,
     sky: u8,
     amin: [i32; 3],
@@ -1087,13 +1098,14 @@ pub(crate) fn relight_area(
                     message: format!(
                         "area `{area_id}`: declared relight fixture `{}` cannot reach \
                          `min_light` {min_light} — the darkest reachable walkable cell at {dark:?} \
-                         has no valid placement site left. Fix in stage-1 `world.areas[].lighting`: \
+                         has no valid placement site left. Fix in {}: \
                          choose a fixture that fits the geometry (`lantern`/`shroomlight` need \
                          less clearance than `torch`/`campfire`), lower the declared `min_light` \
                          (still within 1..=14), or open the room so a fixture site exists. Do NOT \
                          relax this by widening the reachable set — the cell is genuinely lit \
                          below target (spec-0010 DW0211)",
-                        spec.fixture.token()
+                        spec.fixture.token(),
+                        placement.lighting_field()
                     ),
                 });
                 return;
@@ -1113,6 +1125,7 @@ fn measure_undeclared(
     sky: u8,
     night_vision: bool,
     area_id: &str,
+    placement: delvewright_dsl::Placement,
 ) -> Option<LightDiag> {
     let light = model.flood(sky);
     let mut darkest: Option<([i32; 3], u8)> = None;
@@ -1125,19 +1138,36 @@ fn measure_undeclared(
     }
     let (cell, l) = darkest?;
     if l < DARK_THRESHOLD && !night_vision {
+        // **A refusal offers only the surfaces this campaign HAS.** `mitigation`
+        // lives on an `areas[]` entry, which a site-plan campaign is required to
+        // leave empty (`DW0839`), so on a derived map the third way does not
+        // exist and naming it sends the author at a document another gate
+        // refuses. The count moves with the list rather than being written down
+        // beside it, so a surface added or removed later cannot leave the
+        // sentence claiming a way that is not offered.
+        let (declared, ways, mitigation) = if placement.has_area_mitigation() {
+            (
+                " and no `mitigation`",
+                "three ways",
+                ", or declare `world.areas[].mitigation: \"night-vision\"` on this area (the \
+                 compiler then emits a clocked `effect give … night_vision` over its bounds)",
+            )
+        } else {
+            ("", "two ways", "")
+        };
         Some(LightDiag {
             code: DW_DARK_UNMITIGATED,
             message: format!(
                 "area `{area_id}` has a reachable walkable cell at {cell:?} measured at light {l} \
                  (< {DARK_THRESHOLD}) under the darkest reachable (time, weather) sky (effective \
-                 {sky}), with no `lighting` and no `mitigation` declaration. Mitigate \
-                 one of three ways: declare `world.areas[].lighting` (a relight `fixture` + \
-                 `min_light`) for this area, brighten the scene (`world.time`/`weather`), or \
-                 declare `world.areas[].mitigation: \"night-vision\"` on this area (the compiler \
-                 then emits a clocked `effect give … night_vision` over its bounds). A renamed \
+                 {sky}), with no `lighting`{declared} declaration. Mitigate \
+                 one of {ways}: declare {} (a relight `fixture` + \
+                 `min_light`) for this area, brighten the scene (`world.time`/`weather`)\
+                 {mitigation}. A renamed \
                  potion in a class kit is NOT a mitigation — it grants nothing. Do NOT lower \
                  `DARK_THRESHOLD` or trim the reachable set — the darkness is real (spec-0010 \
-                 DW0210)"
+                 DW0210)",
+                placement.lighting_field()
             ),
         })
     } else {
@@ -1553,6 +1583,7 @@ mod tests {
             &reachable,
             &BTreeSet::new(),
             "area/hall",
+            delvewright_dsl::Placement::Prefabs,
             spec,
             0,
             amin,
@@ -1599,6 +1630,7 @@ mod tests {
             &reachable,
             &BTreeSet::new(),
             "area/corridor",
+            delvewright_dsl::Placement::Prefabs,
             AreaLighting {
                 fixture: Fixture::Torch,
                 min_light: 7,
@@ -1624,9 +1656,103 @@ mod tests {
         let map = room(7, 5, 7, false); // enclosed, unlit
         let model = LightModel::from_blocks(map.clone());
         let reachable = reachable_of(&map);
-        let diag = measure_undeclared(&model, &reachable, 0, false, "area/crypt");
+        let diag = measure_undeclared(
+            &model,
+            &reachable,
+            0,
+            false,
+            "area/crypt",
+            delvewright_dsl::Placement::Prefabs,
+        );
         assert!(diag.is_some());
         assert_eq!(diag.unwrap().code, DW_DARK_UNMITIGATED);
+    }
+
+    /// **A prefab campaign reads exactly what it read before**, and the tail
+    /// below is the one the base revision emitted, rendered out of its bytes
+    /// rather than retyped. The refusal's remedy became a function of the
+    /// campaign's placement authority; the arm this campaign takes did not move.
+    #[test]
+    fn dw0210_reads_the_same_on_a_prefab_campaign_as_it_always_did() {
+        let map = room(7, 5, 7, false);
+        let model = LightModel::from_blocks(map.clone());
+        let reachable = reachable_of(&map);
+        let msg = measure_undeclared(
+            &model,
+            &reachable,
+            0,
+            false,
+            "area/crypt",
+            delvewright_dsl::Placement::Prefabs,
+        )
+        .expect("an enclosed unlit room is dark")
+        .message;
+        let expected = "with no `lighting` and no `mitigation` declaration. Mitigate one of \
+                        three ways: declare `world.areas[].lighting` (a relight `fixture` + \
+                        `min_light`) for this area, brighten the scene \
+                        (`world.time`/`weather`), or declare `world.areas[].mitigation: \
+                        \"night-vision\"` on this area (the compiler then emits a clocked \
+                        `effect give … night_vision` over its bounds). A renamed potion in a \
+                        class kit is NOT a mitigation — it grants nothing. Do NOT lower \
+                        `DARK_THRESHOLD` or trim the reachable set — the darkness is real \
+                        (spec-0010 DW0210)";
+        let tail = &msg[msg.find("with no `lighting`").expect("the tail is there")..];
+        assert_eq!(tail, expected);
+    }
+
+    /// **A derived map is offered only the surfaces it has.**
+    ///
+    /// Reproduced before this was written: a site-plan campaign with no
+    /// `lighting` on its plan and `world.time: night` refused with *"declare
+    /// `world.areas[].lighting` … or declare `world.areas[].mitigation`"* — two
+    /// prescriptions `DW0839` and `DW0160` refuse — and never named the one
+    /// document that would have worked. `mitigation` lives on an `areas[]`
+    /// entry, which such a campaign is required to leave empty, so it is a
+    /// capability a derived map does not have rather than a wording question.
+    #[test]
+    fn dw0210_on_a_derived_map_names_the_plan_and_drops_the_mitigation_it_cannot_declare() {
+        let map = room(7, 5, 7, false);
+        let model = LightModel::from_blocks(map.clone());
+        let reachable = reachable_of(&map);
+        let msg = measure_undeclared(
+            &model,
+            &reachable,
+            0,
+            false,
+            delvewright_dsl::SITE_AREA,
+            delvewright_dsl::Placement::SitePlan,
+        )
+        .expect("an enclosed unlit room is dark")
+        .message;
+        assert!(
+            msg.contains("declare the site plan's `lighting`"),
+            "the one reachable declaration must be named: {msg}"
+        );
+        assert!(
+            !msg.contains("world.areas"),
+            "`DW0839` refuses `areas[]` here, so nothing may send the author to it: {msg}"
+        );
+        assert!(
+            !msg.contains("mitigation: "),
+            "a derived map has no per-area `mitigation` surface to declare: {msg}"
+        );
+        assert!(
+            msg.contains("one of two ways"),
+            "the count moves with the list of ways actually offered: {msg}"
+        );
+    }
+
+    /// The `DW0211` half of the same pair: only the FIELD moves.
+    #[test]
+    fn dw0211_names_the_document_this_campaign_declares_lighting_in() {
+        assert_eq!(
+            delvewright_dsl::Placement::Prefabs.lighting_field(),
+            "`world.areas[].lighting`"
+        );
+        assert_eq!(
+            delvewright_dsl::Placement::SitePlan.lighting_field(),
+            "the site plan's `lighting`"
+        );
     }
 
     // --- Criterion 5: night-vision kit suppresses DW0210 ---
@@ -1637,7 +1763,15 @@ mod tests {
         let model = LightModel::from_blocks(map.clone());
         let reachable = reachable_of(&map);
         assert!(
-            measure_undeclared(&model, &reachable, 0, true, "area/crypt").is_none(),
+            measure_undeclared(
+                &model,
+                &reachable,
+                0,
+                true,
+                "area/crypt",
+                delvewright_dsl::Placement::Prefabs
+            )
+            .is_none(),
             "night vision must mitigate an undeclared dark area"
         );
     }
@@ -1666,7 +1800,15 @@ mod tests {
         assert!(!reachable.contains(&[21, 1, 21]));
         // The lit room measures clean despite the dark sealed pocket.
         assert!(
-            measure_undeclared(&model, &reachable, 0, false, "area/room").is_none(),
+            measure_undeclared(
+                &model,
+                &reachable,
+                0,
+                false,
+                "area/room",
+                delvewright_dsl::Placement::Prefabs
+            )
+            .is_none(),
             "a sealed dark cavity must not trip DW0210"
         );
     }
@@ -1701,6 +1843,7 @@ mod tests {
             &reachable,
             &required,
             "area/ledge",
+            delvewright_dsl::Placement::Prefabs,
             AreaLighting {
                 fixture: Fixture::Torch,
                 min_light: 7,
@@ -1737,6 +1880,7 @@ mod tests {
             &reachable,
             &BTreeSet::new(),
             "area/shore",
+            delvewright_dsl::Placement::Prefabs,
             AreaLighting {
                 fixture: Fixture::Torch,
                 min_light: 7,
@@ -1774,6 +1918,7 @@ mod tests {
             &reachable,
             &BTreeSet::new(),
             "area/shore",
+            delvewright_dsl::Placement::Prefabs,
             AreaLighting {
                 fixture: Fixture::Torch,
                 min_light: 7,
@@ -1807,6 +1952,7 @@ mod tests {
                 &reachable,
                 &BTreeSet::new(),
                 "area/hall",
+                delvewright_dsl::Placement::Prefabs,
                 AreaLighting {
                     fixture: Fixture::Lantern,
                     min_light: 9,
@@ -2012,7 +2158,15 @@ mod tests {
             m
         });
         assert!(
-            measure_undeclared(&model, &reachable, 0, false, "area/keep").is_none(),
+            measure_undeclared(
+                &model,
+                &reachable,
+                0,
+                false,
+                "area/keep",
+                delvewright_dsl::Placement::Prefabs
+            )
+            .is_none(),
             "a lit roofed room with a trap trigger must not trip DW0210"
         );
     }
@@ -2031,8 +2185,15 @@ mod tests {
         let reachable = reachable_occ_of(&map, [4, 1, 4]);
         assert!(reachable.contains(&plate));
         let model = LightModel::from_blocks(map);
-        let diag = measure_undeclared(&model, &reachable, 0, false, "area/crypt")
-            .expect("a genuinely dark roofed room must still fail");
+        let diag = measure_undeclared(
+            &model,
+            &reachable,
+            0,
+            false,
+            "area/crypt",
+            delvewright_dsl::Placement::Prefabs,
+        )
+        .expect("a genuinely dark roofed room must still fail");
         assert_eq!(diag.code, DW_DARK_UNMITIGATED);
     }
 
