@@ -264,7 +264,12 @@ pub fn open_sides(model: &VoxelModel) -> Vec<([i32; 3], BTreeSet<[i32; 3]>)> {
         if dir[axis] > 0 && thickness <= 1 {
             continue;
         }
-        let plane = min[axis] + if dir[axis] > 0 { thickness as i32 - 1 } else { 0 };
+        let plane = min[axis]
+            + if dir[axis] > 0 {
+                thickness as i32 - 1
+            } else {
+                0
+            };
         let on: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[axis] == plane).collect();
         if !on.is_empty() {
             out.push((dir, on));

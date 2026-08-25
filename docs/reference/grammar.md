@@ -1401,16 +1401,29 @@ engine's copy behind is caught.
 Three gates run only when the author says the piece makes their claim, because
 each is a claim about a *kind* of piece rather than about every piece.
 
-- **`traversable`** — a walk joins every pair of the piece's **declared ways in
-  and out**: its `exterior` edges, read as the face contract (§2d). The binding
-  count is doors. `allow_falls` adds a one-way fall edge, for a piece entered by
-  stepping off a ledge. A piece with fewer than two declared ways out has nothing
-  to walk *through* and the gate says so rather than passing. A room with one
-  door would fail this correctly and uselessly, which is why it is opt-in.
-  A piece that declares **no** contract has no doors to count, so the gate falls
-  back to the region's world `Z`-max and `Z`-min faces and its detail says in
-  full that the number beside it is standable cells on two faces and not ways in
-  — the count that reports 47 approaches where three are doors.
+- **`traversable`** — a walk joins every pair of the piece's ways in and out.
+  Where the piece declares a spatial contract those are its **declared** ways:
+  its `exterior` edges, read as the face contract (§2d), on any of the six
+  sides, and the binding count is doors. Where it declares none there is nothing
+  written down to read, so the sides are **derived from the blocks**: a side of
+  the region its standable floor reaches, and the binding count is open sides.
+  The detail says which of the two it is counting, because a derived side is not
+  a door — declaring `exterior` edges is what turns the count into ways in, and
+  the standable-cell reading is the one that reports 47 approaches where three
+  are doors. Either way it is one walk over one set of ways in and out.
+  `allow_falls` adds a one-way fall edge, for a piece entered by stepping off a
+  ledge. A piece with fewer than two ways out has nothing to walk *through* and
+  the gate says so rather than passing, naming both repairs: open or declare the
+  second one, or stop claiming the piece is a route. A room with one door would
+  fail this correctly and uselessly, which is why it is opt-in.
+
+  The sides are derived and never assumed, and that is load-bearing. The four
+  **vertical** sides are read, for the reason §4d's reachability walk reads the
+  same four: a standable cell in the region's top plane is a roof or a parapet
+  and geometry cannot tell one from a way in, while the bottom plane cannot hold
+  a standable cell at all. A piece entered from above says so by declaring the
+  face. An axis one cell thick yields one side rather than two, since its two
+  planes are the same plane.
 - **`symmetric`** — the piece is its own mirror image across the mid-plane of a
   named world axis. It compares **presence, not block state**: a stair placed
   correctly on both sides of a mirror plane is a different state on each side,
@@ -1444,10 +1457,13 @@ each is a claim about a *kind* of piece rather than about every piece.
 `symmetric` is what reads a defect no other gate can. A shape with a mirror plane
 is built by expanding one rule at both sites; if one site is instead a hand-kept
 copy, or is missing its reflection, the building has a hole in one flank and
-`blocks-exist`, `shape-complete`, `states-complete`, `oriented-fills`,
-`non-empty` and `traversable` are all still green over it — a missing half is a hole, and every
+`blocks-exist`, `shape-complete`, `states-complete`, `oriented-fills` and
+`non-empty` are all still green over it — a missing half is a hole, and every
 state in it is spelled and framed correctly. The
-gate compares the halves and names the first cell pair that disagrees.
+gate compares the halves and names the first cell pair that disagrees. What no
+other gate reads is the general fact, *these two halves disagree*: where a
+missing reflection happens to seal a room or open a flank, `traversable` reads
+that geometry, and where it happens to do neither, nothing but this gate does.
 
 ```sh
 delve-grammar expand --program idiom-mirror --region 15x11x2 --seed 1 \
@@ -1456,8 +1472,8 @@ delve-grammar expand --program idiom-mirror --region 15x11x2 --seed 1 \
 
 ## 4d. Reachability — how much of the floor a body can get to
 
-`traversable` proves one thing: a walk joins the approach face to the exit face.
-Both faces are at ground level, so a piece passes it with every storey above the
+`traversable` proves one thing: a walk joins the piece's ways in and out to each
+other. They are at ground level, so a piece passes it with every storey above the
 floor stranded. The Notre-Dame zone of `docs/trials/trial-0001-notre-dame.md`
 passes it at 31 × 64 × 93 with **2267 of 4982** standable cells reachable and
 **zero** reachable above the ground band: five levels of aisle, gallery, belfry

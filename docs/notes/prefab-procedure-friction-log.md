@@ -284,6 +284,21 @@ this stop is documentation, not engine.** Two sentences in §3 — "a piece whos
 ends are not on opposite faces declares a spatial contract; see `grammar.md` §2d"
 — would have removed it entirely.
 
+> **The last paragraph is the one thing in this entry that was wrong, and the
+> account is kept as written so the mistake is legible.** Reading the gate
+> rather than trusting its report showed the axis was not one the gate picked:
+> it was hardcoded to world `Z`, so with no contract the gate asked about the
+> north and south faces and nowhere else. A corner passage failing it looks like
+> a limit worth documenting. A straight EAST–WEST corridor failing it, at a
+> binding count of zero, does not — and that is the same rule, on a piece nobody
+> would think to test. `stair-flight` expanded into `22x14x5` measured it on the
+> corpus itself: the library rule turns its own length onto world `X`, exactly
+> as `grammar.md` §5b says every §5b rule does, and the gate examined ZERO
+> objects and refused a stair that walks. The gate now asks the piece which
+> faces it opens on (`grammar.md` §4c). The two sentences proposed above would
+> have documented a limit that should not have existed, which is what a
+> documentation repair does to an engine defect.
+
 ### A defect found on the way: two exterior edges export duplicate faces
 
 Not what I was looking for; found because the report printed its list.

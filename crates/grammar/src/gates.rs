@@ -851,12 +851,22 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             None => nav::open_sides(model)
                 .into_iter()
                 .map(|(dir, cells)| Way {
-                    label: format!("{} side ({} cell(s))", contract::FaceDir(dir).as_str(), cells.len()),
+                    label: format!(
+                        "{} side ({} cell(s))",
+                        contract::FaceDir(dir).as_str(),
+                        cells.len()
+                    ),
                     cells,
                 })
                 .collect(),
         };
-        gates.push(traversal(model, &standable, &ways, options, faces.is_some()));
+        gates.push(traversal(
+            model,
+            &standable,
+            &ways,
+            options,
+            faces.is_some(),
+        ));
     }
     // --- Gates: the spatial contract, whenever the piece declares one. ------
     //
@@ -2008,7 +2018,11 @@ mod tests {
         let gate = walk(&carved([11, 5, 5], &route));
         assert!(!gate.passed(), "{}", gate.detail);
         assert_eq!(gate.bound, 1, "{}", gate.detail);
-        assert!(gate.detail.contains("needs two ways out"), "{}", gate.detail);
+        assert!(
+            gate.detail.contains("needs two ways out"),
+            "{}",
+            gate.detail
+        );
         // Both halves of a reachable remedy: open the other side, or stop
         // making the claim. Neither is "declare something and fail anyway".
         assert!(
@@ -2056,7 +2070,10 @@ mod tests {
             .map(|(name, route, _)| (*name, walk(&carved([11, 5, 5], route)).bound))
             .collect();
         let expected: Vec<(&str, usize)> = cases.iter().map(|(n, _, b)| (*n, *b)).collect();
-        assert_eq!(counted, expected, "the binding count did not track the piece");
+        assert_eq!(
+            counted, expected,
+            "the binding count did not track the piece"
+        );
     }
 
     /// The same widening, on a piece out of the corpus rather than a fixture,

@@ -314,7 +314,10 @@ above a failure is the line a reader stops at.
 
 Gates, each reporting its **binding count**: `blocks-exist` (every painted block
 state exists in 1.21.11), `non-empty`, and three opt-in ones — `traversable` (a
-body walks from the approach end to the exit end; `--allow-falls` for a piece
+body walks between every pair of the piece's ways in and out: its declared
+`exterior` edges where it has a spatial contract, and otherwise the sides of the
+region its standable floor reaches, so a route is judged whichever way it runs;
+`--allow-falls` for a piece
 entered off a ledge), `symmetric` (the piece is its own mirror image across the
 mid-plane of the named world axis, compared by presence rather than by block
 state) and `reachable-floor` (every cell of floor **under a roof** can be walked
@@ -324,7 +327,7 @@ semantic one, so binding counts stay zone-level. The verdict is printed only onc
 the prefab has been written, so every `pass` on the terminal is a `pass` about
 files that exist.
 
-`traversable` is a claim about the **route** and nothing more: both faces it
+`traversable` is a claim about the **route** and nothing more: the ways in it
 joins are at ground level, so a piece can pass it with every storey above the
 floor stranded. The **reachability measurement** answers the other question and
 runs on every expansion, flag or no flag — how much of the standable floor a body

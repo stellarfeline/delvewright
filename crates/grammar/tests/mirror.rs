@@ -8,10 +8,13 @@
 //! nothing at all: a hole in the flank of the building, open to the sky.
 //!
 //! The measured part, and the reason this file exists rather than a note: with
-//! the hole present, `blocks-exist`, `non-empty` and `traversable` are all green
-//! and the report reads `pass`. Nothing in the toolchain could tell an author the
-//! copy they did not write is missing, because the language had no way to say
-//! "this body, mirrored" and no gate asked whether the two halves agreed.
+//! the hole present, `blocks-exist` and `non-empty` are green over it. Nothing
+//! in the toolchain could tell an author the copy they did not write is
+//! missing, because the language had no way to say "this body, mirrored" and no
+//! gate asked whether the two halves agreed. `traversable` reads this
+//! building's misplaced wall — see the red test — but by its geometry and not
+//! as the general finding: it is the shape of the arm being sealed that it
+//! sees, never the fact that two halves disagree.
 //!
 //! Both halves of that are demonstrated here on one program: the frame's
 //! `mirror` puts the far arm's end wall where it belongs, and the `symmetric`
@@ -150,10 +153,27 @@ fn flank_holes(out: &Expansion, plane: i32) -> usize {
 }
 
 /// **The red.** One rule at both sites, unreflected: the far arm's end wall
-/// faces the crossing, its outer face is 36 cells of open air, and every gate
-/// that existed before this file is green over it.
+/// faces the crossing and its outer face is 36 cells of open air.
+///
+/// The gates that cannot see it are `blocks-exist` and `non-empty`, and the
+/// reason is the general one: nothing in them asks whether the two halves of a
+/// shape that claims a mirror plane agree. That is `symmetric`'s question and
+/// this file's subject.
+///
+/// **`traversable` used to be on that list and it is not any more, and the
+/// change is worth stating because it is the same defect one layer out.** The
+/// walk gate read the region's world `Z`-max and `Z`-min planes and nothing
+/// else, so over this building it examined the crossing and called it
+/// connected — a true statement about the two faces it looked at, on a
+/// building whose east flank it never asked about. Asked which faces the piece
+/// actually opens on, it finds three, and it finds the east one severed:
+/// putting the far arm's end wall against the crossing does not only open the
+/// flank, it seals the arm off from the rest of the building. The gate now
+/// reads THIS INSTANCE, by geometry. It still does not read the general
+/// finding — a flank hole that severed nothing would leave every gate here
+/// green but `symmetric`, which is why that gate exists.
 #[test]
-fn red_one_rule_at_both_sites_opens_the_far_flank_and_every_other_gate_stays_green() {
+fn red_one_rule_at_both_sites_opens_the_far_flank_and_the_shape_gates_stay_green() {
     let out = run(&transept(Node::call("arm")));
 
     assert_eq!(
@@ -168,16 +188,28 @@ fn red_one_rule_at_both_sites_opens_the_far_flank_and_every_other_gate_stays_gre
     );
 
     let report = judged(&out, None);
-    assert!(
-        report.is_pass(),
-        "every gate but the one this change adds is green over a building with a \
-         hole in its flank: {:?}",
-        report.gates
-    );
-    for id in ["blocks-exist", "non-empty", "traversable"] {
+    for id in ["blocks-exist", "non-empty"] {
         let g = gate(&report, id);
-        assert!(g.passed() && g.bound > 0, "{id}: {}", g.detail);
+        assert!(
+            g.passed() && g.bound > 0,
+            "{id} is about blocks, not about halves: {}",
+            g.detail
+        );
     }
+
+    let walk = gate(&report, "traversable");
+    assert!(
+        !walk.passed(),
+        "the misplaced end wall seals the far arm, and a gate that asks the piece \
+         which faces it opens on sees that: {}",
+        walk.detail
+    );
+    assert_eq!(walk.bound, 3, "north, south and the opened east flank");
+    assert!(
+        walk.detail.contains("east side"),
+        "the flank it could not see before is the one it names: {}",
+        walk.detail
+    );
 }
 
 /// **The green.** The same one rule, the far site reflected: the end wall lands
