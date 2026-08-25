@@ -3895,17 +3895,54 @@ branch-coherent flow model (`compiler::flow`).
 are only sound if the modelled light is a *lower* bound on the game's — a block
 modelled brighter than vanilla lets a genuinely dark area ship unmitigated. The
 table is evaluated over each block's **actual blockstate** (the assembled map
-carries full states) against verified 1.21.11 values, with a source cited per
-entry in the code. Blocks absent from the table emit 0 (an underestimate, the safe
-direction). A state-dependent block is never collapsed onto its brightest state:
-`sea_pickle` is `3 + 3·pickles` when waterlogged and **0 when dry**;
+carries full states). Blocks absent from the table emit 0 (an underestimate, the
+safe direction). A state-dependent block is never collapsed onto its brightest
+state: `sea_pickle` is `3 + 3·pickles` when waterlogged and **0 when dry**;
 `redstone_ore` is **0** idle and 9 when `lit`; `respawn_anchor` is **0** at
 `charges=0`; `amethyst_cluster` is 5 (buds 4/2/1); `brewing_stand` and
-`brown_mushroom` are **1**; `glow_item_frame` is **0** (it is an entity, not a
-block, and emits no block light in Java — 7 is a Bedrock value); the furnace
-family reports 13 when `lit`. Blocks whose `lit`/`charges`/`berries` state has a *bright*
-default (campfire, soul campfire, redstone torch) still evaluate bright from a
-bare id, so the compiler's own relight fixtures are unaffected.
+`brown_mushroom` are **1**; `glow_lichen` is 7 where it is attached to a face and
+**0** in its faceless default state (what a bare `minecraft:glow_lichen` places);
+`glow_item_frame` is **0** (it is an entity, not a block, and emits no block light
+in Java — 7 is a Bedrock value); the furnace family reports 13 when `lit`. Blocks
+whose `lit`/`charges`/`berries` state has a *bright* default (campfire, soul
+campfire, redstone torch) still evaluate bright from a bare id, so the compiler's
+own relight fixtures are unaffected.
+
+**The values are measured against the pinned game, not cited.** Every entry is
+checked by `crates/compiler/tests/emission_table.rs` against
+`crates/compiler/tests/fixtures/light/emission-1.21.11.tsv` — 1419 rows that
+collapse all **29,671** blockstates of the pinned 1.21.11 server jar onto the
+properties that can change their light, every value being what the game's own
+`BlockState.getLightEmission()` returns. `tools/dump-block-light.py` regenerates
+the fixture and refuses any jar whose sha256 is not the `versions.toml` pin;
+`--check` re-derives it and diffs. Three assertions: `emission ≤ game` over every
+blockstate (the contract); exact equality everywhere the table is not
+deliberately taking a minimum; and the set of blocks measuring *below* the game
+equals the declared set, so a future Minecraft's new emitter reds here rather
+than silently costing a designer their fixture.
+
+**Every light-emitting block of 1.21.11 is modelled**, including the ones a
+designer reaches for first. Candles are **3 per candle and only while `lit`**,
+which defaults to false — so a shipped candle is dark at any count and four lit
+ones are 12; all seventeen candle ids (plain and dyed) and all seventeen
+candle-cake ids (3 when lit) behave the same. Copper bulbs are **15 / 12 / 8 / 4**
+by oxidation stage and only while `lit` (default false), waxed and unwaxed alike;
+copper lanterns are **15 at every stage**, which is not the same rule; `copper_torch`
+and `copper_wall_torch` are 14. `sculk_catalyst` is 6, `nether_portal` 11,
+`firefly_bush` 2, and `dragon_egg`, `end_portal_frame`, `sculk_sensor` and
+`calibrated_sculk_sensor` are 1.
+
+**Where the world re-derives the property at load, the entry is the minimum over
+the states the world can reach.** The model evaluates the blockstate the world
+*ships* with; it does not simulate redstone, block entities, weathering or player
+action. `redstone_lamp` has no `onPlace` and its `neighborChanged` schedules an
+unlight the first time any neighbour updates while no signal is present — which
+structure assembly does — so a shipped `lit=true` lamp is not a stable
+configuration and the entry is **0**. `trial_spawner` and `vault` have their state
+owned by a block entity, giving **0** and **6** respectively. `copper_bulb` is not
+in that set: its `onPlace` runs `checkAndFlip`, which returns without touching
+`lit` whenever the neighbour signal already agrees with `powered`, so a bulb
+shipped lit in a room with no redstone stays lit.
 
 **The opacity table is coupled to nav passability
 (`crate::light::passes_light`).** The opacity side defaults the other way — an
