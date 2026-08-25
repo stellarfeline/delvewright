@@ -282,8 +282,36 @@ pub mod codes {
     /// one shared name would buy coverage for whichever rule the file happens to
     /// sit next to.
     pub const PLAN_NOT_CONVERGENT: DwCode = DwCode::every_version("DW0132");
-    /// Non-mandatory quest (reserved in v0).
+    /// Non-mandatory quest below [`crate::OPTIONAL_QUESTS_SINCE`], where the
+    /// surface is reserved.
+    ///
+    /// **`every_version` deliberately**, and it is the case the [`Binds`]
+    /// doctrine names first: this judges what the document SAYS against the
+    /// version the document itself declares. Fencing it as `Since(17)` would
+    /// *stop rejecting* `mandatory: false` in a 0.12 campaign — the exact
+    /// inversion the doctrine warns about.
     pub const NON_MANDATORY: DwCode = DwCode::every_version("DW0133");
+    /// An optional quest inside the finale's dependency closure (spec-0051
+    /// §8.1) — including a finale that declares itself optional.
+    ///
+    /// `every_version`: only a document at [`crate::OPTIONAL_QUESTS_SINCE`] can
+    /// carry `mandatory: false` at all, so no campaign below it can reach this
+    /// rule and there is nothing to grandfather. Its verdict is a function of
+    /// the campaign alone.
+    pub const OPTIONAL_ON_SPINE: DwCode = DwCode::every_version("DW0866");
+    /// A mandatory quest whose `depends_on` edge or stage-5 `quest-complete`
+    /// trigger names an optional quest (spec-0051 §8.2).
+    ///
+    /// `every_version`, for the same reason as [`OPTIONAL_ON_SPINE`].
+    pub const MANDATORY_ON_OPTIONAL: DwCode = DwCode::every_version("DW0867");
+    /// A mandatory objective gated on a flag only an optional quest produces
+    /// (spec-0051 §8.3) — the mainline key behind participation.
+    ///
+    /// `every_version`, for the same reason as [`OPTIONAL_ON_SPINE`]. The
+    /// participation-minimal replay (`DW0204`) is the compensating stronger
+    /// check behind it; this one refuses at the edge so the message can name
+    /// the strand.
+    pub const MAINLINE_KEY_OPTIONAL: DwCode = DwCode::every_version("DW0868");
     /// Objective `after` cycle.
     pub const AFTER_CYCLE: DwCode = DwCode::every_version("DW0140");
     /// Reserved feature used (reserved enum value or reserved field).

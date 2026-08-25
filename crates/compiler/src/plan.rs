@@ -1932,6 +1932,138 @@ impl AnchorTable {
             })
             .map(|name| (*name).to_string())
     }
+
+    /// Every area that provides `name`, in `BTreeMap` order.
+    ///
+    /// The question the by-name lookups never asked. **The scope of uniqueness
+    /// for an anchor name is the AREA** (`DW0857`), so more than one provider
+    /// means the name *alone* does not pick out a place in the world — and a
+    /// lookup that answers anyway has asked an honest question about the wrong
+    /// object.
+    pub fn providers(&self, name: &str) -> Vec<&str> {
+        self.at
+            .keys()
+            .filter(|(_, n)| n == name)
+            .map(|(a, _)| a.as_str())
+            .collect()
+    }
+
+    /// **The one authority for what an anchor reference means.**
+    ///
+    /// Resolution is *scoped*, because a name is an identity within an area and
+    /// nowhere wider. The rule, and it is the DSL tier's own rule rather than a
+    /// new one — `dsl::validate` resolves every reference against the anchors of
+    /// the quest's own area and makes exactly one exception, a camera, which may
+    /// fly anywhere:
+    ///
+    /// 1. A reference that belongs to an area resolves **in that area**. This is
+    ///    the step the by-name lookups skipped, and it is the whole defect: the
+    ///    area was always in the key and the lookup threw it away.
+    /// 2. Otherwise the name may still cross — **what is refused is the
+    ///    ambiguity, not the crossing** — so a name exactly one area provides
+    ///    resolves from anywhere, exactly as it always did.
+    /// 3. A name more than one *other* area provides is [`AnchorHit::Ambiguous`].
+    ///    Nothing an author can see says which building is meant, and picking
+    ///    the first would settle it by whichever area id sorts first.
+    ///
+    /// A caller that goes through this function never sees a guess: the
+    /// ambiguous arm is [`AnchorHit::Ambiguous`], which the cast path raises as
+    /// [`crate::gates::DW_ANCHOR_AMBIGUOUS`].
+    ///
+    /// **That is not yet true of the compiler as a whole, and the gap is stated
+    /// rather than implied.** One site raises `DW0859` today. The remaining
+    /// by-name helpers — `point_any`, `zone_box`, `gate_region_block_any` and
+    /// the emitter's `anchor_point_any` — still take the first match across
+    /// areas, because the objects they resolve for have no area to be scoped to:
+    /// measured from `schema --stage all`, **exactly one anchor-bearing object
+    /// schema (`Npc`) carries an `area`** — the half that reproduces on every
+    /// counting basis tried. **The denominator does not, and saying so is the
+    /// point:** an independent round counting from the same export got 21 named
+    /// schemas carrying a typed reference, 46 counting inline sub-schemas and 41
+    /// reaching one transitively, and no basis it tried reproduces a single
+    /// agreed total. The claim is therefore stated at the strength of the
+    /// evidence — the fact that holds, not a number two methods disagree about.
+    /// Closing the rest is a DSL surface question — those objects must
+    /// first be able to say which area they belong to — not a compiler one, so
+    /// it is a version-ledger change and is deliberately not made here.
+    pub fn resolve(&self, scope: AnchorScope<'_>, name: &str) -> AnchorHit<'_> {
+        // 1. The referring area owns the name if it provides it.
+        if let AnchorScope::Area(area) = scope
+            && let Some((key, anchor)) =
+                self.at.get_key_value(&(area.to_string(), name.to_string()))
+        {
+            return AnchorHit::Found {
+                area: key.0.as_str(),
+                anchor,
+            };
+        }
+        // 2/3. Crossing is allowed while it is unambiguous.
+        let mut across = self.at.iter().filter(|((_, n), _)| n == name);
+        match (across.next(), across.next()) {
+            (None, _) => AnchorHit::Missing,
+            (Some(((area, _), anchor)), None) => AnchorHit::Found {
+                area: area.as_str(),
+                anchor,
+            },
+            (Some(((a, _), _)), Some(((b, _), _))) => {
+                let mut areas = vec![a.as_str(), b.as_str()];
+                areas.extend(across.map(|((x, _), _)| x.as_str()));
+                AnchorHit::Ambiguous(areas)
+            }
+        }
+    }
+
+    /// [`AnchorTable::resolve`] reduced to a cell, for the callers that only
+    /// want a position. An ambiguous reference yields `None` rather than a
+    /// guess — the campaign carrying one is refused at validation, so this arm
+    /// is unreachable in a build.
+    pub fn point_scoped(&self, scope: AnchorScope<'_>, name: &str) -> Option<[i32; 3]> {
+        match self.resolve(scope, name) {
+            AnchorHit::Found { anchor, .. } => Some(match anchor {
+                ResolvedAnchor::Point { pos, .. } => *pos,
+                ResolvedAnchor::Gate { from, .. } => *from,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// The scope an anchor reference resolves in.
+///
+/// Not a qualifier an author writes — that was considered and refused, because
+/// an author naming which area they meant *is* the area-scoped resolution the
+/// compiler should have been doing all along. The scope is derived from the
+/// referring object: a quest's area, an NPC's area, or the absence of one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnchorScope<'a> {
+    /// The reference belongs to this area and resolves there first.
+    Area(&'a str),
+    /// Global **by design**, matching the DSL tier's own two exceptions: an
+    /// environment trigger (triggers are global) and a cutscene camera (a camera
+    /// legitimately flies across areas). Such a reference has no area to be
+    /// scoped to, so an ambiguous name is refused rather than guessed.
+    Global,
+}
+
+/// What [`AnchorTable::resolve`] found.
+///
+/// Deliberately not `Debug`: printing a hit would mean printing a
+/// [`ResolvedAnchor`], and a derived `Debug` on a type the emitter reads is how
+/// a content key acquires a field nobody meant to put in it.
+pub enum AnchorHit<'a> {
+    /// Exactly one place is meant, and this is the area it lives in.
+    Found {
+        /// The area the name resolved in — the referring area when it provided
+        /// the name, otherwise the single area that does.
+        area: &'a str,
+        /// The resolved anchor itself.
+        anchor: &'a ResolvedAnchor,
+    },
+    /// More than one area provides the name and the reference's own scope does
+    /// not settle it. The areas, in `BTreeMap` order, for the diagnostic.
+    Ambiguous(Vec<&'a str>),
+    /// No placed piece provides the name at all (`DW0142` / `DW0360`).
+    Missing,
 }
 
 /// Ocean-horizon waterline invariant (DW0344). In a `horizon: ocean` world every
@@ -3762,18 +3894,49 @@ fn build_critical_path(
                         flags_at.get(si).unwrap_or(&BTreeSet::new()),
                     ) {
                         Some(crate::cast::Station::At(anchor)) => {
-                            cast_point(anchors, home_area, anchor).ok_or_else(|| {
-                                PlanError::new(
-                                    DW_BUILD,
-                                    format!(
-                                        "internal invariant violation: quest `{qid}` casts npc \
-                                     `{npc}` at `{anchor}`, which resolves to no world position \
-                                     at build time — `DW0464` (dangling cast anchor) / `DW0142` \
-                                     should have named it in validation. This is a compiler bug; \
-                                     stop and escalate"
-                                    ),
-                                )
-                            })?
+                            match cast_point(anchors, area, home_area, anchor) {
+                                CastStation::At(a, pos) => (a, pos),
+                                // Not a compiler bug: the campaign named a place
+                                // whose name more than one building answers to,
+                                // and neither the beat's area nor the NPC's home
+                                // is one of them. Picking would settle it by
+                                // whichever area id sorts first.
+                                CastStation::Ambiguous(areas) => {
+                                    return Err(PlanError::new(
+                                        crate::gates::DW_ANCHOR_AMBIGUOUS,
+                                        format!(
+                                            "quest `{qid}` casts npc `{npc}` at `{anchor}`, and \
+                                             {n} of this campaign's areas provide that name \
+                                             ({list}) — neither the area this beat plays in \
+                                             (`{area}`) nor the npc's own area (`{home_area}`) is \
+                                             among them, so nothing an author can see says which \
+                                             building the body is standing in. An anchor name is \
+                                             unique per AREA, which is the scope every anchor \
+                                             reference resolves in. Rename the anchor in all but \
+                                             one of these areas, or cast the npc at a name the \
+                                             beat's own area provides",
+                                            n = areas.len(),
+                                            list = areas
+                                                .iter()
+                                                .map(|a| format!("`{a}`"))
+                                                .collect::<Vec<_>>()
+                                                .join(", "),
+                                        ),
+                                    ));
+                                }
+                                CastStation::Missing => {
+                                    return Err(PlanError::new(
+                                        DW_BUILD,
+                                        format!(
+                                            "internal invariant violation: quest `{qid}` casts \
+                                     npc `{npc}` at `{anchor}`, which resolves to no world \
+                                     position at build time — `DW0464` (dangling cast anchor) / \
+                                     `DW0142` should have named it in validation. This is a \
+                                     compiler bug; stop and escalate"
+                                        ),
+                                    ));
+                                }
+                            }
                         }
                         Some(crate::cast::Station::Absent(kind)) => {
                             return Err(PlanError::new(
@@ -3969,30 +4132,67 @@ fn build_critical_path(
     })
 }
 
-/// Resolve a **cast-ledger** anchor to `(area, cell)`: the NPC's own area first,
-/// then by name across areas.
+/// Where a cast-ledger anchor put a body.
+enum CastStation {
+    /// The area it resolved in, and the cell.
+    At(String, [i32; 3]),
+    /// More than one area provides the name and neither the beat's area nor the
+    /// NPC's home settles it. The areas, for the diagnostic.
+    Ambiguous(Vec<String>),
+    /// No placed piece provides the name.
+    Missing,
+}
+
+/// Resolve a **cast-ledger** anchor to `(area, cell)`: **the area the beat
+/// happens in** first, then the NPC's declared home, then an unambiguous
+/// crossing.
 ///
-/// The two-step lookup is [`crate::crosshair`]'s, over the same ledger and for
-/// the same reason: a `move-npc` may station a body in an area the NPC was never
-/// declared in, and the ledger is allowed to say so. Returning the area the
-/// anchor actually resolved in — not the NPC's home area — is what keeps the
-/// inter-area transport map coherent with the position the step now carries.
+/// A cast row says *in this quest, this body stands here*, and the quest has an
+/// area — so that is the scope the name is an identity in, exactly as the
+/// `reach-anchor` beside it resolves through [`point_of`]. Reading the NPC's
+/// home area first instead is what made a station a fact about the NPC rather
+/// than about the beat: measured on a campaign of eight zones, one NPC is
+/// declared at `anchor/lampman` in his home zone and cast at `anchor/lampman` in
+/// seven others, and **two** zones provide that name. Every beat resolved to the
+/// home cell, so the escort's destination was the cell he already stood on and
+/// the one zone that has its own station for him was never used.
+///
+/// Home stays as the second step rather than being dropped, and that is the
+/// half that keeps this from being a widening: a `move-npc` may station a body
+/// in an area the NPC was never declared in, and the ledger is allowed to say
+/// so. A beat whose own area does not provide the name still finds the home
+/// station exactly as before, so only the beat whose area **does** provide it
+/// moves — which is the beat that was answering about the wrong building.
+///
+/// Returning the area the anchor actually resolved in — not the NPC's home area
+/// — is what keeps the inter-area transport map coherent with the position the
+/// step now carries.
 fn cast_point(
-    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    anchors: &AnchorTable,
+    beat_area: &str,
     home_area: &str,
     anchor: &str,
-) -> Option<(String, [i32; 3])> {
+) -> CastStation {
     let cell = |r: &ResolvedAnchor| match r {
         ResolvedAnchor::Point { pos, .. } => *pos,
         ResolvedAnchor::Gate { from, .. } => *from,
     };
-    if let Some(r) = anchors.get(&(home_area.to_string(), anchor.to_string())) {
-        return Some((home_area.to_string(), cell(r)));
+    // The beat's own area owns the name; the NPC's home is the declared
+    // fallback. Both are strict `(area, name)` lookups — no guessing here.
+    for area in [beat_area, home_area] {
+        if let Some(r) = anchors.get(&(area.to_string(), anchor.to_string())) {
+            return CastStation::At(area.to_string(), cell(r));
+        }
     }
-    anchors
-        .iter()
-        .find(|((_, n), _)| n == anchor)
-        .map(|((a, _), r)| (a.clone(), cell(r)))
+    // Neither scope provides it: a genuine crossing, allowed while it is
+    // unambiguous, through the one authority.
+    match anchors.resolve(AnchorScope::Global, anchor) {
+        AnchorHit::Found { area, anchor: r } => CastStation::At(area.to_string(), cell(r)),
+        AnchorHit::Ambiguous(areas) => {
+            CastStation::Ambiguous(areas.into_iter().map(str::to_string).collect())
+        }
+        AnchorHit::Missing => CastStation::Missing,
+    }
 }
 
 /// Resolve an anchor name to a point cell by scanning every area's resolved
@@ -4509,9 +4709,24 @@ fn collect_press_answers(
 #[derive(Clone, Copy)]
 pub(crate) enum EffectRoot<'a> {
     /// A quest's `on_objective_complete[<objective>]` — fires at that objective's
-    /// `critical_path` step. Forced: completing the objective is the mainline.
-    ObjectiveComplete(&'a str),
-    /// A quest's `on_complete` — fires at the quest's completion step. Forced.
+    /// `critical_path` step. Forced when the owning quest is mandatory:
+    /// completing the objective is then the mainline.
+    ///
+    /// **Carries the owning quest id, and that is load-bearing** (spec-0051
+    /// §8.6). The DSL side always carried it
+    /// (`EffectRootOwner::ObjectiveComplete { quest, objective }`) and this
+    /// adapter used to drop it, so the only reading available here was "an
+    /// objective completed, therefore forced". Once a quest may be optional
+    /// that reading is unsound in the direction that ships: it credits an
+    /// `open-gate` and lays footing from a bundle the party may never fire.
+    ObjectiveComplete {
+        /// The quest whose `on_objective_complete` map this bundle sits in.
+        quest: &'a str,
+        /// The objective whose completion fires it.
+        objective: &'a str,
+    },
+    /// A quest's `on_complete` — fires at the quest's completion step. Forced
+    /// when the owning quest is mandatory.
     QuestComplete(&'a Quest),
     /// An environment `triggers[].effects` — proximity/interaction-fired, so it has
     /// no step of its own; conservatively rooted at step 0. Carries the trigger,
@@ -4599,8 +4814,11 @@ pub(crate) fn for_each_effect_root<'a>(
 ) -> delvewright_dsl::RootBinding {
     delvewright_dsl::for_each_effect_root(campaign, &mut |site, list| {
         let root = match site.owner {
-            delvewright_dsl::EffectRootOwner::ObjectiveComplete { objective, .. } => {
-                EffectRoot::ObjectiveComplete(objective)
+            delvewright_dsl::EffectRootOwner::ObjectiveComplete { quest, objective } => {
+                EffectRoot::ObjectiveComplete {
+                    quest: quest.id.as_str(),
+                    objective,
+                }
             }
             delvewright_dsl::EffectRootOwner::QuestComplete { quest } => {
                 EffectRoot::QuestComplete(quest)
@@ -4770,6 +4988,16 @@ fn collect_region_events(
     obj_step: &BTreeMap<String, usize>,
     ways: &crate::ways::WayStaging,
 ) -> Vec<RegionEvent> {
+    // spec-0051 §8.6: the skippable-root class, widened. A bundle rooted in an
+    // OPTIONAL quest is one the party may never fire, so it seals like a trap
+    // payload and lays no footing the forced path may stand on — the same rule
+    // with a wider denominator, read off the ONE authority
+    // (`QuestPlanContent::optional`) rather than a private `!q.mandatory`.
+    //
+    // This is the direction that ships if it is wrong: crediting an optional
+    // quest's `clear-region` as forced proves a leg walkable across a hole the
+    // party only opens by playing content nobody makes them play.
+    let optional = campaign.quest_plan.content.optional();
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
         // How a firing is BLAMED when it turns out to be unforced. Worded off the
@@ -4799,14 +5027,26 @@ fn collect_region_events(
                 "a shop offer's effects at `{}`, which fire only if the party buys it",
                 site.path
             ),
-            // Not reachable: these three are forced, and a forced event carries no
-            // blame. Worded rather than `unreachable!()` so a later root added to
-            // the optional list cannot panic the compiler.
-            EffectRoot::ObjectiveComplete(_)
-            | EffectRoot::QuestComplete(_)
-            | EffectRoot::Trigger(_) => format!("the effect bundle at `{}`", site.path),
+            // The two DAG roots reach this arm only when their owning quest is
+            // OPTIONAL (spec-0051 §8.6) — while it is mandatory they are forced
+            // and a forced event carries no blame. Naming the quest is the whole
+            // value: "a beat nobody has to play" is unactionable, and "the
+            // completion of optional quest `quest/crypt`" sends the author to
+            // the strand that laid the footing.
+            EffectRoot::ObjectiveComplete { quest, objective } => format!(
+                "the `{objective}` bundle of optional quest `{quest}`, which the party may \
+                 never play"
+            ),
+            EffectRoot::QuestComplete(q) => format!(
+                "the completion of optional quest `{}`, which the party may never play",
+                q.id
+            ),
+            // Genuinely not reachable: an environment trigger is forced at every
+            // version. Worded rather than `unreachable!()` so a later root added
+            // to the optional list cannot panic the compiler.
+            EffectRoot::Trigger(_) => format!("the effect bundle at `{}`", site.path),
         };
-        let (fire_step, forced) = firing_of(&site.root, obj_step);
+        let (fire_step, forced) = firing_of(&site.root, obj_step, &optional);
         // The three spellings of one write. A gate names a prefab gate anchor and
         // takes that anchor's box and its `replace`-filtered clear; a
         // `fill-region`/`clear-region` names its own anchor-centred box and clears
@@ -4896,10 +5136,20 @@ fn collect_region_events(
 /// far side — are unforced: every shortcut gate is registered sealed at step 0 so
 /// the delve is proven completable with no shortcut ever taken, which is exactly
 /// "the party may never fire this bundle".
-fn firing_of(root: &EffectRoot<'_>, obj_step: &BTreeMap<String, usize>) -> (usize, bool) {
+fn firing_of(
+    root: &EffectRoot<'_>,
+    obj_step: &BTreeMap<String, usize>,
+    optional: &BTreeSet<&str>,
+) -> (usize, bool) {
     match root {
-        EffectRoot::ObjectiveComplete(oid) => (obj_step.get(*oid).copied().unwrap_or(0), true),
-        EffectRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
+        EffectRoot::ObjectiveComplete { quest, objective } => (
+            obj_step.get(*objective).copied().unwrap_or(0),
+            !optional.contains(*quest),
+        ),
+        EffectRoot::QuestComplete(q) => (
+            quest_complete_step(q, obj_step),
+            !optional.contains(q.id.as_str()),
+        ),
         EffectRoot::Trigger(_) => (0, true),
         EffectRoot::TrapPayload(_)
         | EffectRoot::DialogueRespawn
@@ -4920,12 +5170,15 @@ pub(crate) fn collect_way_openings(
     campaign: &Campaign,
     obj_step: &BTreeMap<String, usize>,
 ) -> Vec<crate::ways::WayOpening> {
+    // The same widening as `collect_region_events`, for the same reason: an
+    // `open-way` fired from an optional quest is a way the party may never open.
+    let optional = campaign.quest_plan.content.optional();
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
         let Some((piece, name)) = e.way_write() else {
             return;
         };
-        let (fire_step, forced) = firing_of(&site.root, obj_step);
+        let (fire_step, forced) = firing_of(&site.root, obj_step, &optional);
         out.push(crate::ways::WayOpening {
             prefab_id: piece.as_str().to_string(),
             way: name.to_string(),

@@ -1,0 +1,5 @@
+{
+  "code": "DW0860",
+  "units": [],
+  "why": "The gallery's own stealth beat with its grace shortened from 120 ticks to 40, and NOTHING else changed: the same narrate, the same zones, the same on_caught, the same l10n inventory. One integer is the whole perturbation, which is what makes this a demonstration of DW0860 rather than of whatever else a bigger edit would have disturbed - no other check in the engine reads grace_ticks at all. 40 ticks is two seconds; the line before the arming is 49 characters and takes 118 ticks to read. The party is dropped into a stealth beat and punished for not having read fast enough. It declares no unit: grace_ticks is bound in the gallery proper, and what must not compile is a value of it that races the party's own eyes. Worth committing for what the engine did with this document before the refusal existed - the gallery shipped in exactly this state, green, and DW0860 found it on its first run."
+}

@@ -233,7 +233,19 @@ if [ "$DO_LEASE" = 1 ]; then
   elif python3 "$HERE/tools/worktree-reclaim.py" --lease "$NEW" --holder "$HOLDER" \
          --reason "dispatched worktree" >/dev/null; then
     LEASED=1
-    echo "   lease      : held by $HOLDER (release it at the merge; the sweep honours it until then)"
+    # Not "release it at the merge" and nothing else — that sentence WAS the
+    # release mechanism for as long as this script has existed, and nothing
+    # invoked it, which is the UNRUN vacuity mode. The merge now ends the lease
+    # itself, on the remote's own terminal verdict for the branch; this line
+    # names the command so the reader can see what will do it.
+    if [ -n "$BRANCH" ]; then
+      echo "   lease      : held by $HOLDER — ended by the merge:"
+      echo "                tools/worktree-reclaim.py --after-merge $BRANCH --apply"
+    else
+      echo "   lease      : held by $HOLDER — this tree is DETACHED, so no pull request"
+      echo "                can end its lease. End it deliberately:"
+      echo "                tools/worktree-reclaim.py --release $NEW"
+    fi
   else
     echo "   lease      : NOT TAKEN — the lease command failed. The tree is usable and unclaimed."
   fi

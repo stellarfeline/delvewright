@@ -671,6 +671,18 @@ fn validate_loaded(
             // effect history. Error tier, except the pre-0.7 deprecation window
             // (DW0465) and the staleness lint (DW0467), which warn.
             diags.extend(delvewright_compiler::cast::check_cast(&campaign));
+            // An objective keeps the promise its prompt makes (DW0860-DW0863):
+            // a failure clock armed before its own prompt could be read, an
+            // adopted container nothing distinguishes from the scenery beside
+            // it, a hint the emitter will never show, and a fight the party is
+            // given no way to find. Error tier throughout - each judges what the
+            // document says, so the fence has nothing to grandfather. The
+            // binding line states what it examined, including the zeroes.
+            {
+                let (pd, pbind) = delvewright_compiler::promise::check(&campaign);
+                eprintln!("{}", pbind.line());
+                diags.extend(pd);
+            }
             // spec-0050 (DSL v0.15): the detail plan. `DW0841` (the whole was
             // walked before any part is detailed), `DW0842`-`DW0845` (the
             // binding binds, the piece is the shape of its allocation, its
