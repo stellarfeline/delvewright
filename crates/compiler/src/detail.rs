@@ -1009,42 +1009,42 @@ fn check_owed(
         };
         // spec-0052 §7.5: the SHAPE the station declared is demanded of the
         // piece anchor it binds to, so the kind validation read off the graph
-        // and the kind the built world actually has cannot drift. A synthesized
-        // name that is not a station is a point by construction, so this
-        // quantifies over the whole owed set and not only the declared part.
-        if let Some(want) = delvewright_dsl::synthesized_anchor_kinds(c)
+        // and the kind the built world actually has cannot drift.
+        //
+        // **Only the gate direction is raised here**, and the reason is that
+        // `DW0845` already owns the other one: an owed POINT bound to a region
+        // is exactly "a region, not a place to stand", which the standing check
+        // below says in its own words and has said since spec-0050. Raising a
+        // second code for it would prescribe two repairs for one mistake and
+        // move a diagnostic a campaign already meets. A gate station bound to a
+        // point is the case nothing could report before, because before
+        // spec-0052 no owed name was ever a gate.
+        if delvewright_dsl::synthesized_anchor_kinds(c)
             .get(name)
             .copied()
+            .is_some_and(|k| k == delvewright_dsl::StationKind::Gate)
         {
-            let got_gate = anchor.region.is_some();
-            let wants_gate = want == delvewright_dsl::StationKind::Gate;
-            if got_gate != wants_gate {
+            if anchor.region.is_none() {
                 d.push(Diagnostic::error(
                     DW_BINDING,
                     STAGE,
                     format!("{path}/anchors/{name}"),
                     format!(
-                        "`{name}` is declared as a {want_w} and is bound to `{piece}`'s anchor \
-                         `{bound_to}`, which is a {got_w}. A name's shape is fixed where the \
-                         name is declared, not where it is bound: the campaign's quests were \
-                         validated against the {want_w} this name says it is, so binding it to \
-                         a {got_w} would place them on something they cannot use. Bind it to a \
-                         {want_w} anchor of `{piece}`, or change the station's `kind` in the \
-                         layout graph and re-check the quests that name it.",
-                        want_w = want.word(),
-                        got_w = if got_gate { "region" } else { "point" },
+                        "`{name}` is declared as a gate station and is bound to `{piece}`'s \
+                         anchor `{bound_to}`, which declares no region. A gate is a volume that \
+                         seals and clears: the campaign's `open-gate`, `close-gate`, `shortcut` \
+                         and `timed-gate` verbs were validated against the shape this name says \
+                         it is, and a cell is not one. Bind it to an anchor of `{piece}` that \
+                         declares a `region` and the block filling it, or change the station's \
+                         `kind` to `point` in the layout graph.",
                         piece = row.piece,
                     ),
                 ));
-                continue;
             }
-            if wants_gate {
-                // A gate's cells are not a place to stand, so the standing
-                // demands below are not asked of it — they are the point
-                // contract, and asking them here would refuse every correct
-                // gate binding.
-                continue;
-            }
+            // A gate's cells are not a place to stand, so the standing demands
+            // below are the POINT contract and are not asked of it — asking
+            // them would refuse every correct gate binding.
+            continue;
         }
         // DW0845's second half: bound to somewhere a body cannot be.
         if anchor.pos.is_none() {

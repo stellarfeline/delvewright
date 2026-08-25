@@ -85,7 +85,15 @@ fn version_line() {
     // in the skip world, the replay in which no optional objective is ever
     // completed. No committed document carries the value, so every campaign that
     // compiled before compiles byte-identically.
-    assert!(s.contains("dsl 0.17.0"), "{s}");
+    // 0.18.0 (spec-0052) lets a layout-graph node declare `stations[]` — the
+    // named places INSIDE a place — and those names join the campaign's anchor
+    // vocabulary at the same authority as every synthesized one. It widens what
+    // a quest is ENTITLED TO NAME, which is orthogonal to every surface below
+    // it: a campaign at 0.17.0 states its space as a graph, embeds it as a plan
+    // and details its places, and still has no way to name the fire pit in the
+    // camp. No committed document carries `stations[]`, so every campaign that
+    // compiled before compiles byte-identically.
+    assert!(s.contains("dsl 0.18.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

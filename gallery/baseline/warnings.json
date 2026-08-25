@@ -1081,6 +1081,11 @@
       "stage": "prefabs"
     },
     {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
+    },
+    {
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
