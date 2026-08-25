@@ -67,6 +67,38 @@ pub const DW_SEAL_HINT_CONFLICT: DwCode = DwCode::every_version("DW0423");
 /// resolution this diagnostic exists because the compiler does not have.
 pub const DW_GATE_ANCHOR_AMBIGUOUS: DwCode = DwCode::every_version("DW0857");
 
+/// `DW0859`: an anchor reference **no scope settles** names a place more than one
+/// of the campaign's areas provides.
+///
+/// [`DW_GATE_ANCHOR_AMBIGUOUS`] is the same finding keyed to four gate verbs.
+/// This is the same rule keyed to the **object class the property belongs to** —
+/// an anchor reference — because a name that two buildings answer to is a fact
+/// about the name, not about the verb that happened to say it.
+///
+/// **Why this is a refusal and not simply area-scoped resolution.** The scope of
+/// uniqueness is the AREA, so the right answer is always to resolve in the
+/// referring area — and for the two object classes the DSL gives an area to
+/// (`Npc`, `PlannedQuest`) that is exactly what the compiler now does. The other
+/// eleven anchor-bearing classes — traps, shortcuts, timed gates, loot, lethal
+/// volumes, ambushes, actors, waves, stealth zones, shops, environment triggers
+/// — are flat campaign-wide vectors that **never record an area at all**, so
+/// there is no scope to resolve them in and none can be invented here without a
+/// DSL surface that says which area they belong to.
+///
+/// For those, a by-name match is a **candidate**, not an identity. One candidate
+/// is an answer and resolves from anywhere — what is refused is the ambiguity,
+/// not the crossing, so no unambiguous campaign moves a byte. Two candidates is
+/// a question the compiler cannot answer, and answering it by whichever area id
+/// sorts first is how a green meaning *another building satisfies this* became
+/// indistinguishable from a green meaning *this one does*.
+///
+/// The hatch question: there is none, for the same reason `DW0857` has none. An
+/// opt-out would have to be the author naming which area they meant, and that is
+/// the area-scoped resolution the DSL cannot express for these classes — the
+/// escape hatch and the missing capability are the same thing, so an opt-out
+/// here would be secured by nothing the defect could not also supply.
+pub const DW_ANCHOR_AMBIGUOUS: DwCode = DwCode::every_version("DW0859");
+
 /// Every area of `c` that provides `anchor` as a gate the compiler can fill,
 /// paired with the refusals the authority raised while asking.
 ///

@@ -18,10 +18,15 @@
 //! `flooded_ward`'s floor rule is deliberately extreme: the flood zones are
 //! **water from the floor almost to the ceiling**, not a shallow pool with a
 //! walkable rim — the ward's whole claim is that off the spline there is
-//! nothing to stand on, and a body-height air pocket above the water would
-//! quietly make that false. The causeway itself is a solid berm a body walks
-//! on top of, `rise` blocks above the ward floor, with the same headroom as
-//! every other room in the vocabulary.
+//! nothing to stand on. It was written that way to hold that claim up on its
+//! own, when the walk read any non-air cell as floor and a body-height air
+//! pocket over the water would have quietly made it false. `nav` answers that
+//! now — a fluid is not a floor — so the extreme waterline is no longer what
+//! carries the claim, and a contained ward with a lowered waterline is the
+//! repair this piece owes (`DW0800`: the flood as written is not walled).
+//! The causeway itself is a solid berm a body walks on top of, `rise` blocks
+//! above the ward floor, with the same headroom as every other room in the
+//! vocabulary.
 //!
 //! `guard_station` sits at the far end, and it is deliberately **not flush**
 //! with the causeway: its floor is `tower_rise` blocks above causeway height.
@@ -83,8 +88,13 @@
 //! 1. **The causeway is standable end to end; stepping off it is not.** Every
 //!    causeway cell is standable and connects the approach end to the guard
 //!    station end (`connected`, the same technique `cliff_path` uses); every
-//!    flood cell is asserted directly not standable — its foot cell is water,
-//!    which is not air, so it fails `passable` outright.
+//!    flood cell is asserted directly not standable. As this piece is built
+//!    that holds twice over, and the two reasons are worth keeping apart: the
+//!    foot cell is water, which is not air, so it fails `passable` — and the
+//!    cell under a foot is water, which is not a floor, so it would fail
+//!    `standable` even with air over it. Only the first is a fact about
+//!    flooding to the ceiling; the second is the rule, and it is what makes a
+//!    lowered waterline safe.
 //! 2. **The guard station commands the causeway.** `anchor/elite` sees every
 //!    standable causeway cell, walked with the same Amanatides–Woo traversal
 //!    `watch_bay` uses, **at every width** — odd and even — and with the lane
