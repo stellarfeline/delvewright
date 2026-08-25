@@ -837,104 +837,26 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             .collect()
     });
     if options.traversable {
-        match &faces {
-            Some(faces) => {
-                let mouths: Vec<BTreeSet<[i32; 3]>> =
-                    faces.iter().map(|f| mouth(model, &standable, f)).collect();
-                let bound = faces.len();
-                let mut severed: Vec<String> = Vec::new();
-                for (i, a) in mouths.iter().enumerate() {
-                    for (j, b) in mouths.iter().enumerate().skip(i + 1) {
-                        let walked = if options.allow_falls {
-                            nav::reachable_with_fall(model, &standable, a, b)
-                                || nav::reachable_with_fall(model, &standable, b, a)
-                        } else {
-                            nav::connected(model, &standable, a, b)
-                        };
-                        if !walked {
-                            severed.push(format!(
-                                "{} {} <-> {} {}",
-                                faces[i].dir.as_str(),
-                                faces[i].class,
-                                faces[j].dir.as_str(),
-                                faces[j].class
-                            ));
-                        }
-                    }
-                }
-                gates.push(Gate {
-                    id: "traversable",
-                    state: verdict(bound >= 2 && severed.is_empty()),
-                    undecided: 0,
-                    empty_ok: None,
-                    bound,
-                    detail: if bound < 2 {
-                        format!(
-                            "the contract declares {bound} exterior traversal edge(s). A \
-                             traversability claim is a claim that a body walks THROUGH the piece, \
-                             which needs two ways out"
-                        )
-                    } else if severed.is_empty() {
-                        format!(
-                            "{bound} declared way(s) in or out — {} — and a walk{} connects every \
-                             pair of them",
-                            faces
-                                .iter()
-                                .map(|f| format!("{} {}", f.dir.as_str(), f.class))
-                                .collect::<Vec<_>>()
-                                .join(", "),
-                            if options.allow_falls {
-                                " (with falls)"
-                            } else {
-                                ""
-                            }
-                        )
-                    } else {
-                        format!(
-                            "{bound} declared way(s) in or out; no walk connects {}",
-                            severed.join(", ")
-                        )
-                    },
-                });
-            }
-            None => {
-                // Legacy: a piece that declares no contract has no doors to
-                // count, so the old face heuristic is all there is — and the
-                // detail says so rather than letting the number read as doors.
-                let (entry, exit) = nav::ends(model);
-                let bound = entry.len() + exit.len();
-                let walked = if options.allow_falls {
-                    nav::reachable_with_fall(model, &standable, &entry, &exit)
-                } else {
-                    nav::connected(model, &standable, &entry, &exit)
-                };
-                gates.push(Gate {
-                    id: "traversable",
-                    state: verdict(walked && bound > 0),
-                    undecided: 0,
-                    empty_ok: None,
-                    bound,
-                    detail: format!(
-                        "{} standable cell(s) at the approach end, {} at the exit end; walking{} \
-                         {}. This piece declares no spatial contract, so the binding count is \
-                         standable CELLS on two faces of the region, not declared ways in — \
-                         declare exterior edges and it counts doors",
-                        entry.len(),
-                        exit.len(),
-                        if options.allow_falls {
-                            " (with falls)"
-                        } else {
-                            ""
-                        },
-                        if walked {
-                            "connects them"
-                        } else {
-                            "does NOT connect them"
-                        }
-                    ),
-                });
-            }
-        }
+        let ways: Vec<Way> = match &faces {
+            // The piece declared its ways in and out, so they are read and not
+            // guessed — on whichever of the six sides the author put them.
+            Some(faces) => faces
+                .iter()
+                .map(|f| Way {
+                    label: format!("{} {}", f.dir.as_str(), f.class),
+                    cells: mouth(model, &standable, f),
+                })
+                .collect(),
+            // Nothing declared, so the sides are derived from the blocks.
+            None => nav::open_sides(model)
+                .into_iter()
+                .map(|(dir, cells)| Way {
+                    label: format!("{} side ({} cell(s))", contract::FaceDir(dir).as_str(), cells.len()),
+                    cells,
+                })
+                .collect(),
+        };
+        gates.push(traversal(model, &standable, &ways, options, faces.is_some()));
     }
     // --- Gates: the spatial contract, whenever the piece declares one. ------
     //
@@ -1152,6 +1074,120 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     }
 }
 
+/// One way in or out of a piece, as the traversability walk sees it.
+struct Way {
+    /// How the report names it — `north walk` for a declared edge, `north side
+    /// (3 cell(s))` for a side derived from the blocks. The label carries which
+    /// kind it is, so a reader is never left to infer it from the number.
+    label: String,
+    /// The cells a body actually stands in there. Empty is legal and is a
+    /// severed pair, never a pass: a declared doorway with no footing is a way
+    /// out nobody can use.
+    cells: BTreeSet<[i32; 3]>,
+}
+
+/// **The traversability verdict, over whatever the piece's ways in and out turn
+/// out to be.**
+///
+/// One walk and not two, and that is the repair. There used to be two: a
+/// contract branch that read the declared faces on any of the six sides, and a
+/// fallback that read `nav::ends` — the region's world `Z`-max and `Z`-min
+/// planes and nothing else. The second was not an axis the gate picked; it was
+/// the rule library's §5b travel convention, standing in for the question
+/// "which faces does this piece open on" that the contract answers properly.
+/// So the fallback asked about the north and south faces of every piece that
+/// declared no contract, which is 35 of the 36 library entries: a corner
+/// passage failed it, and so did a straight east–west corridor, at a binding
+/// count of zero. Measured on the corpus, `stair-flight` expanded into
+/// `22x14x5` — its own `z(Largest)` turning its length onto world `X`, exactly
+/// as `grammar.md` §5b says every library rule does — examined ZERO objects and
+/// was refused.
+///
+/// The general mechanism is the contract, and it stays the authority: where a
+/// piece declares its faces, they are the ways in and out. Where it declares
+/// none, [`nav::open_sides`] derives them from the blocks rather than assuming
+/// an axis. Either way the walk below is the same walk, so a rule proved on one
+/// kind of piece cannot silently miss the other.
+///
+/// `declared` decides only the wording — whether the reader is being told about
+/// doors somebody wrote down or about sides a tool inferred. It never changes
+/// what is walked.
+fn traversal(
+    model: &VoxelModel,
+    standable: &BTreeSet<[i32; 3]>,
+    ways: &[Way],
+    options: Options,
+    declared: bool,
+) -> Gate {
+    let bound = ways.len();
+    let mut severed: Vec<String> = Vec::new();
+    for (i, a) in ways.iter().enumerate() {
+        for b in ways.iter().skip(i + 1) {
+            let walked = if options.allow_falls {
+                nav::reachable_with_fall(model, standable, &a.cells, &b.cells)
+                    || nav::reachable_with_fall(model, standable, &b.cells, &a.cells)
+            } else {
+                nav::connected(model, standable, &a.cells, &b.cells)
+            };
+            if !walked {
+                severed.push(format!("{} <-> {}", a.label, b.label));
+            }
+        }
+    }
+    let falls = if options.allow_falls {
+        " (with falls)"
+    } else {
+        ""
+    };
+    // What the number beside the gate counts, said in the gate's own words. A
+    // reader who takes a derived side for a door reads a stronger claim than
+    // the one that was proved, which is the mistake the old fallback's own
+    // caveat was written to stop and is kept here.
+    let noun = if declared {
+        "declared way(s) in or out"
+    } else {
+        "open side(s), derived from the blocks: a side of the region its standable floor reaches. \
+         These are not doors — declare `exterior` edges and the count becomes ways in"
+    };
+    let detail = if bound < 2 {
+        // The remedy has to be reachable, and which one it is depends on what
+        // the piece actually is, so both are named: a route with one way out is
+        // missing a way out, and a room with one way out is not a route.
+        let remedy = if declared {
+            "declare the second `exterior` edge"
+        } else {
+            "open a second side of the region to standable floor, or declare an `exterior` edge \
+             on the side that is already open and its partner"
+        };
+        format!(
+            "{bound} {noun}. A traversability claim is a claim that a body walks THROUGH the \
+             piece, which needs two ways out: either {remedy}, or stop claiming the piece is a \
+             route — a piece with one way in is a room, and a room is entitled to be one"
+        )
+    } else if severed.is_empty() {
+        format!(
+            "{bound} {noun} — {} — and a walk{falls} connects every pair of them",
+            ways.iter()
+                .map(|w| w.label.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    } else {
+        format!(
+            "{bound} {noun}; no walk{falls} connects {}",
+            severed.join(", ")
+        )
+    };
+    Gate {
+        id: "traversable",
+        state: verdict(bound >= 2 && severed.is_empty()),
+        undecided: 0,
+        empty_ok: None,
+        bound,
+        detail,
+    }
+}
+
 /// Where a body actually stands at a declared way in or out.
 ///
 /// The face's own cells when a body can stand in them (a doorway at grade), and
@@ -1285,7 +1321,7 @@ fn top_blocks(model: &VoxelModel, filled: usize) -> Vec<(String, f64)> {
 mod tests {
     use super::*;
     use crate::block::BlockState;
-    use crate::expand::ExpandOptions;
+    use crate::expand::{ExpandOptions, Expansion};
     use crate::geom::{Axis, Box3};
     use crate::ir::{
         Alternative, CmpOp, Cond, DimRef, Expr, Material, Node, Program, Reorient, Rounding, Size,
@@ -1822,5 +1858,225 @@ mod tests {
             "{}",
             temple.measurements.silhouette_complexity
         );
+    }
+
+    // --- The gate that only ever asked about two of six faces --------------
+    //
+    // Every fixture below is one passage carved out of one solid block, so the
+    // only thing that differs between them is WHICH WAY IT RUNS. That is the
+    // whole point: a traversability verdict that changes when a piece is
+    // rotated is a verdict about the tool's axis and not about the piece.
+
+    /// A block of stone with `air` carved through it two courses high, so every
+    /// carved column is a standable cell at `y = 1`.
+    fn carved(size: [u32; 3], route: &[[i32; 2]]) -> Expansion {
+        let mut model = VoxelModel::new(Box3::at_origin(size));
+        let stone = BlockState::simple("minecraft:stone");
+        let air = BlockState::simple("minecraft:air");
+        for pos in Box3::at_origin(size).positions() {
+            model.set(pos, &stone).unwrap();
+        }
+        for &[x, z] in route {
+            for y in 1..=2 {
+                model.set([x, y, z], &air).unwrap();
+            }
+        }
+        Expansion {
+            model,
+            anchors: Default::default(),
+            contract: None,
+            stats: Default::default(),
+            oriented: Default::default(),
+        }
+    }
+
+    /// A straight corridor down the middle of a `length`-long box, running on
+    /// whichever horizontal axis the caller names.
+    fn corridor(along_x: bool, length: i32) -> Expansion {
+        let route: Vec<[i32; 2]> = (0..length)
+            .map(|i| if along_x { [i, 2] } else { [2, i] })
+            .collect();
+        let size = if along_x {
+            [length as u32, 5, 5]
+        } else {
+            [5, 5, length as u32]
+        };
+        carved(size, &route)
+    }
+
+    fn walk(expansion: &Expansion) -> Gate {
+        judge(
+            expansion,
+            Options {
+                traversable: true,
+                allow_falls: false,
+                symmetric: None,
+                reachable_floor: false,
+            },
+        )
+        .gates
+        .into_iter()
+        .find(|g| g.id == "traversable")
+        .expect("the opt-in walk gate was asked for")
+    }
+
+    /// **The headline.** Two corridors, identical but for a quarter turn. The
+    /// north–south one is the shape every worked example in the corpus happens
+    /// to have, and it is why nothing noticed: the gate read the region's world
+    /// `Z` faces, so it asked the right question of this piece by coincidence.
+    /// Turn the same corridor onto `X` and the two faces it asked about are the
+    /// side walls — no standable cell on either, a binding count of **zero**,
+    /// and a piece a body walks end to end in eleven paces refused for
+    /// examining nothing.
+    #[test]
+    fn a_corridor_is_traversable_whichever_way_it_runs() {
+        let north_south = walk(&corridor(false, 11));
+        assert!(north_south.passed(), "{}", north_south.detail);
+        assert_eq!(north_south.bound, 2, "{}", north_south.detail);
+        assert!(
+            north_south.detail.contains("north side") && north_south.detail.contains("south side"),
+            "{}",
+            north_south.detail
+        );
+
+        let east_west = walk(&corridor(true, 11));
+        assert!(east_west.passed(), "{}", east_west.detail);
+        assert_eq!(east_west.bound, 2, "{}", east_west.detail);
+        assert!(
+            east_west.detail.contains("west side") && east_west.detail.contains("east side"),
+            "{}",
+            east_west.detail
+        );
+
+        // The claim the two assertions above make together, stated so it cannot
+        // be satisfied by both verdicts drifting the same way later.
+        assert_eq!(
+            (north_south.state, north_south.bound),
+            (east_west.state, east_west.bound),
+            "one corridor, quarter-turned, must be the same piece to this gate"
+        );
+    }
+
+    /// A corner passage: in from the west, out to the south, nothing on the
+    /// other two sides. It opens on one face of each horizontal axis, so no
+    /// single travel axis describes it and the old rule could not see it — it
+    /// found one standable cell on the `Z`-max face, none on `Z`-min, and
+    /// refused a passage that walks perfectly well.
+    #[test]
+    fn a_corner_passage_is_traversable_and_names_the_two_sides_it_opens_on() {
+        let mut route: Vec<[i32; 2]> = (0..=5).map(|x| [x, 5]).collect();
+        route.extend((6..11).map(|z| [5, z]));
+        let gate = walk(&carved([11, 5, 11], &route));
+        assert!(gate.passed(), "{}", gate.detail);
+        assert_eq!(gate.bound, 2, "{}", gate.detail);
+        assert!(
+            gate.detail.contains("west side") && gate.detail.contains("south side"),
+            "{}",
+            gate.detail
+        );
+    }
+
+    /// **And it still refuses what it is for.** Two stubs with a wall between
+    /// them: the piece opens on two sides, the gate binds to both, and no walk
+    /// joins them. Widening which faces are asked about must not weaken what is
+    /// asked — a piece that is not a route fails, and the report names the pair
+    /// that is severed rather than a number.
+    #[test]
+    fn a_passage_walled_across_the_middle_still_fails_the_walk() {
+        let mut route: Vec<[i32; 2]> = (0..4).map(|x| [x, 2]).collect();
+        route.extend((7..11).map(|x| [x, 2]));
+        let gate = walk(&carved([11, 5, 5], &route));
+        assert!(!gate.passed(), "{}", gate.detail);
+        assert_eq!(gate.bound, 2, "it examined both sides: {}", gate.detail);
+        assert!(
+            gate.detail.contains("no walk connects")
+                && gate.detail.contains("west side")
+                && gate.detail.contains("east side"),
+            "{}",
+            gate.detail
+        );
+    }
+
+    /// A dead end is not a route, and now says so in those words. The old rule
+    /// reported `0 standable cell(s) at the approach end, 1 at the exit end`,
+    /// which is a fact about two planes and not an answer; the remedy it named
+    /// — declare exterior edges — would have left the piece failing, since a
+    /// second declared edge cannot be walked to through a wall.
+    #[test]
+    fn a_dead_end_fails_for_having_one_way_out_and_the_message_offers_both_repairs() {
+        let route: Vec<[i32; 2]> = (0..8).map(|x| [x, 2]).collect();
+        let gate = walk(&carved([11, 5, 5], &route));
+        assert!(!gate.passed(), "{}", gate.detail);
+        assert_eq!(gate.bound, 1, "{}", gate.detail);
+        assert!(gate.detail.contains("needs two ways out"), "{}", gate.detail);
+        // Both halves of a reachable remedy: open the other side, or stop
+        // making the claim. Neither is "declare something and fail anyway".
+        assert!(
+            gate.detail.contains("open a second side") && gate.detail.contains("stop claiming"),
+            "{}",
+            gate.detail
+        );
+    }
+
+    /// A solid block claiming to be a route binds to nothing, and a binding of
+    /// zero is red (`seal_zero_bindings`). The widening must not turn a
+    /// vacuous pass into a real one by finding sides that are not there.
+    #[test]
+    fn a_piece_with_no_standable_cell_anywhere_still_binds_zero_and_reds() {
+        let gate = walk(&carved([11, 5, 5], &[]));
+        assert!(!gate.passed(), "{}", gate.detail);
+        assert_eq!(gate.bound, 0, "{}", gate.detail);
+        assert!(gate.detail.contains(ZERO_BINDING), "{}", gate.detail);
+    }
+
+    /// **The binding count is computed from the piece, and it moves.** A
+    /// constant is what a vacuous gate reports, so the fixtures are chosen to
+    /// separate every value the derivation can take: a sealed block binds 0, a
+    /// dead end 1, a corridor 2, a tee 3, an open floor 4. A rule that answered
+    /// `2` for everything — which is what a hardcoded pair of faces answers —
+    /// passes none of these.
+    #[test]
+    fn the_binding_count_is_the_pieces_own_open_sides_and_not_a_constant() {
+        let dead_end: Vec<[i32; 2]> = (0..8).map(|x| [x, 2]).collect();
+        let mut tee: Vec<[i32; 2]> = (0..11).map(|x| [x, 2]).collect();
+        tee.extend((0..2).map(|z| [5, z]));
+        let open_floor: Vec<[i32; 2]> = Box3::at_origin([11, 1, 5])
+            .positions()
+            .map(|p| [p[0], p[2]])
+            .collect();
+        let cases: [(&str, Vec<[i32; 2]>, usize); 5] = [
+            ("sealed", Vec::new(), 0),
+            ("dead end", dead_end, 1),
+            ("corridor", (0..11).map(|x| [x, 2]).collect(), 2),
+            ("tee", tee, 3),
+            ("open floor", open_floor, 4),
+        ];
+        let counted: Vec<(&str, usize)> = cases
+            .iter()
+            .map(|(name, route, _)| (*name, walk(&carved([11, 5, 5], route)).bound))
+            .collect();
+        let expected: Vec<(&str, usize)> = cases.iter().map(|(n, _, b)| (*n, *b)).collect();
+        assert_eq!(counted, expected, "the binding count did not track the piece");
+    }
+
+    /// The same widening, on a piece out of the corpus rather than a fixture,
+    /// and it is the instance that was measured: every §5b rule opens with
+    /// `z(Largest)` and turns its length onto the longer horizontal axis of
+    /// whatever box it is handed (`grammar.md` §5b), so a library stair given a
+    /// box wider than it is deep runs east–west — and the gate that read world
+    /// `Z` examined ZERO objects and refused it.
+    #[test]
+    fn a_library_stair_turned_onto_x_by_its_own_rule_is_still_a_route() {
+        for region in [[5, 14, 22], [22, 14, 5]] {
+            let out = crate::expand(
+                &library::stair_flight(),
+                Box3::at_origin([region[0] as u32, region[1] as u32, region[2] as u32]),
+                &ExpandOptions::seeded(1),
+            )
+            .unwrap();
+            let gate = walk(&out);
+            assert!(gate.passed(), "{region:?}: {}", gate.detail);
+            assert_eq!(gate.bound, 2, "{region:?}: {}", gate.detail);
+        }
     }
 }
