@@ -293,6 +293,17 @@
       "triage": "content"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
       "binding": {
         "files": [
           "quests.json"
@@ -363,6 +374,26 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "classes.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "item": [
+              "minecraft:lingering_potion",
+              "minecraft:potion",
+              "minecraft:splash_potion",
+              "minecraft:tipped_arrow",
+              "lingering_potion",
+              "potion",
+              "splash_potion",
+              "tipped_arrow"
+            ]
+          }
+        }
+      },
       "binding": {
         "files": [
           "classes.json"
@@ -2031,6 +2062,26 @@
       "triage": "content"
     },
     {
+      "applies_when": {
+        "files": [
+          "classes.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "item": [
+              "minecraft:lingering_potion",
+              "minecraft:potion",
+              "minecraft:splash_potion",
+              "minecraft:tipped_arrow",
+              "lingering_potion",
+              "potion",
+              "splash_potion",
+              "tipped_arrow"
+            ]
+          }
+        }
+      },
       "binding": {
         "files": [
           "classes.json"
