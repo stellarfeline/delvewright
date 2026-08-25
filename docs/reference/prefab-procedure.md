@@ -479,13 +479,21 @@ piece the *exterior* ones show the roof: eleven orbit shots of a 16×9×26 ward
 that is 81% solid rock are eleven pictures of the same grey slab, and none of
 them can tell you the piece has a corridor in it.
 
-**The plan shot is the exception, and it is the one to read on a piece whose
-identity is its plan** — a passage, a junction, a stair, anything whose shape is
-a route rather than an elevation. `<id>-top.png` is marked `"cutaway": true` in
-the manifest: the roof is taken off, so the floor plan is what is in the frame. A
-corridor that turns a corner reads as a corner there and nowhere else in the
-planned set. Reach for a `--view` when the identity is a *face*; reach for `top`
-when it is a *plan*.
+**The plan shot is the exception**, and on a piece whose identity is a route
+rather than an elevation — a passage, a junction, a stair — it is the only
+planned camera that sees the route at all. `<id>-top.png` is marked
+`"cutaway": true` in the manifest: the roof comes off, so what is in the frame is
+the floor. **A hand-aimed `--view name=…,face=up` is not the same shot** — it is
+`"cutaway": false` at the same pitch, so it photographs the roof. Reaching for
+"let me look down at it" with `--view` gets the one picture `top` already
+replaced.
+
+How well a plan reads off it is a question about the palette, not about the
+camera: a piece in one flat material shows its corridors as clean voids, and a
+loud mix flattens them into the same noise as the mass. When the plan does not
+read, the complement is a `--view` aimed square at **each open face** — `--view
+name=east-mouth,face=east` — which is also the only way to see a doorway's shape
+head-on. Judge a route from the plan and the mouths together.
 
 **Eye cameras** stand *inside*, at a body's eye height (1.62), at each declared
 anchor, looking the way that anchor faces — `eye-<anchor>.png`. This is the shot

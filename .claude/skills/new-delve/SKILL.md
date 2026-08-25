@@ -1951,9 +1951,13 @@ this needs were built at Init step 2.
    says so in its binding count; that is step 3's `mark` still owed, not a render
    fault. The exterior orbit shots (`ext-*`, `door-*`, `anchor-*`) are fitted from
    outside, and on a roofed piece they are all the same picture of the same rock —
-   but **`top` is a cutaway plan**, the roof taken off, and it is the shot that
-   shows a piece whose identity is a route rather than a face: a passage, a
-   junction, a stair. Read `top` for a plan and a `--view` for an elevation. Read `<id>-shots.json` beside the images for which cell each body is
+   but **`top` is a cutaway plan**, the roof taken off, and on a piece whose
+   identity is a route rather than a face — a passage, a junction, a stair — it is
+   the only planned camera that sees the route. Do **not** re-aim it by hand: a
+   `--view name=…,face=up` is `"cutaway": false` at the same pitch and
+   photographs the roof. Where a loud palette flattens the plan, add a `--view`
+   square at each open face (`--view name=east-mouth,face=east`) and read the two
+   together. Read `<id>-shots.json` beside the images for which cell each body is
    standing in: a camera whose anchor cell held a gate or a barrel steps back
    along the facing and says so (`DW0727`), and an anchor with no body cell gets no
    eye shot at all — the run states that count. A flat grey frame is outside the
