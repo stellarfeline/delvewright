@@ -89,6 +89,22 @@ pub const DW_BOXES_OVERLAP: DwCode = DwCode::every_version("DW0827");
 /// `DW0828`: a seam is not on a shared face.
 pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::every_version("DW0828");
 
+/// **How many cells stand between two connected boxes: the wall they share.**
+///
+/// The one number every geometric check in this stage is written against, and
+/// the one an author has to know before the first box goes down. A box is the
+/// **play space** of a place — the cells a body can be in — so the shell is not
+/// inside it: it stands in this gap, and two places that connect leave exactly
+/// this much room for it. Boxes placed flush have no wall to cut a seam through
+/// and `DW0828` refuses them.
+///
+/// It is a constant rather than a literal because the authoring documents state
+/// it: [`PlanBox`]'s schema description carries this value, and
+/// `crates/dsl/tests/v14_site_plan.rs` asserts the exported description against
+/// this constant, so the rule a person reads and the rule the checks enforce
+/// cannot drift apart.
+pub const SHARED_FACE_GAP_CELLS: i64 = 1;
+
 /// `DW0829`: a seam's opening is not a standard, or does not fit.
 pub const DW_SEAM_OPENING: DwCode = DwCode::every_version("DW0829");
 
@@ -437,6 +453,21 @@ pub enum Ceiling {
 /// axes and its vertical position is [`PlanBox::floor`] — one authority for the
 /// plane, where a `y` inside `min` beside a declared floor would have been two
 /// numbers with no rule about which the derivation believes.
+///
+/// **A box is the PLAY SPACE, and connected boxes are separated by exactly one
+/// cell.** `extent` is the interior a body can stand in; the shell the blockout
+/// derivation builds is not inside it. That shell stands in the one-cell gap
+/// between two neighbours, and on the course under the floor and over the
+/// ceiling. So two places that connect are placed one cell apart on the face
+/// they share — that cell is the wall they have in common, written once — and
+/// two boxes placed flush have no wall for a seam to be cut through, which
+/// `DW0828` refuses. Worked: a box at `min: [4, 4]` with `extent: [4, 4]`
+/// occupies x 4..7, so its eastern neighbour's `min` x is 9, never 8.
+///
+/// Two consequences follow, and they are what make the checks say what they look
+/// like they say: the size-class ladder judges `extent` directly (`DW0832`),
+/// its smallest rung `4 × 4` being exactly one kit quantum; and a plan never
+/// states a wall's thickness anywhere, because the gap is where the wall is.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlanBox {
@@ -446,9 +477,15 @@ pub struct PlanBox {
     /// that does not name a place, so a site plan cannot describe a space the
     /// layout graph has not declared (spec-0049 §7.1).
     pub node: NodeId,
-    /// Low corner `[x, z]`, in world coordinates.
+    /// Low corner `[x, z]`, in world coordinates. Two horizontal numbers, never
+    /// three — the vertical position is `floor`.
     pub min: [i64; 2],
-    /// Footprint `[dx, dz]`, in blocks, on the kit grid (`DW0825`).
+    /// Interior footprint `[dx, dz]`, in blocks, on the kit grid (`DW0825`).
+    /// Two horizontal numbers, never three — the vertical size is `ceiling`.
+    ///
+    /// **This is play space, not the building.** The box covers `min` to
+    /// `min + extent - 1` inclusive, and the walls stand outside it, in the
+    /// one-cell gap that separates connected places (`DW0828`).
     pub extent: [NonZeroU32; 2],
     /// The walk plane.
     pub floor: Floor,
@@ -740,18 +777,13 @@ pub struct View {
 
 /// One box with everything the checks below need already worked out.
 ///
-/// **The model, stated once because every geometric check depends on it.** A box
-/// is the **play space** of a place: the cells a body can be in. The shell the
-/// blockout derivation builds is not inside it — it stands in the one cell
-/// between two neighbours, and on the course under the floor and over the
-/// ceiling. Two consequences, and both are what make the checks say what they
-/// look like they say:
-///
-/// * `extent` is the **interior footprint**, so the size-class ladder judges it
-///   directly (`DW0832`) — and the ladder's own smallest rung, `4 × 4`, is
-///   exactly one kit quantum, which is only coherent under this reading.
-/// * two connected places are separated by **exactly one cell** on the face they
-///   share (`DW0828`). That cell is the wall they have in common, written once.
+/// **The model every geometric check depends on** is stated where an author
+/// reads it — on [`PlanBox`], whose schema description carries it — and the
+/// number itself is [`SHARED_FACE_GAP_CELLS`]. In short: a box is the **play
+/// space** of a place, the shell stands in the one-cell gap between two
+/// neighbours, `extent` is therefore the interior footprint the size-class
+/// ladder judges directly (`DW0832`), and two connected places sit exactly
+/// [`SHARED_FACE_GAP_CELLS`] apart on the face they share (`DW0828`).
 #[derive(Debug, Clone)]
 struct Placed<'a> {
     index: usize,
@@ -2032,7 +2064,7 @@ fn shared_face(a: FaceSide, b: FaceSide, face: Face) -> Result<SharedFace, NotSh
             } else {
                 (a_span.0 - 1, a_span.0 - b_span.1 - 1)
             };
-            if gap != 1 {
+            if gap != SHARED_FACE_GAP_CELLS {
                 return Err(NotShared::NotAdjacent { gap });
             }
             let a_along = span(a.foot, along);
@@ -2065,7 +2097,7 @@ fn shared_face(a: FaceSide, b: FaceSide, face: Face) -> Result<SharedFace, NotSh
             } else {
                 (ya.0 - 1, ya.0 - yb.1 - 1)
             };
-            if gap != 1 {
+            if gap != SHARED_FACE_GAP_CELLS {
                 return Err(NotShared::NotAdjacent { gap });
             }
             let u = overlap(span(a.foot, 0), span(b.foot, 0))
@@ -2188,7 +2220,8 @@ fn not_shared(
             -gap
         ),
         NotShared::NotAdjacent { gap } => format!(
-            "there are {gap} cells between them across that face where a shared wall is exactly 1"
+            "there are {gap} cells between them across that face where a shared wall is exactly \
+             {SHARED_FACE_GAP_CELLS}"
         ),
         NotShared::NoCommonArea { axis } => format!(
             "they are neighbours across it, but their spans on {axis} miss each other entirely, \

@@ -375,7 +375,12 @@ reproducible only against a named engine (ADR-0006/0016). Full comparison:
 For each stage in order — world → npcs → classes → quest-plan → quests → dialogue:
 
 1. `cargo run -q -p delvec --bin delvec -- schema --stage <n>` —
-   generate AGAINST the live schema, never from memory.
+   generate AGAINST the live schema, never from memory. **Every document
+   answers to its own name too** (`--stage site-plan`, `--stage walk-record`,
+   …), which is the name a `DW0100` refusal prints, so the refusal's own
+   prescription is a command that works. **The schema is the authority on a
+   document's form**: where a spec's field list disagrees with it, the spec is
+   the stale one and the schema is what parses.
 2. **Delegate the mechanical write + validate repair loop (steps 2–3) to a dev
    subagent** (see *Execution architecture*): hand it this stage's creative brief +
    the schema command; it returns valid JSON and a summary of choices. The brief you
@@ -1338,6 +1343,17 @@ reset this design came out of was caused by an ordering that existed as prose.
    - **Extent flows down.** The region comes from the brief and the boxes
      partition it. A box is never grounds to grow the region (`DW0826`): shrink
      or move the box, or change the brief's fact and re-derive, visibly.
+   - **A box is the play space, and connected boxes sit exactly ONE CELL
+     apart.** This is the convention that decides every coordinate in the
+     document, so get it right before placing anything. `extent` is the
+     interior a body can stand in; the walls are not inside it — they stand in
+     the one-cell gap between two neighbours, so the plan never states a wall
+     thickness anywhere. A box at `min: [4, 4]` with `extent: [4, 4]` occupies
+     x 4..7, so its eastern neighbour's `min` x is **9**, never 8. Place two
+     boxes flush and they have no wall for a seam to be cut through, and every
+     pair of them is `DW0828`. `min` and `extent` are two horizontal numbers
+     each, never three — the vertical position is `floor` and the vertical size
+     is `ceiling`.
    - **Seams are allocated, not discovered.** A seam sits on a face the two boxes
      already share, at declared cells, at a standard opening (`DW0828`,
      `DW0829`). Two places that cannot mate is resolved here, while both boxes
@@ -1415,10 +1431,13 @@ and another walk.
 The loop:
 
 1. **Walk the blockout and record it.** Write `walk-record.json` beside the stage
-   documents: the three hashes every site-plan build prints
+   documents — `delvec schema --stage walk-record` is its shape, the same way
+   every other document you write has one. It is a campaign artifact rather than
+   a stage document, so it carries no `dsl_version`, no `campaign_id` and no
+   `stage`. Fill it with the three hashes every site-plan build prints
    (`site_plan_sha256`, `layout_graph_sha256`, `blockout_sha256`), the engine
-   revision it printed them from, `verdict: "passed"`, and whatever the walk
-   noted. Nothing about detail compiles without it (`DW0841`), including asking
+   revision printed beside them, `verdict: "passed"`, and whatever the walk
+   noted. Copy all four out of the build output rather than computing them. Nothing about detail compiles without it (`DW0841`), including asking
    for an allocation. **The first two hashes are the record's freshness key**:
    the whole a walk judges is derived from the plan AND the graph, so editing
    either one — even an edit that moves no block, such as which side a barred way
