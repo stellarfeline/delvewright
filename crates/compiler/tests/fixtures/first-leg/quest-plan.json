@@ -1,0 +1,30 @@
+{
+  "campaign_id": "first-leg",
+  "content": {
+    "finale": "quest/vault",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/hall",
+        "depends_on": [],
+        "goal": "Ring the bell in the watch-hall.",
+        "id": "quest/hall",
+        "mandatory": true,
+        "npcs": []
+      },
+      {
+        "act": 2,
+        "area": "area/vault",
+        "depends_on": [
+          "quest/hall"
+        ],
+        "goal": "Take what the bell answers for.",
+        "id": "quest/vault",
+        "mandatory": true,
+        "npcs": []
+      }
+    ]
+  },
+  "dsl_version": "0.2.0",
+  "stage": "quest-plan"
+}
