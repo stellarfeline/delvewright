@@ -18,7 +18,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "b381b16f3cb8549b5b5e746291e2b13691878dbc72ff9e9c016587f54e355c3b",
+      "SKINS.md": "b235cefc8cda8cc7eace0e5b6f3298492ad68fdae60628d7cd9897b89a6c36dd",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "857e7f6575c5108760ee9fcbd195c95856df30afca7a9435f97da2a82c611ede",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -495,7 +495,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "552051d3af47e0c621dfdd57eb1f36c4e3b87ea0f0a5eb9fe5c31a99cc34849e",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "bc22460def07f04072ce7a3d022b88ff09398f1c37604d76b4d5ef4fa83a2581",
-      "resourcepack.zip": "f26a01087268081557086a796e2cdc5b55228ac6805f9912cb01fda079431c93",
+      "resourcepack.zip": "ea6ed2ed0546bbbb4aec153079636fc1fb8a65461ba3e852a555f201644d69e0",
       "server/README.md": "a895869e91bbc41cad14e1ca81c3e8eca5a2a02aa8b51feb13c2695d922e7466",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "6ae89ea9ad5417b8435b624dcb48e5332077ad8471fb7c2b03219b52a7c0e249",
@@ -526,7 +526,7 @@
       "validation/watch-ledger.json": "2c561b5c68d6431ce1276da2cbd022a9f5f0a6628936ec37b5e390b0e7921de9",
       "validation/ways.json": "bf756f4b8d3d860b0d835f10b145f2e5e66635e47d7fcde1aac99efee81cc655"
     },
-    "resource_pack_sha1": "9b2f82170069ef9121ade39e4bbe6846de7468e3"
+    "resource_pack_sha1": "729157fe5e727cfb582de16ec779ac9a0c23b1dd"
   },
   "hard.en": {
     "campaign_id": "gallery",
@@ -547,7 +547,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "b381b16f3cb8549b5b5e746291e2b13691878dbc72ff9e9c016587f54e355c3b",
+      "SKINS.md": "b235cefc8cda8cc7eace0e5b6f3298492ad68fdae60628d7cd9897b89a6c36dd",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "857e7f6575c5108760ee9fcbd195c95856df30afca7a9435f97da2a82c611ede",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -1024,7 +1024,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "552051d3af47e0c621dfdd57eb1f36c4e3b87ea0f0a5eb9fe5c31a99cc34849e",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "bc22460def07f04072ce7a3d022b88ff09398f1c37604d76b4d5ef4fa83a2581",
-      "resourcepack.zip": "f26a01087268081557086a796e2cdc5b55228ac6805f9912cb01fda079431c93",
+      "resourcepack.zip": "ea6ed2ed0546bbbb4aec153079636fc1fb8a65461ba3e852a555f201644d69e0",
       "server/README.md": "a895869e91bbc41cad14e1ca81c3e8eca5a2a02aa8b51feb13c2695d922e7466",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "e9d55b5fbf08c6dec1251ed5d1e9b41a43fd42538744631457c0a417d15f95f8",
@@ -1055,7 +1055,7 @@
       "validation/watch-ledger.json": "2c561b5c68d6431ce1276da2cbd022a9f5f0a6628936ec37b5e390b0e7921de9",
       "validation/ways.json": "bf756f4b8d3d860b0d835f10b145f2e5e66635e47d7fcde1aac99efee81cc655"
     },
-    "resource_pack_sha1": "9b2f82170069ef9121ade39e4bbe6846de7468e3"
+    "resource_pack_sha1": "729157fe5e727cfb582de16ec779ac9a0c23b1dd"
   },
   "ocean-horizon.en": {
     "campaign_id": "gallery",
@@ -1076,7 +1076,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "b381b16f3cb8549b5b5e746291e2b13691878dbc72ff9e9c016587f54e355c3b",
+      "SKINS.md": "b235cefc8cda8cc7eace0e5b6f3298492ad68fdae60628d7cd9897b89a6c36dd",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "857e7f6575c5108760ee9fcbd195c95856df30afca7a9435f97da2a82c611ede",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -1553,7 +1553,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "552051d3af47e0c621dfdd57eb1f36c4e3b87ea0f0a5eb9fe5c31a99cc34849e",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "8dd4a1e4c519b27103245c6d496ac212dd424c66609b9f4ecc61f89214cde0e1",
-      "resourcepack.zip": "f26a01087268081557086a796e2cdc5b55228ac6805f9912cb01fda079431c93",
+      "resourcepack.zip": "ea6ed2ed0546bbbb4aec153079636fc1fb8a65461ba3e852a555f201644d69e0",
       "server/README.md": "1d6678901a3d4b39da5e81fbee4a747e6bb6fbcc1d916eb0961d97963b138853",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "2ef540fa1c58c4f8c6fad3e078ee6ca869e38143845c8a11d92d49dad4af0831",
@@ -1584,7 +1584,7 @@
       "validation/watch-ledger.json": "2c561b5c68d6431ce1276da2cbd022a9f5f0a6628936ec37b5e390b0e7921de9",
       "validation/ways.json": "bf756f4b8d3d860b0d835f10b145f2e5e66635e47d7fcde1aac99efee81cc655"
     },
-    "resource_pack_sha1": "9b2f82170069ef9121ade39e4bbe6846de7468e3"
+    "resource_pack_sha1": "729157fe5e727cfb582de16ec779ac9a0c23b1dd"
   },
   "primary.en": {
     "campaign_id": "gallery",
@@ -1605,7 +1605,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "b381b16f3cb8549b5b5e746291e2b13691878dbc72ff9e9c016587f54e355c3b",
+      "SKINS.md": "b235cefc8cda8cc7eace0e5b6f3298492ad68fdae60628d7cd9897b89a6c36dd",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "857e7f6575c5108760ee9fcbd195c95856df30afca7a9435f97da2a82c611ede",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -2082,7 +2082,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "552051d3af47e0c621dfdd57eb1f36c4e3b87ea0f0a5eb9fe5c31a99cc34849e",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "bc22460def07f04072ce7a3d022b88ff09398f1c37604d76b4d5ef4fa83a2581",
-      "resourcepack.zip": "f26a01087268081557086a796e2cdc5b55228ac6805f9912cb01fda079431c93",
+      "resourcepack.zip": "ea6ed2ed0546bbbb4aec153079636fc1fb8a65461ba3e852a555f201644d69e0",
       "server/README.md": "a895869e91bbc41cad14e1ca81c3e8eca5a2a02aa8b51feb13c2695d922e7466",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "83516c3c981c454b068b881cb9ae270e78e24fc209bc4b20937ba24ce4c06567",
@@ -2113,7 +2113,7 @@
       "validation/watch-ledger.json": "2c561b5c68d6431ce1276da2cbd022a9f5f0a6628936ec37b5e390b0e7921de9",
       "validation/ways.json": "bf756f4b8d3d860b0d835f10b145f2e5e66635e47d7fcde1aac99efee81cc655"
     },
-    "resource_pack_sha1": "9b2f82170069ef9121ade39e4bbe6846de7468e3"
+    "resource_pack_sha1": "729157fe5e727cfb582de16ec779ac9a0c23b1dd"
   },
   "primary.zh-cn": {
     "campaign_id": "gallery",
@@ -2135,7 +2135,7 @@
     "language": "zh-cn",
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "e1f10c6c23b2c18fe287730837f1b3a433b6be4d2e48290da35f7eb49cf01782",
+      "SKINS.md": "ec51590104e1d0319c09d0021f6d138b3bfc3eddbb8e50dc60f3dbaba6395076",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "857e7f6575c5108760ee9fcbd195c95856df30afca7a9435f97da2a82c611ede",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -2611,7 +2611,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "aaba0367a55ec826639488f3580429b4105b9ff7edd388e1d324057e0d8da393",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "86331505b051ea01ba169ccb43f869df7bc66c0f8cc8f2887dbab3a334ee0a47",
-      "resourcepack.zip": "6978f91532fde871aad2290bb4228c92aa4be4187cc84cf7f427660743cafc22",
+      "resourcepack.zip": "2e430ab270ae826e883dcd472287d86c792b80291069f776a1e42e01867a68e7",
       "server/README.md": "a895869e91bbc41cad14e1ca81c3e8eca5a2a02aa8b51feb13c2695d922e7466",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "83516c3c981c454b068b881cb9ae270e78e24fc209bc4b20937ba24ce4c06567",
@@ -2642,7 +2642,7 @@
       "validation/watch-ledger.json": "5f106bdd966e316249a29287938e120b18f1a5c66408a2663fedea593810088b",
       "validation/ways.json": "bf756f4b8d3d860b0d835f10b145f2e5e66635e47d7fcde1aac99efee81cc655"
     },
-    "resource_pack_sha1": "f17b6cae242932b1e55ddb977f436836caeb8a67"
+    "resource_pack_sha1": "8fa9fce7e721dc837cb7a9a2093ea60b07559cd0"
   },
   "site-plan.en": {
     "campaign_id": "gallery",
@@ -2963,7 +2963,7 @@
     },
     "mc_version": "1.21.11",
     "outputs": {
-      "SKINS.md": "b381b16f3cb8549b5b5e746291e2b13691878dbc72ff9e9c016587f54e355c3b",
+      "SKINS.md": "b235cefc8cda8cc7eace0e5b6f3298492ad68fdae60628d7cd9897b89a6c36dd",
       "creator-datapack/data/gallery/function/creator/emit.mcfunction": "857e7f6575c5108760ee9fcbd195c95856df30afca7a9435f97da2a82c611ede",
       "creator-datapack/data/gallery/function/creator/init.mcfunction": "7f81f1513ec83983d78d01842840c901c83487d3983da8f011b01da95b7eae6d",
       "creator-datapack/data/gallery/function/creator/rehearsal/aim.mcfunction": "5b00f8ca9b8eff0bbbae6a8e3192108dc2c80271e238ab4e4f5a3e093a6c919e",
@@ -3440,7 +3440,7 @@
       "packtest-datapack/data/gallery/test/wave_kill_reward_muster.mcfunction": "552051d3af47e0c621dfdd57eb1f36c4e3b87ea0f0a5eb9fe5c31a99cc34849e",
       "packtest-datapack/pack.mcmeta": "549482756b33bacc8910abe034e55837ccb4df3029ce38065c59c9ce5754f76b",
       "render-plan.json": "bc22460def07f04072ce7a3d022b88ff09398f1c37604d76b4d5ef4fa83a2581",
-      "resourcepack.zip": "f26a01087268081557086a796e2cdc5b55228ac6805f9912cb01fda079431c93",
+      "resourcepack.zip": "ea6ed2ed0546bbbb4aec153079636fc1fb8a65461ba3e852a555f201644d69e0",
       "server/README.md": "a895869e91bbc41cad14e1ca81c3e8eca5a2a02aa8b51feb13c2695d922e7466",
       "server/eula-note.txt": "2490937c526ded0804802b6b9076c936f44260715afb64af26dd8f8cce02a7aa",
       "server/server.properties": "83516c3c981c454b068b881cb9ae270e78e24fc209bc4b20937ba24ce4c06567",
@@ -3471,6 +3471,6 @@
       "validation/watch-ledger.json": "2c561b5c68d6431ce1276da2cbd022a9f5f0a6628936ec37b5e390b0e7921de9",
       "validation/ways.json": "bf756f4b8d3d860b0d835f10b145f2e5e66635e47d7fcde1aac99efee81cc655"
     },
-    "resource_pack_sha1": "9b2f82170069ef9121ade39e4bbe6846de7468e3"
+    "resource_pack_sha1": "729157fe5e727cfb582de16ec779ac9a0c23b1dd"
   }
 }
