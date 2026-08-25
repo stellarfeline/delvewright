@@ -2106,8 +2106,7 @@ fn the_walk_record_schema_names_every_field_the_gate_reads() {
         expected.len()
     );
     assert!(
-        schema["properties"].get("findings").is_some()
-            && !required.contains(&"findings"),
+        schema["properties"].get("findings").is_some() && !required.contains(&"findings"),
         "`findings` is a property and is NOT required"
     );
 
@@ -2151,9 +2150,7 @@ fn a_source_build_names_the_revision_it_was_built_from() {
     // `.git` is a directory in a clone and a FILE in a linked worktree, which
     // is what every dispatched round on this project builds in. Ask whether the
     // path exists, never whether it is a directory.
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..");
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
     if !repo_root.join(".git").exists() {
         eprintln!(
             "binding 0: no `.git` at {}, so this build could not have known its \
@@ -2165,7 +2162,8 @@ fn a_source_build_names_the_revision_it_was_built_from() {
 
     let rev = detail::engine_revision();
     assert_ne!(
-        rev, "unstamped",
+        rev,
+        "unstamped",
         "built from a git checkout at {}, so `crates/compiler/build.rs` should have \
          stamped the revision. `unstamped` here means the stamp stopped working and \
          every walk record written against this build carries a constant where a \

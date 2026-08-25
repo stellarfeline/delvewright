@@ -106,8 +106,10 @@ fn the_site_plan_schema_states_the_one_cell_separation_rule() {
     // Stated where the author is, and stated with the number the checks use.
     let gap = format!("{SHARED_FACE_GAP_CELLS}");
     assert!(
-        whole.contains(&format!("separated by exactly {} cell", spell(SHARED_FACE_GAP_CELLS)))
-            || whole.contains(&format!("separated by exactly {gap} cell")),
+        whole.contains(&format!(
+            "separated by exactly {} cell",
+            spell(SHARED_FACE_GAP_CELLS)
+        )) || whole.contains(&format!("separated by exactly {gap} cell")),
         "the PlanBox description must state the separation rule with the enforced \
          number ({SHARED_FACE_GAP_CELLS}); it says:\n{whole}"
     );
@@ -166,10 +168,7 @@ fn every_stage_document_is_exportable_by_its_own_name() {
         // The name is a real, non-empty, lower-kebab token a person can type.
         let name = stage.name();
         assert!(
-            !name.is_empty()
-                && name
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c == '-'),
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase() || c == '-'),
             "`{name}` must be typeable as a `--stage` argument"
         );
         exported += 1;

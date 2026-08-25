@@ -77,8 +77,11 @@ fn main() {
     // cannot keep. The stamp is context for a diagnostic, never a freshness
     // key — `walk-record.json` keys on the document hashes, which are computed
     // per run from the bytes on disk.
-    let dirty = git(&manifest, &["status", "--porcelain", "--untracked-files=no"])
-        .is_some_and(|s| !s.is_empty());
+    let dirty = git(
+        &manifest,
+        &["status", "--porcelain", "--untracked-files=no"],
+    )
+    .is_some_and(|s| !s.is_empty());
     let suffix = if dirty { "-dirty" } else { "" };
     println!("cargo:rustc-env=DELVEC_ENGINE_REVISION={head}{suffix}");
 }
@@ -86,7 +89,11 @@ fn main() {
 /// Run a git command in `dir`, returning trimmed stdout when it succeeded and
 /// said something.
 fn git(dir: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new("git").current_dir(dir).args(args).output().ok()?;
+    let out = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
