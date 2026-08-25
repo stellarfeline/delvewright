@@ -159,7 +159,10 @@ pub fn container_anchors(
 ///   campaign. Saying so is a remedy. Sending the author to look for an anchor
 ///   that does not exist is not.
 fn container_remedy(available: &[ContainerAnchor], what: &str) -> String {
-    let free: Vec<&ContainerAnchor> = available.iter().filter(|c| c.claimed_by.is_none()).collect();
+    let free: Vec<&ContainerAnchor> = available
+        .iter()
+        .filter(|c| c.claimed_by.is_none())
+        .collect();
     if !free.is_empty() {
         let list = free
             .iter()
@@ -403,7 +406,8 @@ mod tests {
     /// An anchor over thin air is the same defect, and must not be silent.
     #[test]
     fn an_empty_cell_is_also_dw0431() {
-        let e = check_loot_containers(&BTreeMap::new(), &[mk("stores", [0, 0, 0], 1)], &[]).unwrap_err();
+        let e = check_loot_containers(&BTreeMap::new(), &[mk("stores", [0, 0, 0], 1)], &[])
+            .unwrap_err();
         assert_eq!(e.code, "DW0431");
     }
 
@@ -547,25 +551,24 @@ mod tests {
     fn with_no_container_anywhere_the_refusal_says_so_and_names_the_piece() {
         for e in [
             check_collect_containers(&BTreeMap::new(), &[fill([0, 0, 0], 1)], &[]).unwrap_err(),
-            check_loot_containers(&BTreeMap::new(), &[mk("stores", [0, 0, 0], 1)], &[]).unwrap_err(),
+            check_loot_containers(&BTreeMap::new(), &[mk("stores", [0, 0, 0], 1)], &[])
+                .unwrap_err(),
         ] {
             assert!(
-                e.message.contains("No anchor anywhere in this campaign's assembled world"),
+                e.message
+                    .contains("No anchor anywhere in this campaign's assembled world"),
                 "{}",
                 e.message
             );
             // The half that is the author's: which piece an area binds.
             assert!(
-                e.message.contains("bind one of this campaign's areas to a piece"),
+                e.message
+                    .contains("bind one of this campaign's areas to a piece"),
                 "{}",
                 e.message
             );
             // And the half that is not, said plainly rather than prescribed.
-            assert!(
-                e.message.contains("prefab library"),
-                "{}",
-                e.message
-            );
+            assert!(e.message.contains("prefab library"), "{}", e.message);
         }
     }
 

@@ -116,15 +116,15 @@ fn the_refusal_names_every_missing_document_at_once() {
     assert!(d.message.contains("world.json"), "{}", d.message);
     // The remedy has to be runnable as written: a stub, and the command that
     // prints the shape of the document being stubbed.
-    assert!(
-        d.message.contains("delvec schema --stage"),
-        "{}",
-        d.message
-    );
+    assert!(d.message.contains("delvec schema --stage"), "{}", d.message);
     // The optional documents are named as optional, so their absence is not
     // mistaken for the next thing owed.
     for f in OPTIONAL_FILES {
-        assert!(d.message.contains(f), "must name `{f}` as optional: {}", d.message);
+        assert!(
+            d.message.contains(f),
+            "must name `{f}` as optional: {}",
+            d.message
+        );
     }
 }
 

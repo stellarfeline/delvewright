@@ -291,7 +291,8 @@ fn a_gate_two_areas_provide_is_dw0857() {
     // shared by every campaign that binds that piece, so a campaign author was
     // being sent to edit a library the campaign does not contain.
     assert!(
-        !hit.message.contains("Rename the gate in one of these areas"),
+        !hit.message
+            .contains("Rename the gate in one of these areas"),
         "the old prescription told the author to edit a library they do not own: {}",
         hit.message
     );

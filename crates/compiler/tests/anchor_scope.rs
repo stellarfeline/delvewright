@@ -243,7 +243,8 @@ fn a_reference_no_scope_settles_is_dw0859() {
         err.message
     );
     assert!(
-        err.message.contains("cast the npc at a name the beat's own area"),
+        err.message
+            .contains("cast the npc at a name the beat's own area"),
         "{}",
         err.message
     );
