@@ -103,12 +103,22 @@ pub fn passable(model: &VoxelModel, pos: [i32; 3]) -> bool {
     Voxels::passable(model, pos)
 }
 
-/// A full block: what a floor is made of, and what stops an eye.
+/// **What stops an eye**: anything in the box a body cannot pass through.
+///
+/// This used to be the same set as "what a floor is made of" and is not any
+/// more: water stops an eye and is not a floor. So a caller asking "can a body
+/// stand on this cell" wants [`Voxels::floor`] — which is what [`standable`]
+/// asks — and one asking about a sightline, an occluder or a landing wants
+/// this. The two are named apart deliberately; the campaign that made the
+/// difference is a drowned citadel, where the whole ward is one and not the
+/// other.
 pub fn solid(model: &VoxelModel, pos: [i32; 3]) -> bool {
     delvewright_schem::nav::solid(model, pos)
 }
 
-/// A cell a player can stand in: two blocks of clearance over a full floor.
+/// A cell a player can stand in: two cells of clearance over a floor — a floor
+/// being what [`Voxels::floor`] says it is, which is not the complement of
+/// passable and is never a fluid.
 pub fn standable(model: &VoxelModel, pos: [i32; 3]) -> bool {
     delvewright_schem::nav::standable(model, pos)
 }
