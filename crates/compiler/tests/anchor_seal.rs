@@ -387,11 +387,19 @@ fn typod_anchor_in_a_dialogue_respawn_bundle_is_dw0360() {
 // unreachable. An unconditional deferral would trade a specific message for
 // SILENCE exactly where this seal claims to be total.
 
-/// A campaign that assembles NO world: no NPCs (so no bodies), no actors, no
-/// traps, no waves, no checkpoints, no stealth beats, no `move-npc`/`cutscene`,
-/// and a single objective — so `critical_positions().windows(2)` is empty and
-/// there is no walkable critical leg either. `nav::needs_world` is false on every
-/// count, which is what makes `DW0447` unreachable here.
+/// A campaign with no NPCs (so no bodies), no actors, no traps, no waves, no
+/// checkpoints, no stealth beats, no `move-npc`/`cutscene`, and a **single**
+/// objective.
+///
+/// It was written to assemble no world at all — with one objective there was no
+/// consecutive pair of visited positions, hence no walkable critical leg, hence
+/// `nav::needs_world` false on every count and `DW0447` unreachable. It has one
+/// leg now: the party's own first move, from the campaign spawn to that single
+/// objective. The objective stands on the party's side of `anchor/door`
+/// accordingly — the piece places that gate SHUT at world-load and nothing here
+/// opens it, so a beat beyond it is a delve that cannot be finished (`DW0317`),
+/// which is a true fact about this fixture that nothing examined while the leg
+/// did not exist.
 fn worldless_campaign(volley_anchor: &str) -> Campaign {
     let quests = format!(
         r#"{{
@@ -401,7 +409,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
       "id": "quest/open-the-door",
       "trigger": {{ "type": "campaign-start" }},
       "objectives": [
-        {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2 }}
+        {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/keeper-stand", "radius": 2 }}
       ],
       "on_objective_complete": {{}},
       "on_complete": [
@@ -480,39 +488,64 @@ fn build_worldless(volley_anchor: &str) -> Result<BuildOutput, BuildFailure> {
     )
 }
 
-/// The premise the deferral rests on, pinned as a fact rather than left as prose:
-/// this campaign really does skip the world block, so `DW0447` really is
-/// unreachable for it. If a future change makes every campaign assemble a world,
-/// this fails and the conditional deferral can be simplified deliberately rather
-/// than by accident.
+/// The premise the deferral rests on, pinned — **in the direction it now runs**.
+///
+/// This pin used to assert the opposite: that the fixture skipped the world
+/// block, so `DW0447` was unreachable for it and `check_effect_anchors` had to
+/// keep the corner itself. It said in as many words that a change making every
+/// campaign assemble a world should fail it rather than pass by accident. That
+/// change is the party's first leg: a campaign with one critical objective has
+/// one leg where it used to have none, so it needs a world, so `DW0447` runs.
+///
+/// The three assertions together are what make this a statement about the LEG.
+/// No waves and no bodies means nothing else in `assembles_world` is answering;
+/// a leg count of exactly one means the single leg is the party's own first
+/// move, from the spawn to the only objective there is.
+///
+/// The deferral in `check_effect_anchors` stays conditional. Its other arm is
+/// unreachable from `emit::build` — `DW0345` refuses a campaign with no entry
+/// anchor before anything asks — but a check that defers to another check should
+/// establish that the other one runs rather than take this comment's word for it.
 #[test]
-fn the_worldless_fixture_really_does_skip_the_payload_proof() {
-    let campaign = worldless_campaign("anchor/exit");
+fn a_single_objective_campaign_assembles_a_world_for_its_first_leg() {
+    let campaign = worldless_campaign("anchor/keeper-stand");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     assert!(
-        !delvewright_compiler::nav::needs_world(&plan),
-        "fixture must not need a world, or the corner it probes does not exist"
-    );
-    assert!(
         plan.campaign.quests.content.waves.is_empty(),
-        "fixture must declare no waves"
+        "fixture must declare no waves, or the world is being assembled for something else"
     );
     assert!(
         !delvewright_compiler::clearance::has_bodies(&plan),
-        "fixture must carry no NPC or actor body"
+        "fixture must carry no NPC or actor body, or the world is being assembled for \
+         something else"
+    );
+    assert_eq!(
+        delvewright_compiler::nav::critical_leg_count(&plan),
+        1,
+        "one objective, one leg: the party's move from the campaign spawn to it"
+    );
+    assert!(
+        delvewright_compiler::nav::needs_world(&plan),
+        "that one leg has to be proven over geometry, so the world is assembled"
     );
 }
 
-/// A typo'd `volley` anchor in a campaign that assembles no world is `DW0360`.
+/// A typo'd `volley` anchor gets the **specific** diagnostic.
 ///
-/// `DW0447` cannot run here, so the seal keeps the corner itself. A generic
-/// message is a smaller defect than silence — and silence is what an
-/// unconditional deferral would have shipped.
+/// This case used to be the `DW0360` seal's corner: with no world assembled the
+/// payload proof could not run, and the seal kept the anchor itself rather than
+/// deferring into silence. The campaign assembles a world now — its first leg
+/// requires it — so `DW0447` runs, and the author is told which verb, which
+/// volume and which anchor instead of being told only that some anchor did not
+/// resolve.
 #[test]
-fn typod_volley_anchor_without_a_world_is_dw0360() {
-    assert_dw0360(
-        build_worldless("anchor/nope"),
-        "typo'd volley anchor in a world-less campaign",
-    );
+fn typod_volley_anchor_is_dw0447() {
+    match build_worldless("anchor/nope") {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0447", "typo'd volley anchor: {message}");
+        }
+        Err(other) => panic!("expected DW0447, got {other:?}"),
+        Ok(_) => panic!("expected DW0447, but the build succeeded"),
+    }
 }
