@@ -383,7 +383,6 @@
               }
             ],
             "stealth": false,
-            "title": "Reach the counter",
             "type": "reach-anchor"
           }
         ],

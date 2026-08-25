@@ -881,7 +881,6 @@
               "text": "The muster is put down.",
               "verb": "dies"
             },
-            "hint": "They are at the muster line.",
             "id": "obj/clear-the-muster",
             "requires_flags": [],
             "requires_state": [
@@ -892,7 +891,6 @@
               }
             ],
             "stealth": false,
-            "title": "Clear the muster",
             "type": "kill",
             "wave": "wave/muster"
           },

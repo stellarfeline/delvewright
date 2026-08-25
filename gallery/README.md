@@ -84,6 +84,15 @@ writes are perfectly legal, and what the engine refuses is holding them at once.
 | `sound-at-actor` | `DW0335` | playing a sound from an actor's position |
 | `a-piece-the-library-does-not-hold` | `DW0856` | binding the hall to a piece whose name is one letter wrong |
 | `a-gate-two-areas-provide` | `DW0857` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
+| `a-question-nobody-answers` | `DW0858` | asking the party to talk to somebody the same quest declares silent |
+| `a-walk-of-a-different-whole` | `DW0841` | detailing against a walk record of some other map |
+| `detail-without-a-walk` | `DW0841` | detailing a place before the whole has been walked |
+| `a-piece-that-is-not-its-frame` | `DW0843` | seating a piece that does not fill the box the map gave it |
+| `a-horizon-with-no-map` | `DW0855` | declaring a horizon with nothing for it to ring |
+| `a-clock-nobody-explained` | `DW0860` | arming a stealth clock that bites before its own instruction can be read |
+| `a-barrel-in-a-row-of-barrels` | `DW0861` | adopting a container the piece placed without naming what is in it |
+| `a-prompt-nobody-sees` | `DW0862` | writing a hint on an objective with no title to carry it |
+| `a-fight-nobody-points-at` | `DW0863` | requiring a fight and saying nothing about where it happens |
 
 Run any of them yourself:
 
