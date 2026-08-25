@@ -38,6 +38,13 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# The one rule for what a body can pass through, and the step budgets it feeds
+# (`delvewright_dsl::blockshape`, `::metrics` — spec-0056). The collision table
+# is a fact about a vanilla block state under the pinned game version, and this
+# is the crate every consumer of it already resolves; a private copy here is
+# exactly the defect spec-0056 exists to end.
+delvewright-dsl = { path = "../dsl" }
+
 # Structure `.nbt` emission goes through the asset pipeline's existing writer
 # (spec-0007) rather than a second one: one place defines the 1.21.11 template
 # shape and its determinism guarantees (sorted palette, fixed cell order, gzip

@@ -16,6 +16,7 @@
 //! nothing depends on hash order, wall-clock, or absolute paths.
 
 pub mod blocks;
+pub mod blockshape;
 pub mod canonical;
 pub mod chrome;
 pub mod detailplan;

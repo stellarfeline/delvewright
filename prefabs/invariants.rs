@@ -25,6 +25,20 @@ use std::sync::OnceLock;
 /// is the defect this gate exists to catch.
 const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/dsl/data/blocks-1.21.11.json");
 
+/// **What a block state does to a body that walks into it** — the same module
+/// `delvec`, the grammar back end and the admission pipeline all read
+/// (`delvewright_dsl::blockshape`, spec-0056), source-included the same way the
+/// registry above is.
+///
+/// It sits beside [`fluid`] under this name deliberately: `fluid` reaches it as
+/// `super::blockshape`, which resolves inside `delvewright-schem` — where the
+/// crate root re-exports it — and here, where this module is its neighbour. An
+/// absolute `delvewright_dsl::` path would resolve in the workspace and not in a
+/// generator, and the include would break the day the two touched.
+#[path = "../crates/dsl/src/blockshape.rs"]
+#[allow(dead_code)]
+pub mod blockshape;
+
 /// **What a cell does when there is fluid beside it** — the same module the
 /// in-workspace auditor reads (`delvewright_schem::fluid`), source-included the
 /// same way the registry above is.
