@@ -306,6 +306,7 @@ Those nine documents are the worked example this page does not print: a real
 whenever a field on this page is not clear. It is also the campaign that
 calibrates the metrics table, so its second job is the one described under
 *The site plan* below.
+
 ---
 
 # The steps
@@ -1053,6 +1054,7 @@ into a delve their engine cannot run.
 results, and the two commands anyone will actually use.
 
 ```sh
+
 # play
 EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
     --profile play up
@@ -1064,6 +1066,7 @@ EULA=TRUE CREATOR_NAME=<mc name> docker compose -f validation/compose.yaml \
 
 `owner-play.yaml` is what publishes `localhost:25565`; the base compose file
 publishes nothing. Both paths run the staging gate first — see step 9.
+
 ---
 
 # Reference
@@ -1662,6 +1665,7 @@ Two rules carry most of the load for text rendered into a chat line:
   out of every sentence in which it occurs."*
 
 Concision is not the same as flatness. Cut the padding, keep the beat.
+
 ## Reference: drawing the map's reference
 
 Needed at step 2B on path B of Init step 5. On path A the views are already in
@@ -1691,6 +1695,7 @@ re-rolled, where one unusable view is re-rolled alone for the cost of one image.
    elevation is not — which is per call and never a config edit.
 
 ```bash
+
 # the style note, written once and held constant for the whole series
 STYLE="Halgrave, in the same hand throughout: <palette, light, brushwork>. Each
 image is ONE single full-frame view of that place, filling the frame edge to
