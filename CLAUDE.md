@@ -118,6 +118,29 @@ validation/          # docker compose: headless server + bot, same image as CI &
   lower-layer hack (e.g. raycast polling where vanilla has no primitive), the
   feature is excluded until vanilla provides one. Applies at every layer boundary:
   NBT→compiler, compiler→DSL, DSL→skill.
+- **When the record does not answer a craft question, the answer is RESEARCHED
+  against established practice — never invented.** This is a research-grade
+  integration project: the default is that a mature answer exists in some
+  discipline and has not been looked up. Not knowing how to do something is
+  evidence that the research is incomplete, not licence to think a scheme up.
+  It binds at every layer — level-design craft, algorithms, tooling, review
+  method — and it binds hardest where the question *feels* like a matter of
+  taste, because that is where an invented answer is least likely to be
+  challenged. Worked example, and the shape to recognise: asked to light an
+  interior, an invented scheme distributes emitters by a periodic rule or paves
+  a floor with a glowing block; the researched answer is that light is
+  motivated, that pools of light and dark are a navigation grammar, and that
+  the eye reads contrast rather than brightness. Four obligations follow.
+  **State per rule whether it is cited or authored** — an invented scheme and a
+  researched one read identically in a report unless the report says which, and
+  that indistinguishability is the actual danger. **Name the weak spots**: a
+  claim no source supports is written down as unsupported, not smoothed over.
+  **Land the research where the next session finds it** — a record under
+  `docs/reference/`, not in a session's scratch, or the same question is
+  invented again. And **record the gap against the line that should have
+  covered it**, so an incomplete research record is a finding rather than a
+  permanent hole. The bound: research answers the question that was asked and
+  stops. Unlicensed sources are ideas-only (ADR-0013, `ACKNOWLEDGEMENTS.md`).
 - **This is a general engine. Primitives are abstract, flexible and
   configurable, and never bound to one campaign's design.** A creator must be able
   to build **any** content with it. A primitive encodes a *mechanism* — a thing a
