@@ -453,18 +453,26 @@ pub fn build_with_warnings(
             Some(er) => er.assembled.blocks.clone(),
             None => crate::assembled::assembled_blocks(plan, structures),
         };
-        crate::loot::check_loot_containers(&blocks, &plan.loot).map_err(|e| {
+        // What the world actually HAS, computed once and handed to both proofs.
+        // A refusal that tells an author to point at "an anchor whose cell
+        // already has one" owes the list, and it is the same list for both:
+        // `DW0431` and `DW0438` ask one question about one object class through
+        // two doors, so a second derivation here would be a second answer able
+        // to disagree with the first.
+        let available =
+            crate::loot::container_anchors(&blocks, &plan.anchors, &plan.loot, &plan.collect_fills);
+        crate::loot::check_loot_containers(&blocks, &plan.loot, &available).map_err(|e| {
             BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
             }
         })?;
-        crate::loot::check_collect_containers(&blocks, &plan.collect_fills).map_err(|e| {
-            BuildFailure::Diagnostic {
+        crate::loot::check_collect_containers(&blocks, &plan.collect_fills, &available).map_err(
+            |e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
-            }
-        })?;
+            },
+        )?;
     }
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):

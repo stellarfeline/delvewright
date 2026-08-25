@@ -230,6 +230,29 @@ fn a_reference_no_scope_settles_is_dw0859() {
             err.message
         );
     }
+    // **The remedy has to be one this author can perform.** This message led
+    // with "Rename the anchor in all but one of these areas" — an edit to prefab
+    // metadata the campaign does not own and every other campaign binding those
+    // pieces shares. It now leads with the move that costs nothing (cast at a
+    // name the beat's own area provides), states the binding change as the other
+    // campaign-side option, and says plainly that renaming lives in the prefab
+    // library and cannot be reached from these documents.
+    assert!(
+        !err.message.contains("Rename the anchor in all but one"),
+        "the old prescription told the author to edit a library they do not own: {}",
+        err.message
+    );
+    assert!(
+        err.message.contains("cast the npc at a name the beat's own area"),
+        "{}",
+        err.message
+    );
+    assert!(err.message.contains("`world.areas[]`"), "{}", err.message);
+    assert!(
+        err.message.contains("you cannot reach it from here"),
+        "where the change is genuinely in the piece, the message must say so: {}",
+        err.message
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 

@@ -3910,17 +3910,34 @@ fn build_critical_path(
                                              ({list}) — neither the area this beat plays in \
                                              (`{area}`) nor the npc's own area (`{home_area}`) is \
                                              among them, so nothing an author can see says which \
-                                             building the body is standing in. An anchor name is \
-                                             unique per AREA, which is the scope every anchor \
-                                             reference resolves in. Rename the anchor in all but \
-                                             one of these areas, or cast the npc at a name the \
-                                             beat's own area provides",
+                                             building the body is standing in. The move that \
+                                             costs least here is the one this campaign owns \
+                                             outright: cast the npc at a name the beat's own area \
+                                             (`{area}`) provides, and no binding has to change at \
+                                             all. {remedy}",
                                             n = areas.len(),
                                             list = areas
                                                 .iter()
                                                 .map(|a| format!("`{a}`"))
                                                 .collect::<Vec<_>>()
                                                 .join(", "),
+                                            // The same sentence `DW0857` prints, from the one
+                                            // writer: what an author may do about a name two of
+                                            // their buildings answer to is a fact about anchor
+                                            // names, not about the verb that said one. This site
+                                            // knows the areas but not which piece of each
+                                            // provides the name — `AnchorTable` records
+                                            // `(area, name) -> position` and no carrier — so it
+                                            // passes the areas with no pieces and the writer
+                                            // leaves that clause out.
+                                            remedy = crate::gates::anchor_ambiguity_remedy(
+                                                &areas
+                                                    .iter()
+                                                    .map(|a| {
+                                                        ((*a).to_string(), BTreeSet::new())
+                                                    })
+                                                    .collect(),
+                                            ),
                                         ),
                                     ));
                                 }
