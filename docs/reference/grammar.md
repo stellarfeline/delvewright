@@ -15,13 +15,37 @@ Two library modules exist for the tool and are public for it:
 
 - [`nav`] — `passable` / `solid` / `standable` / `standable_cells` / `connected`
   / `reachable_with_fall` / `ends` / `components` / `ground_entry` / `sheltered`.
+  Two of those are facts about this library's own block vocabulary rather than
+  about walking, and they are a **pair**: what a body may occupy (air and a
+  floor skull) and what it may stand **on**. They are not each other's
+  complement. A fluid — `minecraft:water`, `minecraft:lava` — answers no to
+  both: a body may not be in it and may not stand on it, which is the same pair
+  of answers `delvec`'s own routing model gives a flooded cell. So an open water
+  surface is not walkable floor, and a route never crosses one (spec-0038).
+  `solid` is a third question — what stops an eye — and water still answers yes
+  to that.
   These were written inside `tests/`, where a
   rule's own gate is the right place for the gate and the wrong place for the
   *predicate* it is written in: a program authored outside this repo has no
   `tests/support` to reach for, so its author had no way to ask whether the piece
-  could be walked at all. `tests/support/mod.rs` now delegates here;
-  `tests/staging.rs` still carries its own copy, for the reason its own header
-  gives, and folding it in is a named follow-up.
+  could be walked at all. Every test in this crate delegates here, and no copy of
+  the walk survives anywhere.
+
+  **The step rule these are written in terms of is the engine's one rule**, not
+  this crate's: `delvewright_dsl::metrics::step_allowed`, which `delvec`'s own
+  router also asks. A full-block rise is a jump, and a jump requires the cell the
+  body's head sweeps through to be clear — so a piece cannot be admitted on a
+  climb the compiler will later refuse. The walk functions take the model as their
+  first argument for exactly that reason: the set of standable cells cannot answer
+  what is above them.
+
+  Two things the walk still reads its own way, both stated so they are not
+  mistaken for a second rule. A box of cells has no collision heights, so a step
+  of one cell is read as a full block unless the model overrides
+  `Voxels::floor_top_16` — a coarser reading of the rise, and coarse only in the
+  direction that refuses a step vanilla admits. And `reachable_with_fall` remains
+  deliberately more permissive than the plain walk: it adds a one-way fall edge,
+  which is why a forward-arrival claim may use it and a no-way-back claim may not.
 - [`gates`] — `judge(&Expansion, Options) -> Report`, and the distinction the
   module is built around: a **gate** has a verdict and a binding count, a
   **measurement** is a number with no threshold, and the two are never mixed.
@@ -1417,8 +1441,15 @@ and tower deck that no body can walk to.
 
 So every expansion also carries a **reachability measurement**, printed by
 `delve-grammar expand` and written into `<id>.report.json` whether or not any
-optional gate was asked for. It walks `nav::components` over the standable cells
-from `nav::ground_entry` and reports:
+optional gate was asked for. It walks `nav::reachable_from` over the standable
+cells, seeded from `nav::ground_entry`, and groups what the walk did not reach
+into pockets with `nav::components`. The two are different questions and the
+report asks each of the right one: **what a body reaches is walked**, because the
+step relation is directed — a body rises a full block only where it has room over
+its head, and comes back down asking nothing — while a **pocket is a lump of
+floor**, which is a grouping and needs the undirected relation to be a partition
+at all. Taking the pocket that happens to contain an entrance was the same answer
+only while the relation was symmetric. It reports:
 
 | Number | Meaning |
 |---|---|
@@ -1540,10 +1571,12 @@ them is green. One is not fully decided: `the-drowned-bell-r2/z2-gate-ward` is
 is expanded at its transposed region, which is what makes the state a finding
 rather than a formality. The rule library
 holds one recorded red: `library/causeway` (`DW0800`) floods its ward floor to
-ceiling on both flanks of its spine, which is what makes the flanks unwalkable,
-and lowering the waterline needs `nav` to know that a body cannot stand on water
-— until it does, a lowered waterline would read as walkable floor and the ward's
-own claim would go green while being false.
+ceiling on both flanks of its spine, and that body of water is not contained —
+134 of its 252 cells run into open air and 36 run directions leave the piece's
+own faces. The repair is a contained ward: a lowered waterline with a wall under
+it. `nav` knows a body cannot stand on water (§above), so a lowered waterline
+reads as what it is rather than as walkable floor; the entry expires with the
+round that repairs the piece.
 
 The sweep also totals the **local-frame binding count** — how many fills read
 their states in the scope's own axes — beside the gate whose population they
