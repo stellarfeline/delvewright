@@ -967,6 +967,11 @@ fn assert_greenfield_corridor_clear(spec: &Spec, g: &Grid, seed: u64) {
     }
 }
 
+/// How many hand-shaped oaks the greenfield meadow aims at. Named rather than a
+/// literal in the loop's break, because it is now also the number the quantity
+/// floor is asserted against and the two must be one value.
+const G_OAK_TARGET: usize = 3;
+
 fn greenfield_scatter(spec: &Spec, g: &mut Grid, seed: u64) {
     let [sx, _sy, sz] = spec.size;
     let on_walk = |x: i32, z: i32| -> bool { greenfield_on_walk(spec, x, z) };
@@ -1038,9 +1043,11 @@ fn greenfield_scatter(spec: &Spec, g: &mut Grid, seed: u64) {
         }
     }
     cand.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    let domain = ((sx - 4).max(0) * (sz - 4).max(0)) as usize;
+    let usable = cand.len();
     let mut planted: Vec<(i32, i32)> = Vec::new();
     for (_, x, z) in cand {
-        if planted.len() >= 3 {
+        if planted.len() >= G_OAK_TARGET {
             break;
         }
         // reject only when close on BOTH axes so the oaks stay spread across the dell
@@ -1053,6 +1060,16 @@ fn greenfield_scatter(spec: &Spec, g: &mut Grid, seed: u64) {
         place_oak(g, x, z, seed, &on_walk);
         planted.push((x, z));
     }
+    // The quantity floor, asserted as a number over the WHOLE meadow rather than
+    // eyeballed on a render (`invariants::assert_scatter_reaches_its_target`).
+    invariants::assert_scatter_reaches_its_target(
+        &spec.id,
+        "meadow oak",
+        G_OAK_TARGET,
+        planted.len(),
+        domain,
+        usable,
+    );
 
     // Poppies + daisies (the design-named meadow flowers) with an occasional cornflower
     // accent and a short-grass dusting, scattered on the open grass only (never on the
