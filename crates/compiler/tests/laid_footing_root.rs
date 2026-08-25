@@ -176,38 +176,6 @@ fn all_functions(out: &BuildOutput) -> String {
     s
 }
 
-/// **The junction, at campaign scale: one campaign, three roots, three verdicts.**
-///
-/// Same box, same block, same verb, same anchors, same route. The only thing that
-/// differs between the three builds below is where the fill hangs — and that alone
-/// decides whether the delve is refused as unroutable, refused as leaning on a beat
-/// nobody has to play, or shipped with a proven route across it.
-///
-/// Each verdict pins one half of the merge, and the two halves fail in opposite
-/// directions, which is why they are one test:
-///
-/// * **The forced build reds if a leg stops carrying the world it was proven over.**
-///   The doorway cells have no floor in the assembled world — the edit fenced them —
-///   so the exported route across them is refused `DW0314` the moment the self-check
-///   goes back to judging the bare world.
-/// * **The `on_death` build reds if an unforced fill goes back to being ordinary
-///   floor.** It builds green instead, and ships a delve whose only route stands on
-///   planks that a party which never died would find missing.
-///
-/// **What would make this test vacuous**, stated so a later reader can check it
-/// rather than take it on trust:
-///
-/// * If the doorway were passable without the fill, all three builds would be about
-///   a plank nobody needs. The first build is that control, and it is a refusal:
-///   with no fill anywhere the delve is `DW0311`, unroutable.
-/// * If a refusal came from some unrelated defect it would look right and mean
-///   nothing, so each is pinned to its code — never merely to "an error" — and the
-///   `DW0546` message is required to name both the beat that lays the footing and
-///   the box it lays.
-/// * If the forced build succeeded without its route ever crossing the doorway, the
-///   accept would be about a leg that never touches the laid floor. So the emitted
-///   `fill` and the exported critical path are both read off the built artifact, and
-///   the exported leg is required to span the doorway.
 /// A two-quest stage-4 plan at `OPTIONAL_QUESTS_SINCE`: the hello-world finale,
 /// plus a second quest whose `mandatory` this arm varies. The second quest
 /// depends on nothing and nothing depends on it, so when it is declared
@@ -326,6 +294,38 @@ fn an_optional_quests_fill_lays_no_footing_the_forced_path_may_stand_on() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// **The junction, at campaign scale: one campaign, three roots, three verdicts.**
+///
+/// Same box, same block, same verb, same anchors, same route. The only thing that
+/// differs between the three builds below is where the fill hangs — and that alone
+/// decides whether the delve is refused as unroutable, refused as leaning on a beat
+/// nobody has to play, or shipped with a proven route across it.
+///
+/// Each verdict pins one half of the merge, and the two halves fail in opposite
+/// directions, which is why they are one test:
+///
+/// * **The forced build reds if a leg stops carrying the world it was proven over.**
+///   The doorway cells have no floor in the assembled world — the edit fenced them —
+///   so the exported route across them is refused `DW0314` the moment the self-check
+///   goes back to judging the bare world.
+/// * **The `on_death` build reds if an unforced fill goes back to being ordinary
+///   floor.** It builds green instead, and ships a delve whose only route stands on
+///   planks that a party which never died would find missing.
+///
+/// **What would make this test vacuous**, stated so a later reader can check it
+/// rather than take it on trust:
+///
+/// * If the doorway were passable without the fill, all three builds would be about
+///   a plank nobody needs. The first build is that control, and it is a refusal:
+///   with no fill anywhere the delve is `DW0311`, unroutable.
+/// * If a refusal came from some unrelated defect it would look right and mean
+///   nothing, so each is pinned to its code — never merely to "an error" — and the
+///   `DW0546` message is required to name both the beat that lays the footing and
+///   the box it lays.
+/// * If the forced build succeeded without its route ever crossing the doorway, the
+///   accept would be about a leg that never touches the laid floor. So the emitted
+///   `fill` and the exported critical path are both read off the built artifact, and
+///   the exported leg is required to span the doorway.
 #[test]
 fn the_root_of_runtime_laid_footing_decides_the_proof_and_the_export() {
     let dir = prefabs_with_doorstep("dw-laid-footing-root");
