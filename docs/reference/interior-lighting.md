@@ -1,5 +1,11 @@
 # Interior lighting
 
+> **UNFINISHED — this round was stopped by the planner mid-flight.** Sections 1–3 are complete and
+> sourced. Sections 4–7 (the emitter table, map-maker practice, the mob-spawning floor, the
+> provenance table) are placeholders: that research line was cut off before it reported. Do not
+> read the absence of section 4 as a claim that emitter mechanics do not matter — it is a gap.
+> `docs/notes/interior-lighting-measurements.md` holds the measurements behind section 1.
+
 How an interior is lit in a Delvewright delve. Agent-facing. Current behaviour.
 
 **Light is placed while the room is designed. The engine only checks it.** Where a lamp hangs
