@@ -3467,15 +3467,42 @@ pub fn critical_leg_count(plan: &Plan) -> usize {
 }
 
 fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
-    positions_of(&plan.critical_path, &plan.critical_path_transport)
+    positions_of(
+        plan.campaign_start().map(|(_, pos)| pos),
+        &plan.critical_path,
+        &plan.critical_path_transport,
+    )
 }
 
 /// [`critical_positions`] over an arbitrary exported step list — the shared core,
 /// split out so a spec-0025 **branch path** (a different sequence of
 /// the same step shapes, with its own transport markers) yields its own visited
 /// positions in its own step space. `src_step` indices are indices into `steps`.
-fn positions_of(steps: &[Step], transports: &[Option<[i32; 3]>]) -> Vec<VisitedPos> {
+///
+/// `start` is the cell the party begins the delve standing on
+/// ([`Plan::campaign_start`]), and it is the **first** visited position: the
+/// party's opening move is a leg like any other, and leaving it out is what let
+/// a campaign whose first objective stood across a void compile clean and strand
+/// the bot. It is never arrived at by transport — a crossing rides on an
+/// objective completion and at the spawn there is none, which
+/// `plan::DW_SPAWN_LEG_CROSSES` refuses before any of this runs — so the leg out
+/// of it is always a walk for `DW0311` to prove. It carries `src_step: 0`, the
+/// class-select step, which is what every `src_step > fire_step` filter already
+/// treats as preceding everything.
+fn positions_of(
+    start: Option<[i32; 3]>,
+    steps: &[Step],
+    transports: &[Option<[i32; 3]>],
+) -> Vec<VisitedPos> {
     let mut out = Vec::new();
+    if let Some(pos) = start {
+        out.push(VisitedPos {
+            pos,
+            transport_before: false,
+            talk_to: false,
+            src_step: 0,
+        });
+    }
     let mut transport_pending = false;
     for (i, step) in steps.iter().enumerate() {
         let pos = match step {
@@ -6805,6 +6832,7 @@ pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
 /// belong to a different sequence.
 pub fn check_branch_path(
     world: &World,
+    start: Option<[i32; 3]>,
     steps: &[Step],
     transports: &[Option<[i32; 3]>],
     region_events: &[RegionEvent],
@@ -6812,7 +6840,7 @@ pub fn check_branch_path(
 ) -> Result<(), NavError> {
     route_visited(
         world,
-        &positions_of(steps, transports),
+        &positions_of(start, steps, transports),
         region_events,
         ancestor,
     )
@@ -6826,6 +6854,7 @@ pub fn check_branch_path(
 /// route is omitted, which cannot occur once the check has passed).
 pub fn branch_path_routes(
     world: &World,
+    start: Option<[i32; 3]>,
     steps: &[Step],
     transports: &[Option<[i32; 3]>],
     region_events: &[RegionEvent],
@@ -6833,7 +6862,7 @@ pub fn branch_path_routes(
 ) -> Vec<LegRoute> {
     route_walked_legs(
         world,
-        &positions_of(steps, transports),
+        &positions_of(start, steps, transports),
         region_events,
         ancestor,
     )
