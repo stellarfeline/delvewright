@@ -43,7 +43,13 @@ pub enum Placement {
     Prefabs,
     /// A `site-plan.json` owns the space. There is exactly one area
     /// ([`crate::siteplan::SITE_AREA`]) and the anchor names are the ones the
-    /// derivation places ([`crate::siteplan::synthesized_anchors`]).
+    /// derivation places ([`crate::siteplan::synthesized_anchors`]) — the
+    /// `spawn`/`node-`/`seam-`/`unlock-` set the graph's own shape dictates,
+    /// plus every `stations[]` name its nodes declare (spec-0052). The station
+    /// half is why the remedy tells the author they may *declare* the name as
+    /// well as correct it: it is the only anchor name in this engine an author
+    /// writes by hand, so an unresolved one is as likely a missing declaration
+    /// as a typo.
     SitePlan,
     /// **Neither.** `areas[]` is empty and there is no site plan, so the campaign
     /// declares no place and nothing places an anchor: every area reference and
@@ -123,9 +129,10 @@ impl Placement {
                  read. Its anchor names are the ones the derivation places: `anchor/node-<place>` \
                  for each place the layout graph declares, `anchor/seam-<edge>` over each barred \
                  connection, `anchor/unlock-<edge>` on the far side of a one-sided one, and \
-                 `spawn` for the entry. Write one of those, and do NOT add an `areas[]` entry to \
-                 get a prefab: a campaign carrying a site plan declares an empty `areas` list \
-                 (`DW0839`)"
+                 `spawn` for the entry — plus every `stations[]` name its nodes declare. Write \
+                 one of those, or declare this name as a station on the node it belongs to, and \
+                 do NOT add an `areas[]` entry to get a prefab: a campaign carrying a site plan \
+                 declares an empty `areas` list (`DW0839`)"
             }
             Self::NoMap => {
                 "this campaign has no map yet: `world.areas` is empty and there is no \
@@ -135,7 +142,7 @@ impl Placement {
                  prefab's metadata exposes, or write the map pipeline (`geometry-brief.json`, \
                  then `layout-graph.json`, then `site-plan.json`) and write one of the names its \
                  derivation places (`anchor/node-<place>`, `anchor/seam-<edge>`, \
-                 `anchor/unlock-<edge>`, `spawn`)"
+                 `anchor/unlock-<edge>`, `spawn`, or a `stations[]` name a node declares)"
             }
         }
     }

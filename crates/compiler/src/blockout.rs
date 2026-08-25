@@ -62,6 +62,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use delvewright_dsl::StationKind;
 use delvewright_dsl::metrics::{MetricKind, MetricValue, Metrics, Pitch, Reads};
 use delvewright_dsl::siteplan::{
     ENTRY_ANCHOR, PlacedBox, PlacedSeam, SITE_AREA, VolumeRole, node_anchor, seam_anchor,
@@ -750,6 +751,65 @@ fn derive_bound(
                 AnchorSpec::Point(narrow(footing(&mass, b, b.centre()))),
             );
         }
+
+        // **The stations' stand-ins** (spec-0052 §5).
+        //
+        // A quest referencing a station of a still-massed place is the ordinary
+        // mid-build state, not an edge case, so a station reference is never
+        // unresolved: every station of every box is realized here, from the same
+        // one authority validation resolved the name against, which is what makes
+        // "a name that validated cannot fail to exist in the built world" true of
+        // a massed map exactly as it is of a detailed one.
+        //
+        // Computed in TWO passes on purpose. The cells are all read off the mass
+        // as it stands after the openings were cut (one immutable pass over every
+        // box), and only then are the gate bars written. A single interleaved
+        // pass would make each station's cell depend on which boxes were walked
+        // before it, so the derivation would stop being a pure function of the
+        // plan and start being a function of document order in a second, hidden
+        // way.
+        let mut station_cells: Vec<(String, [i64; 3], StationKind)> = Vec::new();
+        for b in &boxes {
+            let Some(node) = graph.nodes.iter().find(|n| n.id == b.node) else {
+                continue;
+            };
+            if node.stations.is_empty() {
+                continue;
+            }
+            // The place's own anchor is already standing on its footing, so the
+            // stations start from the cell after it: two names on one cell would
+            // be two places to put a body that is one place.
+            let mut taken: BTreeSet<[i64; 3]> = BTreeSet::new();
+            taken.insert(footing(&mass, b, b.centre()));
+            for st in &node.stations {
+                let cell = station_cell(&mass, b, &taken);
+                taken.insert(cell);
+                station_cells.push((st.anchor.as_str().to_string(), cell, st.kind));
+            }
+        }
+        for (name, cell, kind) in station_cells {
+            match kind {
+                StationKind::Point => {
+                    anchors.insert(name, AnchorSpec::Point(narrow(cell)));
+                }
+                StationKind::Gate => {
+                    // A minimal sealed region of the derivation's own bar, opened
+                    // and closed by the existing verbs exactly as a synthesized
+                    // seam gate is. The bar is WRITTEN, so the world-load seal
+                    // measures it shut like every other gate rather than taking
+                    // the anchor's word for it.
+                    mass.write(cell, cell, palette::BAR);
+                    anchors.insert(
+                        name,
+                        AnchorSpec::Gate {
+                            from: narrow(cell),
+                            to: narrow(cell),
+                            block: palette::BAR.to_string(),
+                        },
+                    );
+                }
+            }
+        }
     }
 
     let binding = Binding {
@@ -904,6 +964,53 @@ fn footing(mass: &Mass, b: &PlacedBox, want: [i64; 3]) -> [i64; 3] {
                 }
                 let c = [x, b.floor, z];
                 if standable(c) && best.is_none_or(|w| c < w) {
+                    best = Some(c);
+                }
+            }
+        }
+        if let Some(c) = best {
+            return c;
+        }
+    }
+    want
+}
+
+/// **The cell one station stands on while its place is massed** (spec-0052 §5).
+///
+/// The first standable cell of the box not already `taken`, in the derivation's
+/// standing order — Chebyshev distance from the floor centre, then
+/// lexicographically — which is the same rule [`footing`] searches by, so a
+/// reader of this module learns one ordering and not two.
+///
+/// The author cannot state where this goes: a station has no coordinate, no
+/// offset and no hint, and those are absent fields rather than optional ones.
+/// The stand-in's geometry is massing, not design; the design lives in the piece,
+/// where the name will land once one is bound.
+///
+/// Falls back to the box's centre when the place has fewer standable cells than
+/// it has stations, and that is not a silent pass for the same reason
+/// [`footing`]'s fallback is not: a place with nowhere to stand is what `DW0837`
+/// refuses over the built bytes, and answering it here with a second refusal
+/// would be two diagnostics for one defect.
+fn station_cell(mass: &Mass, b: &PlacedBox, taken: &BTreeSet<[i64; 3]>) -> [i64; 3] {
+    let (lo, hi) = b.space();
+    let solid = mass.solid_in([lo[0], lo[1] - 1, lo[2]], [hi[0], hi[1], hi[2]]);
+    let standable = |c: [i64; 3]| -> bool {
+        !solid.contains(&c)
+            && !solid.contains(&[c[0], c[1] + 1, c[2]])
+            && solid.contains(&[c[0], c[1] - 1, c[2]])
+    };
+    let want = b.centre();
+    let reach = (hi[0] - lo[0]).max(hi[2] - lo[2]).max(0);
+    for r in 0..=reach {
+        let mut best: Option<[i64; 3]> = None;
+        for x in (want[0] - r).max(lo[0])..=(want[0] + r).min(hi[0]) {
+            for z in (want[2] - r).max(lo[2])..=(want[2] + r).min(hi[2]) {
+                if (x - want[0]).abs().max((z - want[2]).abs()) != r {
+                    continue;
+                }
+                let c = [x, b.floor, z];
+                if !taken.contains(&c) && standable(c) && best.is_none_or(|w| c < w) {
                     best = Some(c);
                 }
             }

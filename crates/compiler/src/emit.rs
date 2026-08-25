@@ -4976,7 +4976,9 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
         let defer_to_dw0447 =
             payload_verbs_are_proven && (eff.volley().is_some() || eff.collapse().is_some());
         if !defer_to_dw0447 {
-            for (suffix, anchor) in eff.anchor_refs() {
+            // The demanded shape is the DSL tier's business (`DW0871`); this
+            // seal is about whether the name resolves at all.
+            for (suffix, anchor, _kind) in eff.anchor_refs() {
                 refs.push((
                     format!("{path}/{suffix}"),
                     eff.verb(),

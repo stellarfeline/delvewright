@@ -222,6 +222,18 @@ pub fn validate_campaign_with(
 pub(crate) struct AnchorProviders {
     /// area id → the anchor names that area provides.
     per_area: BTreeMap<String, BTreeSet<String>>,
+    /// **What SHAPE each derived name is**, for a site-plan campaign
+    /// (spec-0052 §4) — taken from
+    /// [`crate::siteplan::synthesized_anchor_kinds`], the same authority the
+    /// names themselves come from.
+    ///
+    /// Empty for a prefab campaign, and that emptiness is load-bearing rather
+    /// than a gap: a prefab's shape lives in its metadata, which
+    /// [`AnchorRegistry`] deliberately does not carry — it answers names only.
+    /// So [`Self::wrong_kind`] returns `None` there and the compiler keeps
+    /// answering the question at placement time, exactly as it always has. This
+    /// check is about names the ENGINE derives, which are knowable here.
+    kinds: BTreeMap<String, crate::layout::StationKind>,
     /// The union of every known area's set.
     union: BTreeSet<String>,
     /// Some area binds a pool, so the compiler resolves its anchors later.
@@ -244,11 +256,13 @@ impl AnchorProviders {
         // the derivation itself places them by, so a name that resolves here
         // cannot fail to exist in the built world.
         let mut declared_areas = c.world.content.areas.len();
+        let mut kinds: BTreeMap<String, crate::layout::StationKind> = BTreeMap::new();
         if c.site_plan.is_some() {
             declared_areas += 1;
+            kinds = crate::siteplan::synthesized_anchor_kinds(c);
             per_area.insert(
                 crate::siteplan::SITE_AREA.to_string(),
-                crate::siteplan::synthesized_anchors(c),
+                kinds.keys().cloned().collect(),
             );
         }
         for a in &c.world.content.areas {
@@ -264,11 +278,31 @@ impl AnchorProviders {
         let all_areas_known = declared_areas == per_area.len();
         Self {
             per_area,
+            kinds,
             union,
             deferred,
             all_areas_known,
             placement: crate::placement::Placement::of(c),
         }
+    }
+
+    /// **The shape this campaign declared for `name`, when it disagrees with what
+    /// the reference site demands** (spec-0052 §7.3); `None` when they agree,
+    /// when the name has no declared shape, or when this campaign has no site
+    /// plan.
+    ///
+    /// Judged from the DECLARATION, at validation, with zero pieces bound —
+    /// which is the whole point of putting the kind on the station rather than
+    /// discovering it when a piece arrives. When a piece does arrive, the same
+    /// kind is demanded of the piece anchor it binds to (spec-0052 §6), so the
+    /// two readings cannot drift.
+    pub(crate) fn wrong_kind(
+        &self,
+        name: &str,
+        demands: crate::layout::StationKind,
+    ) -> Option<crate::layout::StationKind> {
+        let declared = *self.kinds.get(name)?;
+        (declared != demands).then_some(declared)
     }
 
     /// The anchor set `area` provides, or `None` when that area's provider is not
@@ -304,6 +338,50 @@ impl AnchorProviders {
     pub(crate) fn anchor_remedy<'a>(&self, prefab: &'a str) -> &'a str {
         self.placement.anchor_remedy(prefab)
     }
+}
+
+/// **`DW0871` for one reference site** (spec-0052 §7.3).
+///
+/// One builder rather than a message per call site, for the reason the live
+/// command rule gives: a correct rule living inside one caller gives the next
+/// two nothing to reuse, and the wording an author meets must not depend on
+/// which verb happened to catch them.
+///
+/// The remedy it names is **reachable**, and that is checked rather than
+/// assumed: it tells the author to change the station's `kind` in the layout
+/// graph, or to name a station of the demanded kind. Both are things the graph
+/// can say — `kind` is a required field with two writable values, and nothing
+/// refuses a node for declaring either.
+fn station_kind_diag(
+    providers: &AnchorProviders,
+    name: &str,
+    demands: impl Into<Option<crate::layout::StationKind>>,
+    what: &str,
+    stage: &'static str,
+    path: String,
+) -> Option<Diagnostic> {
+    // `None` is a site that names a LOCATION rather than demanding a shape, and
+    // it is the majority: see `QuestEffect::anchor_refs` for where the line is
+    // drawn and for the gallery content an earlier, stricter draft refused.
+    let demands = demands.into()?;
+    let declared = providers.wrong_kind(name, demands)?;
+    Some(Diagnostic::error(
+        crate::layout::DW_STATION_KIND,
+        stage,
+        path,
+        format!(
+            "`{name}` is declared as a {got} station, and {what} demands a {want}. A station's \
+             `kind` is its SHAPE: a `point` is a cell a body is put at — a seat, a subject, an \
+             affordance, the centre of an anchor-centred volume — and a `gate` is a region that \
+             seals and clears, which is what `open-gate`, `close-gate`, a `shortcut` and a \
+             `timed-gate` address. This is read from the layout graph's declaration, so it is \
+             answered before any piece is bound and the same shape is demanded of the piece \
+             anchor when one is. Either change this station's `kind` to `{want}` in the layout \
+             graph, or name a station that is already one.",
+            got = declared.word(),
+            want = demands.word(),
+        ),
+    ))
 }
 
 /// Stage-5 lethal-volume structural checks (DSL v0.10, spec-0031): id syntax and
@@ -342,6 +420,16 @@ fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<
                 format!("/content/lethal_volumes/{i}/id"),
                 format!("duplicate lethal-volume id `{}`", v.id),
             ));
+        }
+        if let Some(f) = station_kind_diag(
+            &providers,
+            v.region.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "a lethal volume's region centre",
+            "quests",
+            format!("/content/lethal_volumes/{i}/region/anchor"),
+        ) {
+            d.push(f);
         }
         if !providers.resolvable(v.region.anchor.as_str()) {
             d.push(Diagnostic::error(
@@ -451,6 +539,16 @@ fn shop_anchor_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Di
     }
     let providers = AnchorProviders::build(c, anchors);
     for (i, sh) in c.quests.content.shops.iter().enumerate() {
+        if let Some(f) = station_kind_diag(
+            &providers,
+            sh.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "a shop counter",
+            "quests",
+            format!("/content/shops/{i}/anchor"),
+        ) {
+            d.push(f);
+        }
         if providers.resolvable(sh.anchor.as_str()) {
             continue;
         }
@@ -4386,6 +4484,16 @@ fn v06_checks(
                 ));
             }
         }
+        if let Some(f) = station_kind_diag(
+            &providers,
+            a.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "an actor's station",
+            "quests",
+            format!("/content/actors/{i}/anchor"),
+        ) {
+            d.push(f);
+        }
         if !providers.resolvable(a.anchor.as_str()) {
             d.push(Diagnostic::error(
                 codes::ANCHOR_UNRESOLVED,
@@ -4440,6 +4548,17 @@ fn v06_checks(
                 ));
             }
             if let QuestEffect::MoveActor { to_anchor, .. } = e
+                && let Some(f) = station_kind_diag(
+                    &providers,
+                    to_anchor.as_str(),
+                    crate::layout::StationKind::Point,
+                    "a `move-actor` destination",
+                    "quests",
+                    path.clone(),
+                )
+            {
+                d.push(f);
+            } else if let QuestEffect::MoveActor { to_anchor, .. } = e
                 && !providers.resolvable(to_anchor.as_str())
             {
                 d.push(Diagnostic::error(
@@ -4813,7 +4932,16 @@ fn anchors_and_items(
 
     // NPC anchors.
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-        if let Some(set) = providers.for_area(npc.area.as_str())
+        if let Some(f) = station_kind_diag(
+            &providers,
+            npc.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "an NPC's station",
+            "npcs",
+            format!("/content/npcs/{i}/anchor"),
+        ) {
+            d.push(f);
+        } else if let Some(set) = providers.for_area(npc.area.as_str())
             && !set.contains(npc.anchor.as_str())
         {
             // The one prefab remedy in this file that names the anchor back, so
@@ -4846,6 +4974,17 @@ fn anchors_and_items(
 
         for (j, obj) in q.objectives.iter().enumerate() {
             if let crate::stages::Objective::ReachAnchor { anchor, .. } = obj
+                && let Some(f) = station_kind_diag(
+                    &providers,
+                    anchor.as_str(),
+                    crate::layout::StationKind::Point,
+                    "a `reach-anchor` objective",
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/anchor"),
+                )
+            {
+                d.push(f);
+            } else if let crate::stages::Objective::ReachAnchor { anchor, .. } = obj
                 && !set.contains(anchor.as_str())
             {
                 d.push(Diagnostic::error(
@@ -4877,7 +5016,18 @@ fn anchors_and_items(
             // union of every known area's anchors; every other effect anchor names
             // a world position the quest's own area must provide.
             let cross_area = matches!(eff, QuestEffect::Cutscene { .. });
-            for (suffix, anchor) in eff.anchor_refs() {
+            for (suffix, anchor, demands) in eff.anchor_refs() {
+                if let Some(f) = station_kind_diag(
+                    &providers,
+                    anchor.as_str(),
+                    demands,
+                    &format!("`{}`", eff.verb()),
+                    "quests",
+                    format!("/content/quests/{i}/{path}/{suffix}"),
+                ) {
+                    d.push(f);
+                    continue;
+                }
                 let resolves = if cross_area {
                     // An unknown/pool area makes the union incomplete — defer to
                     // the compiler's build-time seal rather than guess.
@@ -4918,7 +5068,18 @@ fn anchors_and_items(
     if providers.all_areas_known() {
         for (ti, t) in c.quests.content.triggers.iter().enumerate() {
             for_each_trigger_effect_deep(t, |path, eff| {
-                for (suffix, anchor) in eff.anchor_refs() {
+                for (suffix, anchor, demands) in eff.anchor_refs() {
+                    if let Some(f) = station_kind_diag(
+                        &providers,
+                        anchor.as_str(),
+                        demands,
+                        &format!("`{}`", eff.verb()),
+                        "quests",
+                        format!("/content/triggers/{ti}/{path}/{suffix}"),
+                    ) {
+                        d.push(f);
+                        continue;
+                    }
                     if providers.union().contains(anchor.as_str()) {
                         continue;
                     }
@@ -5213,13 +5374,6 @@ fn v03_checks(
 
     // area id -> its single-prefab anchor set (pool areas deferred to compiler).
     let providers = AnchorProviders::build(c, anchors);
-    // Asked once for the whole stage-5 walk below: `anchor_resolves` is a free
-    // function three objective kinds share, and the remedy is the campaign's,
-    // not the objective kind's.
-    let objective_remedy = providers.anchor_remedy(
-        "use an anchor the prefab exposes (anchor names come from prefab metadata; do NOT \
-         invent one)",
-    );
     let quest_area: BTreeMap<&str, &str> = c
         .quest_plan
         .content
@@ -5310,12 +5464,12 @@ fn v03_checks(
                         items,
                         d,
                     );
-                    anchor_resolves(set, anchor, i, j, "anchor", objective_remedy, d);
+                    anchor_resolves(&providers, set, anchor, i, j, "anchor", d);
                     // v0.8: the adopted container's anchor must exist
                     // too. Whether its CELL really holds a chest/barrel needs the
                     // assembled world and is the build-tier `DW0438`.
                     if let Some(cont) = container {
-                        anchor_resolves(set, cont, i, j, "container", objective_remedy, d);
+                        anchor_resolves(&providers, set, cont, i, j, "container", d);
                     }
                     // v0.8: the fill is positional — the required stack
                     // in `container.0` plus one padding stack per slot after it —
@@ -5376,7 +5530,7 @@ fn v03_checks(
                             ),
                         ));
                     }
-                    anchor_resolves(set, anchor, i, j, "anchor", objective_remedy, d);
+                    anchor_resolves(&providers, set, anchor, i, j, "anchor", d);
                 }
                 Objective::TalkTo { .. } | Objective::ReachAnchor { .. } => {}
             }
@@ -5971,6 +6125,16 @@ fn v06_trap_checks(
                 ),
             ));
         }
+        if let Some(f) = station_kind_diag(
+            &providers,
+            t.at.as_str(),
+            crate::layout::StationKind::Point,
+            "a trap's `at`",
+            "quests",
+            format!("/content/traps/{i}/at"),
+        ) {
+            d.push(f);
+        }
         if !providers.resolvable(t.at.as_str()) {
             d.push(Diagnostic::error(
                 codes::TRAP_INVALID,
@@ -5987,6 +6151,16 @@ fn v06_trap_checks(
             ));
         }
         if let Some(dis) = &t.disarm {
+            if let Some(f) = station_kind_diag(
+                &providers,
+                dis.via.as_str(),
+                crate::layout::StationKind::Point,
+                "a trap's disarm affordance",
+                "quests",
+                format!("/content/traps/{i}/disarm/via"),
+            ) {
+                d.push(f);
+            }
             if !providers.resolvable(dis.via.as_str()) {
                 d.push(Diagnostic::error(
                     codes::TRAP_INVALID,
@@ -7018,16 +7192,34 @@ fn deferred_npc_checks(c: &Campaign, npc_ids: &BTreeSet<&str>, d: &mut Vec<Diagn
 }
 
 /// Push `DW0142` if `anchor` is not provided by the quest's (known single-prefab)
-/// area. `None` set = pool area or unknown prefab → deferred to the compiler.
+/// area, or `DW0871` if it is provided and is the wrong SHAPE.
+///
+/// `None` set = pool area or unknown prefab → deferred to the compiler.
+///
+/// Every objective that names an anchor names a cell — `reach-anchor` walks a
+/// body to it, `interact` presses something at it, `collect` opens a container
+/// standing on it — so the demand is [`crate::layout::StationKind::Point`] for
+/// all three and is stated once here rather than at each caller.
 fn anchor_resolves(
+    providers: &AnchorProviders,
     set: Option<&BTreeSet<String>>,
     anchor: &crate::ids::AnchorId,
     qi: usize,
     oi: usize,
     field: &str,
-    remedy: &str,
     d: &mut Vec<Diagnostic>,
 ) {
+    if let Some(f) = station_kind_diag(
+        providers,
+        anchor.as_str(),
+        crate::layout::StationKind::Point,
+        &format!("an objective's `{field}`"),
+        "quests",
+        format!("/content/quests/{qi}/objectives/{oi}/{field}"),
+    ) {
+        d.push(f);
+        return;
+    }
     if let Some(set) = set
         && !set.contains(anchor.as_str())
     {
@@ -7037,7 +7229,11 @@ fn anchor_resolves(
             format!("/content/quests/{qi}/objectives/{oi}/{field}"),
             format!(
                 "objective `{field}` anchor `{anchor}` is not provided by the prefab bound to \
-                 this quest's area — {remedy}"
+                 this quest's area — {remedy}",
+                remedy = providers.anchor_remedy(
+                    "use an anchor the prefab exposes (anchor names come from prefab metadata; \
+                     do NOT invent one)"
+                ),
             ),
         ));
     }
@@ -7824,7 +8020,25 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
                 ),
             ));
         }
-        for (field, anchor) in [("gate", &sc.gate), ("unlock", &sc.unlock)] {
+        // A shortcut's two anchors are two SHAPES: the `gate` is the region it
+        // clears on unlock, and the `unlock` is the cell its far-side affordance
+        // stands on. They travelled together through one resolvable() call
+        // because a name was all either needed.
+        for (field, anchor, demands) in [
+            ("gate", &sc.gate, crate::layout::StationKind::Gate),
+            ("unlock", &sc.unlock, crate::layout::StationKind::Point),
+        ] {
+            if let Some(f) = station_kind_diag(
+                &providers,
+                anchor.as_str(),
+                demands,
+                &format!("a shortcut's `{field}`"),
+                "quests",
+                format!("/content/shortcuts/{i}/{field}"),
+            ) {
+                d.push(f);
+                continue;
+            }
             if !providers.resolvable(anchor.as_str()) {
                 d.push(Diagnostic::error(
                     codes::SHORTCUT_INVALID,
@@ -8061,6 +8275,21 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
                 d,
             );
         }
+        // The clock fills and clears a REGION twice a cycle, so `gate` demands a
+        // gate station. This is the first shape question asked of
+        // `timed_gates[].gate` at this tier at all: the name itself is resolved
+        // only by the compiler, so a point named here used to travel all the way
+        // to `DW0343`.
+        if let Some(f) = station_kind_diag(
+            &providers,
+            g.gate.as_str(),
+            crate::layout::StationKind::Gate,
+            "a timed gate's `gate`",
+            "quests",
+            format!("/content/timed_gates/{i}/gate"),
+        ) {
+            d.push(f);
+        }
         if !driven.insert(g.gate.as_str()) {
             err(
                 format!("/content/timed_gates/{i}/gate"),
@@ -8087,6 +8316,16 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
         }
         // The disarm affordance, the same two rules a trap's obeys.
         if let Some(dis) = &g.disarm {
+            if let Some(f) = station_kind_diag(
+                &providers,
+                dis.via.as_str(),
+                crate::layout::StationKind::Point,
+                "a timed gate's disarm affordance",
+                "quests",
+                format!("/content/timed_gates/{i}/disarm/via"),
+            ) {
+                d.push(f);
+            }
             if !providers.resolvable(dis.via.as_str()) {
                 err(
                     format!("/content/timed_gates/{i}/disarm/via"),
@@ -8344,6 +8583,16 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
             ));
         }
         for (k, wp) in lane.waypoints.iter().enumerate() {
+            if let Some(f) = station_kind_diag(
+                &providers,
+                wp.as_str(),
+                crate::layout::StationKind::Point,
+                "a lane waypoint",
+                "quests",
+                format!("/content/waves/{i}/lane/waypoints/{k}"),
+            ) {
+                d.push(f);
+            }
             if !providers.resolvable(wp.as_str()) {
                 d.push(Diagnostic::error(
                     codes::LANE_INVALID,
@@ -9008,6 +9257,16 @@ fn loot_checks(
                 format!("/content/loot/{i}/id"),
                 format!("duplicate loot id `{}`", l.id),
             ));
+        }
+        if let Some(f) = station_kind_diag(
+            &providers,
+            l.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "a loot chest",
+            "quests",
+            format!("/content/loot/{i}/anchor"),
+        ) {
+            d.push(f);
         }
         if !providers.resolvable(l.anchor.as_str()) {
             d.push(Diagnostic::error(

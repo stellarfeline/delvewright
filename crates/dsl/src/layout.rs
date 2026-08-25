@@ -61,7 +61,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{Diagnostic, DwCode};
 use crate::envelope::Campaign;
-use crate::ids::{EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId};
+use crate::ids::{AnchorId, EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId};
 use crate::metrics::{MetricKind, Metrics, Reads};
 use crate::stages::Objective;
 
@@ -91,6 +91,24 @@ pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::every_version("DW0820");
 
 /// `DW0822`: the pacing measurement — a projection, printed with no threshold.
 pub const DW_PACING: DwCode = DwCode::every_version("DW0822");
+
+/// `DW0869`: a station takes a name in the engine's own namespace (spec-0052 §7.1).
+///
+/// `every_version` for the reason its siblings are: the rule judges what the
+/// document SAYS, and a graph below [`crate::STATIONS_SINCE`] has no `stations[]`
+/// to judge — the per-stage fence (`DW0141`) has already refused it — so there is
+/// no earlier campaign this rule could reach.
+pub const DW_STATION_RESERVED: DwCode = DwCode::every_version("DW0869");
+
+/// `DW0870`: two stations claim one name (spec-0052 §7.2).
+pub const DW_STATION_DUPLICATE: DwCode = DwCode::every_version("DW0870");
+
+/// `DW0871`: a reference demands a shape the station is not (spec-0052 §7.3).
+///
+/// Judged at the reference site from the DECLARATION, with zero pieces bound.
+/// `every_version` for its siblings' reason: below [`crate::STATIONS_SINCE`] a
+/// graph carries no station whose kind could disagree with anything.
+pub const DW_STATION_KIND: DwCode = DwCode::every_version("DW0871");
 
 // ---------------------------------------------------------------------------
 // Stage 2 — the geometry brief's machine-readable facts (spec-0049 §4.2)
@@ -177,6 +195,109 @@ pub struct Node {
     /// Anything the reviewer needs that `intent` does not carry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// **The named places inside this one** (spec-0052 §3).
+    ///
+    /// A site-plan campaign's anchor vocabulary is otherwise exactly the
+    /// synthesized set — `spawn`, one anchor per node, and the seam and unlock
+    /// anchors of barred edges — which is complete only for the authoring order
+    /// it was designed for: quests written against nodes before any piece
+    /// exists. The inverse order is real, and its quest layer names places
+    /// *inside* places: the fire pit in the camp, the aft deck of the galley.
+    /// Those names are the campaign's design, and flattening them onto box
+    /// centres un-writes its spatial script.
+    ///
+    /// A station is a **name and a shape, never a position** (§5): while the box
+    /// is massed the derivation realizes each station at a stand-in of its own,
+    /// and when a piece is bound the `detail-plan` `anchors` map re-binds it to
+    /// an anchor of that piece, which is where the name gets its real place.
+    /// There is no coordinate, offset or hint field here, and that absence is
+    /// the design rather than an omission.
+    ///
+    /// Declared names join the campaign vocabulary at the same authority as
+    /// every synthesized one — [`crate::siteplan::synthesized_anchors`] is still
+    /// the single place the question is answered, so a name that validates
+    /// cannot fail to exist in the built world.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stations: Vec<Station>,
+}
+
+/// **A named place inside a node** (spec-0052 §3).
+///
+/// Belongs to exactly one node. A connection *between* places is the edge's to
+/// declare, as ever — an interior gate station seals a volume inside its own
+/// place and can never gate node-to-node traversal, so topology stays the
+/// graph's structurally rather than by convention.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Station {
+    /// The anchor id (`anchor/<kebab>`) quests reference.
+    ///
+    /// Unique across the whole graph, and refused in the engine's own namespace
+    /// — see [`DW_STATION_RESERVED`] and [`DW_STATION_DUPLICATE`].
+    pub anchor: AnchorId,
+    /// The station's **shape** — never its purpose.
+    pub kind: StationKind,
+    /// Recorded judgement for the reviewer and the later per-place detail
+    /// brief. **No check keys on it**, for the same reason none keys on
+    /// [`Node::intent`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// **What shape a station is** (spec-0052 §3) — a cell to stand a body at, or a
+/// volume with a block that seals and clears.
+///
+/// The kind is the station's shape, never its purpose: there is no enum of
+/// bonfire / camera / shop, for the same reason [`Node::intent`] is free-form —
+/// a purpose vocabulary would be this month's genre wearing a schema's clothes.
+/// A bonfire, a camera subject and a shop counter are the same [`Self::Point`]
+/// to every check in this engine.
+///
+/// # Why two shapes and not three
+///
+/// spec-0052 §3 describes three, "mirroring the three shapes a piece anchor can
+/// take (a cell to stand a body at; a volume; a volume with a block that seals
+/// and clears)". Those are the three shapes a piece anchor may be **declared**
+/// in; they are not three shapes anything **consumes**. This engine resolves an
+/// anchor to `ResolvedAnchor::Point` or `ResolvedAnchor::Gate` and to nothing
+/// else, and a piece anchor declaring a bare `region` with no `block` is read as
+/// a gate whose fill block is `minecraft:air`.
+///
+/// Every volume-shaped consumer — a `lethal_volumes[]` region, `damage-players`'s
+/// `in`, a `volley` kill zone, `collapse`'s ceiling, `begin-stealth`,
+/// `fill-region`, `clear-region` — is a [`crate::StealthZone`], an
+/// **anchor-centred box** resolved from a *point* plus an extent. The engine
+/// states the reason in its own words at `QuestEffect::FillRegion::region`: an
+/// anchor-centred box rather than a prefab `region` anchor, "because the
+/// assembled model deletes every gate-region anchor's cells, so a slab declared
+/// that way would already be gone".
+///
+/// So a third `region` variant would be a name a campaign could declare and bind
+/// and **no reference site could consume** — an inert surface whose stand-in
+/// would have to be a gate region the assembled world then deletes. It is left
+/// out deliberately, and spec-0052 §11's falsifier is what decides it: the first
+/// campaign brief that cannot state its place without one is the evidence, and
+/// the answer is a first-class surface with a consumer, or a refused feature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum StationKind {
+    /// A cell to stand a body at — where a quest step, an NPC, a wave seat, a
+    /// cutscene subject, an affordance or a volume's centre lands.
+    Point,
+    /// A volume with a block that seals and clears — what `open-gate`,
+    /// `close-gate`, a `shortcut` and a `timed-gate` address.
+    Gate,
+}
+
+impl StationKind {
+    /// The word a diagnostic prints for this kind.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Point => "point",
+            Self::Gate => "gate",
+        }
+    }
 }
 
 /// Which way a one-way connection runs.
@@ -674,6 +795,19 @@ pub struct LayoutBinding {
     pub one_way_edges: usize,
     /// Connections that demand something before a body may pass.
     pub gated_edges: usize,
+    /// **Named places inside places** — stations declared across the whole graph
+    /// (spec-0052 §4).
+    ///
+    /// A station no quest references is legal mid-authoring, so this is the
+    /// denominator rather than a count of what is used, and a **zero is stated**
+    /// like every other: a site-plan campaign with no stations names its places
+    /// at node granularity, which is a fact about that campaign and not a
+    /// silence.
+    pub stations: usize,
+    /// Of those, stations declared as a gate — the ones `open-gate`,
+    /// `close-gate`, a `shortcut` and a `timed-gate` may address. The remainder
+    /// are points, which is what every other consumer resolves.
+    pub gate_stations: usize,
     /// Quest beats bound to a place.
     pub beats: usize,
     /// Of those, beats on the **mandatory quest spine** — the number `DW0817`'s
@@ -722,6 +856,14 @@ impl LayoutBinding {
             .count();
         b.path_steps = graph.critical_path.len().saturating_sub(1);
         b.metric_refs = graph.nodes.len();
+        for n in &graph.nodes {
+            b.stations += n.stations.len();
+            b.gate_stations += n
+                .stations
+                .iter()
+                .filter(|s| s.kind == StationKind::Gate)
+                .count();
+        }
         for e in &graph.edges {
             if e.is_traversal() {
                 b.traversal_edges += 1;
@@ -744,15 +886,17 @@ impl LayoutBinding {
     pub fn line(&self) -> String {
         format!(
             "layout-graph binding: {n} node(s), {e} edge(s) ({t} traversal, {ow} one-way, \
-             {s} shortcut, {g} gated), {b} beat(s) of which {sb} on the mandatory spine, \
-             {p} critical-path step(s), {m} metrics reference(s); geometry-brief binding: \
-             {f} fact(s).",
+             {s} shortcut, {g} gated), {st} station(s) of which {gs} gate(s), {b} beat(s) \
+             of which {sb} on the mandatory spine, {p} critical-path step(s), \
+             {m} metrics reference(s); geometry-brief binding: {f} fact(s).",
             n = self.nodes,
             e = self.edges,
             t = self.traversal_edges,
             ow = self.one_way_edges,
             s = self.shortcut_edges,
             g = self.gated_edges,
+            st = self.stations,
+            gs = self.gate_stations,
             b = self.beats,
             sb = self.spine_beats,
             p = self.path_steps,
@@ -793,12 +937,128 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     let known: BTreeSet<&str> = graph.nodes.iter().map(|n| n.id.0.as_str()).collect();
     let malformed = wellformed(graph, &known, d);
     metric_names(graph, &table, d);
+    stations(c, graph, d);
     if malformed {
         return;
     }
     mission(c, graph, d);
     shortcut_loops(graph, d);
     pacing(graph, &table, reads, d);
+}
+
+/// **The three refusals a declared station owes** (spec-0052 §7.1, §7.2, and the
+/// per-stage fence).
+///
+/// Runs before the malformed-graph return, because a station's name is judged
+/// against the engine's namespace and against the other stations — neither of
+/// which needs the node ids to resolve. A campaign with a dangling edge still
+/// gets told its station name is taken.
+fn stations(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
+    // ---- The fence (§7.6). A WELLFORMEDNESS rule: it judges what the document
+    // says against the version that document declares, so it is checked here
+    // rather than fenced as an obligation. Below the version there is nothing
+    // else to say about a station, so every other refusal is skipped — telling
+    // an author "you may not write this" and "and here is what writing it would
+    // mean" prescribes two repairs for one mistake.
+    let version = c
+        .layout_graph
+        .as_ref()
+        .map_or("", |g| g.dsl_version.as_str());
+    if !crate::is_v18(version) {
+        for (i, n) in graph.nodes.iter().enumerate() {
+            if n.stations.is_empty() {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                crate::codes::RESERVED,
+                "layout-graph",
+                format!("/content/nodes/{i}/stations"),
+                format!(
+                    "`{node}` declares {count} station(s), which requires dsl_version {since} \
+                     and this stage declares `{version}` — raise this stage's `dsl_version` to \
+                     {since}, or remove `stations` (below {since} a campaign names places at \
+                     node granularity, and `{node_anchor}` is the name this place already has).",
+                    node = n.id,
+                    count = n.stations.len(),
+                    since = crate::STATIONS_SINCE,
+                    node_anchor = crate::siteplan::node_anchor(&n.id),
+                ),
+            ));
+        }
+        return;
+    }
+
+    // ---- §7.1: a station in the engine's namespace.
+    //
+    // The PREFIX is the rule, not the collision: `anchor/seam-vestry-door` is
+    // refused even where no such edge exists, so that adding the edge later
+    // cannot turn a legal graph into two claims on one name.
+    //
+    // Reserving `spawn` by its exact name rather than by a prefix is not an
+    // inconsistency — `spawn` is one name the derivation synthesizes, and it has
+    // no family to reserve.
+    let entry = crate::siteplan::ENTRY_ANCHOR;
+    for (i, n) in graph.nodes.iter().enumerate() {
+        for (j, s) in n.stations.iter().enumerate() {
+            let name = s.anchor.as_str();
+            let reserved = ["anchor/node-", "anchor/seam-", "anchor/unlock-"]
+                .into_iter()
+                .find(|p| name.starts_with(p));
+            let why = if let Some(prefix) = reserved {
+                format!("its name begins `{prefix}`")
+            } else if name == entry {
+                format!("`{entry}` is the name the entry place stands under")
+            } else {
+                continue;
+            };
+            d.push(Diagnostic::error(
+                DW_STATION_RESERVED,
+                "layout-graph",
+                format!("/content/nodes/{i}/stations/{j}/anchor"),
+                format!(
+                    "station `{name}` takes a name the engine derives: {why}. The derivation \
+                     synthesizes this campaign's whole spatial vocabulary — `{entry}`, an \
+                     `anchor/node-…` for each place, and an `anchor/seam-…` plus an \
+                     `anchor/unlock-…` for each barred connection — so those three prefixes and \
+                     `{entry}` are reserved whether or not this graph happens to produce the \
+                     name today. Name the station something of your own, and the quest layer \
+                     references it exactly as it references a derived one."
+                ),
+            ));
+        }
+    }
+
+    // ---- §7.2: two claims on one name.
+    //
+    // **The scope of uniqueness is the area**, which is the scope every anchor
+    // reference already resolves in — unchanged from the standing rule, and the
+    // reason two pieces may both declare `anchor/door` and collide with nothing.
+    // A site-plan campaign has one area, so this is the whole graph.
+    let mut first: BTreeMap<&str, &NodeId> = BTreeMap::new();
+    for (i, n) in graph.nodes.iter().enumerate() {
+        for (j, s) in n.stations.iter().enumerate() {
+            let name = s.anchor.as_str();
+            if let Some(other) = first.get(name) {
+                d.push(Diagnostic::error(
+                    DW_STATION_DUPLICATE,
+                    "layout-graph",
+                    format!("/content/nodes/{i}/stations/{j}/anchor"),
+                    format!(
+                        "station `{name}` is declared by `{here}` and by `{other}`. A station \
+                         name is unique within the AREA — the scope every anchor reference \
+                         resolves in — and a site-plan campaign has exactly one, so the \
+                         campaign's whole vocabulary shares it. Two places cannot both answer \
+                         to one name, because a quest naming it would have two answers and \
+                         nothing would say which. Rename one of them, or declare it on one \
+                         place only: a quest in either place may name a station of the other.",
+                        here = n.id,
+                    ),
+                ));
+            } else {
+                first.insert(name, &n.id);
+            }
+        }
+    }
 }
 
 /// `fact/<kebab>` ids, unique, and every fact carries the sentence it came from.
