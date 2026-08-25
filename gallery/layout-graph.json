@@ -41,6 +41,16 @@
         "node": "node/exit",
         "objective": "obj/reach-the-end",
         "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/look-in-the-east-bay",
+        "quest": "quest/the-reliquary"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/look-in-the-west-bay",
+        "quest": "quest/the-reliquary"
       }
     ],
     "critical_path": [
