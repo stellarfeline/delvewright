@@ -299,6 +299,185 @@ mod tests {
         assert!(!standable(&m, [1, 1, 1]));
     }
 
+    /// **The owner's room, and the whole reason spec-0056 exists.**
+    ///
+    /// A room of ordinary height — floor, two courses, ceiling — with the things
+    /// anybody puts in one: a torch on the floor, a wall torch on the wall, a
+    /// candle, a carpet runner and a pressure plate, laid in one course across
+    /// the middle. Under the old rule (*air, or a name ending in `_skull`*) every
+    /// one of them was a full solid cube: the decorated cell could not be
+    /// occupied, and the cell above it lost its headroom to the ceiling, so a
+    /// whole course of floor vanished and the room was severed in two.
+    ///
+    /// This is a **set** assertion, not a count, and that is deliberate: a wrong
+    /// collision table moves which cells are standable, and it cannot leave the
+    /// set byte-identical to the bare room's.
+    #[test]
+    fn a_decorated_room_is_the_same_room() {
+        /// A 9x4x9 stone box, hollow, with a doorway at grade in the `z=0` wall.
+        fn room() -> VoxelModel {
+            let mut m = VoxelModel::new(Box3::at_origin([9, 4, 9]));
+            let stone = BlockState::simple("minecraft:stone_bricks");
+            for x in 0..9 {
+                for y in 0..4 {
+                    for z in 0..9 {
+                        let shell = y == 0 || y == 3 || x == 0 || x == 8 || z == 0 || z == 8;
+                        if shell {
+                            m.set([x, y, z], &stone).unwrap();
+                        }
+                    }
+                }
+            }
+            // the doorway
+            m.set([4, 1, 0], &BlockState::air()).unwrap();
+            m.set([4, 2, 0], &BlockState::air()).unwrap();
+            m
+        }
+
+        let bare = room();
+        let bare_cells = standable_cells(&bare);
+        let entry = ground_entry(&bare);
+        assert_eq!(
+            entry,
+            BTreeSet::from([[4, 1, 0]]),
+            "the doorway is the way in"
+        );
+        assert_eq!(
+            reachable_from(&bare, &bare_cells, &entry),
+            bare_cells,
+            "an empty room is walkable end to end"
+        );
+
+        // Now dress it: one course across the room, wall to wall.
+        let mut lit = room();
+        let decor = [
+            BlockState::simple("minecraft:torch"),
+            BlockState::with("minecraft:wall_torch", [("facing", "north")]),
+            BlockState::with(
+                "minecraft:white_candle",
+                [("candles", "3"), ("lit", "true"), ("waterlogged", "false")],
+            ),
+            BlockState::simple("minecraft:red_carpet"),
+            BlockState::with("minecraft:stone_pressure_plate", [("powered", "false")]),
+            BlockState::simple("minecraft:short_grass"),
+            BlockState::simple("minecraft:glow_lichen"),
+        ];
+        for (i, x) in (1..8).enumerate() {
+            lit.set([x, 1, 4], &decor[i % decor.len()]).unwrap();
+        }
+
+        let lit_cells = standable_cells(&lit);
+        assert_eq!(
+            lit_cells, bare_cells,
+            "decorating the floor moved a standable cell; the walk is reading a \
+             torch as a wall again"
+        );
+        assert_eq!(
+            reachable_from(&lit, &lit_cells, &entry),
+            bare_cells,
+            "the decoration severed the room"
+        );
+        // Binding, computed from the objects rather than written down beside
+        // them: 7 x 7 interior floor + the doorway, on one course.
+        assert_eq!(bare_cells.len(), 7 * 7 + 1);
+        assert_eq!(
+            lit_cells.iter().filter(|c| c[2] == 4).count(),
+            7,
+            "the decorated course itself is where a body stands"
+        );
+    }
+
+    /// **The step a body takes onto a bottom slab is a walk, not a jump.**
+    ///
+    /// The walk used to read every floor as a full cube, which turns an 8/16
+    /// auto-step into a 16/16 jump — and a jump is the one step that demands the
+    /// cell the head sweeps through be clear. So a beam over the low side
+    /// refused a step vanilla walks. The error only ever ran in the refusing
+    /// direction, so this is a step the engine gained rather than one it stopped
+    /// losing.
+    #[test]
+    fn a_body_walks_up_onto_a_bottom_slab_under_a_beam_that_would_stop_a_jump() {
+        let mut m = VoxelModel::new(Box3::at_origin([3, 5, 1]));
+        let stone = BlockState::simple("minecraft:stone_bricks");
+        let slab = BlockState::with("minecraft:stone_brick_slab", [("type", "bottom")]);
+        for x in 0..3 {
+            m.set([x, 0, 0], &stone).unwrap();
+            m.set([x, 4, 0], &stone).unwrap(); // ceiling
+        }
+        m.set([1, 1, 0], &slab).unwrap();
+        m.set([2, 1, 0], &slab).unwrap();
+        // The cell a jumping body's head would sweep through, blocked.
+        m.set([0, 3, 0], &stone).unwrap();
+
+        assert_eq!(
+            Voxels::floor_top_16(&m, [1, 1, 0]),
+            8,
+            "a bottom slab is measured, not read as a cube"
+        );
+        let cells = standable_cells(&m);
+        assert_eq!(
+            cells,
+            BTreeSet::from([[0, 1, 0], [1, 2, 0], [2, 2, 0]]),
+            "on the stone, and on top of each slab"
+        );
+        assert!(
+            delvewright_schem::nav::connected(
+                &m,
+                &cells,
+                &BTreeSet::from([[0, 1, 0]]),
+                &BTreeSet::from([[2, 2, 0]])
+            ),
+            "half a block up is an auto-step and asks nothing of the beam"
+        );
+        // And the beam is real: raise the same step to a full block and the walk
+        // refuses it, so the green above is the measurement and not a hole.
+        let mut full = VoxelModel::new(Box3::at_origin([3, 5, 1]));
+        for x in 0..3 {
+            full.set([x, 0, 0], &stone).unwrap();
+            full.set([x, 4, 0], &stone).unwrap();
+        }
+        full.set([1, 1, 0], &stone).unwrap();
+        full.set([2, 1, 0], &stone).unwrap();
+        full.set([0, 3, 0], &stone).unwrap();
+        let full_cells = standable_cells(&full);
+        assert!(
+            !delvewright_schem::nav::connected(
+                &full,
+                &full_cells,
+                &BTreeSet::from([[0, 1, 0]]),
+                &BTreeSet::from([[2, 2, 0]])
+            ),
+            "a whole block up is a jump, and the beam is in the way"
+        );
+    }
+
+    /// The other side of the same table: what is still a wall.
+    ///
+    /// A change that only ever adds passable cells can break a seal, so the
+    /// classes that must keep sealing are asserted here rather than assumed. A
+    /// fence and a wall are 1.5 blocks tall on a 1-block cell — a body neither
+    /// walks through one nor stands on top of one — and everything the table does
+    /// not recognise is a full cube.
+    #[test]
+    fn a_fence_is_still_a_wall_and_nothing_stands_on_it() {
+        for barrier in ["minecraft:oak_fence", "minecraft:cobblestone_wall"] {
+            let m = basin(BlockState::simple(barrier));
+            assert!(!passable(&m, [1, 1, 1]), "{barrier} is not walked through");
+            assert!(
+                !Voxels::floor(&m, [1, 1, 1]),
+                "{barrier} is 1.5 tall: no walking body stands on its top"
+            );
+            assert!(standable_cells(&m).is_empty(), "{barrier}");
+        }
+        // And a closed door stays a door: unrecognised means full cube, which
+        // can only refuse a route, never invent one.
+        let door = BlockState::with(
+            "minecraft:oak_door",
+            [("half", "lower"), ("facing", "north"), ("open", "false")],
+        );
+        assert!(!passable(&basin(door), [1, 1, 1]));
+    }
+
     /// The shape the campaign actually ships, and the one a synthetic room
     /// misses: a flood with a body-height air pocket over it. Every cell of the
     /// surface used to answer `standable`, so a walk crossed the ward; the dry

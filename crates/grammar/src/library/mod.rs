@@ -69,6 +69,7 @@ pub mod castle;
 pub mod causeway;
 pub mod church;
 pub mod cliff_path;
+pub mod decorated_room;
 pub mod disarm_stand;
 pub mod drop_shaft;
 pub mod dumbwaiter;
@@ -99,6 +100,7 @@ pub use castle::castle;
 pub use causeway::causeway;
 pub use church::church;
 pub use cliff_path::cliff_path;
+pub use decorated_room::decorated_room;
 pub use disarm_stand::disarm_stand;
 pub use drop_shaft::drop_shaft;
 pub use dumbwaiter::dumbwaiter;
@@ -420,6 +422,19 @@ const ROUTE: crate::gates::Options = crate::gates::Options {
     reachable_floor: false,
 };
 
+/// A piece with a roof over it and a way in, claiming that every scrap of floor
+/// it shelters can be walked to.
+///
+/// Claimed by the entry for the reason [`MIRRORED_Y`] gives: a claim that lives
+/// only on a command line is a gate the corpus never runs, and until this entry
+/// existed `reachable-floor` bound **zero** over the whole library.
+const ROOFED: crate::gates::Options = crate::gates::Options {
+    traversable: false,
+    allow_falls: false,
+    symmetric: None,
+    reachable_floor: true,
+};
+
 /// A piece built as one rule standing at both sites of a mirror plane on the
 /// world `Y`.
 ///
@@ -517,6 +532,18 @@ pub const PROGRAMS: &[LibraryProgram] = &[
         1,
         Kind::Piece,
         NO_CLAIM,
+    ),
+    // A corpus example rather than a piece of the vocabulary: nobody composes a
+    // zone out of it. It is here because it is the room in which ordinary floor
+    // decoration used to sever the walk (spec-0056), and because it is the only
+    // entry that asks `reachable-floor` anything at all.
+    entry(
+        "decorated-room",
+        decorated_room::decorated_room,
+        [11, 4, 11],
+        0,
+        Kind::Example,
+        ROOFED,
     ),
     entry(
         "drop-shaft",

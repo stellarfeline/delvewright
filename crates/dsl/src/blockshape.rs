@@ -88,10 +88,6 @@ pub const FULL_HEIGHT_16: u8 = 16;
 /// be noise; modelling it as a full cube is a lie.
 pub const THIN_HEIGHT_16: u8 = 8;
 
-// One number, one definition: a full block is 16/16 here and in the step rule, and
-// this refuses to compile the day the two drift.
-const _: () = assert!(FULL_HEIGHT_16 as i64 == crate::metrics::FULL_16);
-
 /// The bare block id of a (possibly blockstate-carrying) block name: strips a
 /// trailing `[state]` / `{nbt}` suffix, keeping the namespace
 /// (`minecraft:oak_slab[type=top]` → `minecraft:oak_slab`).

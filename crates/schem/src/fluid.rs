@@ -89,13 +89,13 @@ fn qualify(name: &str) -> String {
 /// lists collapse into one and the test tying them becomes a check that the
 /// delegation is real.
 pub fn is_fluid(name: &str) -> bool {
-    delvewright_dsl::blockshape::is_fluid(name)
+    super::blockshape::is_fluid(name)
 }
 
-/// True for the three air blocks — the cells a fluid runs into. Also
-/// [`delvewright_dsl::blockshape`]'s, for the same reason.
+/// True for the three air blocks — the cells a fluid runs into. Also the
+/// block-shape authority's, for the same reason.
 pub fn is_air(name: &str) -> bool {
-    delvewright_dsl::blockshape::is_air(name)
+    super::blockshape::is_air(name)
 }
 
 /// True for the one block that means "whatever was already here": a cell the

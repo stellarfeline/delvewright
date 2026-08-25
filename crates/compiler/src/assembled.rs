@@ -2217,6 +2217,70 @@ mod tests {
         }
     }
 
+    /// **A lit corridor is a corridor** (spec-0056).
+    ///
+    /// Torches, signs, banners, levers, buttons, rails, redstone wire, candles
+    /// and flower pots are all `noCollission()` or under the auto-step in
+    /// vanilla, and every one of them classified as a full solid cube here until
+    /// spec-0056 moved the table into `delvewright_dsl::blockshape`. A torch in a
+    /// two-high corridor therefore walled it, and `DW0311` refused the route.
+    ///
+    /// This is the assertion that answers differently if a value in that table is
+    /// wrong: the cells must be neither `solid` nor `partial`, which is a claim
+    /// about the classification and not about whether the ids were listed.
+    #[test]
+    fn a_lit_corridor_is_walkable_and_a_lantern_is_still_conservative() {
+        let lit = [
+            "minecraft:torch",
+            "minecraft:wall_torch[facing=north]",
+            "minecraft:soul_torch",
+            "minecraft:redstone_wall_torch[facing=east,lit=true]",
+            "minecraft:white_candle[candles=2,lit=true,waterlogged=false]",
+            "minecraft:oak_sign[rotation=0,waterlogged=false]",
+            "minecraft:oak_wall_sign[facing=north,waterlogged=false]",
+            "minecraft:white_wall_banner[facing=north]",
+            "minecraft:lever[face=wall,facing=north,powered=false]",
+            "minecraft:stone_button[face=wall,facing=north,powered=false]",
+            "minecraft:rail[shape=north_south]",
+            "minecraft:redstone_wire[east=none,north=none,power=0,south=none,west=none]",
+            "minecraft:flower_pot",
+            "minecraft:potted_cactus",
+        ];
+        let n = lit.len() as i32;
+        let mut b = floor(63, 0, n - 1, 0, 0);
+        for (i, name) in lit.iter().enumerate() {
+            b.insert([i as i32, 64, 0], (*name).to_string());
+        }
+        let occ = occupancy_of(b, &BTreeSet::new());
+        for (i, name) in lit.iter().enumerate() {
+            let c = [i as i32, 64, 0];
+            assert!(
+                !occ.solid.contains(&c) && !occ.tall.contains(&c) && !occ.use_gates.contains(&c),
+                "{name} walls the corridor it is lighting"
+            );
+            assert!(
+                !occ.partial.contains_key(&c),
+                "{name} is not a floor level of its own — a body rests on the block below"
+            );
+        }
+        // Binding, computed from the objects rather than written beside them.
+        assert_eq!(
+            occ.solid.len(),
+            lit.len(),
+            "only the floor under them is solid"
+        );
+
+        // The other direction, and it is what keeps this honest: vanilla gives a
+        // lantern and a ladder collision boxes this table has NOT read out of the
+        // pin, so they stay full cubes. Over-blocking is the direction this
+        // module's errors are allowed to run.
+        let mut b = floor(63, 0, 1, 0, 0);
+        b.insert([0, 64, 0], "minecraft:lantern[hanging=false]".to_string());
+        b.insert([1, 64, 0], "minecraft:ladder[facing=north]".to_string());
+        let occ = occupancy_of(b, &BTreeSet::new());
+        assert!(occ.solid.contains(&[0, 64, 0]) && occ.solid.contains(&[1, 64, 0]));
+    }
+
     #[test]
     fn substrate_under_gravity_floor_settles_with_zero_despawns() {
         // The generator's fix shape: a non-falling substrate (stone) beneath every

@@ -15,15 +15,31 @@ Two library modules exist for the tool and are public for it:
 
 - [`nav`] — `passable` / `solid` / `standable` / `standable_cells` / `connected`
   / `reachable_with_fall` / `ends` / `components` / `ground_entry` / `sheltered`.
-  Two of those are facts about this library's own block vocabulary rather than
-  about walking, and they are a **pair**: what a body may occupy (air and a
-  floor skull) and what it may stand **on**. They are not each other's
-  complement. A fluid — `minecraft:water`, `minecraft:lava` — answers no to
-  both: a body may not be in it and may not stand on it, which is the same pair
-  of answers `delvec`'s own routing model gives a flooded cell. So an open water
-  surface is not walkable floor, and a route never crosses one (spec-0038).
-  `solid` is a third question — what stops an eye — and water still answers yes
-  to that.
+  **What a body can pass through is not decided here.** It is
+  `delvewright_dsl::blockshape::collision_class` — the one place in the
+  workspace that knows what a vanilla block state does to a body, and the same
+  table `delvec` routes with. This crate's `Voxels` impl reads it and adds one
+  thing of its own, because that one thing is content rather than game physics:
+  **a floor skull is passable**, since the rule library lays one on the exact
+  cell an anchor names.
+
+  The three answers are not each other's complement, which is why the trait asks
+  more than once. A **thin decoration** — a torch, a candle, a carpet, a
+  pressure plate, a tuft of grass, a one-layer snow drift, anything under the
+  9/16 auto-step — is passable and is never a floor level of its own; a body
+  walks through its cell and rests on whatever is below. A **tall barrier**
+  (`*_fence`, `*_wall`, 1.5 blocks on a 1-block cell) is neither: a walking body
+  cannot pass it and cannot reach its top. A **fluid** is neither either — a
+  body may not be in it and may not stand on it, the same pair of answers
+  `delvec` gives a flooded cell, so an open water surface is not walkable floor
+  and a route never crosses one (spec-0038). A **partial floor** (a bottom slab,
+  a deep snow drift, `dirt_path`) blocks passage and holds a body up at its
+  measured height, which `Voxels::floor_top_16` reports.
+
+  `solid` is a further question — what stops an eye — and it is still the
+  complement of `passable`, so water answers yes to it. That reading is the
+  refusing one for a partial-height block and is deliberately not split: see
+  `blockshape`'s own note on what one boolean cannot carry.
   These were written inside `tests/`, where a
   rule's own gate is the right place for the gate and the wrong place for the
   *predicate* it is written in: a program authored outside this repo has no
@@ -39,11 +55,8 @@ Two library modules exist for the tool and are public for it:
   first argument for exactly that reason: the set of standable cells cannot answer
   what is above them.
 
-  Two things the walk still reads its own way, both stated so they are not
-  mistaken for a second rule. A box of cells has no collision heights, so a step
-  of one cell is read as a full block unless the model overrides
-  `Voxels::floor_top_16` — a coarser reading of the rise, and coarse only in the
-  direction that refuses a step vanilla admits. And `reachable_with_fall` remains
+  One thing the walk still reads its own way, stated so it is not mistaken for
+  a second rule: `reachable_with_fall` remains
   deliberately more permissive than the plain walk: it adds a one-way fall edge,
   which is why a forward-arrival claim may use it and a no-way-back claim may not.
 - [`gates`] — `judge(&Expansion, Options) -> Report`, and the distinction the
@@ -1411,11 +1424,22 @@ each is a claim about a *kind* of piece rather than about every piece.
   runs on every expansion either way (§4d); this flag is only what turns its
   sheltered half into a verdict, for a piece that claims a body can get
   everywhere indoors. It is opt-in for the same reason `traversable` is and more
-  so: 13 of the 35 library programs have **no** roofed floor at all — `castle`,
+  so: 13 of the library programs have **no** roofed floor at all — `castle`,
   `church` and `stair-flight` among them — and the gate binds to zero on each,
   which is a finding and not a pass. A piece is entitled to strand floor:
   `rafter_hall`'s rafters are meant to be looked at, and `drop_shaft` is one-way
   by design.
+
+  One library entry claims it, and the corpus is where the claim has to live:
+  a gate whose only invocation is a `--reachable-floor` somebody remembers to
+  type is a gate the audit never runs. `decorated-room` is that entry — a room
+  with a doorway, a roof, and one course of ordinary decoration across its floor
+  (a torch, a candle, a carpet, a pressure plate). It is in the corpus because
+  that room used to be **severed**: before spec-0056 the walk read every one of
+  those blocks as a full solid cube, the decorated cell could not be occupied,
+  the cell above it lost its headroom to the ceiling, and the whole far half of
+  the room became floor nothing could reach. Measured at engine `75db97a1`:
+  36 of 73 standable cells unreachable, one pocket, the piece refused.
 
 `symmetric` is what reads a defect no other gate can. A shape with a mirror plane
 is built by expanding one rule at both sites; if one site is instead a hand-kept
