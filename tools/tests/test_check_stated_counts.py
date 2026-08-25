@@ -151,6 +151,29 @@ def skill_md(techniques: str = "three") -> str:
     )
 
 
+# The emitter-table oracle reads a committed fixture rather than a page, so the
+# miniature tree carries a miniature one. Three rows whose third column sums to
+# 30, and `compiler.md` below states exactly those two numbers: the point of the
+# gate is that a page's claim and the artifact agree, so the fixture and the
+# claim have to be able to disagree.
+def emission_tsv(rows: int = 3, states: int = 30) -> str:
+    per, rest = divmod(states, rows)
+    lines = ["# miniature block-light fixture", "#"]
+    for i in range(rows):
+        n = per + (rest if i == rows - 1 else 0)
+        lines.append(f"minecraft:probe_{i}\t{i + 1}\t{n}")
+    return "\n".join(lines) + "\n"
+
+
+def compiler_md(rows: str = "3", states: str = "30") -> str:
+    return (
+        "# compiler\n\n"
+        "### DW02xx light\n\n"
+        f"The emitter table rests on a fixture of {rows} rows covering "
+        f"{states} blockstates.\n"
+    )
+
+
 def build_tree(root: Path, **kw) -> Path:
     """Write the miniature tree. Keyword arguments perturb one page each."""
     ids = [t[0] for t in kw.get("techniques", TECHNIQUES)]
@@ -175,6 +198,13 @@ def build_tree(root: Path, **kw) -> Path:
         ".claude/skills/new-delve/SKILL.md": skill_md(
             kw.get("skill_techniques", "three")
         ),
+        "crates/compiler/tests/fixtures/light/emission-1.21.11.tsv": emission_tsv(
+            rows=kw.get("emission_rows", 3), states=kw.get("emission_states", 30)
+        ),
+        "docs/reference/compiler.md": compiler_md(
+            rows=kw.get("emission_rows_claim", "3"),
+            states=kw.get("emission_states_claim", "30"),
+        ),
     }
     for rel, text in files.items():
         p = root / rel
@@ -193,8 +223,12 @@ def test_a_consistent_tree_passes_and_says_how_much_it_bound(
     assert checker.main() == 0
     out = capsys.readouterr().out
     assert "OK" in out
-    # The binding count is the deliverable, not a footnote (CLAUDE.md).
-    assert "5 prose sites" in out
+    # The binding count is the deliverable, not a footnote (CLAUDE.md) — and it
+    # is CONSTRUCTED from the registry rather than written down beside it. A
+    # literal here goes stale the moment a site is added, which is exactly how
+    # this assertion last failed, and a count written down is a count that can
+    # be green over a gate binding something else.
+    assert f"{len(checker.SITES)} prose sites" in out
     assert "stated counts examined" in out
     assert "idiom-techniques = 3" in out
     assert "idiom-programs = 4" in out

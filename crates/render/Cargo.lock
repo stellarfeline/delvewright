@@ -468,6 +468,7 @@ dependencies = [
  "fastnbt",
  "flate2",
  "image 0.24.9",
+ "schemars",
  "serde",
  "serde_json",
  "sha2",

@@ -149,6 +149,13 @@ pub const MAX_JUMP_RISE_16: i64 = 20;
 /// A full block's height in sixteenths.
 pub const FULL_16: i64 = 16;
 
+// One number, one definition: a full block is 16/16 here and in the collision
+// table this feeds, and this refuses to compile the day the two drift. It is
+// asserted on this side because `blockshape` must compile knowing nothing about
+// the crate around it — the prefab generators are separate workspaces and reach
+// it by source include, the same way they reach the block registry.
+const _: () = assert!(crate::blockshape::FULL_HEIGHT_16 as i64 == FULL_16);
+
 /// What a walker has to do to gain a given rise — the engine's ONE answer, and
 /// the reason it is here rather than in either walk.
 ///

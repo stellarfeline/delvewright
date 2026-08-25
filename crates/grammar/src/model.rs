@@ -9,6 +9,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use delvewright_dsl::blockshape::{Collision, collision_class};
+
 use crate::block::BlockState;
 use crate::geom::Box3;
 
@@ -44,13 +46,37 @@ impl std::error::Error for PaletteFull {}
 /// Cells are palette indices; index 0 is always air, so a freshly allocated
 /// model is empty. The palette grows in first-write order, which is
 /// deterministic because expansion is.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Beside the palette sits what each of its entries does to a body
+/// ([`delvewright_dsl::blockshape::collision_class`], spec-0056). It is stored
+/// rather than recomputed because the walk asks per cell and per edge while the
+/// answer is per block STATE: a model holds at most 65,536 distinct states and
+/// millions of cells, so classifying on write is the cheap end by construction.
+/// `classes` is a pure function of `palette` and is therefore left out of
+/// equality — two models with the same palette cannot disagree about it.
+#[derive(Debug, Clone)]
 pub struct VoxelModel {
     region: Box3,
     palette: Vec<BlockState>,
+    /// `classes[i]` is what `palette[i]` does to a body. Written in lockstep
+    /// with the palette in the two places that grow it.
+    classes: Vec<Collision>,
     index_of: BTreeMap<BlockState, u16>,
     cells: Vec<u16>,
 }
+
+impl PartialEq for VoxelModel {
+    fn eq(&self, other: &Self) -> bool {
+        // `classes` is derived from `palette`, so comparing it would be
+        // comparing the same fact twice.
+        self.region == other.region
+            && self.palette == other.palette
+            && self.index_of == other.index_of
+            && self.cells == other.cells
+    }
+}
+
+impl Eq for VoxelModel {}
 
 impl VoxelModel {
     /// An all-air model covering `region`.
@@ -58,6 +84,7 @@ impl VoxelModel {
         let air = BlockState::air();
         VoxelModel {
             region,
+            classes: vec![collision_class(&air.to_string())],
             palette: vec![air.clone()],
             index_of: BTreeMap::from([(air, 0)]),
             cells: vec![0; region.volume() as usize],
@@ -72,6 +99,18 @@ impl VoxelModel {
     /// The palette, in index order; entry 0 is air.
     pub fn palette(&self) -> &[BlockState] {
         &self.palette
+    }
+
+    /// **What the block at a world position does to a body** — the one rule
+    /// ([`delvewright_dsl::blockshape`], spec-0056), read off the palette rather
+    /// than recomputed. `None` outside the region.
+    ///
+    /// Outside the box has no class on purpose: a body that has left the model
+    /// has left the thing being proved, and the walk refuses it rather than
+    /// inventing a block there.
+    pub fn collision(&self, pos: [i32; 3]) -> Option<Collision> {
+        let index = self.offset(pos)?;
+        Some(self.classes[self.cells[index] as usize])
     }
 
     /// The block at a world position, or `None` outside the region.
@@ -109,6 +148,7 @@ impl VoxelModel {
             None => {
                 let id = u16::try_from(self.palette.len())
                     .map_err(|_| PaletteFull { limit: MAX_PALETTE })?;
+                self.classes.push(collision_class(&block.to_string()));
                 self.palette.push(block.clone());
                 self.index_of.insert(block.clone(), id);
                 id

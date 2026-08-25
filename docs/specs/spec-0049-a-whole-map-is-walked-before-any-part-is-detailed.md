@@ -217,11 +217,19 @@ Validation tier (exit 1) unless stated; every check states its binding count.
 
 ### 4.1 The document
 
+> **Amendment — the field lists below are the schema's.** Four of them stated
+> a form `delvec schema --stage site-plan` refuses, so a person authoring from
+> this section wrote a document that would not parse. They are corrected in
+> place, and what each of them used to say is recorded in §9.6 rather than
+> here, so that this section can be read straight through and acted on. **The
+> exported schema is the authority on the form of any document**; where this
+> spec disagrees with it, this spec is the stale one.
+
 `site-plan.json`, a new campaign stage document (stage name `site-plan`),
 `dsl_version` ≥ 0.13.0: the geometric embedding of the layout graph, and the
 whole map's design of record. It owns:
 
-- **`region`** — `{origin: [x,y,z], extent: [dx,dy,dz]}`, in world
+- **`region`** — `{min: [x,y,z], extent: [dx,dy,dz]}`, in world
   coordinates. The whole map's one region. There is **no way to omit it and
   no way to derive it**: the schema has no "compute from boxes" spelling, so
   extent-flows-up is unrepresentable, not merely forbidden. The water plane
@@ -229,20 +237,32 @@ whole map's design of record. It owns:
   already fixes sea level, and the plan reads that single authority rather
   than restating it.
 - **`datums`** — named ground planes (`{id, y}`) the boxes reference.
-- **`boxes[]`** — `{node, min: [x,y,z], extent: [dx,dy,dz], floor: <datum id
+- **`boxes[]`** — `{node, min: [x,z], extent: [dx,dz], floor: <datum id
   or y>, ceiling: <blocks> | "open"}` — **exactly one box per graph node**,
-  horizontal extents on the kit grid (multiples of `q`), the node's floor
-  datum stated. `ceiling: "open"` is a sky-open place — a courtyard, a
-  shore, a summit.
-- **`seams[]`** — `{edge, face, at: [u,v], opening: <standard name>, rise,
+  extents on the kit grid (multiples of `q`), the node's floor datum stated.
+  `ceiling: "open"` is a sky-open place — a courtyard, a shore, a summit.
+  A box is a footprint standing on a plane, not a prism: `min` and `extent`
+  are the two horizontal axes and the vertical position is `floor` alone, so
+  the plane has one authority rather than a `y` inside `min` beside a
+  declared floor with no rule about which the derivation believes. **A box
+  is the play space** — the cells a body can be in — so the shell is not
+  inside it: it stands in the one cell between two neighbours, which is why
+  two places that connect are placed exactly one cell apart on the face they
+  share (`DW0828`) and a plan never states a wall's thickness anywhere.
+- **`seams[]`** — `{edge, face, at: [u,v], opening: <standard name>,
   stair_in?}` — **exactly one seam per traversal edge** (`walk | stair |
   drop | barred`; `vision` edges carry a sightline instead — §4.4). A seam
   sits on a face the two boxes **share**, at cells `at` on that face, with
-  its opening from the standard set and its `rise` (the signed floor-datum
-  difference it spans) stated. `stair_in` names which of the two boxes hosts
-  the stair massing when `rise` needs one.
-- **`volumes[]`** — `{id, min, extent, role: massif | ground | clearance}` —
-  the volumes the whole itself owns: the mountain a cave system is inside,
+  its opening from the standard set. `stair_in` names which of the two boxes
+  hosts the stair massing when the rise needs one.
+  **The seam carries no rise.** A rise is `floor(b) − floor(a)`, which the
+  plan has already stated by putting the two places where it put them; a
+  second declaration of it could only ever agree or be a refusal teaching
+  nothing the datums did not already say. `DW0830` and `DW0831` judge the
+  derived number, and `DW0836` judges the realized one against the same
+  derivation rather than against an author's copy of it.
+- **`volumes[]`** — `{id, region: {min, extent}, role: massif | ground |
+  clearance, note?}` — the volumes the whole itself owns: the mountain a cave system is inside,
   the ground plane under a village, the sky a silhouette needs kept empty.
 - **`identities[]`** — `{fact, measure, cmp}`: guarded comparisons binding
   the plan to the geometry brief's facts (§4.2). `measure` is from a small
@@ -395,7 +415,10 @@ seconds. How a round is staged and reported is operating practice
 What this spec fixes is the record's **form**, because the next spec's
 machinery consumes it: `walk-record.json`, a campaign artifact —
 `{site_plan_sha256, blockout_sha256, engine_revision, verdict: "passed" |
-"findings", findings[]: {subject, note}}`. The build prints both hashes so
+"findings", findings[]: {subject, note}}`. spec-0050 §2 extends this form by
+one field (`layout_graph_sha256`) and gates it, so the form to author against
+is that one; `delvec schema --stage walk-record` exports it, derived from the
+type the gate parses. The build prints both hashes so
 the record can name its instrument literally (the revision, never a version
 string). In this slice **nothing enforces the record** — stated plainly
 rather than implied: the record is an artifact format, and its gate
@@ -488,6 +511,25 @@ Each recorded where it is made; collected here so the list is auditable:
 5. **Graph reachability is branch-blind in the slice** (§3.2, §3.3
    `DW0819`) — the monotone closure with its stated optimism, backstopped by
    the branch-aware bytes battery; the trigger for deepening is named.
+6. **The site plan's form settled differently from §4.1's first statement of
+   it, in four places** — corrected in §4.1 in place, recorded here. Each is
+   a document a person authoring from the original text could not have got to
+   parse, because the schema declares `additionalProperties: false`:
+
+   | §4.1 first said | The form is | Why |
+   |---|---|---|
+   | `region: {origin, extent}` | `region: {min, extent}` | one spelling for a low corner across every construct that has one — `boxes[]`, `volumes[]` and the region all say `min` |
+   | `boxes[]: min: [x,y,z], extent: [dx,dy,dz]` | `min: [x,z]`, `extent: [dx,dz]` | a box is a footprint standing on a plane, not a prism; `floor` is the one authority for the plane, and a `y` inside `min` beside it would be a second |
+   | `seams[]: … rise, stair_in?` | no `rise` | the rise is `floor(b) − floor(a)`, which the plan has already stated; a declared copy could only agree or refuse, and `DW0836` judges the built rise against the derivation rather than against an author's number |
+   | `volumes[]: {id, min, extent, role}` | `{id, region: {min, extent}, role, note?}` | a volume's cells are a region, spelled the way every other region in the document is spelled |
+
+   The general form of the finding, which is worth more than the four
+   corrections: **an authoring document that disagrees with the schema costs
+   the author a refusal they cannot act on**, and nothing in this repository
+   compares the two. `delvec schema --stage <name>` is the authority and now
+   answers to every document's own name, so `DW0100`'s prescription is a
+   command that works; a gate that would hold this section to the schema does
+   not exist and is a finding for the ledger, not a claim made here.
 
 ## 10. The two-artifact question, carried
 

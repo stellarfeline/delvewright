@@ -51,6 +51,14 @@ serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 sha2 = "0.10"
 
+# `walk-record.json` is the one document a campaign author writes by hand that
+# is not a stage document, so it has no `Stage` and cannot reach
+# `delvewright_dsl::schema`. It gets its schema derived from its own struct
+# here instead — the same crate the rest of the DSL's schemas come from, so
+# there is no second schema generator and no hand-written copy of the form.
+# MIT.
+schemars = "1"
+
 # fastnbt + flate2 moved to real dependencies (2026-07-31): `delvec` now parses
 # each structure's NBT to derive placement-sentinel blocks (runtime verification
 # that `place template` landed — far freshly-forceloaded chunks are not reliably

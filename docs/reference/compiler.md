@@ -604,7 +604,22 @@ than being authored against a schema. Its form is
 `{site_plan_sha256, layout_graph_sha256, blockout_sha256, engine_revision,
 verdict, findings[]}`, and every build of a site-plan campaign prints all three
 hashes with the engine's **revision** beside them, so a record can name its
-subject and its instrument literally. The first two are its **freshness key**:
+subject and its instrument literally. It is hand-authored and it is refused when
+it is wrong, so it is schema-exportable like everything else a person writes:
+`delvec schema --stage walk-record`, derived from the same struct `DW0841`
+parses. Not being a stage document decides what the document CONTAINS; it never
+decided whether its form is machine-readable.
+
+**The engine revision** is stamped into the binary at compile time by
+`crates/compiler/build.rs`. A source build reads it out of the checkout it is
+built from — suffixed `-dirty` when that tree carries uncommitted changes, since
+a build behind an uncommitted edit is not a build of that revision. A release
+recipe or container build that has the revision and no `.git` passes
+`DELVEC_ENGINE_REVISION` in the environment and that wins unchanged. Where
+neither can be established — a source tarball such as crates.io serves — the
+engine prints `unstamped` rather than claiming a revision it does not have. The
+stamp reaches stderr and diagnostic text only and no emitted byte, so two
+binaries differing only in it compile a campaign to identical output. The first two are its **freshness key**:
 the whole a walk judges is derived from both authored documents, so an edit to
 either re-opens the gate. The third is the derived massing, which is what the
 drift advisory reads. It is not a build input: a re-recorded walk moves no
@@ -672,6 +687,14 @@ whole map's design of record. Optional, named rather than numbered, and reached
 only through itself: a campaign that ships none parses, validates and emits
 exactly as it did. `delvec schema --stage site-plan` exports it; `--stage all`
 includes it.
+
+**Every document answers to its own name.** `delvec schema --stage <name>` takes
+any stage's name — the same string `DW0100` prints when that stage's document
+will not parse — as well as `1`..`7` for the numbered campaign stages, so the
+refusal's own prescription is a command that works. The names are enumerated
+from `Stage::ALL` rather than a second list, so a document added later answers
+the day it exists. **The exported schema is the authority on a document's
+form**; where a spec disagrees with it, the spec is the stale one.
 
 **Its one ordering obligation is not advice.** A plan validates only against a
 layout graph and a geometry brief: `DW0824` refuses a plan whose graph or brief
@@ -2619,12 +2642,30 @@ a flood source *and* its host block's normal collision class: nothing walks or f
 would be in open water here").
 
 Trap triggers (spec-0011): `*_pressure_plate`, `tripwire`, and `tripwire_hook`
-(`crate::assembled::is_passable_trap_trigger`) are non-collidable in game, so the
-occupancy model treats their cells as **passable** rather than solid. This is the
+(`crate::assembled::is_passable_trap_trigger`) are non-collidable in game, so
+`collision_top_16` answers 0 for them and the occupancy model treats their cells
+as **passable** rather than solid. The predicate keeps its own name because a
+caller needs the *trap* fact as well as the collision fact, and the two cannot
+disagree because one is computed from the other. This is the
 faithful model — a plate rests on a solid support block below, so standability is
 unchanged — and it is load-bearing for the `DW0342` trap proof: a player must be
 routed *onto* a trigger cell (so the compiler can prove the trap avoidable or not),
 never around a phantom "solid" plate that would call every trap avoidable.
+
+**Where the collision table lives.** `delvewright_dsl::blockshape` holds it,
+and `crate::assembled` re-exports its names by `pub use` — there is one
+definition in the workspace and no second copy for anything to drift from. It is
+in `delvewright-dsl` for the reason `metrics::step_allowed` is: `delvec` is
+published and may depend only on published crates, so the one crate the grammar
+back end, the admission pipeline and the compiler can all reach is that one. And
+it is the right home by object class — a collision box is a fact about a vanilla
+block state under the pinned game version, in the same sixteenths as the
+auto-step and jump-apex budgets it feeds.
+
+`blockshape::collision_class` is the rule, and every consumer asks it:
+`occupancy_of` below, the grammar back end's `Voxels` impl, and `delve-admit`'s
+light probe. `Collision::passes_body` / `supports_body` / `floor_top_16` are the
+three answers a walk gets.
 
 **Collision classes (`crate::assembled::Occupancy`).** The occupancy is
 no longer a single every-non-air-block-is-a-1×1×1-cube solid set; cells are
@@ -2649,6 +2690,9 @@ a block's collision-box top face in sixteenths, against the 1.21.11 shapes:
 | `snow[layers=N]` | `(N-1)·2 / 16` | `layers=1` (the default) has **no** collision box; `layers=8` is 14/16 |
 | `*_carpet`, `moss_carpet` | 1/16 | `pale_moss_carpet` only when `bottom=true`, else 0 |
 | `dirt_path`, `farmland` | 15/16 | |
+| `candle`, `*_candle` | 6/16 | every candle count has the same 6-pixel box, so a candle on a floor is stepped over |
+| `flower_pot`, `potted_*` | 6/16 | |
+| no-collision fixtures (`assembled::is_no_collision_fixture`) | 0/16 | torches (`torch`, `*_torch` — wall, soul and redstone alike), signs and banners (`*_sign`, `*_banner`), `lever`, `*_button`, rails (`rail`, `*_rail`), `redstone_wire`, `light`, `structure_void` — vanilla declares every one of them `noCollission()`. A wall torch occupies the air cell beside the wall it is fixed to, and a model that calls that cell a full cube severs a corridor. **Deliberately excluded, and not because they collide**: `fire`, `soul_fire`, `cobweb` and the portals also have empty collision boxes and stay full cubes here, because a body that *passes through* one is not a body that may be *routed* through one. Also excluded because their shapes are not read out of the pin: lanterns, chains, end rods, ladders. |
 | no-collision vegetation (`assembled::is_no_collision_plant`) | 0/16 | grasses/ferns, every small and tall flower, `pink_petals`/`wildflowers`/`leaf_litter`, saplings, crops, mushrooms and nether flora, kelp/seagrass, vines/`glow_lichen` — vanilla gives them an **empty** collision shape. Modelling them as full cubes makes a plant cell a phantom standable surface, which refuses valid geometry (a tuft on a terrace splits a 2-block riser into two climbable 1-block steps) and, worse, accepts invalid: a walkability proof that stands a body ON a tuft is unsound, and a flower cell measures light 0 as if it were opaque. The list is the **class**, never the ids one generator happens to scatter; lookalikes that DO collide (`azalea`, `big_dripleaf`, `bamboo`, `cactus`, `pointed_dripstone`, `sea_pickle`, leaves, …) deliberately stay conservative full cubes. Fidelity consequence: plant cells no longer dam the water-flood model either — vanilla water flows into and breaks them. |
 | everything else | 16/16 | the conservative default |
 
@@ -3909,17 +3953,54 @@ branch-coherent flow model (`compiler::flow`).
 are only sound if the modelled light is a *lower* bound on the game's — a block
 modelled brighter than vanilla lets a genuinely dark area ship unmitigated. The
 table is evaluated over each block's **actual blockstate** (the assembled map
-carries full states) against verified 1.21.11 values, with a source cited per
-entry in the code. Blocks absent from the table emit 0 (an underestimate, the safe
-direction). A state-dependent block is never collapsed onto its brightest state:
-`sea_pickle` is `3 + 3·pickles` when waterlogged and **0 when dry**;
+carries full states). Blocks absent from the table emit 0 (an underestimate, the
+safe direction). A state-dependent block is never collapsed onto its brightest
+state: `sea_pickle` is `3 + 3·pickles` when waterlogged and **0 when dry**;
 `redstone_ore` is **0** idle and 9 when `lit`; `respawn_anchor` is **0** at
 `charges=0`; `amethyst_cluster` is 5 (buds 4/2/1); `brewing_stand` and
-`brown_mushroom` are **1**; `glow_item_frame` is **0** (it is an entity, not a
-block, and emits no block light in Java — 7 is a Bedrock value); the furnace
-family reports 13 when `lit`. Blocks whose `lit`/`charges`/`berries` state has a *bright*
-default (campfire, soul campfire, redstone torch) still evaluate bright from a
-bare id, so the compiler's own relight fixtures are unaffected.
+`brown_mushroom` are **1**; `glow_lichen` is 7 where it is attached to a face and
+**0** in its faceless default state (what a bare `minecraft:glow_lichen` places);
+`glow_item_frame` is **0** (it is an entity, not a block, and emits no block light
+in Java — 7 is a Bedrock value); the furnace family reports 13 when `lit`. Blocks
+whose `lit`/`charges`/`berries` state has a *bright* default (campfire, soul
+campfire, redstone torch) still evaluate bright from a bare id, so the compiler's
+own relight fixtures are unaffected.
+
+**The values are measured against the pinned game, not cited.** Every entry is
+checked by `crates/compiler/tests/emission_table.rs` against
+`crates/compiler/tests/fixtures/light/emission-1.21.11.tsv` — 1419 rows that
+collapse all **29,671** blockstates of the pinned 1.21.11 server jar onto the
+properties that can change their light, every value being what the game's own
+`BlockState.getLightEmission()` returns. `tools/dump-block-light.py` regenerates
+the fixture and refuses any jar whose sha256 is not the `versions.toml` pin;
+`--check` re-derives it and diffs. Three assertions: `emission ≤ game` over every
+blockstate (the contract); exact equality everywhere the table is not
+deliberately taking a minimum; and the set of blocks measuring *below* the game
+equals the declared set, so a future Minecraft's new emitter reds here rather
+than silently costing a designer their fixture.
+
+**Every light-emitting block of 1.21.11 is modelled**, including the ones a
+designer reaches for first. Candles are **3 per candle and only while `lit`**,
+which defaults to false — so a shipped candle is dark at any count and four lit
+ones are 12; all seventeen candle ids (plain and dyed) and all seventeen
+candle-cake ids (3 when lit) behave the same. Copper bulbs are **15 / 12 / 8 / 4**
+by oxidation stage and only while `lit` (default false), waxed and unwaxed alike;
+copper lanterns are **15 at every stage**, which is not the same rule; `copper_torch`
+and `copper_wall_torch` are 14. `sculk_catalyst` is 6, `nether_portal` 11,
+`firefly_bush` 2, and `dragon_egg`, `end_portal_frame`, `sculk_sensor` and
+`calibrated_sculk_sensor` are 1.
+
+**Where the world re-derives the property at load, the entry is the minimum over
+the states the world can reach.** The model evaluates the blockstate the world
+*ships* with; it does not simulate redstone, block entities, weathering or player
+action. `redstone_lamp` has no `onPlace` and its `neighborChanged` schedules an
+unlight the first time any neighbour updates while no signal is present — which
+structure assembly does — so a shipped `lit=true` lamp is not a stable
+configuration and the entry is **0**. `trial_spawner` and `vault` have their state
+owned by a block entity, giving **0** and **6** respectively. `copper_bulb` is not
+in that set: its `onPlace` runs `checkAndFlip`, which returns without touching
+`lit` whenever the neighbour signal already agrees with `powered`, so a bulb
+shipped lit in a room with no redstone stays lit.
 
 **The opacity table is coupled to nav passability
 (`crate::light::passes_light`).** The opacity side defaults the other way — an

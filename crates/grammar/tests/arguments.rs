@@ -526,6 +526,7 @@ const CORPUS: &[(&str, [u32; 3])] = &[
     ("causeway", [7, 10, 9]),
     ("church", [15, 16, 30]),
     ("cliff-path", [3, 6, 30]),
+    ("decorated-room", [11, 4, 11]),
     ("disarm-stand", [9, 7, 16]),
     ("drop-shaft", [4, 8, 6]),
     ("dumbwaiter", [6, 8, 8]),

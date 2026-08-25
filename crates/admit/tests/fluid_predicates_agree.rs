@@ -11,15 +11,16 @@
 //! decides whether a body of fluid in a piece is walled, and carries its own
 //! `FLUIDS` list to do it.
 //!
-//! Neither crate can read the other's answer. `delvec` is published to
-//! crates.io and deliberately does not depend on `delvewright-schem`; the
-//! dependency edge that would collapse the two predicates into one is exactly
-//! the edge publication forbids. So the duplication stays, and what binds it is
-//! this: a divergence would let a piece the containment gate calls sealed be a
-//! piece the compiler routes a party across, or the reverse, with both green.
+//! **That duplication is over** (spec-0056). Its stated reason — `delvec` is
+//! published and may not depend on `delvewright-schem`, so no edge can collapse
+//! the two — was a true fact about the wrong edge: both crates already depend on
+//! `delvewright-dsl`, and that is where the block-shape table lives now. Both
+//! predicates delegate to `delvewright_dsl::blockshape::is_fluid`.
 //!
-//! `delve-admit` is the one crate that depends on both, so the assertion lives
-//! here.
+//! So this file no longer asks whether two lists agree. It asks whether the
+//! delegation is real, over the whole pinned registry, from the one crate that
+//! can see both — because a re-privatised copy would pass every other test in
+//! this workspace.
 //!
 //! **Binding**: every block id in the pinned 1.21.11 registry — the same file
 //! both crates read. A run that examined zero ids is a failure, not a pass.
@@ -40,12 +41,12 @@ fn pinned_block_ids() -> Vec<String> {
     map.into_keys().collect()
 }
 
-/// **Every id in the pin gets the same verdict from both predicates.**
+/// **Every id in the pin gets the same verdict from both names.**
 ///
-/// The shared input domain is a bare id — namespaced or not. That is what a
-/// parsed `.nbt` palette entry carries (name and properties are separate
-/// fields), and it is what a DSL-authored block id carries before its optional
-/// state suffix. Inside that domain the two must never disagree.
+/// The input domain is every spelling either site can be handed: a namespaced
+/// `.nbt` palette entry, a bare hand-written `fill-region` block, and — since
+/// both now read one state-sensitive table — the same two with a state suffix
+/// attached. Inside that domain the answers must be identical.
 #[test]
 fn both_fluid_predicates_agree_on_every_pinned_block_id() {
     let ids = pinned_block_ids();
@@ -59,9 +60,16 @@ fn both_fluid_predicates_agree_on_every_pinned_block_id() {
     let mut examined = 0usize;
 
     for id in &ids {
-        // Both spellings reach both sites: prefab palettes are namespaced, a
-        // hand-written `fill-region` block is not, and both are legal.
-        for spelling in [id.clone(), id.trim_start_matches("minecraft:").to_string()] {
+        // Every spelling reaches both sites: prefab palettes are namespaced, a
+        // hand-written `fill-region` block is not, a DSL block may carry a state
+        // suffix, and all of them are legal.
+        let bare = id.trim_start_matches("minecraft:").to_string();
+        for spelling in [
+            id.clone(),
+            bare.clone(),
+            format!("{id}[level=3]"),
+            format!("{bare}[level=3]"),
+        ] {
             examined += 1;
             let compiler = delvewright_compiler::assembled::is_fluid(&spelling);
             let schem = delvewright_schem::fluid::is_fluid(&spelling);
@@ -101,25 +109,24 @@ fn both_fluid_predicates_agree_on_every_pinned_block_id() {
     );
 }
 
-/// **The one place the two are allowed to differ, stated rather than
-/// discovered.**
+/// **The place the two used to differ, now closed.**
 ///
-/// `delvec` also accepts an id with its state suffix attached
-/// (`minecraft:water[level=3]`), because a DSL `fill-region` block is one
-/// hand-written string and the compiler classifies it whole. A palette entry
-/// never carries a suffix, so `delvewright-schem` never sees one and does not
-/// model it. That is an input-shape difference, not a disagreement about the
-/// game — and it is asserted here so that a future change which "fixes" one
-/// side to match the other has to come past this comment first.
+/// `delvec` accepted an id with its state suffix attached
+/// (`minecraft:water[level=3]`) because a DSL `fill-region` block is one
+/// hand-written string classified whole; `delvewright-schem` saw only palette
+/// entries, which never carry a suffix, and answered `false` for the same water.
+/// One table, one parser, so both answer for the block rather than for the
+/// spelling their own caller happened to hand them.
 #[test]
-fn only_the_compiler_classifies_a_suffixed_spelling() {
-    assert!(delvewright_compiler::assembled::is_fluid(
-        "minecraft:water[level=3]"
-    ));
-    assert!(delvewright_compiler::assembled::is_fluid("water[level=0]"));
-    assert!(!delvewright_schem::fluid::is_fluid(
-        "minecraft:water[level=3]"
-    ));
+fn a_suffixed_spelling_is_the_same_block_to_both() {
+    for name in [
+        "minecraft:water[level=3]",
+        "water[level=0]",
+        "minecraft:lava[level=1]",
+    ] {
+        assert!(delvewright_compiler::assembled::is_fluid(name), "{name}");
+        assert!(delvewright_schem::fluid::is_fluid(name), "{name}");
+    }
 
     // And neither is fooled by a block whose name merely contains a fluid's.
     for id in [
