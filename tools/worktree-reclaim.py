@@ -1661,7 +1661,13 @@ def main(argv: list[str] | None = None) -> int:
 
         for rs, wt in selected:
             print(f"{wt.verdict}  {wt.path}\n        {wt.label} — {wt.reason}")
-            if wt.verdict == "KEEP" and wt.lease:
+            if wt.verdict == "KEEP" and wt.lease and wt.reason.startswith("LEASED"):
+                # Only when the LEASE is the rung that answered. A tree kept for
+                # being dirty is held by rung 1, and telling its operator that
+                # the lease is what stands in the way would send them to release
+                # a claim that is not the obstacle — a hint that names the wrong
+                # cause is worse than no hint, because it is actionable.
+                #
                 # A narrowed run that does nothing and says nothing about why is
                 # the silent no-op this tool is otherwise careful to refuse. A
                 # detached tree cannot reach `--after-merge` at all: it has no

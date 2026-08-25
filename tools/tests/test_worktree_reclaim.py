@@ -14,7 +14,7 @@ test, rather than a mocked-out function that a refactor could silently re-bind.
 
 ## Binding count for the build-output ladder
 
-60 tests here, of which 11 cover `decide_target`. Run against the version that
+61 tests here, of which 11 cover `decide_target`. Run against the version that
 preceded it, **10 of those 11 go red** — which is what says they bind to the new
 behaviour rather than passing for an unrelated reason.
 
@@ -31,7 +31,7 @@ because it carried no liveness check at all.
 
 ## Binding count for the lease rung
 
-15 of the tests here cover what ENDS a lease, and every one of them goes red on
+16 of the tests here cover what ENDS a lease, and every one of them goes red on
 the version that preceded them, because that version had no answer: a lease was
 written by every dispatch and released by nothing, so the top rung of the ladder
 held every object and each rung below it was unreachable for every tree the
@@ -587,6 +587,27 @@ def test_a_leased_detached_tree_is_told_what_ends_its_lease(fx, tmp_path):
     assert pinned.exists()
     assert "LEASED by planner-x" in p.stdout
     assert f"--release {pinned}" in p.stdout
+
+
+def test_the_hint_names_the_rung_that_actually_answered(fx, tmp_path):
+    """A hint that names the wrong cause is worse than none, being actionable.
+
+    This tree is leased AND dirty, and rung 1 is what keeps it. Telling its
+    operator "the lease is what is holding it" would send them to release a claim
+    that is not the obstacle, and the tree would still be kept afterwards.
+    """
+    wt = fx.worktree("wt-leased", "landed")
+    lease(fx, wt, "--holder", "worker-a")
+    (wt / "unsaved.txt").write_text("x\n", encoding="utf-8")
+    out = after_merge(fx, fake_gh(tmp_path, []), "landed")
+    assert "DIRTY" in out
+    assert "the lease is what is holding it" not in out
+
+    # and where the lease IS the rung that answered, the hint appears
+    (wt / "unsaved.txt").unlink()
+    out = after_merge(fx, fake_gh(tmp_path, []), "landed")
+    assert "the lease is what is holding it" in out
+    assert f"--release {wt}" in out
 
 
 def test_the_lease_binding_count_moves_with_the_leases(fx, tmp_path):
