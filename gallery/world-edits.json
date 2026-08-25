@@ -540,6 +540,16 @@
             "verb": "morph"
           },
           {
+            "name": "region/lane-air",
+            "shape": {
+              "from": 1,
+              "kind": "surface-band",
+              "over": "region/far-floor",
+              "to": 1
+            },
+            "verb": "select"
+          },
+          {
             "avoid": [
               "region/hearth-bay",
               "region/keep-clear"
@@ -556,7 +566,7 @@
               }
             ],
             "limit": 24,
-            "region": "region/lane-strip",
+            "region": "region/lane-air",
             "spacing": 3,
             "verb": "scatter"
           },
