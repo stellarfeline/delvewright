@@ -78,7 +78,14 @@ fn version_line() {
     // shorthands that predate it stay writable where they always were and their
     // output does not move; what the version buys is a spelling for something
     // the old surface had none for.
-    assert!(s.contains("dsl 0.16.0"), "{s}");
+    // 0.17.0 (spec-0051) makes `mandatory: false` legal on a stage-4 quest. It
+    // adds no field — `mandatory` has existed since v0 and was refused at every
+    // version — and changes what the completability proof MEANS: below it every
+    // quest is on the critical path by refusal, and at it the mainline is proven
+    // in the skip world, the replay in which no optional objective is ever
+    // completed. No committed document carries the value, so every campaign that
+    // compiled before compiles byte-identically.
+    assert!(s.contains("dsl 0.17.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

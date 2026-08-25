@@ -101,7 +101,11 @@ impl Fixture {
             let quests = v["content"]["quests"]
                 .as_array_mut()
                 .expect("stage-5 quests is an array");
-            assert_eq!(quests.len(), 1, "hello-world has exactly one expanded quest");
+            assert_eq!(
+                quests.len(),
+                1,
+                "hello-world has exactly one expanded quest"
+            );
 
             if let Some(flag) = self.finale_requires {
                 let objs = quests[0]["objectives"]
@@ -217,7 +221,10 @@ fn the_optional_quest_is_off_the_spine() {
     let optional = c.quest_plan.content.optional();
 
     assert!(spine.contains(FINALE), "the finale is always on the spine");
-    assert!(!spine.contains(STRAND), "the strand must be off the closure");
+    assert!(
+        !spine.contains(STRAND),
+        "the strand must be off the closure"
+    );
     assert_eq!(optional, [STRAND].into_iter().collect::<BTreeSet<_>>());
     // The partition is a partition: nothing is both.
     assert!(spine.intersection(&optional).next().is_none());
@@ -393,10 +400,7 @@ fn every_refusal_binds_and_is_the_only_thing_that_could_have_caught_it() {
     let mut bound = 0usize;
     for (label, f, code) in &cases {
         let got = f.codes();
-        assert!(
-            got.contains(*code),
-            "{label}: expected {code}, got {got:?}"
-        );
+        assert!(got.contains(*code), "{label}: expected {code}, got {got:?}");
 
         // The perturbation is the ONLY thing that could have caught it: with the
         // partition withdrawn — the strand marked mandatory, or the finale's
