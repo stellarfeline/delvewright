@@ -1619,6 +1619,7 @@ mod tests {
             plane,
             opening: (flat(plane), flat(plane)),
             shared: (flat(plane), flat(plane)),
+            crossing: delvewright_dsl::siteplan::Crossing::Portal,
             rise: 0,
             stair_in: None,
         }

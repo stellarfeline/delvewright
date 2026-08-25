@@ -14,7 +14,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.18.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.19.0";
 
 /// The `dsl_version` that introduces the **`open-way`** effect (spec-0042 §2.4):
 /// a campaign opening a placed piece's contingent way, with the geometry, the
@@ -129,6 +129,32 @@ pub const OPTIONAL_QUESTS_SINCE: &str = "0.17.0";
 /// compiles byte-identically and no adoption round is forced.
 pub const STATIONS_SINCE: &str = "0.18.0";
 
+/// The `dsl_version` at which a place may be **a route rather than a box** and
+/// two places may **simply meet** (spec-0053): a layout-graph node declares
+/// `way_class` in place of `size_class`, and a site-plan seam declares a
+/// `contact` span in place of a standard `opening`.
+///
+/// The **hand-written name** for `0.19.0`, written rather than derived for the
+/// reason [`RESERVED_DSL_VERSIONS`] gives: `is_v19` follows from the number, so
+/// two branches claiming `0.19.0` would produce the same anchor and the
+/// uniqueness gate would read one claim where there are two. A name an author
+/// chose cannot agree by accident.
+///
+/// **One number for two surfaces, and why that is one surface.** A version names
+/// one thing a campaign may say, and this one is *a place that is a route, and a
+/// hand-off that is not a door*. The two halves are the same claim seen from
+/// each side of a boundary: a route is a place the size-class ladder cannot
+/// classify, and a front is a meeting the standard opening set cannot name. A
+/// campaign that could state the first and not the second would have a cliff
+/// road it could only join to the world through a doorway, which is the
+/// workaround the version exists to remove. Splitting them across two numbers
+/// would make that half-state reachable and would be the ledger's own numbering
+/// reintroducing the gap.
+///
+/// No committed document carries either surface, so every existing campaign
+/// compiles byte-identically and no adoption round is forced.
+pub const WAY_AND_CONTACT_SINCE: &str = "0.19.0";
+
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
 /// (spec-0008) adds dialogue state, props, narration, live-threat tuning, NPC
@@ -196,7 +222,7 @@ pub const STATIONS_SINCE: &str = "0.18.0";
 /// through one set of rules.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
     "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
-    "0.12.0", "0.13.0", "0.14.0", "0.15.0", "0.16.0", "0.17.0", "0.18.0",
+    "0.12.0", "0.13.0", "0.14.0", "0.15.0", "0.16.0", "0.17.0", "0.18.0", "0.19.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -310,6 +336,7 @@ fn ordinal(version: &str) -> u32 {
         "0.16.0" => 16,
         "0.17.0" => 17,
         "0.18.0" => 18,
+        "0.19.0" => 19,
         _ => 0,
     }
 }
@@ -612,6 +639,18 @@ pub fn is_v17(version: &str) -> bool {
 /// byte-identically.
 pub fn is_v18(version: &str) -> bool {
     ordinal(version) >= 18
+}
+
+/// True if `version` enables **ways and contacts** (spec-0053,
+/// [`WAY_AND_CONTACT_SINCE`]): a layout-graph node may declare `way_class` in
+/// place of `size_class`, and a site-plan seam may declare a `contact` span in
+/// place of a standard `opening`.
+///
+/// Below it a node has no `way_class` and a seam has no `contact` to write, and
+/// the per-stage fence (`DW0141`) refuses either, so every campaign that
+/// compiled before compiles byte-identically.
+pub fn is_v19(version: &str) -> bool {
+    ordinal(version) >= 19
 }
 
 /// Which stage a document belongs to.
