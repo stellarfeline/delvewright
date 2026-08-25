@@ -93,6 +93,153 @@ pub const DW_EDIT_GATE_REGION: DwCode = DwCode::every_version("DW0353");
 /// placed (a declared minimum-light guarantee, not decoration).
 pub const DW_EDIT_SUPPORT: DwCode = DwCode::every_version("DW0354");
 
+/// A placement verb delivered fewer items than its own
+/// declaration asks for, measured over the **whole domain it declared** rather
+/// than over the part of it that happened to be usable.
+///
+/// The owner's cherry-grove finding: a valley staged as a grove held a handful
+/// of trees and bare rock in every other direction, and the acceptance proxy
+/// was a rendered shot — which is a look at one bearing, not a count over a
+/// region. Nothing anywhere produced the number. `plant` declares a `count` and
+/// silently plants fewer when the region's standable, non-keep-clear,
+/// far-enough-apart candidates run out; `scatter` can dress nothing at all and
+/// return `Ok`.
+///
+/// The diagnostic states four numbers, and the denominator is the point: the
+/// declared quantity, what was delivered, how many cells the declared region
+/// holds, and how many of those the verb could act on.
+pub const DW_PLACEMENT_SHORTFALL: DwCode = DwCode::every_version("DW0864");
+
+/// What one placement verb declared and what it delivered, over the domain the
+/// author selected — the numbers `DW0864` is a statement about.
+///
+/// `domain` is the **declared** region, not the eligible subset: a count whose
+/// denominator is the part that worked is the render shot in numeric clothes.
+#[derive(Debug, Clone, Copy)]
+struct Delivery {
+    /// The quantity the declaration asks for, where the verb states one.
+    /// `plant` does (`count`); `scatter` states a per-candidate density and
+    /// therefore no target, so its only floor is that it place something.
+    declared: Option<u32>,
+    /// What the verb actually placed.
+    delivered: usize,
+    /// Cells in the region the author declared.
+    domain: usize,
+    /// Cells of that region the verb could act on at all: standable dressing
+    /// candidates off the keep-clear footprint.
+    usable: usize,
+}
+
+/// What `DW0864` makes of one delivery. Two tiers, one code, on the shape
+/// `DW0354` already uses: the error tier is reserved for the cases where the
+/// verdict cannot be argued with, and everything else states its numbers and
+/// lets the author judge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Shortfall {
+    /// The declaration was met.
+    None,
+    /// **Error.** Either the verb states a quantity and missed it — that is the
+    /// author's own guarantee, and `plant` is the verb the cherry-grove finding
+    /// was reported against — or it could act on **no cell at all** of the domain
+    /// it declared, which is a silent no-op and is always a defect (`DW0323` says
+    /// so in those words, about a region that resolves to zero cells; this is the
+    /// same rule one step later, about a region that resolves to plenty of cells
+    /// and none the verb can touch).
+    Refuse,
+    /// **Advisory.** The verb could have placed something and placed nothing. A
+    /// low enough density legitimately samples empty, so this states the numbers
+    /// rather than refusing.
+    Advise,
+}
+
+impl Delivery {
+    /// This delivery as the artifact row that records it.
+    fn record(&self, batch: &str, edit: usize, verb: &'static str) -> Placement {
+        Placement {
+            batch: batch.to_string(),
+            edit,
+            verb,
+            declared: self.declared,
+            delivered: self.delivered,
+            domain: self.domain,
+            usable: self.usable,
+            short: self.is_short(),
+        }
+    }
+
+    /// Is this delivery short of what its declaration asks for, and how badly?
+    fn shortfall(&self) -> Shortfall {
+        if self.domain == 0 {
+            return Shortfall::None; // `DW0323` owns an empty region
+        }
+        if let Some(want) = self.declared {
+            return if self.delivered < want as usize {
+                Shortfall::Refuse
+            } else {
+                Shortfall::None
+            };
+        }
+        match (self.usable, self.delivered) {
+            (0, _) => Shortfall::Refuse,
+            (_, 0) => Shortfall::Advise,
+            _ => Shortfall::None,
+        }
+    }
+
+    /// Whether this row goes in the artifact as short.
+    fn is_short(&self) -> bool {
+        self.shortfall() != Shortfall::None
+    }
+}
+
+/// The `DW0864` finding one delivery earns: `Err` at the error tier, `Ok(Some)`
+/// at the advisory tier, `Ok(None)` when the declaration was met.
+///
+/// One authority rather than a `match` at each verb's call site: two call sites
+/// deciding a tier is two rules that agree right up until they do not, and the
+/// tier is the part of this diagnostic a reader has to trust.
+fn placement_finding(
+    bid: &str,
+    ei: usize,
+    verb: &str,
+    d: Delivery,
+) -> Result<Option<Diagnostic>, EditError> {
+    match d.shortfall() {
+        Shortfall::None => Ok(None),
+        Shortfall::Refuse => Err(EditError {
+            code: DW_PLACEMENT_SHORTFALL,
+            message: shortfall_message(bid, verb, d),
+        }),
+        Shortfall::Advise => Ok(Some(Diagnostic::warning(
+            DW_PLACEMENT_SHORTFALL,
+            "world-edits",
+            format!("/content/batches/{bid}/edits/{ei}"),
+            shortfall_message(bid, verb, d),
+        ))),
+    }
+}
+
+/// The `DW0864` message for a short delivery, with every number in it. Shared by
+/// both tiers, so the error and the advisory cannot come to describe the numbers
+/// differently.
+fn shortfall_message(bid: &str, verb: &str, d: Delivery) -> String {
+    let want = match d.declared {
+        Some(w) => format!("asks for {w}"),
+        None => "states a per-candidate density and so no target at all".to_string(),
+    };
+    format!(
+        "world-edits batch `{bid}`: the `{verb}` verb {want} and delivered {} over a \
+         declared domain of {} cell(s), {} of which it could act on at all (an air cell \
+         with something under it, off the keep-clear footprint). The gap is in the domain \
+         rather than in the verb: widen the selection, lower `spacing`, drop an `avoid` \
+         envelope, point the region at the course ABOVE the surface rather than at the \
+         surface itself, or ask for what the ground can carry. Stated as a number because \
+         the acceptance proxy for this class used to be a rendered shot, and one bearing \
+         cannot see a region",
+        d.delivered, d.domain, d.usable
+    )
+}
+
 /// A failed edit replay: a stable diagnostic code plus a message that names the
 /// offending batch.
 #[derive(Debug)]
@@ -126,6 +273,70 @@ pub struct EditReplay {
     /// order. Never fatal — `delvec` exits non-zero only on `Severity::Error`.
     /// Empty for a view replay (`replay_view` proves nothing).
     pub warnings: Vec<Diagnostic>,
+    /// What every placement verb declared and delivered, in script order — the
+    /// `DW0864` ledger, emitted as `validation/placement-gate.json`.
+    ///
+    /// Recorded for every verb, not only for the short ones: a rule that speaks
+    /// only when it fires reads exactly like a rule that never looked, which is
+    /// the vacuity this finding's general form exists to end.
+    pub placements: Vec<Placement>,
+}
+
+/// One placement verb's declared-versus-delivered row (`DW0864`).
+#[derive(Debug, Clone)]
+pub struct Placement {
+    /// The batch that holds the verb.
+    pub batch: String,
+    /// The verb's index within that batch's `edits`.
+    pub edit: usize,
+    /// `scatter` or `plant`.
+    pub verb: &'static str,
+    /// What the declaration asks for, where the verb states a quantity.
+    pub declared: Option<u32>,
+    /// What it placed.
+    pub delivered: usize,
+    /// Cells in the region the author declared — the denominator.
+    pub domain: usize,
+    /// Cells of that region the verb could act on at all.
+    pub usable: usize,
+    /// Whether the delivery fell short of the declaration.
+    pub short: bool,
+}
+
+impl Placement {
+    /// The artifact row.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "batch": self.batch,
+            "edit": self.edit,
+            "verb": self.verb,
+            "declared": self.declared,
+            "delivered": self.delivered,
+            "domain": self.domain,
+            "usable": self.usable,
+            "short": self.short,
+        })
+    }
+}
+
+/// The `DW0864` binding ledger: every placement verb this build judged, with the
+/// counts that judged it, plus how many of each kind there were.
+///
+/// The binding counts are DERIVED from the rows rather than written beside them
+/// — a stated count that is a literal is the vacuity it was supposed to expose.
+pub fn placement_gate_json(rows: &[Placement]) -> serde_json::Value {
+    let kind = |v: &str| rows.iter().filter(|r| r.verb == v).count();
+    serde_json::json!({
+        "binding": {
+            "verbs": rows.len(),
+            "scatter": kind("scatter"),
+            "plant": kind("plant"),
+            "short": rows.iter().filter(|r| r.short).count(),
+            "domain_cells": rows.iter().map(|r| r.domain).sum::<usize>(),
+            "delivered": rows.iter().map(|r| r.delivered).sum::<usize>(),
+        },
+        "verbs": rows.iter().map(Placement::to_json).collect::<Vec<_>>(),
+    })
 }
 
 /// Whether the campaign carries a non-empty edit script. `false` keeps the
@@ -181,6 +392,7 @@ fn replay_with(
     let mut commands: Vec<String> = Vec::new();
     let mut batches: Vec<BatchOutcome> = Vec::new();
     let mut warnings: Vec<Diagnostic> = Vec::new();
+    let mut placements: Vec<Placement> = Vec::new();
     // Support-validity bookkeeping (DW0354), cumulative across batches: every
     // support-dependent block the script has placed so far, and which of those
     // cells a `relight` verb placed (those are declared lighting, error tier).
@@ -270,7 +482,7 @@ fn replay_with(
                 } => {
                     let cells = used_region(bid, &regions, region.as_str())?.clone();
                     let avoid_fp = avoid_footprint(bid, &regions, avoid)?;
-                    scatter(
+                    let d = scatter(
                         &mut assembled,
                         &mut batch_writes,
                         &cells,
@@ -282,6 +494,10 @@ fn replay_with(
                         seed,
                         bid,
                     )?;
+                    placements.push(d.record(bid, ei, "scatter"));
+                    if enforce {
+                        warnings.extend(placement_finding(bid, ei, "scatter", d)?);
+                    }
                 }
                 WorldEdit::Plant {
                     region,
@@ -292,7 +508,7 @@ fn replay_with(
                 } => {
                     let cells = used_region(bid, &regions, region.as_str())?.clone();
                     let avoid_fp = avoid_footprint(bid, &regions, avoid)?;
-                    plant(
+                    let d = plant(
                         &mut assembled,
                         &mut batch_writes,
                         &cells,
@@ -302,6 +518,10 @@ fn replay_with(
                         spacing.unwrap_or(4),
                         seed,
                     );
+                    placements.push(d.record(bid, ei, "plant"));
+                    if enforce {
+                        warnings.extend(placement_finding(bid, ei, "plant", d)?);
+                    }
                 }
                 WorldEdit::Fragment {
                     prefab,
@@ -411,6 +631,7 @@ fn replay_with(
         commands,
         batches,
         warnings,
+        placements,
     }))
 }
 
@@ -1194,7 +1415,7 @@ fn scatter(
     limit: Option<u32>,
     seed: u64,
     bid: &str,
-) -> Result<(), EditError> {
+) -> Result<Delivery, EditError> {
     // Defense in depth (map-editor audit): `dsl::validate` rejects an empty
     // `items` list, but `emit::build` is callable without it — a library caller
     // gets a structured error, never an index panic.
@@ -1212,10 +1433,12 @@ fn scatter(
     // Candidates: standable region cells off the keep-clear footprint, gated
     // by the density noise, carrying their placement-order noise.
     let mut cand: Vec<(f64, [i32; 3])> = Vec::new();
+    let mut usable = 0usize;
     for &c in cells {
         if avoid_fp.contains(&(c[0], c[2])) || !is_dressing_candidate(assembled, c) {
             continue;
         }
+        usable += 1;
         if hash01(seed, c[0], c[1], c[2], 151) < density {
             cand.push((hash01(seed, c[0], c[1], c[2], 157), c));
         }
@@ -1251,7 +1474,12 @@ fn scatter(
         write_cell(assembled, batch_writes, c, chosen);
         placed.push((c[0], c[2]));
     }
-    Ok(())
+    Ok(Delivery {
+        declared: None,
+        delivered: placed.len(),
+        domain: cells.len(),
+        usable,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1371,7 +1599,7 @@ fn plant(
     count: u32,
     spacing: u32,
     seed: u64,
-) {
+) -> Delivery {
     let delvewright_dsl::TreeKind::Oak = tree;
     let on_walk = |x: i32, z: i32| avoid_fp.contains(&(x, z));
     let mut cand: Vec<(f64, [i32; 3])> = Vec::new();
@@ -1381,6 +1609,7 @@ fn plant(
         }
         cand.push((value_noise(seed, c[0], 5, c[2], 0.5, 41), c));
     }
+    let usable = cand.len();
     cand.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
     let sp = spacing as i32;
     let mut planted: Vec<(i32, i32)> = Vec::new();
@@ -1396,6 +1625,12 @@ fn plant(
         }
         place_oak(assembled, batch_writes, c[0], c[1], c[2], seed, &on_walk);
         planted.push((c[0], c[2]));
+    }
+    Delivery {
+        declared: Some(count),
+        delivered: planted.len(),
+        domain: cells.len(),
+        usable,
     }
 }
 
@@ -2226,5 +2461,163 @@ mod tests {
                 assert!(!avoid.contains(&(c[0], c[2])), "trunk on keep-clear: {c:?}");
             }
         }
+    }
+
+    /// **`DW0864`, the error tier: a `plant` delivers the count it declares.**
+    ///
+    /// The owner's cherry-grove finding, in its smallest form — the declaration
+    /// asks for more trees than the region can seat, the verb quietly seats what
+    /// fits, and the acceptance proxy was a rendered shot of one bearing.
+    ///
+    /// Driven in BOTH directions in one test, because a verdict that only ever
+    /// comes out one way is not a verdict: the same region and the same spacing,
+    /// asked for a count the ground can carry and a count it cannot.
+    #[test]
+    fn dw0864_refuses_a_plant_that_cannot_seat_the_count_it_declares() {
+        let cells = air_band(9, 9);
+        let far_apart = 4;
+        let mut delivered = Vec::new();
+        for want in [1u32, 40] {
+            let mut a = slab(9, 9);
+            let mut writes = BTreeMap::new();
+            let d = plant(
+                &mut a,
+                &mut writes,
+                &cells,
+                &BTreeSet::new(),
+                delvewright_dsl::TreeKind::Oak,
+                want,
+                far_apart,
+                5,
+            );
+            delivered.push((want, d));
+        }
+        let (_, met) = delivered[0];
+        let (_, missed) = delivered[1];
+        assert_eq!(met.shortfall(), Shortfall::None, "{met:?}");
+        assert_eq!(missed.shortfall(), Shortfall::Refuse, "{missed:?}");
+        // The denominator is the DECLARED domain, never the part that worked —
+        // that distinction is the whole finding.
+        assert_eq!(missed.domain, cells.len());
+        assert!(missed.delivered < 40);
+        // The tier a delivery earns, and the CODE it earns it under, through the
+        // one authority both call sites use.
+        assert!(
+            placement_finding("batch/x", 0, "plant", met)
+                .unwrap()
+                .is_none()
+        );
+        let err = placement_finding("batch/x", 0, "plant", missed)
+            .expect_err("a plant short of its declared count is refused");
+        assert_eq!(err.code, DW_PLACEMENT_SHORTFALL);
+        assert_eq!(DW_PLACEMENT_SHORTFALL.id(), "DW0864");
+        assert!(
+            err.message.contains(&missed.domain.to_string()),
+            "{}",
+            err.message
+        );
+        assert!(
+            err.message.contains(&missed.delivered.to_string()),
+            "{}",
+            err.message
+        );
+    }
+
+    /// **`DW0864`, both tiers on `scatter`.**
+    ///
+    /// A density states no target, so the two zeros are different facts and the
+    /// code splits on which one it is. Acting on **no cell of the declared
+    /// domain at all** is a silent no-op and is refused — this is the gallery's
+    /// own live instance, a `surface-band` aimed at the solid course instead of
+    /// the air above it, which resolved to 406 cells and dressed none of them
+    /// for as long as it existed. A domain the verb *could* have dressed, whose
+    /// noise sample simply came up empty, is stated rather than refused.
+    #[test]
+    fn dw0864_separates_a_scatter_that_cannot_act_from_one_that_sampled_empty() {
+        let solid: BTreeSet<[i32; 3]> = (0..9)
+            .flat_map(|x| (0..9).map(move |z| [x, 0, z]))
+            .collect();
+        let air = air_band(9, 9);
+        let items = [PaletteBlock {
+            block: "minecraft:cobblestone".to_string(),
+            weight: 1.0,
+        }];
+        let run = |cells: &BTreeSet<[i32; 3]>, density: f64| -> Delivery {
+            let mut a = slab(9, 9);
+            let mut writes = BTreeMap::new();
+            scatter(
+                &mut a,
+                &mut writes,
+                cells,
+                &BTreeSet::new(),
+                &items,
+                density,
+                None,
+                None,
+                5,
+                "batch/x",
+            )
+            .expect("a non-empty item list scatters")
+        };
+        let on_the_solid_course = run(&solid, 1.0);
+        assert_eq!(on_the_solid_course.usable, 0);
+        assert_eq!(on_the_solid_course.shortfall(), Shortfall::Refuse);
+        let sampled_empty = run(&air, 0.0);
+        assert!(sampled_empty.usable > 0);
+        assert_eq!(sampled_empty.delivered, 0);
+        assert_eq!(sampled_empty.shortfall(), Shortfall::Advise);
+        let dressed = run(&air, 1.0);
+        assert_eq!(dressed.shortfall(), Shortfall::None);
+        assert_eq!(dressed.delivered, dressed.usable);
+
+        // Same code, different tier — the property that makes `DW0864` one rule
+        // rather than two that could drift apart.
+        assert_eq!(
+            placement_finding("batch/x", 0, "scatter", on_the_solid_course)
+                .expect_err("a verb that can act on nothing is refused")
+                .code,
+            DW_PLACEMENT_SHORTFALL
+        );
+        let advisory = placement_finding("batch/x", 0, "scatter", sampled_empty)
+            .expect("an empty sample is not refused")
+            .expect("an empty sample is stated");
+        assert_eq!(advisory.code, DW_PLACEMENT_SHORTFALL);
+        assert_eq!(advisory.severity, delvewright_dsl::Severity::Warning);
+        assert!(
+            placement_finding("batch/x", 0, "scatter", dressed)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    /// The ledger states a binding count, and it is COMPUTED from the rows —
+    /// a literal in that position is the vacuity a stated count exists to expose.
+    #[test]
+    fn the_placement_gate_states_a_binding_count_it_derived() {
+        let rows: Vec<Placement> = ["scatter", "plant", "scatter"]
+            .iter()
+            .enumerate()
+            .map(|(i, v)| Placement {
+                batch: "batch/x".to_string(),
+                edit: i,
+                verb: if *v == "plant" { "plant" } else { "scatter" },
+                declared: (*v == "plant").then_some(2),
+                delivered: i,
+                domain: 10 * (i + 1),
+                usable: i,
+                short: i == 0,
+            })
+            .collect();
+        let j = placement_gate_json(&rows);
+        let b = &j["binding"];
+        assert_eq!(b["verbs"], rows.len());
+        assert_eq!(b["scatter"], 2);
+        assert_eq!(b["plant"], 1);
+        assert_eq!(b["short"], 1);
+        assert_eq!(
+            b["domain_cells"],
+            rows.iter().map(|r| r.domain).sum::<usize>()
+        );
+        assert_eq!(j["verbs"].as_array().map(Vec::len), Some(rows.len()));
     }
 }

@@ -389,11 +389,20 @@ fn reachability(model: &VoxelModel, standable: &BTreeSet<[i32; 3]>) -> Reachabil
         .iter()
         .filter(|&&c| nav::sheltered(model, c))
         .count();
-    let components = nav::components(standable);
-    let (reached, stranded): (Vec<_>, Vec<_>) = components
-        .into_iter()
-        .partition(|c| c.iter().any(|cell| entry.contains(cell)));
-    let reachable: usize = reached.iter().map(|c| c.len()).sum();
+    // **Reached is walked, never inferred from a component.** Taking the
+    // components that happen to hold an entrance was the same answer only while
+    // the step relation was symmetric, and it is not: a body rises a full block
+    // only where the cell its head sweeps through is clear, and comes back down
+    // asking nothing. So a lump of floor can hold an entrance and still have a
+    // gallery inside it no body reaches. Walk it.
+    let walked = nav::reachable_from(model, standable, &entry);
+    let reachable = walked.len();
+    let unwalked: BTreeSet<[i32; 3]> = standable.difference(&walked).copied().collect();
+    // The leftovers are grouped for the author by [`nav::components`], whose
+    // relation is the undirected one — the question there is "which lump of
+    // floor is this", not "can a body get to it", and the answer to the second
+    // is already `walked`.
+    let stranded = nav::components(model, &unwalked);
 
     let mut unreachable_sheltered = 0usize;
     let mut unreachable_open = 0usize;
@@ -840,7 +849,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                             nav::reachable_with_fall(model, &standable, a, b)
                                 || nav::reachable_with_fall(model, &standable, b, a)
                         } else {
-                            nav::connected(&standable, a, b)
+                            nav::connected(model, &standable, a, b)
                         };
                         if !walked {
                             severed.push(format!(
@@ -897,7 +906,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                 let walked = if options.allow_falls {
                     nav::reachable_with_fall(model, &standable, &entry, &exit)
                 } else {
-                    nav::connected(&standable, &entry, &exit)
+                    nav::connected(model, &standable, &entry, &exit)
                 };
                 gates.push(Gate {
                     id: "traversable",
@@ -1773,9 +1782,9 @@ mod tests {
         .unwrap()
         .model;
         let cells = nav::standable_cells(model);
-        let forward = nav::components(&cells);
+        let forward = nav::components(model, &cells);
         let reversed: BTreeSet<[i32; 3]> = cells.iter().rev().copied().collect();
-        assert_eq!(forward, nav::components(&reversed));
+        assert_eq!(forward, nav::components(model, &reversed));
         assert_eq!(forward.iter().map(|c| c.len()).sum::<usize>(), cells.len());
     }
 

@@ -64,4 +64,5 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0051](spec-0051-optional-is-a-claim-about-the-proof.md) | Optional is a claim about the proof — the mainline neither needs it nor fears it | Accepted |
 | [spec-0052](spec-0052-a-quest-names-a-place-the-graph-declared.md) | A quest names a place the graph declared — the campaign's vocabulary below node granularity | Accepted |
 | [spec-0053](spec-0053-a-place-that-is-a-route-and-a-hand-off-that-is-not-a-door.md) | A place that is a route, and a hand-off that is not a door | Accepted |
+| [spec-0054](spec-0054-a-light-figure-names-its-sky.md) | A light figure names its sky — the lighting record carries its measurement context, so a gate can re-judge it | Proposed |
 | [spec-0055](spec-0055-the-scope-belongs-to-the-object.md) | The scope belongs to the object — an anchor reference resolves where its object stands | Proposed |
