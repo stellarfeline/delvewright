@@ -363,7 +363,8 @@ def test_a_lease_is_honoured_over_a_merged_branch_and_reported(fx, tmp_path):
     out = sweep(fx, bindir)
     v, why = verdict_for(out, wt)
     assert v == "KEEP" and "LEASED by worker-a" in why
-    assert "SPENT" in why and "#11" in why and "MERGED" in why
+    merged_pr = MERGED[0]["number"]
+    assert "SPENT" in why and f"#{merged_pr}" in why and "MERGED" in why
     assert "REPORTED, not resolved" in why
     # and the act that ends it, named where the row is read
     assert "--after-merge landed --apply" in out
@@ -509,7 +510,8 @@ def test_the_merge_does_not_end_a_lease_the_remote_has_not_landed(fx, tmp_path):
     f = lease_file(wt)
     rows = [{"number": 12, "state": "OPEN", "headRefName": "inflight", "title": "t"}]
     out = after_merge(fx, fake_gh(tmp_path, rows), "inflight", "--apply")
-    assert "LEASE KEPT" in out and "#12 is OPEN" in out
+    open_pr = rows[0]["number"]
+    assert "LEASE KEPT" in out and f"#{open_pr} is OPEN" in out
     assert f.exists(), "a lease was ended over a branch that had not landed"
     assert wt.exists()
 
