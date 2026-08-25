@@ -49,9 +49,9 @@ use std::collections::BTreeMap;
 /// A body of fluid in a piece is not still, or not where it was authored.
 pub const DW_FLUID_ESCAPES: &str = "DW0800";
 
-/// Minecraft's two fluids. Not a hand-kept list that can rot: a third fluid
-/// would be a new game version, which is a pin change (ADR-0009), and the
-/// `level` property alone cannot name them (`light` carries one too).
+/// Minecraft's two fluids, as this module's callers spell them. The membership
+/// question is [`delvewright_dsl::blockshape::is_fluid`]; this is the list a
+/// diagnostic prints.
 pub const FLUIDS: [&str; 2] = ["minecraft:water", "minecraft:lava"];
 
 /// How wet one cell is.
@@ -80,17 +80,22 @@ fn qualify(name: &str) -> String {
 }
 
 /// True when this id is one of the game's fluid blocks.
+///
+/// **Not decided here** (spec-0056). This module and `delvec` each used to carry
+/// a fluid list, tied together by a cross-crate test whose own header said the
+/// duplication was unavoidable because `delvec` may not depend on this crate.
+/// That premise was true and is no longer the whole truth: both already depend on
+/// `delvewright-dsl`, which is where the block-shape table now lives, so the two
+/// lists collapse into one and the test tying them becomes a check that the
+/// delegation is real.
 pub fn is_fluid(name: &str) -> bool {
-    let q = qualify(name);
-    FLUIDS.contains(&q.as_str())
+    delvewright_dsl::blockshape::is_fluid(name)
 }
 
-/// True for the three air blocks — the cells a fluid runs into.
+/// True for the three air blocks — the cells a fluid runs into. Also
+/// [`delvewright_dsl::blockshape`]'s, for the same reason.
 pub fn is_air(name: &str) -> bool {
-    matches!(
-        qualify(name).as_str(),
-        "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
-    )
+    delvewright_dsl::blockshape::is_air(name)
 }
 
 /// True for the one block that means "whatever was already here": a cell the

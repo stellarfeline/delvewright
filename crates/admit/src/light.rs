@@ -83,6 +83,7 @@
 use std::collections::BTreeMap;
 
 use delvewright_compiler::light::{LightModel, effective_sky};
+use delvewright_dsl::blockshape;
 use delvewright_dsl::{WorldTime, WorldWeather};
 use delvewright_schem::nav::{self, Voxels};
 use delvewright_schem::split::TilePart;
@@ -181,12 +182,28 @@ impl Voxels for Zone<'_> {
         self.size
     }
 
+    /// **Asked, not decided, here** — [`delvewright_dsl::blockshape`],
+    /// spec-0056.
+    ///
+    /// This probe used to carry a nine-id list of its own: it knew a torch was
+    /// walked through, which the grammar walk did not, and it called open water
+    /// passable, which spec-0038 forbids. A third private answer to one question
+    /// is the defect spec-0056 exists to end, so the list is gone and this reads
+    /// the same table `delvec` routes with.
     fn passable(&self, pos: [i32; 3]) -> bool {
-        self.name(pos).is_some_and(is_passable)
+        self.name(pos).is_some_and(blockshape::passes_body)
     }
 
     fn floor(&self, pos: [i32; 3]) -> bool {
-        self.name(pos).is_some_and(is_floor)
+        self.name(pos).is_some_and(blockshape::supports_body)
+    }
+
+    /// A partial floor is measured, not read as a full cube — the same answer
+    /// the grammar walk and `delvec` give.
+    fn floor_top_16(&self, support: [i32; 3]) -> i64 {
+        self.name(support)
+            .and_then(blockshape::floor_top_16)
+            .map_or(delvewright_dsl::metrics::FULL_16, i64::from)
     }
 }
 
@@ -319,7 +336,7 @@ fn light_model(zone: &Zone) -> LightModel {
             for z in 0..sz {
                 let name = zone.names[((x * sy + y) * sz + z) as usize];
                 // Absent means air to the model, so air is not worth storing.
-                if !is_standable(name) {
+                if !is_empty_to_light(name) {
                     blocks.insert([x, y, z], name.to_string());
                 }
             }
@@ -328,39 +345,14 @@ fn light_model(zone: &Zone) -> LightModel {
     LightModel::from_blocks_within(blocks, [-1, 0, -1], [sx, sy, sz])
 }
 
-/// An empty, standable cell (a player can occupy it).
-fn is_standable(name: &str) -> bool {
-    matches!(strip(name), "air" | "cave_air" | "void_air")
-}
-
-/// A cell a body's own volume passes through: empty air, and the decorations
-/// vanilla gives no collision box.
-fn is_passable(name: &str) -> bool {
-    if is_standable(name) {
-        return true;
-    }
-    matches!(
-        strip(name),
-        "torch"
-            | "wall_torch"
-            | "soul_torch"
-            | "redstone_torch"
-            | "water"
-            | "vine"
-            | "glow_lichen"
-            | "rail"
-            | "light"
-            | "structure_void"
-    )
-}
-
-/// A block a player can stand on top of: anything with a collision box that is
-/// not a fluid a body sinks through. Passable decorations are excluded by
-/// construction, so a cell above a wall torch is not floor.
-fn is_floor(name: &str) -> bool {
-    !is_passable(name) && !matches!(strip(name), "lava" | "barrier")
-}
-
-fn strip(name: &str) -> &str {
-    name.split_once(':').map(|(_, p)| p).unwrap_or(name)
+/// **Is this cell empty to the LIGHT model?**
+///
+/// A different question from whether a body fits through it, and it is why this
+/// one predicate survived spec-0056 while the passability pair beside it did
+/// not: light is stopped by opacity, and a torch cell that a body walks straight
+/// through still holds a block the relight has to see. So only the three air
+/// spellings are omitted from the model's block map, and everything else — torch
+/// included — is handed to [`LightModel`] to decide the opacity of.
+fn is_empty_to_light(name: &str) -> bool {
+    delvewright_dsl::blockshape::is_air(name)
 }

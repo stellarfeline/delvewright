@@ -35,26 +35,34 @@
 
 use std::collections::BTreeSet;
 
-use delvewright_schem::fluid::is_fluid;
+use delvewright_dsl::blockshape::Collision;
 use delvewright_schem::nav::Voxels;
 
 use crate::model::VoxelModel;
 
 pub use delvewright_schem::nav::{components, connected, reachable_from};
 
-/// What a body may occupy, and what it may stand on, in this library's own
-/// block vocabulary.
+/// What a body may occupy, what it may stand on, and how high that floor is —
+/// **asked, not decided, here**.
 ///
-/// Everything the rule library places is a full block except air and a floor
-/// skull, which is neither a barrier nor an occluder — and which sits on the
-/// exact cell an anchor names, so a naive "not air means solid" predicate would
-/// report that niche unreachable. Outside the region counts as blocking: a body
-/// that has left the model has left the thing being proved.
+/// The three answers come from [`delvewright_dsl::blockshape`] (spec-0056), the
+/// one place in this workspace that knows what a vanilla block state does to a
+/// body. This impl used to answer *air, or a block whose name ends in `_skull`*
+/// and call everything else a full solid cube, which meant no grammar-built zone
+/// could hold a torch, a candle, a carpet, a pressure plate or a tuft of grass
+/// anywhere a player was meant to walk: the decoration severed the room, and
+/// three contract gates went red over one bed of glow lichen. Meanwhile `delvec`
+/// held a real collision table and could not lend it here.
 ///
-/// These two methods are the whole of the walk this crate owns, and they are
-/// facts about the rule library's block vocabulary rather than about walking —
-/// which is why they are a pair and not one predicate. Occupancy and support
-/// are separate questions, and water is the block that answers **no** to both.
+/// What is still genuinely this crate's is one convention, and it is content
+/// rather than mechanism: **a floor skull is passable.** The rule library places
+/// one on the exact cell an anchor names, so a walk that read its collision box
+/// (8/16, a partial floor) would report that niche unreachable. That is a fact
+/// about this library's vocabulary, not about the game, so it is written here and
+/// nowhere else.
+///
+/// Outside the region counts as blocking: a body that has left the model has left
+/// the thing being proved.
 impl Voxels for VoxelModel {
     fn origin(&self) -> [i32; 3] {
         self.region().origin
@@ -66,39 +74,62 @@ impl Voxels for VoxelModel {
     }
 
     fn passable(&self, pos: [i32; 3]) -> bool {
-        match self.get(pos) {
+        match self.collision(pos) {
             None => false,
-            Some(block) => block.is_air() || block.name.ends_with("_skull"),
+            Some(_) if is_floor_skull(self, pos) => true,
+            Some(class) => class.passes_body(),
         }
     }
 
-    /// A body stands on stone, and it does not stand on the sea.
+    /// A body stands on stone; it does not stand on the sea, on a torch, or on
+    /// the top of a fence.
     ///
-    /// The default reads "a floor is anything not passable", which is right for
-    /// a vocabulary of full blocks and air and wrong for the one thing this
-    /// library places that a body sinks through. Water is neither passable nor
-    /// floor — the same shape the trait's own doc gives lava — so it is refused
-    /// here rather than left to the default, and the walk stops proving a route
-    /// over an open surface (spec-0038: a route never credits water).
+    /// Not the complement of [`Voxels::passable`], which is why the trait asks
+    /// twice. Three classes answer **no** to both questions, and they are why the
+    /// default reading (`!passable`) is wrong for this vocabulary: a fluid
+    /// (spec-0038 — a route never credits water, and nothing stands on a
+    /// surface), a tall barrier (1.5 blocks on a 1-block cell, above the jump
+    /// apex), and every thin decoration (a body walks through it and rests on
+    /// whatever is below).
     ///
-    /// The fluids are [`delvewright_schem::fluid`]'s, not a second list: that
-    /// module is where this workspace already keeps what a fluid is, measured
-    /// on the pinned server, and a third fluid would be a pin change rather
-    /// than an edit here. **`waterlogged` is deliberately not read.** A
-    /// waterlogged stair is a stair — a block with a collision box, holding its
-    /// own water and spreading none — and a body stands on it.
-    ///
-    /// Refusing only. A cell of water stays impassable, so this cannot admit a
-    /// route the walk did not already have; it can only withdraw one. Whether a
-    /// body may *wade* — occupy a shallow flooded cell standing on the floor
-    /// beneath it — is a separate claim in the opposite direction, and it is
-    /// not made here.
+    /// **`waterlogged` is deliberately not read.** A waterlogged stair is a stair
+    /// — a block with a collision box, holding its own water and spreading none —
+    /// and a body stands on it.
     fn floor(&self, pos: [i32; 3]) -> bool {
-        match self.get(pos) {
+        match self.collision(pos) {
             None => false,
-            Some(block) => !is_fluid(&block.name) && !self.passable(pos),
+            Some(_) if is_floor_skull(self, pos) => false,
+            Some(class) => class.supports_body(),
         }
     }
+
+    /// The measured top face of the block a body rests on, in sixteenths.
+    ///
+    /// The default answers a full cube for anything that is a floor at all, which
+    /// over-states every rise and therefore only ever refuses a step vanilla
+    /// admits. This vocabulary has partial-height blocks in it — slabs, snow
+    /// drifts, `dirt_path` — so it answers with the measurement instead, and a
+    /// body walks up onto a bottom slab without being asked for jump headroom.
+    fn floor_top_16(&self, support: [i32; 3]) -> i64 {
+        match self.collision(support).and_then(Collision::floor_top_16) {
+            Some(top) => i64::from(top),
+            // Not a floor at all. The walk reads this only for a cell `floor`
+            // has already accepted, so it is unreachable in practice; a full cube
+            // is the refusing answer if it ever is reached.
+            None => delvewright_dsl::metrics::FULL_16,
+        }
+    }
+}
+
+/// The rule library's own convention: a skull laid on a floor cell is a marker,
+/// not an obstacle.
+///
+/// Vanilla gives a skull an 8/16 collision box, so the shared table calls it a
+/// partial floor — correct for the game and wrong for this library, which puts
+/// one on the exact cell an anchor names and needs a body able to stand there.
+/// Content, therefore local, therefore stated once.
+fn is_floor_skull(model: &VoxelModel, pos: [i32; 3]) -> bool {
+    model.get(pos).is_some_and(|b| b.name.ends_with("_skull"))
 }
 
 /// Cells a body and a sightline pass through — see the [`Voxels`] impl above.
