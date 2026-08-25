@@ -1142,7 +1142,7 @@ fn prove_class(
 ) -> Result<(), String> {
     match class {
         "walk" => {
-            if nav::connected(graph, a, b) && nav::connected(graph, b, a) {
+            if nav::connected(model, graph, a, b) && nav::connected(model, graph, b, a) {
                 Ok(())
             } else {
                 Err("a walk connects both ways, and this one does not".to_string())
@@ -1155,7 +1155,7 @@ fn prove_class(
                      body climbs"
                         .to_string(),
                 )
-            } else if nav::connected(graph, a, b) && nav::connected(graph, b, a) {
+            } else if nav::connected(model, graph, a, b) && nav::connected(model, graph, b, a) {
                 Ok(())
             } else {
                 Err("the climb does not connect its two ends through its own treads".to_string())
@@ -1164,7 +1164,7 @@ fn prove_class(
         "drop" => {
             if !nav::reachable_with_fall(model, graph, a, b) {
                 Err(format!("nothing falls from {} to {}", ends.0, ends.1))
-            } else if nav::connected(graph, b, a) {
+            } else if nav::connected(model, graph, b, a) {
                 Err(format!(
                     "a drop is one-way, and a body can walk back up from {} to {}",
                     ends.1, ends.0

@@ -571,6 +571,244 @@ def test_strict_fails_on_out_of_stage_rows(gate, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# An ABSENT optional stage document: "this campaign declares none" vs
+# "I could not read one"
+#
+# Five of the eleven stage documents are optional (`compiler::load`), so a
+# campaign that ships no `world-edits.json` is not a campaign missing a
+# document. The probe used to answer `None` for both readings, which reported
+# MISSING-CHECK — a promise nobody keeps — against a campaign whose only
+# offence was declaring no edit stage.
+#
+# The fact that separates them is the COMPILER's, never the filesystem's:
+# `manifest.json` `inputs` is written from the bytes `load_campaign_dir`
+# actually read. A directory or an unreadable file standing where a document
+# belongs is exactly what a broken campaign looks like on disk, and
+# `load::optional` treats ONLY `NotFound` as absent — so such a campaign does
+# not build, has no manifest, and can never present this witness. Every test
+# below drives that in both directions.
+# ---------------------------------------------------------------------------
+
+
+OPTIONAL_DOC_ROW = {
+    "id": "w",
+    "finding": "f",
+    "carrier": {"kind": "dw", "code": LIVE_CODE},
+    "binding": {
+        "kind": "dsl",
+        "files": ["world-edits.json"],
+        "match": {"prefix": {"id": "batch/"}},
+    },
+}
+
+
+def test_a_document_no_build_input_names_is_a_measured_zero(gate, tmp_path):
+    """The compiler compiled this world and read no such document, so the
+    campaign declares none — a count, not a shrug."""
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(tmp_path)
+    count, detail = gate.probe(OPTIONAL_DOC_ROW["binding"], gate.Subject(camp, build))
+    assert count == 0, detail
+    assert "manifest.json inputs" in detail
+
+
+def test_the_same_document_in_the_manifest_is_missing_check(gate, tmp_path):
+    """ONE variable: the compiler DID read a world-edits document. The campaign
+    source is byte-identical to the test above, and the exemption vanishes.
+
+    This is the perturbation the widening is the only thing that could answer
+    differently, and it fails in the refusing direction: a document the
+    compiler read and this gate cannot parse is format rot, which the probe had
+    no way to report at all before."""
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(
+        tmp_path, inputs=("quests.json", "site-plan.json", "world-edits.json")
+    )
+    r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
+    assert r["verdict"] == "MISSING-CHECK"
+    assert r["verdict"] in gate.RED_VERDICTS
+
+
+def test_a_build_that_cannot_say_what_it_read_fails_closed(gate, tmp_path):
+    """No manifest = no witness. "I could not look" is restored, not guessed."""
+    camp = make_blockout_campaign(tmp_path)
+    build = make_build(tmp_path)  # deliberately no manifest.json
+    r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
+    assert r["verdict"] == "MISSING-CHECK"
+    assert "cannot say which documents the compiler read" in r["detail"]
+
+
+def test_a_manifest_with_no_inputs_object_fails_closed(gate, tmp_path):
+    """A manifest whose `inputs` is not a mapping answers nothing, and
+    answering nothing is not the same as answering zero."""
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(tmp_path)
+    (build / "manifest.json").write_text(json.dumps({"inputs": "gone", "outputs": {}}))
+    r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
+    assert r["verdict"] == "MISSING-CHECK"
+
+
+def test_the_measured_zero_is_still_red_on_an_assembled_campaign(gate, tmp_path):
+    """The widening adds NO exemption. The zero is handed to the unchanged
+    adjudication, and off a pre-detail blockout that is a red exactly as every
+    other zero is."""
+    camp = make_campaign(tmp_path, objectives=[{"type": "talk-to"}])
+    build = make_build(tmp_path)
+    (build / "manifest.json").write_text(
+        json.dumps({"inputs": {"quests.json": "0" * 8}, "outputs": {}})
+    )
+    r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
+    assert r["verdict"] in gate.RED_VERDICTS
+    assert r["binding"] == 0
+
+
+def test_the_measured_zero_reaches_out_of_stage_only_on_a_blockout(gate, tmp_path):
+    """And on a blockout it reaches the verdict that already existed for a
+    measured double zero — no new verdict is minted anywhere."""
+    camp = make_blockout_campaign(tmp_path)
+    build = make_blockout_build(tmp_path)
+    r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
+    assert r["verdict"] == "OUT-OF-STAGE"
+    assert r["binding"] == 0 and r["precondition"] == 0
+
+
+def test_a_present_document_never_reaches_the_branch(gate, tmp_path):
+    """Nothing changes for a campaign that HAS the document: it is read and
+    counted, and the manifest is not consulted."""
+    camp = make_blockout_campaign(tmp_path)
+    (camp / "world-edits.json").write_text(
+        json.dumps(
+            {
+                "dsl_version": "0.14.0",
+                "stage": "world-edits",
+                "content": {"batches": [{"id": "batch/one"}]},
+            }
+        )
+    )
+    build = make_blockout_build(tmp_path)  # manifest deliberately does NOT list it
+    r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
+    assert r["verdict"] == "BOUND"
+    assert r["binding"] == 1
+
+
+def test_a_dsl_probe_may_not_name_a_document_this_gate_cannot_read(gate, tmp_path):
+    """The guard that keeps the widening honest. A mistyped filename is in no
+    build's inputs, so it would measure zero on every campaign forever — a
+    check gone quiet, which is exactly what this tool exists to expose. It is a
+    load-time refusal, so it reaches every campaign before any verdict."""
+    good = {
+        "findings": [
+            dict(OPTIONAL_DOC_ROW, applies_when={
+                "kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "x"}},
+            })
+        ]
+    }
+    p = tmp_path / "ok.json"
+    p.write_text(json.dumps(good))
+    assert gate.load_ledger(p)["findings"], "the well-formed ledger must load"
+
+    for key in ("binding", "applies_when"):
+        bad = json.loads(json.dumps(good))
+        bad["findings"][0][key] = {
+            "kind": "dsl", "files": ["worldedits.json"], "match": {"prefix": {"id": "batch/"}},
+        }
+        q = tmp_path / f"bad-{key}.json"
+        q.write_text(json.dumps(bad))
+        with pytest.raises(ValueError, match="not a stage document this gate reads"):
+            gate.load_ledger(q)
+
+
+# ---------------------------------------------------------------------------
+# The LIVE ledger's preconditions, driven over synthetic campaigns
+#
+# The tests above prove the mechanism. These prove the DATA: each
+# `applies_when` added to the live ledger must go non-zero on a campaign that
+# declares the carrier the engine says the check quantifies over, and zero on
+# one that does not. A precondition that can only measure zero is an exemption
+# a row grants itself with extra steps.
+# ---------------------------------------------------------------------------
+
+
+def live_rows(gate, ids):
+    doc = gate.load_ledger(gate.DEFAULT_LEDGER)
+    rows = {r["id"]: r for r in doc["findings"] if r["id"] in ids}
+    assert set(rows) == set(ids), f"live ledger is missing {set(ids) - set(rows)}"
+    return rows
+
+
+def test_the_live_item_gate_precondition_binds_on_an_interact_objective(gate, tmp_path):
+    """`DW0849`'s catalogue row states its own binding: *interact objectives
+    declaring requires_item*. So the carriers are interact objectives, and
+    `requires_item` exists on exactly one enum variant. Driven both ways."""
+    row = live_rows(gate, {"isl-02"})["isl-02"]
+    aw = row["applies_when"]
+
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    carrying = make_campaign(tmp_path / "a", objectives=[{"type": "interact"}])
+    without = make_campaign(tmp_path / "b", objectives=[{"type": "talk-to"}])
+    build = make_build(tmp_path)
+    n_yes = gate.probe(aw, gate.Subject(carrying, build))[0]
+    n_no = gate.probe(aw, gate.Subject(without, build))[0]
+    assert (n_yes, n_no) == (1, 0)
+
+    # And the row's verdict follows: a campaign that HAS the carrier and has
+    # not declared the field is refused, which is the whole point.
+    assert adjudicate_on(gate, carrying, build, row)["verdict"] == "UNBOUND"
+
+
+def test_the_live_flask_precondition_binds_on_a_potion_bearing_kit_item(gate, tmp_path):
+    """`DW0487` fires on a POTION-BEARING kit item, and the carriers are the
+    four ids of `dsl::stages::POTION_BEARING_ITEMS` — in both the namespaced
+    and bare forms `is_potion_bearing_item` normalises. A leather boot cannot
+    carry a placeholder-flask defect, which is why the precondition is those
+    four items and not "kit items"."""
+    rows = live_rows(gate, {"isl-05", "bell-16"})
+    aw = rows["isl-05"]["applies_when"]
+    assert aw == rows["bell-16"]["applies_when"], "one rule, one precondition"
+
+    build = make_build(tmp_path)
+
+    def classes(where, kit):
+        d = tmp_path / where
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "classes.json").write_text(
+            json.dumps(
+                {
+                    "dsl_version": "0.14.0",
+                    "stage": "classes",
+                    "content": {"classes": [{"id": "class/a", "kit": kit}]},
+                }
+            )
+        )
+        return d
+
+    bare = classes("bare", [{"item": "potion", "count": 1}])
+    full = classes("full", [{"item": "minecraft:splash_potion", "count": 1}])
+    none = classes("none", [{"item": "minecraft:bread", "count": 3}])
+    counts = {
+        w: gate.probe(aw, gate.Subject(d, build))[0]
+        for w, d in (("bare", bare), ("full", full), ("none", none))
+    }
+    assert counts == {"bare": 1, "full": 1, "none": 0}, counts
+
+
+def test_every_live_precondition_can_measure_non_zero(gate):
+    """A precondition that no campaign shape could ever satisfy is the sixth
+    vacuity mode with a probe's face on. The count below is COMPUTED from the
+    ledger, never written down beside it — a constant asserted against itself
+    is the vacuity this whole file exists to refuse."""
+    doc = gate.load_ledger(gate.DEFAULT_LEDGER)
+    rows = [r for r in doc["findings"] if r.get("applies_when") is not None]
+    assert len(rows) >= 17, f"the ledger has stopped declaring preconditions: {len(rows)}"
+    for r in rows:
+        aw = r["applies_when"]
+        assert aw != r["binding"], r["id"]
+        if aw.get("kind") == "dsl":
+            assert aw.get("match"), f"{r['id']}: a precondition matching anything is not one"
+
+
+# ---------------------------------------------------------------------------
 # A campaign that cannot be measured at all
 # ---------------------------------------------------------------------------
 

@@ -173,7 +173,7 @@ would be the seventh:
 | Verdict | What it means | Its real instance |
 |---|---|---|
 | `NO-GENERAL-FORM` | the instance was fixed, the class never built | rule 2's `DW0489`, eleven rounds late |
-| `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test) | four rows in the ledger's own first run named invariants that did not exist under those names |
+| `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
 | `UNBOUND` | the check matched zero objects | rule 1's floor gate, nineteen rounds |
 | `INAPPLICABLE` | zero binding **and** zero precondition — the campaign declares none of the objects the class needs | the island has no trap, so no volley-saturation proof can say anything about it |
 | `UNFENCED` | the campaign's `dsl_version` never reached the surface the check keys off | rule 1's branch proofs before round 19 |
@@ -235,6 +235,36 @@ measures zero now reads `INAPPLICABLE` on an assembled campaign (still red)
 instead of `MISSING-CHECK` — "the compiler emits this ledger over zero
 objects" is a different fact from "the check no longer exists", and the remedy
 differs.
+
+### An ABSENT optional stage document is a count, not a shrug
+
+Five of the eleven stage documents are optional (`compiler::load`):
+`world-edits.json` and the four map-pipeline documents. A campaign that ships
+none of them is not a campaign missing a document — it declares no such stage,
+and a probe over one is measuring an object class the campaign has zero of.
+
+**The fact that separates that from "I could not read one" is the compiler's,
+never the filesystem's.** `manifest.json` `inputs` is written from the bytes
+`load_campaign_dir` actually read, hashed per document. A document in no
+build's `inputs` was never read, so the probe counts zero; a document that IS
+in `inputs` and that this gate holds no parsed copy of is format rot and reds
+`MISSING-CHECK`. A build tree that cannot answer — no manifest, or an `inputs`
+that is not a mapping — restores "I could not look" and reds, because guessing
+zero there is the whole defect this tool exists to refuse.
+
+The filesystem cannot be asked, and that is the load-bearing half: a directory
+or an unreadable file standing where a document belongs looks exactly like
+absence on disk. `load::optional` treats **only** `NotFound` as absent, so
+every one of those campaigns fails to build — no build tree, no manifest, and
+`--build` is mandatory. The defect cannot present this witness.
+
+The zero this produces is adjudicated by the rules above and by nothing else:
+red on an assembled campaign, and `OUT-OF-STAGE` only where the twice-measured
+blockout determination already grants it. No verdict, row field, disposition or
+operator flag is added anywhere. Its cost is one obligation the ledger now
+carries: a `dsl` probe may only name a document this gate reads, refused at
+load time, because a mistyped filename appears in no manifest and would
+otherwise measure zero on every campaign forever.
 
 ### The gate is wired to the staging EVENT, not to a doc line
 

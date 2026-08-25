@@ -140,8 +140,23 @@ forbidden zone). `campaigns/` is a symlink to `../delvewright-campaigns/`.
 
 ### A campaign whose map is a site plan
 
-Such a campaign writes **three documents the six-stage loop does not have**, and
-the skill carries the pipeline as a workflow step rather than as a note: a
+**The whole map is confirmed on a reference before it is composed**, and that is
+the first act, not a preliminary: a composition program written without one has
+no criterion to be judged against. The reference is **several single full-frame
+views of the one subject, generated in sequence** — never one canvas cut into
+panels, which spends most of its resolution on gutters and makes one bad panel
+cost the whole sheet. View 1 comes from the prompt alone and is confirmed for
+style; every later view is generated from the prompt plus **view 1**, anchored on
+it by interaction id, never on the view before it, since chaining view to view
+compounds drift rather than bounding it. Each view is framed for what it shows,
+per call. The trade is stated where the step is: co-generating views in one
+canvas guaranteed they agreed about *geometry*, and sequential generation
+guarantees only *style*, so the geometric facts live in the written brief below
+and a drift is checked against text. Confirmed views and their sidecars are
+committed to `campaigns/<id>/design/reference/`.
+
+Such a campaign then writes **three documents the six-stage loop does not have**,
+and the skill carries the pipeline as a workflow step rather than as a note: a
 `geometry-brief` (the whole's written design reduced to checkable numbers), a
 `layout-graph` (the space as places and connections, before any coordinate
 exists) and a `site-plan` (the geometric embedding, and the whole map's design of
@@ -232,9 +247,10 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    hand-carried is the *building* of the Artifact: assembling the story and the
    near/far frames is still the authoring agent's own composition, with no
    template and nothing checking that every scene actually got a pair of images.
-   `tools/refimg.py` draws the individual reference image when a `[refimg]`
-   provider is configured, but it is advisory and needs a human iterating on the
-   prompt — it composes nothing.
+   `tools/refimg.py` draws the individual reference image, and the multi-view
+   sequence a whole subject needs is a workflow step with its anchor and its
+   per-view frame written down — but it needs a human iterating on the prompt,
+   and it composes nothing.
 3. **Chunky is a separate process, not wired into CI** — storybook art is a
    two-pass manual flow (`delvec snapshot` to judge layout, Chunky for the
    shipped frame).
@@ -242,12 +258,14 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is what the mutex used to paper over.
 5. ~~**ADR-0016's third version line is undelivered.**~~ **Closed** — the
-   frontmatter carries `version: 1.1.0`, `requires: delvec: ">=1.0.0 <2.0.0"`
-   and `verified_with: 1.1.0`, and `tools/check-skill-version.py` binds all
-   three: the window must contain this repo's engine, `verified_with` must equal
-   `crates/compiler/Cargo.toml`'s version in **both** directions, and every
-   subcommand and long flag the skill names must exist in the clap CLI (today:
-   9 distinct subcommands, 13 flag references). What is still hand-carried is a
+   frontmatter carries `version:`, `requires: delvec:` and `verified_with:`, and
+   `tools/check-skill-version.py` binds all three: the window must contain this
+   repo's engine, `verified_with` must equal `crates/compiler/Cargo.toml`'s
+   version in **both** directions, and every subcommand and long flag the skill
+   names must exist in the clap CLI. The values and the counts are not copied
+   here — the checker prints its own binding count on every run, and a literal
+   restated in prose is false the moment the thing it names moves, with nothing
+   anywhere to notice. What is still hand-carried is a
    floor that has become **too low** — the gate tests the skill against the
    CURRENT CLI, so a subcommand introduced after the declared floor still
    passes, and this repo has only one engine to test against.
