@@ -67,7 +67,7 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostic::{Diagnostic, DwCode};
 use crate::envelope::Campaign;
 use crate::ids::{DatumId, EdgeId, FactId, NodeId, ViewId, VolumeId};
-use crate::layout::{Edge, LayoutGraphContent};
+use crate::layout::{Edge, LayoutGraphContent, StationKind};
 use crate::metrics::{
     MAX_JUMP_RISE_16, MetricKind, MetricValue, Metrics, Reads, SizeClass, passable_clearance_cells,
     passable_width_cells,
@@ -201,17 +201,74 @@ pub const SEAM_BAR: &str = "minecraft:iron_bars";
 /// function never overrides it.
 #[must_use]
 pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<&'static str> {
-    c.site_plan.as_ref()?;
-    let graph = c.layout_graph.as_ref().map(|g| &g.content)?;
-    graph
-        .edges
-        .iter()
-        .filter_map(|e| match e {
-            Edge::Barred { id, .. } => Some(seam_anchor(id)),
-            _ => None,
-        })
-        .any(|name| name == anchor)
-        .then_some(SEAM_BAR)
+    // Asks the ONE kind authority rather than re-walking the edges, and that is
+    // the whole repair: this used to enumerate `Edge::Barred` alone, so a
+    // `close-gate`, `shortcut` or `timed-gate` naming a **gate station**
+    // (spec-0052) would have been refused by `DW0343` for declaring no fill
+    // block — a refusal whose message says "declare the gate on an anchor of a
+    // piece an area binds", which a site-plan campaign cannot do at all
+    // (`DW0839` refuses a campaign that carries both `areas[]` and a plan).
+    // A narrow binding on the general mechanism, reading as a missing feature.
+    matches!(
+        synthesized_anchor_kinds(c).get(anchor),
+        Some(StationKind::Gate)
+    )
+    .then_some(SEAM_BAR)
+}
+
+/// **Every anchor a site-plan campaign's blockout provides, and what SHAPE each
+/// one is** — the single authority behind [`synthesized_anchors`].
+///
+/// The kind travels with the name because a kind is a property of the **anchor**,
+/// not of the verb that first needed one: `synthesized_gate_block` needed to know
+/// whether a name was a gate and answered by privately re-walking the edges, and
+/// a second consumer wanting the same fact would have re-walked them again. One
+/// function answers it, and everything that needs a shape asks here.
+///
+/// The mapping, and it is total:
+///
+/// * [`ENTRY_ANCHOR`] and every `anchor/node-…` — [`StationKind::Point`], the
+///   floor centre a body stands on.
+/// * every `anchor/unlock-…` — [`StationKind::Point`], where the shortcut's
+///   far-side affordance stands.
+/// * every `anchor/seam-…` — [`StationKind::Gate`], the region the derivation
+///   fills with [`SEAM_BAR`] and content opens.
+/// * every declared station — the kind its node declared (spec-0052 §3).
+///
+/// Empty for a campaign with no site plan — it has prefabs instead, and their
+/// metadata is the authority.
+#[must_use]
+pub fn synthesized_anchor_kinds(c: &Campaign) -> BTreeMap<String, StationKind> {
+    let mut out: BTreeMap<String, StationKind> = BTreeMap::new();
+    if c.site_plan.is_none() {
+        return out;
+    }
+    let Some(graph) = c.layout_graph.as_ref().map(|g| &g.content) else {
+        return out; // `DW0824` refused the plan; there is nothing to name.
+    };
+    out.insert(ENTRY_ANCHOR.to_string(), StationKind::Point);
+    for n in &graph.nodes {
+        out.insert(node_anchor(&n.id), StationKind::Point);
+        // A station whose name collides with a synthesized one is `DW0869`, and
+        // one that collides with another station is `DW0870`; both are errors,
+        // so this insert never silently reinterprets a name a campaign builds
+        // with. Inserting anyway keeps the set EXACT for the refused document
+        // too, which is what lets the kind check name the declared kind rather
+        // than a shape the author did not write.
+        for s in &n.stations {
+            out.insert(s.anchor.as_str().to_string(), s.kind);
+        }
+    }
+    for e in &graph.edges {
+        let Edge::Barred { id, opens_from, .. } = e else {
+            continue;
+        };
+        out.insert(seam_anchor(id), StationKind::Gate);
+        if !matches!(opens_from, crate::layout::OpensFrom::Either) {
+            out.insert(seam_unlock_anchor(id), StationKind::Point);
+        }
+    }
+    out
 }
 
 /// **Every anchor a site-plan campaign's blockout provides**, derived from the
@@ -227,27 +284,11 @@ pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<&'static str
 /// metadata is the authority.
 #[must_use]
 pub fn synthesized_anchors(c: &Campaign) -> BTreeSet<String> {
-    let mut out: BTreeSet<String> = BTreeSet::new();
-    if c.site_plan.is_none() {
-        return out;
-    }
-    let Some(graph) = c.layout_graph.as_ref().map(|g| &g.content) else {
-        return out; // `DW0824` refused the plan; there is nothing to name.
-    };
-    out.insert(ENTRY_ANCHOR.to_string());
-    for n in &graph.nodes {
-        out.insert(node_anchor(&n.id));
-    }
-    for e in &graph.edges {
-        let Edge::Barred { id, opens_from, .. } = e else {
-            continue;
-        };
-        out.insert(seam_anchor(id));
-        if !matches!(opens_from, crate::layout::OpensFrom::Either) {
-            out.insert(seam_unlock_anchor(id));
-        }
-    }
-    out
+    // The names ARE the keys of the kind table, taken rather than re-derived:
+    // two functions walking the graph and agreeing about the spelling is the
+    // exact drift this module's note exists to remove, and a station made the
+    // walk long enough that a second copy would eventually diverge.
+    synthesized_anchor_kinds(c).into_keys().collect()
 }
 
 /// **The synthesized names one PLACE owes** (spec-0050 §6) — the subset of
@@ -282,12 +323,20 @@ pub fn owed_anchors(c: &Campaign, node: &NodeId) -> BTreeSet<String> {
     let Some(graph) = c.layout_graph.as_ref().map(|g| &g.content) else {
         return out; // `DW0824` refused the plan; there is nothing to name.
     };
-    if !graph.nodes.iter().any(|n| &n.id == node) {
+    let Some(n) = graph.nodes.iter().find(|n| &n.id == node) else {
         return out; // `DW0842` names a row whose place the graph does not have.
-    }
+    };
     out.insert(node_anchor(node));
     if &graph.entry == node {
         out.insert(ENTRY_ANCHOR.to_string());
+    }
+    // Every station of this node (spec-0052 §6). The owed set grows **upstream**,
+    // and that one widening is what carries the whole binding chain: the
+    // `detail-plan` `anchors` map must now bind each of them, and it still
+    // refuses every key outside this set, so a binding cannot invent vocabulary
+    // and a typo cannot pass as intent.
+    for s in &n.stations {
+        out.insert(s.anchor.as_str().to_string());
     }
     for e in &graph.edges {
         let Edge::Barred { id, opens_from, .. } = e else {
