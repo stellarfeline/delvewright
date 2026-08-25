@@ -363,3 +363,99 @@ This is the entry the brief asked for: *what I used that a person does not have.
   records as having happened before: "*the island-tileset area was silently never
   transported into, never framed*".
 - **Severity**: **stops the drill dead.** Highest-ranked item in this log.
+
+---
+# Part 3 — the machine ladder, and the second half of the transport defect
+
+## F13 — **a green build + green PackTest + a bot that cannot leave the spawn area**
+This is F12's twin and it is worse, because nothing goes red until the ladder.
+
+- **What happened**: with the destination area's entry anchor fixed, `delvec build`
+  exits 0 and `packtest-run.sh` passes **20/20 game tests**. Then:
+  ```
+  bot-1 | FAILED: step 1 (talk-to) failed: failed npc npc/toll-keeper at
+          [261, 65, 4] (range 3); bot at [4.5, 65.0, 4.5]: No path to the goal!
+  ::error:: bot ladder FAILED in project 'dw-wb-r2' (exit 1)
+  ```
+  The bot is standing at the campaign spawn. The first objective is in a different
+  area, 256 blocks across the void.
+- **Why** (again from `plan.rs`, again unreachable for a person): the transport map
+  is built by `for pair in obj_areas.windows(2)` — it pairs **consecutive
+  objectives**. The leg from the campaign spawn to the FIRST objective has no
+  earlier objective, so it is in no pair, so **no transport is ever emitted for
+  it**, and `DW0311` — which walks the same pair list — never examines it either.
+  **The compile-time completability proof does not cover the first leg.**
+- **Proof, by construction**: I inserted a `reach-anchor` objective in the spawn
+  area ahead of the first talk-to, so that a consecutive pair now spans the two
+  areas. `critical-path.json` step 1 gained `"transport": [261, 65, 2]` — the
+  destination's entry anchor — and the bot ladder went **PASSED (6 steps)**.
+  Before the insertion: no `transport` key on any step, bot red. One variable.
+- **So the undocumented rule, in full, is**: *inter-area transport is emitted on the
+  earlier objective of a consecutive objective pair whose areas differ, and only if
+  the later area's prefab declares an entry anchor; therefore the campaign's FIRST
+  objective must be in the spawn area.* **Not one clause of that sentence exists in
+  `SKILL.md`, in the live schema, or in `compiler.md`'s `DW0311` row.**
+- **What the page offers a person at this exact symptom** (line 1110): "**A
+  `talk-to` / `interact` step that times out with 'objective … did not complete'**:
+  read the rest of that line… *the server ANSWERED* … a re-used world … run
+  `fresh-volumes.sh --project <id>` and re-run before believing the content is at
+  fault." My failure is a **different string** ("No path to the goal!"), so that
+  advice does not apply — but it is the only entry on the page for a failing bot
+  step, so a person will run `fresh-volumes.sh`, get the same red, and conclude the
+  harness is broken.
+- **A person concludes**: the delve is fine and the bot is broken. They would ship
+  it, or give up. Note the shape: **green build + green PackTest + red bot with no
+  DW code** is the most demoralising ordering there is.
+- **Severity**: **stops the drill dead**, and it is the second-cheapest campaign
+  anyone can write.
+
+## F14 — a diagnostic whose prescription the author is not allowed to perform
+- **What happened**: using `hello-room` for two areas —
+  ```
+  DW0857 [error] gate anchor `anchor/door` is provided by 2 of this campaign's
+  areas (`area/ledger-room`, `area/weigh-house`) … An anchor name is unique per
+  AREA … **Rename the gate in one of these areas.**
+  ```
+- **The message is excellent about the problem and impossible about the remedy.**
+  The anchor name is not mine: it is `hello-room.json`'s, in the shared prefab
+  library, used by every campaign. "Rename the gate" means editing library
+  metadata — which the page's own rules forbid an author from doing casually and
+  which the whole `delve-admit` chain exists to govern. The remedy that IS
+  available — *use a different prefab for one of the two areas* — is not named.
+- **Same shape as F11**: a correct refusal whose only stated fix is out of the
+  author's reach. Two instances in one walk suggests the class is worth a sweep.
+- **Severity**: costs an hour.
+
+## F15 — the prefab library forces the fiction, and the page never warns you
+Cumulative, and it is the honest shape of the `areas[]` path today. To get a
+three-place customs post onto a green ladder I had to swap prefabs five times, and
+each swap produced a different error class:
+
+| attempt | area 3 piece | outcome |
+|---|---|---|
+| 1 | `keep-room-small-b` | `DW0311` — no entry anchor, no transport (F12) |
+| 2 | `keep-gate-room` | `DW0311` — same |
+| 3 | `hello-room` | build green; then `DW0317` (its `anchor/door` ships shut — the page DID warn, line 545) |
+| 4 | `hello-room` twice | `DW0857` — duplicate anchor across areas (F14) |
+| 5 | `island-galley` | `DW0318` — 8381 fluid cells leak into the void under `horizon: void` |
+
+Final shape: a customs post on a hill road made of a stone keep hall and a
+`hello-room`. **The library decided the fiction.** The page says "prefer
+`prefab_pool` (stone-keep tileset) for real layouts" and never says that of 36
+pieces, 5 can be entered, 5 contain a container, and 1 does both.
+- **Severity**: costs an hour, repeatedly — and it is where the "showcase mode"
+  ambition on line 96 quietly dies.
+
+## F16 — what worked, unprompted, and should be said plainly
+Recorded because a friction log that only lists breakage is not a measurement.
+- `packtest-run.sh` and `bot-run.sh` did **exactly** what the page says, first try,
+  with a compose project id, and tore their own volumes down: "fresh-volumes:
+  project verified clean (containers + volumes + networks)". 20/20 game tests.
+- `delvec fmt` — "examined 6 file(s); reformatted 6, 0 unparseable" — states its
+  binding count without being asked.
+- `delvec validate` reached green in **two** iterations from a first draft.
+- The DW messages I met (`DW0100`, `DW0205`, `DW0317`, `DW0438`, `DW0467`,
+  `DW0857`) are, as *explanations*, the best-written diagnostics I have seen in any
+  codebase: they say what is wrong, why the rule exists, and what the defect would
+  have cost in play. The failures above are failures of the PAGE and of two
+  *silent* paths — not of the diagnostic catalogue.
