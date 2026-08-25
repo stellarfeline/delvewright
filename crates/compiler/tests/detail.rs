@@ -2056,3 +2056,136 @@ fn the_detailed_build_runs_the_unperturbed_derivation() {
     };
     assert_eq!(mass(&a), mass(&b));
 }
+
+// ---------------------------------------------------------------------------
+// The walk record says what to write in it (round: self-describing documents)
+// ---------------------------------------------------------------------------
+
+/// **`walk-record.json` is schema-exportable like every other document a person
+/// writes.** `SKILL.md` instructs an author to write this file and `DW0841`
+/// refuses it when it is wrong, so its form being prose-only was the gap: every
+/// other document in the pipeline answers to `delvec schema`.
+///
+/// Asserted over the EXPORT, not the struct — the export is the artifact an
+/// author reads, and a derive that stopped reaching a field would leave the
+/// struct correct and the document unwritable.
+#[test]
+fn the_walk_record_schema_names_every_field_the_gate_reads() {
+    let schema = detail::walk_record_schema();
+
+    let required: Vec<&str> = schema["required"]
+        .as_array()
+        .expect("the walk-record schema states its required fields")
+        .iter()
+        .map(|v| v.as_str().expect("a required field is a string"))
+        .collect();
+
+    // Exactly the fields `WalkRecord` parses, minus the one with a default.
+    // `findings` is deliberately optional: a walker may note something without
+    // it blocking detail.
+    let expected = [
+        "site_plan_sha256",
+        "layout_graph_sha256",
+        "blockout_sha256",
+        "engine_revision",
+        "verdict",
+    ];
+    for field in expected {
+        assert!(
+            required.contains(&field),
+            "the walk-record schema must require `{field}`, or an author writes a \
+             record `DW0841` then refuses: required = {required:?}"
+        );
+    }
+    assert_eq!(
+        required.len(),
+        expected.len(),
+        "binding: {} of {} required field(s); an unexpected one means the struct \
+         moved and this test did not: {required:?}",
+        required.len(),
+        expected.len()
+    );
+    assert!(
+        schema["properties"].get("findings").is_some()
+            && !required.contains(&"findings"),
+        "`findings` is a property and is NOT required"
+    );
+
+    // A closed document, so a misspelled field is a refusal rather than a
+    // silently ignored line.
+    assert_eq!(
+        schema["additionalProperties"],
+        serde_json::json!(false),
+        "the walk record refuses unknown fields, exactly as the struct does"
+    );
+
+    // And it says what it IS, because "not a stage document" is the thing an
+    // author gets wrong: they reach for `dsl_version` and `stage`.
+    let described = schema["description"]
+        .as_str()
+        .expect("the walk-record schema is described")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    for needle in ["NOT A STAGE DOCUMENT", "dsl_version", "DW0841"] {
+        assert!(
+            described.contains(needle),
+            "the schema description must say `{needle}`; it says:\n{described}"
+        );
+    }
+}
+
+/// **A source build names the revision it was built from.**
+///
+/// `engine_revision()` reads a compile-time stamp and answers `unstamped` when
+/// nobody supplied one — which was every build everywhere, because the variable
+/// had no writer. A campaign author copies this field into `walk-record.json`,
+/// so a constant there is a value that looks measured and is not.
+///
+/// The precondition is stated rather than assumed: this asserts only when the
+/// crate really was built from a git checkout. A build from a source tarball —
+/// what crates.io serves — legitimately cannot know, and `unstamped` is the
+/// honest answer there rather than a failure.
+#[test]
+fn a_source_build_names_the_revision_it_was_built_from() {
+    // `.git` is a directory in a clone and a FILE in a linked worktree, which
+    // is what every dispatched round on this project builds in. Ask whether the
+    // path exists, never whether it is a directory.
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    if !repo_root.join(".git").exists() {
+        eprintln!(
+            "binding 0: no `.git` at {}, so this build could not have known its \
+             revision and `unstamped` is correct. Not a pass — nothing was examined.",
+            repo_root.display()
+        );
+        return;
+    }
+
+    let rev = detail::engine_revision();
+    assert_ne!(
+        rev, "unstamped",
+        "built from a git checkout at {}, so `crates/compiler/build.rs` should have \
+         stamped the revision. `unstamped` here means the stamp stopped working and \
+         every walk record written against this build carries a constant where a \
+         measurement belongs.",
+        repo_root.display()
+    );
+
+    // A revision, not a version string: two engines 136 commits apart print the
+    // same version, which is the whole reason this field is a revision.
+    let sha = rev.strip_suffix("-dirty").unwrap_or(rev);
+    assert!(
+        sha.len() == 40 && sha.chars().all(|c| c.is_ascii_hexdigit()),
+        "the stamp must be a full git object name, optionally `-dirty`; got `{rev}`"
+    );
+
+    // And the engine names itself with the revision, keeping the version beside
+    // it as context rather than as the name.
+    let named = detail::engine_name();
+    assert!(
+        named.starts_with(rev),
+        "`engine_name()` leads with the revision; got `{named}`"
+    );
+}
