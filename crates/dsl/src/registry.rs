@@ -41,6 +41,74 @@ pub trait EntityRegistry {
     fn contains(&self, entity_id: &str) -> bool;
 }
 
+/// The vendored `entity_type` **tag** table: tag id → its member entity ids,
+/// from Mojang's own generated reports (`crates/dsl/data/entity-tags-1.21.11.json`,
+/// regenerated per MC pin by `tools/extract-entity-tags.py`;
+/// `crates/compiler/data/PROVENANCE.md`).
+///
+/// Vanilla's answer to every question of the form "which entity types do X" that
+/// vanilla itself answers. It lives in this crate — not beside the compiler's
+/// other vendored tables — because both validation tiers ask such questions:
+/// `DW0382` (which bodies honour patrol NBT) is decided from the declaration
+/// alone and therefore here, while `DW0496` (which bodies burn in daylight) and
+/// `DW0452`/`DW0453` (which bodies are aquatic) need the assembled world and are
+/// decided in the compiler, which re-exports these three functions unchanged. A
+/// second copy is how a hand table gets started, and a hand table is how the
+/// engine comes to disagree with the game.
+pub fn entity_tags() -> &'static BTreeMap<String, BTreeSet<String>> {
+    static TAGS: std::sync::LazyLock<BTreeMap<String, BTreeSet<String>>> =
+        std::sync::LazyLock::new(|| {
+            let raw = include_str!("../data/entity-tags-1.21.11.json");
+            let parsed: BTreeMap<String, Vec<String>> =
+                serde_json::from_str(raw).expect("vendored entity-type tags are valid JSON");
+            parsed
+                .into_iter()
+                .map(|(k, v)| (k, v.into_iter().collect()))
+                .collect()
+        });
+    &TAGS
+}
+
+/// Normalize a DSL entity id to its namespaced form (`zombie` →
+/// `minecraft:zombie`), which is how the vendored tags spell every member.
+pub fn namespaced_entity(entity: &str) -> String {
+    if entity.contains(':') {
+        entity.to_string()
+    } else {
+        format!("minecraft:{entity}")
+    }
+}
+
+/// The members of the vanilla `entity_type` tag `tag`, in registry order, bare
+/// (`minecraft:pillager` → `pillager`) — what a diagnostic prints when it has to
+/// tell an author which species a rule admits.
+///
+/// Empty for a tag the pinned game does not carry, which is the same "not a
+/// member" reading [`entity_in_tag`] takes.
+pub fn entity_tag_members_bare(tag: &str) -> Vec<&'static str> {
+    entity_tags()
+        .get(tag)
+        .into_iter()
+        .flatten()
+        .map(|id| id.strip_prefix("minecraft:").unwrap_or(id))
+        .collect()
+}
+
+/// Whether `entity` is a member of the vanilla `entity_type` tag `tag`.
+///
+/// Membership only — this deliberately does **not** expand a nested `#tag`
+/// reference (a tag's member list may name another tag). Every caller so far
+/// reads a flat tag, and silently under-expanding would be the dangerous
+/// direction for a proof that grants exemptions, so the narrowing is stated
+/// rather than assumed: a nested reference reads as "not a member", which puts
+/// the entity in the *checked* class.
+pub fn entity_in_tag(entity: &str, tag: &str) -> bool {
+    let id = namespaced_entity(entity);
+    entity_tags()
+        .get(tag)
+        .is_some_and(|members| members.contains(&id))
+}
+
 /// A prefab lighting profile (spec-0001 "Lighting contract"). `lit` = floor
 /// light ≥ 7; `dim` = 3–6 (needs a rationale); `dark` = < 3 (valid only where
 /// analysis proves a night-vision mitigation — the compiler's `DW0210` check).

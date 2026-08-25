@@ -8111,18 +8111,40 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
 // spec-0016 §6 — TD lanes + aggro-edge summoning
 // ---------------------------------------------------------------------------
 
-/// The raider family: the species whose `Patrolling` / `patrol_target` NBT
-/// vanilla actually honours, all live-verified marching a compiler-driven lane on
-/// 1.21.11 (`docs/notes/td-routing-spike.md`). On anything else the keys are
-/// inert — the mob stands where it spawned — which is the silent no-op class
-/// `DW0382` exists to make loud.
-const LANE_RAIDERS: [&str; 5] = ["pillager", "vindicator", "evoker", "ravager", "witch"];
+/// The vanilla `entity_type` tag whose members honour `Patrolling` /
+/// `patrol_target`: `#minecraft:raiders`.
+///
+/// On anything outside it the keys are inert — the mob stands where it spawned —
+/// which is the silent no-op class `DW0382` exists to make loud.
+///
+/// **The species list is Mojang's, never ours**, the same rule `DW0496` follows
+/// for `#minecraft:burn_in_daylight`. In the pinned game these are the same six
+/// types by two independent routes: the data branch publishes them as this tag,
+/// and the code branch makes exactly them subclasses of `PatrollingMonster` —
+/// whose own `registerGoals` adds the `LongDistancePatrolGoal` every one of them
+/// inherits. A hand-written table is how the two come apart, and had: it named
+/// five, omitting `minecraft:illusioner`, so a lane of illusioners was refused a
+/// march the game would have walked.
+const LANE_RAIDER_TAG: &str = "minecraft:raiders";
+
+/// Whether `entity` may be fielded in a lane — membership of [`LANE_RAIDER_TAG`].
+///
+/// `#minecraft:raiders` names only concrete types in the pinned game (no nested
+/// `#tag` member), so [`crate::registry::entity_in_tag`]'s deliberate
+/// non-expansion cannot narrow this set.
+fn is_lane_raider(entity: &str) -> bool {
+    crate::registry::entity_in_tag(entity, LANE_RAIDER_TAG)
+}
 
 /// Species whose ONLY attack goal is gated on holding a specific weapon: they
 /// acquire a target, find no runnable attack goal, and freeze — while the patrol
 /// goal stays blocked by the very target they cannot hit (`DW0384`). A pillager
-/// is a crossbow mob and nothing else; every other raider melees or casts
-/// bare-handed, so this table has exactly one row on purpose.
+/// is a crossbow mob and nothing else, so this table has exactly one row.
+///
+/// The near miss is `minecraft:illusioner`, whose ranged goal is bow-gated the
+/// same way — but it also carries two spell goals that are gated on nothing but
+/// a target, so a bare-handed illusioner has something runnable and does not
+/// freeze. Every other raider melees or casts bare-handed.
 const LANE_WEAPON_GATED: [(&str, &str); 1] = [("pillager", "minecraft:crossbow")];
 
 /// The bare entity id (`minecraft:pillager` → `pillager`).
@@ -8337,7 +8359,7 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
         }
         for (k, m) in w.mobs.iter().enumerate() {
             let bare = bare_entity(&m.entity);
-            if !LANE_RAIDERS.contains(&bare) {
+            if !is_lane_raider(&m.entity) {
                 d.push(Diagnostic::error(
                     codes::LANE_NOT_RAIDER,
                     "quests",
@@ -8345,11 +8367,12 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
                     format!(
                         "lane wave `{}` fields `{}`, which is not raider-family (spec-0016 §6). \
                          `Patrolling`/`patrol_target` are Raider NBT: on any other species they \
-                         are simply dropped and the mob stands where it spawned. Lane species: \
-                         {}. For anything else use `summon: aggro-edge`, which needs no patrol AI.",
+                         are simply dropped and the mob stands where it spawned. Lane species \
+                         (vanilla's own `#{LANE_RAIDER_TAG}` tag): {}. For anything else use \
+                         `summon: aggro-edge`, which needs no patrol AI.",
                         w.id,
                         m.entity,
-                        LANE_RAIDERS.join(" / ")
+                        crate::registry::entity_tag_members_bare(LANE_RAIDER_TAG).join(" / ")
                     ),
                 ));
             }

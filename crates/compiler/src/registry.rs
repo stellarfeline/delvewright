@@ -105,53 +105,16 @@ impl FullEntityRegistry {
     }
 }
 
-/// The vendored `entity_type` **tag** table: tag id → its member entity ids,
-/// from Mojang's own generated reports (`data/entity-tags-1.21.11.json`,
-/// regenerated per MC pin by `tools/extract-entity-tags.py`; `data/PROVENANCE.md`).
+/// The vendored `entity_type` tag table and its two readers, defined in
+/// `delvewright_dsl::registry` and re-exported here so the compiler's callers
+/// are unchanged.
 ///
-/// Vanilla's answer to every question of the form "which entity types do X" that
-/// vanilla itself answers. Lives here, beside the other vendored tables, because
-/// more than one proof needs it — `DW0496` asks which bodies burn in daylight,
-/// `DW0452`/`DW0453` ask which bodies are aquatic — and a second copy is how a
-/// hand table gets started.
-pub fn entity_tags() -> &'static BTreeMap<String, BTreeSet<String>> {
-    static TAGS: std::sync::LazyLock<BTreeMap<String, BTreeSet<String>>> =
-        std::sync::LazyLock::new(|| {
-            let raw = include_str!("../data/entity-tags-1.21.11.json");
-            let parsed: BTreeMap<String, Vec<String>> =
-                serde_json::from_str(raw).expect("vendored entity-type tags are valid JSON");
-            parsed
-                .into_iter()
-                .map(|(k, v)| (k, v.into_iter().collect()))
-                .collect()
-        });
-    &TAGS
-}
-
-/// Normalize a DSL entity id to its namespaced form (`zombie` →
-/// `minecraft:zombie`), which is how the vendored tags spell every member.
-pub fn namespaced_entity(entity: &str) -> String {
-    if entity.contains(':') {
-        entity.to_string()
-    } else {
-        format!("minecraft:{entity}")
-    }
-}
-
-/// Whether `entity` is a member of the vanilla `entity_type` tag `tag`.
-///
-/// Membership only — this deliberately does **not** expand a nested `#tag`
-/// reference (a tag's member list may name another tag). Every caller so far
-/// reads a flat tag, and silently under-expanding would be the dangerous
-/// direction for a proof that grants exemptions, so the narrowing is stated
-/// rather than assumed: a nested reference reads as "not a member", which puts
-/// the entity in the *checked* class.
-pub fn entity_in_tag(entity: &str, tag: &str) -> bool {
-    let id = namespaced_entity(entity);
-    entity_tags()
-        .get(tag)
-        .is_some_and(|members| members.contains(&id))
-}
+/// The table moved down to the DSL crate when `DW0382` — a *validation-tier*
+/// rule, decidable from the declaration alone — needed it: it asks which bodies
+/// vanilla lets patrol, and had been answering from a hand-written five-species
+/// array that the pinned game disagreed with. One vendored copy, read by both
+/// tiers, is what keeps that from recurring.
+pub use delvewright_dsl::registry::{entity_in_tag, entity_tags, namespaced_entity};
 
 impl EntityRegistry for FullEntityRegistry {
     fn contains(&self, entity_id: &str) -> bool {
