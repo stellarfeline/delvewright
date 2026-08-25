@@ -7101,7 +7101,11 @@ impl QuestEffect {
             }
             for (field, subject) in [("subject", &shot.subject), ("subject_b", &shot.subject_b)] {
                 if let Some(CameraSubject::Anchor(s)) = subject {
-                    out.push((format!("{base}{field}/anchor"), &s.anchor, StationKind::Point));
+                    out.push((
+                        format!("{base}{field}/anchor"),
+                        &s.anchor,
+                        StationKind::Point,
+                    ));
                 }
             }
             out
@@ -7197,13 +7201,11 @@ impl QuestEffect {
                     .enumerate()
                     .flat_map(|(i, s)| shot_refs(&format!("shots/{i}/"), s))
                     .collect();
-                out.extend(path.iter().enumerate().map(|(j, w)| {
-                    (
-                        format!("path/{j}/anchor"),
-                        &w.anchor,
-                        StationKind::Point,
-                    )
-                }));
+                out.extend(
+                    path.iter()
+                        .enumerate()
+                        .map(|(j, w)| (format!("path/{j}/anchor"), &w.anchor, StationKind::Point)),
+                );
                 if let Some(t) = look_at {
                     out.push(("look_at/anchor".to_string(), &t.anchor, StationKind::Point));
                 }

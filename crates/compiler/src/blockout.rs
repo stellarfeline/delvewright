@@ -62,12 +62,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use delvewright_dsl::StationKind;
 use delvewright_dsl::metrics::{MetricKind, MetricValue, Metrics, Pitch, Reads};
 use delvewright_dsl::siteplan::{
     ENTRY_ANCHOR, PlacedBox, PlacedSeam, SITE_AREA, VolumeRole, node_anchor, seam_anchor,
     seam_unlock_anchor,
 };
-use delvewright_dsl::StationKind;
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, NodeId};
 use serde::Serialize;
 
