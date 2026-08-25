@@ -1855,6 +1855,14 @@ this needs were built at Init step 2.
    no `.nbt` (exit 4). **Read the `findings` in the report** — a gate that bound to
    zero objects, or a program that declared no anchors, is a finding, not a pass.
 
+   `--traversable` asks the piece which faces it opens on, so a route is judged
+   the same whichever way it runs and a passage that turns a corner is judged the
+   same as a straight one. Where the piece declares a spatial contract those faces
+   are its `exterior` edges and the binding count is doors; where it declares
+   none they are the sides of the region its standable floor reaches, and the
+   count is open sides. Fewer than two is a refusal that names both repairs: open
+   or declare the second way out, or stop claiming the piece is a route.
+
    Three of the always-on gates are about how a block state is SPELLED —
    `shape-complete` (`DW0735`), `states-complete` (`DW0737`) and `oriented-fills`
    (`DW0736`). Write every property of every block state you paint, including the
@@ -1872,7 +1880,7 @@ this needs were built at Init step 2.
    `{"local": …}` and the answer becomes `pass` at every region.
 
    **Read the `reachability` line too**, which prints whether you asked or not:
-   `traversable` joins two ground-level faces and says nothing about the storeys
+   `traversable` joins ground-level ways in and says nothing about the storeys
    above, so a building can pass every gate with half its floor stranded.
    Unreachable floor **under a roof** is a room with no way in, and the report
    gives you the box to go and look at. Unreachable floor open to the sky is a
