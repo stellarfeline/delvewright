@@ -61,7 +61,7 @@
     "void-horizon.en:packtest-datapack/data/gallery/test/obj_activate_look_in_the_east_bay.mcfunction",
     "void-horizon.en:packtest-datapack/data/gallery/test/obj_activate_look_in_the_west_bay.mcfunction"
   ],
-  "base_commit": "18206ebe9c46e9b29f0638023731500e1c09b681",
+  "base_commit": "ecf1b8d40f23096daf0749e07017b79baf2808ca",
   "changed": [
     "easy.en:SKINS.md",
     "easy.en:creator-datapack/data/gallery/function/creator/emit.mcfunction",
