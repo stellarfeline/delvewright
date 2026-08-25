@@ -1424,7 +1424,7 @@ each is a claim about a *kind* of piece rather than about every piece.
   runs on every expansion either way (§4d); this flag is only what turns its
   sheltered half into a verdict, for a piece that claims a body can get
   everywhere indoors. It is opt-in for the same reason `traversable` is and more
-  so: 13 of the library programs have **no** roofed floor at all — `castle`,
+  so: 13 of the 36 library programs have **no** roofed floor at all — `castle`,
   `church` and `stair-flight` among them — and the gate binds to zero on each,
   which is a finding and not a pass. A piece is entitled to strand floor:
   `rafter_hall`'s rafters are meant to be looked at, and `drop_shaft` is one-way
@@ -1434,12 +1434,12 @@ each is a claim about a *kind* of piece rather than about every piece.
   a gate whose only invocation is a `--reachable-floor` somebody remembers to
   type is a gate the audit never runs. `decorated-room` is that entry — a room
   with a doorway, a roof, and one course of ordinary decoration across its floor
-  (a torch, a candle, a carpet, a pressure plate). It is in the corpus because
-  that room used to be **severed**: before spec-0056 the walk read every one of
-  those blocks as a full solid cube, the decorated cell could not be occupied,
-  the cell above it lost its headroom to the ceiling, and the whole far half of
-  the room became floor nothing could reach. Measured at engine `75db97a1`:
-  36 of 73 standable cells unreachable, one pocket, the piece refused.
+  (a torch, a candle, a carpet, a pressure plate), judged at `11x4x11`, seed 0,
+  binding 82 cells. It is the shape in which a misread collision box costs the
+  most: in a room of ordinary height a decorated cell that is not passable takes
+  the cell above it with it, because the ceiling is already eating that cell's
+  headroom, and the whole far half of the room becomes floor nothing can reach.
+  A body walks through all four blocks and the room is one piece.
 
 `symmetric` is what reads a defect no other gate can. A shape with a mirror plane
 is built by expanding one rule at both sites; if one site is instead a hand-kept
