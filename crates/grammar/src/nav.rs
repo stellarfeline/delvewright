@@ -22,12 +22,15 @@
 //!
 //! # What the model is, and is not
 //!
-//! One walker: one cell horizontally at a time, stepping at most one block up or
+//! One walker: one cell horizontally at a time, stepping at most one cell up or
 //! down, and — under [`reachable_with_fall`] only — walking off a ledge and
-//! landing on the first floor below. **No jump.** Every "cannot reach" these
-//! functions prove means *by walking*, which is the conservative direction for a
-//! severing claim and the generous one for a reachability claim, so the two are
-//! never interchangeable.
+//! landing on the first floor below. Every step is decided by the engine's one
+//! step rule, `delvewright_dsl::metrics::step_allowed`, which is also what
+//! `delvec` routes with: a full-block rise is a jump, and a jump needs the cell
+//! the head sweeps through clear.
+//!
+//! [`reachable_with_fall`] remains deliberately more permissive than the plain
+//! walk, and its own doc records which direction of claim may use it.
 
 use std::collections::BTreeSet;
 
