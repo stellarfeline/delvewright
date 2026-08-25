@@ -1544,6 +1544,32 @@ impl QuestPlanContent {
         }
         spine
     }
+
+    /// **The ONE authority on which quests are elective** (spec-0051): the
+    /// quests declaring `mandatory: false`.
+    ///
+    /// The counterpart to [`Self::spine`], and deliberately a *different*
+    /// question. `spine` asks what the graph demands; this asks what the author
+    /// claims. `DW0866`/`DW0867` are exactly the rules that keep the two
+    /// answers honest about each other, and they can only do that while each
+    /// side has one derivation — which is the defect the spine function was
+    /// created to end, and which a second private `!q.mandatory` filter in the
+    /// compiler would re-introduce on the other half.
+    ///
+    /// **The version fence is upstream, not here.** A document below
+    /// [`crate::OPTIONAL_QUESTS_SINCE`] that declares `mandatory: false` is a
+    /// `DW0133` *error*, and an error means no datapack is written at all — so
+    /// every consumer downstream of a green validate sees an empty set on a
+    /// campaign that predates the surface, without this function needing a
+    /// version it does not carry (`QuestPlanContent` has no envelope).
+    #[must_use]
+    pub fn optional(&self) -> BTreeSet<&str> {
+        self.quests
+            .iter()
+            .filter(|q| !q.mandatory)
+            .map(|q| q.id.as_str())
+            .collect()
+    }
 }
 
 /// One declared story fork (DSL v0.8, spec-0025).

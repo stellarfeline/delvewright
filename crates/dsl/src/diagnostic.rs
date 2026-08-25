@@ -304,6 +304,14 @@ pub mod codes {
     ///
     /// `every_version`, for the same reason as [`OPTIONAL_ON_SPINE`].
     pub const MANDATORY_ON_OPTIONAL: DwCode = DwCode::every_version("DW0867");
+    /// A mandatory objective gated on a flag only an optional quest produces
+    /// (spec-0051 §8.3) — the mainline key behind participation.
+    ///
+    /// `every_version`, for the same reason as [`OPTIONAL_ON_SPINE`]. The
+    /// participation-minimal replay (`DW0204`) is the compensating stronger
+    /// check behind it; this one refuses at the edge so the message can name
+    /// the strand.
+    pub const MAINLINE_KEY_OPTIONAL: DwCode = DwCode::every_version("DW0868");
     /// Objective `after` cycle.
     pub const AFTER_CYCLE: DwCode = DwCode::every_version("DW0140");
     /// Reserved feature used (reserved enum value or reserved field).

@@ -1381,12 +1381,14 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // quests the finale cannot fire without; `mandatory` is the author's claim
     // about the same set. Below the fence the two coincide by refusal, so this
     // is inert on every campaign that predates the surface.
+    // `optional()` is the ONE authority, exactly as `spine()` is for the other
+    // half. Below the fence the set is forced empty here rather than there,
+    // because the refusal above has already fired and reporting the same
+    // document twice — once as "you may not say this" and once as "and here is
+    // what saying it would mean" — prescribes two different repairs for one
+    // mistake.
     let optional: BTreeSet<&str> = if optional_ok {
-        plan.quests
-            .iter()
-            .filter(|q| !q.mandatory)
-            .map(|q| q.id.as_str())
-            .collect()
+        plan.optional()
     } else {
         BTreeSet::new()
     };
@@ -1585,6 +1587,113 @@ fn partition(
                 q.id, quest, quest, q.id, q.id, quest
             ),
         ));
+    }
+
+    mainline_key(c, optional, d);
+}
+
+/// spec-0051 §8.3 — **a mainline key behind participation**: a mandatory
+/// objective gated on a flag every producer of which is rooted in an optional
+/// quest.
+///
+/// Refused **at the edge**, naming the objective, the flag and the optional-only
+/// producers, because that is where an author can act. The
+/// participation-minimal replay (`DW0204`) remains the compensating stronger
+/// check behind it, exactly as it already backstops the negative-gate fixpoint:
+/// the replay credits only the exported path's own producers, so this shape
+/// fails there too. What the edge buys is a message that names the strand
+/// instead of a walk that stops.
+///
+/// **The producer partition is conservative in the safe direction.** A flag is
+/// optional-only when EVERY root that sets it is an optional quest's bundle;
+/// a single producer anywhere else — a mandatory quest, an environment trigger,
+/// a trap disarm, a dialogue option, `on_death` — takes the flag out of the set.
+/// Dialogue is counted as non-optional deliberately: whether an option is
+/// reachable only inside an optional quest's scene is a cast-ladder question
+/// this rule cannot answer, and answering it wrongly here would refuse a
+/// correct campaign. `DW0204` can answer it, and does.
+///
+/// **Not yet covered, and named rather than implied**: the `requires_state` and
+/// `dropped_by` chains of §8.3. Both are real shapes — an item that drops only
+/// from a wave an optional quest spawns is the example the spec gives — and
+/// both are still caught by `DW0204`, one step later and with a worse message.
+fn mainline_key(c: &Campaign, optional: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
+    // flag -> the optional quests that set it, while nothing else does.
+    let mut only_optional: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut disqualified: BTreeSet<&str> = BTreeSet::new();
+
+    crate::stages::for_each_campaign_effect(c, &mut |_path, site, eff| {
+        let QuestEffect::SetFlag { flag, .. } = eff else {
+            return;
+        };
+        let flag = flag.as_str();
+        let owner = match site {
+            crate::stages::EffectSite::Objective { quest, .. }
+            | crate::stages::EffectSite::QuestComplete { quest } => quest.as_str(),
+            // Every other root is ambient or dialogue-hosted: not a quest, so
+            // not "optional participation" in this rule's sense.
+            _ => {
+                disqualified.insert(flag);
+                return;
+            }
+        };
+        match optional.get(owner) {
+            Some(q) => only_optional.entry(flag).or_default().insert(*q),
+            None => disqualified.insert(flag),
+        };
+    });
+    for t in &c.dialogue.content.dialogues {
+        for n in &t.nodes {
+            for o in &n.options {
+                for e in &o.effects {
+                    if let crate::stages::DialogueEffect::SetFlag { flag } = e {
+                        disqualified.insert(flag.as_str());
+                    }
+                }
+            }
+        }
+    }
+    for trap in &c.quests.content.traps {
+        if let Some(dis) = &trap.disarm {
+            disqualified.insert(dis.sets_flag.as_str());
+        }
+    }
+
+    // A mandatory quest's objective gated on such a flag.
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        if optional.contains(q.id.as_str()) {
+            continue;
+        }
+        for (j, o) in q.objectives.iter().enumerate() {
+            for (m, f) in o.requires_flags().iter().enumerate() {
+                let flag = f.as_str();
+                if disqualified.contains(flag) {
+                    continue;
+                }
+                let Some(producers) = only_optional.get(flag) else {
+                    continue; // never produced at all: `DW0172`'s finding, not this one's
+                };
+                let names = producers.iter().copied().collect::<Vec<_>>().join("`, `");
+                d.push(Diagnostic::error(
+                    codes::MAINLINE_KEY_OPTIONAL,
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/requires_flags/{m}"),
+                    format!(
+                        "objective `{}` of mandatory quest `{}` requires flag `{}`, and the \
+                         only effect that ever sets `{}` is rooted in optional quest(s) \
+                         `{}` — so a party that plays only the mainline can never open \
+                         this beat, and the delve is not completable with zero optional \
+                         participation. Move the `set-flag` onto a mandatory quest, mark \
+                         the producing quest mandatory, or drop the gate",
+                        o.id(),
+                        q.id,
+                        flag,
+                        flag,
+                        names
+                    ),
+                ));
+            }
+        }
     }
 }
 
