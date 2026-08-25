@@ -94,7 +94,7 @@ use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 ## Compatibility
 
 - **Minecraft**: Java Edition 1.21.11. Output targets that version and no other.
-- **Campaign format**: `dsl_version` `0.2.0` through `0.18.0`.
+- **Campaign format**: `dsl_version` `0.2.0` through `0.19.0`.
 - **Rust**: 1.97.1 or newer.
 - The binary is self-contained: no JVM, no runtime dependencies.
 
