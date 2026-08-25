@@ -588,8 +588,12 @@ def main() -> int:
         # The noise-commit guard, and it asks ONE question: does
         # `gallery/baseline/` already hold every document this write would
         # produce? That is exactly the question the verify arm asks
-        # (`baseline_matches`), so this arm refuses if and only if that arm
-        # passes, and no tree is refused by both.
+        # (`baseline_matches`) — of the document THIS arm produces, which is
+        # where the two part company: a refusal here means the committed
+        # `delta.json` names this arm's own base, so verify resolves the same
+        # base and passes. Hence `--write` refuses ⇒ verify passes, and no tree
+        # is refused by both. The converse does NOT hold, and the module
+        # docstring says why.
         #
         # It replaces an ENUMERATION — empty output delta, unchanged header,
         # unchanged warning ledger — which was correct about the three things its
