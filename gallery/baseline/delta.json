@@ -5,7 +5,7 @@
     "site-plan.en:datapack/data/gallery/function/complete_o_read_the_label.mcfunction",
     "site-plan.en:packtest-datapack/data/gallery/test/obj_activate_read_the_label.mcfunction"
   ],
-  "base_commit": "bc3f0d718d8a3766c0f8b4f03fb4c37362a75034",
+  "base_commit": "8b9c253c7c990fdda994d0899cd5aa008659c601",
   "changed": [
     "easy.en:creator-datapack/layout.json",
     "hard.en:creator-datapack/layout.json",
