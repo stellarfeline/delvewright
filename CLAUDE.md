@@ -154,8 +154,9 @@ validation/          # docker compose: headless server + bot, same image as CI &
   verb that first needed it.** Built onto the verb, the second object that needs
   it has no surface, and the fix looks like a second bespoke field — **a second
   bespoke field is the defect, not the fix.** Generality is decided at the FIRST
-  site: retrofitting at the second costs a `dsl_version` bump, per-stage fences,
-  and an adoption round on every active campaign.
+  site: retrofitting at the second means rewriting every call site and every
+  proof written against the narrow one — and the second object arrives long
+  after anyone remembers why the first was shaped that way.
   **Three shapes to look for in review**, hardest last:
   1. *Keyed to the verb, not the object class.* Tell: `"X, mirroring Y"` in a doc
      comment; a hook on one variant of a sum type but not its siblings.
@@ -270,13 +271,19 @@ validation/          # docker compose: headless server + bot, same image as CI &
   delete it. Relocating a historically-worded sentence into `docs/reference/` is
   not a fix — that is a current-behaviour record too. **ADRs are the one place
   history legitimately lives.**
-- **Version-adoption discipline**: whenever a `dsl_version` introduces new
-  obligations, adoption rounds for every ACTIVE campaign are scheduled within
-  the same milestone — never left to accumulate. Dormant campaigns are marked
-  upgrade-on-next-touch. A version upgrade is always its own explicit,
-  proof-carrying round. Old versions keep compiling (per-stage fences); released
-  delves reproduce via their pinned engine (`versions.toml` + OCI), not via
-  eternal byte-stable emission.
+- **Nothing here owes compatibility to anything already built.** This is a
+  research-grade integration project: there is no production environment and no
+  user on the other side of a compatibility promise. Only the final result
+  counts. A change that stops an existing campaign document compiling is not a
+  defect — the document is changed or deleted, and that needs no justification.
+  Time spent on backward compatibility is wasted, and so is the argument for
+  discarding an old artifact: discard it. No compatibility shim, opt-in flag,
+  migration path or gradual adoption is added for the benefit of existing
+  content. `dsl_version` numbers a surface so a document can say which surface
+  it was written against; it is not a promise that the old surface survives.
+  What this does NOT relax, because none of it is about history: determinism
+  (ADR-0006), the refusal to weaken a check to get green, and a diagnostic
+  owing a test. Those are how "the result is good" is measured.
 - **A green gate that binds to nothing is VACUOUS, not a pass.** Three empty
   greens: *unbound* (matched zero objects), *unfenced* (the campaign's
   `dsl_version` never reached the surface the gate keys off), *unemitted*
@@ -370,19 +377,13 @@ validation/          # docker compose: headless server + bot, same image as CI &
   A tool absent from docs and skills does not exist for future sessions. The
   inventory of the whole tool surface — every binary, script and flag, with its
   class — is `docs/reference/tools.md`.
-- **A released campaign is never the engine's test surface, and a campaign that
-  stops building on a new engine is a FENCE defect.** A shipped campaign
-  declares an old `dsl_version`; per-stage fences exist precisely so that
-  document keeps compiling unchanged. When it stops, the finding is in the
-  fence, not the content, and a campaign already accepted is never edited to
-  satisfy a new engine. Engine surfaces are exercised against **the gallery**
-  (spec-0039) — a real campaign's content and its engine use cannot be
-  separated, which is exactly what disqualifies it as a test surface.
-  **The complement is an obligation: a campaign that has not been released
-  adopts.** In-development content tracks the current engine, so its red under
-  a new obligation is an adoption item on the campaign, not a fence finding.
-  The triage question, asked before the diagnostic is read: **has this campaign
-  been released or accepted?** Both halves of the answer are load-bearing.
+- **A campaign is never the engine's test surface. Engine surfaces are
+  exercised against the gallery** (spec-0039) — a real campaign's content and
+  its engine use cannot be separated, which is exactly what disqualifies it as
+  a test surface. A campaign that stops building under a new engine is not a
+  finding about the engine: **the campaign adopts, or it is deleted.** There is
+  no released-versus-in-development distinction to triage, because nothing is
+  released and nothing is owed compatibility.
 - **Every engine surface owes a gallery element, in the same PR.** The coverage
   gate enumerates its unit set from the compiler's own `schema --stage all`
   export — the single authority, never a parser of the source — so a new schema
