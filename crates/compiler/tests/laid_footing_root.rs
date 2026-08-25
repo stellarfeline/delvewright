@@ -176,6 +176,124 @@ fn all_functions(out: &BuildOutput) -> String {
     s
 }
 
+/// A two-quest stage-4 plan at `OPTIONAL_QUESTS_SINCE`: the hello-world finale,
+/// plus a second quest whose `mandatory` this arm varies. The second quest
+/// depends on nothing and nothing depends on it, so when it is declared
+/// optional it is legally off the finale's closure (spec-0051 §4).
+fn plan_with_second_quest(mandatory: bool) -> String {
+    format!(
+        r#"{{
+  "dsl_version": "0.17.0",
+  "campaign_id": "hello-world",
+  "stage": "quest-plan",
+  "content": {{
+    "finale": "quest/open-the-door",
+    "quests": [
+      {{ "id": "quest/open-the-door", "goal": "Get the Keeper to open the door and leave the keep.",
+         "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 }},
+      {{ "id": "quest/side", "goal": "Look at the doorstep.",
+         "area": "area/keep", "npcs": [], "depends_on": [], "mandatory": {mandatory}, "act": 1 }}
+    ]
+  }}
+}}"#
+    )
+}
+
+/// The same two-quest campaign, with `LAY_THE_FLOOR` hung on the SECOND quest's
+/// `on_complete`. Only the stage-4 `mandatory` differs between the two calls.
+fn parse_two_quest(mandatory: bool) -> Campaign {
+    let quests = format!(
+        r#"{{
+  "dsl_version": "0.10.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+             "radius": 2, "after": ["obj/talk"] }}
+        ],
+        "on_objective_complete": {{
+          "obj/talk": [ {{ "type": "open-gate", "anchor": "anchor/door" }} ]
+        }},
+        "on_complete": [ {{ "type": "campaign-complete" }} ]
+      }},
+      {{
+        "id": "quest/side",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "reach-anchor", "id": "obj/doorstep", "anchor": "anchor/doorstep", "radius": 2 }}
+        ],
+        "on_complete": [ {LAY_THE_FLOOR} ]
+      }}
+    ],
+    "on_death": []
+  }}
+}}"#
+    );
+    let raw = RawCampaign {
+        world: hw("world.json"),
+        npcs: hw("npcs.json"),
+        classes: hw("classes.json"),
+        quest_plan: plan_with_second_quest(mandatory),
+        quests,
+        dialogue: hw("dialogue.json"),
+        world_edits: Some(fence_the_doorway()),
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+    };
+    parse_campaign(&raw).expect("campaign parses")
+}
+
+/// spec-0051 §8.6 — **the skippable-root class reaches optional quests.**
+///
+/// One declaration varied, nothing else. A fill hung on an optional quest's
+/// `on_complete` is a fill the party may never cause, so it seals and lays no
+/// footing; the same fill on the same box hung on a MANDATORY quest is forced
+/// and carries the route.
+///
+/// The red arm is the one only this rule could produce. Before spec-0051
+/// `EffectRoot::QuestComplete` was hard-coded forced, so this campaign BUILT —
+/// and shipped a delve whose only route stands on planks laid by content
+/// nobody has to play.
+#[test]
+fn an_optional_quests_fill_lays_no_footing_the_forced_path_may_stand_on() {
+    let dir = prefabs_with_doorstep("dw-optional-footing-root");
+
+    match try_build(&parse_two_quest(false), &dir) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0546", "wrong code: {message}");
+            assert!(
+                message.contains("quest/side"),
+                "the refusal must name the OPTIONAL quest that lays the footing: {message}"
+            );
+            assert!(
+                message.contains("[3, 64, 6]..[5, 64, 6]"),
+                "the refusal must name the box it lays: {message}"
+            );
+        }
+        other => panic!(
+            "the only route may not stand on floor laid by an OPTIONAL quest — this is \
+             the spec-0051 §8.6 widening, and a pass here means the skippable class \
+             never reached the new root: {other:?}"
+        ),
+    }
+
+    // The identical fill, the identical box, one word changed in stage 4.
+    try_build(&parse_two_quest(true), &dir).expect(
+        "the same fill hung on a MANDATORY quest is forced and must carry the route — \
+         if this fails, the red arm above proved nothing about optionality",
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// **The junction, at campaign scale: one campaign, three roots, three verdicts.**
 ///
 /// Same box, same block, same verb, same anchors, same route. The only thing that

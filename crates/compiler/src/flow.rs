@@ -464,11 +464,14 @@ impl<'a> Flow<'a> {
         crate::plan::for_each_effect_root(c, &mut |site, effs| match site.root {
             // Dated by the DAG: credited when that objective / quest is proven
             // reachable, under the gates on its own effect chain.
-            crate::plan::EffectRoot::ObjectiveComplete(oid) => {
+            crate::plan::EffectRoot::ObjectiveComplete { objective, .. } => {
                 let mut out = Vec::new();
                 collect_flags(effs, &[], &mut out);
                 if !out.is_empty() {
-                    obj_flags.entry(oid.to_string()).or_default().extend(out);
+                    obj_flags
+                        .entry(objective.to_string())
+                        .or_default()
+                        .extend(out);
                 }
             }
             crate::plan::EffectRoot::QuestComplete(q) => {
