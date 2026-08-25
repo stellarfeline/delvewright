@@ -38,7 +38,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_compiler::assembled::Occupancy;
 use delvewright_compiler::nav::World;
-use delvewright_dsl::metrics::{self, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16, Metrics};
+use delvewright_dsl::metrics::{self, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16, METRICS_VERSION, Metrics};
 
 /// Two adjacent ledges whose walk planes differ by exactly `rise` sixteenths,
 /// with air everywhere else — so the only thing that can stop a body crossing is
@@ -154,7 +154,10 @@ fn the_export_publishes_what_the_model_uses() {
     let table = Metrics::table();
     let json = metrics::export(&table);
 
-    assert_eq!(json["metrics_version"], serde_json::json!(1));
+    // The CONSTANT, never its current value: a literal here is false the
+    // moment the table moves, and the digest test is what holds the number to
+    // the bytes.
+    assert_eq!(json["metrics_version"], serde_json::json!(METRICS_VERSION));
     assert_eq!(json["mc_version"], serde_json::json!("1.21.11"));
 
     let player = &json["player"];
