@@ -422,27 +422,27 @@ strength (no wiki statement found).
 
 ## 7. Rule provenance
 
-| § | rule | provenance |
+| rule | § | provenance |
 |---|---|---|
-| 1 | sky reaches two cells deep at night | **authored** — measured at `86944766` |
-| 1 | emitter radius `E − 3`; the gate is a minimum | **authored** — measured |
-| 1 | `DW0210` names one cell of one area | **authored** — measured |
-| 2 | a lamp never occupies a walkable cell | **authored** — measured, three predicates |
-| 3.1 | motivated light | **cited** — Level Design Book, StudioBinder; dissent from Theodore |
-| 3.1 | strong lights need a source, fills do not | **authored** — from Theodore's refinement |
-| 3.2 | key / fill / rim; focal point and frame | **cited** — Level Design Book, Yang |
-| 3.3 | light and dark as navigation grammar | **cited** — Jenssen, LDB, Shaver; **LDB rejects the framing**, and LDB ranks lighting at 40% certainty |
-| 3.3 | light may reinforce but not carry a route | **authored** — from that dissent |
-| 3.4 | landmarks orient | **cited** — Shaver, Lynch |
-| 3.4 | light makes a landmark a beacon | **authored** — *no source found* |
-| 3.5 | the eye reads contrast, not brightness | **cited** — Theodore 2005; LDB "Hollywood darkness" |
-| 3.5 | "dark" means a ratio, not light 0 | **authored** — from 3.5 plus §1 |
-| 3.6 | colour temperature is a learned code | **cited** — Theodore 2005, incl. the *Half-Life 2* inversion |
-| 3.6 | soul variants are cooler *and* dimmer | **authored** — from §4 |
-| 4 | emitter mechanics | **cited** — `minecraft.wiki`, per row |
-| 4.1 | thirteen emitters model as 0 | **authored** — measured |
-| 5 | spawn floor is block light 1 | **cited** — wiki; **authored** that it sits below the gate |
-| 6.1–6.2 | concealment, the light block | **cited** — forum threads, wiki |
-| 6.1 | conceal by recessing, not by covering | **authored** — from §2 |
-| 6.3 | "gradient" means palette | **cited** — Conquest Reforged |
-| 6.4 | do not pave | **authored** — from §1; the community citation is **unverified** |
+| sky reaches two cells deep at night | 1 | **authored** — measured at `86944766` |
+| emitter radius `E − 3`; the gate is a minimum | 1 | **authored** — measured |
+| `DW0210` names one cell of one area | 1 | **authored** — measured |
+| a lamp never occupies a walkable cell | 2 | **authored** — measured, three predicates |
+| motivated light | 3.1 | **cited** — Level Design Book, StudioBinder; dissent from Theodore |
+| strong lights need a source, fills do not | 3.1 | **authored** — from Theodore's refinement |
+| key / fill / rim; focal point and frame | 3.2 | **cited** — Level Design Book, Yang |
+| light and dark as navigation grammar | 3.3 | **cited** — Jenssen, LDB, Shaver; **LDB rejects the framing**, and LDB ranks lighting at 40% certainty |
+| light may reinforce but not carry a route | 3.3 | **authored** — from that dissent |
+| landmarks orient | 3.4 | **cited** — Shaver, Lynch |
+| light makes a landmark a beacon | 3.4 | **authored** — *no source found* |
+| the eye reads contrast, not brightness | 3.5 | **cited** — Theodore 2005; LDB "Hollywood darkness" |
+| "dark" means a ratio, not light 0 | 3.5 | **authored** — from 3.5 plus §1 |
+| colour temperature is a learned code | 3.6 | **cited** — Theodore 2005, incl. the *Half-Life 2* inversion |
+| soul variants are cooler *and* dimmer | 3.6 | **authored** — from §4 |
+| emitter mechanics | 4 | **cited** — `minecraft.wiki`, per row |
+| thirteen emitters model as 0 | 4.1 | **authored** — measured |
+| spawn floor is block light 1 | 5 | **cited** — wiki; **authored** that it sits below the gate |
+| concealment, the light block | 6.1–6.2 | **cited** — forum threads, wiki |
+| conceal by recessing, not by covering | 6.1 | **authored** — from §2 |
+| "gradient" means palette | 6.3 | **cited** — Conquest Reforged |
+| do not pave | 6.4 | **authored** — from §1; the community citation is **unverified** |

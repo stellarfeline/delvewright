@@ -35,7 +35,7 @@ effective sky 4. Established.
 
 Since every `DW0210` message begins ``area `area/<name>` has a reachable walkable cell at``,
 sorting by message is alphabetical by area id. So the build names the alphabetically-first dark
-area and one cell of it. This confirms PR #104's claim **at my revision** (it measured at
+area and one cell of it. This confirms the earlier report's claim **at my revision** (it measured at
 `800c958e`).
 
 ## 3. The sky arithmetic — the durable fact, and it survives any campaign reset
@@ -102,7 +102,7 @@ and refuses. This is a modelling gap, not a design error. Vanilla 1.21 candles e
 | `crates/compiler/src/assembled.rs` | `occupancy_of` | air + pressure plates/tripwire, thin decoration (carpets, snow layers), fence gates |
 
 The grammar one is the strictest and it governs zone programs. **Re-derived at my revision**;
-PR #104's statement of it is correct.
+The earlier report's statement of it is correct.
 
 ## 7. The campaign's existing light idiom (measured, before the reset instruction)
 
@@ -126,12 +126,12 @@ matched: all 11 are the word **`flight`** (stair flights). z4's 10 are `flight` 
 
 - **I did not re-derive the six-area dark-cell table.** `DW0210` surfaces one cell of one area per
   build, so enumerating the distribution needs a harness linking the compiler's `LightModel`
-  against the assembled world. PR #104's harness did not survive into its diff (its changed files
+  against the assembled world. That harness did not survive into the diff that reported it (its changed files
   are the campaign program, `GENERATION.md` and five prefab pointers). I judged building one not
   worth the round once the reset instruction arrived, because the counts are counts **of the eight
   zone programs the reset voids**. What survives the reset is §3's arithmetic, which explains the
   table's shape without depending on it: at night, anything more than one step from open sky is
   below the bar, so "most reachable cells of every enclosed area" is the expected reading.
-- I did not verify #104's per-room breakdown of the tower's 1335 cells, nor its 317-cell belfry
+- I did not verify the earlier report's per-room breakdown of the tower's 1335 cells, nor its 317-cell belfry
   figure, nor the claim that a lichen bed broke three contract gates with 1120 cells cut off. I
   re-derived the *mechanism* behind that last one (§6) but not the measurement.
