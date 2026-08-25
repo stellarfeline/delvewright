@@ -1185,10 +1185,8 @@ fn dark_diagnostic(
     nav: &World,
     sky: u8,
 ) -> Option<LightDiag> {
-    let mut dark: Vec<(&String, &DarkSurvey)> = areas
-        .iter()
-        .filter(|(_, s)| !s.dark.is_empty())
-        .collect();
+    let mut dark: Vec<(&String, &DarkSurvey)> =
+        areas.iter().filter(|(_, s)| !s.dark.is_empty()).collect();
     if dark.is_empty() {
         return None;
     }
@@ -1231,7 +1229,11 @@ fn dark_diagnostic(
             ));
         }
         if regions.len() > DARK_REGIONS_LISTED {
-            let rest: usize = regions.iter().skip(DARK_REGIONS_LISTED).map(|r| r.cells).sum();
+            let rest: usize = regions
+                .iter()
+                .skip(DARK_REGIONS_LISTED)
+                .map(|r| r.cells)
+                .sum();
             m.push_str(&format!(
                 "    - … and {k} further region(s) covering {rest} cell(s), not listed\n",
                 k = regions.len() - DARK_REGIONS_LISTED,
@@ -2208,6 +2210,337 @@ mod tests {
                 "minecraft:spruce_fence_gate[open=true]".to_string(),
             );
             LightModel::from_blocks(map).flood(0)
+        };
+        assert_eq!(build(), build());
+    }
+
+    // -----------------------------------------------------------------------
+    // The report a designer is handed: how much is dark, and where
+    //
+    // `DW0210` prescribes re-arranging the room. Every assertion below is
+    // computed from the fixture it is about — a count written down beside the
+    // fixture is green on a gate that binds nothing.
+    // -----------------------------------------------------------------------
+
+    /// [`room`], translated. Two of these far apart are two places a body can
+    /// never walk between, which is what makes them separate areas.
+    fn room_at(w: i32, h: i32, d: i32, off: [i32; 3]) -> BTreeMap<[i32; 3], String> {
+        room(w, h, d, false)
+            .into_iter()
+            .map(|(c, b)| ([c[0] + off[0], c[1] + off[1], c[2] + off[2]], b))
+            .collect()
+    }
+
+    /// A corridor `w` long, one cell wide, roofed (no sky light), with a
+    /// glowstone at each of `lamps`. Floor at `y=0`, walkable cells at
+    /// `[x, 1, 1]` for `x in 1..=w-2`, head room at `y=1..=2`, ceiling at `y=3`
+    /// — two cells of interior height, because one leaves no head clearance and
+    /// nothing in it is standable at all.
+    fn corridor(w: i32, lamps: &[[i32; 3]]) -> BTreeMap<[i32; 3], String> {
+        let mut m = room(w, 4, 3, false);
+        for &l in lamps {
+            m.insert(l, "minecraft:glowstone".to_string());
+        }
+        m
+    }
+
+    /// **How much** is dark, per area — the fact that separates "one stubborn
+    /// corner" from "the whole tower is unlit", which call for opposite
+    /// responses. Two unlit rooms of different sizes: both are named, each with
+    /// its own count, and the bigger one is reported first.
+    #[test]
+    fn dw0210_reports_every_dark_area_with_its_own_size() {
+        let mut map = room_at(11, 5, 11, [0, 0, 0]);
+        map.extend(room_at(7, 5, 7, [40, 0, 0]));
+        let nav = nav_of(&map);
+        let model = LightModel::from_blocks(map.clone());
+
+        let big_cells = nav.reachable_walkable(&[[5, 1, 5]]);
+        let small_cells = nav.reachable_walkable(&[[43, 1, 3]]);
+        assert!(
+            big_cells.len() > small_cells.len() && !small_cells.is_empty(),
+            "fixture: two enclosed rooms of different sizes, got {} and {}",
+            big_cells.len(),
+            small_cells.len()
+        );
+        assert!(
+            big_cells.is_disjoint(&small_cells),
+            "fixture: the two rooms must not be connected"
+        );
+
+        let big = survey_undeclared(&model, &big_cells, 0, false);
+        let small = survey_undeclared(&model, &small_cells, 0, false);
+        assert_eq!(big.dark.len(), big_cells.len(), "the big room is all dark");
+        assert_eq!(
+            small.dark.len(),
+            small_cells.len(),
+            "and so is the small one"
+        );
+
+        let areas = BTreeMap::from([
+            ("area/annex".to_string(), small),
+            ("area/hall".to_string(), big),
+        ]);
+        let diag = dark_diagnostic(&areas, &nav, 0).expect("two dark rooms must fail the gate");
+        assert_eq!(diag.code, DW_DARK_UNMITIGATED);
+        let m = &diag.message;
+
+        // Both places are named — the whole point. Before this, the build failed
+        // on one diagnostic and the alphabetically-first area's message was the
+        // only one anyone saw.
+        let hall = m
+            .find(&format!(
+                "area `area/hall`: {n} of {n} measured cell(s) dark",
+                n = big_cells.len()
+            ))
+            .unwrap_or_else(|| panic!("the big room and its count are missing:\n{m}"));
+        let annex = m
+            .find(&format!(
+                "area `area/annex`: {n} of {n} measured cell(s) dark",
+                n = small_cells.len()
+            ))
+            .unwrap_or_else(|| panic!("the small room and its count are missing:\n{m}"));
+        assert!(
+            hall < annex,
+            "worst first: the bigger dark area is the one whose remedy is a different act\n{m}"
+        );
+        assert!(
+            m.contains(&format!(
+                "2 area(s) measure dark: {t} of the {t} reachable walkable cell(s)",
+                t = big_cells.len() + small_cells.len()
+            )),
+            "the campaign-wide total is missing:\n{m}"
+        );
+    }
+
+    /// **Where**: the dark cells grouped into places, not listed as coordinates.
+    /// One corridor, one lamp in the middle, dark at both ends — one area, two
+    /// rooms, and the report says two.
+    #[test]
+    fn dw0210_groups_dark_cells_into_the_places_they_are_in() {
+        let map = corridor(31, &[[15, 3, 1]]);
+        let nav = nav_of(&map);
+        let model = LightModel::from_blocks(map.clone());
+        let reachable = nav.reachable_walkable(&[[15, 1, 1]]);
+        let s = survey_undeclared(&model, &reachable, 0, false);
+
+        let regions = s.regions(&nav);
+        assert_eq!(
+            regions.len(),
+            2,
+            "fixture: a lamp mid-corridor leaves a dark run at each end, got {regions:?}"
+        );
+        assert_eq!(
+            regions.iter().map(|r| r.cells).sum::<usize>(),
+            s.dark.len(),
+            "the regions must PARTITION the dark set — no cell counted twice, none dropped"
+        );
+        let (a, b) = (&regions[0], &regions[1]);
+        assert!(
+            a.hi[0] + 1 < b.lo[0] || b.hi[0] + 1 < a.lo[0],
+            "fixture: the two dark runs are separated by lit corridor, got {a:?} and {b:?}"
+        );
+        for r in &regions {
+            assert!(
+                (0..3).all(|i| r.lo[i] <= r.darkest.0[i] && r.darkest.0[i] <= r.hi[i]),
+                "a region's extent must contain its own darkest cell: {r:?}"
+            );
+        }
+
+        let diag = dark_diagnostic(
+            &BTreeMap::from([("area/gallery".to_string(), s.clone())]),
+            &nav,
+            0,
+        )
+        .expect("a dark-ended corridor must fail the gate");
+        let m = &diag.message;
+        assert!(
+            m.contains(&format!("in {} contiguous region(s)", regions.len())),
+            "the region count is missing:\n{m}"
+        );
+        for r in &regions {
+            assert!(
+                m.contains(&format!(
+                    "- {c} cell(s) spanning {lo:?}..{hi:?}, darkest {dc:?} at light {dl}",
+                    c = r.cells,
+                    lo = r.lo,
+                    hi = r.hi,
+                    dc = r.darkest.0,
+                    dl = r.darkest.1,
+                )),
+                "region {r:?} is missing from the report:\n{m}"
+            );
+        }
+    }
+
+    /// **The single-cell fact, kept.** One dark cell must still be named, and the
+    /// report must not have become noise on the way: one region, one line.
+    #[test]
+    fn dw0210_still_names_the_one_cell_when_only_one_is_dark() {
+        let map = corridor(15, &[[0, 1, 1]]);
+        let nav = nav_of(&map);
+        let model = LightModel::from_blocks(map.clone());
+        let reachable = nav.reachable_walkable(&[[7, 1, 1]]);
+        let s = survey_undeclared(&model, &reachable, 0, false);
+        assert_eq!(
+            s.dark.len(),
+            1,
+            "fixture: a lamp at one end leaves exactly the far cell dark, got {:?}",
+            s.dark
+        );
+        let (cell, level) = s.darkest().expect("one dark cell has a darkest");
+
+        let diag = dark_diagnostic(&BTreeMap::from([("area/hall".to_string(), s)]), &nav, 0)
+            .expect("one dark cell is still a failed build");
+        let m = &diag.message;
+        assert!(
+            m.contains(&format!(
+                "The darkest reachable walkable cell is at {cell:?}, measured at light {level}"
+            )),
+            "the exemplar cell is missing:\n{m}"
+        );
+        assert!(
+            m.contains(&format!(
+                "area `area/hall`: 1 of {} measured cell(s) dark, in 1 contiguous region(s)",
+                reachable.len()
+            )),
+            "the one-cell count is missing:\n{m}"
+        );
+        assert_eq!(
+            m.lines()
+                .filter(|l| l.trim_start().starts_with("- "))
+                .count(),
+            1,
+            "one dark cell must produce one region line, not a wall of them:\n{m}"
+        );
+    }
+
+    /// A lit area reports nothing at all — the gate stays silent where it always
+    /// was, and the report is not a thing that fires on its own.
+    #[test]
+    fn a_lit_area_produces_no_report() {
+        let mut map = room(9, 5, 9, false);
+        map.insert([4, 3, 4], "minecraft:glowstone".to_string());
+        let nav = nav_of(&map);
+        let model = LightModel::from_blocks(map.clone());
+        let reachable = nav.reachable_walkable(&[[4, 1, 4]]);
+        let s = survey_undeclared(&model, &reachable, 0, false);
+        assert!(!reachable.is_empty(), "fixture: the room is walkable");
+        assert!(s.dark.is_empty(), "fixture: the room is lit");
+        assert!(
+            dark_diagnostic(&BTreeMap::from([("area/hall".to_string(), s)]), &nav, 0).is_none(),
+            "a lit area must produce no diagnostic"
+        );
+    }
+
+    /// **A truncated list says what it dropped.** More dark regions than the
+    /// report lists: the ones it did not print are counted, in cells, in the
+    /// message. A list silently cut at N reads as "here is everything".
+    #[test]
+    fn a_capped_region_list_states_what_it_dropped() {
+        // Lamps every 26 cells leave a dark run between each pair and at both
+        // ends — more runs than `DARK_REGIONS_LISTED`.
+        let lamps: Vec<[i32; 3]> = (0..4).map(|i| [15 + 26 * i, 3, 1]).collect();
+        let map = corridor(108, &lamps);
+        let nav = nav_of(&map);
+        let model = LightModel::from_blocks(map.clone());
+        let reachable = nav.reachable_walkable(&[[15, 1, 1]]);
+        let s = survey_undeclared(&model, &reachable, 0, false);
+        let regions = s.regions(&nav);
+        assert!(
+            regions.len() > DARK_REGIONS_LISTED,
+            "fixture: more dark runs than the report lists, got {}",
+            regions.len()
+        );
+
+        let diag = dark_diagnostic(
+            &BTreeMap::from([("area/undercroft".to_string(), s)]),
+            &nav,
+            0,
+        )
+        .expect("a corridor with dark runs must fail the gate");
+        let m = &diag.message;
+        let dropped: usize = regions
+            .iter()
+            .skip(DARK_REGIONS_LISTED)
+            .map(|r| r.cells)
+            .sum();
+        assert!(
+            m.contains(&format!(
+                "… and {k} further region(s) covering {dropped} cell(s), not listed",
+                k = regions.len() - DARK_REGIONS_LISTED,
+            )),
+            "the cut list does not say what it cut:\n{m}"
+        );
+        assert!(
+            m.contains(&format!("in {} contiguous region(s)", regions.len())),
+            "the full region count must be stated even where the list is cut:\n{m}"
+        );
+    }
+
+    /// The same obligation for the other cap: more dark areas than the report
+    /// lists, and it says how many and how many cells they hold.
+    #[test]
+    fn a_capped_area_list_states_what_it_dropped() {
+        let n = DARK_AREAS_LISTED + 1;
+        let mut map = BTreeMap::new();
+        for i in 0..n {
+            map.extend(room_at(5, 4, 5, [20 * i as i32, 0, 0]));
+        }
+        let nav = nav_of(&map);
+        let model = LightModel::from_blocks(map.clone());
+        let mut areas = BTreeMap::new();
+        for i in 0..n {
+            let cells = nav.reachable_walkable(&[[20 * i as i32 + 2, 1, 2]]);
+            assert!(!cells.is_empty(), "fixture: room {i} must be walkable");
+            areas.insert(
+                format!("area/cell-{i:02}"),
+                survey_undeclared(&model, &cells, 0, false),
+            );
+        }
+        let dark_total: usize = areas.values().map(|s| s.dark.len()).sum();
+        let diag = dark_diagnostic(&areas, &nav, 0).expect("nine unlit rooms must fail the gate");
+        let m = &diag.message;
+        assert!(
+            m.contains(&format!("{n} area(s) measure dark: {dark_total} of the")),
+            "the campaign-wide area and cell counts are missing:\n{m}"
+        );
+        let listed: usize = m
+            .lines()
+            .filter(|l| l.trim_start().starts_with("area `"))
+            .count();
+        assert_eq!(listed, DARK_AREAS_LISTED, "the list must be cut:\n{m}");
+        // The report's own ordering, re-derived here rather than read off it.
+        let mut order: Vec<(usize, String)> = areas
+            .iter()
+            .map(|(id, s)| (s.dark.len(), id.clone()))
+            .collect();
+        order.sort_by_key(|(c, id)| (std::cmp::Reverse(*c), id.clone()));
+        let dropped: usize = order.iter().skip(DARK_AREAS_LISTED).map(|(c, _)| c).sum();
+        assert!(
+            m.contains(&format!(
+                "… and {k} further dark area(s) covering {dropped} cell(s), not listed",
+                k = n - DARK_AREAS_LISTED,
+            )),
+            "the cut area list does not say what it cut:\n{m}"
+        );
+    }
+
+    /// Determinism (ADR-0006): the report is a pure function of the measurement.
+    /// The grouping walk in particular must not depend on iteration order.
+    #[test]
+    fn the_dark_report_is_deterministic() {
+        let map = corridor(31, &[[15, 3, 1]]);
+        let nav = nav_of(&map);
+        let model = LightModel::from_blocks(map.clone());
+        let reachable = nav.reachable_walkable(&[[15, 1, 1]]);
+        let build = || {
+            let s = survey_undeclared(&model, &reachable, 0, false);
+            (
+                s.regions(&nav),
+                dark_diagnostic(&BTreeMap::from([("area/gallery".to_string(), s)]), &nav, 0)
+                    .map(|d| d.message),
+            )
         };
         assert_eq!(build(), build());
     }

@@ -263,6 +263,73 @@ fn crit6_dark_undeclared_build_fails_dw0210() {
     }
 }
 
+/// The failure a designer is actually handed, over the real build path. `DW0210`
+/// prescribes re-arranging the room, so the report has to name a **room**: how
+/// many cells are dark, and the contiguous region(s) they occupy. Every figure
+/// asserted here is read out of the report and checked against another figure in
+/// the same report, so a hard-coded count or a dropped grouping cannot satisfy
+/// it.
+#[test]
+fn crit6_dw0210_reports_the_place_and_not_only_a_coordinate() {
+    let c = hello_world();
+    let err = build_with_structure(&c, dark_box_nbt([11, 6, 11], &[])).unwrap_err();
+    let BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a diagnostic, got {err:?}");
+    };
+    assert_eq!(code, "DW0210");
+
+    // The per-area line: "area `X`: N of M measured cell(s) dark, in R contiguous region(s):"
+    let area_line = message
+        .lines()
+        .find(|l| l.trim_start().starts_with("area `"))
+        .unwrap_or_else(|| panic!("no per-area line in the report:\n{message}"));
+    let n: usize = field_before(area_line, " of ");
+    let regions_stated: usize = field_before(area_line, " contiguous region(s)");
+    assert!(
+        n > 1,
+        "an 11x11 unlit box is a room, not a cell — the report says {n}:\n{message}"
+    );
+
+    // The region lines: "- C cell(s) spanning [..]..[..], darkest [..] at light L"
+    let region_cells: Vec<usize> = message
+        .lines()
+        .filter(|l| l.trim_start().starts_with("- "))
+        .map(|l| field_before(l, " cell(s) spanning "))
+        .collect();
+    assert_eq!(
+        region_cells.len(),
+        regions_stated,
+        "every region is listed (nothing was silently cut here):\n{message}"
+    );
+    assert_eq!(
+        region_cells.iter().sum::<usize>(),
+        n,
+        "the regions must account for exactly the dark cells the count claims:\n{message}"
+    );
+
+    // …and the single-cell exemplar the diagnostic always carried is still there.
+    assert!(
+        message.contains("The darkest reachable walkable cell is at ["),
+        "the exemplar cell is gone:\n{message}"
+    );
+}
+
+/// The integer immediately before `sep` on `line` (the reports state every count
+/// as `<n> <noun>`), so a test reads the figure the message actually printed
+/// rather than one written down beside it.
+fn field_before(line: &str, sep: &str) -> usize {
+    let head = line
+        .split(sep)
+        .next()
+        .unwrap_or_else(|| panic!("`{sep}` not in `{line}`"));
+    assert!(head.len() < line.len(), "`{sep}` not in `{line}`");
+    head.rsplit(|c: char| !c.is_ascii_digit())
+        .find(|t| !t.is_empty())
+        .unwrap_or_else(|| panic!("no number before `{sep}` in `{line}`"))
+        .parse()
+        .unwrap_or_else(|e| panic!("unparseable count before `{sep}` in `{line}`: {e}"))
+}
+
 /// Criterion 5 (end-to-end): the same dark area builds clean once the area
 /// **declares** `mitigation: "night-vision"` (DSL v0.6) — and the build actually
 /// emits the clocked `effect give` that backs the declaration.
