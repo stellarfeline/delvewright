@@ -15,6 +15,15 @@ Two library modules exist for the tool and are public for it:
 
 - [`nav`] — `passable` / `solid` / `standable` / `standable_cells` / `connected`
   / `reachable_with_fall` / `ends` / `components` / `ground_entry` / `sheltered`.
+  Two of those are facts about this library's own block vocabulary rather than
+  about walking, and they are a **pair**: what a body may occupy (air and a
+  floor skull) and what it may stand **on**. They are not each other's
+  complement. A fluid — `minecraft:water`, `minecraft:lava` — answers no to
+  both: a body may not be in it and may not stand on it, which is the same pair
+  of answers `delvec`'s own routing model gives a flooded cell. So an open water
+  surface is not walkable floor, and a route never crosses one (spec-0038).
+  `solid` is a third question — what stops an eye — and water still answers yes
+  to that.
   These were written inside `tests/`, where a
   rule's own gate is the right place for the gate and the wrong place for the
   *predicate* it is written in: a program authored outside this repo has no
@@ -1540,10 +1549,12 @@ them is green. One is not fully decided: `the-drowned-bell-r2/z2-gate-ward` is
 is expanded at its transposed region, which is what makes the state a finding
 rather than a formality. The rule library
 holds one recorded red: `library/causeway` (`DW0800`) floods its ward floor to
-ceiling on both flanks of its spine, which is what makes the flanks unwalkable,
-and lowering the waterline needs `nav` to know that a body cannot stand on water
-— until it does, a lowered waterline would read as walkable floor and the ward's
-own claim would go green while being false.
+ceiling on both flanks of its spine, and that body of water is not contained —
+134 of its 252 cells run into open air and 36 run directions leave the piece's
+own faces. The repair is a contained ward: a lowered waterline with a wall under
+it. `nav` knows a body cannot stand on water (§above), so a lowered waterline
+reads as what it is rather than as walkable floor; the entry expires with the
+round that repairs the piece.
 
 The sweep also totals the **local-frame binding count** — how many fills read
 their states in the scope's own axes — beside the gate whose population they

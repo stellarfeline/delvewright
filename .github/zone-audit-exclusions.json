@@ -20,7 +20,7 @@
   ],
   "exclusion": [
     {
-      "capability_gap": "A body cannot stand on water, and `nav::standable` does not know it: any non-air cell reads as floor. `causeway` floods its ward from floor to ceiling on both flanks of a 1-wide raised spine precisely so that the flanks are not walkable, and lowering the waterline — the only repair that keeps the design — would leave water with a body-height air pocket over it, which `nav` would then call a walkable surface and the ward's whole claim would go green while being false. The repair is spec-0038 §2.1's rule one layer over, in `nav`, with its own round and its own playtest gate.",
+      "capability_gap": "`causeway` floods its ward from floor to ceiling on both flanks of a 1-wide raised spine, and `fluid-contained` refuses that body of water: 134 of its 252 cells run into open air, 36 run directions leave the piece's own faces, and nothing in these bytes decides where that water goes. The repair is a contained ward — a lowered waterline with a wall under it — and it is now SAFE to make, which it was not before: `nav` used to read any non-air cell as floor, so lowering the waterline would have left a body-height air pocket the walk called a walkable surface and the ward's whole claim would have gone green while being false. That is fixed (a fluid is not a floor), so what remains here is a piece to repair rather than a capability to build, and this entry expires with the round that repairs it.",
       "expect_codes": [
         "DW0800"
       ],
