@@ -1260,3 +1260,244 @@ fn a_shortcut_on_a_derived_world_resolves_its_gate_and_its_unlock() {
         "the derivation places both anchors; nothing here is invented: {got:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// A refusal never prescribes a document this campaign may not write
+// ---------------------------------------------------------------------------
+
+/// The prescriptions a **derived** map's author cannot carry out, and the reason
+/// each one is on this list. Every entry is a fragment some refusal in
+/// `dsl::validate` printed before `crate::placement` existed.
+///
+/// They are not "words about prefabs" — a refusal is allowed to SAY that no
+/// prefab provides a name, because on a derived map that is true and vacuous.
+/// Each of these is an **instruction**: go and do this thing. On a site-plan
+/// campaign each one is refused by another gate, or names a document that does
+/// not exist and must not be created.
+const FORBIDDEN_ON_A_DERIVED_MAP: &[(&str, &str)] = &[
+    (
+        "declare it in stage-1 `world.areas`",
+        "`DW0839` refuses `areas[]` in a campaign carrying a site plan, and `DW0160` refuses an \
+         entry with no prefab bound to it",
+    ),
+    (
+        "use one of the world stage's area ids",
+        "that set is required to be EMPTY here (`DW0839`), so the instruction names nothing",
+    ),
+    (
+        "anchor names come from prefab metadata",
+        "a derived map has no prefab and no metadata to read",
+    ),
+    (
+        "do NOT invent one",
+        "a derived map's anchor names ARE synthesized from node ids the author picked; this \
+         forbids the only correct answer",
+    ),
+    (
+        "bind a prefab/pool",
+        "binding a prefab means declaring an `areas[]` entry, which `DW0839` refuses",
+    ),
+    (
+        "an anchor the prefab exposes",
+        "there is no prefab to expose one",
+    ),
+    (
+        "an anchor a prefab exposes",
+        "there is no prefab to expose one",
+    ),
+    (
+        "an anchor some area's prefab exposes",
+        "there is no area with a prefab",
+    ),
+    (
+        "bind the trap to an `anchor/trap` marker",
+        "an `anchor/trap` marker comes from prefab metadata a derived map does not have",
+    ),
+];
+
+/// Every area and anchor reference this fixture breaks on purpose. The count is
+/// the test's binding and is read off THIS list rather than written down beside
+/// it, so a planted name that stops being examined fails the test instead of
+/// quietly shrinking the population.
+fn planted_bad_names() -> Vec<&'static str> {
+    vec![
+        "area/nowhere",
+        "anchor/nowhere-npc",
+        "anchor/nowhere-objective",
+        "anchor/nowhere-shortcut-gate",
+        "anchor/nowhere-shortcut-unlock",
+        "anchor/nowhere-shop",
+        "anchor/nowhere-loot",
+        "anchor/nowhere-lethal",
+        "anchor/nowhere-actor",
+        "anchor/nowhere-trigger",
+    ]
+}
+
+/// **A refusal on a derived map never sends its author to a prefab.**
+///
+/// The companion of
+/// [`no_stage_five_verb_calls_a_synthesized_anchor_an_invented_name`], one step
+/// on. That test proves a name the derivation really places RESOLVES; this one
+/// proves that when a name genuinely does not resolve, the sentence the author
+/// reads afterwards prescribes something they are allowed to do.
+///
+/// The pair it exists for: `DW0112` printed *"declare it in stage-1
+/// `world.areas`"*, which is exactly what `DW0839` refuses in a campaign
+/// carrying a site plan; `DW0142` printed *"anchor names come from prefab
+/// metadata; do NOT invent one"* against names that are synthesized by design.
+/// CLAUDE.md: when one gate's prescription is another gate's refusal, the defect
+/// belongs to the PAIR, and a gate that names a remedy owes a check that the
+/// remedy is reachable. This is that check.
+///
+/// The assertion is deliberately about the FORBIDDEN PRESCRIPTION rather than
+/// about a list of codes, so it covers the eighteenth refusal site somebody
+/// writes without that site having to know this test exists.
+#[test]
+fn no_refusal_on_a_derived_map_prescribes_a_prefab_document() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+
+    // Every verb below is fenced; the quests stage of the hello-world fixture is
+    // 0.2.0, and adding a declaration a check is not allowed to look at is the
+    // `unfenced` vacuity mode.
+    let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
+    quests["dsl_version"] = json!("0.14.0");
+    quests["content"]["quests"][0]["objectives"][1]["title"] = json!("Leave by the vault");
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
+    let c = &mut quests["content"];
+    c["quests"][0]["objectives"][1]["anchor"] = json!("anchor/nowhere-objective");
+    c["shortcuts"] = json!([{
+        "id": "shortcut/vault-door",
+        "gate": "anchor/nowhere-shortcut-gate",
+        "unlock": "anchor/nowhere-shortcut-unlock"
+    }]);
+    c["shops"] = json!([{
+        "id": "shop/counter",
+        "anchor": "anchor/nowhere-shop",
+        "title": "The counter",
+        "marker_item": "minecraft:emerald",
+        "offers": [{
+            "label": "Bread, one emerald",
+            "effects": [{ "type": "give-item", "item": "minecraft:bread", "count": 1 }]
+        }]
+    }]);
+    c["loot"] = json!([{
+        "id": "loot/cellar-chest",
+        "anchor": "anchor/nowhere-loot",
+        "items": [{ "item": "minecraft:bread", "count": 1 }]
+    }]);
+    c["lethal_volumes"] = json!([{
+        "id": "lethal/the-sump",
+        "damage_type": "fall",
+        "message": "The floor of the pit is not a floor.",
+        "region": { "anchor": "anchor/nowhere-lethal", "extent": [2, 2, 2] }
+    }]);
+    c["actors"] = json!([{
+        "id": "actor/yard-moth",
+        "anchor": "anchor/nowhere-actor",
+        "entity": "minecraft:zombie",
+        "name": "The Yard Watcher"
+    }]);
+    c["triggers"] = json!([{
+        "id": "trigger/the-bar",
+        "at": "anchor/nowhere-trigger",
+        "on": { "on": "use" },
+        "once": false,
+        "audience": "presser",
+        "effects": [{
+            "type": "narrate", "style": "actionbar",
+            "text": "The bar does not lift from this side."
+        }]
+    }]);
+    raw.quests = serde_json::to_string(&quests).expect("re-serialize");
+    raw.npcs = raw
+        .npcs
+        .replace("\"anchor/node-porch\"", "\"anchor/nowhere-npc\"");
+
+    let anchors_broken = check_campaign(&raw);
+
+    // A broken `area` makes `AnchorProviders::for_area` return `None`, which
+    // SKIPS the per-area anchor rules — so the area case is a SECOND campaign,
+    // or this test would silently measure fewer sites than exist.
+    let mut area_raw = raw.clone();
+    area_raw.npcs = area_raw.npcs.replace("\"area/site\"", "\"area/nowhere\"");
+    area_raw.quest_plan = area_raw
+        .quest_plan
+        .replace("\"area/site\"", "\"area/nowhere\"");
+    let areas_broken = check_campaign(&area_raw);
+
+    let all: Vec<delvewright_dsl::Diagnostic> = anchors_broken
+        .into_iter()
+        .chain(areas_broken.into_iter())
+        .collect();
+
+    // Binding, computed from the fixture: every name planted above must reach a
+    // refusal, or this test is examining a smaller population than it claims.
+    let unexamined: Vec<&str> = planted_bad_names()
+        .into_iter()
+        .filter(|name| !all.iter().any(|d| d.message.contains(name)))
+        .collect();
+    assert!(
+        unexamined.is_empty(),
+        "these deliberately-broken references reached no refusal, so this test binds to less \
+         than it says: {unexamined:?}"
+    );
+
+    let bad: Vec<String> = all
+        .iter()
+        .flat_map(|d| {
+            FORBIDDEN_ON_A_DERIVED_MAP
+                .iter()
+                .filter(move |(phrase, _)| d.message.contains(phrase))
+                .map(move |(phrase, why)| {
+                    format!("{} at {}: says \"{phrase}\" — but {why}", d.code, d.path)
+                })
+        })
+        .collect();
+    assert!(
+        bad.is_empty(),
+        "{} refusal(s) over {} diagnostic(s) prescribe something this campaign is refused for \
+         doing:\n{}",
+        bad.len(),
+        all.len(),
+        bad.join("\n")
+    );
+}
+
+/// **The same question asked of a campaign with NO map at all** — `areas[]`
+/// empty and no site plan.
+///
+/// This is a real authoring state (a story layer written before its map) and it
+/// is the one the old message served worst: *"declare it in stage-1
+/// `world.areas`"* names one half of a choice the author has not made, and
+/// silently commits them to the half that then refuses their site plan.
+///
+/// Refusing the campaign is correct — it has no map. What the refusal owes is
+/// BOTH branches, so the author can pick.
+#[test]
+fn a_campaign_with_no_map_is_told_about_both_placement_authorities() {
+    let mut raw = campaign(None, None, None);
+    let mut world: Value = serde_json::from_str(&raw.world).expect("world parses");
+    world["content"]["areas"] = json!([]);
+    raw.world = serde_json::to_string(&world).expect("re-serialize");
+
+    let d = check_campaign(&raw);
+    let area_refusals: Vec<&delvewright_dsl::Diagnostic> =
+        d.iter().filter(|x| x.code == "DW0112").collect();
+    assert!(
+        !area_refusals.is_empty(),
+        "a campaign that declares no area must still be refused: {d:?}"
+    );
+    for x in &area_refusals {
+        assert!(
+            x.message.contains("`world.areas`") && x.message.contains("`site-plan.json`"),
+            "a refusal here must name BOTH placement authorities, or it decides for the \
+             author: {}",
+            x.message
+        );
+    }
+}
