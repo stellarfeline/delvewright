@@ -134,9 +134,10 @@ fn the_perturbation_is_which_piece_declares_an_entry() {
     let dir = common::prefabs_dir();
     let entry_of = |piece: &str| -> bool {
         let stem = piece.strip_prefix("prefab/").unwrap();
-        let meta: Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.join(format!("{stem}.json"))).unwrap())
-                .unwrap();
+        let meta: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.join(format!("{stem}.json"))).unwrap(),
+        )
+        .unwrap();
         meta["anchors"]
             .as_object()
             .unwrap()
