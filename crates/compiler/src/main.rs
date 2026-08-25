@@ -19,8 +19,9 @@ use delvewright_dsl::{
     Diagnostic, DwCode, Fenced, Stage, parse_campaign, stage_schema, validate_campaign_with,
 };
 
-/// `DW0309`: a mannequin NPC declares a `skin.texture_id` for which the campaign
-/// ships no `skins/<texture_id>.png`. Build-tier (exit 3).
+/// `DW0309`: a staged **body** — a stage-2 npc or a stage-5 actor alike —
+/// declares a `skin.texture_id` for which the campaign ships no
+/// `skins/<texture_id>.png`. Build-tier (exit 3).
 const DW_SKIN_PNG_MISSING: DwCode = DwCode::every_version("DW0309");
 
 /// Internal-error exit code (spec-0002: ≥10).
@@ -1658,37 +1659,53 @@ fn run_build(
     ExitCode::SUCCESS
 }
 
-/// Read the NPC-skin PNGs referenced by mannequin NPCs (spec-0009 bake). The PNG
+/// Read the skin PNGs every staged **body** references (spec-0009 bake). The PNG
 /// lives in the campaign dir at `skins/<texture_id>.png`; a missing one is a
 /// build error (`DW0309`), not a silent skip. Shared by `build` and by `edit`'s
 /// build-tier proof run — the editor must prove exactly what `build` proves.
+///
+/// **Enumerated from [`delvewright_dsl::body_skin_sites`], never from one
+/// stage's list.** This walked `campaign.npcs.content.npcs` by hand, so a
+/// stage-5 actor's skin was read into its summon
+/// (`profile:{texture:"delvewright:npc/<id>"}`), shipped in a resource pack that
+/// carried no such texture, and refused by nothing: deleting an npc's PNG exited
+/// 3 with `DW0309` while deleting an actor's built green. A skin is a property
+/// of a body, so the walk is over bodies.
+///
+/// One texture is read once however many bodies name it — a character and the
+/// puppet that plays it are one face.
 fn read_skins(
     campaign_dir: &Path,
     campaign: &delvewright_dsl::Campaign,
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for npc in &campaign.npcs.content.npcs {
-        let Some(skin) = &npc.skin else { continue };
-        if skins.contains_key(&skin.texture_id) {
+    for site in delvewright_dsl::body_skin_sites(campaign) {
+        if skins.contains_key(&site.skin.texture_id) {
             continue;
         }
         let path = campaign_dir
             .join("skins")
-            .join(format!("{}.png", skin.texture_id));
+            .join(format!("{}.png", site.skin.texture_id));
         match std::fs::read(&path) {
             Ok(bytes) => {
-                skins.insert(skin.texture_id.clone(), bytes);
+                skins.insert(site.skin.texture_id.clone(), bytes);
             }
             Err(e) => {
                 print_build_error(
                     DW_SKIN_PNG_MISSING,
                     &format!(
-                        "cannot read skin PNG `{}`: {e} — a mannequin npc declares this \
-                         `skin.texture_id` but the campaign has no matching \
-                         `skins/<texture_id>.png`. Add the PNG at that path, or remove the \
-                         npc's `skin`",
-                        path.display()
+                        "cannot read skin PNG `{}`: {e} — `{}` declares this `skin.texture_id` \
+                         at `{}` `{}`, but the campaign has no matching \
+                         `skins/<texture_id>.png`. A body that declares a skin ships as a \
+                         mannequin pointing at `delvewright:npc/{}`, and the resource pack is \
+                         where that texture comes from. Add the PNG at that path, or remove \
+                         the `skin`",
+                        path.display(),
+                        site.body.id(),
+                        site.body.stage(),
+                        site.path,
+                        site.skin.texture_id,
                     ),
                     json,
                 );
