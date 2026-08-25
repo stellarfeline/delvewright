@@ -9,6 +9,14 @@ Behaviour references: [`grammar.md`](grammar.md) (what the back end does),
 [`tools.md`](tools.md) (every binary and flag), [`compiler.md`](compiler.md)
 (diagnostics).
 
+**Two libraries, and they are not the same one.** The **rule library** is the
+programs — `delve-grammar list` prints them and says so, `delve-grammar show
+--program <name>` prints one, and they live in this repository. The **prefab
+library** is the built pieces — `.nbt` and `.json` pairs a campaign binds, in
+the *content* repository, reached through the `campaigns/` symlink (ADR-0007).
+This procedure reads the first and writes into the second. Their counts have no
+relation to each other, so a number taken from one says nothing about the other.
+
 ## 0. Which back end
 
 **The box-split grammar back end** (`crates/grammar`, spec-0027). It is the
@@ -21,7 +29,7 @@ that matches no row is **escalated, not improvised**.
 
 | The scene is… | Route | Why this route — and what is proven about it |
 |---|---|---|
-| a new structural piece — a building, room, passage, stair; generic (T1) **or** a specific named referent (T2) | **grammar program** (this procedure, §1–§8) | The adopted production route for both tiers. T2 is an input-modality property — the program is authored *against the referent* from the library corpus; named referents are proven recognizable this way, and the grammar's IR is what makes iteration converge where freehand geometry regresses. |
+| a new structural piece — a building, room, passage, stair; generic (T1) **or** a specific named referent (T2) | **grammar program** (this procedure, §1–§8) | The adopted production route for both tiers. T2 is an input-modality property — the program is authored *against the referent* from the rule library's corpus; named referents are proven recognizable this way, and the grammar's IR is what makes iteration converge where freehand geometry regresses. |
 | a variation inside an existing hand-built tileset (another keep room in the keep's own conventions) | **grammar program**, matching the tileset's palette/conventions | The Rust generators are maintained, not extended (§9). A generator's conventions are data to imitate, not a surface to grow. |
 | a named referent that plausibly exists as a **community build** | check licence-gated ingestion first (`delve-schem` + `delve-admit`, spec-0007); fall back to grammar | Availability is luck — the corpus audit found most schematic sources unverifiable or NC-tainted, so ingestion is an opportunistic shortcut, never the plan of record. Everything ingested passes the same audit/socket/lighting admission as generated pieces. |
 | genuinely un-statable by axis-aligned boxes: a **smooth** curve, a diagonal, a profile whose step varies independently of the box, a vault bending on two axes at once, or noise/terrain (§6) | **in-house generator work** (Rust: value-noise fields, 4-5-rule cellular automata, the ported craft passes) — an engine task, not an authoring step | The grammar has no smooth curve, no diagonal, no noise, no terrain, by design. This route costs a worker dispatch and says so up front; it is the one row where "make a prefab" becomes "extend the engine". **Check §6 and `grammar.md` §2c before taking it** — a stepped arch, a gable, a spire, a batter and a tapered vault are all one recursion (idiom 3), two roofs meeting in a valley are that recursion peeling a ring (idiom 3), and any shape with a mirror plane is a rule body written mirrored (idiom 7). All three were mistaken for this row. |
@@ -61,9 +69,22 @@ invented after the render is a description of the render.
 **Fix the region in the same breath** — not after the program is authored. It
 is chosen from what the scene needs and from nothing else: there is no size a
 design has to stay under, and a zone of any extent exports (§6). Record the
-chosen region and seed beside the program — in the campaign's `GENERATION.md`,
-since the program JSON does not yet carry its own region (queued engine
-surface).
+chosen region and seed **where the next person will look**, since the program
+JSON does not carry its own region (queued engine surface). Which place that is
+depends on what the piece is for, and one of them is written for you:
+
+- **A campaign's zone** names them in that campaign's `zones.json`, beside the
+  program, with the gates it claims (§4). That file is what
+  `delve-grammar audit --campaign-root` re-expands from, so the record is the
+  thing CI runs.
+- **A piece for the prefab library**, with no campaign yet, needs nothing extra:
+  the expand writes the region and the seed into the metadata's
+  `license.provenance` sentence beside the machine-readable
+  `license.generated_by` row (§8, §9).
+
+So the record to make by hand is the campaign one. Write the region down in the
+scene description too while it is still a decision — after the expand it is a
+measurement of what was built.
 
 **One exception: a piece that details a site-plan place (stage 6, spec-0050)
 has its region HANDED, not chosen.** `delvec allocation <campaign-dir>
@@ -160,7 +181,7 @@ pinned block registry at `crates/dsl/data/blocks-1.21.11.json`, and a
 1.21.11 client jar (`--jar`, `$DELVEWRIGHT_CLIENT_JAR`, or
 `~/.chunky/resources/minecraft.jar`). Missing either one is a named refusal that
 says which. **The step does not become optional** — it becomes a different
-source of measured names: the library corpus is a palette somebody already
+source of measured names: the rule library is a corpus somebody already
 measured, so take roles from it (`delve-grammar list`, then `delve-grammar show
 --program <nearest>`) and bind by editing a role that already exists rather than
 by recalling a block. Record where each name came from beside the role, as you
@@ -190,8 +211,8 @@ delve-grammar show --program idiom-shape          # the technique, runnable
 delve-grammar show --program store-room > my-piece.json
 ```
 
-Then start from the corpus, never from the schema. The library is a few-shot
-corpus this project legally owns (spec-0027 §2). Editing the nearest rule is
+Then start from the corpus, never from the schema. The rule library is a
+few-shot corpus this project legally owns (spec-0027 §2). Editing the nearest rule is
 what made the worked example pass its first check; writing the IR from its
 documentation is the slower path.
 
@@ -218,6 +239,46 @@ you write:
   whose frame opens with `z(largest)` is handed two different orientations by
   two different boxes and paints the same state in both. Pick the state with an
   `orientation` guard, or the piece faces the wrong way with every gate green.
+
+### Say where a body goes — the spatial contract
+
+The rules above say what blocks stand where. They do not say what the building
+**is**: which of its voids are rooms, which are out of the walk, where its doors
+are, and what a neighbouring piece may mate with. That is the **spatial
+contract**, and it is written here, in this document, beside the rules — a
+`claim` node naming each body of space, and one `contract` block classifying the
+names. **The authoring surface, with a worked example, is
+[`grammar.md`](grammar.md) §2d** — that is the section to open, and it is the
+only one that says how; `delve-grammar show --program spatial-contract` prints a
+runnable one.
+
+**Write one whenever the piece has more than one way in and out**, and always
+when those ways are not the region's north and south faces — §4's `traversable`
+has nothing else to read, and a corner passage or an east–west corridor fails it
+outright without one. A piece is also worth contracting whenever a campaign will
+place it next to something: the face contract is what the compiler mates seams
+with (§9).
+
+**An `exterior` edge is one claim per space, not one per door.** The faces it
+exports are *derived from the blocks*: an exterior edge that names no `via`
+exports one face for **every** outer face of the region its space actually
+reaches. A space that reaches one — a straight north–south passage, which is
+what `spatial-contract`'s worked example is — exports one face per edge, so
+"one edge per end" looks right there. A space that reaches two, which is what an
+L-shaped passage is, exports two per edge, and writing an edge for each end
+exports each end **twice**. Declare one exterior edge per space-to-outside
+relation and read the `contract-exterior-faces` line to see what it exported.
+
+**Declaring one is not a two-line addition, and there is no flag to stage it.**
+The moment a `contract` block is present, nine obligations run at every door
+that reads the piece — `delve-grammar expand`, and `delve-admit audit` again
+afterwards. They are catalogued with what each binds to in `grammar.md` §2d, and
+in summary they ask that every claimed name resolve, that every standable cell
+lie in something declared, that an `enclosed` space actually be closed except at
+a claimed opening, that every declared edge be walkable on the bytes, and that
+every anchor land in a declared element. A gate whose population is honestly
+empty is withheld with its reason printed rather than passed. Budget the
+contract as part of authoring the piece, not as a fix applied to a finished one.
 
 ```sh
 delve-grammar check --file my-piece.json          # structure only; fast
@@ -255,8 +316,8 @@ whichever file is there.
 
 **What `<id>` is.** It is the prefab's identity: it names every file above and
 becomes the datapack structure path, so it may contain only lowercase letters,
-digits and hyphens. `--id` sets it. Without `--id` it defaults to the library
-program id (`--program`) or **to the input file's stem** (`--file`) — so
+digits and hyphens. `--id` sets it. Without `--id` it defaults to the rule
+library's program id (`--program`) or **to the input file's stem** (`--file`) — so
 `var-B.json` asks for the id `var-B`, which is refused, before anything is
 expanded or written. Name the file in lowercase kebab or pass `--id`.
 
@@ -282,7 +343,7 @@ once the prefab exists, so a `pass` never sits above a failure.
 | `non-empty` | the expansion built something |
 | `stair-shape` (only when the piece holds a stair) | every written stair `shape` is the one vanilla derives from that stair's own neighbours (`DW0801`). A stair's `shape` is not stored — the world recomputes it on the first horizontal block update — so a wrong one survives the `.nbt`, the render and the contact sheet, and resets in play. A stair that writes no `shape` makes no claim and nothing can disagree with it |
 | `fluid-contained` (only when the piece holds fluid) | every fluid cell is a source, and no source has an open cell beside or below it (`DW0800`). A run direction that leaves the piece's own outer face is counted and never judged here — a shoreline piece's water is the sea — and reported as a finding on every piece that has one. The compiler decides it at placement (`DW0318`): fluid outside every placed piece is refused under a void horizon and is fine under an ocean one |
-| `traversable` (`--traversable`) | a body can walk from the approach end to the exit end; add `--allow-falls` for a piece entered by stepping off a ledge |
+| `traversable` (`--traversable`) | a walk connects every pair of the piece's ways in and out. Which cells those are depends on whether the piece declares a spatial contract, and the difference decides whether the gate is satisfiable at all — read the two paragraphs under this table. Add `--allow-falls` for a piece entered by stepping off a ledge |
 | `symmetric` (`--symmetric x\|y\|z`) | the piece is its own mirror image across the mid-plane of that world axis, compared by presence rather than by block state |
 | `reachable-floor` (`--reachable-floor`) | every cell of floor **under a roof** can be walked to from the grade entrance |
 
@@ -290,6 +351,31 @@ once the prefab exists, so a `pass` never sits above a failure.
 with one door has no far end and would fail it correctly and uselessly. **Pass
 it whenever the piece is a passage, a stair or a route** — that is most of them,
 and a route nobody proved walkable is the defect the gate exists for.
+
+**It needs a spatial contract to know where the piece's ways in are, and without
+one it looks at the north and south faces of the region box and nowhere else.**
+A piece that declares no contract has declared no doors, so the gate falls back
+to counting standable cells on those two faces — and it says so in its own
+detail line. Everything about that fallback is a fact about the region box
+rather than about the passage: a corridor that turns a corner has its ends on
+*perpendicular* faces and fails; a perfectly straight corridor running east to
+west has its ends on the two faces the gate never looks at, and fails with a
+binding of **zero**. Both are as walkable as anything the rule library builds, and the
+always-on `reachability` line prints `100.0%` two lines below the refusal. **The
+gate is not disagreeing with that line — it is answering a question about two
+particular faces.**
+
+So the rule above has one condition on it: **a piece whose ways in and out are
+not the north and south faces declares a spatial contract, and then this gate is
+about the ways the piece itself declared, in any direction** (§3, *Say where a
+body goes*). With a contract the same corner passage reads
+
+```text
+traversable  pass  bound 4   4 declared way(s) in or out — west walk, west walk,
+             north walk, north walk — and a walk connects every pair of them
+```
+
+A red here writes no `.nbt`, so this is not a warning to ship past.
 
 It is a claim about the **route only**. Both ends it joins are at ground level,
 so a green `traversable` says nothing about the storeys above: a cathedral has
@@ -299,8 +385,8 @@ to walk around** — it is the gate that catches the upper level with no stair.
 
 **The one piece to leave it off: a one-way descent.** A level a body drops into
 and does not climb back out of is unreachable on foot *by design*, and the engine
-has no way to be told — the predicate that would answer it is library-internal,
-so no flag, no report field and no metadata carries the claim. So
+has no way to be told — the predicate that would answer it is internal to the
+crate, so no flag, no report field and no metadata carries the claim. So
 `--reachable-floor` is not a gate such a piece can satisfy: `drop-shaft` at
 9×12×9 seed 1 fails it with 28 of 63 roofed cells unreached, and a red gate
 writes **no** `.nbt`, so passing the flag anyway does not ship a piece with a
@@ -389,15 +475,29 @@ Three kinds of camera. Two are planned for you; the third you aim.
 **Orbit cameras** — four exterior three-quarters, a plan cutaway, one per socket,
 and one per anchor showing where in the piece that anchor sits — are fitted to
 the model from outside it. They show massing, silhouette and layout. On a roofed
-piece they show the roof: eleven orbit shots of a 16×9×26 ward that is 81% solid
-rock are eleven pictures of the same grey slab, and none of them can tell you the
-piece has a corridor in it.
+piece the *exterior* ones show the roof: eleven orbit shots of a 16×9×26 ward
+that is 81% solid rock are eleven pictures of the same grey slab, and none of
+them can tell you the piece has a corridor in it.
+
+**The plan shot is the exception, and it is the one to read on a piece whose
+identity is its plan** — a passage, a junction, a stair, anything whose shape is
+a route rather than an elevation. `<id>-top.png` is marked `"cutaway": true` in
+the manifest: the roof is taken off, so the floor plan is what is in the frame. A
+corridor that turns a corner reads as a corner there and nowhere else in the
+planned set. Reach for a `--view` when the identity is a *face*; reach for `top`
+when it is a *plan*.
 
 **Eye cameras** stand *inside*, at a body's eye height (1.62), at each declared
 anchor, looking the way that anchor faces — `eye-<anchor>.png`. This is the shot
 that shows the doorway's shape and proportion, what is in front of a body, how
 the walls read, and whether an anchor is looking at the thing it is about. Read
 these first.
+
+**A piece that declares no anchor gets none of them**, and the run says so in its
+binding count (`0 eye-level shot(s) over 0 anchors`). That is the same finding
+§4 raises as *the program declared no anchors* — the piece has no place a
+campaign can name, and no camera stands inside it. Go back to §3 and `mark` the
+places before judging the piece by its pictures.
 
 The eye point is resolved, never assumed. A prefab is mostly solid, so an anchor
 cell often holds a gate or a barrel; the camera then steps back along the facing
@@ -516,12 +616,24 @@ Each of these was established by running it, except the two marked otherwise:
 ## 7. Admit it
 
 ```sh
-delve-admit audit    out/<id>.json         # or out/<id>.nbt — audit takes either
+delve-admit audit    out/<id>.nbt          # a TILE SET passes out/<id>.json instead
 delve-admit socket   out/<id>.nbt --pos X,Y,Z --facing <dir> --opening 3,3 \
                      --name <ns>:<name> --target <ns>:<name> --pool pool/<name>
 delve-admit lighting out/<id>.nbt --write
-delve-admit audit    out/<id>.json         # again, after the edits
+delve-admit audit    out/<id>.nbt          # again, after the edits
 ```
+
+**A single-template piece hands `audit` the `.nbt`, never the `.json`.** The
+metadata beside a single template is not a manifest, and passing it is `DW0732`
+at exit 2. Only a zone past the 48-per-axis cap has a manifest to hand it, and
+the next paragraph is about that zone.
+
+`delve-admit anchor` is the fourth step of the chain and is **not on this route**:
+it writes a place into an anchor of a piece whose producer could not, which is a
+hand-built or ingested piece. A grammar program declares its own anchors with
+`mark` (`grammar.md` §2b) and they are already in the metadata by the time this
+step is reached. Nothing here writes a **catalog card** either — that document
+belongs to the ingestion route (§0), not to a piece this project generated.
 
 A tiled zone has no `out/<id>.nbt` at all — its blocks are the
 `out/<id>.x<i>y<j>z<k>.nbt` files and `out/<id>.json` is the manifest — so on such
@@ -554,6 +666,29 @@ zone-relative, so a composed zone is judged as one building. Handing either one
 tile is `DW0739`, and so is handing it a tile that has been copied away from its
 manifest.
 
+**Where a socket goes.** `--pos` is the **jigsaw cell: the bottom-centre of the
+opening, standing in the wall plane.** The `--opening w,h` is built from it —
+the width is centred on that cell, the height climbs from it — so on a doorway
+whose lowest walkable course is `y` and whose opening spans cells `c1..c2` across
+the wall, `--pos` is `y` at the middle of that span, on the face's own plane
+(`x=0` for a west face, `z=0` for a north face). `--facing` is the direction
+**out** of the piece. A `--pos` outside the structure is refused; one that is
+merely in the wrong place is not, so read it off the piece's own declared
+opening — §4's contract report prints each exterior face as a cell range.
+
+`--name` and `--target` are the jigsaw's own name and the name it seeks; a pair
+of pieces mate when one's `--name` is the other's `--target`. `--pool` is the
+`prefab_pool` the far side is drawn from. They are strings the campaign also
+uses, so pick them with the campaign in hand.
+
+**The socket leaves a `minecraft:jigsaw` block in the doorway, and that is
+correct.** It carries `final_state: minecraft:air`, so the world replaces it with
+air the moment the piece is placed — the doorway a body walks through is clear.
+What changes is the *bytes*, and tools that read them say so: `audit` re-run
+after carving reports one fewer cell on that exterior face (a 9-cell face reads
+as 8) and `minecraft:jigsaw` joins the audited palette. Both are the marker being
+counted, not a blocked door, and the verdict stays `pass`.
+
 `lighting --write` is a **static** estimate, not a live probe; it says so in the
 metadata it writes. A piece it calls `dark` is dark because the program placed
 no light — the grammar cannot warn you, so this step is where you find out.
@@ -584,8 +719,17 @@ Generated `.nbt` + metadata live in the **content repo**
 (`campaigns/prefabs/`), never in this one (ADR-0007). The grammar **program**
 is the artifact of record and lives beside the campaign that uses it; the
 `.nbt` is a snapshot of one expansion of it, and its metadata carries the
-program hash and seed that regenerate those exact bytes (ADR-0006 — verified:
-same inputs twice gives byte-identical `.nbt` and metadata).
+program hash and seed that regenerate **the bytes as expanded** — the `.nbt` §4
+wrote, before §7 (ADR-0006 — verified: same inputs twice gives byte-identical
+`.nbt` and metadata).
+
+**§7's `socket` is the one step that edits the blocks**, so on a piece that
+carries a socket — every piece that enters a `prefab_pool` — re-expanding from
+the recorded row reproduces the pre-socket `.nbt` and not the shipped one.
+`lighting --write` and `anchor` write metadata only and leave the bytes alone.
+The row is a claim about the expansion, which is what makes it worth recording:
+it says the *geometry* came from that program at that seed, and the admission
+edits on top of it are the ones the procedure prescribes.
 
 Those four inputs are `license.generated_by { generator, program, program_hash,
 seed }` — a **machine-readable** row, not only the prose `provenance` sentence
@@ -699,7 +843,7 @@ written.
 Every field a producer may legitimately omit is optional, and an absent optional
 is **omitted, never `null`** — so a legacy piece still loads, and a piece nothing
 has probed does not have to invent a measurement. Field order on write is the
-order of the table above, which is the order the checked-in library already uses.
+order of the table above, which is the order the checked-in prefab library already uses.
 
 A key the reading version does not model is **kept** and written back out. That
 matters because these files are read-modify-written: `delve-admit socket` edits
@@ -725,7 +869,7 @@ a subcommand it has never been told about.
   is the `dsl_version` fence's job.
 - **This document does not have it, on any struct.** Every reader of a prefab is
   a *consumer*, not the document's owner, and a new key here is not a typo — it
-  is a content library newer than the engine reading it, which is the normal
+  is a prefab library newer than the engine reading it, which is the normal
   state of a mixed-version pair. Refusing turns a forward addition into a hard
   failure at the layer with the least context.
 - **Unknown keys are reported, not ignored**: `delvec` warns `DW0543`, naming
