@@ -240,6 +240,9 @@ pub(crate) struct AnchorProviders {
     deferred: bool,
     /// Every area contributed a set — the union is the whole truth.
     all_areas_known: bool,
+    /// This campaign hands its space to a site plan, so its vocabulary is
+    /// derived and declared rather than read out of prefab metadata.
+    site_plan: bool,
 }
 
 impl AnchorProviders {
@@ -279,6 +282,7 @@ impl AnchorProviders {
             union,
             deferred,
             all_areas_known,
+            site_plan: c.site_plan.is_some(),
         }
     }
 
@@ -321,6 +325,34 @@ impl AnchorProviders {
     /// Every anchor name any known area provides.
     pub(crate) fn union(&self) -> &BTreeSet<String> {
         &self.union
+    }
+
+    /// **Where this campaign's anchor names come from** — the sentence every
+    /// unresolved-anchor refusal ends with.
+    ///
+    /// One authority rather than fourteen literals, and it exists because the
+    /// fourteen were all telling a site-plan author to do something this engine
+    /// refuses: "use an anchor the prefab exposes, or bind a prefab/pool that
+    /// carries it" is unperformable in a campaign that has a site plan, because
+    /// `DW0839` refuses a campaign carrying both `areas[]` and a plan. A remedy
+    /// a second gate forbids is not a remedy.
+    ///
+    /// It became the message an author meets most often the moment stations
+    /// landed: mistyping a station name is the ordinary mistake with the new
+    /// surface, and "do NOT invent one" is the opposite of what such an author
+    /// must do — in a site-plan campaign the names ARE invented, in the graph.
+    pub(crate) fn vocabulary(&self) -> &'static str {
+        if self.site_plan {
+            "this campaign hands its space to a site plan, so its names are the ones the \
+             derivation synthesizes — `spawn`, an `anchor/node-…` per place, and the \
+             `anchor/seam-…` and `anchor/unlock-…` of each barred way — plus the `stations[]` \
+             its nodes declare. Declare this name as a station on the node it belongs to, or \
+             correct the spelling. There is no prefab to expose it and no area to bind one to: \
+             a campaign carrying both a site plan and `areas[]` is `DW0839`"
+        } else {
+            "use an anchor the prefab exposes — anchor names come from prefab metadata, so \
+             do NOT invent one"
+        }
     }
 }
 
@@ -379,6 +411,7 @@ fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<
     // The same "is this anchor provided by some bound prefab" rule every stage-5
     // anchor reference uses; a pool area defers the answer to the compiler.
     let providers = AnchorProviders::build(c, anchors);
+    let vocab = providers.vocabulary();
     let mut seen_id: BTreeSet<&str> = BTreeSet::new();
     for (i, v) in volumes.iter().enumerate() {
         if !v.id.is_valid_syntax() {
@@ -418,8 +451,7 @@ fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<
                 format!("/content/lethal_volumes/{i}/region/anchor"),
                 format!(
                     "lethal-volume anchor `{}` is not provided by any prefab bound in this \
-                     campaign — use an anchor the prefab exposes (anchor names come from prefab \
-                     metadata; do NOT invent one)",
+                     campaign — {vocab}",
                     v.region.anchor
                 ),
             ));
@@ -515,6 +547,7 @@ fn shop_anchor_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Di
         return;
     }
     let providers = AnchorProviders::build(c, anchors);
+    let vocab = providers.vocabulary();
     for (i, sh) in c.quests.content.shops.iter().enumerate() {
         if let Some(f) = station_kind_diag(
             &providers,
@@ -534,9 +567,7 @@ fn shop_anchor_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Di
             "quests",
             format!("/content/shops/{i}/anchor"),
             format!(
-                "shop anchor `{}` is not provided by any prefab bound in this campaign — use an \
-                 anchor the prefab exposes (anchor names come from prefab metadata; do NOT invent \
-                 one)",
+                "shop anchor `{}` is not provided by any prefab bound in this campaign — {vocab}",
                 sh.anchor
             ),
         ));
@@ -4887,6 +4918,7 @@ fn anchors_and_items(
     // itself places them by, so a name that resolves here cannot fail to exist
     // in the built world.
     let providers = AnchorProviders::build(c, anchors);
+    let vocab = providers.vocabulary();
     // Every anchor any known area provides, and whether that union is the whole
     // truth (no area binds a pool / an unknown prefab). Used for the anchor
     // references that have no owning area to resolve against: an environment
@@ -4921,10 +4953,8 @@ fn anchors_and_items(
                 "npcs",
                 format!("/content/npcs/{i}/anchor"),
                 format!(
-                    "npc anchor `{}` is not provided by the prefab bound to area `{}` — use an \
-                     anchor the prefab exposes, or bind a prefab/pool that carries `{}`. Anchor \
-                     names come from prefab metadata; do NOT invent one",
-                    npc.anchor, npc.area, npc.anchor
+                    "npc anchor `{}` is not provided by the prefab bound to area `{}` — {vocab}",
+                    npc.anchor, npc.area
                 ),
             ));
         }
@@ -4958,8 +4988,7 @@ fn anchors_and_items(
                     format!("/content/quests/{i}/objectives/{j}/anchor"),
                     format!(
                         "objective anchor `{anchor}` is not provided by the prefab bound to this \
-                         quest's area — use an anchor the prefab exposes (anchor names come from \
-                         prefab metadata; do NOT invent one)"
+                         quest's area — {vocab}"
                     ),
                 ));
             }
@@ -5010,9 +5039,7 @@ fn anchors_and_items(
                     "quests",
                     format!("/content/quests/{i}/{path}/{suffix}"),
                     format!(
-                        "`{verb}` anchor `{anchor}` is not provided by {scope} — use an anchor a \
-                         prefab exposes (anchor names come from prefab metadata; do NOT invent \
-                         one)",
+                        "`{verb}` anchor `{anchor}` is not provided by {scope} — {vocab}",
                         verb = eff.verb(),
                     ),
                 ));
@@ -5049,8 +5076,7 @@ fn anchors_and_items(
                         format!("/content/triggers/{ti}/{path}/{suffix}"),
                         format!(
                             "`{verb}` anchor `{anchor}` in an environment trigger is not provided \
-                             by any area's prefab — use an anchor a prefab exposes (anchor names \
-                             come from prefab metadata; do NOT invent one)",
+                             by any area's prefab — {vocab}",
                             verb = eff.verb(),
                         ),
                     ));
@@ -5654,6 +5680,7 @@ fn v04_checks(
 
     // area anchor sets (single-prefab areas only) + whether any pool area exists.
     let providers = AnchorProviders::build(c, anchors);
+    let vocab = providers.vocabulary();
 
     // Declared flags across quest / dialogue / trigger `set-flag` effects and v0.6
     // trap disarms (a disarm's `sets_flag` is a first-class declared flag other
@@ -5774,8 +5801,7 @@ fn v04_checks(
                 format!("/content/triggers/{i}/at"),
                 format!(
                     "trigger `{}` fires on `{}`, which watches a place, but declares no `at` \
-                     anchor — add one (anchor names come from prefab metadata; do NOT invent \
-                     one), or switch to `strike-npc` if the target is an NPC's body",
+                     anchor — add one, or switch to `strike-npc` if the target is an NPC's body",
                     t.id,
                     t.on.kind()
                 ),
@@ -5814,9 +5840,7 @@ fn v04_checks(
                 "quests",
                 format!("/content/triggers/{i}/at"),
                 format!(
-                    "trigger `at` anchor `{at}` is not provided by any area's prefab — set `at` to \
-                     an anchor some area's prefab exposes (anchor names come from prefab metadata; \
-                     do NOT invent one)"
+                    "trigger `at` anchor `{at}` is not provided by any area's prefab — {vocab}"
                 ),
             )),
             _ => {}
@@ -6067,6 +6091,7 @@ fn v06_trap_checks(
     // resolution stays lenient for pool areas the compiler resolves later — the
     // same policy as the v0.4 trigger check.
     let providers = AnchorProviders::build(c, anchors);
+    let vocab = providers.vocabulary();
 
     let flags = collect_declared_flags(c);
 
@@ -6111,9 +6136,7 @@ fn v06_trap_checks(
                 "quests",
                 format!("/content/traps/{i}/at"),
                 format!(
-                    "trap `at` anchor `{}` is not provided by any area's prefab — bind the trap to \
-                     an `anchor/trap` marker some area's prefab exposes (anchor names come from \
-                     prefab metadata; do NOT invent one)",
+                    "trap `at` anchor `{}` is not provided by any area's prefab — {vocab}",
                     t.at
                 ),
             ));
@@ -7174,6 +7197,7 @@ fn anchor_resolves(
     field: &str,
     d: &mut Vec<Diagnostic>,
 ) {
+    let vocab = providers.vocabulary();
     if let Some(f) = station_kind_diag(
         providers,
         anchor.as_str(),
@@ -7194,8 +7218,7 @@ fn anchor_resolves(
             format!("/content/quests/{qi}/objectives/{oi}/{field}"),
             format!(
                 "objective `{field}` anchor `{anchor}` is not provided by the prefab bound to \
-                 this quest's area — use an anchor the prefab exposes (anchor names come from \
-                 prefab metadata; do NOT invent one)"
+                 this quest's area — {vocab}"
             ),
         ));
     }
@@ -7955,6 +7978,7 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
         return;
     }
     let providers = AnchorProviders::build(c, anchors);
+    let vocab = providers.vocabulary();
 
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for (i, sc) in quests.shortcuts.iter().enumerate() {
@@ -8007,8 +8031,7 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
                     format!("/content/shortcuts/{i}/{field}"),
                     format!(
                         "shortcut `{field}` anchor `{anchor}` is not provided by any area's \
-                         prefab — use an anchor a prefab exposes (anchor names come from prefab \
-                         metadata; do NOT invent one)"
+                         prefab — {vocab}"
                     ),
                 ));
             }
@@ -8168,6 +8191,7 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
         return;
     }
     let providers = AnchorProviders::build(c, anchors);
+    let vocab = providers.vocabulary();
     let shortcut_gates: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     let mut driven: BTreeSet<&str> = BTreeSet::new();
@@ -8289,8 +8313,7 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
                     format!("/content/timed_gates/{i}/disarm/via"),
                     format!(
                         "timed-gate `disarm.via` anchor `{}` is not provided by any area's prefab \
-                         — use an anchor some area's prefab exposes for the jam affordance \
-                         (anchor names come from prefab metadata; do NOT invent one)",
+                         — {vocab}",
                         dis.via
                     ),
                     d,
@@ -8487,6 +8510,7 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
         return;
     }
     let providers = AnchorProviders::build(c, anchors);
+    let vocab = providers.vocabulary();
 
     for (i, w) in quests.waves.iter().enumerate() {
         let aggro_edge = w.summon == Some(crate::stages::WaveSummon::AggroEdge);
@@ -8554,9 +8578,7 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
                     "quests",
                     format!("/content/waves/{i}/lane/waypoints/{k}"),
                     format!(
-                        "lane waypoint anchor `{wp}` is not provided by any area's prefab — use \
-                         an anchor a prefab exposes (anchor names come from prefab metadata; do \
-                         NOT invent one)"
+                        "lane waypoint anchor `{wp}` is not provided by any area's prefab — {vocab}"
                     ),
                 ));
             }
@@ -9187,6 +9209,7 @@ fn loot_checks(
     let ench_reg = crate::registry::VendoredEnchantmentRegistry::v1_21_11();
 
     let providers = AnchorProviders::build(c, anchors);
+    let vocab = providers.vocabulary();
 
     let mut seen_id: BTreeSet<&str> = BTreeSet::new();
     let mut seen_anchor: BTreeMap<&str, usize> = BTreeMap::new();
@@ -9228,8 +9251,7 @@ fn loot_checks(
                 format!("/content/loot/{i}/anchor"),
                 format!(
                     "loot anchor `{}` is not provided by any prefab bound in this campaign — \
-                     use an anchor the prefab exposes (anchor names come from prefab metadata; \
-                     do NOT invent one)",
+                     {vocab}",
                     l.anchor
                 ),
             ));
