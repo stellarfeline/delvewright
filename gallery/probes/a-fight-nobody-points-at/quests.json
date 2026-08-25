@@ -881,7 +881,6 @@
               "text": "The muster is put down.",
               "verb": "dies"
             },
-            "hint": "They are at the muster line.",
             "id": "obj/clear-the-muster",
             "requires_flags": [],
             "requires_state": [
@@ -892,7 +891,6 @@
               }
             ],
             "stealth": false,
-            "title": "Clear the muster",
             "type": "kill",
             "wave": "wave/muster"
           },
@@ -1900,78 +1898,6 @@
             }
           ]
         },
-        "trigger": {
-          "quest": "quest/near-hall",
-          "type": "quest-complete"
-        }
-      },
-      {
-        "cast": {
-          "npc/curator": {
-            "at": "anchor/pedestal",
-            "dialogue": "unchanged",
-            "doing": "still at the case, not watching the shaft"
-          },
-          "npc/marshal": [
-            {
-              "at": "anchor/muster",
-              "dialogue": "unchanged",
-              "doing": "forming up beyond the wall, indifferent to the cellar",
-              "requires_flags": [
-                "flag/read-the-label"
-              ]
-            },
-            {
-              "at": "anchor/muster",
-              "dialogue": "unchanged",
-              "doing": "forming up beyond the wall, having walked straight past the label",
-              "requires_flags": [
-                "flag/skipped-the-label"
-              ]
-            }
-          ]
-        },
-        "happening": {
-          "subject": "anchor/east-bay",
-          "text": "Some of them stop at the side bays to look at what is not on the way out.",
-          "verb": "learns"
-        },
-        "id": "quest/the-reliquary",
-        "objectives": [
-          {
-            "anchor": "anchor/east-bay",
-            "happening": {
-              "subject": "anchor/east-bay",
-              "text": "The east bay keeps what the hall has stopped showing.",
-              "verb": "arrives"
-            },
-            "id": "obj/look-in-the-east-bay",
-            "radius": 3,
-            "title": "Look into the east bay",
-            "type": "reach-anchor"
-          },
-          {
-            "after": [
-              "obj/look-in-the-east-bay"
-            ],
-            "anchor": "anchor/west-bay",
-            "happening": {
-              "subject": "anchor/west-bay",
-              "text": "The west bay keeps the rest of it, and nothing on the way out needs any of it.",
-              "verb": "learns"
-            },
-            "id": "obj/look-in-the-west-bay",
-            "radius": 3,
-            "title": "Look into the west bay",
-            "type": "reach-anchor"
-          }
-        ],
-        "on_complete": [
-          {
-            "flag": "flag/saw-the-reliquary",
-            "type": "set-flag"
-          }
-        ],
         "trigger": {
           "quest": "quest/near-hall",
           "type": "quest-complete"

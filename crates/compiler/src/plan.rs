@@ -4709,9 +4709,24 @@ fn collect_press_answers(
 #[derive(Clone, Copy)]
 pub(crate) enum EffectRoot<'a> {
     /// A quest's `on_objective_complete[<objective>]` — fires at that objective's
-    /// `critical_path` step. Forced: completing the objective is the mainline.
-    ObjectiveComplete(&'a str),
-    /// A quest's `on_complete` — fires at the quest's completion step. Forced.
+    /// `critical_path` step. Forced when the owning quest is mandatory:
+    /// completing the objective is then the mainline.
+    ///
+    /// **Carries the owning quest id, and that is load-bearing** (spec-0051
+    /// §8.6). The DSL side always carried it
+    /// (`EffectRootOwner::ObjectiveComplete { quest, objective }`) and this
+    /// adapter used to drop it, so the only reading available here was "an
+    /// objective completed, therefore forced". Once a quest may be optional
+    /// that reading is unsound in the direction that ships: it credits an
+    /// `open-gate` and lays footing from a bundle the party may never fire.
+    ObjectiveComplete {
+        /// The quest whose `on_objective_complete` map this bundle sits in.
+        quest: &'a str,
+        /// The objective whose completion fires it.
+        objective: &'a str,
+    },
+    /// A quest's `on_complete` — fires at the quest's completion step. Forced
+    /// when the owning quest is mandatory.
     QuestComplete(&'a Quest),
     /// An environment `triggers[].effects` — proximity/interaction-fired, so it has
     /// no step of its own; conservatively rooted at step 0. Carries the trigger,
@@ -4799,8 +4814,11 @@ pub(crate) fn for_each_effect_root<'a>(
 ) -> delvewright_dsl::RootBinding {
     delvewright_dsl::for_each_effect_root(campaign, &mut |site, list| {
         let root = match site.owner {
-            delvewright_dsl::EffectRootOwner::ObjectiveComplete { objective, .. } => {
-                EffectRoot::ObjectiveComplete(objective)
+            delvewright_dsl::EffectRootOwner::ObjectiveComplete { quest, objective } => {
+                EffectRoot::ObjectiveComplete {
+                    quest: quest.id.as_str(),
+                    objective,
+                }
             }
             delvewright_dsl::EffectRootOwner::QuestComplete { quest } => {
                 EffectRoot::QuestComplete(quest)
@@ -4970,6 +4988,16 @@ fn collect_region_events(
     obj_step: &BTreeMap<String, usize>,
     ways: &crate::ways::WayStaging,
 ) -> Vec<RegionEvent> {
+    // spec-0051 §8.6: the skippable-root class, widened. A bundle rooted in an
+    // OPTIONAL quest is one the party may never fire, so it seals like a trap
+    // payload and lays no footing the forced path may stand on — the same rule
+    // with a wider denominator, read off the ONE authority
+    // (`QuestPlanContent::optional`) rather than a private `!q.mandatory`.
+    //
+    // This is the direction that ships if it is wrong: crediting an optional
+    // quest's `clear-region` as forced proves a leg walkable across a hole the
+    // party only opens by playing content nobody makes them play.
+    let optional = campaign.quest_plan.content.optional();
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
         // How a firing is BLAMED when it turns out to be unforced. Worded off the
@@ -4999,14 +5027,26 @@ fn collect_region_events(
                 "a shop offer's effects at `{}`, which fire only if the party buys it",
                 site.path
             ),
-            // Not reachable: these three are forced, and a forced event carries no
-            // blame. Worded rather than `unreachable!()` so a later root added to
-            // the optional list cannot panic the compiler.
-            EffectRoot::ObjectiveComplete(_)
-            | EffectRoot::QuestComplete(_)
-            | EffectRoot::Trigger(_) => format!("the effect bundle at `{}`", site.path),
+            // The two DAG roots reach this arm only when their owning quest is
+            // OPTIONAL (spec-0051 §8.6) — while it is mandatory they are forced
+            // and a forced event carries no blame. Naming the quest is the whole
+            // value: "a beat nobody has to play" is unactionable, and "the
+            // completion of optional quest `quest/crypt`" sends the author to
+            // the strand that laid the footing.
+            EffectRoot::ObjectiveComplete { quest, objective } => format!(
+                "the `{objective}` bundle of optional quest `{quest}`, which the party may \
+                 never play"
+            ),
+            EffectRoot::QuestComplete(q) => format!(
+                "the completion of optional quest `{}`, which the party may never play",
+                q.id
+            ),
+            // Genuinely not reachable: an environment trigger is forced at every
+            // version. Worded rather than `unreachable!()` so a later root added
+            // to the optional list cannot panic the compiler.
+            EffectRoot::Trigger(_) => format!("the effect bundle at `{}`", site.path),
         };
-        let (fire_step, forced) = firing_of(&site.root, obj_step);
+        let (fire_step, forced) = firing_of(&site.root, obj_step, &optional);
         // The three spellings of one write. A gate names a prefab gate anchor and
         // takes that anchor's box and its `replace`-filtered clear; a
         // `fill-region`/`clear-region` names its own anchor-centred box and clears
@@ -5096,10 +5136,20 @@ fn collect_region_events(
 /// far side — are unforced: every shortcut gate is registered sealed at step 0 so
 /// the delve is proven completable with no shortcut ever taken, which is exactly
 /// "the party may never fire this bundle".
-fn firing_of(root: &EffectRoot<'_>, obj_step: &BTreeMap<String, usize>) -> (usize, bool) {
+fn firing_of(
+    root: &EffectRoot<'_>,
+    obj_step: &BTreeMap<String, usize>,
+    optional: &BTreeSet<&str>,
+) -> (usize, bool) {
     match root {
-        EffectRoot::ObjectiveComplete(oid) => (obj_step.get(*oid).copied().unwrap_or(0), true),
-        EffectRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
+        EffectRoot::ObjectiveComplete { quest, objective } => (
+            obj_step.get(*objective).copied().unwrap_or(0),
+            !optional.contains(*quest),
+        ),
+        EffectRoot::QuestComplete(q) => (
+            quest_complete_step(q, obj_step),
+            !optional.contains(q.id.as_str()),
+        ),
         EffectRoot::Trigger(_) => (0, true),
         EffectRoot::TrapPayload(_)
         | EffectRoot::DialogueRespawn
@@ -5120,12 +5170,15 @@ pub(crate) fn collect_way_openings(
     campaign: &Campaign,
     obj_step: &BTreeMap<String, usize>,
 ) -> Vec<crate::ways::WayOpening> {
+    // The same widening as `collect_region_events`, for the same reason: an
+    // `open-way` fired from an optional quest is a way the party may never open.
+    let optional = campaign.quest_plan.content.optional();
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
         let Some((piece, name)) = e.way_write() else {
             return;
         };
-        let (fire_step, forced) = firing_of(&site.root, obj_step);
+        let (fire_step, forced) = firing_of(&site.root, obj_step, &optional);
         out.push(crate::ways::WayOpening {
             prefab_id: piece.as_str().to_string(),
             way: name.to_string(),

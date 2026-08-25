@@ -14,7 +14,7 @@ test, rather than a mocked-out function that a refactor could silently re-bind.
 
 ## Binding count for the build-output ladder
 
-45 tests here, of which 11 cover `decide_target`. Run against the version that
+61 tests here, of which 11 cover `decide_target`. Run against the version that
 preceded it, **10 of those 11 go red** — which is what says they bind to the new
 behaviour rather than passing for an unrelated reason.
 
@@ -28,6 +28,17 @@ at 258 GiB free. It is the UNRUN vacuity mode, not a threshold, and the
 threshold was the second defect rather than the first: on the fixture the manual
 path deleted the output of a tree that was being built in at that moment,
 because it carried no liveness check at all.
+
+## Binding count for the lease rung
+
+16 of the tests here cover what ENDS a lease, and every one of them goes red on
+the version that preceded them, because that version had no answer: a lease was
+written by every dispatch and released by nothing, so the top rung of the ladder
+held every object and each rung below it was unreachable for every tree the
+dispatch script had ever made. The refusals in that group are written against a
+tree whose lease is asserted GONE before the refusal is checked — otherwise the
+lease itself would be producing the KEEP and the test would prove nothing, which
+is the reassuring direction.
 """
 
 from __future__ import annotations
@@ -336,15 +347,357 @@ def lease(fx, path, *extra):
 
 
 def test_a_lease_is_honoured_over_a_merged_branch_and_reported(fx, tmp_path):
+    """Honoured AND reported — and the second half was the one that was missing.
+
+    This test carried `and_reported` in its name and asserted only that the row
+    said `LEASED`. The rung it covers returned before asking the remote anything,
+    so the property both this file's subject and `docs/reference/tools.md`
+    promised — *a lease over a merged branch is reported* — did not exist, and
+    the test named for it was green. Thirty-six leases on the machine printed one
+    indistinguishable line and eight of them were over branches already merged.
+    """
     wt = fx.worktree("wt-leased", "landed")
     lease(fx, wt, "--holder", "worker-a", "--reason", "still measuring")
     bindir = fake_gh(tmp_path, MERGED)
 
-    v, why = verdict_for(sweep(fx, bindir), wt)
+    out = sweep(fx, bindir)
+    v, why = verdict_for(out, wt)
     assert v == "KEEP" and "LEASED by worker-a" in why
+    merged_pr = MERGED[0]["number"]
+    assert "SPENT" in why and f"#{merged_pr}" in why and "MERGED" in why
+    assert "REPORTED, not resolved" in why
+    # and the act that ends it, named where the row is read
+    assert "--after-merge landed --apply" in out
 
     subprocess.run(["python3", str(TOOL), "--release", str(wt)], capture_output=True, check=True)
     assert verdict_for(sweep(fx, bindir), wt)[0] == "RECLAIM"
+
+
+def test_a_lease_over_a_branch_the_remote_still_holds_open_is_not_called_spent(fx, tmp_path):
+    """The report is a claim about the remote, so it must move with the remote."""
+    wt = fx.worktree("wt-leased", "inflight")
+    lease(fx, wt, "--holder", "worker-a")
+    rows = [{"number": 12, "state": "OPEN", "headRefName": "inflight", "title": "t"}]
+    out = sweep(fx, fake_gh(tmp_path, rows))
+    v, why = verdict_for(out, wt)
+    assert v == "KEEP" and "LEASED by worker-a" in why
+    assert "SPENT" not in why
+    assert "0 spent" in out
+
+
+def test_a_lease_is_never_called_spent_on_a_remote_that_could_not_be_asked(fx, tmp_path):
+    """`gh` down is not `no pull request`, and neither is it `landed`.
+
+    A kept row must never print a claim about the remote out of a question the
+    remote never answered.
+    """
+    wt = fx.worktree("wt-leased", "landed")
+    lease(fx, wt, "--holder", "worker-a")
+    out = sweep(fx, broken_gh(tmp_path))
+    v, why = verdict_for(out, wt)
+    assert v == "KEEP" and "LEASED by worker-a" in why
+    assert "SPENT" not in why and "LANDED" not in why
+    assert "could not be asked" in why
+
+
+def test_a_lease_is_counted_spent_even_when_a_higher_rung_answers_first(fx, tmp_path):
+    """The count is over LEASES, never over "leases whose tree reached rung 3".
+
+    This tree is kept by UNPUSHED, which answers before the lease rung is ever
+    reached — so `wt.exists()` would pass whether or not the lease was probed,
+    and the only thing that moves is the number. That is the isolating
+    perturbation, and it is the one that catches the real defect: asking at the
+    rung reported 2 spent leases on a machine holding 8, because five of the
+    eight sat over trees carrying commits on no remote. A numerator taken over
+    one population and printed against another's denominator reads as coverage
+    and understates in the reassuring direction.
+    """
+    wt = fx.worktree("wt-leased", "landed")
+    (wt / "work.txt").write_text("x\n", encoding="utf-8")
+    git(wt, "add", "-A")
+    git(wt, "commit", "-m", "on no remote")
+    lease(fx, wt, "--holder", "worker-a")
+
+    out = sweep(fx, fake_gh(tmp_path, MERGED))
+    v, why = verdict_for(out, wt)
+    assert v == "KEEP" and "UNPUSHED" in why, "rung 1 must still be the one that answers"
+    assert "1 lease(s) held (1 spent)" in out
+    assert "--after-merge landed --apply" in out
+
+
+def test_the_sweep_never_releases_a_lease_even_over_a_merged_branch(fx, tmp_path):
+    """The refusal that keeps this from becoming `quiet means dead`.
+
+    The perturbation is chosen so that only the thing under test could catch it:
+    the assertion is on the LEASE FILE, which nothing but a release path removes.
+    A sweep that read a landed pull request as permission to drop the claim would
+    be resolving on its own reading of how finished something looks, which is the
+    judgement that once deleted a running worker's directories.
+    """
+    wt = fx.worktree("wt-leased", "landed")
+    lease(fx, wt, "--holder", "worker-a")
+    admin = pathlib.Path(git(wt, "rev-parse", "--git-dir").strip())
+    if not admin.is_absolute():
+        admin = wt / admin
+    out = sweep(fx, fake_gh(tmp_path, MERGED), "--apply")
+    assert (admin / "dw-lease.json").exists(), "a sweep released a lease"
+    assert wt.exists()
+    assert "1 lease(s) held (1 spent)" in out
+
+
+# ---------------------------------------------------------------------------
+# what ENDS a lease
+#
+# Before this, nothing did. `tools/worktree-new.sh` claims every tree it makes
+# and prints "release it at the merge"; nothing invoked `--release`, so the
+# sentence WAS the mechanism — the UNRUN vacuity mode. `--after-merge`, the entry
+# point that exists to run in the same breath as a merge, was itself blocked by
+# the lease handed out at dispatch, so the top rung held every object and every
+# rung below it was unreachable for every tree the dispatch script had created.
+# Measured on this machine at the time: 36 leases, 0 releases, 8 of them over a
+# branch the remote had already merged.
+# ---------------------------------------------------------------------------
+
+
+def after_merge(fx, bindir, branch, *extra):
+    env = dict(os.environ)
+    env["PATH"] = f"{bindir}{os.pathsep}{env['PATH']}"
+    p = subprocess.run(
+        ["python3", str(TOOL), "--repo", str(fx.repo), "--after-merge", branch, *extra],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    return p.stdout + p.stderr
+
+
+def lease_file(wt):
+    admin = pathlib.Path(git(wt, "rev-parse", "--git-dir").strip())
+    if not admin.is_absolute():
+        admin = wt / admin
+    return admin / "dw-lease.json"
+
+
+def test_the_merge_ends_the_lease_it_was_taken_against(fx, tmp_path):
+    wt = fx.worktree("wt-leased", "landed")
+    lease(fx, wt, "--holder", "worker-a")
+    out = after_merge(fx, fake_gh(tmp_path, MERGED), "landed", "--apply")
+    assert "LEASE released" in out
+    assert not wt.exists(), out
+
+
+def test_a_dry_run_shows_the_verdict_behind_the_lease_and_ends_nothing(fx, tmp_path):
+    """A dry run must show the ladder's answer, not the lease standing in front."""
+    wt = fx.worktree("wt-leased", "landed")
+    lease(fx, wt, "--holder", "worker-a")
+    f = lease_file(wt)
+    out = after_merge(fx, fake_gh(tmp_path, MERGED), "landed")
+    assert "WOULD BE released" in out
+    assert "RECLAIM" in out
+    assert f.exists(), "a dry run deleted a lease file"
+    assert wt.exists()
+
+
+def test_the_merge_does_not_end_a_lease_the_remote_has_not_landed(fx, tmp_path):
+    """Naming the branch only SELECTS; the key is the remote's own verdict.
+
+    The isolating assertion is the lease file: with an open pull request the tree
+    is kept by the authority rung too, so `wt.exists()` would pass whether or not
+    the release fired. Only a release path can remove that file.
+    """
+    wt = fx.worktree("wt-leased", "inflight")
+    lease(fx, wt, "--holder", "worker-a")
+    f = lease_file(wt)
+    rows = [{"number": 12, "state": "OPEN", "headRefName": "inflight", "title": "t"}]
+    out = after_merge(fx, fake_gh(tmp_path, rows), "inflight", "--apply")
+    open_pr = rows[0]["number"]
+    assert "LEASE KEPT" in out and f"#{open_pr} is OPEN" in out
+    assert f.exists(), "a lease was ended over a branch that had not landed"
+    assert wt.exists()
+
+
+def test_the_merge_does_not_end_a_lease_on_a_remote_it_could_not_ask(fx, tmp_path):
+    wt = fx.worktree("wt-leased", "landed")
+    lease(fx, wt, "--holder", "worker-a")
+    f = lease_file(wt)
+    out = after_merge(fx, broken_gh(tmp_path), "landed", "--apply")
+    assert "LEASE KEPT" in out and "not permission" in out
+    assert f.exists() and wt.exists()
+
+
+def test_ending_the_lease_is_not_permission_dirty_still_refuses(fx, tmp_path):
+    """The perturbation only rung 1 can catch.
+
+    The lease is gone by construction here — asserted, not assumed — so nothing
+    above `DIRTY` is left to produce the refusal. If the release were treated as
+    permission this tree would be deleted with uncommitted work in it.
+    """
+    wt = fx.worktree("wt-leased", "landed")
+    lease(fx, wt, "--holder", "worker-a")
+    (wt / "unsaved.txt").write_text("x\n", encoding="utf-8")
+    f = lease_file(wt)
+    out = after_merge(fx, fake_gh(tmp_path, MERGED), "landed", "--apply")
+    assert not f.exists(), "the lease was not actually released, so this proves nothing"
+    assert "DIRTY" in out
+    assert wt.exists() and (wt / "unsaved.txt").exists()
+
+
+def test_ending_the_lease_is_not_permission_unpushed_still_refuses(fx, tmp_path):
+    wt = fx.worktree("wt-leased", "landed")
+    lease(fx, wt, "--holder", "worker-a")
+    (wt / "work.txt").write_text("x\n", encoding="utf-8")
+    git(wt, "add", "-A")
+    git(wt, "commit", "-m", "unpushed")
+    f = lease_file(wt)
+    out = after_merge(fx, fake_gh(tmp_path, MERGED), "landed", "--apply")
+    assert not f.exists(), "the lease was not actually released, so this proves nothing"
+    assert "UNPUSHED" in out
+    assert wt.exists()
+
+
+def test_ending_the_lease_is_not_permission_a_link_target_still_refuses(fx, tmp_path):
+    """The reachability key survives the release too — liveness in a symlink."""
+    wt = fx.worktree("wt-leased", "landed")
+    lease(fx, wt, "--holder", "worker-a")
+    reader = fx.worktree("wt-reader", "inflight")
+    (reader / "campaigns").symlink_to(wt)
+    f = lease_file(wt)
+    out = after_merge(fx, fake_gh(tmp_path, MERGED), "landed", "--apply")
+    assert not f.exists(), "the lease was not actually released, so this proves nothing"
+    assert "LINK TARGET" in out
+    assert wt.exists()
+
+
+def test_a_leased_detached_tree_is_told_what_ends_its_lease(fx, tmp_path):
+    """A detached tree has no branch, so no merge can end its lease.
+
+    `--tree` is the operator's naming, and it is not a release: the run must say
+    so rather than doing nothing and exiting zero, which is the silent no-op this
+    tool refuses everywhere else.
+    """
+    pinned = fx.worktree("content-pin", detached=True)
+    lease(fx, pinned, "--holder", "planner-x")
+    bindir = fake_gh(tmp_path, [])
+    env = dict(os.environ)
+    env["PATH"] = f"{bindir}{os.pathsep}{env['PATH']}"
+    p = subprocess.run(
+        ["python3", str(TOOL), "--repo", str(fx.repo), "--tree", str(pinned), "--apply"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert pinned.exists()
+    assert "LEASED by planner-x" in p.stdout
+    assert f"--release {pinned}" in p.stdout
+
+
+def test_the_hint_names_the_rung_that_actually_answered(fx, tmp_path):
+    """A hint that names the wrong cause is worse than none, being actionable.
+
+    This tree is leased AND dirty, and rung 1 is what keeps it. Telling its
+    operator "the lease is what is holding it" would send them to release a claim
+    that is not the obstacle, and the tree would still be kept afterwards.
+    """
+    wt = fx.worktree("wt-leased", "landed")
+    lease(fx, wt, "--holder", "worker-a")
+    (wt / "unsaved.txt").write_text("x\n", encoding="utf-8")
+    out = after_merge(fx, fake_gh(tmp_path, []), "landed")
+    assert "DIRTY" in out
+    assert "the lease is what is holding it" not in out
+
+    # and where the lease IS the rung that answered, the hint appears
+    (wt / "unsaved.txt").unlink()
+    out = after_merge(fx, fake_gh(tmp_path, []), "landed")
+    assert "the lease is what is holding it" in out
+    assert f"--release {wt}" in out
+
+
+def test_the_lease_binding_count_moves_with_the_leases(fx, tmp_path):
+    """A stated count that is a constant is green on a gate that binds nothing.
+
+    Perturbed at every value it can take: none held, all held and all spent, then
+    one ended at the merge — and the pair of numbers moves each time, with the
+    tree count moving behind it.
+    """
+    bindir = fake_gh(fx.root, MERGED + [{"number": 13, "state": "MERGED",
+                                         "headRefName": "landed2", "title": "t"}])
+    a = fx.worktree("wt-a", "landed")
+    b = fx.worktree("wt-b", "landed2")
+
+    # none held: the ladder below is reachable for both. The pair is printed
+    # unconditionally — a count that appears only when it is non-zero cannot be
+    # read as a binding, because its absence and a zero look the same.
+    out = sweep(fx, bindir)
+    assert "0 lease(s) held (0 spent)" in out
+    assert "2 tree(s) reclaimable" in out
+
+    # both held, both spent: the top rung has swallowed both objects
+    lease(fx, a, "--holder", "worker-a")
+    lease(fx, b, "--holder", "worker-b")
+    out = sweep(fx, bindir)
+    assert "2 lease(s) held (2 spent)" in out
+    assert "0 tree(s) reclaimable" in out
+    assert "FINDING — 2 SPENT LEASE(S)" in out
+
+    # a dry run at the merge moves nothing at all
+    assert "WOULD BE released" in after_merge(fx, bindir, "landed")
+    out = sweep(fx, bindir)
+    assert "2 lease(s) held (2 spent)" in out
+
+    # one ended by the event that ends it, and the population moves behind it
+    assert "LEASE released" in after_merge(fx, bindir, "landed", "--apply")
+    out = sweep(fx, bindir)
+    assert "1 worktree(s) examined" in out
+    assert "1 lease(s) held (1 spent)" in out
+
+
+def test_the_zero_stays_zero_when_every_lease_is_genuinely_live(fx, tmp_path):
+    """The other direction, which is the one that makes the count worth reading.
+
+    Two claimed trees whose pull requests the remote still holds OPEN: the sweep
+    must report the leases, report NONE of them spent, reclaim nothing, and end
+    nothing at the merge either.
+    """
+    rows = [
+        {"number": 21, "state": "OPEN", "headRefName": "live-a", "title": "t"},
+        {"number": 22, "state": "OPEN", "headRefName": "live-b", "title": "t"},
+    ]
+    bindir = fake_gh(fx.root, rows)
+    a = fx.worktree("wt-a", "live-a")
+    fx.worktree("wt-b", "live-b")
+    lease(fx, a, "--holder", "worker-a")
+    lease(fx, fx.scratch / "wt-b", "--holder", "worker-b")
+
+    out = sweep(fx, bindir, "--apply")
+    assert "2 lease(s) held (0 spent)" in out
+    assert "0 tree(s) reclaimable" in out
+    assert "SPENT LEASE(S)" not in out
+    assert a.exists() and (fx.scratch / "wt-b").exists()
+    assert lease_file(a).exists()
+
+    assert "LEASE KEPT" in after_merge(fx, bindir, "live-a", "--apply")
+    assert lease_file(a).exists() and a.exists()
+
+
+def test_a_spent_lease_is_named_on_the_build_output_it_is_holding(fx, tmp_path):
+    """The disk is in the target rows, so that is where the reason must be legible."""
+    wt = fx.worktree("wt-leased", "landed")
+    # The tree must be CLEAN for the lease rung to be the one that decides it —
+    # `target/` is untracked otherwise and rung 1 answers first, which is the
+    # ladder working, not a fixture detail worth hiding.
+    (wt / ".gitignore").write_text("target/\n", encoding="utf-8")
+    git(wt, "add", "-A")
+    git(wt, "commit", "-m", "ignore build output")
+    git(wt, "push")
+    make_target(wt)
+    lease(fx, wt, "--holder", "worker-a")
+    out = sweep(fx, fake_gh(tmp_path, MERGED))
+    rows = out.splitlines()
+    target_row = [
+        rows[i + 1] for i, ln in enumerate(rows) if ln.strip().endswith(str(wt / "target"))
+    ]
+    assert target_row, out
+    assert "SPENT" in target_row[0] and "--after-merge landed --apply" in target_row[0]
 
 
 def test_an_elapsed_lease_is_still_honoured(fx, tmp_path):

@@ -87,6 +87,33 @@ exists to refuse. An expired lease is reported, and a lease sitting over a merge
 branch is reported too — never silently resolved, because "this looks finished"
 is exactly the judgement that deleted a running worker's directories.
 
+## What ENDS a lease, and why it could not be a sweep
+
+A claim nothing can release is not a lease; it is a permanent exemption. Every
+tree `tools/worktree-new.sh` creates is claimed at dispatch, and the only
+releaser was a `--release` flag nothing invoked — the script printed "release it
+at the merge" and that sentence was the whole mechanism, which is the UNRUN
+vacuity mode (`CLAUDE.md`: a doc line is not an invocation). Measured before the
+repair: thirty-six leases, no releases, and eight of them over a branch the
+remote had already merged. The top rung had swallowed every object, so nothing
+below it — the reachability key, the pull-request authority, the whole argument
+about what counts as permission — could be reached for any of those trees, or
+for the forty-five `target/` directories they hold.
+
+The event that ends a lease is the MERGE, so `--after-merge BRANCH` is where the
+release is bound: the one entry point that already exists to be run in the same
+breath as a merge. It is gated on the same un-forgeable key the reclaim rung
+rests on — the remote's own MERGED or CLOSED verdict for that exact branch, not
+the operator having named it, which only selects. A live dispatch cannot merge
+its own pull request. Releasing the lease is not permission to delete: every
+other rung is re-run afterwards and every one of them still outranks it.
+
+The SWEEP still releases nothing, ever. It reports which leases are spent, states
+how many it holds and how many of those the remote has landed, and prints the act
+that ends each. A detached tree has no branch for the remote to hold a verdict
+about, so the only thing that ends its lease is an operator's explicit
+`--release`, which the narrowed run names rather than doing.
+
 The lease lives in the worktree's git admin directory
 (`.git/worktrees/<name>/dw-lease.json`), not in the working tree: a file in the
 working tree would make it dirty, which conflates a claim with a finding. Git
@@ -262,6 +289,15 @@ class Worktree:
         self.dirty_files = 0
         self.unpushed = 0
         self.lease: dict | None = None
+        # The pull request, if the remote holds a TERMINAL one for this tree's
+        # branch while a lease is still held over it. Set only by the lease rung,
+        # and only from the remote's own answer: it is the fact that the event
+        # this lease was taken against has already happened.
+        self.lease_spent: dict | None = None
+        # Why the remote could not be asked about this tree's branch, if it
+        # could not. Kept apart from `lease_spent`: "not landed" and "not asked"
+        # are different facts and a row must never print one as the other.
+        self.lease_probe_error: str = ""
         self.inbound: list[Path] = []  # symlinks pointing INTO this tree
         self.pr: dict | None = None
         self.verdict = "KEEP"
@@ -500,6 +536,66 @@ def write_lease(wt_path: Path, holder: str, hours: int, reason: str) -> str:
     return str(d / LEASE_FILE)
 
 
+def drop_lease(wt_path: Path) -> bool:
+    """Delete the lease file over `wt_path`. True if one was there."""
+    d = admin_dir(wt_path)
+    f = (d / LEASE_FILE) if d else None
+    if f is None or not f.exists():
+        return False
+    f.unlink()
+    return True
+
+
+def probe_lease(wt: "Worktree", authority: Authority) -> None:
+    """Has the event this lease was taken against already happened?
+
+    Asked of EVERY lease, and that is the whole point of the function existing
+    separately from the verdict ladder. "Is this lease spent" is a fact about the
+    LEASE — about whether the remote has landed the branch it was taken for — and
+    not a fact about which rung of the ladder happens to answer about the tree
+    first. The first version of this asked at the lease rung, which is reached
+    only by a tree that is clean, fully pushed and unreferenced; on this machine
+    that reported **2** spent leases where an independent census of the same
+    thirty-six counted **8**, because five of the eight sit over trees carrying
+    commits on no remote and rung 1 answers about those before rung 3 is reached.
+
+    That is a numerator computed over one population and printed against the
+    denominator of another, which is worse than no count at all: it reads as
+    coverage, it is honest about the trees it examined, and it understates in the
+    direction that makes the backlog look smaller than it is. It was caught only
+    because the figure disagreed with an independent observer — which is the one
+    reason every count here states what it is a count OF.
+
+    A tree with no branch is not asked about and is not an error: the remote holds
+    no pull-request state about a detached checkout, so no merge can end its lease
+    and only an operator's `--release` can.
+    """
+    if not wt.lease or wt.branch is None:
+        return
+    pr, pr_error = authority.for_branch(wt.branch)
+    if pr_error:
+        wt.lease_probe_error = pr_error
+    elif pr is not None and pr.get("state") in {"MERGED", "CLOSED"}:
+        wt.lease_spent = pr
+
+
+def lease_spent_note(wt: "Worktree") -> str:
+    """The clause that says a lease is being honoured over work that has landed.
+
+    One authority for the wording, reached from three places — the tree row, the
+    `target/` row, and the protected-path reason `main` builds before the target
+    ladder runs. The target ladder is consulted through TWO paths (a protected
+    path wins before `decide_target` ever looks at the tree), and a note added to
+    only one of them is invisible in exactly the rows that hold the disk.
+    """
+    if not wt.lease_spent:
+        return ""
+    return (
+        f" — SPENT (#{wt.lease_spent.get('number')} {wt.lease_spent.get('state')});"
+        f" ends at --after-merge {wt.branch} --apply"
+    )
+
+
 def lease_is_expired(lease: dict) -> bool:
     hours = lease.get("hours") or 0
     created = lease.get("created") or 0
@@ -641,12 +737,50 @@ def decide(wt: Worktree, *, self_paths: set[Path], authority: Authority) -> None
         wt.reason = f"LINK TARGET — {len(wt.inbound)} live reference(s) point into it: {names}{more}"
         return
 
-    # 3. A dispatch has claimed it. Honoured even when it looks stale.
+    # 3. A dispatch has claimed it. Honoured even when it looks stale — but
+    #    honouring it is not the same as saying nothing about it.
+    #
+    #    This rung used to return here without ever asking anything, and that is
+    #    what made the top of the ladder opaque as well as absorbing. Both this
+    #    file's own header and `docs/reference/tools.md` promised that "a lease
+    #    over a merged branch is reported, never silently resolved"; the code
+    #    asked no such question, and the test named for the property asserted
+    #    only that the row said LEASED. So every one of thirty-six leases on this
+    #    machine printed one indistinguishable line, and an operator could not
+    #    tell the live claim from the spent one. A rung that swallows every
+    #    object and then declines to say which of them it is protecting from
+    #    what is a gate reporting a binding count it has not established.
+    #
+    #    So the remote IS asked, about this tree's own branch, and the answer is
+    #    REPORTED. The verdict does not move: a lease is honoured, and the act
+    #    that ends one is the merge (`--after-merge`), never a sweep's reading of
+    #    how finished something looks. What changes is that the report now names
+    #    which leases are spent and what ends them.
+    #
+    #    `probe_lease` has already asked, for EVERY lease rather than for the
+    #    ones that happen to arrive here — see its docstring for why the
+    #    difference is the whole value of the count.
     if wt.lease:
         holder = wt.lease.get("holder", "?")
-        stale = " (lease window has elapsed — REPORTED, not resolved)" if lease_is_expired(wt.lease) else ""
+        notes: list[str] = []
+        if lease_is_expired(wt.lease):
+            notes.append("lease window has elapsed")
+        if wt.lease_probe_error:
+            # Never printed as "not landed": that would be a claim about the
+            # remote made out of a question the remote never answered.
+            notes.append(f"the remote could not be asked about its branch ({wt.lease_probe_error})")
+        elif wt.lease_spent:
+            pr = wt.lease_spent
+            wt.pr = pr
+            notes.append(
+                f"SPENT — the remote says pull request #{pr.get('number')} is "
+                f"{pr.get('state')}, so the event this lease was taken against has "
+                f"happened; end it at the merge: --after-merge {wt.branch} --apply"
+            )
         wt.verdict = "KEEP"
-        wt.reason = f"LEASED by {holder}{stale}"
+        wt.reason = f"LEASED by {holder}"
+        if notes:
+            wt.reason += " (" + "; ".join(notes) + " — REPORTED, not resolved)"
         return
 
     # 4. Self and git's own lock.
@@ -886,7 +1020,7 @@ def decide_target(
     if td.tree is not None:
         if td.tree.lease:
             td.verdict = "KEEP"
-            td.reason = f"LEASED by {td.tree.lease.get('holder', '?')}"
+            td.reason = f"LEASED by {td.tree.lease.get('holder', '?')}" + lease_spent_note(td.tree)
             return
         if td.tree.inbound:
             td.verdict = "KEEP"
@@ -1062,6 +1196,12 @@ def sweep(
 
     for rs in sweeps:
         rs.authority = Authority(repo_slug(rs.path), timeout=gh_timeout)
+        # Every lease is probed BEFORE the ladder runs, so the spent count is a
+        # count over leases rather than over "leases whose tree happened to reach
+        # rung 3". The answers are cached, so a branch the ladder asks about
+        # later costs nothing twice.
+        for wt in rs.trees:
+            probe_lease(wt, rs.authority)
         for wt in rs.trees:
             decide(wt, self_paths=self_paths, authority=rs.authority)
         rs.stale_branches = harness_branches(rs.path)
@@ -1154,6 +1294,33 @@ def render(
                 reclaimed += 1
             else:
                 kept += 1
+        # The top rung states its own binding, computed from the trees rather
+        # than written down beside them. Without it a reader sees N identical
+        # `LEASED by …` rows and cannot tell how much of the ladder below has
+        # been reached at all — which is how a rung that absorbed every object
+        # on this machine went unnoticed while the tool underneath it was
+        # correct in every reviewable way.
+        leased = [wt for wt in rs.trees if wt.lease]
+        spent = [wt for wt in leased if wt.lease_spent]
+        if leased:
+            print(
+                f"    leases: {len(leased)} of {len(rs.trees)} tree(s) claimed; "
+                f"{len(spent)} over a branch the remote says has LANDED",
+                file=out,
+            )
+        if spent:
+            print(
+                f"    FINDING — {len(spent)} SPENT LEASE(S). Each is honoured here and ends\n"
+                "    at the merge, which is the event it was taken against:",
+                file=out,
+            )
+            for wt in spent:
+                print(
+                    f"      --after-merge {wt.branch} --apply"
+                    f"   (#{wt.lease_spent.get('number')} "
+                    f"{wt.lease_spent.get('state')}, held by {wt.lease.get('holder', '?')})",
+                    file=out,
+                )
         if rs.stale_branches:
             print(
                 f"    harness throwaway branches contained in origin/main: "
@@ -1207,13 +1374,24 @@ def render(
             file=out,
         )
 
+    all_leased = [wt for rs in sweeps for wt in rs.trees if wt.lease]
+    all_spent = [wt for wt in all_leased if wt.lease_spent]
     print(
         f"\n  binding: {len(sweeps)} repositor(y|ies) enumerated, {examined} worktree(s) examined, "
         f"{index.examined} symlink(s) resolved across {len(index.roots)} scan root(s), "
         f"{len(tdirs)} target/ director(y|ies) judged, "
+        f"{len(all_leased)} lease(s) held ({len(all_spent)} spent), "
         f"{reclaimed} tree(s) reclaimable, {kept} kept, {len(t_reclaim)} target(s) reclaimable",
         file=out,
     )
+    if all_spent:
+        print(
+            f"  {len(all_spent)} of {len(all_leased)} lease(s) sit over a branch the remote has\n"
+            "  already landed. A sweep never resolves one — the merge does. Until each is\n"
+            "  ended, the rungs below the lease are unreachable for that tree AND its build\n"
+            "  output, so a zero above is a fact about the top rung, not about the ladder.",
+            file=out,
+        )
     if examined == 0:
         print(
             "  BINDING ZERO — no worktree was examined, so this run proves nothing.\n"
@@ -1279,10 +1457,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.release:
         p = real(args.release)
-        d = admin_dir(p)
-        f = (d / LEASE_FILE) if d else None
-        if f and f.exists():
-            f.unlink()
+        if drop_lease(p):
             print(f"lease released on {p}")
         else:
             print(f"no lease on {p}")
@@ -1316,7 +1491,7 @@ def main(argv: list[str] | None = None) -> int:
             if wt.verdict == "RECLAIM":
                 continue
             if wt.lease:
-                held = f"LEASED by {wt.lease.get('holder', '?')}"
+                held = f"LEASED by {wt.lease.get('holder', '?')}" + lease_spent_note(wt)
                 protected.append((wt.path, held))
                 # A dispatch is given a tree AND a scratch directory beside it,
                 # and a live worker's scratch is never touched — that rule is
@@ -1407,8 +1582,102 @@ def main(argv: list[str] | None = None) -> int:
                 "the last page before treating it as a problem."
             )
             return 1
+
+        # ------------------------------------------------------------------
+        # THE MERGE IS THE EVENT THAT ENDS A LEASE.
+        #
+        # `tools/worktree-new.sh` takes a lease on every tree it creates and
+        # prints "release it at the merge". Nothing invoked `--release`, so that
+        # instruction was a doc line, which is the UNRUN vacuity mode: the top
+        # rung of the ladder claimed every tree the dispatch script had ever
+        # made, and the rungs below it — the ones carrying the whole argument
+        # about what counts as permission to delete — could never be reached.
+        # `--after-merge`, the entry point that exists precisely to be run in the
+        # same breath as a merge, was itself blocked by the lease it had handed
+        # out at dispatch. Thirty-six leases, zero releases, no release path.
+        #
+        # The key is NOT the operator having typed the branch name — that only
+        # selects. It is the same un-forgeable key the reclaim rung already
+        # rests on: the remote's own TERMINAL pull-request state for this exact
+        # branch. `CLAUDE.md`'s sixth vacuity mode asks what an escape hatch
+        # demands and whether the thing it excludes could supply it; a live
+        # dispatch cannot merge its own pull request, so it cannot.
+        #
+        # What this deliberately does NOT do: the SWEEP never releases anything.
+        # A lease sitting over a landed branch is reported by the sweep and
+        # resolved only here, at the merge, by the party performing it. An
+        # expiry that voided a lease would be "quiet means dead" wearing a
+        # timestamp, and a sweep that resolved one on its own reading would be
+        # the judgement that once deleted a running worker's directories.
+        #
+        # Releasing the lease is not permission to delete. Every other rung is
+        # re-run afterwards and every one of them still outranks: dirty and
+        # unpushed above all, then anything pointing into the tree.
+        # ------------------------------------------------------------------
+        self_paths = {real(REPO), real(Path.cwd())}
+        if args.after_merge:
+            for rs, wt in selected:
+                if not wt.lease:
+                    continue
+                pr, pr_error = (
+                    rs.authority.for_branch(args.after_merge)
+                    if rs.authority is not None
+                    else (None, "no pull-request authority exists for this repository")
+                )
+                if pr_error:
+                    print(
+                        f"LEASE KEPT  {wt.path}\n"
+                        f"        the remote could not be asked about {args.after_merge} "
+                        f"({pr_error}); absence of the authority is not permission"
+                    )
+                    continue
+                if pr is None or pr.get("state") not in {"MERGED", "CLOSED"}:
+                    said = (
+                        "holds no pull request for it"
+                        if pr is None
+                        else f"says pull request #{pr.get('number')} is {pr.get('state')}"
+                    )
+                    print(
+                        f"LEASE KEPT  {wt.path}\n"
+                        f"        the remote {said}, so the event that ends this lease "
+                        f"has not happened"
+                    )
+                    continue
+                verb = "released" if args.apply else "WOULD BE released (dry run)"
+                print(
+                    f"LEASE {verb}  {wt.path}\n"
+                    f"        held by {wt.lease.get('holder', '?')}; pull request "
+                    f"#{pr.get('number')} is {pr.get('state')} on the remote, which is the "
+                    f"event this lease was taken against. Every other key is re-checked below."
+                )
+                if args.apply:
+                    drop_lease(wt.path)
+                # Set aside in memory either way, so a dry run shows the verdict
+                # the ladder actually reaches once the lease is gone rather than
+                # the one it is standing in front of.
+                wt.lease = None
+                wt.lease_spent = None
+                decide(wt, self_paths=self_paths, authority=rs.authority)
+
         for rs, wt in selected:
             print(f"{wt.verdict}  {wt.path}\n        {wt.label} — {wt.reason}")
+            if wt.verdict == "KEEP" and wt.lease and wt.reason.startswith("LEASED"):
+                # Only when the LEASE is the rung that answered. A tree kept for
+                # being dirty is held by rung 1, and telling its operator that
+                # the lease is what stands in the way would send them to release
+                # a claim that is not the obstacle — a hint that names the wrong
+                # cause is worse than no hint, because it is actionable.
+                #
+                # A narrowed run that does nothing and says nothing about why is
+                # the silent no-op this tool is otherwise careful to refuse. A
+                # detached tree cannot reach `--after-merge` at all: it has no
+                # branch for the remote to hold a verdict about, so the only act
+                # that ends its lease is an operator's explicit one.
+                print(
+                    f"        the lease is what is holding it. `--after-merge` ends a lease "
+                    f"only on the remote's terminal verdict for its branch; to end this one "
+                    f"deliberately: --release {wt.path}"
+                )
         if args.apply and not args.targets_only:
             for rs, wt in selected:
                 if wt.verdict in {"RECLAIM", "PRUNE"}:
