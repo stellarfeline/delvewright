@@ -26,6 +26,10 @@
     "Face::west",
     "Floor.datum",
     "Floor.y",
+    "HorizonBase::valley",
+    "HorizonSpec.base",
+    "HorizonSpec.ratio",
+    "HorizonSpec.rim_height",
     "Identity.cmp",
     "Identity.fact",
     "Identity.measure",
@@ -41,6 +45,7 @@
     "Measure::distance-xz.to",
     "Measure::region-extent",
     "Measure::region-extent.axis",
+    "Node.stations",
     "PlanAxis::x",
     "PlanAxis::z",
     "PlanBox.ceiling",
@@ -67,6 +72,11 @@
     "SitePlanContent.volumes",
     "Stage::detail-plan",
     "Stage::site-plan",
+    "Station.anchor",
+    "Station.kind",
+    "Station.note",
+    "StationKind::gate",
+    "StationKind::point",
     "View.eye",
     "View.id",
     "View.look_at",
@@ -79,11 +89,7 @@
     "VolumeRole::ground",
     "VolumeRole::massif",
     "WorldBox.extent",
-    "WorldBox.min",
-    "HorizonBase::valley",
-    "HorizonSpec.base",
-    "HorizonSpec.ratio",
-    "HorizonSpec.rim_height"
+    "WorldBox.min"
   ],
-  "note": "The gallery's own six places with NO authored geometry: a region, a box each, a seam per connection on a face the two boxes share, the rock and the sky the whole owns, eight comparisons holding all of it to its own written brief — and the blockout the engine derives from all of that. An overlay rather than primary surface because a campaign has ONE placement authority: the primary seats prefab pieces with `areas[]`, and this point of the same campaign hands the space to the plan, which is why it also carries its own world, cast, quest layer and translations. Everything a body meets in it is derived — the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to — so what this overlay proves is that the unchanged quest, gate and shortcut machinery lands on massing nobody authored and does not know the difference. One of its six places is DETAILED (spec-0050): `node/exit` is filled by a piece built to exactly the frame the plan gives that box, and the `detail-plan` that binds it carries no coordinate, no extent and no offset — the frame is computed from the plan. Its walk record sits beside it, because the whole is walked before any part of it is detailed. It is also the only place a horizon that builds terrain can be written, and that is structural rather than a filing decision: a surround rings a declared extent, this plan declares one as its `region`, and a campaign that places areas by hand declares none at all — so `{base: \"valley\"}` on the primary is `DW0855` and has its probe beside this. The mountains here are built around the same rectangle the boxes are allocated inside, which is what makes the landform something a later detail pass cannot move."
+  "note": "The gallery's own six places with NO authored geometry: a region, a box each, a seam per connection on a face the two boxes share, the rock and the sky the whole owns, eight comparisons holding all of it to its own written brief \u2014 and the blockout the engine derives from all of that. An overlay rather than primary surface because a campaign has ONE placement authority: the primary seats prefab pieces with `areas[]`, and this point of the same campaign hands the space to the plan, which is why it also carries its own world, cast, quest layer and translations. Everything a body meets in it is derived \u2014 the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to \u2014 so what this overlay proves is that the unchanged quest, gate and shortcut machinery lands on massing nobody authored and does not know the difference. One of its six places is DETAILED (spec-0050): `node/exit` is filled by a piece built to exactly the frame the plan gives that box, and the `detail-plan` that binds it carries no coordinate, no extent and no offset \u2014 the frame is computed from the plan. Its walk record sits beside it, because the whole is walked before any part of it is detailed. It is also the only place a horizon that builds terrain can be written, and that is structural rather than a filing decision: a surround rings a declared extent, this plan declares one as its `region`, and a campaign that places areas by hand declares none at all \u2014 so `{base: \"valley\"}` on the primary is `DW0855` and has its probe beside this. The mountains here are built around the same rectangle the boxes are allocated inside, which is what makes the landform something a later detail pass cannot move."
 }

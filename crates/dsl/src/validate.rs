@@ -371,11 +371,15 @@ impl AnchorProviders {
 fn station_kind_diag(
     providers: &AnchorProviders,
     name: &str,
-    demands: crate::layout::StationKind,
+    demands: impl Into<Option<crate::layout::StationKind>>,
     what: &str,
     stage: &'static str,
     path: String,
 ) -> Option<Diagnostic> {
+    // `None` is a site that names a LOCATION rather than demanding a shape, and
+    // it is the majority: see `QuestEffect::anchor_refs` for where the line is
+    // drawn and for the gallery content an earlier, stricter draft refused.
+    let demands = demands.into()?;
     let declared = providers.wrong_kind(name, demands)?;
     Some(Diagnostic::error(
         crate::layout::DW_STATION_KIND,
@@ -5818,23 +5822,6 @@ fn v04_checks(
                     t.on.npc_target().map(|n| n.as_str()).unwrap_or("?")
                 ),
             )),
-            // A trigger watches a CELL, so its `at` demands a point. Checked
-            // before resolvability for the reason every other site checks it
-            // first: a station that resolves fine and is the wrong shape is a
-            // different mistake from a name nothing provides, and reporting the
-            // second would send the author looking for a typo that is not there.
-            (true, Some(at))
-                if let Some(f) = station_kind_diag(
-                    &providers,
-                    at,
-                    crate::layout::StationKind::Point,
-                    "an environment trigger's `at`",
-                    "quests",
-                    format!("/content/triggers/{i}/at"),
-                ) =>
-            {
-                d.push(f);
-            }
             (true, Some(at)) if !providers.resolvable(at) => d.push(Diagnostic::error(
                 codes::ANCHOR_UNRESOLVED,
                 "quests",

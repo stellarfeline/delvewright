@@ -33,6 +33,17 @@
         "id": "quest/near-hall",
         "objectives": [
           {
+            "anchor": "anchor/reading-desk",
+            "happening": {
+              "text": "The party reads a label, which is what this hall is for.",
+              "verb": "learns"
+            },
+            "id": "obj/read-the-label",
+            "radius": 2,
+            "title": "Read the label at the desk",
+            "type": "reach-anchor"
+          },
+          {
             "happening": {
               "subject": "npc/factor",
               "text": "The Factor prices what is on the counter.",
@@ -162,6 +173,14 @@
             {
               "flag": "flag/muster-cleared",
               "type": "set-flag"
+            },
+            {
+              "anchor": "anchor/reliquary-grille",
+              "happening": {
+                "text": "The reliquary grille inside the near hall comes up with the muster cleared.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
             }
           ]
         },
