@@ -3093,6 +3093,22 @@ on the **rise** between the two feet heights:
 | ≤ 20/16 (1.25) | a jump; the swept head cell above the source feet must be clear or the entity head-bonks |
 | > 20/16 | **impossible** — a vanilla jump apex is ≈1.2522 blocks, so 1.3125 is unreachable |
 
+**Those three arms are one function, in one crate, and every walk in this engine
+asks it.** `delvewright_dsl::metrics::step_allowed` takes a rise in sixteenths and
+a head-clear answer and returns the verdict above; `compiler::nav` asks it, and so
+does `delvewright_schem::nav`, which is the walk a grammar expansion, an ingested
+structure template and a reassembled zone are read with, and which a prefab's
+contract-reachability gate proves over. The site is `delvewright-dsl` because
+`delvec` is published to crates.io and may only depend on published crates, so the
+rule cannot live in the schem crate and be shared; `dsl` is the one crate both
+already reach, and it is where the three constants already live.
+
+What each caller keeps is the **measurement** of the rise, not the rule. This
+model reads real collision tops and a footprint's highest supporting face. A box
+of cells has neither, so it reads a step of one cell as a full block unless its
+implementor overrides `Voxels::floor_top_16` — a coarser reading of the same
+quantity, wrong only in the direction that **refuses** a step vanilla admits.
+
 This corrects the rule in both directions. It **rejects** what the old full-cube
 model proved: stepping off a bottom slab (feet at `y+0.5`) onto a ledge whose face
 is at `y+2` is a **1.5-block** rise, which the old rule read as an ordinary "+1

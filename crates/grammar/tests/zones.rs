@@ -390,7 +390,7 @@ fn every_zone_is_walkable_end_to_end() {
         let crossed = if falls {
             reachable_with_fall(&out.model, &cells, &entry, &exit)
         } else {
-            connected(&cells, &entry, &exit)
+            connected(&out.model, &cells, &entry, &exit)
         };
         assert!(
             crossed,
@@ -712,7 +712,8 @@ fn the_drowned_ward_is_a_route_both_ways_and_only_through_the_gatehouse() {
     let (entry, exit) = ends(&out.model);
     assert_eq!(entry.len(), 1, "the crossing is one wide: {entry:?}");
     assert!(
-        connected(&cells, &entry, &exit) && connected(&cells, &exit, &entry),
+        connected(&out.model, &cells, &entry, &exit)
+            && connected(&out.model, &cells, &exit, &entry),
         "the drowned ward is not walkable in both directions"
     );
 
@@ -726,7 +727,7 @@ fn the_drowned_ward_is_a_route_both_ways_and_only_through_the_gatehouse() {
         "the plugged zone has no faces, so the red below would be vacuous"
     );
     assert!(
-        !connected(&shut_cells, &shut_entry, &shut_exit),
+        !connected(&shut.model, &shut_cells, &shut_entry, &shut_exit),
         "the guard post's plinth is back and the ward still crosses — either the \
          lane was never what carried the route, or something else does"
     );
@@ -751,7 +752,7 @@ fn the_drowned_ward_is_a_route_both_ways_and_only_through_the_gatehouse() {
         .filter(|c| c[2] == berm.iter().map(|b| b[2]).min().unwrap())
         .collect();
     assert!(
-        connected(&berm, &far, &near),
+        connected(&shut.model, &berm, &far, &near),
         "the plugged crossing does not even cross, so the red above is a broken fixture"
     );
 }
@@ -802,7 +803,7 @@ fn the_keeper_sees_the_whole_drowned_crossing() {
     let cells = standable_cells(&blocked.model);
     let (entry, exit) = ends(&blocked.model);
     assert!(
-        connected(&cells, &entry, &exit),
+        connected(&blocked.model, &cells, &entry, &exit),
         "the obstruction sealed the ward, so the red above is impassability wearing \
          blindness's name"
     );
@@ -856,7 +857,7 @@ fn arena_flank_routes(out: &Expansion, elite: [i32; 3], run: i32) -> usize {
     .filter(|(band, _)| {
         let entry: BTreeSet<[i32; 3]> = band.iter().copied().filter(|c| c[2] == run - 1).collect();
         let exit: BTreeSet<[i32; 3]> = band.iter().copied().filter(|c| c[2] == 0).collect();
-        !entry.is_empty() && !exit.is_empty() && connected(band, &entry, &exit)
+        !entry.is_empty() && !exit.is_empty() && connected(&out.model, band, &entry, &exit)
     })
     .count()
 }
@@ -884,17 +885,17 @@ fn the_drowned_wards_shortcut_is_sealed_and_reached_through_one_doorway() {
     let unlock: BTreeSet<[i32; 3]> = [out.anchors["anchor/unlock"].pos].into_iter().collect();
 
     assert!(
-        connected(&cells, &entry, &exit),
+        connected(&out.model, &cells, &entry, &exit),
         "the shortcut sealed the ward"
     );
     let near = branch_near_room(&out, DROWNED_STRIP);
     assert_eq!(near.len(), 180, "the branch's near room");
     assert!(
-        connected(&cells, &entry, &near),
+        connected(&out.model, &cells, &entry, &near),
         "the ward cannot reach its own shortcut room"
     );
     assert!(
-        !connected(&cells, &entry, &unlock),
+        !connected(&out.model, &cells, &entry, &unlock),
         "the ward reaches {unlock:?} while the bar stands"
     );
 
@@ -906,7 +907,7 @@ fn the_drowned_wards_shortcut_is_sealed_and_reached_through_one_doorway() {
     let open_unlock: BTreeSet<[i32; 3]> =
         [opened.anchors["anchor/unlock"].pos].into_iter().collect();
     assert!(
-        connected(&open_cells, &open_entry, &open_unlock),
+        connected(&opened.model, &open_cells, &open_entry, &open_unlock),
         "drawing the bar did not open the branch, so the seal above proves nothing"
     );
     let cut: BTreeSet<[i32; 3]> = open_cells
@@ -920,7 +921,7 @@ fn the_drowned_wards_shortcut_is_sealed_and_reached_through_one_doorway() {
         "exactly the doorway was cut"
     );
     assert!(
-        !connected(&cut, &open_entry, &open_unlock),
+        !connected(&opened.model, &cut, &open_entry, &open_unlock),
         "with the junction's doorway plugged the unbarred branch is still reachable"
     );
 
@@ -936,6 +937,7 @@ fn the_drowned_wards_shortcut_is_sealed_and_reached_through_one_doorway() {
     );
     assert!(
         !connected(
+            &shut.model,
             &shut_cells,
             &shut_entry,
             &branch_near_room(&shut, DROWNED_STRIP)
@@ -943,7 +945,7 @@ fn the_drowned_wards_shortcut_is_sealed_and_reached_through_one_doorway() {
         "the junction's doorway was filled and the branch is still reachable"
     );
     assert!(
-        connected(&shut_cells, &shut_entry, &shut_exit),
+        connected(&shut.model, &shut_cells, &shut_entry, &shut_exit),
         "sealing the branch door sealed the ward, so the red above measures the \
          wrong thing"
     );
@@ -986,7 +988,7 @@ fn flank_routes(model: &VoxelModel, elite: [i32; 3], falls: bool) -> usize {
             if falls {
                 reachable_with_fall(model, band, &entry, &exit)
             } else {
-                connected(band, &entry, &exit)
+                connected(model, band, &entry, &exit)
             }
         })
         .count()
@@ -1037,7 +1039,7 @@ fn sealing_a_flank_of_the_shore_drops_its_route() {
         let cells = standable_cells(&out.model);
         let (entry, exit) = ends(&out.model);
         assert!(
-            connected(&cells, &entry, &exit),
+            connected(&out.model, &cells, &entry, &exit),
             "arena/seal_flank={knob} sealed the shore itself, so the route count is \
              measuring impassability rather than a missing bypass"
         );
@@ -1147,7 +1149,7 @@ fn the_switchback_runs_in_on_one_leg_and_out_on_the_other() {
         .collect();
     assert_eq!((enter.len(), leave.len()), (1, 1), "one cell at each mouth");
     assert!(
-        connected(&cells, &enter, &leave),
+        connected(&out.model, &cells, &enter, &leave),
         "the near leg does not reach the far one — the hairpin does not turn"
     );
 
@@ -1168,7 +1170,7 @@ fn the_switchback_runs_in_on_one_leg_and_out_on_the_other() {
             .filter(|c| !on_lane.contains(c))
             .collect();
         assert!(
-            !connected(&cut, &enter, &leave),
+            !connected(&out.model, &cut, &enter, &leave),
             "with the {what} ledge deleted the switchback still runs end to end — \
              the crag left a bypass, so that leg's niches are decoration beside a \
              safe road"
@@ -1255,7 +1257,7 @@ fn a_shelf_under_the_ledges_reds_the_drop_gate() {
         assert_eq!(count(&cells), count(&plain_cells), "the {stem} ledge moved");
     }
     let (entry, exit) = ends(&out.model);
-    assert!(connected(&cells, &entry, &exit));
+    assert!(connected(&out.model, &cells, &entry, &exit));
 }
 
 /// Gate 3: every recess opens onto *its own* lane. A niche whose mouth is a cell
@@ -1691,7 +1693,7 @@ fn the_gatehouse_is_a_route_down_and_not_back_up() {
          entry floor do not meet"
     );
     assert!(
-        !connected(&cells, &exit, &entry),
+        !connected(&out.model, &cells, &exit, &entry),
         "the ward below climbs back into the gatehouse — the spill is a step"
     );
 }
@@ -1708,7 +1710,7 @@ fn a_ladder_up_the_spill_reds_the_gatehouses_one_way_gate() {
     let cells = standable_cells(&out.model);
     let (entry, exit) = ends(&out.model);
     assert!(
-        connected(&cells, &exit, &entry),
+        connected(&out.model, &cells, &exit, &entry),
         "a ladder was notched up the shaft and the ward still read as one-way — the \
          gate proves nothing"
     );
@@ -1724,7 +1726,7 @@ fn a_ladder_up_the_spill_reds_the_gatehouses_one_way_gate() {
     let plain_cells = standable_cells(&plain.model);
     let (plain_entry, plain_exit) = ends(&plain.model);
     assert!(
-        !connected(&plain_cells, &plain_exit, &plain_entry),
+        !connected(&plain.model, &plain_cells, &plain_exit, &plain_entry),
         "the shortened drop alone already let the ward climb back, so the teeth test \
          above proves nothing about the ladder"
     );
@@ -1916,7 +1918,7 @@ fn the_doorway_is_the_only_route_from_hall_to_stores() {
     assert_eq!(approach.len(), 205);
     assert_eq!(inside.len(), 471);
     assert!(
-        connected(&cells, &approach, &inside),
+        connected(&out.model, &cells, &approach, &inside),
         "the hall and the stores do not join"
     );
 
@@ -1926,7 +1928,7 @@ fn the_doorway_is_the_only_route_from_hall_to_stores() {
         .filter(|c| c[0] != threshold[0] || c[2] != threshold[2])
         .collect();
     assert!(
-        !connected(&cut, &approach, &inside),
+        !connected(&out.model, &cut, &approach, &inside),
         "with the doorway plugged the keep still lets a walker through — there is a \
          second way into the stores, so passing the alcove is optional"
     );
@@ -2080,7 +2082,7 @@ fn the_keep_is_a_route_down_and_not_back_up() {
          entry floor do not meet"
     );
     assert!(
-        !connected(&cells, &exit, &entry),
+        !connected(&out.model, &cells, &exit, &entry),
         "the hub below climbs back into the keep — the duct is a step"
     );
 }
@@ -2095,7 +2097,7 @@ fn a_ladder_up_the_kitchen_duct_reds_the_keeps_one_way_gate() {
     let cells = standable_cells(&out.model);
     let (entry, exit) = ends(&out.model);
     assert!(
-        connected(&cells, &exit, &entry),
+        connected(&out.model, &cells, &exit, &entry),
         "a ladder was notched up the duct and the keep still read as one-way — the \
          gate proves nothing"
     );
@@ -2111,7 +2113,7 @@ fn a_ladder_up_the_kitchen_duct_reds_the_keeps_one_way_gate() {
     let plain_cells = standable_cells(&plain.model);
     let (plain_entry, plain_exit) = ends(&plain.model);
     assert!(
-        !connected(&plain_cells, &plain_exit, &plain_entry),
+        !connected(&plain.model, &plain_cells, &plain_exit, &plain_entry),
         "the shortened drop alone already let the keep climb back, so the teeth test \
          above proves nothing about the ladder"
     );
@@ -2227,7 +2229,7 @@ fn the_cistern_is_a_route_down_and_not_back_up() {
          shaft do not join"
     );
     assert!(
-        !connected(&cells, &floor, &ledge),
+        !connected(&out.model, &cells, &floor, &ledge),
         "the deep walks back up to the gallery — the drop is a step, and everything \
          past it can be skipped by going round"
     );
@@ -2252,7 +2254,7 @@ fn a_ladder_up_the_shaft_reds_the_one_way_gate() {
     let cells = standable_cells(&out.model);
     let (ledge, floor) = ends(&out.model);
     assert!(
-        connected(&cells, &floor, &ledge),
+        connected(&out.model, &cells, &floor, &ledge),
         "a ladder was notched up the whole shaft and the zone still read as one-way \
          — the gate proves nothing"
     );
@@ -2268,7 +2270,7 @@ fn a_ladder_up_the_shaft_reds_the_one_way_gate() {
     let plain_cells = standable_cells(&plain.model);
     let (plain_ledge, plain_floor) = ends(&plain.model);
     assert!(
-        !connected(&plain_cells, &plain_floor, &plain_ledge),
+        !connected(&plain.model, &plain_cells, &plain_floor, &plain_ledge),
         "the shortened drop alone already let the deep climb back, so the teeth test \
          above proves nothing about the ladder"
     );
@@ -2474,7 +2476,7 @@ fn the_hub_is_a_route_down_and_not_back_up() {
         "the chute does not reach the hub floor — the pieces below it do not join"
     );
     assert!(
-        !connected(&cells, &exit, &ledge),
+        !connected(&out.model, &cells, &exit, &ledge),
         "the hub walks back up the kitchen duct — the drop is a step, and the keep \
          above it can be re-entered from the rest ward"
     );
@@ -2493,7 +2495,7 @@ fn a_ladder_up_the_chute_reds_the_hubs_one_way_gate() {
     let cells = standable_cells(&out.model);
     let (ledge, exit) = ends(&out.model);
     assert!(
-        connected(&cells, &exit, &ledge),
+        connected(&out.model, &cells, &exit, &ledge),
         "a ladder was notched up the whole duct and the hub still read as one-way — \
          the gate proves nothing"
     );
@@ -2509,7 +2511,7 @@ fn a_ladder_up_the_chute_reds_the_hubs_one_way_gate() {
     let plain_cells = standable_cells(&plain.model);
     let (plain_ledge, plain_exit) = ends(&plain.model);
     assert!(
-        !connected(&plain_cells, &plain_exit, &plain_ledge),
+        !connected(&plain.model, &plain_cells, &plain_exit, &plain_ledge),
         "the shortened drop alone already let the hub climb back, so the teeth test \
          above proves nothing about the ladder"
     );
@@ -2728,11 +2730,11 @@ fn the_bell_tower_is_a_route_and_the_route_climbs() {
     assert_eq!((entry.len(), exit.len()), (17, 19), "the tower's end faces");
 
     assert!(
-        connected(&cells, &entry, &exit),
+        connected(&out.model, &cells, &entry, &exit),
         "the tower's pieces do not join into a route"
     );
     assert!(
-        connected(&cells, &exit, &entry),
+        connected(&out.model, &cells, &exit, &entry),
         "the tower cannot be walked back down"
     );
 
@@ -2794,7 +2796,7 @@ fn one_unclimbable_riser_severs_the_tower() {
         "the broken tower still has both faces, so the cut is the riser"
     );
     assert!(
-        !connected(&cells, &entry, &exit),
+        !connected(&out.model, &cells, &entry, &exit),
         "one unclimbable riser and the tower still walks end to end — either the \
          knob does nothing after composition or there is a second way up"
     );
@@ -2808,7 +2810,7 @@ fn one_unclimbable_riser_severs_the_tower() {
     );
     let lowest: BTreeSet<[i32; 3]> = [*steps.last().expect("a tread")].into_iter().collect();
     assert!(
-        connected(&cells, &entry, &lowest),
+        connected(&out.model, &cells, &entry, &lowest),
         "the entry cannot even reach the first tread, so the severance above is not \
          the break"
     );
@@ -2857,7 +2859,7 @@ fn every_loft_perch_is_visible_from_the_lofts_own_door() {
     let cells = standable_cells(&shut.model);
     let (entry, exit) = ends(&shut.model);
     assert!(
-        connected(&cells, &entry, &exit),
+        connected(&shut.model, &cells, &entry, &exit),
         "the closed truss severed the tower, so the blindness above measures the \
          wrong thing"
     );
@@ -2884,7 +2886,7 @@ fn no_route_reaches_the_bellkeeper_without_crossing_the_threshold() {
     let elite: BTreeSet<[i32; 3]> = [out.anchors["anchor/elite"].pos].into_iter().collect();
 
     assert!(
-        connected(&cells, &entry, &elite),
+        connected(&out.model, &cells, &entry, &elite),
         "the tower cannot reach its own boss ring"
     );
 
@@ -2903,7 +2905,7 @@ fn no_route_reaches_the_bellkeeper_without_crossing_the_threshold() {
     let cut: BTreeSet<[i32; 3]> = cells.difference(&doorband).copied().collect();
     assert_eq!(cut.len(), cells.len() - 17);
     assert!(
-        !connected(&cut, &entry, &elite),
+        !connected(&out.model, &cut, &entry, &elite),
         "with the boss threshold cut out the ring is still reachable — there is a \
          way to the Bellkeeper that never crosses the marker"
     );
@@ -2923,7 +2925,7 @@ fn no_route_reaches_the_bellkeeper_without_crossing_the_threshold() {
     assert_eq!((ring_side.len(), tower_side.len()), (532, 1623));
     let loft_door: BTreeSet<[i32; 3]> = [out.anchors["anchor/hall-door"].pos].into_iter().collect();
     assert!(
-        connected(&cut, &entry, &loft_door),
+        connected(&out.model, &cut, &entry, &loft_door),
         "the cut also severed the loft from the entry, so the red above is not \
          about the threshold"
     );
@@ -2986,12 +2988,12 @@ fn the_counterweight_shaft_is_entered_once_and_only_drops() {
     assert_eq!(landings.len(), 1, "the shaft's landings: {landings:?}");
 
     assert!(
-        connected(&cells, &entry, &exit),
+        connected(&out.model, &cells, &entry, &exit),
         "the shaft sealed the tower — a branch that severs the zone it hangs off is \
          not a branch"
     );
     assert!(
-        connected(&cells, &entry, &landings),
+        connected(&out.model, &cells, &entry, &landings),
         "the tower cannot reach its own lift landing"
     );
 
@@ -3012,13 +3014,13 @@ fn the_counterweight_shaft_is_entered_once_and_only_drops() {
         "a body cannot get into the shaft at all, so its one-wayness is vacuous"
     );
     assert!(
-        !connected(&cells, &pit, &entry),
+        !connected(&out.model, &cells, &pit, &entry),
         "the shaft's pit walks back into the tower — the hub-opener is a staircase"
     );
     // ...and the negative is not merely the pit being sealed off from itself:
     // the shaft's own landing is what it fails to reach.
     assert!(
-        !connected(&cells, &pit, &landings),
+        !connected(&out.model, &cells, &pit, &landings),
         "the pit walks back up to the landing it fell from"
     );
 
@@ -3034,12 +3036,17 @@ fn the_counterweight_shaft_is_entered_once_and_only_drops() {
         "the junction's doorway cell, and only it, is gone"
     );
     assert!(
-        !connected(&shut_cells, &shut_entry, &tower_shaft_landings(&shut)),
+        !connected(
+            &shut.model,
+            &shut_cells,
+            &shut_entry,
+            &tower_shaft_landings(&shut)
+        ),
         "the junction's doorway was filled and the shaft is still reachable — the \
          way in was never the doorway"
     );
     assert!(
-        connected(&shut_cells, &shut_entry, &shut_exit),
+        connected(&shut.model, &shut_cells, &shut_entry, &shut_exit),
         "sealing the junction sealed the tower, so the red above measures an \
          impassable zone rather than an unreachable shaft"
     );
@@ -3649,7 +3656,7 @@ fn the_causeway_is_a_terminus_until_its_berm_gate_is_opened() {
     let head: BTreeSet<[i32; 3]> = berm.iter().copied().filter(|c| c[2] == 23).collect();
     let toe: BTreeSet<[i32; 3]> = berm.iter().copied().filter(|c| c[2] == 2).collect();
     assert!(
-        connected(&berm, &head, &toe),
+        connected(&out.model, &berm, &head, &toe),
         "the berm does not even cross the ward, so the red above is a broken fixture"
     );
 
@@ -3660,7 +3667,7 @@ fn the_causeway_is_a_terminus_until_its_berm_gate_is_opened() {
     let cells = standable_cells(&out.model);
     let (entry, exit) = ends(&out.model);
     assert!(
-        connected(&cells, &entry, &exit),
+        connected(&out.model, &cells, &entry, &exit),
         "`berm_gate` is open and the piece is still a terminus"
     );
 }
@@ -3802,11 +3809,11 @@ fn a_zone_can_compose_a_route_a_player_walks_up() {
         "the composed route does not climb: entry at {entry_y}, head at {head:?}"
     );
     assert!(
-        connected(&cells, &entry, &[head].into_iter().collect()),
+        connected(model, &cells, &entry, &[head].into_iter().collect()),
         "a player entering the zone cannot reach the top of the flight"
     );
     assert!(
-        connected(&cells, &[head].into_iter().collect(), &entry),
+        connected(model, &cells, &[head].into_iter().collect(), &entry),
         "and cannot walk back down"
     );
 }
@@ -3856,7 +3863,7 @@ fn a_barred_door_on_the_route_seals_the_chain() {
     let open_cells = standable_cells(&opened.model);
     let (open_entry, open_exit) = ends(&opened.model);
     assert!(
-        connected(&open_cells, &open_entry, &open_exit),
+        connected(&opened.model, &open_cells, &open_entry, &open_exit),
         "drawing the bar did not open the chain, so the seal above proves nothing \
          about the bar"
     );
@@ -3881,7 +3888,7 @@ fn a_barred_door_on_the_route_seals_the_chain() {
         "the mainline's ends: {entry:?} / {exit:?}"
     );
     assert!(
-        connected(&cells, &entry, &exit),
+        connected(&out.model, &cells, &entry, &exit),
         "the branch sealed the mainline — a tee that severs the chain it is a \
          segment of is a `far_side_bar` wearing a different name"
     );
@@ -3890,12 +3897,12 @@ fn a_barred_door_on_the_route_seals_the_chain() {
     let near_room = branch_near_room(&out, BRANCH_DEPTH as i32);
     assert_eq!(near_room.len(), 9, "the branch's near room: {near_room:?}");
     assert!(
-        connected(&cells, &entry, &near_room),
+        connected(&out.model, &cells, &entry, &near_room),
         "the mainline cannot reach the branch at all — the tee's doorway opens onto \
          nothing, so the shortcut is not even a room"
     );
     assert!(
-        !connected(&cells, &entry, &unlock),
+        !connected(&out.model, &cells, &entry, &unlock),
         "the mainline reaches {unlock:?} while the bar stands — the shortcut has no \
          far side to earn"
     );
@@ -3908,7 +3915,7 @@ fn a_barred_door_on_the_route_seals_the_chain() {
     let open_cells = standable_cells(&opened.model);
     let (open_entry, _) = ends(&opened.model);
     assert!(
-        connected(&open_cells, &open_entry, &unlock),
+        connected(&opened.model, &open_cells, &open_entry, &unlock),
         "drawing the bar did not open the branch, so the seal above proves nothing"
     );
     let cut: BTreeSet<[i32; 3]> = open_cells
@@ -3922,7 +3929,7 @@ fn a_barred_door_on_the_route_seals_the_chain() {
         "exactly the doorway was cut"
     );
     assert!(
-        !connected(&cut, &open_entry, &unlock),
+        !connected(&opened.model, &cut, &open_entry, &unlock),
         "with the tee's doorway plugged the unbarred branch is still reachable — the \
          way in is a seam that never closed, not the doorway this rule declares"
     );
@@ -3947,14 +3954,14 @@ fn sealing_the_tee_makes_the_branch_unreachable() {
     let near_room = branch_near_room(&out, BRANCH_DEPTH as i32);
     assert_eq!(near_room.len(), 9, "the branch is still a room");
     assert!(
-        !connected(&cells, &entry, &near_room),
+        !connected(&out.model, &cells, &entry, &near_room),
         "the tee's doorway was filled and the branch is still reachable — the way in \
          was never the doorway, so the gate above proves nothing"
     );
 
     // The control: a filled doorway, not a filled zone.
     assert!(
-        connected(&cells, &entry, &exit),
+        connected(&out.model, &cells, &entry, &exit),
         "sealing the branch door sealed the mainline, so the red above is measuring \
          an impassable chain rather than an unreachable branch"
     );
