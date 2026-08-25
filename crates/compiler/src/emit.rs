@@ -1660,6 +1660,19 @@ pub fn build_with_warnings(
     // bind to nothing, since every class that carries an exemption is a class
     // some rule does not examine. `gate_use.cells` counts every non-gate-opening
     // body regardless of class, so the count itself shows that rule is total.
+    // The placement gate's binding ledger (`DW0864`, hv-10): what every
+    // `scatter`/`plant` verb declared and what it delivered, over the DECLARED
+    // domain rather than over the part of it that turned out to be usable. The
+    // rows are emitted whether or not any of them is short, because the finding
+    // this closes was a class nobody had a number for at all — the acceptance
+    // proxy was a rendered shot, and one bearing cannot see a region.
+    if let Some(er) = &edit_replay {
+        put_json(
+            &mut out,
+            "validation/placement-gate.json",
+            &crate::edit::placement_gate_json(&er.placements),
+        );
+    }
     if let Some(gate) = &traversal_gate {
         put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
     }
