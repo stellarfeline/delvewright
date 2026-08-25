@@ -289,6 +289,73 @@ fn crit6_dark_undeclared_build_fails_dw0210() {
     }
 }
 
+/// The failure a designer is actually handed, over the real build path. `DW0210`
+/// prescribes re-arranging the room, so the report has to name a **room**: how
+/// many cells are dark, and the contiguous region(s) they occupy. Every figure
+/// asserted here is read out of the report and checked against another figure in
+/// the same report, so a hard-coded count or a dropped grouping cannot satisfy
+/// it.
+#[test]
+fn crit6_dw0210_reports_the_place_and_not_only_a_coordinate() {
+    let c = hello_world();
+    let err = build_with_structure(&c, dark_box_nbt([11, 6, 11], &[])).unwrap_err();
+    let BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a diagnostic, got {err:?}");
+    };
+    assert_eq!(code, "DW0210");
+
+    // The per-area line: "area `X`: N of M measured cell(s) dark, in R contiguous region(s):"
+    let area_line = message
+        .lines()
+        .find(|l| l.trim_start().starts_with("area `"))
+        .unwrap_or_else(|| panic!("no per-area line in the report:\n{message}"));
+    let n: usize = field_before(area_line, " of ");
+    let regions_stated: usize = field_before(area_line, " contiguous region(s)");
+    assert!(
+        n > 1,
+        "an 11x11 unlit box is a room, not a cell — the report says {n}:\n{message}"
+    );
+
+    // The region lines: "- C cell(s) spanning [..]..[..], darkest [..] at light L"
+    let region_cells: Vec<usize> = message
+        .lines()
+        .filter(|l| l.trim_start().starts_with("- "))
+        .map(|l| field_before(l, " cell(s) spanning "))
+        .collect();
+    assert_eq!(
+        region_cells.len(),
+        regions_stated,
+        "every region is listed (nothing was silently cut here):\n{message}"
+    );
+    assert_eq!(
+        region_cells.iter().sum::<usize>(),
+        n,
+        "the regions must account for exactly the dark cells the count claims:\n{message}"
+    );
+
+    // …and the single-cell exemplar the diagnostic always carried is still there.
+    assert!(
+        message.contains("The darkest reachable walkable cell is at ["),
+        "the exemplar cell is gone:\n{message}"
+    );
+}
+
+/// The integer immediately before `sep` on `line` (the reports state every count
+/// as `<n> <noun>`), so a test reads the figure the message actually printed
+/// rather than one written down beside it.
+fn field_before(line: &str, sep: &str) -> usize {
+    let head = line
+        .split(sep)
+        .next()
+        .unwrap_or_else(|| panic!("`{sep}` not in `{line}`"));
+    assert!(head.len() < line.len(), "`{sep}` not in `{line}`");
+    head.rsplit(|c: char| !c.is_ascii_digit())
+        .find(|t| !t.is_empty())
+        .unwrap_or_else(|| panic!("no number before `{sep}` in `{line}`"))
+        .parse()
+        .unwrap_or_else(|e| panic!("unparseable count before `{sep}` in `{line}`: {e}"))
+}
+
 /// Four lit candles set into each wall of the same box, and nothing else: the
 /// build must succeed. This is the room a designer actually writes — the
 /// fiction-correct low, warm, domestic source — and until `emission()` learned
@@ -647,4 +714,94 @@ fn the_vanilla_keywords_still_emit_keywords() {
             "expected the `{token}` keyword, not a tick count:\n{s}"
         );
     }
+}
+
+/// **The report a DERIVED map is handed, over the real build path.**
+///
+/// Two rules meet in one message and each was proven alone: `DW0210` names which
+/// rooms are dark (the report is built once for the whole build), and it
+/// prescribes only remedies this campaign's placement authority actually has.
+/// Every unit test of either half hands `dark_diagnostic` a `Placement` chosen by
+/// the test, so none of them binds the one step that decides it in a real build —
+/// `relight_over` asking the campaign. Perturbing that call to a hard-coded
+/// `Placement::Prefabs` left `cargo test --workspace` fully green while the
+/// message sent a site-plan author at `world.areas[].lighting` and
+/// `world.areas[].mitigation`, which `DW0839` and `DW0160` refuse. This is the
+/// test that reds.
+///
+/// The fixture is the site-plan blockout (`tests/fixtures/blockout`) with its
+/// plan's own `lighting` removed and `world.time` set to midnight — the state
+/// that reproduced the defect, made from the campaign rather than from bytes.
+#[test]
+fn dw0210_on_a_built_site_plan_names_the_rooms_and_a_reachable_remedy() {
+    let dir = common::repo_root().join("crates/compiler/tests/fixtures/blockout");
+    let loaded = load_campaign_dir(&dir).expect("the blockout fixture is readable");
+    let mut c = parse_campaign(&loaded.raw).expect("the blockout fixture parses");
+
+    let plan = c
+        .site_plan
+        .as_mut()
+        .expect("the fixture carries a site plan");
+    assert!(
+        plan.content.lighting.take().is_some(),
+        "fixture: the plan must have declared lighting for its removal to make the map dark"
+    );
+    c.world.content.time = Some(WorldTime::Midnight);
+    assert!(
+        c.world.content.areas.is_empty(),
+        "fixture: a site-plan campaign declares an empty `areas` list (DW0839)"
+    );
+
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("the library loads");
+    let plan = Plan::build(&c, &prefabs).expect("the blockout fixture plans");
+    let tree = CommandTree::v1_21_11();
+    let err = emit::build(
+        &plan,
+        &loaded.inputs,
+        &BTreeMap::new(),
+        &tree,
+        &prefabs,
+        None,
+        "unpinned",
+        &BTreeMap::new(),
+    )
+    .expect_err("an unlit derived blockout at midnight must fail the light gate");
+    let BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a diagnostic, got {err:?}");
+    };
+    assert_eq!(code, "DW0210");
+
+    // WHICH ROOM — the half this branch added, over a real build.
+    let area_line = message
+        .lines()
+        .find(|l| l.trim_start().starts_with("area `"))
+        .unwrap_or_else(|| panic!("the report names no area:\n{message}"));
+    assert!(
+        area_line.contains(&format!("area `{}`", delvewright_dsl::siteplan::SITE_AREA)),
+        "a derived map has exactly one area and the report must name it:\n{message}"
+    );
+    assert!(
+        message
+            .lines()
+            .any(|l| l.trim_start().starts_with("- ") && l.contains(" cell(s) spanning ")),
+        "the dark cells must be grouped into regions with extents:\n{message}"
+    );
+
+    // A REACHABLE REMEDY — the half `main` added, over the same message.
+    assert!(
+        message.contains("declare the site plan's `lighting`"),
+        "the one declaration this author can write must be named:\n{message}"
+    );
+    assert!(
+        !message.contains("world.areas"),
+        "`DW0839` refuses `areas[]` here, so nothing may send the author to it:\n{message}"
+    );
+    assert!(
+        !message.contains("mitigation: "),
+        "a derived map has no per-area `mitigation` surface to declare:\n{message}"
+    );
+    assert!(
+        message.contains("one of two ways"),
+        "the count moves with the list of ways actually offered:\n{message}"
+    );
 }
