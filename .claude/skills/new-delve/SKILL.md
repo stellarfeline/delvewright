@@ -1780,7 +1780,7 @@ this needs were built at Init step 2.
    (`delve-grammar list`, then `delve-grammar show --program <nearest>`), which is
    a palette somebody already measured, and record where each name came from.
    Never invent one — a block that does not exist is refused at export, and one
-   that exists but looks nothing like its name is caught only by eye at step 5.
+   that exists but looks nothing like its name is caught only by eye at 5 below.
 
 3. **Author a grammar program.** Read the **idiom index** first
    (`docs/reference/grammar.md` §2c): ten techniques with a runnable program each
@@ -1893,7 +1893,8 @@ this needs were built at Init step 2.
    delve-render piece out/<id>.nbt -o shots/
    ```
 
-   and compare against step 1. The gates prove it is buildable and walkable; they
+   and compare against the scene description from 1 above. The gates prove it is
+   buildable and walkable; they
    say nothing about whether it is the scene you asked for. If the expand wrote a
    tile set instead of one `.nbt`, pass the manifest — `delve-render piece
    out/<id>.json` — which renders the assembled zone as one scene, eye shots
@@ -1980,7 +1981,8 @@ languages are delivered as sidecars.
 
    `--reflect` is the three-step translate → critique → revise pass and is where
    translationese actually dies — always pass it. It writes and validates the
-   sidecar for you; then go to step 4. Otherwise translate yourself, steps 3–4.
+   sidecar for you; then go to 4 below. Otherwise translate yourself, 3 and 4
+   below.
    Generation-time only either way — a shipped delve never calls a model.
 3. Yourself: `delvec l10n-inventory <campaign-dir> --lang <code>` gives the exact
    key inventory as JSON (key, English, speaking NPC, existing translation).
@@ -2096,8 +2098,8 @@ about the same-area case and will not apply. Read step 2A: **the destination
 area's piece must declare an entry point**, and only 5 of 36 shipped prefabs do.
 Bind that area to one of them, or make a piece that has one.
 
-**The build is green, PackTest is green, and the bot fails step 1 with "No path
-to the goal!"** The party's first objective is in an area they did not spawn in,
+**The build is green, PackTest is green, and the bot fails its FIRST step with
+"No path to the goal!"** The party's first objective is in an area they did not spawn in,
 and no crossing carries them there — the delve is not completable and nothing
 before the bot said so. Read step 2A rule 1: put a beat in the spawn area first,
 or move the spawn. Confirm by reading `critical-path.json` at the build output's
