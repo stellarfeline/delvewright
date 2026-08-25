@@ -144,13 +144,18 @@ fn every_library_program_gives_the_recorded_verdict_at_its_declared_expansion() 
     }
     // Binding counts, so a corpus that quietly stopped reaching these gates is
     // a red rather than a shorter green list (CLAUDE.md's first vacuity mode).
-    assert_eq!(library::PROGRAMS.len(), 35, "the corpus this swept");
+    assert_eq!(library::PROGRAMS.len(), 36, "the corpus this swept");
     for (id, floor) in [
         ("blocks-exist", 100usize),
         ("shape-complete", 100),
         ("states-complete", 100),
         ("oriented-fills", 600),
         ("non-empty", 40000),
+        // `decorated-room` is the corpus's only `reachable_floor` claim, so
+        // this floor is the whole of that gate's binding: it went from zero —
+        // green because nothing asked it anything — to one program's roofed
+        // floor.
+        ("reachable-floor", 80),
     ] {
         let bound = *totals.get(id).unwrap_or(&0);
         assert!(
