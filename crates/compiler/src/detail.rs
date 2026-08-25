@@ -99,14 +99,18 @@ pub const DW_ANCHOR_STANDING: DwCode = DwCode::every_version("DW0845");
 /// revision, never by a version string, is the reason this is not
 /// `DELVEC_VERSION`: two engines 136 commits apart report the same version.
 ///
-/// Stamped at COMPILE time by whoever builds the binary, and honestly `unstamped`
-/// when nobody did. This is a departure from a literal reading of spec-0050 §2,
-/// recorded here because this is where it is made: naming the revision would
-/// otherwise need a `build.rs` shelling out to `git`, on a crate published to
-/// crates.io where there is no `.git` to read — a distribution change the spec
-/// does not ask for, to answer a question the release recipe can answer for
-/// free. What the engine must never do is *claim* a revision it does not have,
-/// and `unstamped` is that claim withheld.
+/// Stamped at COMPILE time, by `crates/compiler/build.rs` (spec-0050 §2). A
+/// source build reads the revision out of the checkout it is being built from,
+/// suffixed `-dirty` when that tree carries uncommitted changes; a release
+/// recipe or container build that has the revision and no `.git` passes
+/// `DELVEC_ENGINE_REVISION` in the environment and that wins unchanged.
+///
+/// `unstamped` is what is left when neither can be established — a source
+/// tarball such as crates.io serves, with no `.git` to read. What the engine
+/// must never do is *claim* a revision it does not have, and `unstamped` is
+/// that claim withheld. It is the fallback, not the normal answer: a campaign
+/// author copies this field into `walk-record.json`, and a field that always
+/// holds one constant is not a measurement.
 #[must_use]
 pub fn engine_revision() -> &'static str {
     option_env!("DELVEC_ENGINE_REVISION").unwrap_or("unstamped")
