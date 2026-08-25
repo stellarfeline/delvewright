@@ -28,9 +28,24 @@ Two library modules exist for the tool and are public for it:
   rule's own gate is the right place for the gate and the wrong place for the
   *predicate* it is written in: a program authored outside this repo has no
   `tests/support` to reach for, so its author had no way to ask whether the piece
-  could be walked at all. `tests/support/mod.rs` now delegates here;
-  `tests/staging.rs` still carries its own copy, for the reason its own header
-  gives, and folding it in is a named follow-up.
+  could be walked at all. Every test in this crate delegates here, and no copy of
+  the walk survives anywhere.
+
+  **The step rule these are written in terms of is the engine's one rule**, not
+  this crate's: `delvewright_dsl::metrics::step_allowed`, which `delvec`'s own
+  router also asks. A full-block rise is a jump, and a jump requires the cell the
+  body's head sweeps through to be clear — so a piece cannot be admitted on a
+  climb the compiler will later refuse. The walk functions take the model as their
+  first argument for exactly that reason: the set of standable cells cannot answer
+  what is above them.
+
+  Two things the walk still reads its own way, both stated so they are not
+  mistaken for a second rule. A box of cells has no collision heights, so a step
+  of one cell is read as a full block unless the model overrides
+  `Voxels::floor_top_16` — a coarser reading of the rise, and coarse only in the
+  direction that refuses a step vanilla admits. And `reachable_with_fall` remains
+  deliberately more permissive than the plain walk: it adds a one-way fall edge,
+  which is why a forward-arrival claim may use it and a no-way-back claim may not.
 - [`gates`] — `judge(&Expansion, Options) -> Report`, and the distinction the
   module is built around: a **gate** has a verdict and a binding count, a
   **measurement** is a number with no threshold, and the two are never mixed.
@@ -1426,8 +1441,15 @@ and tower deck that no body can walk to.
 
 So every expansion also carries a **reachability measurement**, printed by
 `delve-grammar expand` and written into `<id>.report.json` whether or not any
-optional gate was asked for. It walks `nav::components` over the standable cells
-from `nav::ground_entry` and reports:
+optional gate was asked for. It walks `nav::reachable_from` over the standable
+cells, seeded from `nav::ground_entry`, and groups what the walk did not reach
+into pockets with `nav::components`. The two are different questions and the
+report asks each of the right one: **what a body reaches is walked**, because the
+step relation is directed — a body rises a full block only where it has room over
+its head, and comes back down asking nothing — while a **pocket is a lump of
+floor**, which is a grouping and needs the undirected relation to be a partition
+at all. Taking the pocket that happens to contain an entrance was the same answer
+only while the relation was symmetric. It reports:
 
 | Number | Meaning |
 |---|---|

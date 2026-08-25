@@ -149,6 +149,69 @@ pub const MAX_JUMP_RISE_16: i64 = 20;
 /// A full block's height in sixteenths.
 pub const FULL_16: i64 = 16;
 
+/// What a walker has to do to gain a given rise — the engine's ONE answer, and
+/// the reason it is here rather than in either walk.
+///
+/// Two crates ask this question of two different object classes. `delvec`'s
+/// navigation model asks it of an assembled world, where a floor has a real
+/// collision top and a body has a footprint; `delvewright-schem`'s walk asks it
+/// of a box of cells with a passability answer for each, which is what a grammar
+/// expansion, a structure template read off disk and a reassembled zone all are.
+/// Neither crate can hold the shared answer: `delvec` is published to crates.io
+/// and may only depend on published crates, and `delvewright-schem` is not one.
+/// This crate is the only one both already reach, and it is where the three
+/// numbers the rule is written in terms of already live — so the rule lives
+/// beside them.
+///
+/// The two callers still measure the rise differently, and that is a difference
+/// of **measurement**, never of rule: a box of cells with no collision heights
+/// can only read a rise as whole cells, which over-states every partial-block
+/// step and therefore only ever refuses. The rise is the input; this is the rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rise {
+    /// Inside [`MAX_AUTO_STEP_16`]: the body walks straight up, never leaves the
+    /// ground, and needs no room over its head.
+    Walk,
+    /// Past the auto-step budget and inside [`MAX_JUMP_RISE_16`]: the body jumps,
+    /// so the cell its head sweeps through must be clear or it head-bonks.
+    Jump,
+    /// Past the jump apex. No player makes this step.
+    Beyond,
+}
+
+/// Classify a rise between two standing surfaces, in sixteenths. Negative and
+/// zero rises are [`Rise::Walk`] — stepping down and walking level ask nothing
+/// of the ceiling.
+#[must_use]
+pub fn classify_rise_16(rise_16: i64) -> Rise {
+    if rise_16 <= MAX_AUTO_STEP_16 {
+        Rise::Walk
+    } else if rise_16 <= MAX_JUMP_RISE_16 {
+        Rise::Jump
+    } else {
+        Rise::Beyond
+    }
+}
+
+/// Can a body make this step? `head_clear` answers *is the cell the head sweeps
+/// through clear at the source* — it is consulted only for a [`Rise::Jump`], so a
+/// caller may compute it lazily.
+///
+/// This predicate is the whole of the step rule. A walk that answers "can a body
+/// get from here to there" without going through it is a second opinion, and the
+/// two this engine had disagreed by exactly this term: one of them omitted the
+/// head sweep, so it connected a full-block rise under a two-course ceiling that
+/// the other refuses, and the gate that admits a prefab proved its **positive**
+/// reachability claim over the looser of the two.
+#[must_use]
+pub fn step_allowed(rise_16: i64, head_clear: impl FnOnce() -> bool) -> bool {
+    match classify_rise_16(rise_16) {
+        Rise::Walk => true,
+        Rise::Jump => head_clear(),
+        Rise::Beyond => false,
+    }
+}
+
 /// Ticks a jumping player spends off the ground, apex to landing included.
 pub const JUMP_AIRBORNE_TICKS: f64 = 12.0;
 

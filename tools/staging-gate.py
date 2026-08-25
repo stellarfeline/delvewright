@@ -34,7 +34,16 @@ would be the fourth way.
 - `MISSING-CHECK` — a general form is declared in this ledger but does not exist
   in the engine that built this tree: the code is gone from source, or has no
   test asserting it, or its artifact was never emitted. A ledger that names a
-  check nobody maintains is a promise, not a proof.
+  check nobody maintains is a promise, not a proof. A probe over a stage
+  document is MISSING-CHECK when the COMPILER read that document and this gate
+  holds no parsed copy of it — format rot. It is **not** MISSING-CHECK merely
+  because the document is absent: five of the eleven stage documents are
+  optional, and a campaign that declares no edit script and no map-pipeline
+  stage is not a campaign missing a document. Which of the two it is, is read
+  off `manifest.json` `inputs` — the compiler's own record of what it read —
+  and never off the filesystem, because a directory or an unreadable file
+  standing where a document belongs is exactly what a broken campaign looks
+  like. Such a campaign does not build, so it has no manifest to present.
 - `UNBOUND` — the check exists and matched **zero objects** on this campaign.
   The bot's combat floor gate examined zero enemies for nineteen island rounds
   because `floor_gate.covered`, `.not_covered` and `actors[]` were all empty at
@@ -159,6 +168,10 @@ PASS_VERDICTS = ("BOUND",)
 VALID_DISPOSITIONS = ("no-machine-form", "not-a-defect")
 MIN_JUSTIFICATION = 24  # chars — a justification has to say something
 
+# Sentinel for "this cache has not been filled yet", distinct from a cached
+# `None` (which means "the build tree cannot answer").
+_UNREAD = object()
+
 
 # ---------------------------------------------------------------------------
 # Reuse, never re-derive: the DW catalogue/source/test facts have one owner.
@@ -271,6 +284,7 @@ class Subject:
         self.stages: dict[str, object] = {}
         self.stage_versions: dict[str, str] = {}
         self.parse_errors: list[str] = []
+        self._manifest_inputs: object = _UNREAD
         for fname in self.STAGE_FILES:
             p = campaign / fname
             if not p.is_file():
@@ -287,6 +301,34 @@ class Subject:
     @property
     def has_source(self) -> bool:
         return bool(self.stages)
+
+    @property
+    def manifest_inputs(self) -> dict | None:
+        """The stage documents the COMPILER read to build this tree, by name.
+
+        `manifest.json` `inputs` is written by `emit::emit_manifest` from the
+        byte map `load::load_campaign_dir` filled, hashed per document — so it
+        is the compiler's own testimony about which documents this world was
+        compiled from, not a restatement of what is on disk now. It is the one
+        authority for that question; `pre_detail` and the `dsl` probe both ask
+        it, and neither re-derives it.
+
+        `None` = the build tree cannot answer (no manifest, unreadable, or no
+        `inputs` object). Every caller must fail closed on `None`: "the
+        compiler did not read such a document" and "I cannot tell what the
+        compiler read" are the two facts this whole tool exists to keep apart.
+        """
+        if self._manifest_inputs is _UNREAD:
+            self._manifest_inputs = None
+            m = self.build / "manifest.json"
+            if m.is_file():
+                try:
+                    inputs = json.loads(m.read_text(encoding="utf-8")).get("inputs")
+                except (OSError, json.JSONDecodeError):
+                    inputs = None
+                if isinstance(inputs, dict):
+                    self._manifest_inputs = inputs
+        return self._manifest_inputs
 
     @property
     def pre_detail(self) -> bool:
@@ -313,14 +355,8 @@ class Subject:
             return False
         if (self.campaign / "detail-plan.json").is_file():
             return False
-        m = self.build / "manifest.json"
-        if not m.is_file():
-            return False
-        try:
-            inputs = json.loads(m.read_text(encoding="utf-8")).get("inputs")
-        except (OSError, json.JSONDecodeError):
-            return False
-        if not isinstance(inputs, dict):
+        inputs = self.manifest_inputs
+        if inputs is None:
             return False
         return "site-plan.json" in inputs and "detail-plan.json" not in inputs
 
@@ -406,6 +442,69 @@ def _dig(doc, dotted: str):
     return cur
 
 
+def _absent_stage_docs(files: list, pred: dict, subj: Subject) -> tuple[int | None, str]:
+    """Every stage document a `dsl` probe names is absent from this campaign.
+    Is that "I could not look", or is it "this campaign declares none"?
+
+    Both readings are live, and telling them apart is this tool's whole job.
+    Five of the eleven stage documents are OPTIONAL (`compiler::load`:
+    `world-edits.json`, and the four map-pipeline documents), so a campaign
+    that ships none of them is not a campaign missing a document — it is a
+    campaign that declares no such stage. A probe over `world-edits.json` on
+    such a campaign was reading `MISSING-CHECK`: the ledger names a check the
+    engine has, the campaign simply has nothing for it to quantify over, and
+    the gate could not say so because it had no way to distinguish that from a
+    document it failed to read.
+
+    **The compiler answers it, and nothing else may.** `manifest.json` `inputs`
+    is written by the compiler from the bytes it actually read, hashed per
+    document. So:
+
+    - a document the compiler read is IN `inputs`. If it is nonetheless not in
+      `subj.stages`, this gate could not parse what the compiler could — that
+      is format rot and stays `None` (MISSING-CHECK), a refusal this probe did
+      not previously have at all;
+    - a document in NO build's `inputs` was never read, and the campaign
+      compiled without it. That is a measured zero.
+
+    **What the defect cannot supply.** The defect this gate exists to catch is
+    *nobody measured*, and it cannot present this fact:
+
+    - a campaign that DOES declare the document has it hashed into `inputs`
+      (pinned by `crates/compiler/tests/edit.rs`: "the stage-7 script is a
+      hashed build input"), so it can never take this branch;
+    - a campaign whose document is present but broken — a directory in its
+      place, unreadable, non-UTF-8, malformed — does not build at all:
+      `load::optional` treats ONLY `NotFound` as absent, by a rule that file
+      states was written for exactly this class of silent wrong build. No
+      build tree, no manifest, and `--build` is mandatory;
+    - a build tree that cannot say what the compiler read keeps `None`.
+
+    And the zero this returns is **not an exemption**. It is handed to the same
+    unchanged adjudication as any other zero: INAPPLICABLE (red) on a finished
+    campaign, and OUT-OF-STAGE only where the pre-detail blockout
+    determination — itself twice-measured — already grants it. No verdict, flag,
+    row field or disposition is added anywhere.
+    """
+    inputs = subj.manifest_inputs
+    if inputs is None:
+        return None, (
+            f"none of {files} present in {subj.name}, and this build's "
+            "manifest.json cannot say which documents the compiler read"
+        )
+    read_by_compiler = [f for f in files if f in inputs]
+    if read_by_compiler:
+        return None, (
+            f"the compiler compiled this world from {read_by_compiler}, and "
+            f"this gate holds no parsed copy — {'; '.join(subj.parse_errors) or 'unreadable'}"
+        )
+    return 0, (
+        f"0 × {describe(pred)} — the compiler compiled this world from "
+        f"{len(inputs)} stage document(s) and none of {files} was among them "
+        "(manifest.json inputs), so this campaign declares no such stage"
+    )
+
+
 def probe(binding: dict, subj: Subject) -> tuple[int | None, str]:
     """Return (count, detail). `None` means the probe could not run at all —
     reported as MISSING-CHECK, never silently as zero: "I could not look" and
@@ -424,7 +523,7 @@ def probe(binding: dict, subj: Subject) -> tuple[int | None, str]:
             seen_any_file = True
             n += sum(1 for node in _iter_nodes(doc) if _matches(node, pred))
         if not seen_any_file:
-            return None, f"none of {files} present in {subj.name}"
+            return _absent_stage_docs(files, pred, subj)
         return n, f"{n} × {describe(pred)} in {', '.join(files)}"
 
     if kind == "artifact":
@@ -772,6 +871,25 @@ def load_ledger(path: pathlib.Path) -> dict:
                 "a carrier with no binding count is the vacuity this gate exists "
                 "to expose, so it may not be declared"
             )
+        # A `dsl` probe may only name a document this gate knows how to read.
+        # Without this, the measured-zero branch in `_absent_stage_docs` turns a
+        # MISTYPED filename into a silent zero: no build's manifest lists
+        # `worldedits.json`, so the row would measure zero everywhere and go
+        # quiet on every campaign forever. The widening and this guard are one
+        # act — a name outside the vocabulary is a ledger defect, and it fails
+        # loudly at load, for every campaign, before any verdict is reached.
+        for key in ("binding", "applies_when"):
+            b = r.get(key)
+            if not isinstance(b, dict) or b.get("kind") != "dsl":
+                continue
+            for f in b.get("files") or []:
+                if f not in Subject.STAGE_FILES:
+                    raise ValueError(
+                        f"{path}: row `{r['id']}` `{key}` names `{f}`, which is "
+                        "not a stage document this gate reads — a document no "
+                        "campaign can declare measures zero on every campaign, "
+                        "which is a check that has gone quiet, not a check"
+                    )
         if r.get("applies_when") is not None and r.get("applies_when") == r.get("binding"):
             raise ValueError(
                 f"{path}: row `{r['id']}` declares its own binding probe as its "
