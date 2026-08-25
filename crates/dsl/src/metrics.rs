@@ -571,6 +571,9 @@ pub struct ReadBinding {
 pub struct UnknownMetric {
     /// The kind of entry the document was naming (`size class`, `opening`, …).
     pub kind: &'static str,
+    /// The same kind, plural — carried rather than derived, because three of the
+    /// six nouns end in a sibilant and `{kind}s` is wrong for them.
+    pub kind_plural: &'static str,
     /// The name it wrote.
     pub named: String,
     /// Every name this table does define of that kind, in table order.
@@ -594,9 +597,10 @@ impl UnknownMetric {
                 "the metrics table defines no {kind} called `{named}`. The table is \
                  the single authority for this vocabulary, so a name it does not \
                  define cannot compile and no check downstream has to cope with one. \
-                 Defined {kind}s: {defined}. Run `delvec metrics` for the whole \
+                 Defined {plural}: {defined}. Run `delvec metrics` for the whole \
                  table, including what each entry is for.",
                 kind = self.kind,
+                plural = self.kind_plural,
                 named = self.named,
             ),
         )
@@ -658,6 +662,24 @@ impl MetricKind {
             MetricKind::WayClass => "way-class.",
             MetricKind::Storey => "storey.",
             MetricKind::Pacing => "pacing.",
+        }
+    }
+
+    /// What the kind is called in a refusal, **plural**.
+    ///
+    /// A fact about the kind rather than an `s` appended where a message needed
+    /// one: three of the six nouns end in a sibilant, so `{noun}s` reads
+    /// `size classs`, `stair pitchs` and `way classs`. Written out here, a kind
+    /// added later cannot inherit that by default — it has to answer.
+    #[must_use]
+    pub fn plural(self) -> &'static str {
+        match self {
+            MetricKind::Opening => "seam openings",
+            MetricKind::Pitch => "stair pitches",
+            MetricKind::SizeClass => "size classes",
+            MetricKind::WayClass => "way classes",
+            MetricKind::Storey => "storey heights",
+            MetricKind::Pacing => "pacing coefficients",
         }
     }
 
@@ -1212,6 +1234,7 @@ impl Metrics {
             .get(key.as_str())
             .ok_or_else(|| UnknownMetric {
                 kind: kind.noun(),
+                kind_plural: kind.plural(),
                 named: named.to_string(),
                 defined: self.names_of(kind),
             })

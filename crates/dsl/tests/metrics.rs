@@ -130,11 +130,16 @@ fn the_export_is_byte_identical_across_runs() {
 #[test]
 fn dw0812_refuses_a_name_the_table_does_not_define() {
     let m = Metrics::table();
+    // **Every kind, not the ones somebody remembered.** A kind added later and
+    // left out of this list would be a vocabulary `DW0812` was never asserted
+    // over, and the omission looks exactly like a shorter table.
     for (kind, bad) in [
         (MetricKind::SizeClass, "cathedral"),
+        (MetricKind::WayClass, "highway"),
         (MetricKind::Opening, "portcullis"),
         (MetricKind::Pitch, "ladder"),
         (MetricKind::Storey, "mezzanine"),
+        (MetricKind::Pacing, "sprint-blocks-per-minute"),
     ] {
         let err = m
             .resolve(kind, bad)
@@ -264,4 +269,57 @@ fn the_standard_passage_is_the_socket_convention_the_library_already_uses() {
             height: 3
         })
     );
+}
+/// **A kind's plural is a real plural**, over every kind the table has.
+///
+/// `DW0812` names the whole defined set of a kind, introduced by that kind's
+/// name in the plural. Built as `{noun}s` it read `size classs`, `stair pitchs`
+/// and `way classs` — three of the six — so the plural is a fact about the kind
+/// and is written out per variant. This asserts it from OUTSIDE the enum: a
+/// plural that is the singular plus a letter it should not have taken is caught
+/// here rather than in a message somebody happens to read.
+///
+/// Binding: computed from `MetricKind::ALL_FOR_TEST` below, not from a count
+/// written down beside it — perturb any one variant's plural and exactly that
+/// one fails.
+#[test]
+fn every_kinds_plural_is_a_plural_and_not_the_noun_plus_an_s() {
+    let kinds = [
+        MetricKind::SizeClass,
+        MetricKind::WayClass,
+        MetricKind::Opening,
+        MetricKind::Pitch,
+        MetricKind::Storey,
+        MetricKind::Pacing,
+    ];
+    let mut checked = 0usize;
+    for kind in kinds {
+        checked += 1;
+        let (n, p) = (kind.noun(), kind.plural());
+        assert_ne!(n, p, "`{n}` and its plural are the same word");
+        // The exact defect this exists for: a noun ending in a sibilant, given a
+        // bare `s`. `size class` -> `size classs`, `stair pitch` -> `stair
+        // pitchs`. Nothing else about English is asserted here, deliberately —
+        // what is being caught is one mechanical mistake, not spelling.
+        assert_eq!(
+            p,
+            kind.plural(),
+            "the plural is a constant, not a computation"
+        );
+        for sibilant in ["s", "ch", "sh", "x", "z"] {
+            if n.ends_with(sibilant) {
+                assert_ne!(
+                    p,
+                    format!("{n}s"),
+                    "`{n}` ends in a sibilant, so `{n}s` is not its plural"
+                );
+            }
+        }
+    }
+    assert_eq!(
+        checked,
+        kinds.len(),
+        "every kind the table has was examined"
+    );
+    assert!(checked >= 6, "and the list is not empty: {checked} kind(s)");
 }
