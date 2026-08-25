@@ -163,8 +163,12 @@ function rle(runs) {
   return Buffer.from(b).toString("base64");
 }
 
-/** A prefab of `n` anchors named `<id>-1 … <id>-n`, in a one-cell box. */
-function prefabModel(id, n) {
+/**
+ * A prefab of `n` anchors named `<id>-1 … <id>-n`, in a one-cell box, plus any
+ * `shared` names verbatim — a name another prefab on the page also declares.
+ */
+function prefabModel(id, n, shared = []) {
+  const anchor = (name) => ({ name: "anchor/" + name, pos: [0, 0, 0], facing: "north" });
   return {
     id,
     size: [1, 1, 1],
@@ -173,11 +177,10 @@ function prefabModel(id, n) {
     filled: 0,
     runs: 1,
     tiles: 1,
-    anchors: Array.from({ length: n }, (_, i) => ({
-      name: "anchor/" + id + "-" + (i + 1),
-      pos: [0, 0, 0],
-      facing: "north",
-    })),
+    anchors: [
+      ...Array.from({ length: n }, (_, i) => anchor(id + "-" + (i + 1))),
+      ...shared.map(anchor),
+    ],
   };
 }
 
@@ -257,7 +260,20 @@ function modelNames(viewer) {
 
 /* ----------------------------------------------------------------- tests -- */
 
-const DATA = makeData([prefabModel("alpha", 5), prefabModel("beta", 3)]);
+/* Four prefabs of four different anchor counts, so a switch changes the size of
+ * the pool as well as its contents, in both directions — a repair that grew the
+ * layer but never shrank it would pass on same-sized neighbours. `alpha` and
+ * `beta` are the pair the single-switch tests name; the pair sweep uses all
+ * four, which is twelve ordered pairs rather than two. Names are shared across
+ * prefabs on purpose (`shared-1`): the pool is keyed by name, and a name that
+ * appears in two prefabs is the case that hands the new scene the old scene's
+ * element. A page of the eight Halgrave zones has six such anchors. */
+const DATA = makeData([
+  prefabModel("alpha", 5, ["shared-1"]),
+  prefabModel("beta", 3),
+  prefabModel("gamma", 8, ["shared-1"]),
+  prefabModel("delta", 1),
+]);
 
 test("the label layer holds the anchors of the model on screen", () => {
   const { viewer, layer } = boot(DATA);
@@ -265,7 +281,8 @@ test("the label layer holds the anchors of the model on screen", () => {
   viewer.selectModel(0);
   viewer.positionLabels();
   assert.deepEqual(layerNames(layer), modelNames(viewer));
-  assert.equal(layer.children.length, 5, "alpha declares five anchors");
+  assert.equal(layer.children.length, DATA.models[0].anchors.length,
+    "one element per anchor the model declares");
 });
 
 test("switching scene leaves none of the previous scene's labels behind", () => {
@@ -274,7 +291,7 @@ test("switching scene leaves none of the previous scene's labels behind", () => 
   viewer.selectModel(0);
   viewer.positionLabels();
   const gone = layerNames(layer);
-  assert.equal(gone.length, 5);
+  assert.equal(gone.length, DATA.models[0].anchors.length);
 
   // The defect was visible only for labels that were on screen at the moment
   // of the switch — the pass hid the ones it visited and never visited these.
@@ -286,7 +303,8 @@ test("switching scene leaves none of the previous scene's labels behind", () => 
 
   const left = layerNames(layer);
   assert.deepEqual(left, modelNames(viewer), "the layer is the new model's anchors");
-  assert.equal(layer.children.length, 3, "beta declares three anchors");
+  assert.equal(layer.children.length, DATA.models[1].anchors.length,
+    "one element per anchor the NEW model declares");
   for (const name of gone) {
     assert.ok(!left.includes(name), `${name} belongs to the model we left`);
   }
@@ -308,8 +326,11 @@ test("a label never outlives its scene, over every ordered pair of models", () =
       pairs++;
     }
   }
-  // Stated, not written down: the count comes from the models themselves.
-  assert.equal(pairs, DATA.models.length * (DATA.models.length - 1));
+  // Binding count, computed from the models rather than written down beside
+  // them — a count that is a constant is green on a sweep that swept nothing.
+  const n = DATA.models.length;
+  assert.equal(pairs, n * (n - 1));
+  console.log(`bound ${pairs} ordered pair(s) over ${n} model(s)`);
 });
 
 test("labels turned off do not survive a scene switch either", () => {
@@ -318,7 +339,7 @@ test("labels turned off do not survive a scene switch either", () => {
   viewer.selectModel(0);
   viewer.positionLabels();
   const alpha = layerNames(layer);
-  assert.equal(alpha.length, 5);
+  assert.equal(alpha.length, DATA.models[0].anchors.length);
   for (const el of layer.children) el.style.display = "";
 
   // The pass returns early when the reviewer has the labels switched off. The
@@ -377,8 +398,8 @@ test("PERTURBATION: with the pool no longer bound to the model, the leak returns
     const left = layerNames(layer);
 
     const stale = alpha.filter((n) => left.includes(n));
-    assert.equal(stale.length, 5,
-      `${name}: all five of alpha's labels should still be in the layer`);
+    assert.equal(stale.length, DATA.models[0].anchors.length,
+      `${name}: every one of the previous model's labels should still be there`);
     assert.notDeepEqual(left, modelNames(viewer),
       `${name}: the layer should NOT be just beta's anchors`);
   }
