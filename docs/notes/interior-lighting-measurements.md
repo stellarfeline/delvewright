@@ -75,23 +75,31 @@ shortest passable path:
 | glow lichen / enchanting table / ender chest | 7 | 4 |
 | amethyst cluster | 5 | 2 |
 | magma block | 3 | 0 (lights only itself) |
-| **candle (1–4), copper bulb** | **0 in the model** | **never clears the gate** |
+| candle (1–4) | 3/6/9/12 | 0/3/6/9 |
 
 One lantern holds a 25-block-diameter sphere above the threshold. `DW0210` is therefore cleared
 by **sparse, motivated fixtures**; the instinct to pave a floor comes from misreading a
 minimum-brightness gate as a coverage requirement. Established by arithmetic over the flood rule
 and the emission table, both read at my revision.
 
-## 5. Candles and copper bulbs emit 0 in the engine's model
+## 5. Candles emit what the game says they emit
 
-`grep candle crates/compiler/src/light.rs` → no match; `grep copper_bulb` → no match. Both fall
-through `_ => 0`. The table's doc comment states the never-overestimate contract: absent blocks
-emit 0, "an underestimate, which is the safe direction".
+This section recorded a modelling gap: `emission()` had no arm for candles or copper bulbs, both
+fell through `_ => 0`, and a room lit only by candles was modelled at 0 and refused. The gap was
+real and it is closed. `emission()` is now measured against the pinned server jar —
+`BlockState.getLightEmission()` over all 29,671 blockstates — and `emission_table.rs` asserts
+`emission ≤ game` over every one of them, so the never-overestimate contract is proven rather
+than documented.
 
-Consequence for design, and it is real: **the candle — the fiction-correct low, warm, domestic
-source for a priory — is invisible to the proof.** A room lit only by candles is modelled at 0
-and refuses. This is a modelling gap, not a design error. Vanilla 1.21 candles emit 3/6/9/12 for
-1–4 lit candles. Reported, not acted on.
+The census that closed it corrects this note's own figure: **thirteen** was a count of *families*.
+The under-modelled population was **62 block ids in 16 families**, and three families are ones
+this note never named. There was also one **over**estimate in the opposite direction, which a unit
+test asserted: bare `glow_lichen` is the faceless default state, which vanilla lights at 0 where
+the table returned 7.
+
+Three ids remain deliberately below the game — redstone lamp, trial spawner, vault — because the
+world re-derives their state at load and the model takes the minimum over the states it can reach.
+A copper bulb is not one of them: shipped lit with no redstone nearby, it stays lit.
 
 ## 6. Three different passability predicates in three crates
 

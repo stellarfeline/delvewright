@@ -277,31 +277,40 @@ the proof, so it cannot clear `DW0210` however bright it is in game — see §4.
 | [respawn anchor](https://minecraft.wiki/w/Respawn_Anchor) | 0/3/7/11/15 | yes (`charges`, default 0) | yes | no | **explodes if used outside the Nether** |
 | [brown mushroom](https://minecraft.wiki/w/Brown_Mushroom) | 1 | yes | no | no | **emits nothing in a flower pot** |
 | [enchanting table](https://minecraft.wiki/w/Enchanting_Table) / [ender chest](https://minecraft.wiki/w/Ender_Chest) | 7 | yes | no | ender chest yes | ordinary |
-| **[candle](https://minecraft.wiki/w/Candle) ×1–4 lit** | **3/6/9/12** | **NO — 0** | no | yes | up to four per cell, on a **solid** block; placed unlit |
-| **[copper bulb](https://minecraft.wiki/w/Copper_Bulb)** | **15/12/8/4** by oxidation | **NO — 0** | yes | no | ordinary; toggles on a redstone **pulse** |
-| **[copper lantern](https://minecraft.wiki/w/Copper_Lantern)** | **15** | **NO — 0** | no | yes | as lantern. Added 1.21.9 |
-| **[copper torch](https://minecraft.wiki/w/Copper_Torch)** | **14** | **NO — 0** | no | yes | as torch. Added 1.21.9 |
-| **[redstone lamp](https://minecraft.wiki/w/Redstone_Lamp) (lit)** | **15** | **NO — 0** | yes | no | ordinary; instant on, 0.2 s off |
-| **[sculk catalyst](https://minecraft.wiki/w/Sculk_Catalyst)** | **6** | **NO — 0** | yes | no | ordinary |
-| **[firefly bush](https://minecraft.wiki/w/Firefly_Bush)** | **2** | **NO — 0** | no | — | added 1.21.5 |
+| [candle](https://minecraft.wiki/w/Candle) ×1–4 lit** | **3/6/9/12** | yes | no | yes | up to four per cell, on a **solid** block; placed unlit |
+| [copper bulb](https://minecraft.wiki/w/Copper_Bulb)** | **15/12/8/4** by oxidation | yes | yes | no | ordinary; toggles on a redstone **pulse** |
+| [copper lantern](https://minecraft.wiki/w/Copper_Lantern)** | **15** | yes | no | yes | as lantern. Added 1.21.9 |
+| [copper torch](https://minecraft.wiki/w/Copper_Torch)** | **14** | yes | no | yes | as torch. Added 1.21.9 |
+| [redstone lamp](https://minecraft.wiki/w/Redstone_Lamp) (lit)** | **15** | yes | yes | no | ordinary; instant on, 0.2 s off |
+| [sculk catalyst](https://minecraft.wiki/w/Sculk_Catalyst)** | **6** | yes | yes | no | ordinary |
+| [firefly bush](https://minecraft.wiki/w/Firefly_Bush)** | **2** | yes | no | — | added 1.21.5 |
 
-### 4.1 The modelling gap, and it is design-blocking **[authored]**
+### 4.1 What the model measures, and the three it deliberately does not **[authored]**
 
-Thirteen emitters that exist at the pin are absent from `emission()` and therefore measure **0**:
-candle, copper bulb, copper lantern, copper torch, redstone lamp, sculk catalyst, firefly bush,
-sculk sensor, trial spawner, vault, nether portal, end portal frame and dragon egg. Verified by
-grepping the function at `86944766`.
+`emission()` is measured against the pinned server jar itself: every value is what
+`BlockState.getLightEmission()` returns over the whole blockstate registry — 1166 blocks,
+29,671 blockstates, 109 of them emitting at some state. `emission_table.rs` asserts
+`emission ≤ game` over all 29,671, so the never-overestimate contract is proven rather than
+assumed, and a future version's new emitter reds here instead of silently costing a designer a
+fixture.
 
-The direction is safe — the function documents a **never-overestimate contract**, and an absent
-block emitting 0 is an underestimate, which can only make the gate stricter. But the consequence
-for a designer is real and is not a safety property:
+Three ids sit deliberately **below** the game, and the rule is: evaluate the blockstate the world
+ships with, except where the world re-derives the property at load, and there take the minimum
+over the states the world can reach.
 
-> **A room lit only by candles, copper lanterns or redstone lamps refuses to build**, however
-> bright it is in the game.
+| id | modelled | why |
+|---|---:|---|
+| redstone lamp | 0 | no `onPlace`; the first neighbour update with no signal schedules an unlight, and assembly is such an update. A shipped lit lamp is not a stable configuration. |
+| trial spawner | 0 | block-entity-owned; the minimum over its six states is 0 |
+| vault | 6 | block-entity-owned, but every state is 6 or 12, so 6 holds whatever the entity does |
 
-Candles are the sharp case: they are the fiction-correct low, warm, domestic source, and they are
-invisible to the proof. Use them as **unlit decoration**, which costs nothing, and light the room
-with something the model knows.
+A copper bulb is **not** in that set: shipped lit in a room with no redstone, it stays lit.
+
+> **A room lit only by candles builds.** So does one lit by copper lanterns, copper torches, a
+> sculk catalyst or a firefly bush.
+
+Candles are the fiction-correct low, warm, domestic source, and the proof sees them: `3/6/9/12`
+by count, and **0 when unlit**, so a candle placed as decoration still costs nothing.
 
 ## 5. The mob-spawning floor
 
@@ -440,7 +449,7 @@ strength (no wiki statement found).
 | colour temperature is a learned code | 3.6 | **cited** — Theodore 2005, incl. the *Half-Life 2* inversion |
 | soul variants are cooler *and* dimmer | 3.6 | **authored** — from §4 |
 | emitter mechanics | 4 | **cited** — `minecraft.wiki`, per row |
-| thirteen emitters model as 0 | 4.1 | **authored** — measured |
+| emission is measured against the pinned jar; three ids sit deliberately below the game | 4.1 | **authored** — measured |
 | spawn floor is block light 1 | 5 | **cited** — wiki; **authored** that it sits below the gate |
 | concealment, the light block | 6.1–6.2 | **cited** — forum threads, wiki |
 | conceal by recessing, not by covering | 6.1 | **authored** — from §2 |
