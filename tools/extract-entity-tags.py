@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate `crates/compiler/data/entity-tags-1.21.11.json` from the pinned MC
+"""Regenerate `crates/dsl/data/entity-tags-1.21.11.json` from the pinned MC
 1.21.11 `entity_type` tag summary — Mojang's own answer to questions of the form
 "which entity types do X", which the compiler must never re-answer with a table
 of its own (`DW0496` daylight burning; CLAUDE.md forbids invented vanilla data,
@@ -31,7 +31,7 @@ namespaced here (`minecraft:burn_in_daylight`) so a lookup reads exactly like
 the `#minecraft:<tag>` a datapack would write. 46 tags for 1.21.11.
 
     python3 tools/extract-entity-tags.py entity-type-tags.min.json \\
-      crates/compiler/data/entity-tags-1.21.11.json
+      crates/dsl/data/entity-tags-1.21.11.json
 """
 
 import hashlib

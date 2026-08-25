@@ -4,14 +4,17 @@ These files pin the game data the compiler validates against (ADR-0009 = MC
 1.21.11, ADR-0011 = vendored command tree + item registry). They change only if
 ADR-0009's revisit triggers fire.
 
-**The block tables live in `crates/dsl/data/`**, and this file is their
-provenance too — one record for one pinned game version, rather than a second
-copy that can fall a version behind. `blocks-1.21.11.json`,
+**The block tables and the entity-type tags live in `crates/dsl/data/`**, and
+this file is their provenance too — one record for one pinned game version,
+rather than a second copy that can fall a version behind. `blocks-1.21.11.json`,
 `blockstate-shape-props-1.21.11.json` and `block-defaults-1.21.11.json` sit
 beside the module that reads them (`delvewright_dsl::blocks`, re-exported as
 `delvewright_schem::blocks`), because `delvec` is published to crates.io and may
 only depend on published crates — and the CPU render surface it carries reads the
-block registry. Every reproduce command below names the path it writes.
+block registry. `entity-tags-1.21.11.json` sits there for the sibling reason:
+both validation tiers ask which entity types do X, and the DSL crate cannot
+`include_str!` a file it does not ship. Every reproduce command below names the
+path it writes.
 
 ## Route taken
 
@@ -260,13 +263,27 @@ not third-party reconstructions.
   representative as its lexicographically smallest member so the output cannot
   depend on edge order (ADR-0006).
 
-- **`entity-tags-1.21.11.json`** — vanilla's built-in `entity_type` tags, from
+- **`entity-tags-1.21.11.json`** (in `crates/dsl/data/`) — vanilla's built-in
+  `entity_type` tags, from
   `data/tag/entity_type/data.min.json` in the same summary: tag id (namespaced,
   so a lookup reads like the `#minecraft:<tag>` a datapack would write) → its
   sorted values. 46 tags. These are **Mojang's own answers to "which entity types
   do X"**, which is the only acceptable source for such a question here — the
   alternative is a hand-written species table, i.e. exactly the invented vanilla
   data this file's next section refuses.
+  Feeds `DW0382` (which bodies may march a lane) via `#minecraft:raiders`, and
+  that tag is the reason the table lives in the DSL crate: `DW0382` is decidable
+  from the declaration alone and is therefore a validation-tier rule, and before
+  it read the tag it answered from a five-species array the pinned game
+  disagreed with. Choosing `#minecraft:raiders` for that question is itself a
+  claim about the game, and `tools/check-patrol-types.py` is what falsifies it:
+  it re-derives the set three ways from the pinned server jar — the tag, the
+  entity types whose class is a `PatrollingMonster`, and the entity types whose
+  class is a `Raider` — and requires all three to name the same species. It also
+  checks that of every class in the jar carrying `Patrolling` / `PatrolLeader` /
+  `patrol_target` as string constants, exactly one stands in some entity's
+  superclass chain, which is what makes the class test the whole answer rather
+  than a plausible one.
   Feeds `DW0496` (daylight-burning staging) via `#minecraft:burn_in_daylight`,
   the tag the 1.21 engine itself tests before running a mob's sun-burn tick. The
   tag is about which types run that tick, **not** about which types the fire then
@@ -275,7 +292,7 @@ not third-party reconstructions.
   branch — so `daylight.rs` carries that one exclusion explicitly, cited, rather
   than pretending the tag alone is the whole rule.
   **Reproduce it**: `python3 tools/extract-entity-tags.py
-  <data/tag/entity_type/data.min.json> crates/compiler/data/entity-tags-1.21.11.json`.
+  <data/tag/entity_type/data.min.json> crates/dsl/data/entity-tags-1.21.11.json`.
 
 ### What vanilla data does NOT provide (and what the compiler does about it)
 
