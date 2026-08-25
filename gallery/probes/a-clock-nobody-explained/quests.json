@@ -1336,7 +1336,7 @@
               "type": "narrate"
             },
             {
-              "grace_ticks": 120,
+              "grace_ticks": 40,
               "on_caught": [
                 {
                   "forbids_flags": [

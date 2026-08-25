@@ -1090,11 +1090,33 @@
       "triage": "capability"
     },
     {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "begin-stealth"
+          },
+          "has": [
+            "on_caught"
+          ]
+        }
+      },
       "campaign": "nobodys-cave-island",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0860",
+        "kind": "dw"
+      },
       "finding": "a beat that can fail the player armed before its own prompt could be read",
       "general_form": "a failure clock arms only after the prompt that explains it can have been read",
       "id": "isl-36",
+      "note": "Closed as the arithmetic, not as the one beat's grace. DW0860 refuses a `begin-stealth` whose `on_caught` can punish the party before the last `narrate` at or before the arming could have been read: `(arming offset - prompt offset) + grace_ticks` against `20 + 2 x characters` ticks, so a `sequence` step's offset counts and the default grace of 20 ticks carries almost no line at all. Calibrated on this campaign's own repair, which it passes with 260 ticks against 108 needed, and on the shape that repair left: three long mutually exclusive branch retellings then a short instruction, where the line the clock races is the last one and not the sum. On its first run against the current build it found a live instance on the gallery - grace 40, no narrate anywhere before the arming - which is fixed in the same change. A `timed-gate` is out of scope and stays with DW0388/DW0378: it arms at world load, so no prompt can precede it.",
+      "requires": {
+        "file": "quests.json",
+        "min_dsl_version": "0.8.0"
+      },
       "round": 12,
       "triage": "capability"
     },
@@ -1439,11 +1461,44 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "collect"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "collect"
+          },
+          "has": [
+            "container"
+          ]
+        }
+      },
       "campaign": "nobodys-cave-island",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0861",
+        "kind": "dw"
+      },
       "finding": "only one of four identical barrels held the item the objective wanted, and nothing told the party which",
       "general_form": "an objective's target is distinguishable from identical scenery, or every copy satisfies it",
       "id": "isl-53",
+      "note": "Closed WEAKER than the general form as written, and the gap is stated rather than papered over. DW0861 refuses a `collect` that adopts a prefab container without both a `title` and an `item_name` - the two things that can tell the party which box to open and what they have found - keyed to adoption, which is the act that creates the ambiguity: the compiler's own chest at `anchor` appears when the objective activates, an adopted one is scenery the party has been walking past since the beat began. What it does NOT prove is that the target is visually distinguishable from its identical neighbours, which needs the assembled world and a search radius. The general form's second disjunct - or every copy satisfies it - is not expressible at any strength: `container` names one anchor.",
+      "requires": {
+        "file": "quests.json",
+        "min_dsl_version": "0.8.0"
+      },
       "round": 16,
       "triage": "capability"
     },
@@ -1969,20 +2024,74 @@
       "triage": "capability"
     },
     {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "id"
+          ],
+          "in": {
+            "type": [
+              "talk-to",
+              "reach-anchor",
+              "kill",
+              "collect",
+              "interact"
+            ]
+          }
+        }
+      },
       "campaign": "the-drowned-bell",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0862",
+        "kind": "dw"
+      },
       "finding": "an on-screen prompt told the party to return to one place while the objective it described completed somewhere else",
       "general_form": "an objective's prompt names the place and the act that actually complete it",
       "id": "bell-13",
+      "note": "Closed WEAKER than the general form as written. DW0862 refuses a `hint` authored on an objective with no `title`: the activation announcement is emitted only for a titled objective and the hint's line is nested inside that guard, so the prose is inventoried, translated into every sidecar, and never put on a screen - the necessary condition for a prompt to name anything. It does NOT prove that the prompt names the right place: a machine cannot read prose for that. The stronger reading was built and measured before being rejected - keying the place to the objective's quest's declared `area` finds three objectives on a live campaign and all three are correct, because a quest's area is where the beat is booked and not where each objective completes. A sound reading needs each objective's own anchor resolved to an area.",
       "round": 6,
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "mobs"
+          ]
+        }
+      },
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "kill"
+          }
+        }
+      },
       "campaign": "the-drowned-bell",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0863",
+        "kind": "dw"
+      },
       "finding": "a defence wave gave the party no guidance to where the attackers were, so the fight could not be found",
       "general_form": "a mandatory encounter is discoverable from the objective that requires it",
       "id": "bell-14",
+      "note": "DW0863 refuses a `kill` objective without both a `title` and a `hint`. The ground is a fact about emission rather than a taste about prose: a fight is the one objective kind the compiler puts nothing in the world for - `activation_commands` emits no command for it, no marker, no prop, no name, and the render plan falls back to the literal phrase `the fight` because none exists - while every other kind leaves something standing. So the objective's own two lines are the only thing that can say where the wave arrives. Weaker than the general form in one respect, stated: it proves guidance was written, not that it is sufficient. What bounds that is the sibling rule - DW0862 refuses a prompt that reaches no player - and the author's own words.",
+      "requires": {
+        "file": "quests.json",
+        "min_dsl_version": "0.8.0"
+      },
       "round": 6,
       "triage": "capability"
     },

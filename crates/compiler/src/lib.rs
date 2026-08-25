@@ -86,6 +86,7 @@ pub mod plan;
 pub mod png;
 pub mod pool;
 pub mod pressable;
+pub mod promise;
 pub mod raster;
 pub mod reach;
 pub mod registry;

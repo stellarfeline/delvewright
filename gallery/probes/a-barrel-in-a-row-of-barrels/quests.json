@@ -345,7 +345,6 @@
             "hint": "Four of them, in the case.",
             "id": "obj/take-the-emeralds",
             "item": "minecraft:emerald",
-            "item_name": "Hall Emerald",
             "requires_flags": [],
             "requires_state": [
               {
