@@ -1157,9 +1157,12 @@ fn resolve_shape(
                         None => {
                             return Err(format!(
                                 "world-edits batch `{bid}`: area `{}` resolves no anchor \
-                                 `{anchor}` — use an anchor the area's placed prefab metadata \
-                                 declares (see the `delvec snapshot` manifest's target list)",
+                                 `{anchor}` — {}",
                                 area.area_id,
+                                delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
+                                    "use an anchor the area's placed prefab metadata declares \
+                                     (see the `delvec snapshot` manifest's target list)"
+                                ),
                             ));
                         }
                     };
@@ -1888,6 +1891,7 @@ fn relight_region(
         &reachable,
         &required,
         &area_label(bid, batch),
+        delvewright_dsl::Placement::of(plan.campaign),
         spec,
         sky,
         amin,
@@ -1960,10 +1964,12 @@ fn resolve_frame_point(
                 Some(ResolvedAnchor::Gate { from, .. }) => *from,
                 None => {
                     return Err(format!(
-                        "world-edits batch `{bid}`: area `{}` resolves no anchor `{anchor}` — \
-                         use an anchor the area's placed prefab metadata declares (see the \
-                         `delvec snapshot` manifest's target list)",
+                        "world-edits batch `{bid}`: area `{}` resolves no anchor `{anchor}` — {}",
                         area.area_id,
+                        delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
+                            "use an anchor the area's placed prefab metadata declares (see the \
+                             `delvec snapshot` manifest's target list)"
+                        ),
                     ));
                 }
             };

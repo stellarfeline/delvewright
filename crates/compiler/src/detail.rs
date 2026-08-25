@@ -56,6 +56,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -98,14 +99,18 @@ pub const DW_ANCHOR_STANDING: DwCode = DwCode::every_version("DW0845");
 /// revision, never by a version string, is the reason this is not
 /// `DELVEC_VERSION`: two engines 136 commits apart report the same version.
 ///
-/// Stamped at COMPILE time by whoever builds the binary, and honestly `unstamped`
-/// when nobody did. This is a departure from a literal reading of spec-0050 §2,
-/// recorded here because this is where it is made: naming the revision would
-/// otherwise need a `build.rs` shelling out to `git`, on a crate published to
-/// crates.io where there is no `.git` to read — a distribution change the spec
-/// does not ask for, to answer a question the release recipe can answer for
-/// free. What the engine must never do is *claim* a revision it does not have,
-/// and `unstamped` is that claim withheld.
+/// Stamped at COMPILE time, by `crates/compiler/build.rs` (spec-0050 §2). A
+/// source build reads the revision out of the checkout it is being built from,
+/// suffixed `-dirty` when that tree carries uncommitted changes; a release
+/// recipe or container build that has the revision and no `.git` passes
+/// `DELVEC_ENGINE_REVISION` in the environment and that wins unchanged.
+///
+/// `unstamped` is what is left when neither can be established — a source
+/// tarball such as crates.io serves, with no `.git` to read. What the engine
+/// must never do is *claim* a revision it does not have, and `unstamped` is
+/// that claim withheld. It is the fallback, not the normal answer: a campaign
+/// author copies this field into `walk-record.json`, and a field that always
+/// holds one constant is not a measurement.
 #[must_use]
 pub fn engine_revision() -> &'static str {
     option_env!("DELVEC_ENGINE_REVISION").unwrap_or("unstamped")
@@ -235,7 +240,7 @@ impl Hashes {
 // ---------------------------------------------------------------------------
 
 /// What a walk concluded.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Verdict {
     /// The whole was walked and is fit to detail.
@@ -245,7 +250,7 @@ pub enum Verdict {
 }
 
 /// One thing a walk found.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WalkFinding {
     /// What it is about — a place, a seam, a view.
@@ -264,7 +269,7 @@ pub struct WalkFinding {
 /// stated plainly rather than implied. That a human actually walked is this
 /// document's author's assertion, held by operating practice; no engine check
 /// can prove a walk happened and nothing here pretends one can.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WalkRecord {
     /// The plan that was walked, by its canonical-bytes hash.
@@ -293,6 +298,58 @@ impl WalkRecord {
         serde_json::from_str(src).map_err(|e| e.to_string())
     }
 }
+
+/// The JSON Schema for `walk-record.json`, exported by
+/// `delvec schema --stage walk-record`.
+///
+/// **Why this document has a schema even though it is not a stage document.**
+/// `walk-record.json` is a campaign artifact, not a stage document: it records
+/// an event rather than being authored against a schema version, which is why
+/// it carries no `dsl_version`, no `campaign_id` and no `stage`. None of that
+/// is a reason to leave the person who has to WRITE it reading prose. It is
+/// hand-authored, it is refused when it is wrong (`DW0841`), and every other
+/// document the author writes is `delvec schema`-exportable — so the one that
+/// is not is the one they get wrong. The schema is derived from
+/// [`WalkRecord`] exactly as every stage schema is derived from its type, so
+/// there is one authority for the form and no hand-written copy to disagree
+/// with it.
+#[must_use]
+pub fn walk_record_schema() -> serde_json::Value {
+    let mut v = serde_json::to_value(schemars::schema_for!(WalkRecord))
+        .expect("the walk-record schema serializes to JSON");
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "title".into(),
+            serde_json::Value::String("walk-record.json".into()),
+        );
+        obj.insert(
+            "description".into(),
+            serde_json::Value::String(WALK_RECORD_SCHEMA_DESCRIPTION.into()),
+        );
+    }
+    v
+}
+
+/// What the exported schema tells its reader the document IS — stated on the
+/// schema rather than only in a reference document, because the schema is what
+/// the authoring step actually opens.
+const WALK_RECORD_SCHEMA_DESCRIPTION: &str = "\
+The record of a human walking one derived blockout, written by hand beside the \
+stage documents once the walk is done.
+
+A CAMPAIGN ARTIFACT, NOT A STAGE DOCUMENT. It records an event rather than \
+being authored against a schema version, so it carries no `dsl_version`, no \
+`campaign_id` and no `stage` — the three fields every stage document must \
+have. It is not a build input either: re-recording a walk moves no emitted \
+byte.
+
+Every field but `findings` is required. The three hashes and the engine \
+revision are all printed by `delvec build` on a site-plan campaign — copy \
+them from that output rather than computing them. `site_plan_sha256` and \
+`layout_graph_sha256` are the freshness key: editing either document re-opens \
+the gate and asks for another walk. `DW0841` refuses detail work — including \
+`delvec allocation` — when this file is missing, unparseable, stale in \
+either hash, or carries `verdict: \"findings\"`.";
 
 /// What the walk gate examined, with its denominator.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

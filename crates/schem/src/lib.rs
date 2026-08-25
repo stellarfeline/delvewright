@@ -20,6 +20,17 @@
 pub mod convert;
 pub mod diag;
 pub mod fixtures;
+/// **What a block state does to a body** — `delvewright_dsl::blockshape`,
+/// re-exported here so [`fluid`] can reach it as `super::blockshape`.
+///
+/// That spelling is load-bearing rather than stylistic. `fluid` is source-included
+/// by every prefab generator (`prefabs/invariants.rs`), and those are separate
+/// Cargo workspaces with no dependency on this one — an absolute
+/// `delvewright_dsl::` path inside it does not resolve there. `super::` resolves
+/// in both, because the generator includes the authority beside it under the same
+/// name.
+pub use delvewright_dsl::blockshape;
+
 pub mod fluid;
 pub mod nav;
 pub mod nbt;

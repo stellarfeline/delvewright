@@ -1,0 +1,48 @@
+{
+  "campaign_id": "first-leg",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/hall",
+        "objectives": [
+          {
+            "anchor": "anchor/keeper-stand",
+            "id": "obj/bell",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {},
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "id": "quest/vault",
+        "objectives": [
+          {
+            "anchor": "anchor/npc-stand",
+            "id": "obj/take",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {
+          "obj/take": [
+            {
+              "type": "campaign-complete"
+            }
+          ]
+        },
+        "trigger": {
+          "quest": "quest/hall",
+          "type": "quest-complete"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.2.0",
+  "stage": "quests"
+}

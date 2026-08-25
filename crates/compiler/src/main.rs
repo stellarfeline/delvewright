@@ -102,9 +102,13 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
-    /// Export a stage's JSON Schema (LLM authoring aid).
+    /// Export a campaign document's JSON Schema (LLM authoring aid).
     Schema {
-        /// Stage `1..7` or `all`.
+        /// Which document. A numbered stage `1..7`; a named map-pipeline stage
+        /// document `geometry-brief` | `layout-graph` | `site-plan` |
+        /// `detail-plan`; `walk-record` for the hand-written walk record
+        /// (a campaign artifact, not a stage document); or `all` for every
+        /// stage document at once.
         #[arg(long)]
         stage: String,
     },
@@ -2347,7 +2351,25 @@ fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: boo
 }
 
 fn run_schema(stage: &str) -> ExitCode {
+    // EVERY stage answers to its own name, the one `DW0100` prints when that
+    // stage's document will not parse: a refusal that names `site-plan` and
+    // then tells the author to run `--stage <1..7>` has sent them somewhere
+    // their document is not. The names come from `Stage::ALL` rather than a
+    // second hand-written list, so a stage added later answers here the day it
+    // exists (`Stage::ALL`'s own doc comment says why).
+    if let Some(s) = Stage::ALL.iter().find(|s| s.name() == stage) {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&stage_schema(*s)).unwrap()
+        );
+        return ExitCode::SUCCESS;
+    }
     let stages = match stage {
+        // The numbered spelling of the campaign DSL's seven staged documents
+        // (ADR-0002). The map-pipeline documents are NAMED and never numbered
+        // into this sequence (spec-0049): that sequence is the campaign DSL's
+        // staging and this is a different pipeline, so a number would assert an
+        // ordering between the two that does not exist.
         "1" => vec![Stage::World],
         "2" => vec![Stage::Npcs],
         "3" => vec![Stage::Classes],
@@ -2355,19 +2377,31 @@ fn run_schema(stage: &str) -> ExitCode {
         "5" => vec![Stage::Quests],
         "6" => vec![Stage::Dialogue],
         "7" => vec![Stage::WorldEdits],
-        // The map-pipeline documents are NAMED, never numbered into the 1..7
-        // sequence (spec-0049): that sequence is the campaign DSL's staging and
-        // this is a different pipeline, so a number would assert an ordering
-        // between the two that does not exist.
-        "geometry-brief" => vec![Stage::GeometryBrief],
-        "layout-graph" => vec![Stage::LayoutGraph],
-        "site-plan" => vec![Stage::SitePlan],
-        "detail-plan" => vec![Stage::DetailPlan],
+        // `walk-record.json` is not a stage document and has no `Stage` — it is
+        // a campaign artifact recording an event (see `detail::walk_record_schema`).
+        // It is reachable here anyway because this is the command an author is
+        // told to run to see the shape of a document they must write, and the
+        // walk record is one of those. The schema says what it is, so the tool
+        // and the reference document agree rather than the flag's name deciding.
+        "walk-record" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&delvewright_compiler::detail::walk_record_schema())
+                    .unwrap()
+            );
+            return ExitCode::SUCCESS;
+        }
         "all" => Stage::ALL.to_vec(),
         other => {
+            let names: Vec<String> = Stage::ALL
+                .iter()
+                .map(|s| format!("`{}`", s.name()))
+                .collect();
             eprintln!(
-                "unknown stage `{other}` (want 1..7, `geometry-brief`, `layout-graph`, \
-                 `site-plan`, `detail-plan`, or `all`)"
+                "unknown document `{other}`. Want `1`..`7` (the campaign DSL's numbered \
+                 stages), any stage by name — {names} — `walk-record` for the hand-written \
+                 walk record, or `all` for every stage document at once.",
+                names = names.join(", "),
             );
             return ExitCode::from(EXIT_INTERNAL);
         }

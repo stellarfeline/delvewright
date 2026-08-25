@@ -1,0 +1,24 @@
+{
+  "campaign_id": "first-leg",
+  "content": {
+    "areas": [
+      {
+        "id": "area/hall",
+        "name": "The Watch-Hall",
+        "prefab": "prefab/hello-room"
+      },
+      {
+        "id": "area/vault",
+        "name": "The Vault",
+        "prefab": "prefab/keep-room-small-b"
+      }
+    ],
+    "premise": "The bell is rung in the hall; what it answers for is kept in the vault.",
+    "seed": 20260825,
+    "target_minutes": 5,
+    "theme": "A watch-hall and the vault it guards, a yard apart.",
+    "title": "The Long Yard"
+  },
+  "dsl_version": "0.2.0",
+  "stage": "world"
+}

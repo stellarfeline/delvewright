@@ -1067,6 +1067,7 @@ pub fn build_with_warnings(
                         };
                         crate::nav::check_branch_path(
                             &world,
+                            campaign_spawn(plan),
                             &cp.steps,
                             &cp.transport_by_step,
                             &region_events,
@@ -1075,6 +1076,7 @@ pub fn build_with_warnings(
                         .map_err(label)?;
                         let branch_routes = crate::nav::branch_path_routes(
                             &world,
+                            campaign_spawn(plan),
                             &cp.steps,
                             &cp.transport_by_step,
                             &region_events,
@@ -5013,8 +5015,11 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
                 "`{verb}` at `{path}` names anchor `{anchor}`, which resolves to no \
                  position in the assembled world — the effect would emit nothing at \
                  all (a gate that never opens, a block never placed, a camera stuck \
-                 at the world origin). Anchor names come from prefab metadata: use \
-                 one the area's prefab/pool actually exposes, and do NOT invent one."
+                 at the world origin) — {}",
+                delvewright_dsl::Placement::of(c).anchor_remedy(
+                    "anchor names come from prefab metadata: use one the area's prefab/pool \
+                     actually exposes, and do NOT invent one"
+                ),
             ),
         });
     }
@@ -10234,12 +10239,15 @@ fn check_trigger_bodies(plan: &Plan) -> Result<crate::pressable::PressLedger, Bu
                 "trigger `{}` watches a `{}` on anchor `{}`, but nothing at that anchor is \
                  clickable: it resolves to no placed piece, so the compiler has no cell to give \
                  the trigger a body at and the press can never land. The trigger's effects would \
-                 simply never run, with every check green. Prescription: anchor it on a place a \
-                 prefab provides (anchor names come from prefab metadata; do NOT invent one), or \
-                 drop the trigger.",
+                 simply never run, with every check green. Prescription: {}, or drop the \
+                 trigger.",
                 t.id,
                 t.on.kind(),
-                at
+                at,
+                delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
+                    "anchor it on a place a prefab provides (anchor names come from prefab \
+                     metadata; do NOT invent one)"
+                ),
             ),
         });
     }
@@ -10920,6 +10928,7 @@ fn plan_payload_verbs(
     blocks: &BTreeMap<[i32; 3], String>,
 ) -> Result<PayloadPlans, BuildFailure> {
     let mut out = PayloadPlans::default();
+    let placement = delvewright_dsl::Placement::of(plan.campaign);
     let mut seen: BTreeSet<String> = BTreeSet::new();
     for eff in all_campaign_effects(plan.campaign) {
         let key = payload_verb_key(eff);
@@ -10930,10 +10939,10 @@ fn plan_payload_verbs(
             let label = format!("volley from `{from_anchor}` into `{}`", kill_zone.anchor);
             let from = plan
                 .point_any(from_anchor.as_str())
-                .ok_or_else(|| payload_anchor_failure(&label, from_anchor.as_str()))?;
-            let region = plan
-                .zone_box(kill_zone)
-                .ok_or_else(|| payload_anchor_failure(&label, kill_zone.anchor.as_str()))?;
+                .ok_or_else(|| payload_anchor_failure(placement, &label, from_anchor.as_str()))?;
+            let region = plan.zone_box(kill_zone).ok_or_else(|| {
+                payload_anchor_failure(placement, &label, kill_zone.anchor.as_str())
+            })?;
             let geom = crate::nav::plan_volley(world, from, region, &label)?;
             out.volleys.push(VolleyEmit {
                 key,
@@ -10947,9 +10956,9 @@ fn plan_payload_verbs(
                 continue;
             }
             let label = format!("collapse of `{}`", region_anchor.anchor);
-            let region = plan
-                .zone_box(region_anchor)
-                .ok_or_else(|| payload_anchor_failure(&label, region_anchor.anchor.as_str()))?;
+            let region = plan.zone_box(region_anchor).ok_or_else(|| {
+                payload_anchor_failure(placement, &label, region_anchor.anchor.as_str())
+            })?;
             let geom = crate::nav::plan_collapse(world, blocks, region, &label)?;
             out.collapses.push(CollapseEmit {
                 key,
@@ -10970,13 +10979,20 @@ fn plan_payload_verbs(
 }
 
 /// The `DW0441` failure for a payload-verb anchor that no placed piece provides.
-fn payload_anchor_failure(label: &str, anchor: &str) -> BuildFailure {
+fn payload_anchor_failure(
+    placement: delvewright_dsl::Placement,
+    label: &str,
+    anchor: &str,
+) -> BuildFailure {
     BuildFailure::Diagnostic {
         code: DW_PAYLOAD_ANCHOR_UNRESOLVED,
         message: format!(
             "{label}: anchor `{anchor}` is not provided by any placed prefab piece, so the \
-             volume it centres cannot be resolved. Use an anchor name the prefab metadata \
-             actually exposes (anchor names come from prefab metadata; do NOT invent one)"
+             volume it centres cannot be resolved — {}",
+            placement.anchor_remedy(
+                "use an anchor name the prefab metadata actually exposes (anchor names come \
+                 from prefab metadata; do NOT invent one)"
+            ),
         ),
     }
 }
@@ -11231,16 +11247,13 @@ fn trap_payload_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
-/// The campaign's **entry point**: the absolute position of the first area's
-/// entry anchor, resolved through [`plan::AnchorTable::entry_anchor`] — the
-/// anchor that declares [`plan::AnchorRole::Entry`], or the first
-/// [`plan::ENTRY_ANCHOR_NAMES`] spelling an area that declares no role carries.
-/// This one cell is `setworldspawn`, the class-apply teleport, the first-join
-/// placement, and the `dw:cp` seed. `None` is a hard build error (`DW0345`).
+/// The campaign's **entry point**: the cell the party begins the delve on,
+/// through [`Plan::campaign_start`] — the one resolver, which is also where the
+/// party's first leg begins. This cell is `setworldspawn`, the class-apply
+/// teleport, the first-join placement, and the `dw:cp` seed. `None` is a hard
+/// build error (`DW0345`).
 fn campaign_spawn(plan: &Plan) -> Option<[i32; 3]> {
-    plan.areas
-        .iter()
-        .find_map(|area| plan.entry_point(&area.area_id))
+    plan.campaign_start().map(|(_, pos)| pos)
 }
 
 // ---------------------------------------------------------------------------

@@ -89,8 +89,11 @@
 //!    causeway cell is standable and connects the approach end to the guard
 //!    station end (`connected`, the same technique `cliff_path` uses); every
 //!    flood cell is asserted directly not standable. As this piece is built
-//!    that holds twice over, and the two reasons are worth keeping apart: the
-//!    foot cell is water, which is not air, so it fails `passable` — and the
+//!    that holds twice over, and the two reasons are worth keeping apart. The
+//!    foot cell is water, and **a body does not occupy a fluid cell** — that is
+//!    the collision class fluid gets, not an inference from the cell not being
+//!    air (`delvewright_dsl::blockshape`, spec-0056; the walk once read *not
+//!    air* as *solid*, and under that reading a torch was a wall too). And the
 //!    cell under a foot is water, which is not a floor, so it would fail
 //!    `standable` even with air over it. Only the first is a fact about
 //!    flooding to the ceiling; the second is the rule, and it is what makes a
