@@ -16,6 +16,7 @@
 //! nothing depends on hash order, wall-clock, or absolute paths.
 
 pub mod blocks;
+pub mod blockshape;
 pub mod canonical;
 pub mod chrome;
 pub mod detailplan;
@@ -30,6 +31,7 @@ pub mod l10n;
 pub mod layout;
 pub mod mclang;
 pub mod metrics;
+pub mod placement;
 pub mod prefab;
 pub mod registry;
 pub mod schema;
@@ -74,6 +76,7 @@ pub use layout::{
     LayoutBinding, LayoutGraphContent, OpensFrom,
 };
 pub use mclang::mc_lang_code;
+pub use placement::Placement;
 pub use prefab::PrefabMeta;
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,

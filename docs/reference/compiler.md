@@ -604,7 +604,22 @@ than being authored against a schema. Its form is
 `{site_plan_sha256, layout_graph_sha256, blockout_sha256, engine_revision,
 verdict, findings[]}`, and every build of a site-plan campaign prints all three
 hashes with the engine's **revision** beside them, so a record can name its
-subject and its instrument literally. The first two are its **freshness key**:
+subject and its instrument literally. It is hand-authored and it is refused when
+it is wrong, so it is schema-exportable like everything else a person writes:
+`delvec schema --stage walk-record`, derived from the same struct `DW0841`
+parses. Not being a stage document decides what the document CONTAINS; it never
+decided whether its form is machine-readable.
+
+**The engine revision** is stamped into the binary at compile time by
+`crates/compiler/build.rs`. A source build reads it out of the checkout it is
+built from — suffixed `-dirty` when that tree carries uncommitted changes, since
+a build behind an uncommitted edit is not a build of that revision. A release
+recipe or container build that has the revision and no `.git` passes
+`DELVEC_ENGINE_REVISION` in the environment and that wins unchanged. Where
+neither can be established — a source tarball such as crates.io serves — the
+engine prints `unstamped` rather than claiming a revision it does not have. The
+stamp reaches stderr and diagnostic text only and no emitted byte, so two
+binaries differing only in it compile a campaign to identical output. The first two are its **freshness key**:
 the whole a walk judges is derived from both authored documents, so an edit to
 either re-opens the gate. The third is the derived massing, which is what the
 drift advisory reads. It is not a build input: a re-recorded walk moves no
@@ -672,6 +687,14 @@ whole map's design of record. Optional, named rather than numbered, and reached
 only through itself: a campaign that ships none parses, validates and emits
 exactly as it did. `delvec schema --stage site-plan` exports it; `--stage all`
 includes it.
+
+**Every document answers to its own name.** `delvec schema --stage <name>` takes
+any stage's name — the same string `DW0100` prints when that stage's document
+will not parse — as well as `1`..`7` for the numbered campaign stages, so the
+refusal's own prescription is a command that works. The names are enumerated
+from `Stage::ALL` rather than a second list, so a document added later answers
+the day it exists. **The exported schema is the authority on a document's
+form**; where a spec disagrees with it, the spec is the stale one.
 
 **Its one ordering obligation is not advice.** A plan validates only against a
 layout graph and a geometry brief: `DW0824` refuses a plan whose graph or brief
@@ -2619,12 +2642,30 @@ a flood source *and* its host block's normal collision class: nothing walks or f
 would be in open water here").
 
 Trap triggers (spec-0011): `*_pressure_plate`, `tripwire`, and `tripwire_hook`
-(`crate::assembled::is_passable_trap_trigger`) are non-collidable in game, so the
-occupancy model treats their cells as **passable** rather than solid. This is the
+(`crate::assembled::is_passable_trap_trigger`) are non-collidable in game, so
+`collision_top_16` answers 0 for them and the occupancy model treats their cells
+as **passable** rather than solid. The predicate keeps its own name because a
+caller needs the *trap* fact as well as the collision fact, and the two cannot
+disagree because one is computed from the other. This is the
 faithful model — a plate rests on a solid support block below, so standability is
 unchanged — and it is load-bearing for the `DW0342` trap proof: a player must be
 routed *onto* a trigger cell (so the compiler can prove the trap avoidable or not),
 never around a phantom "solid" plate that would call every trap avoidable.
+
+**Where the collision table lives.** `delvewright_dsl::blockshape` holds it,
+and `crate::assembled` re-exports its names by `pub use` — there is one
+definition in the workspace and no second copy for anything to drift from. It is
+in `delvewright-dsl` for the reason `metrics::step_allowed` is: `delvec` is
+published and may depend only on published crates, so the one crate the grammar
+back end, the admission pipeline and the compiler can all reach is that one. And
+it is the right home by object class — a collision box is a fact about a vanilla
+block state under the pinned game version, in the same sixteenths as the
+auto-step and jump-apex budgets it feeds.
+
+`blockshape::collision_class` is the rule, and every consumer asks it:
+`occupancy_of` below, the grammar back end's `Voxels` impl, and `delve-admit`'s
+light probe. `Collision::passes_body` / `supports_body` / `floor_top_16` are the
+three answers a walk gets.
 
 **Collision classes (`crate::assembled::Occupancy`).** The occupancy is
 no longer a single every-non-air-block-is-a-1×1×1-cube solid set; cells are
@@ -2649,6 +2690,9 @@ a block's collision-box top face in sixteenths, against the 1.21.11 shapes:
 | `snow[layers=N]` | `(N-1)·2 / 16` | `layers=1` (the default) has **no** collision box; `layers=8` is 14/16 |
 | `*_carpet`, `moss_carpet` | 1/16 | `pale_moss_carpet` only when `bottom=true`, else 0 |
 | `dirt_path`, `farmland` | 15/16 | |
+| `candle`, `*_candle` | 6/16 | every candle count has the same 6-pixel box, so a candle on a floor is stepped over |
+| `flower_pot`, `potted_*` | 6/16 | |
+| no-collision fixtures (`assembled::is_no_collision_fixture`) | 0/16 | torches (`torch`, `*_torch` — wall, soul and redstone alike), signs and banners (`*_sign`, `*_banner`), `lever`, `*_button`, rails (`rail`, `*_rail`), `redstone_wire`, `light`, `structure_void` — vanilla declares every one of them `noCollission()`. A wall torch occupies the air cell beside the wall it is fixed to, and a model that calls that cell a full cube severs a corridor. **Deliberately excluded, and not because they collide**: `fire`, `soul_fire`, `cobweb` and the portals also have empty collision boxes and stay full cubes here, because a body that *passes through* one is not a body that may be *routed* through one. Also excluded because their shapes are not read out of the pin: lanterns, chains, end rods, ladders. |
 | no-collision vegetation (`assembled::is_no_collision_plant`) | 0/16 | grasses/ferns, every small and tall flower, `pink_petals`/`wildflowers`/`leaf_litter`, saplings, crops, mushrooms and nether flora, kelp/seagrass, vines/`glow_lichen` — vanilla gives them an **empty** collision shape. Modelling them as full cubes makes a plant cell a phantom standable surface, which refuses valid geometry (a tuft on a terrace splits a 2-block riser into two climbable 1-block steps) and, worse, accepts invalid: a walkability proof that stands a body ON a tuft is unsound, and a flower cell measures light 0 as if it were opaque. The list is the **class**, never the ids one generator happens to scatter; lookalikes that DO collide (`azalea`, `big_dripleaf`, `bamboo`, `cactus`, `pointed_dripstone`, `sea_pickle`, leaves, …) deliberately stay conservative full cubes. Fidelity consequence: plant cells no longer dam the water-flood model either — vanilla water flows into and breaks them. |
 | everything else | 16/16 | the conservative default |
 
@@ -3577,6 +3621,41 @@ message names it with an explicit "do NOT". The rows below summarize each code's
 *meaning*; the emitted message additionally carries the prescription. Gold
 standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 
+**A prescription is chosen by the campaign's placement authority, not by the
+rule that raised it.** A campaign hands its space either to stage-1 `areas[]`,
+which seats prefab pieces, or to a `site-plan.json`, which owns a derived
+blockout — never both (`DW0839`) — and a campaign may also have declared
+neither yet. Where a name does not resolve, the sentence saying what to write
+instead is asked of `dsl::placement::Placement`, one authority for all three
+answers, rather than written beside each refusal:
+
+| Placement | An area id resolves against | An anchor name comes from |
+|-----------|-----------------------------|---------------------------|
+| `Prefabs` (`areas[]` non-empty, no plan) | the stage-1 `areas[]` entries | the bound prefab's metadata |
+| `SitePlan` (a `site-plan.json` is present) | exactly one id, `area/site` | the derivation: `anchor/node-<place>`, `anchor/seam-<edge>`, `anchor/unlock-<edge>`, `spawn` |
+| `NoMap` (`areas[]` empty and no plan) | nothing — the campaign has no map | nothing — no anchor is placed |
+
+The `Prefabs` arm is what each site printed before the authority existed and is
+returned verbatim, so a prefab campaign's refusals are unchanged. The other two
+arms **replace** it rather than appending to it, because every prefab
+prescription (`declare it in stage-1 world.areas`, `bind a prefab/pool`, `anchor
+names come from prefab metadata; do NOT invent one`) is refused by `DW0839` or
+`DW0160` in a campaign carrying a site plan, or names prefab metadata a derived
+map does not have. A `NoMap` refusal names **both** authorities, since which one
+the author wants is a choice they have not made and a refusal must not make it
+for them.
+
+It binds at **twenty-eight message sites**: in `dsl::validate`, three area
+refusals (`DW0112` — an npc's area, a planned quest's area, and a stage-7 edit
+script's `batches[].area`) and seventeen anchor refusals (`DW0142` x11,
+`DW0194`, `DW0340` x2, `DW0371`, `DW0377`, `DW0381`); in `compiler::emit`,
+`DW0360`, `DW0426` and `DW0447`; in `compiler::gates`, `DW0343`; in
+`compiler::edit`, the two `AnchorRelative` frame failures a stage-7 edit script
+can raise; and in `compiler::light`, `DW0210` and `DW0211`. `crates/dsl/tests/v14_site_plan.rs`'s
+`no_refusal_on_a_derived_map_prescribes_a_prefab_document` binds it over a
+derived map's whole refusal set, keyed to the forbidden prescription rather than
+to a list of codes.
+
 ### DW01xx — validation (`dsl`; severity error; exit 1)
 
 | Code | Meaning |
@@ -3587,7 +3666,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
-| `DW0112` | Dangling / forward / undeclared reference (incl. persona relationship to unknown NPC). |
+| `DW0112` | Dangling / forward / undeclared reference (incl. persona relationship to unknown NPC). An **area** reference resolves against the campaign's placement authority and its prescription comes from there (see the remediation contract above): a `Prefabs` campaign is told to declare it in stage-1 `world.areas`, a `SitePlan` campaign is told its one area is `area/site` and explicitly told NOT to declare it, and a campaign with neither is told both branches. Three sets in `dsl::validate` resolve an area id — npc/quest-plan references, and a stage-7 edit script's `batches[].area` — and all three now prescribe from the same authority. |
 | `DW0120` | Dialogue node unreachable from `root`. |
 | `DW0121` | Dialogue `root`/`next` references unknown node. |
 | `DW0122` | Dialogue effect targets an objective unknown / not `talk-to` / on a different NPC. |
@@ -3598,7 +3677,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0133` | **`mandatory: false` below dsl_version 0.17.0**, where the surface is reserved (spec-0051 §9). `every_version` deliberately, and it is the first case the `Binds` doctrine names: the rule judges what the document SAYS against the version that document itself declares, so its verdict is a function of the campaign alone. Fencing it as `Since(17)` would *stop rejecting* `mandatory: false` in a 0.12 campaign — the exact inversion the doctrine warns about. Below the fence the partition is forced empty, so an off-closure quest raises `DW0132` alongside this, exactly as it did before the surface existed. Prescription: raise the **quest-plan** stage's `dsl_version` to 0.17.0, or set `mandatory: true`. |
 | `DW0140` | Objective `after` cycle. |
 | `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface: the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending` (spec-0025); the class-kit `flask`, a kit item's potion `contents` and the `bonfire` rest-dialog labels (spec-0016 §1); actor `tier` (spec-0023); the stage-6 dialogue-option `tooltip`; the `close-gate` `sealed_hint`; and the `collect` container-adoption trio `container` / `item_name` / `fill_count` (each field is reserved independently, and an explicit `fill_count: 0` declares nothing since it is the default); under pre-0.10 the v0.10 surface (spec-0031): the stage-5 `state[]`, `lethal_volumes[]` and `on_death` sections, `requires_state` at every gate site, and the effects `set-state` / `add-state` / `clear-state` / `fill-region` / `clear-region`; under pre-0.11 **both** v0.11 surfaces — the press-answer lift (the `narrate` `style: actionbar` and a trigger's `audience: presser`, fenced on the quests stage) and the per-body `traversal` declaration (spec-0034, fenced on the stage that declares it: the stage-2 npc on `npcs`, the stage-5 actor on `quests`, so one stage may adopt it while the other has not)). |
-| `DW0142` | Anchor not provided by the area's bound prefab. |
+| `DW0142` | Anchor not provided by the area's bound prefab — or, on a site-plan campaign, not among the names the derivation places. The predicate is `AnchorProviders`, unchanged; the prescription is the placement authority's (see the remediation contract above), so a derived map is given the synthesized vocabulary instead of being sent to prefab metadata it does not have and told not to invent a name it is required to invent. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
 | `DW0151` | Stage-5 quest not planned in stage 4. |
@@ -3631,7 +3710,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0321` | `boundary.margin` outside `0..=64`. v0.6, spec-0013. Validation-tier (exit 1). |
 | `DW0340` | Trap declaration structurally invalid (v0.6, spec-0011): a malformed/duplicate `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides, or a `disarm.via` that collides with the trap's own trigger anchor. Renumbered off the spec's stale reserved number (0197). |
 | `DW0341` | A trap `dispense` payload item id is not in the pinned 1.21.11 registry (v0.6, spec-0011; mirrors `DW0143`). Renumbered off the spec's stale reserved number (0198). |
-| `DW0343` | A verb that needs a gate anchor's **fill block** targets an anchor that declares none (or is not a gate region at all): `close-gate` (v0.6), which fills the region back in, or a stage-5 `shortcut` (spec-0016 §2), whose unlock clears exactly that block and whose gate is sealed by it from world-load. Compiler-side (needs prefab metadata the DSL anchor registry does not carry), reported at **validation tier (exit 1)** like the atmos `DW032x` checks. **The scan is over the pieces this campaign's areas can place** — each area's bare `prefab`, or every member of its `prefab_pool` — and **all** of them that declare the anchor as a gate must declare a fillable one. A piece the campaign binds no area to has no standing to answer: it cannot be placed, so what it says about a gate is a fact about a different building. What the anchor declares is asked of one authority, `PrefabMeta::gate_anchor`, so an anchor carrying an explicit `region` + `block` and one carrying a `resolves_to` of `bar:<region>` resolve identically; where that authority refuses (the two forms disagree, the named bar is not in the piece's contract, or the bar's boxes do not fill their own bounding box) its reason is quoted into this diagnostic. Prescription: declare the gate on an anchor of a piece an area binds — as a `region` plus a `block`, or as a `bar:` the piece's spatial contract carries — or remove the verb. |
+| `DW0343` | A verb that needs a gate anchor's **fill block** targets an anchor that declares none (or is not a gate region at all): `close-gate` (v0.6), which fills the region back in, or a stage-5 `shortcut` (spec-0016 §2), whose unlock clears exactly that block and whose gate is sealed by it from world-load. Compiler-side (needs prefab metadata the DSL anchor registry does not carry), reported at **validation tier (exit 1)** like the atmos `DW032x` checks. **The scan is over the pieces this campaign's areas can place** — each area's bare `prefab`, or every member of its `prefab_pool` — and **all** of them that declare the anchor as a gate must declare a fillable one. A piece the campaign binds no area to has no standing to answer: it cannot be placed, so what it says about a gate is a fact about a different building. What the anchor declares is asked of one authority, `PrefabMeta::gate_anchor`, so an anchor carrying an explicit `region` + `block` and one carrying a `resolves_to` of `bar:<region>` resolve identically; where that authority refuses (the two forms disagree, the named bar is not in the piece's contract, or the bar's boxes do not fill their own bounding box) its reason is quoted into this diagnostic. Prescription: the placement authority's (see the remediation contract above) — on a prefab campaign, declare the gate on an anchor of a piece an area binds, as a `region` plus a `block` or as a `bar:` the piece's spatial contract carries; on a site-plan campaign, name an `anchor/seam-<edge>` the derivation cuts over a barred connection the layout graph declares. Either way, or remove the verb. A gate whose block the derivation supplies never reaches this check at all — `siteplan::synthesized_gate_block` answers first. |
 | `DW0857` | **A gate verb names an anchor more than one of the campaign's areas provides**, so nothing an author can see says which building it fills, clears or opens. `close-gate`, `open-gate`, `shortcut` and `timed-gate`; `compiler::gates::check_close_gates`, validation tier (exit 1). **The scope of uniqueness for an anchor name is the AREA**, and that is the scope `DW0142` already resolves every anchor reference in — it checks each reference against the anchors of the quest's own area and makes exactly one exception, a cutscene camera, which may fly anywhere. The compiler's by-name lookup honours none of it: it walks a map keyed by `(area, name)` and returns the first entry whose NAME matches, across every area, first match wins. While one area provides the name the two readings agree, which is why nothing noticed; when two do, the answer is whichever area id sorts first. Measured on a campaign of eight zones: five names collided, two on the critical path — a portcullis shadowed by a chapel door, and an escort beat whose destination resolved back to the cell the NPC already stood on. This is not the unbound vacuity mode — the check examined something and reported truthfully about it — but the computed-key family: the lookup asked the right question about the wrong object, and a green meaning *another building satisfies this* is indistinguishable at the call site from a green meaning *this one does*. **What is refused is the ambiguity, not the crossing**: an anchor exactly one area provides resolves from anywhere exactly as before, so a beat that legitimately reaches into another area still does and no unambiguous campaign moves a byte. Two pieces inside ONE area sharing a name is not this finding either — that is what a `prefab_pool` is for, and it has always resolved within the area. Prescription: rename the gate in one of the named areas. There is no second way, deliberately: an escape hatch would have to be the author naming which area they meant, which is the area-scoped resolution this diagnostic exists because the compiler does not have. |
 | `DW0859` | **An anchor reference no scope settles names a place more than one of the campaign's areas provides.** `DW0857` is this finding keyed to four gate verbs; this is the same rule keyed to the object class the property belongs to, because a name two buildings answer to is a fact about the name and not about the verb that said it. Build tier (exit 3), `compiler::plan`, because a pool area defers its anchors to the solver and the DSL tier cannot see the second provider. **The scope of uniqueness for an anchor name is the AREA**, so the answer is normally to resolve in the referring area — and for the two object classes the DSL gives an area to (`Npc`, `PlannedQuest`) that is what the compiler does: a cast beat stands in the area the BEAT plays in, then the NPC's declared home, then an unambiguous crossing. The other eleven anchor-bearing classes — traps, shortcuts, timed gates, loot, lethal volumes, ambushes, actors, waves, stealth zones, shops, environment triggers — are flat campaign-wide vectors that **never record an area at all**, so there is no scope to resolve them in. For those a by-name match is a *candidate*: one candidate is an answer and resolves from anywhere, two is a question the compiler cannot answer, and answering it by whichever area id sorts first is how a green meaning *another building satisfies this* became indistinguishable from a green meaning *this one does*. **What is refused is the ambiguity, not the crossing**, so no unambiguous campaign moves a byte. Prescription: rename the anchor in all but one of the named areas, or name a place the referring area itself provides. There is no hatch, for the reason `DW0857` has none — an opt-out would have to be the author naming which area they meant, which is the area-scoped resolution the DSL cannot express for these classes, so the hatch and the missing capability are the same thing. |
 | `DW0866` | **An optional quest inside the finale's dependency closure** (spec-0051 §8.1), including a `finale` that declares itself `mandatory: false`. Validation tier (exit 1), `every_version`, `dsl::validate`. The delve cannot be completed without the quest, so calling it optional is a claim the completability proof would then rest on — and the skip world, in which no optional objective is ever completed, is exactly the world where the finale never fires. The closure is asked of `QuestPlanContent::spine`, the ONE authority on it; the declaration is asked of `QuestPlanContent::optional`, the ONE authority on the other half. **Its mirror image is `DW0132`**, which keeps today's convergence refusal for a MANDATORY quest the closure does not reach: the two are opposite errors and a shared message could prescribe neither. **Co-fires with `DW0867` whenever a mandatory quest's `depends_on` names an optional one**, necessarily — such a dependency is inside the closure by construction — and the two are kept apart because they prescribe different repairs: `DW0867` names the edge to cut, this one names the claim to withdraw. Prescription: set `mandatory: true`, or cut the `depends_on` chain that puts it in the closure. |
@@ -3965,8 +4044,8 @@ fails there rather than in a campaign.
 | `DW0358` | A declared `min_players: n` (n ≥ 2) has **no n-agent division of labour** (v0.6, spec-0018). Completability is proven with `min_players` agents: n = 1 is the unchanged single-agent proof, and n ≥ 2 additionally requires the proven playthrough to contain an AND-join with n arms that are *independently reachable at the join's frontier* — the replay state just before its earliest arm — with no arm waiting on a sibling, a flag a sibling sets, or a quest that is not active yet (`flow::Flow::divide`). Names the widest join and how many arms it actually offers, or says the campaign has no AND-join at all. Reported on `world`/`/content/min_players`, exit 2. Prescription: split one beat into n `after`-arms completable from the same frontier, or lower `min_players`. |
 | `DW0204` | The exported critical path is not a playthrough any player can walk: some step is not activatable/completable at its position, or `campaign-complete` fires before the final step (the signature of two mutually exclusive endings sharing one path). Names the first incoherent step. |
 | `DW0205` | **Optional participation gates the mainline**: the dialogue button that completes a mainline objective is already on screen at an earlier point of the participation-minimal walk, before that objective's own activation chain has happened — so a player can take it and walk past a load-bearing beat. Names the objective, the beat, the dependency edge (`after`, or the flag the beat is what sets), and what the skip costs the mainline (the wave the beat spawns, the flag it sets, the quest that then never opens). Reported per branch too (`branch::check_branches`), naming the branch, for skips the campaign's own critical path does not already admit. Prescription: put the beat's flag on the option (`requires_flags`), or move the option into a `cast` scene that opens only after the beat. |
-| `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. Keys on the stage-1 `areas[].mitigation` declaration, so a renamed water bottle in a class kit does not pass the gate. **One diagnostic for the whole build**, because its remedy is re-arranging a room and a designer cannot re-arrange a room they were not told about: it names every dark area (worst first), each with its dark-cell count out of the cells measured in it and its dark cells grouped into contiguous regions — adjacency is `nav::World::neighbors`, symmetrised, so a region is a run a body can walk without leaving the dark — each region with its extent and its own darkest cell, plus the campaign's single darkest cell. Both lists are capped and state how many entries and cells they dropped. |
-| `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). |
+| `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. Keys on the stage-1 `areas[].mitigation` declaration, so a renamed water bottle in a class kit does not pass the gate. **One diagnostic for the whole build**, because its remedy is re-arranging a room and a designer cannot re-arrange a room they were not told about: it names every dark area (worst first), each with its dark-cell count out of the cells measured in it and its dark cells grouped into contiguous regions — adjacency is `nav::World::neighbors`, symmetrised, so a region is a run a body can walk without leaving the dark — each region with its extent and its own darkest cell, plus the campaign's single darkest cell. Both lists are capped and state how many entries and cells they dropped. The prescription that closes the report names the document THIS campaign declares lighting in — `world.areas[].lighting` where prefabs place the world, the site plan's own `lighting` where the blockout is derived — and it offers `mitigation` only where that surface exists. It does not on a site-plan campaign: `mitigation` lives on an `areas[]` entry and `DW0839` requires that list to be empty, so a derived map is offered two ways rather than three, and the count in the message is computed from the list of ways rather than written beside it. **A derived map therefore has no night-vision mitigation at all** — a capability gap, recorded here rather than papered over: such a campaign lights its blockout or brightens the scene. |
+| `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). "Fix in" names the same placement-authority field `DW0210` does. |
 
 **The branch-coherent flow model (`compiler::flow`).** Reachability is not one
 union fixpoint over "every `set-flag` anywhere". A **choice group** is a dialogue

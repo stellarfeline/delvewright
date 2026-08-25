@@ -38,33 +38,25 @@ use std::io::Read;
 
 use crate::plan::{Plan, ResolvedAnchor};
 use delvewright_dsl::DwCode;
+use delvewright_dsl::blockshape::{Collision, bare_id, collision_class};
 
-/// The bare block id of a (possibly blockstate-carrying) block name: strips a
-/// trailing `[state]` / `{nbt}` suffix, keeping the namespace
-/// (`minecraft:oak_slab[type=top]` → `minecraft:oak_slab`).
+/// **What a block state does to a body is not decided here** (spec-0056).
 ///
-/// The assembled map stores **full blockstates**: waterlogging, slab
-/// halves and snow-layer counts are all block *state*, and a model that throws
-/// the state away cannot tell a half-step from a full cube or a submerged fence
-/// from a dry one. Every classifier below therefore matches on `base_id`, and
-/// the state-sensitive ones read the property they need with [`state_value`].
-pub fn base_id(name: &str) -> &str {
-    match name.find(['[', '{']) {
-        Some(i) => &name[..i],
-        None => name,
-    }
-}
-
-/// The value of blockstate property `key` in an `id[k=v,…]` block name, or
-/// `None` when the name carries no state or lacks that property.
-pub fn state_value<'a>(name: &'a str, key: &str) -> Option<&'a str> {
-    let open = name.find('[')?;
-    let close = name[open..].find(']')? + open;
-    name[open + 1..close].split(',').find_map(|kv| {
-        let (k, v) = kv.split_once('=')?;
-        (k.trim() == key).then_some(v.trim())
-    })
-}
+/// It is decided once, in [`delvewright_dsl::blockshape`], because three crates
+/// need the answer and only one of them could reach this module: the grammar back
+/// end's contract gates read *air or a skull* and called a torch a wall, and the
+/// admission pipeline's light probe kept a nine-id list that called open water
+/// walkable. The table below is re-exported rather than re-implemented, so there
+/// is no second definition for a private copy to drift from — a `pub use` is
+/// checked by the compiler, which is a stronger tie than any test could be.
+///
+/// Read that module for the collision table, the class rule and the direction of
+/// its errors.
+pub use delvewright_dsl::blockshape::{
+    FULL_HEIGHT_16, THIN_HEIGHT_16, base_id, collision_top_16, is_air, is_fence_gate, is_fluid,
+    is_no_collision_plant, is_partial_floor, is_passable_trap_trigger, is_tall_barrier,
+    is_thin_decoration, state_value,
+};
 
 /// Rewrite a blockstate's **orientation properties** for a piece placed with
 /// rotation `r`, the way vanilla's `/place template … <rotation>` does.
@@ -178,64 +170,6 @@ pub fn rotate_state(name: &str, r: crate::solver::Rotation) -> String {
     format!("{}[{}]", &name[..open], body.join(","))
 }
 
-/// The air block variants that count as "no block" (passable / transparent).
-pub fn is_air(name: &str) -> bool {
-    matches!(
-        base_id(name),
-        "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
-    )
-}
-
-/// Thin, walkable trap-trigger blocks (DSL v0.6, spec-0011) a player steps *onto*
-/// rather than being blocked by: pressure plates and tripwire. Their cells are
-/// modelled **passable** so nav routes a player ONTO a critical-path trap trigger
-/// (the hazard the `DW0342` proof reasons about) instead of routing around a
-/// "solid" plate and falsely calling every trap avoidable. They are non-collidable
-/// in game, so this is the faithful model; a `_pressure_plate`/`tripwire` cell
-/// always rests on a solid support block below, so standability is unaffected.
-pub fn is_passable_trap_trigger(name: &str) -> bool {
-    let id = strip_ns(base_id(name));
-    id.ends_with("_pressure_plate") || matches!(id, "tripwire" | "tripwire_hook")
-}
-
-/// The namespace-free bare id (`minecraft:oak_slab[type=top]` → `oak_slab`).
-fn strip_ns(id: &str) -> &str {
-    let id = base_id(id);
-    id.strip_prefix("minecraft:").unwrap_or(id)
-}
-
-/// Whether a block is a **1.5-block-tall barrier**: fences (`*_fence`,
-/// incl. `nether_brick_fence`) and walls (`*_wall`). Vanilla gives these a
-/// collision box 1.5 blocks tall on a 1-block cell, which breaks the full-cube
-/// assumption in BOTH directions:
-///
-/// - **Not standable on top by a walking player**: a normal jump rises ~1.25
-///   blocks, so a 1.5-tall top face is unreachable by walking/jumping — the
-///   full-solid model's "legal +1 step onto a fence-top" was a proof of a route no
-///   player (or mineflayer bot) can walk.
-/// - **Not passable through**: the barrier fills its cell for a walker, and its
-///   top half also blocks the cell above (feet at `y+1` intersect the `y..y+1.5`
-///   box), which the model gets for free because a tall barrier is never valid
-///   floor.
-///
-/// Fence **gates** are excluded — they are the openable case, see
-/// [`is_fence_gate`].
-pub fn is_tall_barrier(name: &str) -> bool {
-    let id = strip_ns(name);
-    id.ends_with("_fence") || id.ends_with("_wall")
-}
-
-/// Whether a block is a fence gate (`*_fence_gate` — every vanilla fence gate is
-/// a wooden, right-click-openable one). Closed, it is a 1.5-tall barrier like a
-/// fence but **passable-with-use**: opening it is a right-click USE interaction
-/// vanilla permits in adventure mode (the same action a human player performs),
-/// so the nav model treats a closed gate cell as walkable for the player and tags
-/// it as a "use-gate" cell in the exported critical-path waypoints. Open (block
-/// state `open=true` in the prefab), the threshold is simply passable.
-pub fn is_fence_gate(name: &str) -> bool {
-    strip_ns(name).ends_with("_fence_gate")
-}
-
 /// Whether a block carries `waterlogged=true` — **the cell contains a water
 /// source** alongside the host block (MC 1.13+ waterlogging).
 ///
@@ -256,46 +190,6 @@ pub fn is_waterlogged(name: &str) -> bool {
     state_value(name, "waterlogged") == Some("true")
 }
 
-/// Whether a cell's block is a **free fluid** — water or lava occupying the whole
-/// cell with no host block. **The one answer to "is this block id a fluid"**; every
-/// site that has to decide what a fluid does to a walker reads it, so the answer
-/// cannot differ between two of them. Both sites do: [`occupancy_of`] classifies a
-/// prefab- or edit-authored cell with it, and [`crate::plan::RegionWrite::of_block`]
-/// classifies a runtime region write with it.
-///
-/// What it covers, and why each case is the way it is:
-/// - **Block state is irrelevant.** [`strip_ns`] drops it, so a flowing
-///   `minecraft:water[level=3]` answers the same as a source `minecraft:water`.
-///   Both leave a body swimming rather than standing, which is the only question
-///   a collision model asks; the *reach* of the flow is [`flood`]'s problem, not
-///   this predicate's. (A stored flowing cell therefore seeds the flood as a
-///   full-strength source, which over-marks its reach — deliberately safe.)
-/// - **So is the namespace**, and that is not cosmetic. Prefab palettes always
-///   carry `minecraft:`, but an author's `fill-region` block is a hand-written
-///   string, and a bare `water` passes DSL block validation
-///   (`registry::is_technical_block` normalizes before its lookup) and is emitted
-///   verbatim as `fill … water`, which vanilla resolves. A namespace-sensitive
-///   comparison here would read that as an ordinary solid and prove a floor made
-///   of it — measured, not assumed. Every other classifier in this module already
-///   goes through `strip_ns` for the same reason.
-/// - **`minecraft:lava` counts.** Nothing stands on lava either, and a model that
-///   answered only for water would prove a lava surface walkable.
-/// - **A waterlogged block does NOT count.** `oak_stairs[waterlogged=true]` is a
-///   cell occupied by its *host* block — solid, standable, and simultaneously a
-///   flood source for its neighbours ([`is_waterlogged`]). Folding it in here
-///   would delete a floor the game plainly has. The two predicates answer
-///   different questions and both are needed.
-///
-/// Vanilla's `FallingBlock.isFree` treats a fluid (and air, fire, and replaceable
-/// blocks) as "no support": a falling block entity passes straight through it and
-/// keeps falling, displacing the fluid when it finally lands on something solid.
-/// Used by [`settle`] in that role; deliberately narrower than `isFree`
-/// (replaceable plants are not modelled), which only ever makes settling *more*
-/// conservative.
-pub fn is_fluid(name: &str) -> bool {
-    matches!(strip_ns(name), "water" | "lava")
-}
-
 /// Whether a block falls under gravity when the cell below cannot support it
 /// (vanilla `FallingBlock`). In the delve's `the_void` world such a block, placed
 /// unsupported by `/place template`, drops out of the world and leaves air — so
@@ -306,189 +200,11 @@ pub fn is_fluid(name: &str) -> bool {
 /// so the "supported from below" settling rule here does not model them — a cave
 /// generator hangs dripstone *stalactites* from the ceiling, and this rule must
 /// never mistake a ceiling-hung block for an unsupported one and delete it.
-/// A full block's collision height in sixteenths — the unit [`collision_top_16`]
-/// reports in. Vanilla builds every partial collision box out of sixteenths, so
-/// integer sixteenths represent every case exactly (no float ordering, ADR-0006).
-pub const FULL_HEIGHT_16: u8 = 16;
-/// Below this collision height a block is **stepped over, not onto**: the walker's
-/// feet stay on whatever supports it. 8/16 = half a block, the slab step. Anything
-/// thinner (carpet 1/16, a 1–4-layer snow drift ≤ 6/16) is under the vanilla
-/// 0.6-block auto-step, so modelling it as a floor *level* of its own would be
-/// noise; modelling it as a full cube (the old behaviour) is a lie.
-pub const THIN_HEIGHT_16: u8 = 8;
-
-/// The height of a block's **collision box top face**, in sixteenths of a block
-/// (0 = no collision at all, 16 = a full cube). Anything not listed is a full
-/// cube — the conservative default.
 ///
-/// Fidelity fix: modelling a slab or a snow layer as a full 1×1×1 cube
-/// misplaces the surface a walker stands on by up to a whole block, which makes
-/// the nav step rule prove step-ups vanilla refuses (stepping from a bottom slab
-/// up onto a full block is a **1.5-block** rise — above the ~1.25-block jump
-/// apex) and refuse step-ups vanilla allows (stepping onto a bottom slab is a
-/// 0.5-block auto-step needing no jump headroom at all).
-///
-/// Sources (Minecraft Java 1.21.11 block shapes):
-/// - **Slabs**: `type=bottom` occupies the lower half → 8; `type=top` and
-///   `type=double` reach the cell top → 16. `type` **defaults to `bottom`**, so a
-///   bare `minecraft:oak_slab` is a half-step.
-/// - **Snow layers** (`minecraft:snow`): collision height is `(layers - 1) * 2`
-///   sixteenths (`SnowLayerBlock` indexes its shape table at `layers - 1`), so
-///   `layers=1` has **no** collision box (you walk through it) and `layers=8` is
-///   14/16. The *outline* shape is `layers * 2`, which is what the block looks
-///   like — the collision box is what a walker stands on. `layers` defaults to 1.
-/// - **Carpets**: 1/16 (`pale_moss_carpet` only when `bottom=true`; its default
-///   wall-vine form has no collision box at all).
-/// - **`dirt_path` / `farmland`**: 15/16 (the one-pixel dip you step down into).
-pub fn collision_top_16(name: &str) -> u8 {
-    let id = strip_ns(name);
-    if id.ends_with("_slab") {
-        return match state_value(name, "type") {
-            Some("top") | Some("double") => FULL_HEIGHT_16,
-            // `bottom` — and the default state, which omits the property.
-            _ => 8,
-        };
-    }
-    if id == "snow" {
-        let layers: u8 = state_value(name, "layers")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1);
-        return layers.clamp(1, 8).saturating_sub(1) * 2;
-    }
-    if id == "pale_moss_carpet" {
-        // The odd one out: a floor carpet only when `bottom=true` (1/16); its
-        // wall-vine form (`bottom=false`, the default) has NO collision box.
-        return u8::from(state_value(name, "bottom") == Some("true"));
-    }
-    if id.ends_with("_carpet") || id == "moss_carpet" {
-        return 1;
-    }
-    if matches!(id, "dirt_path" | "farmland") {
-        return 15;
-    }
-    if is_no_collision_plant(id) {
-        return 0;
-    }
-    FULL_HEIGHT_16
-}
-
-/// Vanilla's **no-collision vegetation class**: blocks whose collision shape is
-/// EMPTY — a walker passes straight through and stands on whatever is below
-/// (they are visual/light-model content only).
-///
-/// Modelling one as a full cube makes its cell a phantom standable surface,
-/// and that is wrong in both directions. A `short_grass` tuft on a valley
-/// terrace splits a deliberate 2-block riser into two climbable 1-block steps,
-/// so `DW0854` refuses a landform vanilla cannot climb (rejects-valid); and,
-/// worse, any walkability proof that stands a body ON a tuft or flower cell is
-/// unsound (accepts-invalid).
-///
-/// The list is the **class**, not the three ids the valley generator happens
-/// to scatter (fixing only those would be folklore). Sources: Minecraft Java
-/// 1.21.11 block shapes — every id here has an empty collision shape.
-/// Deliberately excluded because they DO collide (or attach in ways this model
-/// does not represent): `azalea`/`flowering_azalea`, `big_dripleaf`, `bamboo`,
-/// `cactus`, `chorus_*`, `pointed_dripstone`, `scaffolding`, `sea_pickle`,
-/// `cocoa`, lily `pad` (a platform), all leaves, and anything not certainly
-/// collision-free — the conservative full-cube default keeps those sound.
-pub fn is_no_collision_plant(id: &str) -> bool {
-    id.ends_with("_sapling")
-        || matches!(
-            id,
-            // grasses + ground cover
-            "short_grass"
-                | "tall_grass"
-                | "fern"
-                | "large_fern"
-                | "dead_bush"
-                | "bush"
-                | "firefly_bush"
-                | "short_dry_grass"
-                | "tall_dry_grass"
-                | "seagrass"
-                | "tall_seagrass"
-                | "pink_petals"
-                | "wildflowers"
-                | "leaf_litter"
-                | "hanging_roots"
-                | "mangrove_propagule"
-                // small + tall flowers
-                | "dandelion"
-                | "poppy"
-                | "blue_orchid"
-                | "allium"
-                | "azure_bluet"
-                | "red_tulip"
-                | "orange_tulip"
-                | "white_tulip"
-                | "pink_tulip"
-                | "oxeye_daisy"
-                | "cornflower"
-                | "lily_of_the_valley"
-                | "wither_rose"
-                | "torchflower"
-                | "sunflower"
-                | "lilac"
-                | "rose_bush"
-                | "peony"
-                | "pitcher_plant"
-                // mushrooms + nether flora
-                | "brown_mushroom"
-                | "red_mushroom"
-                | "crimson_fungus"
-                | "warped_fungus"
-                | "crimson_roots"
-                | "warped_roots"
-                | "nether_sprouts"
-                | "nether_wart"
-                // crops
-                | "wheat"
-                | "carrots"
-                | "potatoes"
-                | "beetroots"
-                | "melon_stem"
-                | "pumpkin_stem"
-                | "attached_melon_stem"
-                | "attached_pumpkin_stem"
-                | "torchflower_crop"
-                | "sweet_berry_bush"
-                | "sugar_cane"
-                | "bamboo_sapling"
-                // climbing / hanging plants
-                | "vine"
-                | "glow_lichen"
-                | "spore_blossom"
-                | "small_dripleaf"
-                | "kelp"
-                | "kelp_plant"
-                | "cave_vines"
-                | "cave_vines_plant"
-                | "twisting_vines"
-                | "twisting_vines_plant"
-                | "weeping_vines"
-                | "weeping_vines_plant"
-        )
-}
-
-/// Whether a block is thin enough to be **walked over rather than onto**
-/// ([`THIN_HEIGHT_16`]): its cell is passable and never a floor level of its own,
-/// so a walker standing there rests on the block below it. Vanilla agrees — none
-/// of these blocks obstructs a 1.8-block-tall walker, and every one of them is
-/// under the 0.6-block auto-step.
-pub fn is_thin_decoration(name: &str) -> bool {
-    collision_top_16(name) < THIN_HEIGHT_16
-}
-
-/// Whether a block is a **partial-height floor**: it fills its cell for passage
-/// purposes but its walkable top face sits below the cell top (a bottom slab, a
-/// deep snow drift). Its height is [`collision_top_16`].
-pub fn is_partial_floor(name: &str) -> bool {
-    let h = collision_top_16(name);
-    (THIN_HEIGHT_16..FULL_HEIGHT_16).contains(&h)
-}
-
+/// Gravity is a world fact, not a block-shape fact, so it stays here rather than
+/// travelling to [`delvewright_dsl::blockshape`] with the collision table.
 pub fn is_falling_block(name: &str) -> bool {
-    let id = strip_ns(name);
+    let id = bare_id(name);
     // NB: `suspicious_sand`/`suspicious_gravel` are brushable archaeology blocks,
     // NOT `FallingBlock` — they stay put, so they are deliberately excluded.
     matches!(
@@ -1215,31 +931,40 @@ pub fn occupancy_of(
         if is_waterlogged(name) {
             sources.insert(*cell);
         }
-        if is_fluid(name) {
-            // Water AND lava: a body stands on neither, so neither is `solid`.
-            // Reading the general predicate rather than a water-only one is the
-            // whole of this branch — a water-only test dropped lava through to
-            // the `else` and made a lava surface into floor a route proof walks.
-            sources.insert(*cell);
-        } else if is_passable_trap_trigger(name) || is_thin_decoration(name) {
-            // A pressure plate / tripwire / carpet / thin snow drift is walkable
-            // floor decoration, not an obstacle (spec-0011) — leave its cell
-            // passable so the trap-trigger cell stays on the walkable path, and
-            // so a 2-high corridor with a carpet in it stays walkable.
-        } else if is_fence_gate(name) {
-            barriers.insert(*cell);
-            if !open_gates.contains(cell) {
-                use_gates.insert(*cell); // closed: passable-with-use
-            } // open: a passable threshold (still dams water)
-        } else if is_tall_barrier(name) {
-            barriers.insert(*cell);
-            tall.insert(*cell);
-        } else {
-            barriers.insert(*cell);
-            solid.insert(*cell);
-            let h = collision_top_16(name);
-            if h < FULL_HEIGHT_16 {
-                partial.insert(*cell, h);
+        // The classification is not made here: it is
+        // [`delvewright_dsl::blockshape::collision_class`], the one rule three
+        // crates read. What IS this function's own is the world layer on top of
+        // it — which cells dam a flood, which gate was authored open, and the
+        // disjointness of the five sets.
+        match collision_class(name) {
+            Collision::Fluid => {
+                // Water AND lava: a body stands on neither, so neither is `solid`.
+                // A water-only test dropped lava through to the default and made
+                // a lava surface into floor a route proof walks.
+                sources.insert(*cell);
+            }
+            // A pressure plate / tripwire / carpet / candle / torch / thin snow
+            // drift is walkable floor decoration, not an obstacle — leave its
+            // cell passable so the trap-trigger cell stays on the walkable path
+            // (spec-0011), and so a corridor with a torch in it stays a corridor.
+            // Air reaches this arm too, and its cell is likewise not a floor.
+            Collision::Air | Collision::Thin(_) => {}
+            Collision::FenceGate => {
+                barriers.insert(*cell);
+                if !open_gates.contains(cell) {
+                    use_gates.insert(*cell); // closed: passable-with-use
+                } // open: a passable threshold (still dams water)
+            }
+            Collision::TallBarrier => {
+                barriers.insert(*cell);
+                tall.insert(*cell);
+            }
+            class @ (Collision::PartialFloor(_) | Collision::FullCube) => {
+                barriers.insert(*cell);
+                solid.insert(*cell);
+                if let Collision::PartialFloor(h) = class {
+                    partial.insert(*cell, h);
+                }
             }
         }
     }
@@ -1466,7 +1191,7 @@ fn despawn_message(settled: &[Settled], pieces: &[PieceBox]) -> Option<String> {
     for s in &despawned {
         let entry = per_piece.entry(piece_of(s.from)).or_default();
         entry.0.push(s.from);
-        entry.1.insert(strip_ns(&s.block).to_string());
+        entry.1.insert(bare_id(&s.block).to_string());
     }
 
     let total = despawned.len();
@@ -2490,6 +2215,70 @@ mod tests {
                 "{c:?} is sub-auto-step decoration, walked over rather than onto"
             );
         }
+    }
+
+    /// **A lit corridor is a corridor** (spec-0056).
+    ///
+    /// Torches, signs, banners, levers, buttons, rails, redstone wire, candles
+    /// and flower pots are all `noCollission()` or under the auto-step in
+    /// vanilla, and every one of them classified as a full solid cube here until
+    /// spec-0056 moved the table into `delvewright_dsl::blockshape`. A torch in a
+    /// two-high corridor therefore walled it, and `DW0311` refused the route.
+    ///
+    /// This is the assertion that answers differently if a value in that table is
+    /// wrong: the cells must be neither `solid` nor `partial`, which is a claim
+    /// about the classification and not about whether the ids were listed.
+    #[test]
+    fn a_lit_corridor_is_walkable_and_a_lantern_is_still_conservative() {
+        let lit = [
+            "minecraft:torch",
+            "minecraft:wall_torch[facing=north]",
+            "minecraft:soul_torch",
+            "minecraft:redstone_wall_torch[facing=east,lit=true]",
+            "minecraft:white_candle[candles=2,lit=true,waterlogged=false]",
+            "minecraft:oak_sign[rotation=0,waterlogged=false]",
+            "minecraft:oak_wall_sign[facing=north,waterlogged=false]",
+            "minecraft:white_wall_banner[facing=north]",
+            "minecraft:lever[face=wall,facing=north,powered=false]",
+            "minecraft:stone_button[face=wall,facing=north,powered=false]",
+            "minecraft:rail[shape=north_south]",
+            "minecraft:redstone_wire[east=none,north=none,power=0,south=none,west=none]",
+            "minecraft:flower_pot",
+            "minecraft:potted_cactus",
+        ];
+        let n = lit.len() as i32;
+        let mut b = floor(63, 0, n - 1, 0, 0);
+        for (i, name) in lit.iter().enumerate() {
+            b.insert([i as i32, 64, 0], (*name).to_string());
+        }
+        let occ = occupancy_of(b, &BTreeSet::new());
+        for (i, name) in lit.iter().enumerate() {
+            let c = [i as i32, 64, 0];
+            assert!(
+                !occ.solid.contains(&c) && !occ.tall.contains(&c) && !occ.use_gates.contains(&c),
+                "{name} walls the corridor it is lighting"
+            );
+            assert!(
+                !occ.partial.contains_key(&c),
+                "{name} is not a floor level of its own — a body rests on the block below"
+            );
+        }
+        // Binding, computed from the objects rather than written beside them.
+        assert_eq!(
+            occ.solid.len(),
+            lit.len(),
+            "only the floor under them is solid"
+        );
+
+        // The other direction, and it is what keeps this honest: vanilla gives a
+        // lantern and a ladder collision boxes this table has NOT read out of the
+        // pin, so they stay full cubes. Over-blocking is the direction this
+        // module's errors are allowed to run.
+        let mut b = floor(63, 0, 1, 0, 0);
+        b.insert([0, 64, 0], "minecraft:lantern[hanging=false]".to_string());
+        b.insert([1, 64, 0], "minecraft:ladder[facing=north]".to_string());
+        let occ = occupancy_of(b, &BTreeSet::new());
+        assert!(occ.solid.contains(&[0, 64, 0]) && occ.solid.contains(&[1, 64, 0]));
     }
 
     #[test]
