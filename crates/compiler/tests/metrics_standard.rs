@@ -38,7 +38,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_compiler::assembled::Occupancy;
 use delvewright_compiler::nav::World;
-use delvewright_dsl::metrics::{self, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16, METRICS_VERSION, Metrics};
+use delvewright_dsl::metrics::{
+    self, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16, METRICS_VERSION, Metrics,
+};
 
 /// Two adjacent ledges whose walk planes differ by exactly `rise` sixteenths,
 /// with air everywhere else — so the only thing that can stop a body crossing is

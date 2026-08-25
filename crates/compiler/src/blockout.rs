@@ -706,7 +706,10 @@ fn derive_bound(
     // likes, and the hole is the last word.
     for s in &seams {
         let (olo, ohi) = slide(s, perturb.slide_openings);
-        if s.class == "barred" {
+        if s.crossing == Crossing::Contact && perturb.wall_contacts {
+            // The deliberate defect: the front the plan allocated, walled.
+            mass.write(olo, ohi, palette::WALL);
+        } else if s.class == "barred" {
             mass.write(olo, ohi, palette::BAR);
             anchors.insert(
                 seam_anchor(&s.edge),
@@ -1526,9 +1529,22 @@ fn seal_unopened(
 /// **The crossing profile of a contact's span**, measured over the assembled
 /// bytes (spec-0053 §4).
 ///
-/// Returns, per column of the span, the pair of walk planes a body crossing in
-/// that column stands on — `(a-side, b-side)` — for every column it can cross
-/// at all. An empty result is a front nothing crosses.
+/// Returns the columns of the span a body can cross in. An empty result is a
+/// front nothing crosses.
+///
+/// # What it deliberately does NOT report, and why
+///
+/// An earlier form returned the walk planes on either side per column, so that
+/// `DW0836`'s rise claim could be taken per column as spec-0053 §4 describes it.
+/// That claim is **not sound and is withdrawn**: measured on this repository's
+/// own blockout fixture, an ordinary correct map falsifies it. A `stair` seam
+/// hosted in one of the two places arrives at the very wall the contact spans,
+/// so in the stair's own columns the two sides are level and the measured rise
+/// is 0 while the plan declares -5 — and nothing about that map is wrong. A
+/// seam's `rise` is `floor(b) − floor(a)`, a fact about the two places' FLOORS,
+/// never a promise about every column of a wide front. The whole-place form of
+/// the claim, which every seam already owed and which a contact now runs too, is
+/// the sound one.
 ///
 /// # What a column crossing MEANS, and the one asymmetry
 ///
@@ -1543,10 +1559,7 @@ fn seal_unopened(
 /// not two.
 ///
 /// The step rule is `nav::World::neighbors`, unmodified and unwidened.
-fn contact_profile(
-    s: &PlacedSeam,
-    world: &crate::nav::World,
-) -> Vec<(i64, i64, i64)> {
+fn contact_profile(s: &PlacedSeam, world: &crate::nav::World) -> Vec<i64> {
     // The face's two in-plane axes: the one columns run along, and the one
     // scanned within a column. On a vertical face the column axis is the
     // horizontal one, because a column is what a body walks past; on a
@@ -1562,10 +1575,20 @@ fn contact_profile(
         .find(|a| *a != s.normal_axis && *a != col_axis)
         .expect("a face has two in-plane axes");
 
+    // **Which side of the wall plane `a` is on is a fact of the FACE**, not a
+    // constant. The seam names a face OF `a`, so `a` sits on the side the face's
+    // normal points AWAY from: on a `west` face the plane is `a`'s low corner
+    // minus one and `a` is at `plane + 1`, and on an `east` face it is the other
+    // way round. Read from `Face::vector`, which is where `shared_face` reads it
+    // too, rather than assumed — a constant here would be right on half the
+    // faces and quietly wrong on the rest.
+    let n_dir = s.face.vector()[s.normal_axis];
+    let (a_off, b_off) = (-n_dir, n_dir);
+
     // Which side a `drop` falls FROM: the higher floor. `rise` is
     // `floor(b) − floor(a)`, so a negative rise puts `a` above `b`.
     let need_both = s.class != "drop";
-    let high = if s.rise <= 0 { -1i64 } else { 1i64 };
+    let high_off = if s.rise <= 0 { a_off } else { b_off };
 
     let (lo, hi) = s.opening;
     let mut out = Vec::new();
@@ -1584,21 +1607,14 @@ fn contact_profile(
                     .find(|x| i64::from(x[s.normal_axis]) == s.plane + off)
                     .map(|x| i64::from(x[1]))
             };
-            let (a_side, b_side) = (side(-1), side(1));
+            let (on_a, on_b) = (side(a_off), side(b_off));
             let crosses = if need_both {
-                a_side.is_some() && b_side.is_some()
-            } else if high < 0 {
-                a_side.is_some()
+                on_a.is_some() && on_b.is_some()
             } else {
-                b_side.is_some()
+                side(high_off).is_some()
             };
             if crosses {
-                // The planes a body stands on either side, where the step rule
-                // reached one. A drop's far side was not walked to, so it is
-                // reported as the seam's own declared plane rather than
-                // measured — the number `DW0836` compares is then the one
-                // `DW0837` is already responsible for.
-                out.push((u, a_side.unwrap_or(c[1]), b_side.unwrap_or(c[1] + s.rise)));
+                out.push(u);
                 break;
             }
         }
@@ -1612,11 +1628,11 @@ fn contact_profile(
 /// scattered along the front — two crossable columns forty blocks apart do not
 /// make a two-wide way. The profile is produced in column order, so this is one
 /// pass.
-fn widest_run(profile: &[(i64, i64, i64)]) -> usize {
+fn widest_run(profile: &[i64]) -> usize {
     let mut best = 0usize;
     let mut run = 0usize;
     let mut prev: Option<i64> = None;
-    for (u, _, _) in profile {
+    for u in profile {
         run = if prev == Some(u - 1) { run + 1 } else { 1 };
         best = best.max(run);
         prev = Some(*u);
@@ -1725,45 +1741,24 @@ fn seams_built(
                     ),
                 );
             }
-            // ---- Claim 3 for a contact, PER CROSSING COLUMN.
-            //
-            // A front is wide enough that one number for the whole of it would
-            // be a claim about its middle. A landform that tilted one side
-            // leaves the two places' own walk planes agreeing and the crossing
-            // disagreeing, which is precisely what an independent observer is
-            // for.
-            if let Some((u, pa, pb)) = profile.iter().find(|(_, pa, pb)| pb - pa != s.rise) {
-                raise(
-                    d,
-                    DW_SEAM_BUILT,
-                    Diagnostic::error(
-                        DW_SEAM_BUILT,
-                        "site-plan",
-                        format!("/content/seams[{}]", s.edge),
-                        format!(
-                            "the contact for `{id}` is crossed at the wrong height. In the \
-                             column at {u}, a body steps from a walk plane of {pa} to one of \
-                             {pb}, a rise of {got} where the plan puts `{a}` and `{b}` \
-                             {want} apart. The rise is derived from the two places' floors \
-                             and is never authored, so this is the mass disagreeing with the \
-                             plan: either the derivation built a course at the wrong height, \
-                             or the plan gave one of the two places a floor the massing \
-                             standing in it cannot honour.",
-                            id = s.edge,
-                            a = s.a,
-                            b = s.b,
-                            got = pb - pa,
-                            want = s.rise,
-                        ),
-                    ),
-                );
-            }
-            continue;
+            // No `continue`: the whole-place rise claim further down is owed by
+            // every seam of either kind, and on a contact it is the one that
+            // covers a drop's far side.
         }
 
-        let blocked: Vec<[i64; 3]> = cells_of(lo, hi)
-            .filter(|c| !world.is_clear(narrow(*c)))
-            .collect();
+        // ---- A PORTAL's half of claim 1: EVERY allocated cell is passable.
+        //
+        // A contact's cells are deliberately not asked this. A front is
+        // continuous ground and massing standing on part of it is content, so
+        // `DW0877` above asks the question a front can answer; asking a portal's
+        // question of a front would refuse correct content.
+        let blocked: Vec<[i64; 3]> = if s.crossing == Crossing::Portal {
+            cells_of(lo, hi)
+                .filter(|c| !world.is_clear(narrow(*c)))
+                .collect()
+        } else {
+            Vec::new()
+        };
         if !blocked.is_empty() {
             raise(
                 d,
@@ -1795,7 +1790,10 @@ fn seams_built(
                 ),
             );
         }
-        // Claim 3.
+        // ---- Claim 3, over the two places' own walk planes. Owed by every
+        // seam of either kind: on a contact it is what covers a drop's far side,
+        // which the step rule does not walk to and the per-column claim above
+        // therefore does not measure.
         let (Some(Some(pa)), Some(Some(pb))) = (
             planes.get(s.a.0.as_str()).copied(),
             planes.get(s.b.0.as_str()).copied(),
@@ -2796,6 +2794,19 @@ pub struct Perturb {
     /// stays walkable, so `DW0837` is untouched. That narrowness is the point:
     /// it is a defect only the headroom measure can see.
     pub low_ceiling: Option<&'static str>,
+    /// Fill every **contact's** span with wall, as if the massing had closed the
+    /// front the plan allocated. Reddens `DW0877`: the plan says two places meet
+    /// along this span and the world has a wall there.
+    ///
+    /// It is the only thing that can produce that red, which is what makes it a
+    /// demonstration rather than a reassurance. A portal's cells are untouched,
+    /// so `DW0836`'s claim 1 stays green; the wall it writes is inside the span,
+    /// so `DW0836`'s claim 2 (nothing passable OUTSIDE the allocation) stays
+    /// green; and closing a way can only ever remove crossings, so `DW0838`
+    /// stays green. What it can also reach is `DW0837`, and only when the front
+    /// is the sole way into a place — which is a fact about the fixture, not
+    /// about the knob, and the test that uses it says which.
+    pub wall_contacts: bool,
 }
 
 impl Perturb {
@@ -2808,6 +2819,7 @@ impl Perturb {
             short_walls: false,
             brick_up: None,
             low_ceiling: None,
+            wall_contacts: false,
         }
     }
 

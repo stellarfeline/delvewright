@@ -1296,10 +1296,7 @@ fn metric_names(graph: &LayoutGraphContent, table: &Metrics, d: &mut Vec<Diagnos
         ] {
             let Some(named) = named else { continue };
             if let Err(unknown) = table.resolve(kind, named) {
-                d.push(
-                    unknown
-                        .diagnostic("layout-graph", &format!("/content/nodes/{i}/{field}")),
-                );
+                d.push(unknown.diagnostic("layout-graph", &format!("/content/nodes/{i}/{field}")));
             }
         }
     }
@@ -1378,7 +1375,7 @@ fn place_classes(
                  run free, so they are two different questions about the same box and every \
                  geometric rule below would have to pick between them with no rule to pick \
                  by"
-                    .to_string(),
+                .to_string(),
             )
         } else {
             (

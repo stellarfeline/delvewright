@@ -1099,10 +1099,9 @@ fn crossing_rect(
     let named = s.opening.as_ref()?;
     let entry = table.resolve(MetricKind::Opening, named).ok()?;
     match entry.value(reads) {
-        MetricValue::Opening(o) => Some((
-            Crossing::Portal,
-            [i64::from(o.width), i64::from(o.height)],
-        )),
+        MetricValue::Opening(o) => {
+            Some((Crossing::Portal, [i64::from(o.width), i64::from(o.height)]))
+        }
         _ => None,
     }
 }
@@ -1489,10 +1488,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     disjoint(&placed, d);
     // The SITE PLAN stage's own declared version — what the contact fence is
     // judged against, exactly as the graph stage's is what the way fence reads.
-    let version = c
-        .site_plan
-        .as_ref()
-        .map_or("", |p| p.dsl_version.as_str());
+    let version = c.site_plan.as_ref().map_or("", |p| p.dsl_version.as_str());
     seams(plan, graph, &placed, &table, version, reads, d);
     size_classes(&placed, d);
     volumes_outside_boxes(plan, &placed, d);
@@ -2510,9 +2506,7 @@ fn seams(
                     _ => continue,
                 },
                 Err(unknown) => {
-                    d.push(
-                        unknown.diagnostic("site-plan", &format!("/content/seams/{i}/opening")),
-                    );
+                    d.push(unknown.diagnostic("site-plan", &format!("/content/seams/{i}/opening")));
                     continue;
                 }
             }

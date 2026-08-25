@@ -326,14 +326,24 @@ fn patch_detail_plan(d: &Detailed, f: impl FnOnce(&mut serde_json::Value)) {
     common::patch_file(&d.campaign.join("detail-plan.json"), f);
 }
 
-const EVERY_PLACE: [&str; 6] = [
-    "node/landing",
-    "node/hall",
-    "node/loft",
-    "node/cell",
-    "node/exit",
-    "node/undercroft",
-];
+/// Every place the blockout fixture declares, **read off the graph**.
+///
+/// It was a hand-written list of six, and a hand-written census of something
+/// that grows is the shape `CLAUDE.md` warns about: the fixture gained a place
+/// and the list did not, so `fully_detailed` quietly became false in the test
+/// that exists to assert it is true. Derived, it cannot go stale, and a fixture
+/// that gained a place gets it detailed for free.
+fn every_place() -> Vec<String> {
+    let c = campaign_at(&blockout_dir());
+    c.layout_graph
+        .as_ref()
+        .expect("the blockout fixture carries a layout graph")
+        .content
+        .nodes
+        .iter()
+        .map(|n| n.id.0.clone())
+        .collect()
+}
 
 // ---------------------------------------------------------------------------
 // The green case, and what it binds
@@ -351,7 +361,7 @@ fn a_bound_place_validates_and_states_its_binding() {
     );
     assert_eq!(binding.rows, 1, "one row read");
     assert_eq!(binding.bound, 1, "and it bound a place");
-    assert_eq!(binding.boxes, 6, "against the plan's six boxes");
+    assert_eq!(binding.boxes, 7, "against the plan's seven boxes");
     assert_eq!(binding.records, 1, "over one walk record");
     assert_eq!(
         binding.compared, 2,
@@ -365,7 +375,7 @@ fn a_bound_place_validates_and_states_its_binding() {
     assert!(
         binding
             .line()
-            .contains("1 of 6 place(s) bound over 1 `details[]` row(s)"),
+            .contains("1 of 7 place(s) bound over 1 `details[]` row(s)"),
         "the count states its denominator: {}",
         binding.line()
     );
@@ -1127,7 +1137,9 @@ fn dw0812_refuses_a_footprint_class_the_table_does_not_define() {
 #[test]
 fn dw0821_is_a_warning_until_every_node_is_bound_and_then_a_refusal() {
     let tmp = tempdir("dw0821-partial");
-    let partial = detailed(&tmp, &EVERY_PLACE[..5]);
+    let all = every_place();
+    let some: Vec<&str> = all[..all.len() - 1].iter().map(String::as_str).collect();
+    let partial = detailed(&tmp, &some);
     assert!(!detail::fully_detailed(&campaign_at(&partial.campaign)));
     let (battery, found) = battery_at(&partial);
     assert!(found.iter().any(|c| c == "DW0821"), "{found:?}");
@@ -1140,26 +1152,28 @@ fn dw0821_is_a_warning_until_every_node_is_bound_and_then_a_refusal() {
     );
 
     let tmp = tempdir("dw0821-full");
-    let full = detailed(&tmp, &EVERY_PLACE);
+    let every: Vec<&str> = all.iter().map(String::as_str).collect();
+    let full = detailed(&tmp, &every);
     let c = campaign_at(&full.campaign);
     assert!(detail::fully_detailed(&c));
     let (dd, binding) = check_at(&full);
     assert!(
         errors(&dd).is_empty(),
-        "six pieces cut from the massing satisfy every stage-6 gate — including \
-         the hall's hosted stair, the loft's drop and the undercroft's climb up \
-         through a punched floor: {:?}",
+        "a piece cut from the massing of EVERY place satisfies every stage-6 gate — \
+         including the hall's hosted stair, the loft's rim over it, the undercroft's \
+         climb up through a punched floor, and the way that is not a box with a size \
+         class at all: {:?}",
         codes(&dd)
     );
     assert_eq!(
         binding.bound,
-        6,
+        binding.boxes,
         "and every place is bound: {}",
         binding.line()
     );
     assert_eq!(
-        binding.seams_required, 12,
-        "each of the six seams answered from both sides"
+        binding.seams_required, 14,
+        "each of the seven seams answered from both sides"
     );
 
     let (battery, _) = battery_at(&full);
@@ -1239,7 +1253,7 @@ fn the_stage_five_battery_is_green_over_a_detailed_world() {
             .collect::<Vec<_>>()
     );
     assert!(
-        battery.binding.seams > 0 && battery.binding.nodes == 6,
+        battery.binding.seams > 0 && battery.binding.nodes == 7,
         "and it bound to the whole map: {}",
         battery.binding.line()
     );
@@ -1593,7 +1607,7 @@ fn the_allocation_verb_hands_out_the_frame_the_seams_and_the_owed_names() {
     let v: serde_json::Value = serde_json::from_slice(&all.stdout).unwrap();
     assert_eq!(
         v.as_array().unwrap().len(),
-        6,
+        7,
         "one per place, in plan order"
     );
 }
@@ -1651,7 +1665,7 @@ fn a_detailed_build_exits_zero_and_prints_every_hash() {
         "and the engine's revision"
     );
     assert!(
-        err.contains("1 of 6 place(s) bound"),
+        err.contains("1 of 7 place(s) bound"),
         "and the detail binding count, with its denominator"
     );
 }
@@ -2005,7 +2019,7 @@ fn a_build_states_what_it_built_as_well_as_what_it_examined() {
         "the DERIVATION states what it bound to: {err}"
     );
     assert!(
-        err.contains("(1 detailed, so 5 massed by the derivation)"),
+        err.contains("(1 detailed, so 6 massed by the derivation)"),
         "and the split is the number stage 6 made load-bearing — a reader who \
          cannot see it cannot tell a fully detailed map from one binding nothing: \
          {err}"

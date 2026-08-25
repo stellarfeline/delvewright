@@ -101,6 +101,23 @@
           21
         ],
         "node": "node/undercroft"
+      },
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          4,
+          8
+        ],
+        "floor": {
+          "y": 59
+        },
+        "min": [
+          22,
+          21
+        ],
+        "node": "node/tunnel"
       }
     ],
     "datums": [
@@ -203,12 +220,17 @@
       },
       {
         "at": [
-          13,
+          8,
           69
         ],
+        "contact": {
+          "extent": [
+            6,
+            3
+          ]
+        },
         "edge": "edge/loft-drop",
-        "face": "west",
-        "opening": "arch"
+        "face": "west"
       },
       {
         "at": [
@@ -237,6 +259,15 @@
         "face": "down",
         "opening": "passage",
         "stair_in": "node/undercroft"
+      },
+      {
+        "at": [
+          21,
+          59
+        ],
+        "edge": "edge/undercroft-tunnel",
+        "face": "east",
+        "opening": "passage"
       }
     ],
     "sightlines": [
@@ -307,6 +338,6 @@
       }
     ]
   },
-  "dsl_version": "0.14.0",
+  "dsl_version": "0.19.0",
   "stage": "site-plan"
 }
