@@ -30,12 +30,33 @@ file-by-file diff buries the one fact the reader needs.
 - it touches none of them — a **determinism finding** (ADR-0006), named as such.
   The baseline is thereby a standing cross-machine determinism probe, for free.
 
-## The two arms are ONE rule (CLAUDE.md: the defect belongs to the PAIR)
+## The two arms are ONE rule, and the implication runs ONE WAY
 
 `--write` refuses a noise commit by asking exactly the question the verify arm
 asks — `baseline_matches`: *does `gallery/baseline/` already hold, byte for byte,
-every document a write would produce?* — and nothing else. So **`--write`
-refuses if and only if verify passes**, and no tree can be refused by both arms.
+every document a write would produce?* — and nothing else. The pair property
+holds, and it is the one that matters: **no tree can be refused by both arms.**
+
+The BICONDITIONAL this file used to claim — *`--write` refuses if and only if
+verify passes* — is false, and it is false on a pristine checkout of `main`.
+Both arms ask one question, but they hand it a different
+`produced["delta.json"]`, because a delta is a claim about a transition and the
+arms name the far end of that transition differently: **verify is HANDED the
+base by the artifact; `--write` re-derives `merge-base(--base, HEAD)`.** The
+moment `--base` has advanced past the commit the artifact names — which is the
+state of every branch a merge train has touched, and of `main` itself after any
+merge — `--write` produces a document differing from the committed one, and
+lands on a tree verify has just passed.
+
+Only the forward direction holds, and it holds for a reason rather than by
+luck: if `--write` refuses then `on_disk == produced`, so the committed
+`delta.json` names `--write`'s own base, so verify resolves the SAME base and
+passes. Hence `--write` refuses ⇒ verify passes, and no tree is refused by
+both. The extra state is a WRITABLE one, never a deadlock, so this is not the
+unsatisfiable-pair defect CLAUDE.md names.
+
+What it is instead is a **report** defect, and that is the expensive half —
+see `write_effect` and `write_report`.
 
 That is a repair to the pair rather than to either half. The previous shape
 ENUMERATED what to compare — emission, then the header, then, one fix later, the
@@ -68,8 +89,12 @@ Two consequences fall out, and both were live defects:
   function of the write rather than of the tree. Running `--write` twice before
   committing silently re-based it onto its own first output, and a write that
   moved only the header rewrote it to empty — destroying the record of the last
-  real emission change while every gate stayed green. Measured from a commit, a
-  repeated write is idempotent and nothing can be blanked by accident.
+  real emission change while every gate stayed green. Measured from a commit,
+  two writes of one tree agree **while `--base` sits still**, which is all the
+  idempotence there is: `--base` is a moving ref, so a write is still a function
+  of WHEN it ran, and a write after the base advanced can still empty the delta.
+  That is honest for the new base and is a record discarded all the same, so
+  `write_report` says so in those words rather than leaving it to `git diff`.
 - It becomes checkable at all. `base_commit` is a commit on the base branch, so
   it survives the squash that discards the branch, and the claim stays true on
   `main` for as long as the manifests do not move.
@@ -599,19 +624,20 @@ def main() -> int:
                 "rewrite is a noise commit. A baseline update is never split "
                 "from the change that caused it (§5). Nothing was written."
             )
+        # `on_disk` is read BEFORE the write, so it is the only chance this run
+        # has to know what its own write moved. Take the answer now.
+        effect = write_effect(on_disk, produced, base_sha)
         BASELINE.mkdir(parents=True, exist_ok=True)
         for name in PRODUCED:
             write_canonical(BASELINE / name, produced[name])
         old_warnings = warnings_at(base_sha)
         moved = warning_delta(old_warnings, warnings) if old_warnings != warnings else []
-        fields = manifest_field_delta(base_manifests, manifests) if base_manifests else []
-        print(
-            f"wrote {BASELINE} against `{base_sha[:12]}`: {len(delta['added'])} added, "
-            f"{len(delta['removed'])} removed, {len(delta['changed'])} changed path(s); "
-            f"{len(moved)} warning row(s) at a new count; "
-            f"{len(fields)} recorded manifest value(s) moved."
+        fields = (
+            manifest_field_delta(base_manifests, manifests, left=f"`{base_sha[:12]}`")
+            if base_manifests
+            else []
         )
-        for line in moved + fields:
+        for line in write_report(effect, delta, moved, fields):
             print(line)
         return 0
 
@@ -783,6 +809,142 @@ def report_delta_mismatch(committed: dict, recomputed: dict) -> None:
     )
 
 
+# ------------------------------------------------- what a write actually moved
+
+
+def write_effect(on_disk: dict | None, produced: dict, base_sha: str) -> dict:
+    """What THIS INVOCATION moves on disk — measured before the write, never narrated.
+
+    The write arm had no such measurement, and could not have had one after the
+    fact: `on_disk` is read once, before the files are overwritten, so this is the
+    only moment at which the run can know its own effect. Everything the arm
+    printed instead was `<this tree> vs <the review base>` — a difference between
+    two COMMITS, which is not what the invocation changed and can be arbitrarily
+    large while the invocation changes one JSON field.
+
+    The two ends of the report are therefore separate facts, and only one of them
+    is about this run:
+
+    - `changed` / `unchanged`: the documents whose bytes this write moves;
+    - `recorded_moved`: those of them that RECORD the tree — an empty list means
+      emission, the warning set and every recorded manifest value are already
+      exactly what this run measured, so nothing about the tree drifted;
+    - `rebased`: `delta.json` names a different base than it did, because
+      `--base` advanced since the artifact was written. This is a re-base of a
+      claim about a transition, not a movement of the tree, and it is the whole
+      of the divergence between the two arms (see the module docstring).
+    """
+    changed = [n for n in PRODUCED if on_disk is None or on_disk.get(n) != produced[n]]
+    old_delta = on_disk["delta.json"] if on_disk else None
+    old_base = base_of(old_delta)
+
+    def paths(d) -> dict | None:
+        if not isinstance(d, dict):
+            return None
+        return {k: list(d.get(k) or []) for k in ("added", "removed", "changed")}
+
+    was, now = paths(old_delta), paths(produced["delta.json"])
+    n_was = sum(len(v) for v in was.values()) if was else 0
+    n_now = sum(len(v) for v in now.values()) if now else 0
+    return {
+        "created": on_disk is None,
+        "changed": changed,
+        "unchanged": [n for n in PRODUCED if n not in changed],
+        "recorded_moved": [n for n in changed if n in RECORDED],
+        "old_base": old_base,
+        "new_base": base_sha,
+        "rebased": old_base is not None and old_base != base_sha,
+        "delta_lists_moved": was != now,
+        # A record this write DISCARDS: the delta it replaced listed paths and the
+        # one it wrote lists none. Honest for the new base and still a loss, so it
+        # is said rather than left to `git diff`.
+        "discarded": n_was if (n_was and not n_now) else 0,
+    }
+
+
+def write_report(effect: dict, delta: dict, moved: list[str], fields: list[str]) -> list[str]:
+    """The write arm's whole output, as two blocks that cannot be read as one.
+
+    The defect this replaces: one sentence carried three figures — changed paths,
+    warning rows, recorded manifest values — every one of them measured between
+    THIS TREE and THE REVIEW BASE, and none of them measured against what was on
+    disk. On a branch whose review base had advanced, that sentence announced
+    `129 changed path(s); 24 warning row(s) at a new count; 17 recorded manifest
+    value(s) moved` over a write that changed exactly one JSON field,
+    `delta.json`'s `base_commit`. It reads as an emission drift; the words
+    `moved` and `at a new count` are the tree's vocabulary, and the reader has
+    nothing in the output to weigh them against. A false drift signal is the
+    expensive mirror of a reassuring gloss, because a false drift gets acted on:
+    a round told only "run `--write`" commits it as a regeneration, and the
+    commit carries a measurement of nothing.
+
+    So the effect is stated FIRST, in documents rather than in path counts, and
+    the difference between two commits is stated second with both of its ends
+    named. Neither block can stand in for the other: the first cannot be large
+    (there are four documents), and the second never claims to be an effect.
+
+    Explaining the ambiguity would not have been enough — the drift reading is
+    removed by there being a measurement of the write's own effect at all, which
+    is what did not exist. The prose only names what that measurement found.
+    """
+    n = len(effect["changed"])
+    lines = [
+        f"wrote {BASELINE} — this invocation changed {n} of {len(PRODUCED)} document(s):"
+    ]
+    for name in effect["changed"]:
+        if name != "delta.json":
+            lines.append(f"  ~ {name} — {'written' if effect['created'] else 'rewritten'}")
+            continue
+        if effect["rebased"]:
+            tail = (
+                "its path lists are unchanged"
+                if not effect["delta_lists_moved"]
+                else "its path lists moved with it"
+            )
+            lines.append(
+                f"  ~ delta.json — RE-BASED `{effect['old_base'][:12]}` -> "
+                f"`{effect['new_base'][:12]}`; {tail}"
+            )
+        elif effect["created"] or effect["old_base"] is None:
+            lines.append(f"  ~ delta.json — written against `{effect['new_base'][:12]}`")
+        else:
+            lines.append(
+                f"  ~ delta.json — rewritten against the same base "
+                f"`{effect['new_base'][:12]}`"
+            )
+    if effect["unchanged"]:
+        lines.append(f"  = {', '.join(effect['unchanged'])} — unchanged")
+    if not effect["created"] and not effect["recorded_moved"]:
+        lines.append(
+            "  NOT AN EMISSION DRIFT: every document that RECORDS this tree — "
+            f"{', '.join(RECORDED)} — already held exactly what this run measured, "
+            "so emission, the warning set and the recorded manifest values did not "
+            "move. `--base` has advanced since the review delta was written and the "
+            "delta followed it. The figures below are a difference between two "
+            "commits; this write did not produce them."
+        )
+    if effect["discarded"]:
+        lines.append(
+            f"  AND IT DISCARDED A REVIEW RECORD: the delta it replaced listed "
+            f"{effect['discarded']} path(s) against `{effect['old_base'][:12]}`, and the "
+            f"one written here is empty — this tree moves no emission relative to "
+            f"`{effect['new_base'][:12]}`. That record now survives only in git at "
+            f"`{effect['old_base'][:12]}`."
+        )
+    lines.append(
+        f"review delta now recorded — THIS TREE against `{effect['new_base'][:12]}`, "
+        "which is a difference between two commits and not a list of what this "
+        "invocation changed:"
+    )
+    lines.append(
+        f"  {len(delta['added'])} added, {len(delta['removed'])} removed, "
+        f"{len(delta['changed'])} changed path(s); {len(moved)} warning row(s) at a "
+        f"different count; {len(fields)} recorded manifest value(s) differ from the base."
+    )
+    lines.extend(moved + fields)
+    return lines
+
+
 def warning_delta(old: dict, new: dict) -> list[str]:
     """Every warning row whose COUNT moved, named, with both counts.
 
@@ -845,8 +1007,15 @@ def field_count(manifests: dict) -> int:
     return n
 
 
-def manifest_field_delta(old: dict, new: dict) -> list[str]:
+def manifest_field_delta(old: dict, new: dict, left: str = "baseline") -> list[str]:
     """Every recorded-but-not-emitted manifest value whose content moved, named.
+
+    `left` names what `old` IS, and it is a parameter because the two callers hand
+    it different things. The verify arm's `old` is the committed baseline, so
+    `baseline` is right there. The write arm's `old` is the manifest set at the
+    REVIEW BASE — a commit, not the file on disk — and calling that "baseline"
+    told the reader the committed file had moved, which is the same misreading
+    `write_report` exists to end, one line further down the page.
 
     A manifest is not its outputs. `content_sha`, the pinned `delvec_version` /
     `dsl_version` / `mc_version`, `campaign_id`, `resource_pack_sha1` and the
@@ -877,11 +1046,11 @@ def manifest_field_delta(old: dict, new: dict) -> list[str]:
                 for sub in sorted(set(av) | set(bv)):
                     if av.get(sub) != bv.get(sub):
                         lines.append(
-                            f"  ~ {bid}.{k}[{sub}]: baseline `{av.get(sub)}` "
+                            f"  ~ {bid}.{k}[{sub}]: {left} `{av.get(sub)}` "
                             f"vs this tree `{bv.get(sub)}`"
                         )
                 continue
-            lines.append(f"  ~ {bid}.{k}: baseline `{av}` vs this tree `{bv}`")
+            lines.append(f"  ~ {bid}.{k}: {left} `{av}` vs this tree `{bv}`")
     return lines
 
 
