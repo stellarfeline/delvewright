@@ -1032,6 +1032,50 @@ fn dw0845_refuses_a_region_anchor_where_a_place_to_stand_is_owed() {
     assert!(e.contains("declares no cell"), "{e}");
 }
 
+/// **A gate station bound to a cell** (spec-0052 §7.5) — the direction nothing
+/// in this engine could report before, because before stations no owed name was
+/// ever a gate.
+///
+/// Its sibling above is the reason this is a separate rule rather than a wider
+/// one: an owed POINT bound to a region is `DW0845`'s "a region, not a place to
+/// stand", and it stays `DW0845`. Raising a second code for it would prescribe
+/// two repairs for one mistake and move a diagnostic campaigns already meet.
+///
+/// Binding: one owed name, declared as a gate, bound to the piece's point.
+#[test]
+fn dw0842_refuses_a_gate_station_bound_to_a_cell() {
+    let tmp = tempdir("dw0842-gate-station");
+    let d = detailed(&tmp, &["node/exit"]);
+    // Declare a gate station on the bound place and bind it to `seat0`, which
+    // is a point: the piece has a cell where the campaign promised a volume.
+    common::patch_file(&d.campaign.join("layout-graph.json"), |v| {
+        v["dsl_version"] = serde_json::json!("0.18.0");
+        for n in v["content"]["nodes"].as_array_mut().unwrap() {
+            if n["id"] == "node/exit" {
+                n["stations"] = serde_json::json!([
+                    { "anchor": "anchor/vestry-grille", "kind": "gate" }
+                ]);
+            }
+        }
+    });
+    patch_detail_plan(&d, |v| {
+        v["content"]["details"][0]["anchors"]["anchor/vestry-grille"] = serde_json::json!("seat0");
+    });
+    let e = check_and_expect(&d, "DW0842");
+    assert!(
+        e.contains("anchor/vestry-grille"),
+        "must name the station: {e}"
+    );
+    assert!(
+        e.contains("declares no region"),
+        "must say what the piece anchor is missing: {e}"
+    );
+    assert!(
+        e.contains("`point`"),
+        "and must name the reachable remedy — change the kind: {e}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // DW0848 — the declared footprint class, at the consumer door
 // ---------------------------------------------------------------------------
