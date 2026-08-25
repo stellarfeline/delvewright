@@ -294,6 +294,10 @@ class Worktree:
         # and only from the remote's own answer: it is the fact that the event
         # this lease was taken against has already happened.
         self.lease_spent: dict | None = None
+        # Why the remote could not be asked about this tree's branch, if it
+        # could not. Kept apart from `lease_spent`: "not landed" and "not asked"
+        # are different facts and a row must never print one as the other.
+        self.lease_probe_error: str = ""
         self.inbound: list[Path] = []  # symlinks pointing INTO this tree
         self.pr: dict | None = None
         self.verdict = "KEEP"
@@ -542,6 +546,39 @@ def drop_lease(wt_path: Path) -> bool:
     return True
 
 
+def probe_lease(wt: "Worktree", authority: Authority) -> None:
+    """Has the event this lease was taken against already happened?
+
+    Asked of EVERY lease, and that is the whole point of the function existing
+    separately from the verdict ladder. "Is this lease spent" is a fact about the
+    LEASE — about whether the remote has landed the branch it was taken for — and
+    not a fact about which rung of the ladder happens to answer about the tree
+    first. The first version of this asked at the lease rung, which is reached
+    only by a tree that is clean, fully pushed and unreferenced; on this machine
+    that reported **2** spent leases where an independent census of the same
+    thirty-six counted **8**, because five of the eight sit over trees carrying
+    commits on no remote and rung 1 answers about those before rung 3 is reached.
+
+    That is a numerator computed over one population and printed against the
+    denominator of another, which is worse than no count at all: it reads as
+    coverage, it is honest about the trees it examined, and it understates in the
+    direction that makes the backlog look smaller than it is. It was caught only
+    because the figure disagreed with an independent observer — which is the one
+    reason every count here states what it is a count OF.
+
+    A tree with no branch is not asked about and is not an error: the remote holds
+    no pull-request state about a detached checkout, so no merge can end its lease
+    and only an operator's `--release` can.
+    """
+    if not wt.lease or wt.branch is None:
+        return
+    pr, pr_error = authority.for_branch(wt.branch)
+    if pr_error:
+        wt.lease_probe_error = pr_error
+    elif pr is not None and pr.get("state") in {"MERGED", "CLOSED"}:
+        wt.lease_spent = pr
+
+
 def lease_spent_note(wt: "Worktree") -> str:
     """The clause that says a lease is being honoured over work that has landed.
 
@@ -719,25 +756,27 @@ def decide(wt: Worktree, *, self_paths: set[Path], authority: Authority) -> None
     #    that ends one is the merge (`--after-merge`), never a sweep's reading of
     #    how finished something looks. What changes is that the report now names
     #    which leases are spent and what ends them.
+    #
+    #    `probe_lease` has already asked, for EVERY lease rather than for the
+    #    ones that happen to arrive here — see its docstring for why the
+    #    difference is the whole value of the count.
     if wt.lease:
         holder = wt.lease.get("holder", "?")
         notes: list[str] = []
         if lease_is_expired(wt.lease):
             notes.append("lease window has elapsed")
-        if wt.branch is not None:
-            pr, pr_error = authority.for_branch(wt.branch)
-            if pr_error:
-                # Never printed as "not landed": that would be a claim about the
-                # remote made out of a question the remote never answered.
-                notes.append(f"the remote could not be asked about its branch ({pr_error})")
-            elif pr is not None and pr.get("state") in {"MERGED", "CLOSED"}:
-                wt.lease_spent = pr
-                wt.pr = pr
-                notes.append(
-                    f"SPENT — the remote says pull request #{pr.get('number')} is "
-                    f"{pr.get('state')}, so the event this lease was taken against has "
-                    f"happened; end it at the merge: --after-merge {wt.branch} --apply"
-                )
+        if wt.lease_probe_error:
+            # Never printed as "not landed": that would be a claim about the
+            # remote made out of a question the remote never answered.
+            notes.append(f"the remote could not be asked about its branch ({wt.lease_probe_error})")
+        elif wt.lease_spent:
+            pr = wt.lease_spent
+            wt.pr = pr
+            notes.append(
+                f"SPENT — the remote says pull request #{pr.get('number')} is "
+                f"{pr.get('state')}, so the event this lease was taken against has "
+                f"happened; end it at the merge: --after-merge {wt.branch} --apply"
+            )
         wt.verdict = "KEEP"
         wt.reason = f"LEASED by {holder}"
         if notes:
@@ -1157,6 +1196,12 @@ def sweep(
 
     for rs in sweeps:
         rs.authority = Authority(repo_slug(rs.path), timeout=gh_timeout)
+        # Every lease is probed BEFORE the ladder runs, so the spent count is a
+        # count over leases rather than over "leases whose tree happened to reach
+        # rung 3". The answers are cached, so a branch the ladder asks about
+        # later costs nothing twice.
+        for wt in rs.trees:
+            probe_lease(wt, rs.authority)
         for wt in rs.trees:
             decide(wt, self_paths=self_paths, authority=rs.authority)
         rs.stale_branches = harness_branches(rs.path)

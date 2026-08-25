@@ -14,7 +14,7 @@ test, rather than a mocked-out function that a refactor could silently re-bind.
 
 ## Binding count for the build-output ladder
 
-59 tests here, of which 11 cover `decide_target`. Run against the version that
+60 tests here, of which 11 cover `decide_target`. Run against the version that
 preceded it, **10 of those 11 go red** — which is what says they bind to the new
 behaviour rather than passing for an unrelated reason.
 
@@ -31,7 +31,7 @@ because it carried no liveness check at all.
 
 ## Binding count for the lease rung
 
-14 of the tests here cover what ENDS a lease, and every one of them goes red on
+15 of the tests here cover what ENDS a lease, and every one of them goes red on
 the version that preceded them, because that version had no answer: a lease was
 written by every dispatch and released by nothing, so the top rung of the ladder
 held every object and each rung below it was unreachable for every tree the
@@ -397,6 +397,31 @@ def test_a_lease_is_never_called_spent_on_a_remote_that_could_not_be_asked(fx, t
     assert v == "KEEP" and "LEASED by worker-a" in why
     assert "SPENT" not in why and "LANDED" not in why
     assert "could not be asked" in why
+
+
+def test_a_lease_is_counted_spent_even_when_a_higher_rung_answers_first(fx, tmp_path):
+    """The count is over LEASES, never over "leases whose tree reached rung 3".
+
+    This tree is kept by UNPUSHED, which answers before the lease rung is ever
+    reached — so `wt.exists()` would pass whether or not the lease was probed,
+    and the only thing that moves is the number. That is the isolating
+    perturbation, and it is the one that catches the real defect: asking at the
+    rung reported 2 spent leases on a machine holding 8, because five of the
+    eight sat over trees carrying commits on no remote. A numerator taken over
+    one population and printed against another's denominator reads as coverage
+    and understates in the reassuring direction.
+    """
+    wt = fx.worktree("wt-leased", "landed")
+    (wt / "work.txt").write_text("x\n", encoding="utf-8")
+    git(wt, "add", "-A")
+    git(wt, "commit", "-m", "on no remote")
+    lease(fx, wt, "--holder", "worker-a")
+
+    out = sweep(fx, fake_gh(tmp_path, MERGED))
+    v, why = verdict_for(out, wt)
+    assert v == "KEEP" and "UNPUSHED" in why, "rung 1 must still be the one that answers"
+    assert "1 lease(s) held (1 spent)" in out
+    assert "--after-merge landed --apply" in out
 
 
 def test_the_sweep_never_releases_a_lease_even_over_a_merged_branch(fx, tmp_path):
