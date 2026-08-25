@@ -1888,6 +1888,7 @@ fn relight_region(
         &reachable,
         &required,
         &area_label(bid, batch),
+        delvewright_dsl::Placement::of(plan.campaign),
         spec,
         sky,
         amin,

@@ -1430,10 +1430,8 @@ fn no_refusal_on_a_derived_map_prescribes_a_prefab_document() {
         .replace("\"area/site\"", "\"area/nowhere\"");
     let areas_broken = check_campaign(&area_raw);
 
-    let all: Vec<delvewright_dsl::Diagnostic> = anchors_broken
-        .into_iter()
-        .chain(areas_broken.into_iter())
-        .collect();
+    let all: Vec<delvewright_dsl::Diagnostic> =
+        anchors_broken.into_iter().chain(areas_broken).collect();
 
     // Binding, computed from the fixture: every name planted above must reach a
     // refusal, or this test is examining a smaller population than it claims.

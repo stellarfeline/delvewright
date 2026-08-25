@@ -115,7 +115,7 @@ impl Placement {
     /// the whole point: every one of those sentences prescribes a prefab
     /// operation, and a derived map has no prefab for the author to reach.
     #[must_use]
-    pub fn anchor_remedy<'a>(self, prefab: &'a str) -> &'a str {
+    pub fn anchor_remedy(self, prefab: &str) -> &str {
         match self {
             Self::Prefabs => prefab,
             Self::SitePlan => {
@@ -138,5 +138,44 @@ impl Placement {
                  `anchor/unlock-<edge>`, `spawn`)"
             }
         }
+    }
+
+    /// **Where this campaign writes a lighting declaration.**
+    ///
+    /// Not a sentence but a field name, because that is the whole of what moves
+    /// between the two kinds: a site plan carries ONE `lighting`, applied to
+    /// every enclosed box, and a prefab campaign carries one per `areas[]`
+    /// entry. The prose around it — which fixture, what `min_light` is for, what
+    /// not to do about it — is the same either way and stays where it is
+    /// written, which is also where `tools/check-diagnostic-messages.py` reads
+    /// it.
+    ///
+    /// `NoMap` answers with the `areas[]` field: such a campaign has no area for
+    /// the light pass to walk, so this arm is reached only by a caller asking in
+    /// the abstract, and `areas[]` is the surface it would be writing.
+    ///
+    /// Returned BARE, with no stage qualifier, because two callers need two
+    /// different qualifiers of one name — `DW0210` says "declare …" and `DW0211`
+    /// says "Fix in …" — and a second accessor for the second phrasing would be
+    /// the duplication this module exists to remove.
+    #[must_use]
+    pub fn lighting_field(self) -> &'static str {
+        match self {
+            Self::Prefabs | Self::NoMap => "`world.areas[].lighting`",
+            Self::SitePlan => "the site plan's `lighting`",
+        }
+    }
+
+    /// Whether this campaign has the per-area **`mitigation`** surface at all.
+    ///
+    /// It lives on an `areas[]` entry, and a site-plan campaign is required to
+    /// declare an empty `areas` list (`DW0839`), so it has none. That is a
+    /// capability a derived map does not have rather than a wording question: a
+    /// darkness refusal offers the option only where it exists, because offering
+    /// it anywhere else is a prescription the campaign is refused for carrying
+    /// out.
+    #[must_use]
+    pub fn has_area_mitigation(self) -> bool {
+        !matches!(self, Self::SitePlan)
     }
 }
