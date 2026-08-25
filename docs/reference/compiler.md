@@ -604,7 +604,22 @@ than being authored against a schema. Its form is
 `{site_plan_sha256, layout_graph_sha256, blockout_sha256, engine_revision,
 verdict, findings[]}`, and every build of a site-plan campaign prints all three
 hashes with the engine's **revision** beside them, so a record can name its
-subject and its instrument literally. The first two are its **freshness key**:
+subject and its instrument literally. It is hand-authored and it is refused when
+it is wrong, so it is schema-exportable like everything else a person writes:
+`delvec schema --stage walk-record`, derived from the same struct `DW0841`
+parses. Not being a stage document decides what the document CONTAINS; it never
+decided whether its form is machine-readable.
+
+**The engine revision** is stamped into the binary at compile time by
+`crates/compiler/build.rs`. A source build reads it out of the checkout it is
+built from — suffixed `-dirty` when that tree carries uncommitted changes, since
+a build behind an uncommitted edit is not a build of that revision. A release
+recipe or container build that has the revision and no `.git` passes
+`DELVEC_ENGINE_REVISION` in the environment and that wins unchanged. Where
+neither can be established — a source tarball such as crates.io serves — the
+engine prints `unstamped` rather than claiming a revision it does not have. The
+stamp reaches stderr and diagnostic text only and no emitted byte, so two
+binaries differing only in it compile a campaign to identical output. The first two are its **freshness key**:
 the whole a walk judges is derived from both authored documents, so an edit to
 either re-opens the gate. The third is the derived massing, which is what the
 drift advisory reads. It is not a build input: a re-recorded walk moves no
@@ -672,6 +687,14 @@ whole map's design of record. Optional, named rather than numbered, and reached
 only through itself: a campaign that ships none parses, validates and emits
 exactly as it did. `delvec schema --stage site-plan` exports it; `--stage all`
 includes it.
+
+**Every document answers to its own name.** `delvec schema --stage <name>` takes
+any stage's name — the same string `DW0100` prints when that stage's document
+will not parse — as well as `1`..`7` for the numbered campaign stages, so the
+refusal's own prescription is a command that works. The names are enumerated
+from `Stage::ALL` rather than a second list, so a document added later answers
+the day it exists. **The exported schema is the authority on a document's
+form**; where a spec disagrees with it, the spec is the stale one.
 
 **Its one ordering obligation is not advice.** A plan validates only against a
 layout graph and a geometry brief: `DW0824` refuses a plan whose graph or brief
