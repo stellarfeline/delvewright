@@ -1,6 +1,6 @@
 {
   "added": [],
-  "base_commit": "8b9c253c7c990fdda994d0899cd5aa008659c601",
+  "base_commit": "02e5edf2278112e64d2f549bc632bfe67b99bd31",
   "changed": [
     "easy.en:render-plan.json",
     "easy.en:validation/branch-waypoints-read.json",
