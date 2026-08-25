@@ -1886,9 +1886,9 @@ this needs were built at Init step 2.
    contract has declared no doors and the gate has nothing else to read. So a
    corridor that turns a corner fails it — its ends are on perpendicular faces —
    and a straight corridor running east to west fails it with a binding of
-   **zero**, both while the always-on `reachability` line two lines below reads
-   `100.0%`. That is not a contradiction: the gate is answering about two
-   particular faces. **The fix is step 3's contract, not the flag** — declare
+   **zero**, both while the always-on `reachability` line further down the same
+   report reads `100.0%`. That is not a contradiction: the gate is answering
+   about two particular faces. **The fix is step 3's contract, not the flag** — declare
    one and the gate counts the ways the piece itself declared, in any direction.
 
    Three of the always-on gates are about how a block state is SPELLED —

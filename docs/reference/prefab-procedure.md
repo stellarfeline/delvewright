@@ -360,10 +360,10 @@ detail line. Everything about that fallback is a fact about the region box
 rather than about the passage: a corridor that turns a corner has its ends on
 *perpendicular* faces and fails; a perfectly straight corridor running east to
 west has its ends on the two faces the gate never looks at, and fails with a
-binding of **zero**. Both are as walkable as anything the rule library builds, and the
-always-on `reachability` line prints `100.0%` two lines below the refusal. **The
-gate is not disagreeing with that line — it is answering a question about two
-particular faces.**
+binding of **zero**. Both are as walkable as anything the rule library builds,
+and the same report says so a few lines further down, where the always-on
+`reachability` line reads `100.0%`. **The gate is not disagreeing with that line
+— it is answering a question about two particular faces.**
 
 So the rule above has one condition on it: **a piece whose ways in and out are
 not the north and south faces declares a spatial contract, and then this gate is
@@ -377,8 +377,8 @@ traversable  pass  bound 4   4 declared way(s) in or out — west walk, west wal
 
 A red here writes no `.nbt`, so this is not a warning to ship past.
 
-It is a claim about the **route only**. Both ends it joins are at ground level,
-so a green `traversable` says nothing about the storeys above: a cathedral has
+`--traversable` is a claim about the **route only**. Both ends it joins are at
+ground level, so a green `traversable` says nothing about the storeys above: a cathedral has
 passed it with 45% of its floor reachable and nothing at all reachable above the
 nave. **Pass `--reachable-floor` whenever the piece has an inside a body is meant
 to walk around** — it is the gate that catches the upper level with no stair.
