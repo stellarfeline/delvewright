@@ -459,3 +459,212 @@ Recorded because a friction log that only lists breakage is not a measurement.
   codebase: they say what is wrong, why the rule exists, and what the defect would
   have cost in play. The failures above are failures of the PAGE and of two
   *silent* paths — not of the diagnostic catalogue.
+
+---
+# Part 4 — review, staging, and the shape of the page itself
+
+## F17 — the step the page calls the PRIMARY review evidence needs a tool `Init` never establishes
+- **Page said** (step 9): "read the **POV sequence in route order** before you open
+  a single orbit render, and treat it as the primary evidence… Whole-scene and
+  player-POV shots come from `validation/render-shots.sh <build-dir>`… path-tracing
+  those scenes is Chunky, run as a separate process — **not wired into CI**."
+- **What happened**: `render-shots.sh` exits 0 and emits **Chunky scene JSONs, not
+  images**: "emitted 11 Chunky scene(s) … render with
+  `chunky-core-2.5.0-SNAPSHOT.474.g156e2bb`". To see a single POV frame a person
+  needs Java, a `ChunkyLauncher.jar`, and that exact pinned SNAPSHOT core.
+- **`Init` establishes none of them.** The word "chunky" appears 8 times on the
+  page; exactly once inside `Init`, and there only as a filesystem path for the
+  *client jar* (`~/.chunky/resources/minecraft.jar`) — not as a tool to install.
+- **A person concludes**: the review step produced no pictures, and goes hunting.
+  On this machine Chunky happens to be installed (`~/.chunky/lib/` carries the
+  pinned SNAPSHOT core) — **that is the owner's machine, not a property of the
+  procedure**, and I did not test the path from a machine without it.
+- **Severity**: costs an hour; **stops the drill dead** on a machine without Chunky,
+  at the step the page says not to skip ("A visual channel that fails soft is a
+  review that passed without looking").
+
+## F18 — the visual-review command renders the whole library, not the campaign
+- **Page said** (step 9): "`… delve-render -- batch campaigns/prefabs -o <workspace>/renders`".
+- **What happened**: exit 0 in 9s — **"batch: 36 prefab(s), 435 shot(s)"**. My
+  campaign uses **two** pieces. The page then says "Open the exterior/top/interior/
+  anchor PNGs and check each against its `expect` line", where the `expect` lines
+  live in the *build's* `render-plan.json` (11 shots, of a different kind:
+  4 `pov`, 2 `interior`, 2 `npc`, 2 `gate`, 1 `spawn`). Nothing states how the 435
+  library images relate to the 11 planned shots.
+- **A person concludes**: they are supposed to look at 435 pictures, most of them of
+  pieces their delve does not contain. They will look at none of them.
+- **Severity**: mild friction, but it converts a mandatory review step into theatre.
+
+## F19 — the last gate before play refuses a first campaign, 61 items deep
+- **Page said** (Playtest rounds, rule 5): run
+  `python3 tools/staging-gate.py --campaign <dir> --build <out> --report round-N-gate.md`
+  … "**A red is not permission to stop**".
+- **What happened**:
+  ```
+  staging-gate: REFUSED — 61 of 93 findings have no live, binding check on `wb-exp5`
+    … 40 UNBOUND, 21 INAPPLICABLE
+  staging-gate: this build is NOT stageable. Fix the red list, or override deliberately:
+    --stage-anyway "<why this session needs a red build>" --acknowledge-red 61
+  ```
+  Almost every UNBOUND row reads "0 × [X] in quests.json — **and the row declares no
+  `applies_when` probe, so which kind of zero this is was never measured**".
+- **Measured** (instrument: `docs/playtest-findings.json` at `90cf2051`):
+  **93 rows, 26 carry `applies_when`, 67 do not.** So the refusal is mostly a
+  property of the LEDGER, not of the campaign: a small campaign cannot bind rows
+  whose probe was never written, and the gate correctly refuses to call that a pass.
+- **A person concludes**: their first campaign is 61 defects deep. It is not.
+  They will use the override, on their first ever run, which is exactly the
+  "convenient override becomes habit" shape.
+- **The gate itself is exemplary**: the override prints all 61 classes, records the
+  reason, mints `staging-admission.json`, and the server announces it at boot
+  ("Anything the owner hits from those classes in this session is this override,
+  not a new finding"). That is the rule working. The friction is the ledger.
+- **Severity**: costs an hour on the first run, and trains the override.
+
+## F20 — `fresh-volumes.sh --project` cannot clean the stack the owner actually plays on
+- **Page said**: the entry scripts "fresh-volume their own project before and after
+  every run… To clean up by hand: `validation/fresh-volumes.sh --project <id>`.
+  `--project` is required everywhere and there is no daemon-wide mode."
+- **What happened**: after `docker compose … owner-play.yaml --profile play up` and
+  `down -v`, `fresh-volumes.sh --project dw-wb-play` answered:
+  ```
+  461e0a81cfb0  delvewright-server  127.0.0.1:25565->25565/tcp
+    A worker stack publishes NO host port; check the --project you passed.
+  ```
+  and cleaned nothing. Left behind: container `delvewright-server` (a **fixed**
+  container name from `owner-play.yaml`, so it is outside the project-scoped
+  reclaimer), volume `dw-wb-play_server-data`, network `dw-wb-play_default`. I
+  removed all three by hand.
+- **A person concludes**: nothing — which is the problem. It is silent, and it
+  accumulates one container + one volume + one network per play session.
+- **Severity**: mild friction per run; it is the "runnable locally decays with use"
+  shape, and the play path is the one a person runs most.
+
+## F21 — the page cannot be followed in the order it is written
+Measured against the heading map of `SKILL.md` at `90cf2051`:
+
+| what | where | why it breaks |
+|---|---|---|
+| `## The loop` steps 1–4 | 357–711 | tells you to write **all six stages** |
+| `### 4b … MANDATORY between the plan and the content` | **713** | "**Do not begin stage 5 until the Artifact is confirmed**" — i.e. the gate that forbids stages 5–6 is printed AFTER the instruction to write them |
+| `delvec fmt … — MANDATORY, before analyze` | **1191** | sits **inside** `### Localization stage (only when the prompt asks for other languages)` (1148–1211). A person with no second language skips that whole section and misses a step marked MANDATORY for every campaign, which CI then reds (`delvec fmt --check`) |
+| loop steps **5–11** (`analyze`, `build`, chronicle, ladder, visual, storybook, report) | **1445–1679** | **734 lines after step 4**, and nested inside `### The map pipeline` (1212–1679), a section that only applies to site-plan campaigns |
+
+- **A person concludes**: they have finished, at step 4. I only found steps 5–11
+  because I had read the whole file first. Someone working section by section — the
+  way a procedure is meant to be used — writes six stage documents and stops.
+- **Would have unstuck them**: the eleven numbered steps in one contiguous block,
+  with the reference material moved behind them.
+- **Severity**: **stops the drill dead**, silently, which is the worst kind.
+
+## F22 — gate 4b was never executed in this walk, and I am declaring it
+I produced **no** design-alignment Artifact and **no** reference images, because
+`Init` step 6 could not be completed (no image-provider API key — F5). The page's
+own rule is "Do not begin stage 5 until the Artifact is confirmed. A confirmation
+is an explicit yes, not the absence of an objection." **I began stage 5 anyway.**
+So this log says nothing about whether gate 4b works — only that the walk past it
+is not blocked by anything mechanical. A person without a key can walk straight
+through the only human-judgment gate on the page and nothing stops them.
+
+---
+# Verdict
+
+**Could a person with this repository and this page, and nothing else, reach a
+walkable delve by following it? No — not without four interventions, three of
+which are not available to them.**
+
+I did reach one. `localhost:25565` accepted a connection; the bot walked the
+critical path in 6 steps; PackTest passed 20/20. The route there ran through:
+
+1. **F12 — read the compiler source.** Nothing else on any surface a person is
+   pointed at contains the rule that inter-area transport requires the destination
+   area's prefab to declare an entry anchor. Not available to a person.
+2. **F13 — infer that the first objective must live in the spawn area**, because
+   the transport map only pairs consecutive objectives. Derived from the same
+   source read. Not available to a person.
+3. **F11 — do what a diagnostic explicitly forbids** (drop `container`), because
+   the two things it prescribes instead are impossible in the recommended tileset.
+   Available to a person, and it ships the defect the field exists to prevent.
+4. **F21 — read the whole 1940-line page before starting**, in order to know that
+   the procedure has eleven steps and that steps 5–11 are 734 lines below step 4,
+   inside a section about a pipeline my campaign does not use. Available in
+   principle; nobody works this way.
+
+Without 1 and 2, the honest answer is that a person stops at `DW0311` on their
+first multi-area campaign, or ships a build that is green everywhere and that the
+bot cannot walk out of the spawn room.
+
+# Ranked, in her terms
+
+**Stops the drill dead**
+1. **F12/F13 — inter-area transport.** Undocumented precondition; `DW0311` blames
+   the wrong thing; the first leg is not covered by the compile-time proof at all,
+   so the failure arrives from the bot as "No path to the goal!" after a green
+   build and a green PackTest. *This is the one to fix before she starts.*
+2. **F21 — the page's order is not followable.** Steps 5–11 are unreachable by
+   anyone reading in order; a MANDATORY `fmt` step hides inside the optional
+   localization section; gate 4b is printed after the work it forbids.
+3. **F11 — `collect` + `container` is unsatisfiable in the recommended tileset.**
+   1 of 36 library prefabs can satisfy it, and it is a dark cave.
+4. **F1 — Init's own verification command is `command not found`**, at step 1 of 6,
+   under a sentence that says a failure here is a hard stop.
+5. **F5/F22 — the whole page presupposes a paid image-provider API key**, disclosed
+   at Init step 6 of 6, after two cargo builds; and if you do not have one, nothing
+   mechanically stops you walking through the one human-judgment gate.
+
+**Costs an hour**
+6. F7 — no complete stage document anywhere on the page, and no rule for what
+   `dsl_version` to write.
+7. F15 — five prefab swaps, five different error classes, to place three rooms.
+8. F17 — the primary visual evidence needs Chunky, which Init never establishes.
+9. F6 — Init builds 2 of the 6 binaries the page invokes.
+10. F19 — the staging gate refuses a first campaign 61 items deep, 40 of them
+    because ledger rows lack a probe.
+11. F14 — `DW0857` prescribes a remedy (rename a library anchor) the author may not
+    perform.
+12. F3 — Init step 4 ("Python 3") is the one step with no way to confirm it, and the
+    thing it stands for (`delve_skin` in a venv) has no setup instructions anywhere.
+
+**Mild friction**
+13. F2 (second binary, second target dir) · F1b (`--release` twice) · F4 ("the
+    table" is 333 lines of JSON) · F8 ("internal error" for the documented
+    incremental state) · F9 (`happening` over-reach) · F10 (six stages vs seven) ·
+    F18 (435 renders for a 2-piece campaign) · F20 (the play stack leaks).
+
+# What I used that a person does not have
+
+**Established, with the instrument named:**
+- `crates/compiler/src/plan.rs` ~4086, `build_critical_path` — the transport rule.
+  A person cannot: the page forbids nothing here, it simply never points anywhere
+  that says it, and the live schema for all six stages contains **zero** matches
+  for `transport` or `inter-area`. *A person without this would have collapsed the
+  campaign to one area and silently lost the point-of-no-return the page sells.*
+- `crates/compiler/src/plan.rs` ~1905 — a comment recording that this same class of
+  silence has happened before ("the island-tileset area was silently never
+  transported into, never framed").
+- The library sweeps (5/36 with a container blockstate, 3/36 with a container
+  anchor, 5/36 with an entry anchor) — instrument: `delvec palette` over all 36
+  `campaigns/prefabs/*.nbt` plus a JSON scan of the 36 metadata files, at whatever
+  revision the shared `campaigns/` symlink stood at during this round. **That
+  checkout is mutable and I did not pin it**; the counts are true of what I read.
+- The page-structure counts (F6, F21) — instrument: `grep -c` and a heading map over
+  `.claude/skills/new-delve/SKILL.md` at `90cf2051f6b8c38f41e77577f1f58698f75dc363`.
+- 93 ledger rows, 26 with `applies_when` — `docs/playtest-findings.json` at the same
+  revision.
+
+**What I did NOT establish (did not contradict, but did not prove):**
+- That a fresh clone lacks `delve-grammar`/`delve-admit` at the moment the prefab
+  procedure asks for them. My `target/` was donor-populated before I started.
+- Any build TIME. Every figure here is warm and understates a fresh clone.
+- Anything about gate 4b, `tools/refimg.py` beyond its refusal, the map pipeline
+  (`geometry-brief`/`layout-graph`/`site-plan`/`detail-plan`), `delve-grammar`,
+  `delve-admit`, the skin toolchain, localization, branch chronicles, or
+  `delvec metrics --gym`. **This walk took the `areas[]` branch only.** The
+  site-plan branch — the one a map-is-the-point campaign takes — is unwalked, and
+  its `Init` hard-stops on the API key I do not have.
+- Whether Chunky can be obtained by someone who does not already have it.
+
+**Aids I deliberately did not use**, because the page never points at them:
+`delvec metrics --gym`, `campaigns/the-bowl`, the gallery. The brief named the
+first two; the page mentions `--gym` only inside the map pipeline, which this
+campaign is not on.
