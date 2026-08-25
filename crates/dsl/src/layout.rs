@@ -103,6 +103,13 @@ pub const DW_STATION_RESERVED: DwCode = DwCode::every_version("DW0869");
 /// `DW0870`: two stations claim one name (spec-0052 §7.2).
 pub const DW_STATION_DUPLICATE: DwCode = DwCode::every_version("DW0870");
 
+/// `DW0871`: a reference demands a shape the station is not (spec-0052 §7.3).
+///
+/// Judged at the reference site from the DECLARATION, with zero pieces bound.
+/// `every_version` for its siblings' reason: below [`crate::STATIONS_SINCE`] a
+/// graph carries no station whose kind could disagree with anything.
+pub const DW_STATION_KIND: DwCode = DwCode::every_version("DW0871");
+
 // ---------------------------------------------------------------------------
 // Stage 2 — the geometry brief's machine-readable facts (spec-0049 §4.2)
 // ---------------------------------------------------------------------------
