@@ -271,6 +271,17 @@ only — `validate`/`analyze` are language-independent apart from coverage).
 build failure · `≥10` internal error. Undeclared `--lang` is a validation-class
 rejection (exit 1). Codes are stable API; the CI fixture matrix asserts them.
 
+**Reading a campaign directory has two failure states, and they are different
+findings.** A directory that is present and does not hold all six stage
+documents is a campaign part-way through being written — the state an author is
+in for as long as it takes to write six documents — and it is refused as
+`DW0874` at exit 1, naming every document that is missing. Anything else about
+the directory (a document that cannot be opened, a directory standing where a
+document belongs, a path that is not a campaign directory) is `internal error`
+at exit 10, naming the path or document. The four verbs that read a campaign
+directory — `validate` and everything built on it, `l10n-inventory`, `edit`,
+`allocation` — answer both the same way, from one place.
+
 **`--json` diagnostic shape**:
 `{ "code":"DW####", "severity":"error|warning", "stage":"<stage>",
 "path":"<json-pointer-ish>", "message":"…" }`.
@@ -3655,6 +3666,12 @@ can raise; and in `compiler::light`, `DW0210` and `DW0211`. `crates/dsl/tests/v1
 `no_refusal_on_a_derived_map_prescribes_a_prefab_document` binds it over a
 derived map's whole refusal set, keyed to the forbidden prescription rather than
 to a list of codes.
+
+### DW0874 — a campaign directory part-way through being written (`compiler::load`; error; exit 1)
+
+| Code | Meaning |
+|------|---------|
+| `DW0874` | **A campaign directory is present and does not hold all six stage documents.** `compiler::load` (`missing_stage_documents_diagnostic`), validation tier (exit 1), raised through `Fenced::structural` because it exists before any document has parsed and so has no declared `dsl_version` to grandfather against. The state it names is the ordinary one: a campaign is written a document at a time, and the authoring skill tells an author to stub the stages they have not reached. The message names **every** missing document rather than the first — the loader reads in document order and stops at the first absence, so an author starting from `world.json` alone learned the remaining five filenames by running `validate` five more times — then the whole set of six, what a stub is (`dsl_version`, `campaign_id`, `stage`, and a `content` carrying only the fields its schema requires), and `delvec schema --stage <name>` for each one's exact shape. The optional documents are named as optional, so their absence is not mistaken for the next thing owed. **What it deliberately does not cover**: a path that is not a directory has six absent documents by arithmetic and a remedy that does nothing, so it stays `internal error` at exit 10, as does a document that is there and cannot be opened. Absence is probed by opening and treating only `NotFound` as absent — `is_file()` answers `false` for a directory standing in a document's place, which would call an unreadable document absent. Bound at every verb that reads a campaign directory, which is what `crates/compiler/tests/missing_stage_document.rs` enumerates. |
 
 ### DW01xx — validation (`dsl`; severity error; exit 1)
 
