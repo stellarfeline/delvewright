@@ -1,10 +1,7 @@
 # Interior lighting
 
-> **UNFINISHED — this round was stopped by the planner mid-flight.** Sections 1–3 are complete and
-> sourced. Sections 4–7 (the emitter table, map-maker practice, the mob-spawning floor, the
-> provenance table) are placeholders: that research line was cut off before it reported. Do not
-> read the absence of section 4 as a claim that emitter mechanics do not matter — it is a gap.
-> `docs/notes/interior-lighting-measurements.md` holds the measurements behind section 1.
+> The measurements behind §1, §2 and §4.1 are `docs/notes/interior-lighting-measurements.md`.
+> §6.5 records what could not be researched, so those gaps are not read as absence of practice.
 
 How an interior is lit in a Delvewright delve. Agent-facing. Current behaviour.
 
@@ -247,18 +244,205 @@ either readable.
 
 Emission values **mirror** `emission()` in `crates/compiler/src/light.rs`, which is the authority
 and carries a per-block wiki citation for each entry. If this table and that function disagree,
-the function is right. The other columns are what a designer needs and the engine does not model.
+the function is right. The other columns are what a designer needs and the engine does not model;
+they are read from each block's own page on `minecraft.wiki`. **[cited]**
 
-<!-- EMITTER-TABLE -->
+**"Modelled"** says whether `emission()` knows the block. A block it does not know emits **0** in
+the proof, so it cannot clear `DW0210` however bright it is in game — see §4.1.
 
-## 5. What established map-makers do
+| emitter | light | modelled | full cube | waterloggable | attaches to |
+|---|---:|:---:|:---:|:---:|---|
+| [lantern](https://minecraft.wiki/w/Lantern) | 15 | yes | no | **yes** | top face of a block, or **hung** from a block or chain above (`hanging=`) |
+| [soul lantern](https://minecraft.wiki/w/Soul_Lantern) | 10 | yes | no | **yes** | as lantern |
+| [torch](https://minecraft.wiki/w/Torch) | 14 | yes | no | **no** — pops off in water | top of a solid block; `wall_torch` is a **separate id** with `facing` |
+| [soul torch](https://minecraft.wiki/w/Soul_Torch) | 10 | yes | no | no | as torch |
+| [campfire](https://minecraft.wiki/w/Campfire) | 15 | yes (`lit`) | no | **yes** (extinguishes it) | floor. **Damages anything in its cell**; any block above it prevents that |
+| [soul campfire](https://minecraft.wiki/w/Soul_Campfire) | 10 | yes (`lit`) | no | yes | as campfire, double damage |
+| [glowstone](https://minecraft.wiki/w/Glowstone) | 15 | yes | **yes** | no | ordinary block |
+| [sea lantern](https://minecraft.wiki/w/Sea_Lantern) | 15 | yes | **yes** | no | ordinary block |
+| [shroomlight](https://minecraft.wiki/w/Shroomlight) | 15 | yes | **yes** | no | ordinary block; passes redstone |
+| [froglight](https://minecraft.wiki/w/Froglight) ×3 | 15 | yes | **yes** | no | ordinary block. No plain `froglight` id — only the three prefixed ones |
+| [glow lichen](https://minecraft.wiki/w/Glow_Lichen) | 7 | yes | no | **yes** | **any face** of a solid block, several at once |
+| [amethyst cluster](https://minecraft.wiki/w/Amethyst_Cluster) | 5 | yes | no | yes | a solid full surface; refuses fences, chains, lanterns, panes |
+| large / medium / small bud | 4 / 2 / 1 | yes | no | yes | as cluster |
+| [end rod](https://minecraft.wiki/w/End_Rod) | 14 | yes | no | no | **any face of any block**, and **survives its support being removed** |
+| [magma block](https://minecraft.wiki/w/Magma_Block) | 3 | yes | **yes** | no | ordinary block. **Damages anything standing on it** unless sneaking |
+| [crying obsidian](https://minecraft.wiki/w/Crying_Obsidian) | 10 | yes | **yes** | no | ordinary block |
+| [jack o'lantern](https://minecraft.wiki/w/Jack_o%27Lantern) | 15 | yes | **yes** | no | ordinary; **lights while submerged** |
+| [lit furnace / smoker / blast furnace](https://minecraft.wiki/w/Furnace) | 13 | yes (`lit`, default false) | yes | no | directional; only while active |
+| [sea pickle](https://minecraft.wiki/w/Sea_Pickle) (1–4) | 6/9/12/15 | yes | no | always | **only lights underwater** |
+| [cave vines + glow berries](https://minecraft.wiki/w/Glow_Berries) | 14 | yes (`berries`) | no | no | **hangs** from a block's bottom face |
+| [light block](https://minecraft.wiki/w/Light_(block)) | 0–15 | yes (`level`) | invisible | yes | **attaches to nothing**; survives neighbours breaking |
+| [beacon](https://minecraft.wiki/w/Beacon) | 15 | yes | no | no | lights **without** a pyramid or beam |
+| [respawn anchor](https://minecraft.wiki/w/Respawn_Anchor) | 0/3/7/11/15 | yes (`charges`, default 0) | yes | no | **explodes if used outside the Nether** |
+| [brown mushroom](https://minecraft.wiki/w/Brown_Mushroom) | 1 | yes | no | no | **emits nothing in a flower pot** |
+| [enchanting table](https://minecraft.wiki/w/Enchanting_Table) / [ender chest](https://minecraft.wiki/w/Ender_Chest) | 7 | yes | no | ender chest yes | ordinary |
+| **[candle](https://minecraft.wiki/w/Candle) ×1–4 lit** | **3/6/9/12** | **NO — 0** | no | yes | up to four per cell, on a **solid** block; placed unlit |
+| **[copper bulb](https://minecraft.wiki/w/Copper_Bulb)** | **15/12/8/4** by oxidation | **NO — 0** | yes | no | ordinary; toggles on a redstone **pulse** |
+| **[copper lantern](https://minecraft.wiki/w/Copper_Lantern)** | **15** | **NO — 0** | no | yes | as lantern. Added 1.21.9 |
+| **[copper torch](https://minecraft.wiki/w/Copper_Torch)** | **14** | **NO — 0** | no | yes | as torch. Added 1.21.9 |
+| **[redstone lamp](https://minecraft.wiki/w/Redstone_Lamp) (lit)** | **15** | **NO — 0** | yes | no | ordinary; instant on, 0.2 s off |
+| **[sculk catalyst](https://minecraft.wiki/w/Sculk_Catalyst)** | **6** | **NO — 0** | yes | no | ordinary |
+| **[firefly bush](https://minecraft.wiki/w/Firefly_Bush)** | **2** | **NO — 0** | no | — | added 1.21.5 |
 
-<!-- PRACTICE -->
+### 4.1 The modelling gap, and it is design-blocking **[authored]**
 
-## 6. The mob-spawning floor
+Thirteen emitters that exist at the pin are absent from `emission()` and therefore measure **0**:
+candle, copper bulb, copper lantern, copper torch, redstone lamp, sculk catalyst, firefly bush,
+sculk sensor, trial spawner, vault, nether portal, end portal frame and dragon egg. Verified by
+grepping the function at `86944766`.
 
-<!-- SPAWNING -->
+The direction is safe — the function documents a **never-overestimate contract**, and an absent
+block emitting 0 is an underestimate, which can only make the gate stricter. But the consequence
+for a designer is real and is not a safety property:
+
+> **A room lit only by candles, copper lanterns or redstone lamps refuses to build**, however
+> bright it is in the game.
+
+Candles are the sharp case: they are the fiction-correct low, warm, domestic source, and they are
+invisible to the proof. Use them as **unlit decoration**, which costs nothing, and light the room
+with something the model knows.
+
+## 5. The mob-spawning floor
+
+**At 1.21 a hostile Overworld mob needs `block light == 0` *and* internal sky light ≤ 7.**
+**[cited]**
+
+> "In the Overworld, if the **internal sky light** level is **7 or less** (which always occurs
+> inside a cave) and the **block level is 0**, all Overworld monsters can spawn."
+> — [Mob spawning](https://minecraft.wiki/w/Mob_spawning)
+
+This changed in 1.18 and the change is the important part:
+
+> "**1.18** (Experimental Snapshot 1): Block light level now must be **0** for many hostile mobs to
+> spawn." — [Light § History](https://minecraft.wiki/w/Light)
+
+**The floor on interior light is therefore block light 1, not 8. [authored]** Any enclosed room
+has sky light 0, so block light is the only gate. `DW0210`'s threshold of 3 sits **above** the
+spawn floor, so **a room that satisfies the darkness gate is already spawn-proof** — the two
+constraints do not compete, and atmospheric darkness at block light 1–4 is mechanically safe.
+
+Carve-outs a delve should know: **slime-chunk slimes ignore light entirely**; **blaze and
+silverfish spawners need light 12**; and mobs cannot spawn on **bottom slabs, glass, trapdoors,
+leaves, ice or rails at any light level**, which is usually cheaper than lighting.
+
+**Hazard.** Most indexable community lighting advice predates 1.18 and states the old "light 8"
+rule — including [minecraft101](https://minecraft101.net/t/lighting.html), whose torch-spacing
+tables are built on it. Do not mine spacing figures from undated guides.
+
+## 6. What established map-makers do
+
+### 6.1 Hide the source, keep the light **[cited]**
+
+The oldest and most consistent practice in the record is that the *fixture* is often concealed
+while the light stays. From the Minecraft Forum
+[hidden lighting](https://www.minecraftforum.net/forums/minecraft-java-edition/discussion/193082-hidden-lighting)
+and [indoor lighting](https://www.minecraftforum.net/forums/minecraft-java-edition/survival-mode/218004-indoor-lighting)
+threads:
+
+> "Place a light source of any kind in a hole, then place carpet on top." — Outkin, 2014
+> "You can cover torches with half slabs or stairs on floors and ceilings." — nocturn333, 2014
+> "I hide jack-o-lanterns under water." — Vincenzo, 2011
+
+and glowstone recessed "in the wall at the base of the windows" to wash light upward through
+stained glass — cove lighting, in effect. The wiki's own
+[Adding beauty to constructions](https://minecraft.wiki/w/Tutorial:Adding_beauty_to_constructions)
+tutorial recommends "redstone lamps or sea lanterns and glowstone **instead of torches**", plus
+chandeliers and a ceiling-hung beacon.
+
+**Caution for this engine [authored]:** carpets and slabs are exactly the thin non-collidable
+decorations `grammar::nav` treats as **full solid cubes** (§2). The concealment tricks that work
+in survival will move a zone program's walk proof. Concealment here means **recessing the emitter
+into the wall or ceiling**, not covering it with a thin block.
+
+### 6.2 The light block is the adventure-map tool **[cited]**
+
+> "Maps are always cluttered with glowstone and torches. Why not have a only accessible in creative
+> light source, that provides light without an eyesore." — Surfer_72, 2012,
+> [invisible light source for map makers](https://www.minecraftforum.net/forums/minecraft-java-edition/suggestions/70064-invisible-light-source-for-map-makers)
+
+Three facts decide whether a delve should use it, all from
+[Light (block)](https://minecraft.wiki/w/Light_(block)):
+
+1. **In Adventure mode it is completely invisible and inaccessible** — and a delve is Adventure
+   mode. It is the only emitter with no visual presence at all.
+2. It **attaches to nothing**; breaking a neighbour does not remove it.
+3. **A falling block, or any block placed into its cell, destroys it** — silently.
+
+**Use it only where an unmotivated fill is genuinely wanted [authored]**, and prefer a real
+fixture everywhere else: this document's first rule is that light is part of what a room is, and
+an invisible source is by construction not decoration.
+
+### 6.3 "Gradient" means the palette, not the light — a correction **[cited]**
+
+The brief for this research assumed builders discuss light-level gradients. They mostly do not.
+In build-team vocabulary a gradient is a **block-value** gradient:
+
+> "A gradient is simply a transition from one value and/or colour to another. In Minecraft this
+> means transitioning one block to another to create a gradient effect on a surface."
+> — [Conquest Reforged, Gradienting your Builds](https://www.conquestreforged.com/guides/gradients)
+
+That page does not discuss light sources, lighting or shadow at all. The community's craft language
+for "light and dark" lives in the **palette**. The clearest attributable statement of light used
+for *contrast* rather than illumination is a build guide:
+
+> "I set my light sources behind the build so it lights up the back of the build along with the
+> wall behind it, making the build pop from its backdrop." — NutmegNam,
+> [Building Tips From a #1 Builder](https://hypixel.net/threads/guide-building-tips-from-a-1-builder.3741027/)
+
+### 6.4 What they avoid — and the honest state of the evidence
+
+Torch-spam as the beginner tell is attested, but only weakly and only in old posts: builders in
+2011 and 2014 say torches "don't look nice" indoors and that they avoid putting them on floors.
+**Every one of those posts predates lanterns, campfires, soul variants, candles, glow lichen,
+froglights and copper bulbs.** The modern lantern/candle/campfire vocabulary is real in practice
+but **no substantive attributable written source for it was found**; the sources asserting it are
+content farms and are deliberately not cited here.
+
+**On paving a floor with glowing blocks, the evidence is weaker than the practice deserves.** The
+one on-point community statement found — "Placing glowstone in random places in the floor is
+considered a noobish approach to lighting large rooms" — is from a Planet Minecraft thread that
+**returned 403 and could not be opened**. It is a search snippet and is marked here as
+**unverified**, not cited.
+
+**This engine does not need that citation, and should not lean on it. [authored]** §1 gives an
+established, engine-native reason: light falls one level per step, so one lantern holds a
+25-block-diameter sphere above the threshold. Paving is not a stricter reading of the gate — it is
+a misreading of what the gate asks for. That argument rests on measurement, not on taste.
+
+### 6.5 What could not be researched
+
+Recorded so the gaps are not mistaken for absence of practice. **Reddit is entirely inaccessible**
+to this toolchain (crawler blocked); **Planet Minecraft, minecraftmaps.com, wiki.ardacraft.me and
+minecraft.wonderhowto.com all return 403**; the SearXNG fallback returned HTTP 429 on every
+attempt and produced nothing. No named building channel's transcript and no builder interview was
+obtained. Two wiki facts are contested and are **not** relied on above: whether a conduit lights
+when inactive (two wiki pages disagree), and whether light passes a *closed* trapdoor at full
+strength (no wiki statement found).
 
 ## 7. Rule provenance
 
-<!-- PROVENANCE -->
+| § | rule | provenance |
+|---|---|---|
+| 1 | sky reaches two cells deep at night | **authored** — measured at `86944766` |
+| 1 | emitter radius `E − 3`; the gate is a minimum | **authored** — measured |
+| 1 | `DW0210` names one cell of one area | **authored** — measured |
+| 2 | a lamp never occupies a walkable cell | **authored** — measured, three predicates |
+| 3.1 | motivated light | **cited** — Level Design Book, StudioBinder; dissent from Theodore |
+| 3.1 | strong lights need a source, fills do not | **authored** — from Theodore's refinement |
+| 3.2 | key / fill / rim; focal point and frame | **cited** — Level Design Book, Yang |
+| 3.3 | light and dark as navigation grammar | **cited** — Jenssen, LDB, Shaver; **LDB rejects the framing**, and LDB ranks lighting at 40% certainty |
+| 3.3 | light may reinforce but not carry a route | **authored** — from that dissent |
+| 3.4 | landmarks orient | **cited** — Shaver, Lynch |
+| 3.4 | light makes a landmark a beacon | **authored** — *no source found* |
+| 3.5 | the eye reads contrast, not brightness | **cited** — Theodore 2005; LDB "Hollywood darkness" |
+| 3.5 | "dark" means a ratio, not light 0 | **authored** — from 3.5 plus §1 |
+| 3.6 | colour temperature is a learned code | **cited** — Theodore 2005, incl. the *Half-Life 2* inversion |
+| 3.6 | soul variants are cooler *and* dimmer | **authored** — from §4 |
+| 4 | emitter mechanics | **cited** — `minecraft.wiki`, per row |
+| 4.1 | thirteen emitters model as 0 | **authored** — measured |
+| 5 | spawn floor is block light 1 | **cited** — wiki; **authored** that it sits below the gate |
+| 6.1–6.2 | concealment, the light block | **cited** — forum threads, wiki |
+| 6.1 | conceal by recessing, not by covering | **authored** — from §2 |
+| 6.3 | "gradient" means palette | **cited** — Conquest Reforged |
+| 6.4 | do not pave | **authored** — from §1; the community citation is **unverified** |
