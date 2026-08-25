@@ -254,12 +254,16 @@ delve_skin …` wherever this page says `python -m delve_skin`.
 ```sh
 ls campaigns/prefabs/pools.json          # the content symlink
 delvec --version                         # the compiler, and the dsl number
-delve-grammar list                       # the other four workspace binaries
-delve-render fidelity-gate               # the GPU arms
+delve-grammar list                       # the workspace's other binaries are on PATH
+delve-render fidelity-gate               # the GPU arms, in their own target dir
 delvec palette campaigns/prefabs/hello-room.nbt -o /tmp/palette.json   # the client jar
 java -jar ChunkyLauncher.jar --version   # Chunky
 docker info                              # the ladder and the play server
 ```
+
+`delve-admit`, `delve-schem` and `delve-harvest` came out of the same
+`--workspace` build and sit beside `delve-grammar`; `command -v delve-admit`
+answering is the whole check for them.
 
 Path B adds `python3 tools/refimg.py --prompt "smoke test" --dry-run`; a custom
 skin adds `PYTHONPATH=tools/skin .venv-skin/bin/python -m delve_skin --help`.
