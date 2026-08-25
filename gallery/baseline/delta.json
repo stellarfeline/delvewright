@@ -7,7 +7,7 @@
     "primary.zh-cn:validation/placement-gate.json",
     "void-horizon.en:validation/placement-gate.json"
   ],
-  "base_commit": "0534b6d0305f39df77f13304197437a40770fa57",
+  "base_commit": "41f629a12cf9ac1d79b970358359d8c42d078eda",
   "changed": [
     "easy.en:datapack/data/gallery/function/collapse_110d044a908fe0ad_floor.mcfunction",
     "easy.en:datapack/data/gallery/function/ma_tick_rafter_spider_pocket.mcfunction",
