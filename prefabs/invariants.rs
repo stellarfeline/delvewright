@@ -367,6 +367,42 @@ pub fn assert_distress_never_stacks(id: &str, cells: &Cells) {
 /// The weathered counterpart of a surface material — the vocabulary
 /// [`assert_distress_never_stacks`] expects wear to be spoken in.
 ///
+/// **A scatter delivers the quantity it aims at, over the whole domain it was
+/// given** — and the number is asserted rather than looked at.
+///
+/// The owner's cherry-grove finding: a valley staged as a grove held a handful
+/// of trees and bare rock in every other direction, and the acceptance proxy was
+/// a rendered shot. A shot is one bearing; it cannot see a region, and nothing
+/// anywhere produced the count. A scatter that aims at N and stops early because
+/// its candidates ran out — every one of them rejected by a spacing rule, an
+/// exclusion, or ground it cannot stand on — is silent today: the loop simply
+/// ends, and what ships is whatever the ground happened to allow.
+///
+/// `domain` is the region the generator was given, NOT the subset that turned
+/// out to be usable, because a count whose denominator is the part that worked
+/// is the render shot in numeric clothes. Both are in the message, so a failure
+/// says which of the two ran out.
+///
+/// The compiler's own `scatter`/`plant` verbs answer the same question through
+/// `DW0864`; this is that rule at the layer that has no diagnostics, only
+/// panics.
+pub fn assert_scatter_reaches_its_target(
+    id: &str,
+    what: &str,
+    want: usize,
+    got: usize,
+    domain: usize,
+    usable: usize,
+) {
+    assert!(
+        got >= want,
+        "{id}: the {what} scatter aimed at {want} and placed {got} over a domain of \
+         {domain} cell(s), {usable} of which it could use. Widen the domain, relax the \
+         spacing, or aim at what the ground can carry — never ship the shortfall, which \
+         is what a render shot of one bearing cannot see"
+    );
+}
+
 /// Shape is preserved by construction: a stair maps to a stair of the damaged
 /// material, a slab to a slab, a full block to a full block, so the caller can keep
 /// the original block state (facing / half / shape / waterlogged) verbatim and the

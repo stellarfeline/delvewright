@@ -263,7 +263,7 @@ pub fn probe(zone: &Zone, dark_threshold: i32) -> LightProbe {
 
     let standable = nav::standable_cells(zone);
     let entry = nav::ground_entry(zone);
-    let measured = nav::reachable_from(&standable, &entry);
+    let measured = nav::reachable_from(zone, &standable, &entry);
 
     let at = |f: &BTreeMap<[i32; 3], u8>, c: [i32; 3]| f.get(&c).copied().unwrap_or(0) as i32;
     let mut min_light: Option<i32> = None;

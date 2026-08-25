@@ -68,8 +68,9 @@ docs/notes/private/
 # Release-shelf build output (tools/build-release-binaries.sh).
 dist/
 
-# Reference images are generation-time working material: never shipped,
-# never in the content repo (see [refimg] in delvewright.toml).
+# Reference-image drafts. The engine repo holds no reference images: an APPROVED
+# one is copied into the campaign it belongs to and committed there, in the
+# content repo (see [refimg] in delvewright.toml).
 .refimg/
 
 # Contact sheets + their score files, same rule: candidate renders laid out for
