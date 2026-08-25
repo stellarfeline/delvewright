@@ -1090,9 +1090,22 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json",
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "begin-stealth"
+          }
+        }
+      },
       "binding": {
         "files": [
-          "quests.json"
+          "quests.json",
+          "dialogue.json"
         ],
         "kind": "dsl",
         "match": {
@@ -1112,7 +1125,7 @@
       "finding": "a beat that can fail the player armed before its own prompt could be read",
       "general_form": "a failure clock arms only after the prompt that explains it can have been read",
       "id": "isl-36",
-      "note": "Closed as the arithmetic, not as the one beat's grace. DW0860 refuses a `begin-stealth` whose `on_caught` can punish the party before the last `narrate` at or before the arming could have been read: `(arming offset - prompt offset) + grace_ticks` against `20 + 2 x characters` ticks, so a `sequence` step's offset counts and the default grace of 20 ticks carries almost no line at all. Calibrated on this campaign's own repair, which it passes with 260 ticks against 108 needed, and on the shape that repair left: three long mutually exclusive branch retellings then a short instruction, where the line the clock races is the last one and not the sum. On its first run against the current build it found a live instance on the gallery - grace 40, no narrate anywhere before the arming - which is fixed in the same change. A `timed-gate` is out of scope and stays with DW0388/DW0378: it arms at world load, so no prompt can precede it.",
+      "note": "Closed as the arithmetic, not as the one beat's grace. DW0860 refuses a `begin-stealth` whose `on_caught` can punish the party before the last `narrate` at or before the arming could have been read: `(arming offset - prompt offset) + grace_ticks` against `20 + 2 x characters` ticks, so a `sequence` step's offset counts and the default grace of 20 ticks carries almost no line at all. Calibrated on this campaign's own repair, which it passes with 260 ticks against 108 needed, and on the shape that repair left: three long mutually exclusive branch retellings then a short instruction, where the line the clock races is the last one and not the sum. On its first run against the current build it found a live instance on the gallery - grace 40, no narrate anywhere before the arming - which is fixed in the same change. A `timed-gate` is out of scope and stays with DW0388/DW0378: it arms at world load, so no prompt can precede it. The binding names both documents its carrier reads. DW0860 enumerates its population with `for_each_effect_root`, whose eight roots include `DialogueRespawn` (`EffectRootKind::stage()` -> `dialogue`), so a `begin-stealth` declared inside a dialogue option's `set-checkpoint.on_respawn` is judged and reported against the dialogue stage; `quests.json` and `dialogue.json` are the two stage documents the compiler's own `schema --stage all` export makes `QuestEffect` reachable from. A binding naming only `quests.json` was blind to the second, which is the zero nobody can classify wearing an honest absence's clothes. `applies_when` counts stealth beats by identity across the same two documents (the shape isl-19 and isl-53 already use): stealth beats declared with none carrying an `on_caught` = UNBOUND, no stealth beat anywhere = the class measures zero.",
       "requires": {
         "file": "quests.json",
         "min_dsl_version": "0.8.0"
@@ -2001,6 +2014,11 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "contains": "minecraft:mannequin",
+        "glob": "**",
+        "kind": "out"
+      },
       "binding": {
         "files": [
           "npcs.json"
@@ -2020,6 +2038,7 @@
       "finding": "an NPC's skin rendered as a different person entirely from the one the fiction described",
       "general_form": "a declared skin texture is baked and served, and a mannequin declaring a texture id without a source file is refused",
       "id": "bell-12",
+      "note": "The binding stays `npcs.json` on purpose, and the precondition is deliberately wider than it. `skin` is declared on exactly two object classes -- `Npc` (npcs.json) and `Actor` (quests.json), per the compiler's own `schema --stage all` export -- but DW0309 is raised by `compiler::main::read_skins`, which walks `campaign.npcs.content.npcs` only. The binding counts what the carrier quantifies over, so widening it to `quests.json` would report BOUND over actor mannequins nothing reads: coverage asserted, not held. `applies_when` instead counts the mannequin bodies the COMPILER put in this build -- a witness an author cannot write -- so a campaign whose mannequins DW0309 cannot see reds UNBOUND with the gap named, while a campaign with no mannequin at all measures a real zero. Open capability gap: an `Actor` skin is neither baked into `resourcepack.zip` nor refused when its `skins/<texture_id>.png` is absent, so the general form's `is baked and served` half does not yet reach actors. The glob is the whole build tree on purpose: a mannequin that reaches a world as NBT rather than as a `summon` line must still count, and this probe's two failure directions are not symmetric -- over-counting reds a campaign that has to be looked at, under-counting goes quiet.",
       "round": 6,
       "triage": "capability"
     },
