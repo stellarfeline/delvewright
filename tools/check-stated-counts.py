@@ -116,8 +116,13 @@ ORD = "(?:%s)" % "|".join(sorted(ORDINALS, key=len, reverse=True))
 
 
 def parse_number(token: str) -> int | None:
-    """`"ten"` / `"10"` / `"tenth"` -> 10. `None` if it is not a number word."""
-    t = token.strip().lower()
+    """`"ten"` / `"10"` / `"29,671"` / `"tenth"` -> the number, else `None`.
+
+    Group separators are stripped, because a five-figure count is written
+    `29,671` in prose and refusing that spelling would leave exactly the
+    counts most worth binding unbindable.
+    """
+    t = token.strip().lower().replace(",", "")
     if t.isdigit():
         return int(t)
     return CARDINALS.get(t, ORDINALS.get(t))
@@ -185,6 +190,8 @@ def section_of(text: str, heading: str) -> str:
 _LIBRARY_MOD = "crates/grammar/src/library/mod.rs"
 _GRAMMAR_MD = "docs/reference/grammar.md"
 _INDEX_SECTION = r"^## 2c\. "
+_COMPILER_MD = "docs/reference/compiler.md"
+_DW02XX_SECTION = r"^### DW02xx "
 
 _PROGRAMS_RE = re.compile(
     r"pub const PROGRAMS: &\[LibraryProgram\] = &\[(?P<body>.*?)^\];", re.S | re.M
@@ -295,6 +302,39 @@ def oracle_idiom_techniques(root: pathlib.Path) -> tuple[int, str]:
     )
 
 
+_EMISSION_FIXTURE = "crates/compiler/tests/fixtures/light/emission-1.21.11.tsv"
+
+
+def _emission_rows(root: pathlib.Path) -> list[tuple[str, int, int]]:
+    path = root / _EMISSION_FIXTURE
+    if not path.exists():
+        raise SystemExit(
+            f"{_EMISSION_FIXTURE} is missing, and the emitter-table section of "
+            "compiler.md states its size. Either it moved — update the oracle — "
+            "or the measurement the emitter table rests on is gone."
+        )
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#") or not line:
+            continue
+        state, light, states = line.split("\t")
+        rows.append((state, int(light), int(states)))
+    if not rows:
+        raise SystemExit(f"{_EMISSION_FIXTURE} has no rows — it was truncated.")
+    return rows
+
+
+def oracle_emission_rows(root: pathlib.Path) -> tuple[int, str]:
+    rows = _emission_rows(root)
+    return len(rows), f"{_EMISSION_FIXTURE}, {len(rows)} rows"
+
+
+def oracle_emission_states(root: pathlib.Path) -> tuple[int, str]:
+    rows = _emission_rows(root)
+    total = sum(n for _, _, n in rows)
+    return total, f"{_EMISSION_FIXTURE}, third column summed over {len(rows)} rows"
+
+
 #: id -> (what the number counts, how to compute it, how prose states it).
 #: A phrasing is `(regex capturing one number, offset)`; the captured number is
 #: expected to equal the oracle plus the offset.
@@ -329,6 +369,20 @@ ORACLES: dict[str, dict] = {
             (rf"\bnot an? ({ORD}) technique\b", 1),
         ],
     },
+    "emission-fixture-rows": {
+        "describe": "rows of the block-light fixture",
+        "compute": oracle_emission_rows,
+        "phrasings": [
+            (r"\*{0,2}([\d,]+)\*{0,2}\s+rows\b", 0),
+        ],
+    },
+    "emission-fixture-states": {
+        "describe": "blockstates the block-light fixture covers",
+        "compute": oracle_emission_states,
+        "phrasings": [
+            (r"\*{0,2}([\d,]+)\*{0,2}\s+blockstates\b", 0),
+        ],
+    },
 }
 
 #: The pages that state those counts. `section` narrows the search to one region
@@ -342,6 +396,11 @@ SITES: list[dict] = [
     # same PR as the reference — the same claim, in the place the second
     # consumer of a class always turns out to live.
     {"oracle": "idiom-techniques", "path": ".claude/skills/new-delve/SKILL.md"},
+    # The emitter table's own size. Scoped to the DW02xx section, because
+    # "N rows" and "N blockstates" are ordinary English and would otherwise
+    # bind sentences about some other table on a 4000-line page.
+    {"oracle": "emission-fixture-rows", "path": _COMPILER_MD, "section": _DW02XX_SECTION},
+    {"oracle": "emission-fixture-states", "path": _COMPILER_MD, "section": _DW02XX_SECTION},
 ]
 
 

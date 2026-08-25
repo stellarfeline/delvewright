@@ -30,6 +30,15 @@ fn hello_world() -> Campaign {
 /// no light source. Built in-code, no network assets (mirrors the admit fixture
 /// style). `lights` place a glowstone at those local cells.
 fn dark_box_nbt(size: [i32; 3], lights: &[[i32; 3]]) -> Vec<u8> {
+    box_nbt(size, lights, "minecraft:glowstone")
+}
+
+/// [`dark_box_nbt`], with the emitter named: the same hollow stone shell, but
+/// `lights` are cells of the SHELL replaced by `light_block` — a lamp set into
+/// the wall face, which is where one goes (a lamp never occupies a cell a body
+/// stands in). Lets a test light a room with something other than glowstone and
+/// ask whether the assembled-light model can see it.
+fn box_nbt(size: [i32; 3], lights: &[[i32; 3]], light_block: &str) -> Vec<u8> {
     use fastnbt::Value;
     let [sx, sy, sz] = size;
     let mut blocks: Vec<Value> = Vec::new();
@@ -42,23 +51,24 @@ fn dark_box_nbt(size: [i32; 3], lights: &[[i32; 3]]) -> Vec<u8> {
         c.insert("state".to_string(), Value::Int(state));
         blocks.push(Value::Compound(c));
     };
+    let lit: std::collections::BTreeSet<[i32; 3]> = lights.iter().copied().collect();
     for x in 0..sx {
         for y in 0..sy {
             for z in 0..sz {
                 let shell = y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
-                if shell {
+                if shell && !lit.contains(&[x, y, z]) {
                     push(x, y, z, 1); // stone
                 }
             }
         }
     }
     for l in lights {
-        push(l[0], l[1], l[2], 2); // glowstone
+        push(l[0], l[1], l[2], 2); // the emitter
     }
     let palette = Value::List(vec![
         pal_entry("minecraft:air"),
         pal_entry("minecraft:stone"),
-        pal_entry("minecraft:glowstone"),
+        pal_entry(light_block),
     ]);
     let mut root = std::collections::HashMap::new();
     root.insert("DataVersion".to_string(), Value::Int(4671));
@@ -75,9 +85,25 @@ fn dark_box_nbt(size: [i32; 3], lights: &[[i32; 3]]) -> Vec<u8> {
     gz.finish().unwrap()
 }
 
+/// A structure palette entry. Accepts a full blockstate string
+/// (`minecraft:candle[candles=4,lit=true]`) and splits it the way a vanilla
+/// `.nbt` holds one: `Name` plus a `Properties` compound — which is exactly what
+/// `assembled::…` reassembles into `name[k=v,…]` for the light model to read.
 fn pal_entry(name: &str) -> fastnbt::Value {
+    let (id, state) = match name.split_once('[') {
+        Some((id, rest)) => (id, rest.trim_end_matches(']')),
+        None => (name, ""),
+    };
     let mut c = std::collections::HashMap::new();
-    c.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
+    c.insert("Name".to_string(), fastnbt::Value::String(id.to_string()));
+    if !state.is_empty() {
+        let mut props = std::collections::HashMap::new();
+        for kv in state.split(',') {
+            let (k, v) = kv.split_once('=').expect("a palette property is k=v");
+            props.insert(k.to_string(), fastnbt::Value::String(v.to_string()));
+        }
+        c.insert("Properties".to_string(), fastnbt::Value::Compound(props));
+    }
     fastnbt::Value::Compound(c)
 }
 
@@ -328,6 +354,62 @@ fn field_before(line: &str, sep: &str) -> usize {
         .unwrap_or_else(|| panic!("no number before `{sep}` in `{line}`"))
         .parse()
         .unwrap_or_else(|e| panic!("unparseable count before `{sep}` in `{line}`: {e}"))
+}
+
+/// Four lit candles set into each wall of the same box, and nothing else: the
+/// build must succeed. This is the room a designer actually writes — the
+/// fiction-correct low, warm, domestic source — and until `emission()` learned
+/// the candle it measured as pitch dark and `DW0210` refused it however bright
+/// it was in the game.
+///
+/// `wall_candles` are the four cells, one per wall, at head height.
+#[test]
+fn a_room_lit_only_by_candles_builds() {
+    let c = hello_world();
+    let r = build_with_structure(
+        &c,
+        box_nbt(
+            [11, 6, 11],
+            &wall_candles(),
+            "minecraft:candle[candles=4,lit=true,waterlogged=false]",
+        ),
+    );
+    match &r {
+        Ok(_) => {}
+        Err(BuildFailure::Diagnostic { code, message }) => assert_ne!(
+            *code, "DW0210",
+            "four lit candles per wall are 12 block light each; the room is not dark: {message}"
+        ),
+        Err(other) => panic!("unexpected {other:?}"),
+    }
+}
+
+/// The same room with the candles UNLIT still fails `DW0210`, and that is the
+/// direction that matters: vanilla places a candle unlit, an unlit candle emits
+/// nothing, and a repair that made every candle bright would have broken the
+/// never-overestimate contract while looking like a success here.
+#[test]
+fn a_room_of_unlit_candles_is_still_dark() {
+    let c = hello_world();
+    let err = build_with_structure(
+        &c,
+        box_nbt(
+            [11, 6, 11],
+            &wall_candles(),
+            "minecraft:candle[candles=4,lit=false,waterlogged=false]",
+        ),
+    )
+    .unwrap_err();
+    match err {
+        BuildFailure::Diagnostic { code, .. } => assert_eq!(code, "DW0210"),
+        other => panic!("expected DW0210 for unlit candles, got {other:?}"),
+    }
+}
+
+/// One emitter cell in the middle of each of the four walls of an `[11, 6, 11]`
+/// box, at head height.
+fn wall_candles() -> Vec<[i32; 3]> {
+    vec![[0, 3, 5], [10, 3, 5], [5, 3, 0], [5, 3, 10]]
 }
 
 /// Criterion 5 (end-to-end): the same dark area builds clean once the area
