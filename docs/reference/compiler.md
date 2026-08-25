@@ -2642,12 +2642,30 @@ a flood source *and* its host block's normal collision class: nothing walks or f
 would be in open water here").
 
 Trap triggers (spec-0011): `*_pressure_plate`, `tripwire`, and `tripwire_hook`
-(`crate::assembled::is_passable_trap_trigger`) are non-collidable in game, so the
-occupancy model treats their cells as **passable** rather than solid. This is the
+(`crate::assembled::is_passable_trap_trigger`) are non-collidable in game, so
+`collision_top_16` answers 0 for them and the occupancy model treats their cells
+as **passable** rather than solid. The predicate keeps its own name because a
+caller needs the *trap* fact as well as the collision fact, and the two cannot
+disagree because one is computed from the other. This is the
 faithful model — a plate rests on a solid support block below, so standability is
 unchanged — and it is load-bearing for the `DW0342` trap proof: a player must be
 routed *onto* a trigger cell (so the compiler can prove the trap avoidable or not),
 never around a phantom "solid" plate that would call every trap avoidable.
+
+**Where the collision table lives.** `delvewright_dsl::blockshape` holds it,
+and `crate::assembled` re-exports its names by `pub use` — there is one
+definition in the workspace and no second copy for anything to drift from. It is
+in `delvewright-dsl` for the reason `metrics::step_allowed` is: `delvec` is
+published and may depend only on published crates, so the one crate the grammar
+back end, the admission pipeline and the compiler can all reach is that one. And
+it is the right home by object class — a collision box is a fact about a vanilla
+block state under the pinned game version, in the same sixteenths as the
+auto-step and jump-apex budgets it feeds.
+
+`blockshape::collision_class` is the rule, and every consumer asks it:
+`occupancy_of` below, the grammar back end's `Voxels` impl, and `delve-admit`'s
+light probe. `Collision::passes_body` / `supports_body` / `floor_top_16` are the
+three answers a walk gets.
 
 **Collision classes (`crate::assembled::Occupancy`).** The occupancy is
 no longer a single every-non-air-block-is-a-1×1×1-cube solid set; cells are
@@ -2672,6 +2690,9 @@ a block's collision-box top face in sixteenths, against the 1.21.11 shapes:
 | `snow[layers=N]` | `(N-1)·2 / 16` | `layers=1` (the default) has **no** collision box; `layers=8` is 14/16 |
 | `*_carpet`, `moss_carpet` | 1/16 | `pale_moss_carpet` only when `bottom=true`, else 0 |
 | `dirt_path`, `farmland` | 15/16 | |
+| `candle`, `*_candle` | 6/16 | every candle count has the same 6-pixel box, so a candle on a floor is stepped over |
+| `flower_pot`, `potted_*` | 6/16 | |
+| no-collision fixtures (`assembled::is_no_collision_fixture`) | 0/16 | torches (`torch`, `*_torch` — wall, soul and redstone alike), signs and banners (`*_sign`, `*_banner`), `lever`, `*_button`, rails (`rail`, `*_rail`), `redstone_wire`, `light`, `structure_void` — vanilla declares every one of them `noCollission()`. A wall torch occupies the air cell beside the wall it is fixed to, and a model that calls that cell a full cube severs a corridor. **Deliberately excluded, and not because they collide**: `fire`, `soul_fire`, `cobweb` and the portals also have empty collision boxes and stay full cubes here, because a body that *passes through* one is not a body that may be *routed* through one. Also excluded because their shapes are not read out of the pin: lanterns, chains, end rods, ladders. |
 | no-collision vegetation (`assembled::is_no_collision_plant`) | 0/16 | grasses/ferns, every small and tall flower, `pink_petals`/`wildflowers`/`leaf_litter`, saplings, crops, mushrooms and nether flora, kelp/seagrass, vines/`glow_lichen` — vanilla gives them an **empty** collision shape. Modelling them as full cubes makes a plant cell a phantom standable surface, which refuses valid geometry (a tuft on a terrace splits a 2-block riser into two climbable 1-block steps) and, worse, accepts invalid: a walkability proof that stands a body ON a tuft is unsound, and a flower cell measures light 0 as if it were opaque. The list is the **class**, never the ids one generator happens to scatter; lookalikes that DO collide (`azalea`, `big_dripleaf`, `bamboo`, `cactus`, `pointed_dripstone`, `sea_pickle`, leaves, …) deliberately stay conservative full cubes. Fidelity consequence: plant cells no longer dam the water-flood model either — vanilla water flows into and breaks them. |
 | everything else | 16/16 | the conservative default |
 
