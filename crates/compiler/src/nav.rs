@@ -853,7 +853,7 @@ pub fn built_volume(plan: &Plan) -> Vec<BuiltPiece> {
 /// walkable top face sits **below** the cell top (a bottom slab at 8/16, a snow
 /// drift, a `dirt_path` at 15/16), that true height. It is what makes
 /// [`World::neighbors_fp`] a physical step rule rather than a cell-adjacency rule
-/// — see [`MAX_AUTO_STEP_16`] / [`MAX_JUMP_RISE_16`].
+/// — see [`delvewright_dsl::metrics::MAX_AUTO_STEP_16`] / [`delvewright_dsl::metrics::MAX_JUMP_RISE_16`].
 /// One declared lethal volume as the navigation model carries it: `(id, box)`,
 /// the box being inclusive world-space corners.
 type LethalRegion = (String, ([i32; 3], [i32; 3]));
@@ -967,10 +967,22 @@ pub struct World {
 /// not a second table that agrees with them, so `delvec metrics` cannot describe
 /// a walker this model does not route. Their derivations are on the definitions
 /// (`dsl::metrics::MAX_AUTO_STEP_16` is vanilla's 0.6-block `maxUpStep` rounded
-/// down to a sixteenth; `MAX_JUMP_RISE_16` is the ≈1.2522-block apex), and they
-/// stay private to this module because the step rule is this module's, while the
-/// numbers are the table's.
-use delvewright_dsl::metrics::{FULL_16, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16, PLAYER_WIDTH};
+/// down to a sixteenth; `MAX_JUMP_RISE_16` is the ≈1.2522-block apex).
+///
+/// The **rule** they express comes from the same place, and no longer from here:
+/// [`step_allowed`] is what [`World::neighbors_fp`] asks. It moved there because
+/// this engine had a second answer to the same question — `delvewright-schem`'s
+/// box-of-cells walk, which a prefab's admission gate proves over — and a rule
+/// with two implementations is a rule two gates can disagree about. What stays
+/// this module's is the **measurement** of a rise: real collision tops, water,
+/// tall barriers and a footprint's highest supporting face are facts about an
+/// assembled world, and a box of cells has none of them.
+///
+/// [`PLAYER_WIDTH`] is imported for a different question and deliberately not a
+/// fourth arm of the rule: it is the fallback hitbox [`npc_render_width`] hands
+/// [`step_vertices`], which shapes a step the router has **already** permitted
+/// and never re-decides whether it may be taken.
+use delvewright_dsl::metrics::{FULL_16, PLAYER_WIDTH, step_allowed};
 
 impl World {
     /// Build the occupancy model from the plan's placed pieces and the structure
@@ -2062,13 +2074,18 @@ impl World {
     /// Footprint-aware standable neighbours (spec-0014), gated by the **physical
     /// rise** between the two standing surfaces rather than by cell adjacency:
     ///
-    /// - rise ≤ [`MAX_AUTO_STEP_16`] — a walk-up. No jump, so no headroom is
+    /// - rise ≤ [`delvewright_dsl::metrics::MAX_AUTO_STEP_16`] — a walk-up. No jump, so no headroom is
     ///   required above the source cell. This is what admits the step onto a bottom
     ///   slab under a low ceiling that the old full-cube rule wrongly refused.
-    /// - rise ≤ [`MAX_JUMP_RISE_16`] — a jump; the swept head cell must be clear.
+    /// - rise ≤ [`delvewright_dsl::metrics::MAX_JUMP_RISE_16`] — a jump; the swept head cell must be clear.
     /// - anything higher is **impossible** and is refused. The load-bearing case:
     ///   standing on a bottom slab and "stepping" onto a full block one cell up is
     ///   a 1.5-block rise the old model proved as an ordinary `+1` step.
+    ///
+    /// Those three arms are [`step_allowed`], in `delvewright-dsl`, and are asked
+    /// rather than restated: `delvewright-schem`'s walk asks the same function of
+    /// the same rise, so the admission gate and this router cannot answer the
+    /// question differently.
     ///
     /// Vertical candidates stay `{0, -1, +1}` cells. A `+2`-cell move can be
     /// physically legal between two very thin floors, but leaving it out only ever
@@ -2088,11 +2105,12 @@ impl World {
                     continue;
                 }
                 let rise = self.feet_16_fp(n, fp) - here;
-                if rise > MAX_JUMP_RISE_16 {
-                    continue; // above the jump apex: no player can make this step
-                }
-                if rise > MAX_AUTO_STEP_16 && !head_clear_to_jump {
-                    continue; // needs a jump, and there is no room to jump here
+                // The rule itself is `dsl::metrics` — see `step_allowed`. What
+                // stays here is the MEASUREMENT of the rise, which is this
+                // model's own: real collision tops, and the footprint's highest
+                // supporting face.
+                if !step_allowed(rise, || head_clear_to_jump) {
+                    continue;
                 }
                 out.push(n);
             }
@@ -2189,7 +2207,7 @@ const STEP_COST_16: u32 = FULL_16 as u32;
 /// *photographed*: a body that pogos over lumps reads as broken even though every
 /// step is legal, and the built road exists precisely to be walked.
 ///
-/// **Why 2.** A rise past [`MAX_AUTO_STEP_16`] is a jump, and vanilla's jump arc
+/// **Why 2.** A rise past [`delvewright_dsl::metrics::MAX_AUTO_STEP_16`] is a jump, and vanilla's jump arc
 /// is ≈12 ticks airborne against ≈4.6 ticks to walk one block on the flat — so
 /// clearing a 1-block rise really does cost about 2.5 blocks of walking time.
 /// Two is the integer under that: enough that the planner pays a genuine detour
