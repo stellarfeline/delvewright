@@ -3577,6 +3577,40 @@ message names it with an explicit "do NOT". The rows below summarize each code's
 *meaning*; the emitted message additionally carries the prescription. Gold
 standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 
+**A prescription is chosen by the campaign's placement authority, not by the
+rule that raised it.** A campaign hands its space either to stage-1 `areas[]`,
+which seats prefab pieces, or to a `site-plan.json`, which owns a derived
+blockout — never both (`DW0839`) — and a campaign may also have declared
+neither yet. Where a name does not resolve, the sentence saying what to write
+instead is asked of `dsl::placement::Placement`, one authority for all three
+answers, rather than written beside each refusal:
+
+| Placement | An area id resolves against | An anchor name comes from |
+|-----------|-----------------------------|---------------------------|
+| `Prefabs` (`areas[]` non-empty, no plan) | the stage-1 `areas[]` entries | the bound prefab's metadata |
+| `SitePlan` (a `site-plan.json` is present) | exactly one id, `area/site` | the derivation: `anchor/node-<place>`, `anchor/seam-<edge>`, `anchor/unlock-<edge>`, `spawn` |
+| `NoMap` (`areas[]` empty and no plan) | nothing — the campaign has no map | nothing — no anchor is placed |
+
+The `Prefabs` arm is what each site printed before the authority existed and is
+returned verbatim, so a prefab campaign's refusals are unchanged. The other two
+arms **replace** it rather than appending to it, because every prefab
+prescription (`declare it in stage-1 world.areas`, `bind a prefab/pool`, `anchor
+names come from prefab metadata; do NOT invent one`) is refused by `DW0839` or
+`DW0160` in a campaign carrying a site plan, or names prefab metadata a derived
+map does not have. A `NoMap` refusal names **both** authorities, since which one
+the author wants is a choice they have not made and a refusal must not make it
+for them.
+
+It binds at **twenty-five message sites**: in `dsl::validate`, three area
+refusals (`DW0112` — an npc's area, a planned quest's area, and a stage-7 edit
+script's `batches[].area`) and seventeen anchor refusals (`DW0142` x11,
+`DW0194`, `DW0340` x2, `DW0371`, `DW0377`, `DW0381`); in `compiler::emit`,
+`DW0360`, `DW0426` and `DW0447`; and in `compiler::light`, `DW0210` and
+`DW0211`. `crates/dsl/tests/v14_site_plan.rs`'s
+`no_refusal_on_a_derived_map_prescribes_a_prefab_document` binds it over a
+derived map's whole refusal set, keyed to the forbidden prescription rather than
+to a list of codes.
+
 ### DW01xx — validation (`dsl`; severity error; exit 1)
 
 | Code | Meaning |
@@ -3587,7 +3621,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
-| `DW0112` | Dangling / forward / undeclared reference (incl. persona relationship to unknown NPC). |
+| `DW0112` | Dangling / forward / undeclared reference (incl. persona relationship to unknown NPC). An **area** reference resolves against the campaign's placement authority and its prescription comes from there (see the remediation contract above): a `Prefabs` campaign is told to declare it in stage-1 `world.areas`, a `SitePlan` campaign is told its one area is `area/site` and explicitly told NOT to declare it, and a campaign with neither is told both branches. Three sets in `dsl::validate` resolve an area id — npc/quest-plan references, and a stage-7 edit script's `batches[].area` — and all three now prescribe from the same authority. |
 | `DW0120` | Dialogue node unreachable from `root`. |
 | `DW0121` | Dialogue `root`/`next` references unknown node. |
 | `DW0122` | Dialogue effect targets an objective unknown / not `talk-to` / on a different NPC. |
@@ -3598,7 +3632,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0133` | **`mandatory: false` below dsl_version 0.17.0**, where the surface is reserved (spec-0051 §9). `every_version` deliberately, and it is the first case the `Binds` doctrine names: the rule judges what the document SAYS against the version that document itself declares, so its verdict is a function of the campaign alone. Fencing it as `Since(17)` would *stop rejecting* `mandatory: false` in a 0.12 campaign — the exact inversion the doctrine warns about. Below the fence the partition is forced empty, so an off-closure quest raises `DW0132` alongside this, exactly as it did before the surface existed. Prescription: raise the **quest-plan** stage's `dsl_version` to 0.17.0, or set `mandatory: true`. |
 | `DW0140` | Objective `after` cycle. |
 | `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface: the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending` (spec-0025); the class-kit `flask`, a kit item's potion `contents` and the `bonfire` rest-dialog labels (spec-0016 §1); actor `tier` (spec-0023); the stage-6 dialogue-option `tooltip`; the `close-gate` `sealed_hint`; and the `collect` container-adoption trio `container` / `item_name` / `fill_count` (each field is reserved independently, and an explicit `fill_count: 0` declares nothing since it is the default); under pre-0.10 the v0.10 surface (spec-0031): the stage-5 `state[]`, `lethal_volumes[]` and `on_death` sections, `requires_state` at every gate site, and the effects `set-state` / `add-state` / `clear-state` / `fill-region` / `clear-region`; under pre-0.11 **both** v0.11 surfaces — the press-answer lift (the `narrate` `style: actionbar` and a trigger's `audience: presser`, fenced on the quests stage) and the per-body `traversal` declaration (spec-0034, fenced on the stage that declares it: the stage-2 npc on `npcs`, the stage-5 actor on `quests`, so one stage may adopt it while the other has not)). |
-| `DW0142` | Anchor not provided by the area's bound prefab. |
+| `DW0142` | Anchor not provided by the area's bound prefab — or, on a site-plan campaign, not among the names the derivation places. The predicate is `AnchorProviders`, unchanged; the prescription is the placement authority's (see the remediation contract above), so a derived map is given the synthesized vocabulary instead of being sent to prefab metadata it does not have and told not to invent a name it is required to invent. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
 | `DW0151` | Stage-5 quest not planned in stage 4. |
@@ -3928,8 +3962,8 @@ fails there rather than in a campaign.
 | `DW0358` | A declared `min_players: n` (n ≥ 2) has **no n-agent division of labour** (v0.6, spec-0018). Completability is proven with `min_players` agents: n = 1 is the unchanged single-agent proof, and n ≥ 2 additionally requires the proven playthrough to contain an AND-join with n arms that are *independently reachable at the join's frontier* — the replay state just before its earliest arm — with no arm waiting on a sibling, a flag a sibling sets, or a quest that is not active yet (`flow::Flow::divide`). Names the widest join and how many arms it actually offers, or says the campaign has no AND-join at all. Reported on `world`/`/content/min_players`, exit 2. Prescription: split one beat into n `after`-arms completable from the same frontier, or lower `min_players`. |
 | `DW0204` | The exported critical path is not a playthrough any player can walk: some step is not activatable/completable at its position, or `campaign-complete` fires before the final step (the signature of two mutually exclusive endings sharing one path). Names the first incoherent step. |
 | `DW0205` | **Optional participation gates the mainline**: the dialogue button that completes a mainline objective is already on screen at an earlier point of the participation-minimal walk, before that objective's own activation chain has happened — so a player can take it and walk past a load-bearing beat. Names the objective, the beat, the dependency edge (`after`, or the flag the beat is what sets), and what the skip costs the mainline (the wave the beat spawns, the flag it sets, the quest that then never opens). Reported per branch too (`branch::check_branches`), naming the branch, for skips the campaign's own critical path does not already admit. Prescription: put the beat's flag on the option (`requires_flags`), or move the option into a `cast` scene that opens only after the beat. |
-| `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. **v0.6:** keys on the stage-1 `areas[].mitigation` declaration; the display-name heuristic is deleted, so a renamed water bottle in a class kit no longer passes the gate. |
-| `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). |
+| `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. **v0.6:** keys on the stage-1 `areas[].mitigation` declaration; the display-name heuristic is deleted, so a renamed water bottle in a class kit no longer passes the gate. The prescription names the document THIS campaign declares lighting in — `world.areas[].lighting` where prefabs place the world, the site plan's own `lighting` where the blockout is derived — and it offers `mitigation` only where that surface exists. It does not on a site-plan campaign: `mitigation` lives on an `areas[]` entry and `DW0839` requires that list to be empty, so a derived map is offered two ways rather than three, and the count in the message is computed from the list of ways rather than written beside it. **A derived map therefore has no night-vision mitigation at all** — a capability gap, recorded here rather than papered over: such a campaign lights its blockout or brightens the scene. |
+| `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). "Fix in" names the same placement-authority field `DW0210` does. |
 
 **The branch-coherent flow model (`compiler::flow`).** Reachability is not one
 union fixpoint over "every `set-flag` anywhere". A **choice group** is a dialogue
