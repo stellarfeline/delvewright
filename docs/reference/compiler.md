@@ -1890,7 +1890,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (`resource_major: 75, resource_minor: 0`). Getting this wrong is **client-side
   only**: the pack is refused whole ("Pack declares support for version newer
   than 64, but is missing mandatory fields min_format and max_format") and every
-  NPC skin silently never loads, while no server — and therefore no rung of the
+  baked skin silently never loads, while no server — and therefore no rung of the
   validation ladder — parses a resource pack at all.
 - `<out>/`: `manifest.json` (SHA-256 of the 6 inputs + every output; non-`en`
   build adds `language` + hashes the sidecar), `datapack/`, `packtest-datapack/`,
