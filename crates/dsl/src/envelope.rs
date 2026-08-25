@@ -747,11 +747,12 @@ fn parse_stage<T: for<'de> Deserialize<'de>>(
                 stage.name(),
                 "",
                 format!(
-                    "`{}` stage document does not conform to its schema: {e}. Fix the offending \
-                     field (unknown field, wrong type, or missing required one) in the campaign \
-                     JSON to match the schema — run `delvec schema --stage <1..7>` to see the \
-                     exact shape.",
-                    stage.name()
+                    "`{name}` stage document does not conform to its schema: {e}. Fix the \
+                     offending field (unknown field, wrong type, or missing required one) in the \
+                     campaign JSON to match the schema — run `delvec schema --stage {name}` to \
+                     see the exact shape of THIS document. The schema is the authority on the \
+                     form; a spec that disagrees with it is the stale one.",
+                    name = stage.name()
                 ),
             ));
         }
