@@ -776,6 +776,11 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
 
     let mut model = LightModel::from_blocks(assembled.blocks.clone());
     let mut out = Relight::default();
+    // The dark set of the whole build, kept per area and reported once at the end
+    // (`dark_diagnostic`). Accumulated rather than raised per area because the
+    // build fails on its first diagnostic: raising one per area meant every area
+    // but the alphabetically-first was measured and thrown away.
+    let mut dark: BTreeMap<String, DarkSurvey> = BTreeMap::new();
 
     for area in &plan.areas {
         let (amin, amax) = area.bounds();
@@ -832,7 +837,7 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
         // which is the one thing the fabric split says it does not do.
         //
         // The cells are not simply dropped, or a dark detailed place would be a
-        // silence rather than a finding. They go to `measure_undeclared`, which
+        // silence rather than a finding. They go to `survey_undeclared`, which
         // is the gate an area with no declaration already gets — so the piece
         // lights itself and is judged on whether it did.
         //
@@ -880,11 +885,8 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
                 None => {
                     // Measured-darkness gate over the assembled reachable walkable cells.
                     let night_vision = dsl_area.is_some_and(area_night_vision);
-                    if let Some(diag) =
-                        measure_undeclared(&model, &reachable, sky, night_vision, &area.area_id)
-                    {
-                        out.diagnostics.push(diag);
-                    }
+                    let s = survey_undeclared(&model, &reachable, sky, night_vision);
+                    dark.entry(area.area_id.clone()).or_default().absorb(&s);
                 }
             }
         }
@@ -895,11 +897,14 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
         // measuring before that would report it dark for want of a fixture this
         // same pass was about to place three cells away. Ordering is the whole of
         // the difference — the set and the gate are the same either way.
-        if !detailed.is_empty()
-            && let Some(diag) = measure_undeclared(&model, &detailed, sky, false, &area.area_id)
-        {
-            out.diagnostics.push(diag);
+        if !detailed.is_empty() {
+            let s = survey_undeclared(&model, &detailed, sky, false);
+            dark.entry(area.area_id.clone()).or_default().absorb(&s);
         }
+    }
+
+    if let Some(diag) = dark_diagnostic(&dark, &nav, sky) {
+        out.diagnostics.push(diag);
     }
 
     out.diagnostics
@@ -987,47 +992,276 @@ pub(crate) fn relight_area(
     }
 }
 
-/// The measured-darkness gate for an **undeclared** area (spec-0010 mitigation
-/// hierarchy step 4). Returns a `DW0210` diagnostic when the darkest reachable
-/// walkable cell measures below [`DARK_THRESHOLD`] under the darkest reachable sky
-/// and no night-vision kit mitigates; `None` otherwise. Sealed cavities are not in
-/// `reachable`, so they are never counted.
-fn measure_undeclared(
+// ---------------------------------------------------------------------------
+// A brightness measurement over a set of cells
+// ---------------------------------------------------------------------------
+
+/// One **contiguous run of dark cells**: the cells a body can walk between
+/// without ever leaving the dark, with the box they span and the darkest of
+/// them.
+///
+/// A region is what "a room" means to the person who has to go and fix it, and
+/// it is the unit the mitigation remedy is spent on — a fixture, a brighter
+/// scene or a night-vision declaration is chosen per place, not per cell.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DarkRegion {
+    /// How many dark cells the region holds.
+    pub cells: usize,
+    /// Lower corner of the region's axis-aligned extent.
+    pub lo: [i32; 3],
+    /// Upper corner of the region's axis-aligned extent.
+    pub hi: [i32; 3],
+    /// The darkest cell of the region and its measured light.
+    pub darkest: ([i32; 3], u8),
+}
+
+/// A **brightness measurement over a set of world cells**: how many cells were
+/// examined, and which of them measured below a threshold, each with the light
+/// it actually has.
+///
+/// The object this belongs to is the *set of cells*, not any one diagnostic. A
+/// gate that measures a set already holds every dark cell in it; folding that
+/// set down to a single coordinate at the moment of reporting is where the
+/// information is lost, and a designer told "one cell" and a designer told
+/// "six places, and this one is 98% dark" do entirely different things next.
+/// Whatever asks the question keeps the answer here and decides for itself how
+/// much of it to say.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DarkSurvey {
+    /// How many cells were measured (the denominator every count here is of).
+    pub examined: usize,
+    /// The cells that measured below the threshold, with their light.
+    pub dark: BTreeMap<[i32; 3], u8>,
+}
+
+impl DarkSurvey {
+    /// Measure `cells` against `model` under `sky`, keeping every cell below
+    /// `below`. A cell the flood never reached measures 0 — the never-overestimate
+    /// direction (see [`emission`]).
+    pub fn measure(
+        model: &LightModel,
+        cells: &BTreeSet<[i32; 3]>,
+        sky: u8,
+        below: u8,
+    ) -> DarkSurvey {
+        let light = model.flood(sky);
+        let mut out = DarkSurvey {
+            examined: cells.len(),
+            dark: BTreeMap::new(),
+        };
+        for &cell in cells {
+            let l = light.get(&cell).copied().unwrap_or(0);
+            if l < below {
+                out.dark.insert(cell, l);
+            }
+        }
+        out
+    }
+
+    /// Fold another measurement of a **disjoint** set of the same place into this
+    /// one: the denominators add and the dark sets union. This is what lets an
+    /// area measured in two passes (its own cells, then the cells inside a bound
+    /// detail frame, which are judged after the pass has hung its fixtures) be
+    /// reported as the one place a designer has to walk back into.
+    pub fn absorb(&mut self, other: &DarkSurvey) {
+        self.examined += other.examined;
+        for (&cell, &l) in &other.dark {
+            self.dark.insert(cell, l);
+        }
+    }
+
+    /// The darkest cell measured, ties broken by ascending `[x, y, z]`. `None`
+    /// when nothing measured dark.
+    pub fn darkest(&self) -> Option<([i32; 3], u8)> {
+        self.dark
+            .iter()
+            .map(|(&cell, &l)| (cell, l))
+            .min_by_key(|&(cell, l)| (l, cell))
+    }
+
+    /// The dark cells grouped into contiguous regions, largest first (ties by
+    /// ascending `lo`).
+    ///
+    /// Adjacency is [`World::neighbors`] — the engine's ONE answer to "can a body
+    /// get from here to there", which is also the relation that produced the
+    /// reachable set being measured. A second, private adjacency rule here (six
+    /// face neighbours, say) would split a staircase into one region per step and
+    /// would be a step rule this compiler proves nothing else under.
+    ///
+    /// The relation is **symmetrised** before the walk: a rise can be walkable
+    /// downhill and refused uphill, so the directed edges alone would make the
+    /// grouping depend on which cell the walk started from. Undirected components
+    /// are order-independent, which is what determinism (ADR-0006) needs.
+    pub fn regions(&self, nav: &World) -> Vec<DarkRegion> {
+        let mut adj: BTreeMap<[i32; 3], BTreeSet<[i32; 3]>> = BTreeMap::new();
+        for &cell in self.dark.keys() {
+            adj.entry(cell).or_default();
+            for n in nav.neighbors(cell) {
+                if self.dark.contains_key(&n) {
+                    adj.entry(cell).or_default().insert(n);
+                    adj.entry(n).or_default().insert(cell);
+                }
+            }
+        }
+
+        let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+        let mut out: Vec<DarkRegion> = Vec::new();
+        for &start in self.dark.keys() {
+            if !seen.insert(start) {
+                continue;
+            }
+            let mut queue: VecDeque<[i32; 3]> = VecDeque::from([start]);
+            let mut lo = start;
+            let mut hi = start;
+            let mut cells = 0usize;
+            let mut darkest = (start, self.dark[&start]);
+            while let Some(cur) = queue.pop_front() {
+                cells += 1;
+                for a in 0..3 {
+                    lo[a] = lo[a].min(cur[a]);
+                    hi[a] = hi[a].max(cur[a]);
+                }
+                let l = self.dark[&cur];
+                if (l, cur) < (darkest.1, darkest.0) {
+                    darkest = (cur, l);
+                }
+                for &n in adj.get(&cur).into_iter().flatten() {
+                    if seen.insert(n) {
+                        queue.push_back(n);
+                    }
+                }
+            }
+            out.push(DarkRegion {
+                cells,
+                lo,
+                hi,
+                darkest,
+            });
+        }
+        out.sort_by_key(|r| (std::cmp::Reverse(r.cells), r.lo, r.hi));
+        out
+    }
+}
+
+/// The measured-darkness survey for an **undeclared** area (spec-0010 mitigation
+/// hierarchy step 4): every reachable walkable cell below [`DARK_THRESHOLD`] under
+/// the darkest reachable sky. Empty when the area declares the night-vision
+/// mitigation. Sealed cavities are not in `reachable`, so they are never counted.
+///
+/// The verdict is unchanged from the fold this replaced: "the darkest cell is
+/// below the threshold" and "some cell is below the threshold" are the same
+/// predicate. What changed is that the cells that satisfied it are kept.
+fn survey_undeclared(
     model: &LightModel,
     reachable: &BTreeSet<[i32; 3]>,
     sky: u8,
     night_vision: bool,
-    area_id: &str,
+) -> DarkSurvey {
+    if night_vision {
+        return DarkSurvey::default();
+    }
+    DarkSurvey::measure(model, reachable, sky, DARK_THRESHOLD)
+}
+
+/// How many dark areas the `DW0210` report lists in full before it summarises the
+/// rest, and how many regions it lists per area. A truncated list that does not
+/// say it was truncated reads as "here is everything", so both caps are stated in
+/// the message whenever they bite.
+const DARK_AREAS_LISTED: usize = 8;
+/// See [`DARK_AREAS_LISTED`].
+const DARK_REGIONS_LISTED: usize = 4;
+
+/// Build the one `DW0210` diagnostic for a whole build from the per-area surveys,
+/// or `None` when nothing measured dark.
+///
+/// **One diagnostic, not one per area.** A build fails on its *first* diagnostic
+/// (`emit::BuildFailure` carries one code and one message, as every other check in
+/// this compiler does), so a per-area diagnostic per dark area meant the sort
+/// picked the alphabetically-first area's message and the rest were never printed
+/// at all. The object this gate measures is the campaign's dark set; the report
+/// now says so, and nothing about the fail-fast build channel had to move.
+fn dark_diagnostic(
+    areas: &BTreeMap<String, DarkSurvey>,
+    nav: &World,
+    sky: u8,
 ) -> Option<LightDiag> {
-    let light = model.flood(sky);
-    let mut darkest: Option<([i32; 3], u8)> = None;
-    for &cell in reachable {
-        let l = light.get(&cell).copied().unwrap_or(0);
-        match darkest {
-            Some((_, bl)) if bl <= l => {}
-            _ => darkest = Some((cell, l)),
+    let mut dark: Vec<(&String, &DarkSurvey)> = areas
+        .iter()
+        .filter(|(_, s)| !s.dark.is_empty())
+        .collect();
+    if dark.is_empty() {
+        return None;
+    }
+    // Worst first: the area with the most dark cells is the one whose remedy is a
+    // different act. Ties by area id, which is unique, so the order is total.
+    dark.sort_by_key(|(id, s)| (std::cmp::Reverse(s.dark.len()), (*id).clone()));
+
+    let total: usize = dark.iter().map(|(_, s)| s.dark.len()).sum();
+    let examined: usize = dark.iter().map(|(_, s)| s.examined).sum();
+    let (wcell, wl) = dark
+        .iter()
+        .filter_map(|(_, s)| s.darkest())
+        .min_by_key(|&(cell, l)| (l, cell))
+        .expect("a non-empty dark set has a darkest cell");
+
+    let n = dark.len();
+    let mut m = format!(
+        "{n} area(s) measure dark: {total} of the {examined} reachable walkable cell(s) measured \
+         in them are below light {DARK_THRESHOLD} under the darkest reachable (time, weather) sky \
+         (effective {sky}), with no `lighting` and no `mitigation` declaration. The darkest \
+         reachable walkable cell is at {wcell:?}, measured at light {wl} \
+         (< {DARK_THRESHOLD}).\n"
+    );
+    for (id, s) in dark.iter().take(DARK_AREAS_LISTED) {
+        let regions = s.regions(nav);
+        m.push_str(&format!(
+            "  area `{id}`: {d} of {e} measured cell(s) dark, in {r} contiguous region(s):\n",
+            d = s.dark.len(),
+            e = s.examined,
+            r = regions.len(),
+        ));
+        for reg in regions.iter().take(DARK_REGIONS_LISTED) {
+            m.push_str(&format!(
+                "    - {c} cell(s) spanning {lo:?}..{hi:?}, darkest {dc:?} at light {dl}\n",
+                c = reg.cells,
+                lo = reg.lo,
+                hi = reg.hi,
+                dc = reg.darkest.0,
+                dl = reg.darkest.1,
+            ));
+        }
+        if regions.len() > DARK_REGIONS_LISTED {
+            let rest: usize = regions.iter().skip(DARK_REGIONS_LISTED).map(|r| r.cells).sum();
+            m.push_str(&format!(
+                "    - … and {k} further region(s) covering {rest} cell(s), not listed\n",
+                k = regions.len() - DARK_REGIONS_LISTED,
+            ));
         }
     }
-    let (cell, l) = darkest?;
-    if l < DARK_THRESHOLD && !night_vision {
-        Some(LightDiag {
-            code: DW_DARK_UNMITIGATED,
-            message: format!(
-                "area `{area_id}` has a reachable walkable cell at {cell:?} measured at light {l} \
-                 (< {DARK_THRESHOLD}) under the darkest reachable (time, weather) sky (effective \
-                 {sky}), with no `lighting` and no `mitigation` declaration. Mitigate \
-                 one of three ways: declare `world.areas[].lighting` (a relight `fixture` + \
-                 `min_light`) for this area, brighten the scene (`world.time`/`weather`), or \
-                 declare `world.areas[].mitigation: \"night-vision\"` on this area (the compiler \
-                 then emits a clocked `effect give … night_vision` over its bounds). A renamed \
-                 potion in a class kit is NOT a mitigation — it grants nothing. Do NOT lower \
-                 `DARK_THRESHOLD` or trim the reachable set — the darkness is real (spec-0010 \
-                 DW0210)"
-            ),
-        })
-    } else {
-        None
+    if n > DARK_AREAS_LISTED {
+        let rest: usize = dark
+            .iter()
+            .skip(DARK_AREAS_LISTED)
+            .map(|(_, s)| s.dark.len())
+            .sum();
+        m.push_str(&format!(
+            "  … and {k} further dark area(s) covering {rest} cell(s), not listed\n",
+            k = n - DARK_AREAS_LISTED,
+        ));
     }
+    m.push_str(
+        "Mitigate each area one of three ways: declare `world.areas[].lighting` (a relight \
+         `fixture` + `min_light`) for it, brighten the scene (`world.time`/`weather`), or declare \
+         `world.areas[].mitigation: \"night-vision\"` on it (the compiler then emits a clocked \
+         `effect give … night_vision` over its bounds) — or re-arrange the room, or raise the \
+         density of what is already lit in it, and measure again. A renamed potion in a class kit \
+         is NOT a mitigation — it grants nothing. Do NOT lower `DARK_THRESHOLD` or trim the \
+         reachable set — the darkness is real (spec-0010 DW0210)",
+    );
+    Some(LightDiag {
+        code: DW_DARK_UNMITIGATED,
+        message: m,
+    })
 }
 
 /// A valid fixture placement site: the world cell, the block to write, and
@@ -1269,6 +1503,21 @@ mod tests {
         nav_occ_of(map).reachable_walkable(&[start])
     }
 
+    /// The `DW0210` diagnostic one undeclared area's survey produces, or `None`.
+    /// The whole-build report ([`dark_diagnostic`]) applied to a single area, which
+    /// is the unit the spec-0010 criterion tests below are about.
+    fn undeclared_diag(
+        model: &LightModel,
+        nav: &World,
+        reachable: &BTreeSet<[i32; 3]>,
+        sky: u8,
+        night_vision: bool,
+        area_id: &str,
+    ) -> Option<LightDiag> {
+        let s = survey_undeclared(model, reachable, sky, night_vision);
+        dark_diagnostic(&BTreeMap::from([(area_id.to_string(), s)]), nav, sky)
+    }
+
     fn min_reachable_light(model: &LightModel, reachable: &BTreeSet<[i32; 3]>, sky: u8) -> u8 {
         let light = model.flood(sky);
         reachable
@@ -1505,7 +1754,7 @@ mod tests {
         let map = room(7, 5, 7, false); // enclosed, unlit
         let model = LightModel::from_blocks(map.clone());
         let reachable = reachable_of(&map);
-        let diag = measure_undeclared(&model, &reachable, 0, false, "area/crypt");
+        let diag = undeclared_diag(&model, &nav_of(&map), &reachable, 0, false, "area/crypt");
         assert!(diag.is_some());
         assert_eq!(diag.unwrap().code, DW_DARK_UNMITIGATED);
     }
@@ -1518,7 +1767,7 @@ mod tests {
         let model = LightModel::from_blocks(map.clone());
         let reachable = reachable_of(&map);
         assert!(
-            measure_undeclared(&model, &reachable, 0, true, "area/crypt").is_none(),
+            undeclared_diag(&model, &nav_of(&map), &reachable, 0, true, "area/crypt").is_none(),
             "night vision must mitigate an undeclared dark area"
         );
     }
@@ -1547,7 +1796,7 @@ mod tests {
         assert!(!reachable.contains(&[21, 1, 21]));
         // The lit room measures clean despite the dark sealed pocket.
         assert!(
-            measure_undeclared(&model, &reachable, 0, false, "area/room").is_none(),
+            undeclared_diag(&model, &nav_of(&map), &reachable, 0, false, "area/room").is_none(),
             "a sealed dark cavity must not trip DW0210"
         );
     }
@@ -1865,6 +2114,7 @@ mod tests {
         // The trigger cell really is a reachable walkable cell under the shipped
         // collision model (this is what makes the false DW0210 reachable at all).
         let reachable = reachable_occ_of(&with_plate, [4, 1, 4]);
+        let nav = nav_occ_of(&with_plate);
         assert!(
             reachable.contains(&plate),
             "the plate cell must stay walkable (DW0342 premise)"
@@ -1893,7 +2143,7 @@ mod tests {
             m
         });
         assert!(
-            measure_undeclared(&model, &reachable, 0, false, "area/keep").is_none(),
+            undeclared_diag(&model, &nav, &reachable, 0, false, "area/keep").is_none(),
             "a lit roofed room with a trap trigger must not trip DW0210"
         );
     }
@@ -1911,8 +2161,9 @@ mod tests {
         );
         let reachable = reachable_occ_of(&map, [4, 1, 4]);
         assert!(reachable.contains(&plate));
+        let nav = nav_occ_of(&map);
         let model = LightModel::from_blocks(map);
-        let diag = measure_undeclared(&model, &reachable, 0, false, "area/crypt")
+        let diag = undeclared_diag(&model, &nav, &reachable, 0, false, "area/crypt")
             .expect("a genuinely dark roofed room must still fail");
         assert_eq!(diag.code, DW_DARK_UNMITIGATED);
     }
