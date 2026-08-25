@@ -230,12 +230,18 @@ pub fn ends(model: &VoxelModel) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
 /// standable cell on either, and the gate over it examined zero objects while
 /// the piece it was judging walked end to end perfectly well.
 ///
-/// **Four sides and not six.** [`ground_entry`] takes the same four for the
-/// same reason: a standable cell in the region's top plane is a roof or a
-/// parapet, and geometry alone cannot tell one from a way in, while the bottom
-/// plane cannot hold a standable cell at all — a body needs a floor under it,
-/// and on that plane the floor lies outside the box. A piece entered from above
-/// says so by declaring the face; that is what a contract is for.
+/// **Four sides and not six, and it is the derivation that has four rather
+/// than a rule imposed on it.** Neither horizontal plane of the region can hold
+/// a standable cell in the first place, because outside the box blocks (see the
+/// [`Voxels`] impl above): on the top plane the body's head is outside and the
+/// cell is not passable, on the bottom plane its floor is outside and there is
+/// nothing to stand on. So the four vertical sides are the whole of what a
+/// derivation from standable cells could ever read, and this returns all of it.
+/// [`ground_entry`] lands on the same four by the same arithmetic. A piece
+/// entered from above is therefore not a piece this can read at all — it says
+/// so by declaring the face, which the contract exports on any of the six
+/// sides, and a `traversable` claim on one that declares nothing binds too low
+/// and is refused rather than passed.
 ///
 /// A side with nothing standable on it is **absent**, not empty: it is not a way
 /// out, and a caller counting the returned sides would otherwise get four on

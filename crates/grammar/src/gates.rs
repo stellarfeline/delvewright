@@ -2032,6 +2032,43 @@ mod tests {
         );
     }
 
+    /// **The derivation's own limit, asserted rather than described.** It reads
+    /// the four vertical sides, and it does so because those are the only ones a
+    /// standable cell can ever lie on: outside the region blocks, so on the top
+    /// plane a body's head is outside and on the bottom plane its floor is. A
+    /// piece whose only opening is overhead therefore has nothing this can read
+    /// — and it is REFUSED rather than passed, which is the direction that
+    /// matters. Its way out is declarable: a contract exports a face on any of
+    /// the six sides, `up` included.
+    #[test]
+    fn a_piece_open_only_overhead_is_refused_rather_than_read_wrong() {
+        let mut model = VoxelModel::new(Box3::at_origin([11, 5, 5]));
+        let stone = BlockState::simple("minecraft:stone");
+        let air = BlockState::simple("minecraft:air");
+        for pos in Box3::at_origin([11, 5, 5]).positions() {
+            model.set(pos, &stone).unwrap();
+        }
+        // A shaft down the middle, open to the sky and to nothing else.
+        for y in 1..5 {
+            model.set([5, y, 2], &air).unwrap();
+        }
+        let expansion = Expansion {
+            model,
+            anchors: Default::default(),
+            contract: None,
+            stats: Default::default(),
+            oriented: Default::default(),
+        };
+        assert!(
+            nav::standable_cells(&expansion.model).contains(&[5, 1, 2]),
+            "the shaft floor is somewhere a body stands, so the piece is not empty"
+        );
+        let gate = walk(&expansion);
+        assert!(!gate.passed(), "{}", gate.detail);
+        assert_eq!(gate.bound, 0, "no vertical side is open: {}", gate.detail);
+        assert!(gate.detail.contains(ZERO_BINDING), "{}", gate.detail);
+    }
+
     /// A solid block claiming to be a route binds to nothing, and a binding of
     /// zero is red (`seal_zero_bindings`). The widening must not turn a
     /// vacuous pass into a real one by finding sides that are not there.
