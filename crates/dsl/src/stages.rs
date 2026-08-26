@@ -9,6 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::layout::StationKind;
+
 use crate::ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, ClassId, DialogueId, EditBatchId,
     EndingId, FlagId, LethalVolumeId, LootId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
@@ -7055,33 +7057,80 @@ impl QuestEffect {
     /// silent-drop class of bug: an anchor-bearing effect whose anchor is typo'd
     /// used to emit *nothing* (the emitter's `for … if name == anchor` loop simply
     /// found no match) while every shallow validator looked straight past it.
-    pub fn anchor_refs(&self) -> Vec<(String, &AnchorId)> {
-        /// `(suffix, anchor)` for a shot's own anchor-bearing fields, under `base`.
-        fn shot_refs<'a>(base: &str, shot: &'a CameraShot) -> Vec<(String, &'a AnchorId)> {
-            let mut out: Vec<(String, &AnchorId)> = shot
+    ///
+    /// # The third element is the SHAPE the site demands
+    ///
+    /// A reference is not only a name: `close-gate` fills and clears a region and
+    /// `bonfire` seats a body, and until spec-0052 those two sat in one match arm
+    /// with nothing recording the difference. The demand rides with the reference
+    /// so that a new anchor-bearing variant cannot be added without stating what
+    /// it does with the anchor — the same reason this is one authority and not
+    /// three walks.
+    ///
+    /// **A demand is stated only where the shape is structurally required**, and
+    /// the line is drawn where this engine's own `DW0845` already draws it — *a
+    /// region is not a place to stand*:
+    ///
+    /// * [`StationKind::Gate`] where the verb cannot function without a region
+    ///   that seals and clears: the two gate verbs. A point is not a gate, and
+    ///   `gate_region_block_any` finds nothing for one.
+    /// * [`StationKind::Point`] where a **body is put**: a checkpoint seat, a
+    ///   bonfire, a `move-npc`/`move-actor` destination, a `teleport`
+    ///   destination. A body cannot stand inside bars.
+    /// * `None` wherever a reference merely names a **location** — every
+    ///   anchor-centred volume's centre, every camera field, a `set-block`, a
+    ///   `play-sound`. A gate region's own corner is a perfectly good answer
+    ///   there, and refusing it would refuse correct content.
+    ///
+    /// That last case is not a gap left for later. An earlier draft of this rule
+    /// demanded a point at every non-gate site, and the gallery refused to
+    /// compile: `trigger/east-door-wrong-side` is a `use` trigger sitting on the
+    /// very `anchor/seam-…` of a barred door so that it can say "the east door
+    /// does not open from this side". A check that resolves against a smaller
+    /// world than the campaign has refuses CONTENT, which is the lesson `DW0343`
+    /// carries three files away.
+    pub fn anchor_refs(&self) -> Vec<(String, &AnchorId, Option<StationKind>)> {
+        // Every camera field is a point: a shot flies through cells and looks at
+        // one.
+        /// `(suffix, anchor, kind)` for a shot's own anchor-bearing fields, under `base`.
+        fn shot_refs<'a>(
+            base: &str,
+            shot: &'a CameraShot,
+        ) -> Vec<(String, &'a AnchorId, Option<StationKind>)> {
+            let mut out: Vec<(String, &AnchorId, Option<StationKind>)> = shot
                 .path
                 .iter()
                 .enumerate()
-                .map(|(j, w)| (format!("{base}path/{j}/anchor"), &w.anchor))
+                .map(|(j, w)| (format!("{base}path/{j}/anchor"), &w.anchor, None))
                 .collect();
             if let Some(t) = &shot.look_at {
-                out.push((format!("{base}look_at/anchor"), &t.anchor));
+                out.push((format!("{base}look_at/anchor"), &t.anchor, None));
             }
             for (field, subject) in [("subject", &shot.subject), ("subject_b", &shot.subject_b)] {
                 if let Some(CameraSubject::Anchor(s)) = subject {
-                    out.push((format!("{base}{field}/anchor"), &s.anchor));
+                    out.push((format!("{base}{field}/anchor"), &s.anchor, None));
                 }
             }
             out
         }
         match self {
-            QuestEffect::OpenGate { anchor, .. }
-            | QuestEffect::CloseGate { anchor, .. }
-            | QuestEffect::SetBlock { anchor, .. }
-            | QuestEffect::SetCheckpoint { anchor, .. }
-            | QuestEffect::Bonfire { anchor, .. } => vec![("anchor".to_string(), anchor)],
+            // The two gate verbs address a REGION that seals and clears; the
+            // three below them seat or write at a cell. They shared an arm until
+            // the demand had somewhere to be written down.
+            QuestEffect::OpenGate { anchor, .. } | QuestEffect::CloseGate { anchor, .. } => {
+                vec![("anchor".to_string(), anchor, Some(StationKind::Gate))]
+            }
+            // A checkpoint and a bonfire are **respawn seats** — a body is put
+            // there, so a region is not one. `set-block` writes a block at a
+            // cell, which names a location and seats nothing.
+            QuestEffect::SetCheckpoint { anchor, .. } | QuestEffect::Bonfire { anchor, .. } => {
+                vec![("anchor".to_string(), anchor, Some(StationKind::Point))]
+            }
+            QuestEffect::SetBlock { anchor, .. } => {
+                vec![("anchor".to_string(), anchor, None)]
+            }
             QuestEffect::MoveNpc { to_anchor, .. } | QuestEffect::MoveActor { to_anchor, .. } => {
-                vec![("to_anchor".to_string(), to_anchor)]
+                vec![("to_anchor".to_string(), to_anchor, Some(StationKind::Point))]
             }
             // The `in` filter is one capability on three verbs, so it registers
             // once: `damage-players` (v0.6) and the v0.10 status-effect pair.
@@ -7093,24 +7142,24 @@ impl QuestEffect {
             }
             | QuestEffect::ClearEffect {
                 within: Some(zone), ..
-            } => vec![("in/anchor".to_string(), &zone.anchor)],
+            } => vec![("in/anchor".to_string(), &zone.anchor, None)],
             // Both of a `teleport`'s anchors are load-bearing — the source volume
             // decides WHAT moves and the destination decides WHERE — so a typo in
             // either is a dangling reference (`DW0142`), never a silently
             // zero-cell volume or a dropped command.
             QuestEffect::Teleport { from, to, .. } => vec![
-                ("from/anchor".to_string(), &from.anchor),
-                ("to".to_string(), to),
+                ("from/anchor".to_string(), &from.anchor, None),
+                ("to".to_string(), to, Some(StationKind::Point)),
             ],
             QuestEffect::BeginStealth { zones, .. } => zones
                 .iter()
                 .enumerate()
-                .map(|(i, z)| (format!("zones/{i}/anchor"), &z.anchor))
+                .map(|(i, z)| (format!("zones/{i}/anchor"), &z.anchor, None))
                 .collect(),
             QuestEffect::PlaySound {
                 at: Some(SoundAt::Anchor { anchor }),
                 ..
-            } => vec![("at/anchor".to_string(), anchor)],
+            } => vec![("at/anchor".to_string(), anchor, None)],
             // spec-0022 trap-payload verbs. Both anchors of a `volley` are
             // load-bearing for the coverage proof, so both register here — a
             // typo'd `kill_zone` must be a dangling-reference error, never a
@@ -7120,18 +7169,22 @@ impl QuestEffect {
                 kill_zone,
                 ..
             } => vec![
-                ("from_anchor".to_string(), from_anchor),
-                ("kill_zone/anchor".to_string(), &kill_zone.anchor),
+                ("from_anchor".to_string(), from_anchor, None),
+                ("kill_zone/anchor".to_string(), &kill_zone.anchor, None),
             ],
             QuestEffect::Collapse { region_anchor, .. } => {
-                vec![("region_anchor/anchor".to_string(), &region_anchor.anchor)]
+                vec![(
+                    "region_anchor/anchor".to_string(),
+                    &region_anchor.anchor,
+                    None,
+                )]
             }
             // The v0.10 region writes: the box's anchor is load-bearing for both
             // the emission and the completability model, so a typo'd one must be a
             // dangling-reference error (`DW0142`/`DW0355`), never a silently
             // unwritten — and therefore vacuously proven — region.
             QuestEffect::FillRegion { region, .. } | QuestEffect::ClearRegion { region, .. } => {
-                vec![("region/anchor".to_string(), &region.anchor)]
+                vec![("region/anchor".to_string(), &region.anchor, None)]
             }
             // Both cutscene spellings (`DW0199` polices mixing them): the v0.6
             // multi-shot list, or the v0.4 single-shot fields flattened at the
@@ -7142,7 +7195,7 @@ impl QuestEffect {
                 look_at,
                 ..
             } => {
-                let mut out: Vec<(String, &AnchorId)> = shots
+                let mut out: Vec<(String, &AnchorId, Option<StationKind>)> = shots
                     .iter()
                     .enumerate()
                     .flat_map(|(i, s)| shot_refs(&format!("shots/{i}/"), s))
@@ -7150,10 +7203,10 @@ impl QuestEffect {
                 out.extend(
                     path.iter()
                         .enumerate()
-                        .map(|(j, w)| (format!("path/{j}/anchor"), &w.anchor)),
+                        .map(|(j, w)| (format!("path/{j}/anchor"), &w.anchor, None)),
                 );
                 if let Some(t) = look_at {
-                    out.push(("look_at/anchor".to_string(), &t.anchor));
+                    out.push(("look_at/anchor".to_string(), &t.anchor, None));
                 }
                 out
             }

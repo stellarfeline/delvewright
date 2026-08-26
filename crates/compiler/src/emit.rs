@@ -1075,6 +1075,7 @@ pub fn build_with_warnings(
                         };
                         crate::nav::check_branch_path(
                             &world,
+                            campaign_spawn(plan),
                             &cp.steps,
                             &cp.transport_by_step,
                             &region_events,
@@ -1083,6 +1084,7 @@ pub fn build_with_warnings(
                         .map_err(label)?;
                         let branch_routes = crate::nav::branch_path_routes(
                             &world,
+                            campaign_spawn(plan),
                             &cp.steps,
                             &cp.transport_by_step,
                             &region_events,
@@ -4982,7 +4984,9 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
         let defer_to_dw0447 =
             payload_verbs_are_proven && (eff.volley().is_some() || eff.collapse().is_some());
         if !defer_to_dw0447 {
-            for (suffix, anchor) in eff.anchor_refs() {
+            // The demanded shape is the DSL tier's business (`DW0871`); this
+            // seal is about whether the name resolves at all.
+            for (suffix, anchor, _kind) in eff.anchor_refs() {
                 refs.push((
                     format!("{path}/{suffix}"),
                     eff.verb(),
@@ -11253,16 +11257,13 @@ fn trap_payload_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
-/// The campaign's **entry point**: the absolute position of the first area's
-/// entry anchor, resolved through [`plan::AnchorTable::entry_anchor`] — the
-/// anchor that declares [`plan::AnchorRole::Entry`], or the first
-/// [`plan::ENTRY_ANCHOR_NAMES`] spelling an area that declares no role carries.
-/// This one cell is `setworldspawn`, the class-apply teleport, the first-join
-/// placement, and the `dw:cp` seed. `None` is a hard build error (`DW0345`).
+/// The campaign's **entry point**: the cell the party begins the delve on,
+/// through [`Plan::campaign_start`] — the one resolver, which is also where the
+/// party's first leg begins. This cell is `setworldspawn`, the class-apply
+/// teleport, the first-join placement, and the `dw:cp` seed. `None` is a hard
+/// build error (`DW0345`).
 fn campaign_spawn(plan: &Plan) -> Option<[i32; 3]> {
-    plan.areas
-        .iter()
-        .find_map(|area| plan.entry_point(&area.area_id))
+    plan.campaign_start().map(|(_, pos)| pos)
 }
 
 // ---------------------------------------------------------------------------

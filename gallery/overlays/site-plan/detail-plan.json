@@ -4,6 +4,7 @@
     "details": [
       {
         "anchors": {
+          "anchor/exit-stone": "yard-stone",
           "anchor/node-exit": "yard-stone"
         },
         "piece": "prefab/gallery-yard",

@@ -3,16 +3,6 @@
   "content": {
     "beats": [
       {
-        "node": "node/annex",
-        "objective": "obj/reach-the-counter",
-        "quest": "quest/near-hall"
-      },
-      {
-        "node": "node/near-hall",
-        "objective": "obj/hear-the-curator",
-        "quest": "quest/near-hall"
-      },
-      {
         "node": "node/far-hall",
         "objective": "obj/clear-the-muster",
         "quest": "quest/far-hall"
@@ -26,6 +16,21 @@
         "node": "node/exit",
         "objective": "obj/reach-the-end",
         "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/hear-the-curator",
+        "quest": "quest/near-hall"
+      },
+      {
+        "node": "node/annex",
+        "objective": "obj/reach-the-counter",
+        "quest": "quest/near-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/read-the-label",
+        "quest": "quest/near-hall"
       }
     ],
     "critical_path": [
@@ -145,6 +150,12 @@
         "b": "node/loft",
         "class": "vision",
         "id": "edge/loft-sightline"
+      },
+      {
+        "a": "node/far-hall",
+        "b": "node/causeway",
+        "class": "walk",
+        "id": "edge/causeway-front"
       }
     ],
     "entry": "node/near-hall",
@@ -154,7 +165,18 @@
         "id": "node/near-hall",
         "intent": "hub",
         "note": "Everything the delve opens with stands here: the Curator, the case, the stall counter. It is the one place a body returns to.",
-        "size_class": "hall"
+        "size_class": "hall",
+        "stations": [
+          {
+            "anchor": "anchor/reading-desk",
+            "kind": "point",
+            "note": "The desk a label is read at. The hall's own anchor stands at its floor centre and this does not, which is the whole reason a place can name what is inside it."
+          },
+          {
+            "anchor": "anchor/reliquary-grille",
+            "kind": "gate"
+          }
+        ]
       },
       {
         "id": "node/annex",
@@ -182,10 +204,22 @@
       {
         "id": "node/exit",
         "intent": "goal-chamber",
-        "size_class": "alcove"
+        "size_class": "alcove",
+        "stations": [
+          {
+            "anchor": "anchor/exit-stone",
+            "kind": "point"
+          }
+        ]
+      },
+      {
+        "id": "node/causeway",
+        "intent": "approach",
+        "note": "A place that is a ROUTE: eight cells across and twenty-four long, bounded in one axis and free in the other. No rung of the size ladder admits it and no calibration of the ladder could — for a rung to span 8..24 on an axis, an alcove and a hall would be the same thing.",
+        "way_class": "road"
       }
     ]
   },
-  "dsl_version": "0.13.0",
+  "dsl_version": "0.19.0",
   "stage": "layout-graph"
 }

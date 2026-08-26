@@ -192,6 +192,17 @@ pub fn sheltered(model: &VoxelModel, pos: [i32; 3]) -> bool {
 /// §5b): local `Z`-max is the approach end and travel runs toward `Z`-min. It
 /// stays in this crate because it is that convention and nothing else — a
 /// structure template read off disk has no travel axis.
+///
+/// **It is the convention's accessor and it is not a question about a piece.**
+/// A caller holding a model it authored to the §5b frame, at a box it chose, is
+/// entitled to ask where that frame's two ends are; the zone tests are exactly
+/// that caller. Nothing that JUDGES an arbitrary piece may ask it, because the
+/// two premises it rests on are the caller's and not the piece's: that world `Z`
+/// is the travel axis at all, and that the piece runs the whole length of its
+/// box. Every §5b rule opens with `z(Largest)` and turns its length onto the
+/// longer horizontal axis of whatever box it is handed, so even a library piece
+/// breaks the first premise the moment its box is wider than it is deep. The
+/// question a gate has to ask is [`open_sides`], which asks the piece.
 pub fn ends(model: &VoxelModel) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
     let region = model.region();
     let far = region.origin[2] + region.size[2] as i32 - 1;
@@ -200,6 +211,77 @@ pub fn ends(model: &VoxelModel) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
     let entry = cells.iter().copied().filter(|c| c[2] == far).collect();
     let exit = cells.iter().copied().filter(|c| c[2] == near).collect();
     (entry, exit)
+}
+
+/// **Which of the piece's vertical sides its standable floor reaches, and
+/// where** — the unit direction of each open side, paired with the cells on it.
+///
+/// The question `traversable` has to ask of a piece that declares no spatial
+/// contract: *which faces does this piece open on?* A contract answers it for
+/// all six directions by naming doors ([`crate::contract::exterior_faces`]),
+/// which is the general mechanism and stays the authority wherever a piece has
+/// one. With no contract there is nothing declared to read, so the sides are
+/// derived from the blocks: a side is open where the standable floor reaches
+/// its plane.
+///
+/// Derived, and never assumed. The rule this replaced took the world `Z`-max
+/// and `Z`-min planes and nothing else, so it asked about the north and south
+/// faces of every piece in the corpus — a straight east–west corridor has no
+/// standable cell on either, and the gate over it examined zero objects while
+/// the piece it was judging walked end to end perfectly well.
+///
+/// **Four sides and not six, and it is the derivation that has four rather
+/// than a rule imposed on it.** Neither horizontal plane of the region can hold
+/// a standable cell in the first place, because outside the box blocks (see the
+/// [`Voxels`] impl above): on the top plane the body's head is outside and the
+/// cell is not passable, on the bottom plane its floor is outside and there is
+/// nothing to stand on. So the four vertical sides are the whole of what a
+/// derivation from standable cells could ever read, and this returns all of it.
+/// [`ground_entry`] lands on the same four by the same arithmetic. A piece
+/// entered from above is therefore not a piece this can read at all — it says
+/// so by declaring the face, which the contract exports on any of the six
+/// sides, and a `traversable` claim on one that declares nothing binds too low
+/// and is refused rather than passed.
+///
+/// A side with nothing standable on it is **absent**, not empty: it is not a way
+/// out, and a caller counting the returned sides would otherwise get four on
+/// every piece, which is a constant wearing a binding count's clothes. An axis
+/// one cell thick yields **one** side rather than two, because its two planes
+/// are the same plane and a body cannot walk from a face to itself.
+///
+/// Ordered by direction, so a pair enumeration over the result is total
+/// (ADR-0006).
+pub fn open_sides(model: &VoxelModel) -> Vec<([i32; 3], BTreeSet<[i32; 3]>)> {
+    let region = model.region();
+    let min = region.origin;
+    let cells = standable_cells(model);
+    let mut out = Vec::new();
+    // Sorted by direction here rather than afterwards: `[-1,0,0] < [0,0,-1] <
+    // [0,0,1] < [1,0,0]` is the order `contract::FaceDir` derives, and the two
+    // enumerations naming their sides the same way is what lets one walk judge
+    // declared faces and derived sides without knowing which it was handed.
+    for (axis, dir) in [
+        (0usize, [-1, 0, 0]),
+        (2usize, [0, 0, -1]),
+        (2usize, [0, 0, 1]),
+        (0usize, [1, 0, 0]),
+    ] {
+        let thickness = region.size[axis];
+        if dir[axis] > 0 && thickness <= 1 {
+            continue;
+        }
+        let plane = min[axis]
+            + if dir[axis] > 0 {
+                thickness as i32 - 1
+            } else {
+                0
+            };
+        let on: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[axis] == plane).collect();
+        if !on.is_empty() {
+            out.push((dir, on));
+        }
+    }
+    out
 }
 
 #[cfg(test)]

@@ -282,16 +282,19 @@ once the prefab exists, so a `pass` never sits above a failure.
 | `non-empty` | the expansion built something |
 | `stair-shape` (only when the piece holds a stair) | every written stair `shape` is the one vanilla derives from that stair's own neighbours (`DW0801`). A stair's `shape` is not stored — the world recomputes it on the first horizontal block update — so a wrong one survives the `.nbt`, the render and the contact sheet, and resets in play. A stair that writes no `shape` makes no claim and nothing can disagree with it |
 | `fluid-contained` (only when the piece holds fluid) | every fluid cell is a source, and no source has an open cell beside or below it (`DW0800`). A run direction that leaves the piece's own outer face is counted and never judged here — a shoreline piece's water is the sea — and reported as a finding on every piece that has one. The compiler decides it at placement (`DW0318`): fluid outside every placed piece is refused under a void horizon and is fine under an ocean one |
-| `traversable` (`--traversable`) | a body can walk from the approach end to the exit end; add `--allow-falls` for a piece entered by stepping off a ledge |
+| `traversable` (`--traversable`) | a body can walk between every pair of the piece's ways in and out — its declared `exterior` edges where it has a spatial contract, and otherwise the sides of the region its standable floor reaches, whichever those turn out to be. It asks the piece which faces it opens on, so a passage that runs east–west, or turns a corner, is judged the same as one that runs north–south. Add `--allow-falls` for a piece entered by stepping off a ledge |
 | `symmetric` (`--symmetric x\|y\|z`) | the piece is its own mirror image across the mid-plane of that world axis, compared by presence rather than by block state |
 | `reachable-floor` (`--reachable-floor`) | every cell of floor **under a roof** can be walked to from the grade entrance |
 
 `--traversable` is opt-in because it is a claim about a *kind* of piece: a room
-with one door has no far end and would fail it correctly and uselessly. **Pass
-it whenever the piece is a passage, a stair or a route** — that is most of them,
-and a route nobody proved walkable is the defect the gate exists for.
+with one way out has nothing to walk through and would fail it correctly and
+uselessly. **Pass it whenever the piece is a passage, a stair or a route** —
+that is most of them, and a route nobody proved walkable is the defect the gate
+exists for. It does not matter which way the route runs: the gate reads the
+sides the piece actually opens on, so a corridor along `X`, a corridor along
+`Z`, and a passage that turns a corner all get the same question.
 
-It is a claim about the **route only**. Both ends it joins are at ground level,
+It is a claim about the **route only**. The ways in it joins are at ground level,
 so a green `traversable` says nothing about the storeys above: a cathedral has
 passed it with 45% of its floor reachable and nothing at all reachable above the
 nave. **Pass `--reachable-floor` whenever the piece has an inside a body is meant

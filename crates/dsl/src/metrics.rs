@@ -116,7 +116,7 @@ pub const DW_METRIC_PROVISIONAL: DwCode = DwCode::every_version("DW0813");
 /// nothing grandfathers against a metrics version, no document declares one, and
 /// no surface is gated by one. What it needs instead is that the number cannot
 /// stand still while the table moves, and that is the digest test.
-pub const METRICS_VERSION: u32 = 1;
+pub const METRICS_VERSION: u32 = 2;
 
 /// Player collision-box width in blocks (`0.6 × 0.6 × 1.8` standing).
 pub const PLAYER_WIDTH: f64 = 0.6;
@@ -266,9 +266,10 @@ pub fn passable_width_cells() -> u32 {
 /// the correction worth naming: the width and clearance at which a body can pass
 /// at all are functions of the collision box, so no walk can change them and
 /// `calibrated` would mean nothing on them. What the gym calibrates is the
-/// *designed* minimum (`corridor.min-width`, `corridor.min-clearance`), which is
+/// *designed* minimum — a way class's `min_width` and `min_clearance` — which is
 /// a comfort judgement and can never be chosen below this floor —
-/// [`Metrics::self_check`] is what holds it there.
+/// [`Metrics::self_check`] is what holds it there, over every way class the
+/// table defines rather than over the two entries that used to stand alone.
 #[must_use]
 pub fn passable_clearance_cells() -> u32 {
     PLAYER_HEIGHT.ceil() as u32
@@ -348,6 +349,49 @@ pub struct SizeClass {
     pub nominal_traverse_blocks: u32,
 }
 
+/// A **way class** — the vocabulary a layout-graph node declares for a place
+/// whose footprint is bounded in one axis and free in the other: a road, a
+/// causeway, a corridor, a duct (spec-0053 §3).
+///
+/// # Why it is a second kind of classification and not a rung
+///
+/// The size-class ladder classifies a place by both horizontal extents at once,
+/// and that is what it is for. A route has no second extent to classify: a cut
+/// ledge one body wide climbing a whole seaward face is 4 by 90, and for any
+/// rung to admit it that rung would have to span 4..90 on an axis — a class in
+/// which an alcove and an expanse are the same thing has stopped classifying.
+/// The failure is by KIND, not by margin, which is why no calibration of the
+/// ladder reaches it.
+///
+/// # What it bounds, and what it deliberately does not
+///
+/// A way class bounds the **cross-section** — the axis a body feels walking it
+/// — and says nothing whatever about the run. A route's length is per-campaign
+/// geometry, not a standard: a village lane, a canyon rim trail, a ship's
+/// gangway and a mine gallery are the same class of thing at four wildly
+/// different lengths, and a `max_length` here would be this month's map wearing
+/// a standard's clothes. The run is *measured*, into pacing, and is never
+/// compared against anything (spec-0053 §7).
+///
+/// The elongation demand a way-classed box must satisfy is therefore
+/// **structural rather than a constant**: the run must exceed
+/// [`Self::max_width`], which is exactly what a room cannot supply. A square box
+/// can never qualify, because its "run" equals its width and one number cannot
+/// both be `<= max_width` and exceed it. That is what makes "declare it a way to
+/// escape the ladder" refused by the object's own shape rather than by a rule
+/// the author could satisfy by choosing differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct WayClass {
+    /// Narrowest cross-section, in cells, inclusive. Never below the physical
+    /// passable width — [`Metrics::self_check`] holds it there.
+    pub min_width: u32,
+    /// Widest cross-section, in cells, inclusive. Doubles as the elongation
+    /// floor: a way-classed box's run must **exceed** this.
+    pub max_width: u32,
+    /// Least interior clearance, in cells.
+    pub min_clearance: u32,
+}
+
 /// The kit grid: the quantum box extents are multiples of, and the datum
 /// convention that fixes what a declared `y` means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -379,6 +423,8 @@ pub enum MetricValue {
     Pitch(Pitch),
     /// A rung of the size-class ladder.
     SizeClass(SizeClass),
+    /// A way class — a route's cross-section.
+    WayClass(WayClass),
     /// The kit grid.
     Grid(Grid),
 }
@@ -525,6 +571,9 @@ pub struct ReadBinding {
 pub struct UnknownMetric {
     /// The kind of entry the document was naming (`size class`, `opening`, …).
     pub kind: &'static str,
+    /// The same kind, plural — carried rather than derived, because three of the
+    /// six nouns end in a sibilant and `{kind}s` is wrong for them.
+    pub kind_plural: &'static str,
     /// The name it wrote.
     pub named: String,
     /// Every name this table does define of that kind, in table order.
@@ -548,9 +597,10 @@ impl UnknownMetric {
                 "the metrics table defines no {kind} called `{named}`. The table is \
                  the single authority for this vocabulary, so a name it does not \
                  define cannot compile and no check downstream has to cope with one. \
-                 Defined {kind}s: {defined}. Run `delvec metrics` for the whole \
+                 Defined {plural}: {defined}. Run `delvec metrics` for the whole \
                  table, including what each entry is for.",
                 kind = self.kind,
+                plural = self.kind_plural,
                 named = self.named,
             ),
         )
@@ -583,6 +633,13 @@ pub enum MetricKind {
     Pitch,
     /// A rung of the size-class ladder (`size-class.<name>`).
     SizeClass,
+    /// A way class (`way-class.<name>`) — the second kind of place
+    /// classification (spec-0053 §3). A [`MetricKind`] rather than a lookup of
+    /// its own for the reason [`Metrics::resolve`] gives: this is a name a
+    /// DOCUMENT writes, so it goes through the one path from a name to an entry
+    /// and a name the table does not define is `DW0812` here exactly as it is
+    /// for a size class.
+    WayClass,
     /// A storey height (`storey.<name>`).
     Storey,
     /// A pacing coefficient (`pacing.<name>`) — blocks of route per minute of
@@ -602,8 +659,27 @@ impl MetricKind {
             MetricKind::Opening => "opening.",
             MetricKind::Pitch => "pitch.",
             MetricKind::SizeClass => "size-class.",
+            MetricKind::WayClass => "way-class.",
             MetricKind::Storey => "storey.",
             MetricKind::Pacing => "pacing.",
+        }
+    }
+
+    /// What the kind is called in a refusal, **plural**.
+    ///
+    /// A fact about the kind rather than an `s` appended where a message needed
+    /// one: three of the six nouns end in a sibilant, so `{noun}s` reads
+    /// `size classs`, `stair pitchs` and `way classs`. Written out here, a kind
+    /// added later cannot inherit that by default — it has to answer.
+    #[must_use]
+    pub fn plural(self) -> &'static str {
+        match self {
+            MetricKind::Opening => "seam openings",
+            MetricKind::Pitch => "stair pitches",
+            MetricKind::SizeClass => "size classes",
+            MetricKind::WayClass => "way classes",
+            MetricKind::Storey => "storey heights",
+            MetricKind::Pacing => "pacing coefficients",
         }
     }
 
@@ -614,6 +690,7 @@ impl MetricKind {
             MetricKind::Opening => "seam opening",
             MetricKind::Pitch => "stair pitch",
             MetricKind::SizeClass => "size class",
+            MetricKind::WayClass => "way class",
             MetricKind::Storey => "storey height",
             MetricKind::Pacing => "pacing coefficient",
         }
@@ -872,22 +949,44 @@ impl Metrics {
                  whether a quantum this fine buys anything a coarser one would not.",
             ),
             building(
-                "corridor.min-width",
-                MetricValue::Count(2),
+                "way-class.corridor",
+                MetricValue::WayClass(WayClass {
+                    min_width: 2,
+                    max_width: 4,
+                    min_clearance: 3,
+                }),
                 "cells",
                 Provenance::Provisional,
-                "The narrowest a designed corridor may be. One cell is passable and \
-                 reads as a crawlspace; two lets two bodies pass and is the seed. The \
-                 gym walks one, two and three side by side and the walk decides.",
+                "The narrow way: a passage, a duct, a gallery cut through rock. Its \
+                 `min_width` and `min_clearance` ARE the two numbers this table used to \
+                 publish as `corridor.min-width` and `corridor.min-clearance` — one \
+                 cell is passable and reads as a crawlspace, two lets two bodies pass, \
+                 and two blocks of clearance puts the ceiling on the walker's head — and \
+                 they are fields here rather than entries of their own so that there is \
+                 one authority for the narrow way rather than a class beside two loose \
+                 numbers nothing could spell. The gym walks widths one, two and three \
+                 and clearances two, three and four. It is also asked a question that \
+                 could not be posed while these numbers were unreachable: the kit \
+                 quantum beside them is 4 and every box extent is a multiple of it, so \
+                 the narrowest way any plan can currently DRAW is four cells, and the \
+                 walk decides whether the floor moves up or the quantum moves down.",
             ),
             building(
-                "corridor.min-clearance",
-                MetricValue::Count(3),
+                "way-class.road",
+                MetricValue::WayClass(WayClass {
+                    min_width: 4,
+                    max_width: 16,
+                    min_clearance: 6,
+                }),
                 "cells",
                 Provenance::Provisional,
-                "The lowest a designed corridor's ceiling may be. Two cells is passable \
-                 and puts the ceiling on the walker's head; three is the seed. The gym \
-                 walks two, three and four.",
+                "The broad way: a village lane, a causeway, a quay, a ledge cut across a \
+                 cliff face. Wide enough that a party walks it abreast and something can \
+                 come the other way, which is the difference from the corridor beside it \
+                 and is what the walk is being asked to place. The clearance seed is \
+                 higher than the corridor's because a way this wide reads as roofless \
+                 even when it is not, and a low ceiling over a broad floor is the one \
+                 combination that reads as a mistake.",
             ),
             building(
                 "opening.door",
@@ -1135,6 +1234,7 @@ impl Metrics {
             .get(key.as_str())
             .ok_or_else(|| UnknownMetric {
                 kind: kind.noun(),
+                kind_plural: kind.plural(),
                 named: named.to_string(),
                 defined: self.names_of(kind),
             })
@@ -1168,6 +1268,37 @@ impl Metrics {
             MetricValue::Count(n) => Some(*n),
             _ => None,
         }
+    }
+
+    /// The **widest** standard opening in the table, in cells — the floor a
+    /// contact seam's span must exceed (spec-0053 §4).
+    ///
+    /// Derived from the table rather than seeded, and that is the whole of why
+    /// the floor is honest: anything at or under this width **could have been a
+    /// portal**, so a doorway declared a contact to dodge the standard set is
+    /// refused by its own width. A seeded floor would be a number an author
+    /// could argue with; this one is a consequence of the standard set, and it
+    /// moves when the standard set moves.
+    ///
+    /// It walks every opening rather than naming one, so a broader standard
+    /// landing tomorrow raises the floor with no edit here — the failure mode a
+    /// hand-named `opening.gateway` would have is that the floor silently stops
+    /// being the broadest the day a broader one is added.
+    ///
+    /// `None` only if the table defines no opening at all, which
+    /// [`Metrics::self_check`] reports as an internal error.
+    #[must_use]
+    pub fn broadest_opening_width(&self, reads: &mut Reads) -> Option<u32> {
+        let mut widest: Option<u32> = None;
+        for name in self.names_of(MetricKind::Opening) {
+            let Ok(entry) = self.resolve(MetricKind::Opening, name) else {
+                continue;
+            };
+            if let MetricValue::Opening(o) = entry.value(reads) {
+                widest = Some(widest.map_or(o.width, |w: u32| w.max(o.width)));
+            }
+        }
+        widest
     }
 
     /// Every name defined for a kind, in table order.
@@ -1233,27 +1364,32 @@ impl Metrics {
         let floor_w = u64::from(passable_width_cells());
         let floor_h = u64::from(passable_clearance_cells());
 
-        // A designed minimum may never be chosen below the physical floor: the
-        // building half's job is comfort, and a standard under the passable
-        // width would be a standard nothing can use.
-        for (key, floor, what) in [
-            ("corridor.min-width", floor_w, "passable.width"),
-            ("corridor.min-clearance", floor_h, "passable.clearance"),
-        ] {
-            let Some(entry) = self.building.get(key) else {
-                failures.push(format!("the table defines no `{key}`"));
-                continue;
-            };
-            checked += 1;
-            if let MetricValue::Count(n) = entry.value(&mut reads) {
-                if u64::from(*n) < floor {
-                    failures.push(format!(
-                        "`{key}` is {n}, below the `{what}` floor of {floor}"
-                    ));
-                }
-            } else {
-                failures.push(format!("`{key}` is not a count"));
-            }
+        // A place that is a route must be spellable at all. Zero way classes is
+        // the state spec-0053 was written to end — the metrics gym reported
+        // `corridor.min-width` and `corridor.min-clearance` unreachable because
+        // no document could name a place that is not a box with a size class —
+        // so an empty way vocabulary is an internal error rather than a table
+        // that happens to be short one kind.
+        checked += 1;
+        if self.names_of(MetricKind::WayClass).is_empty() {
+            failures.push(
+                "the table defines no way class, so no document can state a place that is \
+                 a route"
+                    .to_string(),
+            );
+        }
+
+        // The contact floor is derived from the standard opening set (spec-0053
+        // §4), so an empty set would make that floor `None` and the refusal it
+        // is the floor for unable to separate a doorway from a front.
+        checked += 1;
+        if self.broadest_opening_width(&mut reads).is_none() {
+            failures.push(
+                "the table defines no standard opening, so a contact seam's width floor — \
+                 the width a front must exceed to be a front rather than a door — cannot \
+                 be derived"
+                    .to_string(),
+            );
         }
 
         let quantum = match self.grid(&mut reads) {
@@ -1322,6 +1458,54 @@ impl Metrics {
                     }
                     if c.nominal_traverse_blocks == 0 {
                         failures.push(format!("`{key}` has a nominal traverse of zero"));
+                    }
+                }
+                MetricValue::WayClass(w) => {
+                    checked += 1;
+                    // The two floors the freestanding `corridor.min-*` entries
+                    // used to be checked at, re-asserted here against every way
+                    // class rather than against the one that inherited them: a
+                    // designed minimum is a comfort judgement and a standard
+                    // under the physical passable size would be a standard
+                    // nothing can use, which is true of a road exactly as it is
+                    // of a corridor.
+                    if u64::from(w.min_width) < floor_w {
+                        failures.push(format!(
+                            "`{key}` allows a width of {}, under the `passable.width` floor of \
+                             {floor_w}",
+                            w.min_width
+                        ));
+                    }
+                    if u64::from(w.min_clearance) < floor_h {
+                        failures.push(format!(
+                            "`{key}` allows a clearance of {}, under the `passable.clearance` \
+                             floor of {floor_h}",
+                            w.min_clearance
+                        ));
+                    }
+                    if w.min_width > w.max_width {
+                        failures.push(format!(
+                            "`{key}` bounds its width at {}..{}, a minimum above its maximum",
+                            w.min_width, w.max_width
+                        ));
+                    }
+                    // `max_width` is the elongation floor as well as the widest
+                    // cross-section, and a box's horizontal extents are
+                    // multiples of the kit quantum (`DW0825`). A `max_width` off
+                    // the quantum is therefore a bound no plan can draw a way
+                    // AT, which makes the widest member of the class
+                    // uninstantiable and the gym unable to rule on it. The
+                    // narrow bound is deliberately NOT held to the quantum: the
+                    // corridor's inherited floor of 2 sits under a quantum of 4
+                    // and which of those two provisional numbers moves is the
+                    // walk's to decide, not this file's.
+                    if !w.max_width.is_multiple_of(quantum) {
+                        failures.push(format!(
+                            "`{key}` bounds its width at {}, which is not on the kit grid's \
+                             quantum of {quantum}, so no box can be drawn at the widest member \
+                             of the class",
+                            w.max_width
+                        ));
                     }
                 }
                 _ => {}

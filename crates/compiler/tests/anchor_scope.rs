@@ -67,12 +67,52 @@ fn fixture(tag: &str, annex_provides_the_name: bool) -> std::path::PathBuf {
         }));
     });
     // The beat plays in the annex; `npc/keeper` still lives in `area/keep`.
-    common::patch_file(&dir.join("quest-plan.json"), |p| {
-        for q in p["content"]["quests"].as_array_mut().expect("quests[]") {
-            if q["id"] == "quest/ask" {
-                q["area"] = json!("area/annex");
+    //
+    // A beat in another area is a CROSSING for the party, and a crossing rides
+    // on the completion of the objective they leave from — so the fixture owes
+    // the party something to do in the area they start in, or it is a campaign
+    // whose first move cannot be made (`DW0873`). `quest/arrive` is that beat:
+    // it is not part of the perturbation (both trees carry it, identically) and
+    // it says nothing about anchor scope. Its only job is to make the two trees
+    // campaigns a party could actually play, so that what differs between them
+    // is still only which areas provide the name.
+    common::patch_file(&dir.join("quests.json"), |q| {
+        let quests = q["content"]["quests"].as_array_mut().expect("quests[]");
+        for x in quests.iter_mut() {
+            if x["id"] == "quest/ask" {
+                x["trigger"] = json!({ "type": "quest-complete", "quest": "quest/arrive" });
             }
         }
+        quests.insert(
+            0,
+            json!({
+                "id": "quest/arrive",
+                "trigger": { "type": "campaign-start" },
+                "objectives": [
+                    { "id": "obj/arrive", "type": "reach-anchor",
+                      "anchor": "anchor/keeper-stand", "radius": 2 }
+                ],
+                "on_objective_complete": {},
+                "on_complete": [],
+            }),
+        );
+    });
+    common::patch_file(&dir.join("quest-plan.json"), |p| {
+        let quests = p["content"]["quests"].as_array_mut().expect("quests[]");
+        for q in quests.iter_mut() {
+            if q["id"] == "quest/ask" {
+                q["area"] = json!("area/annex");
+                q["depends_on"] = json!(["quest/arrive"]);
+            }
+        }
+        quests.insert(
+            0,
+            json!({
+                "id": "quest/arrive", "goal": "Cross the yard to the Keeper's door.",
+                "area": "area/keep", "npcs": [], "depends_on": [],
+                "mandatory": true, "act": 1,
+            }),
+        );
     });
     dir
 }

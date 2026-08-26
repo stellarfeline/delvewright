@@ -62,9 +62,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_dsl::metrics::{MetricKind, MetricValue, Metrics, Pitch, Reads};
+use delvewright_dsl::StationKind;
+use delvewright_dsl::metrics::{
+    MetricKind, MetricValue, Metrics, Pitch, Reads, passable_width_cells,
+};
 use delvewright_dsl::siteplan::{
-    ENTRY_ANCHOR, PlacedBox, PlacedSeam, SITE_AREA, VolumeRole, node_anchor, seam_anchor,
+    Crossing, ENTRY_ANCHOR, PlacedBox, PlacedSeam, SITE_AREA, VolumeRole, node_anchor, seam_anchor,
     seam_unlock_anchor,
 };
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, NodeId};
@@ -656,9 +659,18 @@ fn derive_bound(
         }
     }
 
-    // (4) Every seam's frame.
+    // (4) Every PORTAL's frame.
+    //
+    // A contact gets none, and that is what a contact IS: the boundary is
+    // continuous ground and the derivation writes no wall along the span
+    // (spec-0053 §4). A frame ring around a 55-cell front would be a wall drawn
+    // in a second block — the exact thing the span says is not there — and it
+    // would stand in every column the crossing profile is measured over.
     let mut anchors: BTreeMap<String, AnchorSpec> = BTreeMap::new();
     for s in &seams {
+        if s.crossing == Crossing::Contact {
+            continue;
+        }
         for (flo, fhi) in frame_ring(s) {
             mass.write(flo, fhi, palette::FRAME);
         }
@@ -694,7 +706,10 @@ fn derive_bound(
     // likes, and the hole is the last word.
     for s in &seams {
         let (olo, ohi) = slide(s, perturb.slide_openings);
-        if s.class == "barred" {
+        if s.crossing == Crossing::Contact && perturb.wall_contacts {
+            // The deliberate defect: the front the plan allocated, walled.
+            mass.write(olo, ohi, palette::WALL);
+        } else if s.class == "barred" {
             mass.write(olo, ohi, palette::BAR);
             anchors.insert(
                 seam_anchor(&s.edge),
@@ -749,6 +764,65 @@ fn derive_bound(
                 ENTRY_ANCHOR.to_string(),
                 AnchorSpec::Point(narrow(footing(&mass, b, b.centre()))),
             );
+        }
+
+        // **The stations' stand-ins** (spec-0052 §5).
+        //
+        // A quest referencing a station of a still-massed place is the ordinary
+        // mid-build state, not an edge case, so a station reference is never
+        // unresolved: every station of every box is realized here, from the same
+        // one authority validation resolved the name against, which is what makes
+        // "a name that validated cannot fail to exist in the built world" true of
+        // a massed map exactly as it is of a detailed one.
+        //
+        // Computed in TWO passes on purpose. The cells are all read off the mass
+        // as it stands after the openings were cut (one immutable pass over every
+        // box), and only then are the gate bars written. A single interleaved
+        // pass would make each station's cell depend on which boxes were walked
+        // before it, so the derivation would stop being a pure function of the
+        // plan and start being a function of document order in a second, hidden
+        // way.
+        let mut station_cells: Vec<(String, [i64; 3], StationKind)> = Vec::new();
+        for b in &boxes {
+            let Some(node) = graph.nodes.iter().find(|n| n.id == b.node) else {
+                continue;
+            };
+            if node.stations.is_empty() {
+                continue;
+            }
+            // The place's own anchor is already standing on its footing, so the
+            // stations start from the cell after it: two names on one cell would
+            // be two places to put a body that is one place.
+            let mut taken: BTreeSet<[i64; 3]> = BTreeSet::new();
+            taken.insert(footing(&mass, b, b.centre()));
+            for st in &node.stations {
+                let cell = station_cell(&mass, b, &taken);
+                taken.insert(cell);
+                station_cells.push((st.anchor.as_str().to_string(), cell, st.kind));
+            }
+        }
+        for (name, cell, kind) in station_cells {
+            match kind {
+                StationKind::Point => {
+                    anchors.insert(name, AnchorSpec::Point(narrow(cell)));
+                }
+                StationKind::Gate => {
+                    // A minimal sealed region of the derivation's own bar, opened
+                    // and closed by the existing verbs exactly as a synthesized
+                    // seam gate is. The bar is WRITTEN, so the world-load seal
+                    // measures it shut like every other gate rather than taking
+                    // the anchor's word for it.
+                    mass.write(cell, cell, palette::BAR);
+                    anchors.insert(
+                        name,
+                        AnchorSpec::Gate {
+                            from: narrow(cell),
+                            to: narrow(cell),
+                            block: palette::BAR.to_string(),
+                        },
+                    );
+                }
+            }
         }
     }
 
@@ -904,6 +978,53 @@ fn footing(mass: &Mass, b: &PlacedBox, want: [i64; 3]) -> [i64; 3] {
                 }
                 let c = [x, b.floor, z];
                 if standable(c) && best.is_none_or(|w| c < w) {
+                    best = Some(c);
+                }
+            }
+        }
+        if let Some(c) = best {
+            return c;
+        }
+    }
+    want
+}
+
+/// **The cell one station stands on while its place is massed** (spec-0052 §5).
+///
+/// The first standable cell of the box not already `taken`, in the derivation's
+/// standing order — Chebyshev distance from the floor centre, then
+/// lexicographically — which is the same rule [`footing`] searches by, so a
+/// reader of this module learns one ordering and not two.
+///
+/// The author cannot state where this goes: a station has no coordinate, no
+/// offset and no hint, and those are absent fields rather than optional ones.
+/// The stand-in's geometry is massing, not design; the design lives in the piece,
+/// where the name will land once one is bound.
+///
+/// Falls back to the box's centre when the place has fewer standable cells than
+/// it has stations, and that is not a silent pass for the same reason
+/// [`footing`]'s fallback is not: a place with nowhere to stand is what `DW0837`
+/// refuses over the built bytes, and answering it here with a second refusal
+/// would be two diagnostics for one defect.
+fn station_cell(mass: &Mass, b: &PlacedBox, taken: &BTreeSet<[i64; 3]>) -> [i64; 3] {
+    let (lo, hi) = b.space();
+    let solid = mass.solid_in([lo[0], lo[1] - 1, lo[2]], [hi[0], hi[1], hi[2]]);
+    let standable = |c: [i64; 3]| -> bool {
+        !solid.contains(&c)
+            && !solid.contains(&[c[0], c[1] + 1, c[2]])
+            && solid.contains(&[c[0], c[1] - 1, c[2]])
+    };
+    let want = b.centre();
+    let reach = (hi[0] - lo[0]).max(hi[2] - lo[2]).max(0);
+    for r in 0..=reach {
+        let mut best: Option<[i64; 3]> = None;
+        for x in (want[0] - r).max(lo[0])..=(want[0] + r).min(hi[0]) {
+            for z in (want[2] - r).max(lo[2])..=(want[2] + r).min(hi[2]) {
+                if (x - want[0]).abs().max((z - want[2]).abs()) != r {
+                    continue;
+                }
+                let c = [x, b.floor, z];
+                if !taken.contains(&c) && standable(c) && best.is_none_or(|w| c < w) {
                     best = Some(c);
                 }
             }
@@ -1176,6 +1297,29 @@ pub const DW_SEAM_BUILT: DwCode = DwCode::every_version("DW0836");
 /// `DW0837`: a node's floor is unreached.
 pub const DW_NODE_UNREACHED: DwCode = DwCode::every_version("DW0837");
 
+/// `DW0877`: a contact nothing can cross (spec-0053 §6).
+///
+/// The contact's measured crossing profile — the columns of its span a body
+/// crosses over the assembled bytes, under the compiler's own step rule — holds
+/// no run of body width. The author allocated a front and the massing walled it,
+/// so the graph declares a hand-off the world does not have.
+///
+/// It is the **contact's half of `DW0836`'s first claim**, and it is a different
+/// claim rather than the same one widened. A portal is a hole and *every* cell
+/// the plan allocated must be clear; a contact is continuous ground and the
+/// massing standing on part of it is content, not a defect — a rim with a boulder
+/// on it is still a rim. So what a contact owes is not "all of it" but "somewhere
+/// along it", and asking a portal's question of a front would refuse correct
+/// content, which is exactly the failure `DW0343` already carries as a lesson.
+///
+/// **Not a widening of the step rule**: the profile is read through
+/// `nav::World::neighbors`, the same rule every route proof in this compiler is
+/// taken under. A second step rule here would make this the one proof in the
+/// compiler taken under different physics.
+///
+/// Build tier (exit 3), `every_version`.
+pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::every_version("DW0877");
+
 /// `DW0838`: a connection nothing allocated.
 pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::every_version("DW0838");
 
@@ -1187,6 +1331,16 @@ pub const DW_SIGHTLINE_BLOCKED: DwCode = DwCode::every_version("DW0821");
 pub struct BatteryBinding {
     /// Seams proven against the bytes — `DW0836`.
     pub seams: usize,
+    /// Of those, the ones that are CONTACTS — `DW0877`'s denominator.
+    ///
+    /// Stated beside the crossing columns rather than inferred from them,
+    /// because zero columns over zero contacts and zero columns over three are
+    /// different facts and only the pair separates them: the first is a campaign
+    /// whose places all meet through doorways, and the second is a measurement
+    /// that examined three fronts and found nothing crossable in any of them.
+    pub contacts: usize,
+    /// Columns of contact span measured crossable — `DW0877`'s numerator.
+    pub contact_columns: usize,
     /// Shared walls examined for a wider or misplaced hole — `DW0836`.
     pub walls: usize,
     /// Places proven reached — `DW0837`.
@@ -1211,11 +1365,14 @@ impl BatteryBinding {
     #[must_use]
     pub fn line(&self) -> String {
         format!(
-            "blockout battery binding: {s} seam(s) proven over {w} shared wall(s), {n} place(s) \
+            "blockout battery binding: {s} seam(s) proven over {w} shared wall(s) (of them \
+             {ct} contact(s), {cc} crossable column(s) measured), {n} place(s) \
              proven reached, {c} standable cell(s) classified over {p} place pair(s), \
              {sl} sightline(s) walked, {i} identity(ies) re-measured ({d} declaration-only), \
              {l} critical-path leg(s) measured.",
             s = self.seams,
+            ct = self.contacts,
+            cc = self.contact_columns,
             w = self.walls,
             n = self.nodes,
             c = self.standable,
@@ -1369,6 +1526,135 @@ fn seal_unopened(
     out
 }
 
+/// **The crossing profile of a contact's span**, measured over the assembled
+/// bytes (spec-0053 §4).
+///
+/// Returns the columns of the span a body can cross in. An empty result is a
+/// front nothing crosses.
+///
+/// # What it deliberately does NOT report, and why
+///
+/// An earlier form returned the walk planes on either side per column, so that
+/// `DW0836`'s rise claim could be taken per column as spec-0053 §4 describes it.
+/// That claim is **not sound and is withdrawn**: measured on this repository's
+/// own blockout fixture, an ordinary correct map falsifies it. A `stair` seam
+/// hosted in one of the two places arrives at the very wall the contact spans,
+/// so in the stair's own columns the two sides are level and the measured rise
+/// is 0 while the plan declares -5 — and nothing about that map is wrong. A
+/// seam's `rise` is `floor(b) − floor(a)`, a fact about the two places' FLOORS,
+/// never a promise about every column of a wide front. The whole-place form of
+/// the claim, which every seam already owed and which a contact now runs too, is
+/// the sound one.
+///
+/// # What a column crossing MEANS, and the one asymmetry
+///
+/// A body stands on a standable cell of the span at the wall plane and steps out
+/// of it. For a `walk` contact it must be able to step out on **both** sides:
+/// walking ground is two-way and a front a body can only enter is not a
+/// hand-off. For a `drop` contact only the **high** side is required, because
+/// the far side of a fall is precisely what the step rule does not model — a
+/// router that could fall would prove routes a body cannot come back from — and
+/// `DW0837` already treats a declared drop by seeding rather than walking. The
+/// same policy, in the same words, so this engine has one answer about drops and
+/// not two.
+///
+/// The step rule is `nav::World::neighbors`, unmodified and unwidened.
+fn contact_profile(s: &PlacedSeam, world: &crate::nav::World) -> Vec<i64> {
+    // The face's two in-plane axes: the one columns run along, and the one
+    // scanned within a column. On a vertical face the column axis is the
+    // horizontal one, because a column is what a body walks past; on a
+    // horizontal face x is columns and z is the scan.
+    let col_axis = if s.normal_axis == 1 {
+        0
+    } else {
+        (0..3)
+            .find(|a| *a != s.normal_axis && *a != 1)
+            .expect("a vertical face has one horizontal in-plane axis")
+    };
+    let scan_axis = (0..3)
+        .find(|a| *a != s.normal_axis && *a != col_axis)
+        .expect("a face has two in-plane axes");
+
+    // **Which side of the wall plane `a` is on is a fact of the FACE**, not a
+    // constant. The seam names a face OF `a`, so `a` sits on the side the face's
+    // normal points AWAY from: on a `west` face the plane is `a`'s low corner
+    // minus one and `a` is at `plane + 1`, and on an `east` face it is the other
+    // way round. Read from `Face::vector`, which is where `shared_face` reads it
+    // too, rather than assumed — a constant here would be right on half the
+    // faces and quietly wrong on the rest.
+    let n_dir = s.face.vector()[s.normal_axis];
+    let (a_off, b_off) = (-n_dir, n_dir);
+
+    // Which side a `drop` falls FROM: the higher floor. `rise` is
+    // `floor(b) − floor(a)`, so a negative rise puts `a` above `b`.
+    let need_both = s.class != "drop";
+    let high_off = if s.rise <= 0 { a_off } else { b_off };
+
+    let (lo, hi) = s.opening;
+    let mut out = Vec::new();
+    for u in lo[col_axis]..=hi[col_axis] {
+        for v in lo[scan_axis]..=hi[scan_axis] {
+            let mut c = [0i64; 3];
+            c[s.normal_axis] = s.plane;
+            c[col_axis] = u;
+            c[scan_axis] = v;
+            if !world.is_standable(narrow(c)) {
+                continue;
+            }
+            let n = world.neighbors(narrow(c));
+            let side = |off: i64| {
+                n.iter()
+                    .find(|x| i64::from(x[s.normal_axis]) == s.plane + off)
+                    .map(|x| i64::from(x[1]))
+            };
+            let (on_a, on_b) = (side(a_off), side(b_off));
+            let crosses = if need_both {
+                on_a.is_some() && on_b.is_some()
+            } else {
+                side(high_off).is_some()
+            };
+            if crosses {
+                out.push(u);
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// The longest unbroken run of consecutive columns in a crossing profile.
+///
+/// A body needs `passable_width_cells()` columns SIDE BY SIDE, not that many
+/// scattered along the front — two crossable columns forty blocks apart do not
+/// make a two-wide way. The profile is produced in column order, so this is one
+/// pass.
+fn widest_run(profile: &[i64]) -> usize {
+    let mut best = 0usize;
+    let mut run = 0usize;
+    let mut prev: Option<i64> = None;
+    for u in profile {
+        run = if prev == Some(u - 1) { run + 1 } else { 1 };
+        best = best.max(run);
+        prev = Some(*u);
+    }
+    best
+}
+
+/// How many columns a seam's span has — the denominator a crossing profile is
+/// stated against, so a profile of zero over a span of zero is distinguishable
+/// from a profile of zero over a span of fifty-five.
+fn column_count(s: &PlacedSeam) -> usize {
+    let col_axis = if s.normal_axis == 1 {
+        0
+    } else {
+        (0..3)
+            .find(|a| *a != s.normal_axis && *a != 1)
+            .expect("a vertical face has one horizontal in-plane axis")
+    };
+    let (lo, hi) = s.opening;
+    usize::try_from(hi[col_axis] - lo[col_axis] + 1).unwrap_or(0)
+}
+
 /// `DW0836`: the hole in the wall is the hole the plan cut — no narrower, no
 /// wider, nowhere else — and the climb it spans is the climb the plan declared.
 ///
@@ -1384,6 +1670,14 @@ fn seal_unopened(
 ///    the lowest cell a body can stand on inside each place, so a floor course
 ///    laid at the wrong height disagrees with the plan that put the two places
 ///    at those datums.
+///
+/// **A contact answers claim 1 differently, and `DW0877` is that answer.** A
+/// portal is a hole and every cell of it must be clear; a contact is continuous
+/// ground and the massing standing on part of it is content, so what it owes is
+/// a crossable run of body width somewhere along the span. Claim 2 is unchanged
+/// — wall outside the span, as ever — and claim 3 is taken **per crossing
+/// column**, because one number for a fifty-five-cell front would be a claim
+/// about its middle.
 fn seams_built(
     b: &Blockout,
     world: &crate::nav::World,
@@ -1399,9 +1693,72 @@ fn seams_built(
     for s in &b.seams {
         binding.seams += 1;
         let (lo, hi) = s.opening;
-        let blocked: Vec<[i64; 3]> = cells_of(lo, hi)
-            .filter(|c| !world.is_clear(narrow(*c)))
-            .collect();
+
+        // ---- A CONTACT's half of claim 1 (spec-0053 §4).
+        //
+        // A front is continuous ground, not a hole, so what it owes is a run of
+        // body width somewhere along it rather than every cell of it. Massing
+        // standing on part of a rim is content; a rim nothing can cross is a
+        // hand-off the graph declares and the world does not have.
+        if s.crossing == Crossing::Contact {
+            binding.contacts += 1;
+            let profile = contact_profile(s, world);
+            let need = usize::try_from(passable_width_cells()).unwrap_or(1).max(1);
+            let widest = widest_run(&profile);
+            binding.contact_columns += profile.len();
+            if widest < need {
+                raise(
+                    d,
+                    DW_CONTACT_UNCROSSABLE,
+                    Diagnostic::error(
+                        DW_CONTACT_UNCROSSABLE,
+                        "site-plan",
+                        format!("/content/seams[{}]", s.edge),
+                        format!(
+                            "nothing crosses the contact the plan allocated for `{id}`. Of the \
+                             {cols} column(s) of the front between `{a}` and `{b}` at x \
+                             {x0}..{x1} y {y0}..{y1} z {z0}..{z1}, {n} are crossable and the \
+                             longest unbroken run of them is {widest}, where a body needs \
+                             {need}. The graph declares a hand-off here and the massing has \
+                             walled it. Nobody wrote these blocks, so this is the derivation \
+                             disagreeing with the plan it was derived from rather than an \
+                             authoring mistake: the repair is in the compiler, not in the \
+                             campaign. What the plan can say about it is where the front is — \
+                             move `at`, or widen `contact.extent`, so the span lies where the \
+                             two places actually meet.",
+                            id = s.edge,
+                            a = s.a,
+                            b = s.b,
+                            cols = column_count(s),
+                            n = profile.len(),
+                            x0 = lo[0],
+                            x1 = hi[0],
+                            y0 = lo[1],
+                            y1 = hi[1],
+                            z0 = lo[2],
+                            z1 = hi[2],
+                        ),
+                    ),
+                );
+            }
+            // No `continue`: the whole-place rise claim further down is owed by
+            // every seam of either kind, and on a contact it is the one that
+            // covers a drop's far side.
+        }
+
+        // ---- A PORTAL's half of claim 1: EVERY allocated cell is passable.
+        //
+        // A contact's cells are deliberately not asked this. A front is
+        // continuous ground and massing standing on part of it is content, so
+        // `DW0877` above asks the question a front can answer; asking a portal's
+        // question of a front would refuse correct content.
+        let blocked: Vec<[i64; 3]> = if s.crossing == Crossing::Portal {
+            cells_of(lo, hi)
+                .filter(|c| !world.is_clear(narrow(*c)))
+                .collect()
+        } else {
+            Vec::new()
+        };
         if !blocked.is_empty() {
             raise(
                 d,
@@ -1433,7 +1790,10 @@ fn seams_built(
                 ),
             );
         }
-        // Claim 3.
+        // ---- Claim 3, over the two places' own walk planes. Owed by every
+        // seam of either kind: on a contact it is what covers a drop's far side,
+        // which the step rule does not walk to and the per-column claim above
+        // therefore does not measure.
         let (Some(Some(pa)), Some(Some(pb))) = (
             planes.get(s.a.0.as_str()).copied(),
             planes.get(s.b.0.as_str()).copied(),
@@ -2434,6 +2794,19 @@ pub struct Perturb {
     /// stays walkable, so `DW0837` is untouched. That narrowness is the point:
     /// it is a defect only the headroom measure can see.
     pub low_ceiling: Option<&'static str>,
+    /// Fill every **contact's** span with wall, as if the massing had closed the
+    /// front the plan allocated. Reddens `DW0877`: the plan says two places meet
+    /// along this span and the world has a wall there.
+    ///
+    /// It is the only thing that can produce that red, which is what makes it a
+    /// demonstration rather than a reassurance. A portal's cells are untouched,
+    /// so `DW0836`'s claim 1 stays green; the wall it writes is inside the span,
+    /// so `DW0836`'s claim 2 (nothing passable OUTSIDE the allocation) stays
+    /// green; and closing a way can only ever remove crossings, so `DW0838`
+    /// stays green. What it can also reach is `DW0837`, and only when the front
+    /// is the sole way into a place — which is a fact about the fixture, not
+    /// about the knob, and the test that uses it says which.
+    pub wall_contacts: bool,
 }
 
 impl Perturb {
@@ -2446,6 +2819,7 @@ impl Perturb {
             short_walls: false,
             brick_up: None,
             low_ceiling: None,
+            wall_contacts: false,
         }
     }
 

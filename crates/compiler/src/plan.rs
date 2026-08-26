@@ -1740,6 +1740,64 @@ pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345");
 /// admitted under and refusing it now would red a library nobody has touched.
 pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::every_version("DW0804");
 
+/// `DW0872`: **a crossing into an area with nowhere to arrive.** A leg of the
+/// party's forced route changes area, and the destination declares no entry
+/// point — so there is no cell to put the party down on and the crossing cannot
+/// be made.
+///
+/// Areas stand [`AREA_SPACING`] blocks apart across the void, so a leg that
+/// changes area is never a walk. Before this code the crossing was simply not
+/// emitted and nothing was said: the leg then fell through to the walkability
+/// proof, which reported `DW0311` — *the player cannot walk from … to …, a
+/// wedged doorway seam, a void gap, a fence ring* — a true sentence about a
+/// route nobody was ever going to walk, and an author who does what it says
+/// goes and widens a doorway.
+///
+/// [`DW_NO_ENTRY_ANCHOR`] is the same rule over the whole world (*no area at
+/// all declares one*); this is the same rule over the one area a body must be
+/// put down in. The quantifiers differ and so do the remedies, which is why
+/// they are two codes.
+pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::every_version("DW0872");
+
+/// **Where the party begins the delve**: the area it starts in, and the cell it
+/// stands on — the first area in declaration order that resolves an entry point
+/// (spec-0046, through [`AnchorTable::entry_anchor`]).
+///
+/// The single resolver for the delve's *start*, as [`AnchorTable::entry_anchor`]
+/// is the single resolver for an *area's* entry. Everything that needs to know
+/// where the party begins asks here: `setworldspawn`, the class-apply teleport,
+/// the first-join placement, [`DW_NO_ENTRY_ANCHOR`] — and the leg enumeration in
+/// [`build_critical_path`], because the party's first leg begins at this cell.
+/// It used to be a private helper inside emission, which is the reason the
+/// party's own starting cell was not a member of any leg population.
+pub fn resolve_campaign_start(
+    areas: &[AreaPlacement],
+    anchors: &AnchorTable,
+) -> Option<(String, [i32; 3])> {
+    areas
+        .iter()
+        .find_map(|a| match anchors.entry_anchor(&a.area_id) {
+            Some(ResolvedAnchor::Point { pos, .. }) => Some((a.area_id.clone(), *pos)),
+            _ => None,
+        })
+}
+
+/// `DW0873`: **the party's first leg is a crossing, and nothing can carry it.**
+/// The campaign spawn and the first critical objective stand in different
+/// areas.
+///
+/// A crossing rides on the completion of the objective the party leaves from
+/// (see [`Plan::transport`]), and at the spawn the party has completed nothing.
+/// So the first leg can be neither ridden nor walked, and the delve cannot be
+/// started.
+///
+/// This is the member the old leg enumeration missed. It paired *consecutive
+/// objectives*, so the spawn — a leg's origin that is not an objective — was in
+/// no pair: such a campaign built clean, passed every game test, and stranded
+/// the party at the spawn with the harness reporting `No path to the goal!` and
+/// no diagnostic code at all.
+pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::every_version("DW0873");
+
 /// The prefab-metadata anchor names that mark a campaign's **entry point**, in
 /// resolution order — the **fallback**, not the mechanism (spec-0046).
 ///
@@ -2732,7 +2790,15 @@ impl<'a> Plan<'a> {
 
         // ---- critical path + inter-area transport ----
         let flow = crate::flow::Flow::new(campaign);
-        let cp = build_critical_path(campaign, &anchors, &npcs, &flow, &flow.playthrough())?;
+        let start = resolve_campaign_start(&areas, &anchors);
+        let cp = build_critical_path(
+            campaign,
+            &anchors,
+            &npcs,
+            &flow,
+            &flow.playthrough(),
+            start.as_ref(),
+        )?;
 
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
         let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
@@ -2960,7 +3026,14 @@ impl<'a> Plan<'a> {
         flow: &crate::flow::Flow<'_>,
         path: &crate::flow::Playthrough,
     ) -> Result<CriticalPath, PlanError> {
-        build_critical_path(self.campaign, &self.anchors, &self.npcs, flow, path)
+        build_critical_path(
+            self.campaign,
+            &self.anchors,
+            &self.npcs,
+            flow,
+            path,
+            self.campaign_start().as_ref(),
+        )
     }
 
     /// The gate/seal model of ONE branch's exported path (spec-0025):
@@ -3019,6 +3092,12 @@ impl<'a> Plan<'a> {
             Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
             _ => None,
         }
+    }
+
+    /// **Where the party begins the delve** — the area it starts in and the cell
+    /// it stands on — through [`resolve_campaign_start`].
+    pub fn campaign_start(&self) -> Option<(String, [i32; 3])> {
+        resolve_campaign_start(&self.areas, &self.anchors)
     }
 
     /// One area's entry point with the facing it was declared with — the POV
@@ -3750,16 +3829,21 @@ pub struct CriticalPath {
 /// path is a sequence one player can actually walk (proven by
 /// `crate::flow::Flow::replay`, `DW0204`, before the build reaches here).
 ///
-/// Also returns the inter-area transport map (when consecutive objectives sit in
-/// different areas) and, per step, the DSL v0.4 harness hints: `sneak` (a
-/// `stealth` objective) and `cutscene_seconds` (a step whose completion triggers
-/// a `QuestEffect::Cutscene`).
+/// Also returns the inter-area transport map and, per step, the DSL v0.4 harness
+/// hints: `sneak` (a `stealth` objective) and `cutscene_seconds` (a step whose
+/// completion triggers a `QuestEffect::Cutscene`).
+///
+/// `start` is where the party begins ([`resolve_campaign_start`]) — the origin
+/// of the FIRST leg, and therefore part of the population every crossing is
+/// decided over. `None` only for a world that resolves no entry anchor at all,
+/// whose refusal is [`DW_NO_ENTRY_ANCHOR`].
 fn build_critical_path(
     campaign: &Campaign,
     anchors: &AnchorTable,
     npcs: &[NpcPlan],
     flow: &crate::flow::Flow<'_>,
     path: &crate::flow::Playthrough,
+    start: Option<&(String, [i32; 3])>,
 ) -> Result<CriticalPath, PlanError> {
     let mut steps = Vec::new();
     // (objective id, physical area, step index) in critical-path order, for the
@@ -4094,21 +4178,110 @@ fn build_critical_path(
         value: 1,
     });
 
-    // Transport: when consecutive critical objectives change area, completing the
-    // earlier objective teleports the player to the later area's entry spawn.
+    // ---- the legs the party must cross ----
+    //
+    // A **leg** is a move from where the party stands to where the next critical
+    // objective stands, and the FIRST one begins at the campaign spawn. This is
+    // the population; everything about a leg is decided here, once.
+    //
+    // It used to be `obj_areas.windows(2)` — every adjacent pair of objectives —
+    // which is a strictly smaller set: the spawn is a leg's ORIGIN and is not an
+    // objective, so the party's very first move was in no pair. It got no
+    // transport, and the walkability proof (which walks the same population)
+    // never examined it either. A campaign whose first objective stood in
+    // another area therefore compiled clean, passed every game test, and
+    // stranded the party at the spawn.
+    //
+    // A leg that changes area is a CROSSING, never a walk — areas sit
+    // `AREA_SPACING` blocks apart across void. A crossing needs two things, and
+    // a leg missing either is refused here rather than handed on to the walk
+    // proof, which would report a true sentence about a route nobody was going
+    // to walk:
+    //   * somewhere to arrive — the destination area's entry point (`DW0872`);
+    //   * something to ride — the completion of the objective the party leaves
+    //     from, which the spawn cannot supply (`DW0873`).
+    // Every other leg is a walk, and `DW0311` proves it over the geometry.
     let mut transport: BTreeMap<String, [i32; 3]> = BTreeMap::new();
     // Per-step transport marker, aligned with `steps`. Filled from `transport` via
     // each objective's recorded step index (gap 8).
     let mut transport_by_step: Vec<Option<[i32; 3]>> = vec![None; steps.len()];
-    for pair in obj_areas.windows(2) {
-        let (prev_id, prev_area, prev_idx) = &pair[0];
-        let (_, next_area, _) = &pair[1];
-        if prev_area != next_area
-            && let Some(ResolvedAnchor::Point { pos, .. }) = anchors.entry_anchor(next_area)
+    // Where the party stands as it sets off for the next objective: the area,
+    // and the objective whose completion can carry it out of there — `None` at
+    // the campaign spawn, which is the whole of `DW0873`. `None` overall when
+    // the world resolves no entry anchor at all: that campaign has no start to
+    // measure a first leg from and `DW0345` is its refusal, not this one.
+    let mut from: Option<(&str, Option<(&str, usize)>)> =
+        start.as_ref().map(|(area, _)| (area.as_str(), None));
+    for (id, area, idx) in &obj_areas {
+        if let Some((prev_area, carrier)) = from
+            && prev_area != area.as_str()
         {
-            transport.insert(prev_id.clone(), *pos);
-            transport_by_step[*prev_idx] = Some(*pos);
+            let Some((prev_id, prev_idx)) = carrier else {
+                let (start_area, start_pos) = start.as_ref().expect("a leg has an origin");
+                return Err(PlanError::new(
+                    DW_SPAWN_LEG_CROSSES,
+                    format!(
+                        "the party begins this delve in area `{start_area}`, at \
+                         [{sx}, {sy}, {sz}], and the first thing the critical path asks of \
+                         them — objective `{id}` — stands in area `{area}`. Areas sit \
+                         {sp} blocks apart across the void with no walkable link, so that \
+                         is a crossing rather than a walk, and a crossing is carried by \
+                         the completion of the objective the party leaves from. At the \
+                         spawn they have completed nothing, so this one can be neither \
+                         ridden nor walked and the delve cannot be started. Put the \
+                         campaign's first beat where the party starts — set that quest's \
+                         `area` to `{start_area}` in the quest plan — or start the delve \
+                         where the beat already is, by listing `{area}` before \
+                         `{start_area}` in `world.areas`; the delve starts in the first \
+                         area that declares an entry point of its own, so `{area}` needs \
+                         an anchor carrying `\"role\": \"{role}\"` to be that area",
+                        sx = start_pos[0],
+                        sy = start_pos[1],
+                        sz = start_pos[2],
+                        sp = AREA_SPACING,
+                        role = AnchorRole::Entry,
+                    ),
+                ));
+            };
+            let Some(ResolvedAnchor::Point { pos, .. }) = anchors.entry_anchor(area) else {
+                return Err(PlanError::new(
+                    DW_CROSSING_NO_ENTRY,
+                    format!(
+                        "completing objective `{prev_id}` in area `{prev_area}` carries the \
+                         party across to objective `{id}` in area `{area}` — areas sit \
+                         {sp} blocks apart across the void with no walkable link, so the \
+                         party has to be put down inside `{area}`, and {said}. Fix it \
+                         where the anchors are declared: give the piece the party arrives \
+                         in an anchor at that cell and put `\"role\": \"{role}\"` on it (in \
+                         a pool, that is the prefab the layout is seeded from), or bind \
+                         `{area}` to a prefab that already has one",
+                        sp = AREA_SPACING,
+                        role = AnchorRole::Entry,
+                        said = match anchors.entry_anchor_name(area) {
+                            // A named entry that is not a cell: a gate anchor
+                            // declares a plane, and a body cannot be put down on
+                            // a plane. Saying "declares no entry point" here
+                            // would be false, and the author would go looking
+                            // for the declaration they can see.
+                            Some(name) => format!(
+                                "`{area}` declares its entry as `{name}`, which resolves to a \
+                                 region rather than to a cell — a body cannot be put down on a \
+                                 plane"
+                            ),
+                            None => format!(
+                                "nothing says where: no anchor in `{area}`'s prefab carries \
+                                 `\"role\": \"{role}\"`, and none is named {names:?} either",
+                                role = AnchorRole::Entry,
+                                names = ENTRY_ANCHOR_NAMES,
+                            ),
+                        },
+                    ),
+                ));
+            };
+            transport.insert(prev_id.to_string(), *pos);
+            transport_by_step[prev_idx] = Some(*pos);
         }
+        from = Some((area.as_str(), Some((id.as_str(), *idx))));
     }
 
     // DSL v0.4 per-step harness hints: `sneak` (a stealth objective) and

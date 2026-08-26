@@ -61,7 +61,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{Diagnostic, DwCode};
 use crate::envelope::Campaign;
-use crate::ids::{EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId};
+use crate::ids::{AnchorId, EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId};
 use crate::metrics::{MetricKind, Metrics, Reads};
 use crate::stages::Objective;
 
@@ -91,6 +91,40 @@ pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::every_version("DW0820");
 
 /// `DW0822`: the pacing measurement — a projection, printed with no threshold.
 pub const DW_PACING: DwCode = DwCode::every_version("DW0822");
+
+/// `DW0869`: a station takes a name in the engine's own namespace (spec-0052 §7.1).
+///
+/// `every_version` for the reason its siblings are: the rule judges what the
+/// document SAYS, and a graph below [`crate::STATIONS_SINCE`] has no `stations[]`
+/// to judge — the per-stage fence (`DW0141`) has already refused it — so there is
+/// no earlier campaign this rule could reach.
+pub const DW_STATION_RESERVED: DwCode = DwCode::every_version("DW0869");
+
+/// `DW0870`: two stations claim one name (spec-0052 §7.2).
+pub const DW_STATION_DUPLICATE: DwCode = DwCode::every_version("DW0870");
+
+/// `DW0871`: a reference demands a shape the station is not (spec-0052 §7.3).
+///
+/// Judged at the reference site from the DECLARATION, with zero pieces bound.
+/// `every_version` for its siblings' reason: below [`crate::STATIONS_SINCE`] a
+/// graph carries no station whose kind could disagree with anything.
+pub const DW_STATION_KIND: DwCode = DwCode::every_version("DW0871");
+
+/// `DW0875`: a place is classified twice, or not at all (spec-0053 §6).
+///
+/// A node declares **exactly one of** `size_class` and `way_class`. Both is two
+/// answers to one question with nothing to choose between them — every
+/// downstream geometric rule would have to pick, and there is no rule to pick
+/// by. Neither is a place with no standard at all, which is what the size-class
+/// ladder was made compulsory to prevent.
+///
+/// `every_version` for the reason its siblings are: the rule judges what the
+/// document SAYS. Below [`crate::WAY_AND_CONTACT_SINCE`] there is no `way_class`
+/// to write — the per-stage fence has already refused one — so the only shape
+/// this can reach in an older campaign is a node that classifies itself in no
+/// way at all, which no campaign that compiled has ever been (the field was
+/// required, so its absence was `DW0100`).
+pub const DW_PLACE_CLASS: DwCode = DwCode::every_version("DW0875");
 
 // ---------------------------------------------------------------------------
 // Stage 2 — the geometry brief's machine-readable facts (spec-0049 §4.2)
@@ -173,10 +207,142 @@ pub struct Node {
     /// The size class this place is built to, naming a rung of the metrics
     /// table's ladder (`alcove`, `room`, `hall`, …). A name the table does not
     /// define is `DW0812`.
-    pub size_class: String,
+    ///
+    /// **Exactly one of this and [`Node::way_class`]** (`DW0875`). It is
+    /// `Option` rather than required because the alternative is a different KIND
+    /// of classification and not a rung — see [`Node::way_class`] — and a
+    /// required field with a sentinel value would be the ladder pretending to
+    /// classify something it cannot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_class: Option<String>,
+    /// The way class this place is built to, naming an entry of the metrics
+    /// table's way vocabulary (`corridor`, `road`, …) — **the second kind of
+    /// place classification** (spec-0053 §3). A name the table does not define
+    /// is `DW0812`, exactly as for a size class.
+    ///
+    /// **Exactly one of this and [`Node::size_class`]** (`DW0875`).
+    ///
+    /// A way is a place whose footprint is bounded in one axis and free in the
+    /// other: a road, a causeway, a corridor, a duct. The ladder cannot classify
+    /// one, and no calibration of it could — for a rung to admit a cut ledge one
+    /// body wide climbing a whole seaward face, that rung would have to span
+    /// 4..90 on an axis, and a class in which an alcove and an expanse are the
+    /// same thing has stopped classifying. The failure is by KIND, not by
+    /// margin.
+    ///
+    /// It classifies the **cross-section** and nothing else. The run is
+    /// per-campaign geometry: the site plan states it by putting the box where
+    /// it put it, `DW0832` demands only that it EXCEED the class's widest
+    /// cross-section, and the pacing measurement reads it. There is no length
+    /// standard here and there is not going to be one (spec-0053 §7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub way_class: Option<String>,
     /// Anything the reviewer needs that `intent` does not carry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// **The named places inside this one** (spec-0052 §3).
+    ///
+    /// A site-plan campaign's anchor vocabulary is otherwise exactly the
+    /// synthesized set — `spawn`, one anchor per node, and the seam and unlock
+    /// anchors of barred edges — which is complete only for the authoring order
+    /// it was designed for: quests written against nodes before any piece
+    /// exists. The inverse order is real, and its quest layer names places
+    /// *inside* places: the fire pit in the camp, the aft deck of the galley.
+    /// Those names are the campaign's design, and flattening them onto box
+    /// centres un-writes its spatial script.
+    ///
+    /// A station is a **name and a shape, never a position** (§5): while the box
+    /// is massed the derivation realizes each station at a stand-in of its own,
+    /// and when a piece is bound the `detail-plan` `anchors` map re-binds it to
+    /// an anchor of that piece, which is where the name gets its real place.
+    /// There is no coordinate, offset or hint field here, and that absence is
+    /// the design rather than an omission.
+    ///
+    /// Declared names join the campaign vocabulary at the same authority as
+    /// every synthesized one — [`crate::siteplan::synthesized_anchors`] is still
+    /// the single place the question is answered, so a name that validates
+    /// cannot fail to exist in the built world.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stations: Vec<Station>,
+}
+
+/// **A named place inside a node** (spec-0052 §3).
+///
+/// Belongs to exactly one node. A connection *between* places is the edge's to
+/// declare, as ever — an interior gate station seals a volume inside its own
+/// place and can never gate node-to-node traversal, so topology stays the
+/// graph's structurally rather than by convention.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Station {
+    /// The anchor id (`anchor/<kebab>`) quests reference.
+    ///
+    /// Unique across the whole graph, and refused in the engine's own namespace
+    /// — see [`DW_STATION_RESERVED`] and [`DW_STATION_DUPLICATE`].
+    pub anchor: AnchorId,
+    /// The station's **shape** — never its purpose.
+    pub kind: StationKind,
+    /// Recorded judgement for the reviewer and the later per-place detail
+    /// brief. **No check keys on it**, for the same reason none keys on
+    /// [`Node::intent`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// **What shape a station is** (spec-0052 §3) — a cell to stand a body at, or a
+/// volume with a block that seals and clears.
+///
+/// The kind is the station's shape, never its purpose: there is no enum of
+/// bonfire / camera / shop, for the same reason [`Node::intent`] is free-form —
+/// a purpose vocabulary would be this month's genre wearing a schema's clothes.
+/// A bonfire, a camera subject and a shop counter are the same [`Self::Point`]
+/// to every check in this engine.
+///
+/// # Why two shapes and not three
+///
+/// spec-0052 §3 describes three, "mirroring the three shapes a piece anchor can
+/// take (a cell to stand a body at; a volume; a volume with a block that seals
+/// and clears)". Those are the three shapes a piece anchor may be **declared**
+/// in; they are not three shapes anything **consumes**. This engine resolves an
+/// anchor to `ResolvedAnchor::Point` or `ResolvedAnchor::Gate` and to nothing
+/// else, and a piece anchor declaring a bare `region` with no `block` is read as
+/// a gate whose fill block is `minecraft:air`.
+///
+/// Every volume-shaped consumer — a `lethal_volumes[]` region, `damage-players`'s
+/// `in`, a `volley` kill zone, `collapse`'s ceiling, `begin-stealth`,
+/// `fill-region`, `clear-region` — is a [`crate::StealthZone`], an
+/// **anchor-centred box** resolved from a *point* plus an extent. The engine
+/// states the reason in its own words at `QuestEffect::FillRegion::region`: an
+/// anchor-centred box rather than a prefab `region` anchor, "because the
+/// assembled model deletes every gate-region anchor's cells, so a slab declared
+/// that way would already be gone".
+///
+/// So a third `region` variant would be a name a campaign could declare and bind
+/// and **no reference site could consume** — an inert surface whose stand-in
+/// would have to be a gate region the assembled world then deletes. It is left
+/// out deliberately, and spec-0052 §11's falsifier is what decides it: the first
+/// campaign brief that cannot state its place without one is the evidence, and
+/// the answer is a first-class surface with a consumer, or a refused feature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum StationKind {
+    /// A cell to stand a body at — where a quest step, an NPC, a wave seat, a
+    /// cutscene subject, an affordance or a volume's centre lands.
+    Point,
+    /// A volume with a block that seals and clears — what `open-gate`,
+    /// `close-gate`, a `shortcut` and a `timed-gate` address.
+    Gate,
+}
+
+impl StationKind {
+    /// The word a diagnostic prints for this kind.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Point => "point",
+            Self::Gate => "gate",
+        }
+    }
 }
 
 /// Which way a one-way connection runs.
@@ -674,6 +840,19 @@ pub struct LayoutBinding {
     pub one_way_edges: usize,
     /// Connections that demand something before a body may pass.
     pub gated_edges: usize,
+    /// **Named places inside places** — stations declared across the whole graph
+    /// (spec-0052 §4).
+    ///
+    /// A station no quest references is legal mid-authoring, so this is the
+    /// denominator rather than a count of what is used, and a **zero is stated**
+    /// like every other: a site-plan campaign with no stations names its places
+    /// at node granularity, which is a fact about that campaign and not a
+    /// silence.
+    pub stations: usize,
+    /// Of those, stations declared as a gate — the ones `open-gate`,
+    /// `close-gate`, a `shortcut` and a `timed-gate` may address. The remainder
+    /// are points, which is what every other consumer resolves.
+    pub gate_stations: usize,
     /// Quest beats bound to a place.
     pub beats: usize,
     /// Of those, beats on the **mandatory quest spine** — the number `DW0817`'s
@@ -722,6 +901,14 @@ impl LayoutBinding {
             .count();
         b.path_steps = graph.critical_path.len().saturating_sub(1);
         b.metric_refs = graph.nodes.len();
+        for n in &graph.nodes {
+            b.stations += n.stations.len();
+            b.gate_stations += n
+                .stations
+                .iter()
+                .filter(|s| s.kind == StationKind::Gate)
+                .count();
+        }
         for e in &graph.edges {
             if e.is_traversal() {
                 b.traversal_edges += 1;
@@ -744,15 +931,17 @@ impl LayoutBinding {
     pub fn line(&self) -> String {
         format!(
             "layout-graph binding: {n} node(s), {e} edge(s) ({t} traversal, {ow} one-way, \
-             {s} shortcut, {g} gated), {b} beat(s) of which {sb} on the mandatory spine, \
-             {p} critical-path step(s), {m} metrics reference(s); geometry-brief binding: \
-             {f} fact(s).",
+             {s} shortcut, {g} gated), {st} station(s) of which {gs} gate(s), {b} beat(s) \
+             of which {sb} on the mandatory spine, {p} critical-path step(s), \
+             {m} metrics reference(s); geometry-brief binding: {f} fact(s).",
             n = self.nodes,
             e = self.edges,
             t = self.traversal_edges,
             ow = self.one_way_edges,
             s = self.shortcut_edges,
             g = self.gated_edges,
+            st = self.stations,
+            gs = self.gate_stations,
             b = self.beats,
             sb = self.spine_beats,
             p = self.path_steps,
@@ -793,12 +982,129 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     let known: BTreeSet<&str> = graph.nodes.iter().map(|n| n.id.0.as_str()).collect();
     let malformed = wellformed(graph, &known, d);
     metric_names(graph, &table, d);
+    place_classes(c, graph, &table, d);
+    stations(c, graph, d);
     if malformed {
         return;
     }
     mission(c, graph, d);
     shortcut_loops(graph, d);
-    pacing(graph, &table, reads, d);
+    pacing(c, graph, &table, reads, d);
+}
+
+/// **The three refusals a declared station owes** (spec-0052 §7.1, §7.2, and the
+/// per-stage fence).
+///
+/// Runs before the malformed-graph return, because a station's name is judged
+/// against the engine's namespace and against the other stations — neither of
+/// which needs the node ids to resolve. A campaign with a dangling edge still
+/// gets told its station name is taken.
+fn stations(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
+    // ---- The fence (§7.6). A WELLFORMEDNESS rule: it judges what the document
+    // says against the version that document declares, so it is checked here
+    // rather than fenced as an obligation. Below the version there is nothing
+    // else to say about a station, so every other refusal is skipped — telling
+    // an author "you may not write this" and "and here is what writing it would
+    // mean" prescribes two repairs for one mistake.
+    let version = c
+        .layout_graph
+        .as_ref()
+        .map_or("", |g| g.dsl_version.as_str());
+    if !crate::is_v18(version) {
+        for (i, n) in graph.nodes.iter().enumerate() {
+            if n.stations.is_empty() {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                crate::codes::RESERVED,
+                "layout-graph",
+                format!("/content/nodes/{i}/stations"),
+                format!(
+                    "`{node}` declares {count} station(s), which requires dsl_version {since} \
+                     and this stage declares `{version}` — raise this stage's `dsl_version` to \
+                     {since}, or remove `stations` (below {since} a campaign names places at \
+                     node granularity, and `{node_anchor}` is the name this place already has).",
+                    node = n.id,
+                    count = n.stations.len(),
+                    since = crate::STATIONS_SINCE,
+                    node_anchor = crate::siteplan::node_anchor(&n.id),
+                ),
+            ));
+        }
+        return;
+    }
+
+    // ---- §7.1: a station in the engine's namespace.
+    //
+    // The PREFIX is the rule, not the collision: `anchor/seam-vestry-door` is
+    // refused even where no such edge exists, so that adding the edge later
+    // cannot turn a legal graph into two claims on one name.
+    //
+    // Reserving `spawn` by its exact name rather than by a prefix is not an
+    // inconsistency — `spawn` is one name the derivation synthesizes, and it has
+    // no family to reserve.
+    let entry = crate::siteplan::ENTRY_ANCHOR;
+    for (i, n) in graph.nodes.iter().enumerate() {
+        for (j, s) in n.stations.iter().enumerate() {
+            let name = s.anchor.as_str();
+            let reserved = ["anchor/node-", "anchor/seam-", "anchor/unlock-"]
+                .into_iter()
+                .find(|p| name.starts_with(p));
+            let why = if let Some(prefix) = reserved {
+                format!("its name begins `{prefix}`")
+            } else if name == entry {
+                format!("`{entry}` is the name the entry place stands under")
+            } else {
+                continue;
+            };
+            d.push(Diagnostic::error(
+                DW_STATION_RESERVED,
+                "layout-graph",
+                format!("/content/nodes/{i}/stations/{j}/anchor"),
+                format!(
+                    "station `{name}` takes a name the engine derives: {why}. The derivation \
+                     synthesizes this campaign's whole spatial vocabulary — `{entry}`, an \
+                     `anchor/node-…` for each place, and an `anchor/seam-…` plus an \
+                     `anchor/unlock-…` for each barred connection — so those three prefixes and \
+                     `{entry}` are reserved whether or not this graph happens to produce the \
+                     name today. Name the station something of your own, and the quest layer \
+                     references it exactly as it references a derived one."
+                ),
+            ));
+        }
+    }
+
+    // ---- §7.2: two claims on one name.
+    //
+    // **The scope of uniqueness is the area**, which is the scope every anchor
+    // reference already resolves in — unchanged from the standing rule, and the
+    // reason two pieces may both declare `anchor/door` and collide with nothing.
+    // A site-plan campaign has one area, so this is the whole graph.
+    let mut first: BTreeMap<&str, &NodeId> = BTreeMap::new();
+    for (i, n) in graph.nodes.iter().enumerate() {
+        for (j, s) in n.stations.iter().enumerate() {
+            let name = s.anchor.as_str();
+            if let Some(other) = first.get(name) {
+                d.push(Diagnostic::error(
+                    DW_STATION_DUPLICATE,
+                    "layout-graph",
+                    format!("/content/nodes/{i}/stations/{j}/anchor"),
+                    format!(
+                        "station `{name}` is declared by `{here}` and by `{other}`. A station \
+                         name is unique within the AREA — the scope every anchor reference \
+                         resolves in — and a site-plan campaign has exactly one, so the \
+                         campaign's whole vocabulary shares it. Two places cannot both answer \
+                         to one name, because a quest naming it would have two answers and \
+                         nothing would say which. Rename one of them, or declare it on one \
+                         place only: a quest in either place may name a station of the other.",
+                        here = n.id,
+                    ),
+                ));
+            } else {
+                first.insert(name, &n.id);
+            }
+        }
+    }
 }
 
 /// `fact/<kebab>` ids, unique, and every fact carries the sentence it came from.
@@ -972,12 +1278,128 @@ fn wellformed(graph: &LayoutGraphContent, known: &BTreeSet<&str>, d: &mut Vec<Di
     d.len() != before
 }
 
-/// `DW0812`: every `size_class` names a rung the metrics table defines.
+/// `DW0812`: every place classification names an entry the metrics table
+/// defines — a rung of the size ladder, or a way class (spec-0053 §3).
+///
+/// One loop over both fields rather than a second function for the second kind:
+/// `Metrics::resolve` is the one path from an authored name to an entry, and the
+/// question "does the table define this" is the same question whichever
+/// vocabulary the name is from. `DW0875` is what makes at most one of the two
+/// arms fire per node; this rule does not depend on that and does not restate
+/// it — a node that wrongly declares both AND misspells both is told both names
+/// are unknown, which is true.
 fn metric_names(graph: &LayoutGraphContent, table: &Metrics, d: &mut Vec<Diagnostic>) {
     for (i, n) in graph.nodes.iter().enumerate() {
-        if let Err(unknown) = table.resolve(MetricKind::SizeClass, &n.size_class) {
-            d.push(unknown.diagnostic("layout-graph", &format!("/content/nodes/{i}/size_class")));
+        for (field, kind, named) in [
+            ("size_class", MetricKind::SizeClass, n.size_class.as_ref()),
+            ("way_class", MetricKind::WayClass, n.way_class.as_ref()),
+        ] {
+            let Some(named) = named else { continue };
+            if let Err(unknown) = table.resolve(kind, named) {
+                d.push(unknown.diagnostic("layout-graph", &format!("/content/nodes/{i}/{field}")));
+            }
         }
+    }
+}
+
+/// **`DW0875` and the per-stage fence**: a place is classified exactly once
+/// (spec-0053 §6).
+///
+/// Runs before the malformed-graph return for the reason [`stations`] does: the
+/// rule reads one node's own two fields and needs no id to resolve, so a graph
+/// with a dangling edge still gets told which of its places has no standard.
+fn place_classes(
+    c: &Campaign,
+    graph: &LayoutGraphContent,
+    table: &Metrics,
+    d: &mut Vec<Diagnostic>,
+) {
+    // ---- The fence. A WELLFORMEDNESS rule, judged against the version this
+    // document declares, so it is checked here rather than fenced as an
+    // obligation. Below the version a node has no way to be a route, and every
+    // other refusal is skipped — telling an author "you may not write this" and
+    // "and here is what writing it would have meant" prescribes two repairs for
+    // one mistake.
+    let version = c
+        .layout_graph
+        .as_ref()
+        .map_or("", |g| g.dsl_version.as_str());
+    if !crate::is_v19(version) {
+        let mut fenced = false;
+        for (i, n) in graph.nodes.iter().enumerate() {
+            let Some(way) = n.way_class.as_ref() else {
+                continue;
+            };
+            fenced = true;
+            d.push(Diagnostic::error(
+                crate::codes::RESERVED,
+                "layout-graph",
+                format!("/content/nodes/{i}/way_class"),
+                format!(
+                    "`{node}` declares `way_class: \"{way}\"`, which requires dsl_version \
+                     {since} and this stage declares `{version}` — raise this stage's \
+                     `dsl_version` to {since}, or give `{node}` a `size_class` instead \
+                     (below {since} every place is a box with a rung of the size ladder, \
+                     and a place the ladder cannot classify cannot be stated at all).",
+                    node = n.id,
+                    since = crate::WAY_AND_CONTACT_SINCE,
+                ),
+            ));
+        }
+        if fenced {
+            return;
+        }
+    }
+
+    let sizes = table.names_of(MetricKind::SizeClass).join(", ");
+    let ways = table.names_of(MetricKind::WayClass).join(", ");
+
+    for (i, n) in graph.nodes.iter().enumerate() {
+        let (size, way) = (n.size_class.as_ref(), n.way_class.as_ref());
+        let (both, neither) = (
+            size.is_some() && way.is_some(),
+            size.is_none() && way.is_none(),
+        );
+        if !both && !neither {
+            continue;
+        }
+        let (found, prescription) = if both {
+            (
+                format!(
+                    "declares BOTH `size_class: \"{s}\"` and `way_class: \"{w}\"`",
+                    s = size.expect("both"),
+                    w = way.expect("both"),
+                ),
+                "delete whichever one this place is not. A size class bounds a footprint on \
+                 both horizontal axes and a way class bounds a cross-section and leaves the \
+                 run free, so they are two different questions about the same box and every \
+                 geometric rule below would have to pick between them with no rule to pick \
+                 by"
+                .to_string(),
+            )
+        } else {
+            (
+                "declares neither `size_class` nor `way_class`".to_string(),
+                format!(
+                    "give it one. A place with no standard is a place nothing can judge — \
+                     `DW0832` has nothing to hold its extents to and the pacing projection \
+                     has nothing to cross it in. Defined size classes: {sizes}. Defined way \
+                     classes: {ways}",
+                    sizes = sizes,
+                    ways = ways,
+                ),
+            )
+        };
+        d.push(Diagnostic::error(
+            DW_PLACE_CLASS,
+            "layout-graph",
+            format!("/content/nodes/{i}"),
+            format!(
+                "`{node}` {found} — a place is classified exactly once. To fix it, \
+                 {prescription}.",
+                node = n.id,
+            ),
+        ));
     }
 }
 
@@ -1195,14 +1617,81 @@ fn connected_without(graph: &LayoutGraphContent, skip: &EdgeId, a: &NodeId, b: &
 }
 
 /// `DW0822`: the pacing projection, printed with **no threshold**.
-fn pacing(graph: &LayoutGraphContent, table: &Metrics, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
+///
+/// # A way leg is measured, never looked up
+///
+/// A size class carries a `nominal_traverse_blocks` because a rung bounds both
+/// horizontal extents, so the ladder can say what crossing one costs. A way
+/// class cannot: it bounds the cross-section and leaves the run free, which is
+/// what makes it a way. So a way leg's traverse is **the box's long horizontal
+/// extent** — a real number read off the plan — and there is no
+/// `nominal_traverse_blocks` on a way class to read instead. That absence is the
+/// design: a route's length is per-campaign geometry and never a standard
+/// (spec-0053 §7), and a nominal length here would be a standard for exactly the
+/// thing this vocabulary exists to stop standardizing.
+///
+/// Where the campaign carries **no site plan**, a way leg has no geometry yet
+/// and the projection says so: the leg is counted as **unprojected** in the
+/// line's own binding rather than being given an invented number. A campaign at
+/// [`crate::LAYOUT_GRAPH_SINCE`] with no plan is a real and intended state — the
+/// graph is authored before the embedding — so this is the ordinary case for a
+/// way and not a fault. Every other leg still projects, and the figure printed
+/// is honest about what it left out.
+fn pacing(
+    c: &Campaign,
+    graph: &LayoutGraphContent,
+    table: &Metrics,
+    reads: &mut Reads,
+    d: &mut Vec<Diagnostic>,
+) {
+    // The plan's boxes, when there is a plan. `DW0824` is what holds this to one
+    // box per place; a lookup that finds nothing here is a campaign the graph
+    // stage is looking at before the plan stage exists, which is legal.
+    let runs: BTreeMap<&str, u64> = c
+        .site_plan
+        .as_ref()
+        .map(|p| {
+            p.content
+                .boxes
+                .iter()
+                .map(|b| {
+                    let (dx, dz) = (u64::from(b.extent[0].get()), u64::from(b.extent[1].get()));
+                    (b.node.0.as_str(), dx.max(dz))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     let mut blocks: u64 = 0;
     let mut legs = 0usize;
+    let mut unprojected: Vec<String> = Vec::new();
     for node_id in &graph.critical_path {
         let Some(node) = graph.nodes.iter().find(|n| &n.id == node_id) else {
             continue;
         };
-        let Ok(entry) = table.resolve(MetricKind::SizeClass, &node.size_class) else {
+        if let Some(way) = node.way_class.as_ref() {
+            // The resolve is still made, and still recorded: the way class is a
+            // standard this verdict rests on even though the number crossed is
+            // measured, because whether this box is a way AT ALL is the class's
+            // judgement (`DW0832`). A name the table does not define is already
+            // `DW0812`'s.
+            let Ok(entry) = table.resolve(MetricKind::WayClass, way) else {
+                continue;
+            };
+            let _ = entry.value(reads);
+            match runs.get(node_id.0.as_str()) {
+                Some(run) => {
+                    blocks += *run;
+                    legs += 1;
+                }
+                None => unprojected.push(format!("`{node_id}`")),
+            }
+            continue;
+        }
+        let Some(size) = node.size_class.as_ref() else {
+            continue; // `DW0875` already refused a place with no classification.
+        };
+        let Ok(entry) = table.resolve(MetricKind::SizeClass, size) else {
             continue; // `DW0812` already refused the name.
         };
         if let crate::metrics::MetricValue::SizeClass(sc) = entry.value(reads) {
@@ -1224,7 +1713,7 @@ fn pacing(graph: &LayoutGraphContent, table: &Metrics, reads: &mut Reads, d: &mu
         format!(
             "the critical path crosses {legs} place(s) over {steps} step(s), a nominal \
              {blocks} blocks of route, which at {rate} blocks of route per minute of play \
-             projects to about {minutes} minute(s). This figure carries NO threshold and \
+             projects to about {minutes} minute(s){un}. This figure carries NO threshold and \
              refuses nothing: the coefficient it rests on is uncalibrated until the first \
              walked blockout and the first full playtest, and a threshold on a number that \
              uncertain would be defending nothing. It is printed so that the projection and \
@@ -1232,6 +1721,19 @@ fn pacing(graph: &LayoutGraphContent, table: &Metrics, reads: &mut Reads, d: &mu
              how the coefficient gets calibrated at all.",
             steps = graph.critical_path.len().saturating_sub(1),
             minutes = blocks.div_ceil(rate),
+            un = if unprojected.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    ", with {n} way leg(s) UNPROJECTED and not in that total ({names}) — a way \
+                     class bounds a cross-section and leaves the run free, so what crossing one \
+                     costs is its box's long extent and this campaign has no site plan to read \
+                     it from yet. Embedding the graph is what projects them; nothing is wrong \
+                     here",
+                    n = unprojected.len(),
+                    names = unprojected.join(", "),
+                )
+            },
         ),
     ));
 }

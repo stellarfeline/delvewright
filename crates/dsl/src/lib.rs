@@ -51,9 +51,10 @@ pub use effects::{
 pub use envelope::{
     Campaign, DETAIL_PLAN_SINCE, Envelope, HORIZON_LIBRARY_SINCE, LAYOUT_GRAPH_SINCE,
     OPEN_WAY_SINCE, OPTIONAL_QUESTS_SINCE, RESERVED_DSL_VERSIONS, RawCampaign, SITE_PLAN_SINCE,
-    SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage, accepted_versions, check_campaign,
-    is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09, is_v10, is_v11,
-    is_v12, is_v13, is_v14, is_v15, is_v16, is_v17, minor_ordinal, parse_campaign, reserved_for,
+    STATIONS_SINCE, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage, WAY_AND_CONTACT_SINCE,
+    accepted_versions, check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06,
+    is_v07, is_v08, is_v09, is_v10, is_v11, is_v12, is_v13, is_v14, is_v15, is_v16, is_v17, is_v18,
+    is_v19, minor_ordinal, parse_campaign, reserved_for,
 };
 pub use fence::Fenced;
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
@@ -73,7 +74,7 @@ pub use l10n::{
 };
 pub use layout::{
     Beat, BriefFact, Closure, Direction, Edge, EdgeGating, GeometryBriefContent, Grant, Grants,
-    LayoutBinding, LayoutGraphContent, OpensFrom,
+    LayoutBinding, LayoutGraphContent, OpensFrom, Station, StationKind,
 };
 pub use mclang::mc_lang_code;
 pub use placement::Placement;
@@ -88,7 +89,7 @@ pub use siteplan::{
     Axis, Ceiling, Cmp, Datum, ENTRY_ANCHOR, Face, Floor, Identity, Measure, PlanAxis, PlanBinding,
     PlanBox, SITE_AREA, Seam, Sightline, SitePlanContent, View, Volume, VolumeRole, WorldBox,
     node_anchor, owed_anchors, placed_boxes, placed_seams, seam_anchor, seam_unlock_anchor,
-    synthesized_anchors, synthesized_gate_block,
+    synthesized_anchor_kinds, synthesized_anchors, synthesized_gate_block,
 };
 pub use siteplan::{PlacedBox, PlacedSeam};
 pub use stages::{

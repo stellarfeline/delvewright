@@ -102,19 +102,19 @@ fn the_derived_whole_is_green_and_states_what_it_bound_to() {
             .join("\n")
     );
     let k = b.binding;
-    assert_eq!(k.seams, 6, "six traversal connections are allocated");
+    assert_eq!(k.seams, 7, "seven traversal connections are allocated");
     assert_eq!(
-        k.walls, 5,
-        "six seams over five walls — the stair and the fall pierce one wall, and \
+        k.walls, 6,
+        "seven seams over six walls — the stair and the fall pierce one wall, and \
          the undercroft's own stair pierces the cell's floor"
     );
-    assert_eq!(k.nodes, 6, "six places are proven reached");
+    assert_eq!(k.nodes, 7, "seven places are proven reached");
     assert!(
         k.standable > 500,
         "the crossing check classified {} standable cell(s), which is not a map",
         k.standable
     );
-    assert_eq!(k.pairs, 15, "six places make fifteen unordered pairs");
+    assert_eq!(k.pairs, 21, "seven places make twenty-one unordered pairs");
     assert_eq!(k.sightlines, 1);
     assert_eq!(k.identities, 6);
     assert_eq!(
@@ -135,8 +135,8 @@ fn the_derivation_states_what_it_massed() {
         .as_ref()
         .expect("a site plan derives a blockout");
     let k = b.binding;
-    assert_eq!(k.boxes, 6);
-    assert_eq!(k.seams, 6);
+    assert_eq!(k.boxes, 7);
+    assert_eq!(k.seams, 7);
     assert_eq!(
         k.stairs, 2,
         "two connections are built out of treads — one across a wall, one down \
@@ -200,7 +200,7 @@ fn a_slid_opening_reddens_dw0836() {
         "the refusal must say which way it disagrees: {m}"
     );
     assert_eq!(
-        b.binding.seams, 6,
+        b.binding.seams, 7,
         "the binding is stated even when the check refuses"
     );
 }
@@ -251,7 +251,7 @@ fn a_bricked_up_place_reddens_dw0837() {
         m.contains("node/exit") && m.contains("standable cell(s)"),
         "the refusal names the place and what it offered: {m}"
     );
-    assert_eq!(b.binding.nodes, 6, "all six places were examined");
+    assert_eq!(b.binding.nodes, 7, "all seven places were examined");
 }
 
 /// `DW0838`: walls one course tall, so a body hops between two places somewhere
@@ -282,7 +282,7 @@ fn a_low_wall_reddens_dw0838() {
         m.contains("allocated no seam for") && m.contains("can still walk to"),
         "the refusal names both places and a witness cell: {m}"
     );
-    assert_eq!(b.binding.pairs, 15);
+    assert_eq!(b.binding.pairs, 21);
 }
 
 // ---------------------------------------------------------------------------
@@ -728,5 +728,179 @@ fn the_owed_anchors_partition_the_synthesized_set() {
         "every synthesized name is either owed by exactly one place or a gate \
          region the whole keeps — there is no third kind, and a name in neither \
          is one no piece is ever asked for"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A place that is a route, and a hand-off that is not a door (spec-0053)
+// ---------------------------------------------------------------------------
+
+/// **The way builds.** `node/tunnel` is a `corridor`: four cells across and
+/// eight long, which no rung of the size ladder admits. It derives, assembles
+/// and passes the whole battery beside the size-classed places, through the
+/// SAME derivation and the same observer — no branch was added for it below the
+/// classification itself.
+#[test]
+fn a_way_classed_box_builds_and_walks_like_any_other_place() {
+    let (b, _) = battery_under(Perturb::none());
+    assert!(
+        errors(&b).is_empty(),
+        "the fixture with a way and a contact in it builds clean: {:?}",
+        errors(&b)
+    );
+    assert_eq!(
+        b.binding.nodes, 7,
+        "every place is proven reached, the way among them"
+    );
+
+    // The way is read off the graph rather than asserted: if the fixture stopped
+    // declaring one, this says so instead of passing over a campaign that no
+    // longer exercises the surface.
+    let c = campaign();
+    let graph = c.layout_graph.as_ref().expect("the fixture has a graph");
+    let ways: Vec<&str> = graph
+        .content
+        .nodes
+        .iter()
+        .filter(|n| n.way_class.is_some())
+        .map(|n| n.id.0.as_str())
+        .collect();
+    assert_eq!(
+        ways,
+        vec!["node/tunnel"],
+        "the fixture declares exactly one way, and the battery above proved it"
+    );
+}
+
+/// **The contact leaves exactly the span open** (spec-0053 acceptance criterion
+/// 6): no solid cell inside the span, and wall everywhere outside it on the same
+/// shared face at the heights the span occupies.
+///
+/// Read off the assembled bytes, not off the plan — the plan is what the claim
+/// is ABOUT. The two halves are asserted separately because they fail in
+/// opposite directions: a derivation that forgot the carve leaves the span
+/// solid, and one that carved the whole wall leaves nothing outside it.
+#[test]
+fn a_contact_leaves_exactly_its_span_open_on_the_shared_wall() {
+    use delvewright_dsl::siteplan::Crossing;
+
+    let c = campaign();
+    let reg = prefabs();
+    let plan = Plan::build_with(&c, &reg, Perturb::none()).expect("the fixture plans");
+    let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let bo = plan
+        .blockout
+        .as_ref()
+        .expect("a site-plan campaign has a blockout");
+
+    let contacts: Vec<_> = bo
+        .seams
+        .iter()
+        .filter(|s| s.crossing == Crossing::Contact)
+        .collect();
+    assert_eq!(contacts.len(), 1, "the fixture allocates one contact");
+    let s = contacts[0];
+    let (lo, hi) = s.opening;
+
+    let solid_at = |c: [i64; 3]| {
+        blocks
+            .get(&[c[0] as i32, c[1] as i32, c[2] as i32])
+            .is_some_and(|b| b != "minecraft:air")
+    };
+    let inside = |c: [i64; 3]| (0..3).all(|a| c[a] >= lo[a] && c[a] <= hi[a]);
+
+    // Half one: nothing solid inside the span.
+    let mut span_cells = 0usize;
+    for x in lo[0]..=hi[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                span_cells += 1;
+                assert!(
+                    !solid_at([x, y, z]),
+                    "the span is where the derivation writes NO wall, and [{x},{y},{z}] is solid"
+                );
+            }
+        }
+    }
+    assert!(
+        span_cells > 0,
+        "the span is not empty, or this binds nothing"
+    );
+
+    // Half two: wall everywhere else on the same shared face.
+    let (smin, smax) = s.shared;
+    let mut outside = 0usize;
+    for u in smin[0]..=smax[0] {
+        for v in smin[1]..=smax[1] {
+            for w in smin[2]..=smax[2] {
+                let cell = [u, v, w];
+                if inside(cell) {
+                    continue;
+                }
+                outside += 1;
+                assert!(
+                    solid_at(cell),
+                    "wall as ever OUTSIDE the span, and [{u},{v},{w}] is open"
+                );
+            }
+        }
+    }
+    assert!(
+        outside > 0,
+        "the shared face is bigger than the span, or half two binds nothing"
+    );
+}
+
+/// `DW0877`: the massing walls the front the plan allocated, and the observer
+/// says nothing crosses it.
+///
+/// Produced by a **perturbed derivation**, never by hand-authored bytes — the
+/// manner spec-0049 §13.8 fixed and spec-0053 §6 asks for by name.
+///
+/// The knob is the only thing that can produce this red: a portal's cells are
+/// untouched, the wall it writes is inside the allocation, and closing a way can
+/// only remove crossings. What it can also reach is `DW0837`, and only where the
+/// front is the sole walked way into a place — a fact about the fixture, not
+/// about the knob. The assertions below are on `DW0877`'s own message, which no
+/// other check in this engine produces.
+#[test]
+fn a_walled_front_reddens_dw0877() {
+    let (clean, _) = battery_under(Perturb::none());
+    assert!(
+        !errors(&clean).contains(&"DW0877".to_string()),
+        "the unperturbed derivation leaves the front open: {:?}",
+        errors(&clean)
+    );
+    assert!(
+        clean.binding.contact_columns > 0,
+        "and it measures a non-zero crossing profile, or the red below proves nothing"
+    );
+
+    let (b, _) = battery_under(Perturb {
+        wall_contacts: true,
+        ..Perturb::none()
+    });
+    assert!(
+        errors(&b).contains(&"DW0877".to_string()),
+        "a walled front is a hand-off the graph declares and the world does not have: {:?}",
+        errors(&b)
+    );
+    let m = message_for(&b, "DW0877");
+    assert!(
+        m.contains("nothing crosses the contact"),
+        "the refusal names what it measured: {m}"
+    );
+    assert!(
+        m.contains("longest unbroken run"),
+        "and states the run against what a body needs: {m}"
+    );
+    assert_eq!(
+        b.binding.contacts, 1,
+        "the binding states the denominator even when the check refuses"
+    );
+    assert_eq!(
+        b.binding.contact_columns, 0,
+        "and the numerator, which is what went to zero"
     );
 }

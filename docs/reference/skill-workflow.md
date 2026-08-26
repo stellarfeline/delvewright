@@ -9,6 +9,18 @@ audience separation). This is a **current-state record**, the same class as
 Two things it is deliberately not: a spec (nothing here is a decision being
 proposed) and a tutorial (a creator never reads it).
 
+**This file is where the delegation architecture lives, and the only place it
+lives.** The skill page is written for one person with this repository and
+nothing else, so it carries no model tiers, no subagent dispatch and no worker
+roles — §2 below is that material, and it is a description of how an agent
+driving the skill splits the work, never a step on the page.
+
+**The page's spine is fourteen numbered steps in one contiguous block**, printed
+in the order they are performed, with every reference section behind them. The
+numbers used throughout this file are those. Two branches are decided before
+step 1 — `areas[]` or a site plan, and whether the campaign already carries an
+approved `design/` directory — and both are stated on the page before Init ends.
+
 ---
 
 ## 1. The whole run on one screen
@@ -20,28 +32,46 @@ flowchart TD
     M -->|detailed| HB[honor exactly what it pins,<br/>showcase nothing extra]
     SH --> WS
     HB --> WS
-    WS[["workspace in the CONTENT repo<br/>campaigns/campaigns/id/<br/>6 stage JSONs + GENERATION.md + DESIGN.md"]]
+    SH --> IN
+    HB --> IN
+    IN[["Init — six binaries over two target dirs,<br/>client jar, Chunky, reference-image path,<br/>content symlink"]]
+    IN --> PM{areas[] or site plan?}
+    PM --> WS
+    WS[["1 · workspace in the CONTENT repo<br/>campaigns/campaigns/id/<br/>documents + GENERATION.md + DESIGN.md"]]
 
-    WS --> L
-    subgraph L ["the stage loop — six times"]
+    WS --> P2
+    subgraph P2 ["2 · placement — one authority per campaign"]
         direction LR
-        S1[world] --> S2[npcs] --> S3[classes] --> S4[quest-plan] --> S5[quests] --> S6[dialogue]
+        AR[areas in world.json] ~~~ SP[geometry-brief --> layout-graph --> site-plan]
+    end
+    P2 --> L
+    subgraph L ["3 · story"]
+        direction LR
+        S2[npcs] --> S3[classes] --> S4[quest-plan]
     end
 
-    L --> AG{{"4b · DESIGN-ALIGNMENT ARTIFACT<br/>story + every scene, near AND far<br/>the owner confirms — in her words"}}
+    L --> AG{{"4 · DESIGN GATE<br/>story + every scene, near AND far<br/>an explicit yes"}}
     AG -.not confirmed.-> L
-    AG --> A["delvec analyze<br/>reachability / deadlock / dark mitigation"]
-    A --> B["delvec build -o out<br/>must exit 0"]
-    B --> G7{{"7 · BRANCH CHRONICLE REVIEW<br/>authoring agent's OWN — never delegated"}}
-    G7 --> G8{{"8 · MACHINE LADDER<br/>sonnet subagent"}}
-    G8 --> G9{{"9 · VISUAL REVIEW<br/>authoring agent's OWN"}}
-    G9 --> G10["10 · storybook README + engine-version marker"]
-    G10 --> R([11 · report + play commands])
+    AG --> C
+    subgraph C ["5 · content"]
+        direction LR
+        S5[quests] --> S6[dialogue]
+    end
+    C --> F["6 · delvec fmt — EVERY campaign"]
+    F --> A["7 · delvec analyze<br/>reachability / deadlock / dark mitigation"]
+    A --> B["8 · delvec build -o validation/delve-output<br/>must exit 0"]
+    B --> W{{"9 · WALK IT<br/>staging gate, then localhost:25565"}}
+    W --> G8{{"10 · MACHINE LADDER<br/>PackTest / bot / branch runs"}}
+    G8 --> G7{{"11 · BRANCH CHRONICLE<br/>only when branch_points exist"}}
+    G7 --> G9{{"12 · VISUAL REVIEW<br/>POV sequence first"}}
+    G9 --> D["13 · detail plan — site plan only,<br/>after the walk"]
+    D --> G10([14 · storybook + play commands])
 
-    G7 -.finding.-> L
-    G8 -.content bug.-> L
+    W -.finding.-> P2
+    G7 -.finding.-> C
+    G8 -.content bug.-> C
     G8 -.toolchain bug.-> ESC[[STOP and escalate<br/>never work around]]
-    G9 -.DSL-level finding.-> L
+    G9 -.document-level finding.-> C
 ```
 
 The dotted edges are the point of the diagram. Every gate's failure path goes
@@ -56,19 +86,25 @@ work entirely.
 |---|---|---|
 | **authoring agent** (main) | session model | theme, beats, personas, quest-plan intent, stage summaries, **all user interaction**, the branch chronicle review, visual judgment |
 | **dev subagent** | `opus` | the mechanical write of each stage's JSON + the `delvec validate` repair loop |
-| **test subagent** | `sonnet` | the machine ladder (step 8) — keeps long server logs out of the authoring context |
+| **test subagent** | `sonnet` | the machine ladder (step 10) — keeps long server logs out of the authoring context |
 
 One hard rule on top: **a subagent never runs a higher tier than the main agent.**
 Main on `sonnet` clamps every subagent to `sonnet`.
 
-Two steps are explicitly non-delegable, for the same reason in both cases —
+Three steps are explicitly non-delegable, for the same reason in every case —
 delegating them would hand the design's intent to somebody who never held it:
 
-- **Step 4b, the design-alignment Artifact.** It exists to put the design in front
-  of the owner in the medium she reviews in; a subagent that never held the
-  design cannot compose that walkthrough.
-- **Step 7, the branch chronicle review.** Narrative judgment against `DESIGN.md`.
-- **Step 9, visual review.** Judging a frame is the whole task.
+- **Step 4, the design gate.** It exists to put the design in front of the
+  reviewer in the medium they review in; a subagent that never held the design
+  cannot compose that walkthrough.
+- **Step 11, the branch chronicle review.** Narrative judgment against
+  `DESIGN.md`.
+- **Step 12, visual review.** Judging a frame is the whole task.
+
+None of this appears on the skill page, and that is deliberate: a person
+following the page does all of it themselves, and the page reads identically
+either way because every step is written as work to do rather than as work to
+route.
 
 ## 3. Inside one stage
 
@@ -81,12 +117,14 @@ flowchart LR
     F --> V
     V -->|clean| SUM[3–6 line summary to the user]
     F -.->|3 failures on the SAME code| TH[[stop patching syntax —<br/>the DESIGN is wrong]]
-    SUM --> NEXT([next stage])
-    NEXT -.after stage 4.-> GATE([the Artifact gate — step 4b])
+    SUM --> NEXT([next document])
+    NEXT -.after quest-plan.-> GATE([the design gate — step 4])
 ```
 
-`schema --stage <n>` first, every time, is what keeps a stage from being written
-against a DSL surface that has since moved. The three-strikes rule on one
+`schema --stage <n>` first, every time, is what keeps a document from being
+written against a DSL surface that has since moved. The page also points at
+`delvec metrics --gym <dir>`, which writes nine complete, buildable campaign
+documents in one command — the worked example the page itself does not print. The three-strikes rule on one
 diagnostic code is the loop's own anti-thrash guard.
 
 ## 4. What each gate actually proves
@@ -96,15 +134,16 @@ something it does not check is how a green run ships a broken delve.
 
 | # | Gate | Proves | Does **not** prove |
 |---|---|---|---|
-| 4b | design-alignment Artifact | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/refimg.py`. A render is a candidate prefab imaged by `delve-render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
-| 5 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
-| 6 | `delvec build` | the DSL compiles to a datapack | nothing about play |
-| 7 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
-| 8 | machine ladder | PackTest green; the bot completes the critical path; it survives `die-retry`; every declared branch was walked | that any fight was measured — read `floor_gate`. `covered`/`not_covered`/`actors[]` **all empty** means no body declares a tier and the gate examined nothing. The island sat in exactly that state, green, for nineteen rounds |
-| 9 | visual review | the frame matches the shot's `expect` — **read the POV sequence in route order first**, orbit renders second | `DW0308` proves a camera path is air, not that the shot points at the subject — round 6 shipped an inside-out cinematic that was fully DW-green |
-| 10 | storybook marker | the host is told which engine they need | verified by `tools/check-storybook-version.py`, which is the thing that stops a stale marker |
+| 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/refimg.py`. A render is a candidate prefab imaged by `delve-render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
+| 7 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
+| 8 | `delvec build` | the DSL compiles to a datapack | nothing about play |
+| 9 | the walk | somebody has stood in the world — scale, route legibility, silhouette; and the staging gate has run, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign — an `UNBOUND` row on a campaign that contains none of the objects it is about is a fact about the ledger, not about the delve |
+| 11 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
+| 10 | machine ladder | PackTest green; the bot completes the critical path; it survives `die-retry`; every declared branch was walked | that any fight was measured — read `floor_gate`. `covered`/`not_covered`/`actors[]` **all empty** means no body declares a tier and the gate examined nothing. The island sat in exactly that state, green, for nineteen rounds |
+| 12 | visual review | the frame matches the shot's `expect` — **read the POV sequence in route order first**, orbit renders second | `DW0308` proves a camera path is air, not that the shot points at the subject — round 6 shipped an inside-out cinematic that was fully DW-green |
+| 14 | storybook marker | the host is told which engine they need | verified by `tools/check-storybook-version.py`, which is the thing that stops a stale marker |
 
-Step 7 exists because of the **decompilation principle** (spec-0025): the
+Step 11 exists because of the **decompilation principle** (spec-0025): the
 compiler renders the compiled DSL *back into natural language*
 (`out/validation/branch-chronicle-<branch>.md`), and the review compares like
 with like — NL against NL. Nobody mentally compiles DSL.
@@ -253,10 +292,33 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    and it composes nothing.
 3. **Chunky is a separate process, not wired into CI** — storybook art is a
    two-pass manual flow (`delvec snapshot` to judge layout, Chunky for the
-   shipped frame).
+   shipped frame). Its acquisition is now an `Init` step on the page
+   (`ChunkyLauncher.jar` + `--update snapshot`), because a review step whose
+   primary evidence needs a tool `Init` never established is a review step that
+   silently does not happen.
 4. **The ladder's project id is chosen by hand** (`dw-<campaign>-r<round>`).
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is what the mutex used to paper over.
+
+4a. **The inter-area crossing rule lives in prose and in nothing a document can
+   state.** A crossing is emitted on the earlier objective of a consecutive pair
+   whose areas differ, and only when the later area's piece resolves an entry
+   point; so the campaign's first beat must play in the area the party starts
+   in. The live schema export contains **zero** occurrences of `transport` or
+   `inter-area` across every stage, so an author told to generate against the
+   schema has no spelling for the concept and no way to be refused by one. The
+   skill page states the rule as an authoring constraint, with the measured
+   rarity of the pieces that satisfy it (5 of 36 in the shipped library, 1 of the
+   12 members of `pool/stone-keep`), because a promise that reads as free is the
+   half a reader believes.
+
+4b. **`collect` + `container` is satisfiable by one piece in the shipped
+   library.** Exactly 1 of 36 prefabs stands an anchor on a chest or barrel
+   (`island-mountain`), five contain one anywhere, and two declare an anchor
+   named `anchor/chest` over air. The page therefore names the three shapes a
+   `collect` can take rather than prescribing the one the library mostly cannot
+   satisfy. Nothing in the engine reports this shape at authoring time; it
+   arrives as `DW0438` at build.
 5. ~~**ADR-0016's third version line is undelivered.**~~ **Closed** — the
    frontmatter carries `version:`, `requires: delvec:` and `verified_with:`, and
    `tools/check-skill-version.py` binds all three: the window must contain this
