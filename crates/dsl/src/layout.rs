@@ -110,6 +110,22 @@ pub const DW_STATION_DUPLICATE: DwCode = DwCode::every_version("DW0870");
 /// graph carries no station whose kind could disagree with anything.
 pub const DW_STATION_KIND: DwCode = DwCode::every_version("DW0871");
 
+/// `DW0875`: a place is classified twice, or not at all (spec-0053 §6).
+///
+/// A node declares **exactly one of** `size_class` and `way_class`. Both is two
+/// answers to one question with nothing to choose between them — every
+/// downstream geometric rule would have to pick, and there is no rule to pick
+/// by. Neither is a place with no standard at all, which is what the size-class
+/// ladder was made compulsory to prevent.
+///
+/// `every_version` for the reason its siblings are: the rule judges what the
+/// document SAYS. Below [`crate::WAY_AND_CONTACT_SINCE`] there is no `way_class`
+/// to write — the per-stage fence has already refused one — so the only shape
+/// this can reach in an older campaign is a node that classifies itself in no
+/// way at all, which no campaign that compiled has ever been (the field was
+/// required, so its absence was `DW0100`).
+pub const DW_PLACE_CLASS: DwCode = DwCode::every_version("DW0875");
+
 // ---------------------------------------------------------------------------
 // Stage 2 — the geometry brief's machine-readable facts (spec-0049 §4.2)
 // ---------------------------------------------------------------------------
@@ -191,7 +207,36 @@ pub struct Node {
     /// The size class this place is built to, naming a rung of the metrics
     /// table's ladder (`alcove`, `room`, `hall`, …). A name the table does not
     /// define is `DW0812`.
-    pub size_class: String,
+    ///
+    /// **Exactly one of this and [`Node::way_class`]** (`DW0875`). It is
+    /// `Option` rather than required because the alternative is a different KIND
+    /// of classification and not a rung — see [`Node::way_class`] — and a
+    /// required field with a sentinel value would be the ladder pretending to
+    /// classify something it cannot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_class: Option<String>,
+    /// The way class this place is built to, naming an entry of the metrics
+    /// table's way vocabulary (`corridor`, `road`, …) — **the second kind of
+    /// place classification** (spec-0053 §3). A name the table does not define
+    /// is `DW0812`, exactly as for a size class.
+    ///
+    /// **Exactly one of this and [`Node::size_class`]** (`DW0875`).
+    ///
+    /// A way is a place whose footprint is bounded in one axis and free in the
+    /// other: a road, a causeway, a corridor, a duct. The ladder cannot classify
+    /// one, and no calibration of it could — for a rung to admit a cut ledge one
+    /// body wide climbing a whole seaward face, that rung would have to span
+    /// 4..90 on an axis, and a class in which an alcove and an expanse are the
+    /// same thing has stopped classifying. The failure is by KIND, not by
+    /// margin.
+    ///
+    /// It classifies the **cross-section** and nothing else. The run is
+    /// per-campaign geometry: the site plan states it by putting the box where
+    /// it put it, `DW0832` demands only that it EXCEED the class's widest
+    /// cross-section, and the pacing measurement reads it. There is no length
+    /// standard here and there is not going to be one (spec-0053 §7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub way_class: Option<String>,
     /// Anything the reviewer needs that `intent` does not carry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -937,13 +982,14 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     let known: BTreeSet<&str> = graph.nodes.iter().map(|n| n.id.0.as_str()).collect();
     let malformed = wellformed(graph, &known, d);
     metric_names(graph, &table, d);
+    place_classes(c, graph, &table, d);
     stations(c, graph, d);
     if malformed {
         return;
     }
     mission(c, graph, d);
     shortcut_loops(graph, d);
-    pacing(graph, &table, reads, d);
+    pacing(c, graph, &table, reads, d);
 }
 
 /// **The three refusals a declared station owes** (spec-0052 §7.1, §7.2, and the
@@ -1232,12 +1278,128 @@ fn wellformed(graph: &LayoutGraphContent, known: &BTreeSet<&str>, d: &mut Vec<Di
     d.len() != before
 }
 
-/// `DW0812`: every `size_class` names a rung the metrics table defines.
+/// `DW0812`: every place classification names an entry the metrics table
+/// defines — a rung of the size ladder, or a way class (spec-0053 §3).
+///
+/// One loop over both fields rather than a second function for the second kind:
+/// `Metrics::resolve` is the one path from an authored name to an entry, and the
+/// question "does the table define this" is the same question whichever
+/// vocabulary the name is from. `DW0875` is what makes at most one of the two
+/// arms fire per node; this rule does not depend on that and does not restate
+/// it — a node that wrongly declares both AND misspells both is told both names
+/// are unknown, which is true.
 fn metric_names(graph: &LayoutGraphContent, table: &Metrics, d: &mut Vec<Diagnostic>) {
     for (i, n) in graph.nodes.iter().enumerate() {
-        if let Err(unknown) = table.resolve(MetricKind::SizeClass, &n.size_class) {
-            d.push(unknown.diagnostic("layout-graph", &format!("/content/nodes/{i}/size_class")));
+        for (field, kind, named) in [
+            ("size_class", MetricKind::SizeClass, n.size_class.as_ref()),
+            ("way_class", MetricKind::WayClass, n.way_class.as_ref()),
+        ] {
+            let Some(named) = named else { continue };
+            if let Err(unknown) = table.resolve(kind, named) {
+                d.push(unknown.diagnostic("layout-graph", &format!("/content/nodes/{i}/{field}")));
+            }
         }
+    }
+}
+
+/// **`DW0875` and the per-stage fence**: a place is classified exactly once
+/// (spec-0053 §6).
+///
+/// Runs before the malformed-graph return for the reason [`stations`] does: the
+/// rule reads one node's own two fields and needs no id to resolve, so a graph
+/// with a dangling edge still gets told which of its places has no standard.
+fn place_classes(
+    c: &Campaign,
+    graph: &LayoutGraphContent,
+    table: &Metrics,
+    d: &mut Vec<Diagnostic>,
+) {
+    // ---- The fence. A WELLFORMEDNESS rule, judged against the version this
+    // document declares, so it is checked here rather than fenced as an
+    // obligation. Below the version a node has no way to be a route, and every
+    // other refusal is skipped — telling an author "you may not write this" and
+    // "and here is what writing it would have meant" prescribes two repairs for
+    // one mistake.
+    let version = c
+        .layout_graph
+        .as_ref()
+        .map_or("", |g| g.dsl_version.as_str());
+    if !crate::is_v19(version) {
+        let mut fenced = false;
+        for (i, n) in graph.nodes.iter().enumerate() {
+            let Some(way) = n.way_class.as_ref() else {
+                continue;
+            };
+            fenced = true;
+            d.push(Diagnostic::error(
+                crate::codes::RESERVED,
+                "layout-graph",
+                format!("/content/nodes/{i}/way_class"),
+                format!(
+                    "`{node}` declares `way_class: \"{way}\"`, which requires dsl_version \
+                     {since} and this stage declares `{version}` — raise this stage's \
+                     `dsl_version` to {since}, or give `{node}` a `size_class` instead \
+                     (below {since} every place is a box with a rung of the size ladder, \
+                     and a place the ladder cannot classify cannot be stated at all).",
+                    node = n.id,
+                    since = crate::WAY_AND_CONTACT_SINCE,
+                ),
+            ));
+        }
+        if fenced {
+            return;
+        }
+    }
+
+    let sizes = table.names_of(MetricKind::SizeClass).join(", ");
+    let ways = table.names_of(MetricKind::WayClass).join(", ");
+
+    for (i, n) in graph.nodes.iter().enumerate() {
+        let (size, way) = (n.size_class.as_ref(), n.way_class.as_ref());
+        let (both, neither) = (
+            size.is_some() && way.is_some(),
+            size.is_none() && way.is_none(),
+        );
+        if !both && !neither {
+            continue;
+        }
+        let (found, prescription) = if both {
+            (
+                format!(
+                    "declares BOTH `size_class: \"{s}\"` and `way_class: \"{w}\"`",
+                    s = size.expect("both"),
+                    w = way.expect("both"),
+                ),
+                "delete whichever one this place is not. A size class bounds a footprint on \
+                 both horizontal axes and a way class bounds a cross-section and leaves the \
+                 run free, so they are two different questions about the same box and every \
+                 geometric rule below would have to pick between them with no rule to pick \
+                 by"
+                .to_string(),
+            )
+        } else {
+            (
+                "declares neither `size_class` nor `way_class`".to_string(),
+                format!(
+                    "give it one. A place with no standard is a place nothing can judge — \
+                     `DW0832` has nothing to hold its extents to and the pacing projection \
+                     has nothing to cross it in. Defined size classes: {sizes}. Defined way \
+                     classes: {ways}",
+                    sizes = sizes,
+                    ways = ways,
+                ),
+            )
+        };
+        d.push(Diagnostic::error(
+            DW_PLACE_CLASS,
+            "layout-graph",
+            format!("/content/nodes/{i}"),
+            format!(
+                "`{node}` {found} — a place is classified exactly once. To fix it, \
+                 {prescription}.",
+                node = n.id,
+            ),
+        ));
     }
 }
 
@@ -1455,14 +1617,81 @@ fn connected_without(graph: &LayoutGraphContent, skip: &EdgeId, a: &NodeId, b: &
 }
 
 /// `DW0822`: the pacing projection, printed with **no threshold**.
-fn pacing(graph: &LayoutGraphContent, table: &Metrics, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
+///
+/// # A way leg is measured, never looked up
+///
+/// A size class carries a `nominal_traverse_blocks` because a rung bounds both
+/// horizontal extents, so the ladder can say what crossing one costs. A way
+/// class cannot: it bounds the cross-section and leaves the run free, which is
+/// what makes it a way. So a way leg's traverse is **the box's long horizontal
+/// extent** — a real number read off the plan — and there is no
+/// `nominal_traverse_blocks` on a way class to read instead. That absence is the
+/// design: a route's length is per-campaign geometry and never a standard
+/// (spec-0053 §7), and a nominal length here would be a standard for exactly the
+/// thing this vocabulary exists to stop standardizing.
+///
+/// Where the campaign carries **no site plan**, a way leg has no geometry yet
+/// and the projection says so: the leg is counted as **unprojected** in the
+/// line's own binding rather than being given an invented number. A campaign at
+/// [`crate::LAYOUT_GRAPH_SINCE`] with no plan is a real and intended state — the
+/// graph is authored before the embedding — so this is the ordinary case for a
+/// way and not a fault. Every other leg still projects, and the figure printed
+/// is honest about what it left out.
+fn pacing(
+    c: &Campaign,
+    graph: &LayoutGraphContent,
+    table: &Metrics,
+    reads: &mut Reads,
+    d: &mut Vec<Diagnostic>,
+) {
+    // The plan's boxes, when there is a plan. `DW0824` is what holds this to one
+    // box per place; a lookup that finds nothing here is a campaign the graph
+    // stage is looking at before the plan stage exists, which is legal.
+    let runs: BTreeMap<&str, u64> = c
+        .site_plan
+        .as_ref()
+        .map(|p| {
+            p.content
+                .boxes
+                .iter()
+                .map(|b| {
+                    let (dx, dz) = (u64::from(b.extent[0].get()), u64::from(b.extent[1].get()));
+                    (b.node.0.as_str(), dx.max(dz))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     let mut blocks: u64 = 0;
     let mut legs = 0usize;
+    let mut unprojected: Vec<String> = Vec::new();
     for node_id in &graph.critical_path {
         let Some(node) = graph.nodes.iter().find(|n| &n.id == node_id) else {
             continue;
         };
-        let Ok(entry) = table.resolve(MetricKind::SizeClass, &node.size_class) else {
+        if let Some(way) = node.way_class.as_ref() {
+            // The resolve is still made, and still recorded: the way class is a
+            // standard this verdict rests on even though the number crossed is
+            // measured, because whether this box is a way AT ALL is the class's
+            // judgement (`DW0832`). A name the table does not define is already
+            // `DW0812`'s.
+            let Ok(entry) = table.resolve(MetricKind::WayClass, way) else {
+                continue;
+            };
+            let _ = entry.value(reads);
+            match runs.get(node_id.0.as_str()) {
+                Some(run) => {
+                    blocks += *run;
+                    legs += 1;
+                }
+                None => unprojected.push(format!("`{node_id}`")),
+            }
+            continue;
+        }
+        let Some(size) = node.size_class.as_ref() else {
+            continue; // `DW0875` already refused a place with no classification.
+        };
+        let Ok(entry) = table.resolve(MetricKind::SizeClass, size) else {
             continue; // `DW0812` already refused the name.
         };
         if let crate::metrics::MetricValue::SizeClass(sc) = entry.value(reads) {
@@ -1484,7 +1713,7 @@ fn pacing(graph: &LayoutGraphContent, table: &Metrics, reads: &mut Reads, d: &mu
         format!(
             "the critical path crosses {legs} place(s) over {steps} step(s), a nominal \
              {blocks} blocks of route, which at {rate} blocks of route per minute of play \
-             projects to about {minutes} minute(s). This figure carries NO threshold and \
+             projects to about {minutes} minute(s){un}. This figure carries NO threshold and \
              refuses nothing: the coefficient it rests on is uncalibrated until the first \
              walked blockout and the first full playtest, and a threshold on a number that \
              uncertain would be defending nothing. It is printed so that the projection and \
@@ -1492,6 +1721,19 @@ fn pacing(graph: &LayoutGraphContent, table: &Metrics, reads: &mut Reads, d: &mu
              how the coefficient gets calibrated at all.",
             steps = graph.critical_path.len().saturating_sub(1),
             minutes = blocks.div_ceil(rate),
+            un = if unprojected.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    ", with {n} way leg(s) UNPROJECTED and not in that total ({names}) — a way \
+                     class bounds a cross-section and leaves the run free, so what crossing one \
+                     costs is its box's long extent and this campaign has no site plan to read \
+                     it from yet. Embedding the graph is what projects them; nothing is wrong \
+                     here",
+                    n = unprojected.len(),
+                    names = unprojected.join(", "),
+                )
+            },
         ),
     ));
 }

@@ -93,7 +93,18 @@ fn version_line() {
     // and details its places, and still has no way to name the fire pit in the
     // camp. No committed document carries `stations[]`, so every campaign that
     // compiled before compiles byte-identically.
-    assert!(s.contains("dsl 0.18.0"), "{s}");
+    // 0.19.0 (spec-0053) is a place that is a ROUTE and a hand-off that is not a
+    // DOOR: a layout-graph node declares `way_class` in place of `size_class`,
+    // and a site-plan seam declares a `contact` span in place of a standard
+    // `opening`. One number for both halves because they are the same claim seen
+    // from each side of a boundary — a route is a place the size ladder cannot
+    // classify and a front is a meeting the standard opening set cannot name —
+    // and a campaign that could state the first and not the second would have a
+    // cliff road it could only join to the world through a doorway, which is the
+    // workaround the version exists to remove. No committed document carries
+    // either surface, so every campaign that compiled before compiles
+    // byte-identically.
+    assert!(s.contains("dsl 0.19.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

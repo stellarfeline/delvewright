@@ -76,9 +76,26 @@ fn landing_y(table: &Metrics, reads: &mut Reads) -> i64 {
     GRADE_Y + i64::from(table.max_designed_drop_blocks(reads).unwrap_or(5))
 }
 
-/// One bay of the spine: a rung of the ladder at one of its bounds.
+/// The `dsl_version` every document this generator writes declares.
+///
+/// **The fence constant of the newest surface the gym uses, never a typed
+/// number.** The gym's bays include a way (spec-0053 §3), so its layout graph
+/// cannot be read below [`delvewright_dsl::WAY_AND_CONTACT_SINCE`] — and a
+/// literal here would be true on the day it was typed and false the next time
+/// the gym reached for something new, in a generated campaign nobody reads
+/// before running.
+const GYM_DSL_VERSION: &str = delvewright_dsl::WAY_AND_CONTACT_SINCE;
+
+/// One bay of the spine: a rung of the size ladder at one of its bounds, or a
+/// **way** at one of its instantiable widths (spec-0053 §3).
 struct Bay {
     node: String,
+    /// Which vocabulary [`Bay::class`] names. A bay carries the kind rather than
+    /// the generator inferring it from the name, for the reason the layout graph
+    /// itself does: the two classifications are different questions about a box
+    /// and a reader that had to guess would guess wrong on the first name that
+    /// existed in both tables.
+    kind: MetricKind,
     class: &'static str,
     /// `[x, z]` of the box's low corner.
     min: [i64; 2],
@@ -134,6 +151,26 @@ impl Gym {
                 names = missed.join(", "),
             ),
         ))
+    }
+}
+
+/// Look a way class up, recording the read (spec-0053 §3).
+///
+/// Through `Metrics::resolve` and `BuildingEntry::value` like every other
+/// accessor here, because the coverage numerator is the read ledger: an entry
+/// this generator reached any other way would be an entry the gym claims to
+/// instantiate and `DW0840` cannot see it instantiate.
+fn way_class(
+    table: &Metrics,
+    reads: &mut Reads,
+    name: &'static str,
+) -> delvewright_dsl::metrics::WayClass {
+    let entry = table
+        .resolve(MetricKind::WayClass, name)
+        .expect("the way vocabulary is the table's own names");
+    match entry.value(reads) {
+        MetricValue::WayClass(w) => *w,
+        _ => unreachable!("a way-class entry carries a way class"),
     }
 }
 
@@ -243,6 +280,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                 .unwrap_or(i64::from(c.min_clearance));
             bays.push(Bay {
                 node: format!("node/{rung}-{bound}"),
+                kind: MetricKind::SizeClass,
                 class: rung,
                 min: [x, z0],
                 extent,
@@ -280,10 +318,68 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         }
     }
 
+    // ------------------------------------------------------------- the way bays
+    //
+    // A way class bounds a cross-section and leaves the run free, so a bay of one
+    // is a box at an instantiable WIDTH whose run exceeds the class's widest
+    // cross-section — the elongation `DW0832` demands, which is what makes the
+    // box a way rather than a room.
+    //
+    // **Instantiable** is doing work. A box's horizontal extents are multiples of
+    // the kit quantum (`DW0825`), so the widths a walker can be given are the
+    // multiples of `q` inside the class's range — which is fewer than the range
+    // states. The corridor's inherited floor of 2 sits under a quantum of 4 and
+    // is therefore not a width any plan can draw, and that is a real gap between
+    // two provisional numbers rather than a laziness here: which of the two moves
+    // is the walk's judgement, and the entry's own note asks for it. What this
+    // generator will not do is quietly round the floor up and present the walk
+    // with a bay it did not ask for.
+    //
+    // They are appended AFTER the climb hosts are chosen, deliberately: a way bay
+    // is long by construction and would win `pick_host`'s length test, putting a
+    // stair in a corridor and dissolving the pitch pair the gym exists to argue
+    // about.
+    let q = table
+        .grid(&mut reads)
+        .map_or(1, |g| i64::from(g.quantum).max(1));
+    for name in table.names_of(MetricKind::WayClass) {
+        let w = way_class(table, &mut reads, name);
+        let (lo, hi) = (i64::from(w.min_width), i64::from(w.max_width));
+        let widths: Vec<i64> = (lo..=hi).filter(|n| n % q == 0).collect();
+        assert!(
+            !widths.is_empty(),
+            "`way-class.{name}` admits widths {lo}..{hi} and none of them is a multiple of \
+             the kit quantum of {q}, so no plan can draw a way of this class at all and no \
+             bay can instantiate it"
+        );
+        // The shortest run that both exceeds the widest cross-section and lands
+        // on the grid — the least a box has to be to qualify, which is the
+        // interesting end for a walk about whether a way reads as one.
+        let run = ((hi + 1) + q - 1) / q * q;
+        for width in widths {
+            let extent = [width, run];
+            let clearance = storeys
+                .iter()
+                .copied()
+                .find(|s| *s >= i64::from(w.min_clearance))
+                .unwrap_or(i64::from(w.min_clearance));
+            bays.push(Bay {
+                node: format!("node/{name}-{width}-wide"),
+                kind: MetricKind::WayClass,
+                class: name,
+                min: [x, z0],
+                extent,
+                clearance,
+            });
+            x += extent[0] + 1;
+        }
+    }
+
     // ------------------------------------------------------- the vertical group
     let landing = GRADE_Y + rise;
     let steep_top = Bay {
         node: "node/steep-landing".to_string(),
+        kind: MetricKind::SizeClass,
         class: "alcove",
         min: [bays[steep_host].min[0], z0 + bays[steep_host].extent[1] + 1],
         extent: [8, 8],
@@ -291,6 +387,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     };
     let gentle_top = Bay {
         node: "node/gentle-landing".to_string(),
+        kind: MetricKind::SizeClass,
         class: "room",
         min: [
             bays[gentle_host].min[0],
@@ -301,6 +398,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     };
     let pit = Bay {
         node: "node/pit".to_string(),
+        kind: MetricKind::SizeClass,
         class: "room",
         min: [
             gentle_top.min[0],
@@ -345,11 +443,15 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     let mut seams: Vec<Value> = Vec::new();
 
     let node_entry = |b: &Bay, intent: &str, note: &str| {
+        let field = match b.kind {
+            MetricKind::WayClass => "way_class",
+            _ => "size_class",
+        };
         json!({
             "id": b.node,
             "intent": intent,
             "note": note,
-            "size_class": b.class,
+            field: b.class,
         })
     };
     let box_entry = |b: &Bay, floor: i64| {
@@ -363,18 +465,33 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     };
 
     for (i, b) in bays.iter().enumerate() {
-        nodes.push(node_entry(
-            b,
-            "size-class specimen",
-            &format!(
-                "The `{}` rung at its {} bound: {} by {} with {} of headroom.",
-                b.class,
-                if i % 2 == 0 { "lower" } else { "upper" },
-                b.extent[0],
-                b.extent[1],
-                b.clearance,
+        let (intent, note) = match b.kind {
+            MetricKind::WayClass => (
+                "way-class specimen",
+                format!(
+                    "A `{}` at a cross-section of {}: {} by {} with {} of headroom. The run \
+                     exceeds the class's widest cross-section, which is the elongation that \
+                     makes it a way and not a room.",
+                    b.class,
+                    b.extent[0].min(b.extent[1]),
+                    b.extent[0],
+                    b.extent[1],
+                    b.clearance,
+                ),
             ),
-        ));
+            _ => (
+                "size-class specimen",
+                format!(
+                    "The `{}` rung at its {} bound: {} by {} with {} of headroom.",
+                    b.class,
+                    if i % 2 == 0 { "lower" } else { "upper" },
+                    b.extent[0],
+                    b.extent[1],
+                    b.clearance,
+                ),
+            ),
+        };
+        nodes.push(node_entry(b, intent, &note));
         boxes.push(box_entry(b, GRADE_Y));
     }
     for (i, pair) in bays.windows(2).enumerate() {
@@ -477,9 +594,18 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     // and the pacing coefficient. A typed number here would be a guess sitting
     // beside the coefficient the projection is measured against.
     let coefficient = pacing(table, &mut reads, "route-blocks-per-minute");
+    // A size-class bay costs its rung's nominal traverse; a way bay costs its
+    // measured RUN, because a way class bounds a cross-section and leaves the
+    // run free and therefore has no nominal traverse to look up. The same rule
+    // `DW0822` states, applied here rather than restated — a gym whose target
+    // minutes were computed by a different rule from the projection it is walked
+    // against would be arguing with the thing it exists to calibrate.
     let nominal: i64 = bays
         .iter()
-        .map(|b| i64::from(size_class(table, &mut reads, b.class).nominal_traverse_blocks))
+        .map(|b| match b.kind {
+            MetricKind::WayClass => b.extent[0].max(b.extent[1]),
+            _ => i64::from(size_class(table, &mut reads, b.class).nominal_traverse_blocks),
+        })
         .sum();
     let target_minutes = ceil_div(nominal, coefficient.max(1)).max(1);
 
@@ -499,7 +625,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         "world.json",
         json!({
             "campaign_id": campaign_id,
-            "dsl_version": "0.14.0",
+            "dsl_version": GYM_DSL_VERSION,
             "stage": "world",
             "content": {
                 "areas": [],
@@ -517,7 +643,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         "classes.json",
         json!({
             "campaign_id": campaign_id,
-            "dsl_version": "0.14.0",
+            "dsl_version": GYM_DSL_VERSION,
             "stage": "classes",
             "content": { "classes": [{
                 "id": "class/measurer",
@@ -535,7 +661,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         "npcs.json",
         json!({
             "campaign_id": campaign_id,
-            "dsl_version": "0.14.0",
+            "dsl_version": GYM_DSL_VERSION,
             "stage": "npcs",
             "content": { "npcs": [{
                 "id": "npc/invigilator",
@@ -563,7 +689,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         "quest-plan.json",
         json!({
             "campaign_id": campaign_id,
-            "dsl_version": "0.14.0",
+            "dsl_version": GYM_DSL_VERSION,
             "stage": "quest-plan",
             "content": {
                 "finale": "quest/walk-the-ladder",
@@ -585,7 +711,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         "dialogue.json",
         json!({
             "campaign_id": campaign_id,
-            "dsl_version": "0.14.0",
+            "dsl_version": GYM_DSL_VERSION,
             "stage": "dialogue",
             "content": { "dialogues": [{
                 "npc": "npc/invigilator",
@@ -620,7 +746,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         "quests.json",
         json!({
             "campaign_id": campaign_id,
-            "dsl_version": "0.14.0",
+            "dsl_version": GYM_DSL_VERSION,
             "stage": "quests",
             "content": { "quests": [{
                 "id": "quest/walk-the-ladder",
@@ -673,7 +799,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         "geometry-brief.json",
         json!({
             "campaign_id": campaign_id,
-            "dsl_version": "0.14.0",
+            "dsl_version": GYM_DSL_VERSION,
             "stage": "geometry-brief",
             "content": { "facts": [
                 {
@@ -708,7 +834,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         "layout-graph.json",
         json!({
             "campaign_id": campaign_id,
-            "dsl_version": "0.14.0",
+            "dsl_version": GYM_DSL_VERSION,
             "stage": "layout-graph",
             "content": {
                 "nodes": nodes,
@@ -728,7 +854,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         "site-plan.json",
         json!({
             "campaign_id": campaign_id,
-            "dsl_version": "0.14.0",
+            "dsl_version": GYM_DSL_VERSION,
             "stage": "site-plan",
             "content": {
                 "region": { "min": region_min, "extent": region_extent },

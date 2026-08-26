@@ -69,8 +69,8 @@ use crate::envelope::Campaign;
 use crate::ids::{DatumId, EdgeId, FactId, NodeId, ViewId, VolumeId};
 use crate::layout::{Edge, LayoutGraphContent, StationKind};
 use crate::metrics::{
-    MAX_JUMP_RISE_16, MetricKind, MetricValue, Metrics, Reads, SizeClass, passable_clearance_cells,
-    passable_width_cells,
+    MAX_JUMP_RISE_16, MetricKind, MetricValue, Metrics, Reads, SizeClass, WayClass,
+    passable_clearance_cells, passable_width_cells,
 };
 use crate::stages::AreaLighting;
 
@@ -113,6 +113,36 @@ pub const DW_STAIR_PITCH: DwCode = DwCode::every_version("DW0830");
 
 /// `DW0831`: a drop seam falls outside the drop policy.
 pub const DW_DROP_POLICY: DwCode = DwCode::every_version("DW0831");
+
+/// `DW0876`: a seam does not declare a connection this engine builds
+/// (spec-0053 §6).
+///
+/// **One code, four shapes of one claim** — the claim being that this seam
+/// states a crossing the derivation can build and the observer can measure:
+///
+/// 1. it declares neither an `opening` nor a `contact`, or both;
+/// 2. its contact's span leaves the shared face `DW0828` established;
+/// 3. its contact's span is not **wider than the broadest standard opening**;
+/// 4. it is a contact on a `stair`, `barred` or `vision` connection.
+///
+/// They are one code rather than four because the author's next action is the
+/// same in every case — say which kind of hand-off this is and give it a shape
+/// the engine has — and because a seam exhibiting one of them has no crossing
+/// for any rule below to judge. It is the shape `DW0830` already carries for a
+/// stair ("three shapes of one claim") and `DW0829` for an opening ("two halves
+/// of one claim that the opening is usable").
+///
+/// Shape 3 is the floor that keeps the whole surface honest, and it is
+/// **structural rather than seeded**: it is derived from the standard opening
+/// set, so anything at or under it COULD have been a portal, and a doorway
+/// declared a contact to dodge the standard set is refused by its own width.
+/// That is the property `CLAUDE.md` demands of an escape hatch — the defect this
+/// exists to catch is incapable of supplying the hatch's proof obligation.
+///
+/// `every_version` for the reason its siblings are: the rule judges what the
+/// document SAYS, and a plan below [`crate::WAY_AND_CONTACT_SINCE`] has no
+/// `contact` to judge — the per-stage fence has already refused one.
+pub const DW_CONTACT: DwCode = DwCode::every_version("DW0876");
 
 /// `DW0832`: a box violates its node's size class.
 pub const DW_SIZE_CLASS: DwCode = DwCode::every_version("DW0832");
@@ -626,9 +656,27 @@ pub struct Seam {
     /// * on a horizontal face (`up`/`down`) — `[x, z]`, `width` along `x` and
     ///   `height` along `z`.
     pub at: [i64; 2],
-    /// A named opening from the metrics table's standard set (`DW0812` on a name
-    /// the table does not define, `DW0829` on one that does not fit).
-    pub opening: String,
+    /// **A PORTAL**: a named opening from the metrics table's standard set
+    /// (`DW0812` on a name the table does not define, `DW0829` on one that does
+    /// not fit). A body crosses at exactly the cells `at` and this standard
+    /// allocate.
+    ///
+    /// **Exactly one of this and [`Seam::contact`]** (`DW0876`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opening: Option<String>,
+    /// **A CONTACT**: the two places simply meet along a front, rather than
+    /// through a doorway (spec-0053 §4).
+    ///
+    /// **Exactly one of this and [`Seam::opening`]** (`DW0876`).
+    ///
+    /// The width of a front where two places meet is a fact of those two boxes'
+    /// shared face — per-campaign geometry, continuous — so it is never a named
+    /// standard. A table that enumerated it would gain a new entry per campaign,
+    /// which is the size ladder's own failure mode reproduced in the opening
+    /// set: an `opening.gate-front` of 21×4 is content wearing a standard's
+    /// clothes (spec-0053 §7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact: Option<Contact>,
     /// Which of the edge's two boxes hosts the stair massing. Required on a
     /// `stair` edge and refused on any other (`DW0830`, `DW0824`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -842,10 +890,41 @@ struct Placed<'a> {
     /// The walk plane.
     floor: i64,
     /// Cells of headroom over the walk plane, or `None` when the place is
-    /// sky-open and its size class did not resolve.
+    /// sky-open and its classification did not resolve.
     clearance: Option<u32>,
-    /// The size class, when it resolved.
-    class: Option<SizeClass>,
+    /// How the place is classified, when the name resolved.
+    class: Option<PlaceClass>,
+}
+
+/// **How a place is classified** — the two kinds of standard a box is judged
+/// against (spec-0053 §3).
+///
+/// The classification belongs to the PLACE, so it is one field of two kinds
+/// rather than two fields. Written as a second `Option<WayClass>` beside the
+/// first, every consumer would have had to remember to look at both, and the
+/// one that forgot would silently judge a road against nothing — which is the
+/// state this whole surface exists to end, reintroduced one layer down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlaceClass {
+    /// A rung of the size ladder: both horizontal extents bounded.
+    Size(SizeClass),
+    /// A way: the cross-section bounded, the run free.
+    Way(WayClass),
+}
+
+impl PlaceClass {
+    /// The least interior clearance the class demands.
+    ///
+    /// The one question both kinds answer identically, which is why a sky-open
+    /// box needs no arm: an open place claims exactly its class's minimum
+    /// headroom and nothing above it, and that sentence is true of a road as it
+    /// is of a hall.
+    fn min_clearance(self) -> u32 {
+        match self {
+            PlaceClass::Size(c) => c.min_clearance,
+            PlaceClass::Way(w) => w.min_clearance,
+        }
+    }
 }
 
 impl Placed<'_> {
@@ -953,6 +1032,9 @@ pub struct PlacedSeam {
     pub opening: ([i64; 3], [i64; 3]),
     /// The whole rectangle the two boxes share on that wall, inclusive.
     pub shared: ([i64; 3], [i64; 3]),
+    /// Which kind of connection this seam allocates (spec-0053 §4). A portal's
+    /// `opening` is a standard's rectangle; a contact's is its span.
+    pub crossing: Crossing,
     /// `floor(b) − floor(a)`, derived — never authored (see [`Seam`]).
     pub rise: i64,
     /// Which place hosts the stair massing, on a `stair`.
@@ -989,6 +1071,60 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
         .collect()
 }
 
+/// **The one place a seam's crossing rectangle is computed**, for either kind
+/// of connection (spec-0053 §4).
+///
+/// A portal's rectangle is the named standard's `width × height` anchored at
+/// `at`. A contact's is its span: `at` plus the declared `extent`, or `at` to
+/// the far edge of the shared face when no extent is declared.
+///
+/// One function rather than one per kind, and one call rather than a copy in
+/// each reader, because this rectangle is simultaneously the derivation's carve,
+/// `DW0836`'s allocation, `DW0838`'s allocation set and `DW0877`'s span. Two
+/// implementations of it would be a plan-time green and a byte-time green about
+/// two different rectangles, which is the defect `shared_face` already has one
+/// implementation to prevent.
+///
+/// `None` when the seam names an opening the table does not define — `DW0812`
+/// refused it and there is no rectangle to build or measure.
+fn crossing_rect(
+    s: &Seam,
+    face: &SharedFace,
+    table: &Metrics,
+    reads: &mut Reads,
+) -> Option<(Crossing, [i64; 2])> {
+    if s.contact.is_some() {
+        return Some((Crossing::Contact, contact_extent(s, face)));
+    }
+    let named = s.opening.as_ref()?;
+    let entry = table.resolve(MetricKind::Opening, named).ok()?;
+    match entry.value(reads) {
+        MetricValue::Opening(o) => {
+            Some((Crossing::Portal, [i64::from(o.width), i64::from(o.height)]))
+        }
+        _ => None,
+    }
+}
+
+/// **How big a contact's span is** — the one authority, read by
+/// [`crossing_rect`] and by the refusal that judges it (`DW0876`).
+///
+/// A declared `extent` is taken as written. With none declared the span runs
+/// from `at` to the far edge of the shared face on both axes, which is how a
+/// contact along the whole of a face is spelled. An `at` already past that edge
+/// would give a negative extent, so it is clamped to one cell: the rectangle
+/// stays well-formed and `DW0876` describes it, rather than the arithmetic
+/// producing a rectangle nothing downstream could reason about.
+fn contact_extent(s: &Seam, face: &SharedFace) -> [i64; 2] {
+    match s.contact.as_ref().and_then(|c| c.extent) {
+        Some(e) => [i64::from(e[0].get()), i64::from(e[1].get())],
+        None => [
+            (face.u.1 - s.at[0] + 1).max(1),
+            (face.v.1 - s.at[1] + 1).max(1),
+        ],
+    }
+}
+
 /// The plan's seams, resolved by the code the stage-4 checks judge with.
 ///
 /// A seam whose face the two boxes do not share, or whose opening the table does
@@ -1023,12 +1159,8 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
         let Ok(face) = shared_face_of(a, b, s.face) else {
             continue;
         };
-        let opening = match table.resolve(MetricKind::Opening, &s.opening) {
-            Ok(e) => match e.value(reads) {
-                MetricValue::Opening(o) => *o,
-                _ => continue,
-            },
-            Err(_) => continue,
+        let Some((crossing, extent)) = crossing_rect(s, &face, &table, reads) else {
+            continue;
         };
         let normal_axis = match s.face {
             Face::East | Face::West => 0,
@@ -1042,9 +1174,9 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
         lo[normal_axis] = face.plane;
         hi[normal_axis] = face.plane;
         lo[u_axis] = s.at[0];
-        hi[u_axis] = s.at[0] + i64::from(opening.width) - 1;
+        hi[u_axis] = s.at[0] + extent[0] - 1;
         lo[v_axis] = s.at[1];
-        hi[v_axis] = s.at[1] + i64::from(opening.height) - 1;
+        hi[v_axis] = s.at[1] + extent[1] - 1;
         let mut smin = [0i64; 3];
         let mut smax = [0i64; 3];
         smin[normal_axis] = face.plane;
@@ -1063,11 +1195,69 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
             plane: face.plane,
             opening: (lo, hi),
             shared: (smin, smax),
+            crossing,
             rise: b.floor - a.floor,
             stair_in: s.stair_in.clone(),
         });
     }
     out
+}
+
+/// **A contact**: the span of a shared face along which two places simply meet
+/// (spec-0053 §4).
+///
+/// # What a contact MEANS
+///
+/// The boundary is continuous ground. The derivation writes **no wall along the
+/// span** — and wall as ever outside it — and crossing is legitimate anywhere
+/// along it the step rule admits. It is not a wide door: `DW0829`'s standard-name
+/// resolution and sill rule are portal checks and do not apply, because a
+/// contact has no opening name to resolve and no single sill. Calling a 55-cell
+/// front a door would make every downstream door check wrong.
+///
+/// # What the author allocates and what the engine measures
+///
+/// The author allocates **where** the places meet. The engine measures the
+/// **crossing profile** from assembled bytes — which columns of the span a body
+/// actually crosses under the step rule — and `DW0877` refuses a contact nothing
+/// can cross. *"This face is fine"* is never a declaration this engine accepts.
+///
+/// Seams stay **allocated, never discovered**: the span is the edge's allocation
+/// set for `DW0838`, so a crossing outside it is still a refusal.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Contact {
+    /// The span, `[u, v]` in cells on the face's own two in-plane axes, anchored
+    /// at the seam's `at`.
+    ///
+    /// **Omitted, the span runs from `at` to the far edge of the shared face on
+    /// both axes** — which is how a contact along the whole of a face is
+    /// written, by putting `at` at the face's low corner. `DW0828`'s refusal
+    /// prints that corner, so the number an author needs is in the message they
+    /// would already be reading.
+    ///
+    /// There is no `width` standard and no `length` here, and both absences are
+    /// the design (spec-0053 §7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extent: Option<[NonZeroU32; 2]>,
+}
+
+/// **Which kind of connection a seam allocates** (spec-0053 §4).
+///
+/// Carried on the resolved seam rather than re-derived from the authored one at
+/// each reader, so that the derivation and the byte observer cannot disagree
+/// about which kind a seam is — the same reason `shared_face` has one
+/// implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Crossing {
+    /// A standard opening. Every allocated cell must be passable (`DW0836`).
+    Portal,
+    /// A front where two places meet. No wall along the span, and **at least
+    /// one** passable column of body width somewhere in it (`DW0877`) — not
+    /// every cell, because a contact is ground rather than a hole and the
+    /// massing standing on it is content.
+    Contact,
 }
 
 /// The two world axes a face's `at` names, in that order.
@@ -1296,7 +1486,10 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     grid(&placed, &table, reads, d);
     region(plan, &placed, d);
     disjoint(&placed, d);
-    seams(plan, graph, &placed, &table, reads, d);
+    // The SITE PLAN stage's own declared version — what the contact fence is
+    // judged against, exactly as the graph stage's is what the way fence reads.
+    let version = c.site_plan.as_ref().map_or("", |p| p.dsl_version.as_str());
+    seams(plan, graph, &placed, &table, version, reads, d);
     size_classes(&placed, d);
     volumes_outside_boxes(plan, &placed, d);
     identities(c, plan, &placed, d);
@@ -1452,10 +1645,23 @@ fn resolve<'a>(
     d: &mut Vec<Diagnostic>,
 ) -> Vec<Placed<'a>> {
     let datums: BTreeMap<&str, i64> = plan.datums.iter().map(|x| (x.id.0.as_str(), x.y)).collect();
-    let classes: BTreeMap<&str, &str> = graph
+    // Whichever of the two classifications the node declared. `DW0875` is what
+    // refuses a node that declared both or neither; this map takes the size
+    // class first so that a node which slipped past with both is judged against
+    // one of the two rather than against neither — a refused campaign builds
+    // nothing either way, and a check that quietly examines zero boxes is the
+    // shape worth avoiding.
+    let classes: BTreeMap<&str, (MetricKind, &str)> = graph
         .nodes
         .iter()
-        .map(|n| (n.id.0.as_str(), n.size_class.as_str()))
+        .filter_map(|n| {
+            let named = n
+                .size_class
+                .as_deref()
+                .map(|x| (MetricKind::SizeClass, x))
+                .or_else(|| n.way_class.as_deref().map(|x| (MetricKind::WayClass, x)))?;
+            Some((n.id.0.as_str(), named))
+        })
         .collect();
     let mut out = Vec::new();
     for (i, b) in plan.boxes.iter().enumerate() {
@@ -1482,17 +1688,20 @@ fn resolve<'a>(
         };
         let class = classes
             .get(b.node.0.as_str())
-            .and_then(|name| table.resolve(MetricKind::SizeClass, name).ok())
+            .and_then(|(kind, name)| table.resolve(*kind, name).ok())
             .and_then(|entry| match entry.value(reads) {
-                MetricValue::SizeClass(sc) => Some(*sc),
+                MetricValue::SizeClass(sc) => Some(PlaceClass::Size(*sc)),
+                MetricValue::WayClass(w) => Some(PlaceClass::Way(*w)),
                 _ => None,
             });
         let clearance = match b.ceiling {
             Ceiling::Clearance(c) => Some(c.get()),
-            // A sky-open place claims its size class's own minimum headroom and
+            // A sky-open place claims its class's own minimum headroom and
             // nothing above it: an open place is precisely one that makes no
-            // claim on the air over it.
-            Ceiling::Open => class.map(|sc| sc.min_clearance),
+            // claim on the air over it. True of both kinds of class, which is
+            // why the question is asked of the classification rather than of
+            // one of its variants.
+            Ceiling::Open => class.map(PlaceClass::min_clearance),
         };
         out.push(Placed {
             index: i,
@@ -1971,28 +2180,78 @@ fn volumes_outside_boxes(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut 
     }
 }
 
-/// `DW0832`: a box is built to its place's size class.
+/// `DW0832`: a box is built to its place's class — **either kind** (spec-0053
+/// §3).
+///
+/// # The way branch, and why its third demand is structural
+///
+/// A size class bounds both horizontal extents and this is the one place that
+/// becomes geometry. A way class bounds only the **cross-section**, which is the
+/// box's *shorter* horizontal extent — the axis a body feels — and then demands
+/// that the **run**, the longer extent, strictly EXCEED the class's
+/// `max_width`.
+///
+/// That third demand is the elongation, and it is deliberately derived from the
+/// class's own widest cross-section rather than seeded as a constant, because it
+/// is exactly what a room cannot supply. A square box can never satisfy it: its
+/// run equals its width, and one number cannot both be `<= max_width` and exceed
+/// it. So "declare a room a way to escape the size ladder" is refused **by the
+/// object's own shape** rather than by a rule the author could satisfy by
+/// choosing differently — the property `CLAUDE.md` demands of an opt-out, since
+/// the defect this branch exists to catch is structurally incapable of
+/// producing its proof.
+///
+/// There is no maximum run and there is not going to be one: a route's length is
+/// per-campaign geometry, never a standard (spec-0053 §7).
 fn size_classes(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
     for p in placed {
-        let Some(sc) = p.class else {
+        let Some(class) = p.class else {
             continue; // `DW0812` refused the name.
         };
-        let mut bad: Vec<String> = Vec::new();
-        for (axis, name) in [(0usize, "x"), (1, "z")] {
-            let e = p.plan.extent[axis].get();
-            if e < sc.min_footprint[axis] || e > sc.max_footprint[axis] {
-                bad.push(format!(
-                    "{e} blocks on {name}, outside the class's {}..{}",
-                    sc.min_footprint[axis], sc.max_footprint[axis]
-                ));
+        let (kind, mut bad) = match class {
+            PlaceClass::Size(sc) => {
+                let mut bad: Vec<String> = Vec::new();
+                for (axis, name) in [(0usize, "x"), (1, "z")] {
+                    let e = p.plan.extent[axis].get();
+                    if e < sc.min_footprint[axis] || e > sc.max_footprint[axis] {
+                        bad.push(format!(
+                            "{e} blocks on {name}, outside the class's {}..{}",
+                            sc.min_footprint[axis], sc.max_footprint[axis]
+                        ));
+                    }
+                }
+                ("size", bad)
             }
-        }
+            PlaceClass::Way(w) => {
+                let mut bad: Vec<String> = Vec::new();
+                let (dx, dz) = (p.plan.extent[0].get(), p.plan.extent[1].get());
+                let (width, run) = (dx.min(dz), dx.max(dz));
+                let axis = if dx <= dz { "x" } else { "z" };
+                if width < w.min_width || width > w.max_width {
+                    bad.push(format!(
+                        "a cross-section of {width} blocks (its shorter extent, on {axis}), \
+                         outside the class's {}..{}",
+                        w.min_width, w.max_width
+                    ));
+                }
+                if run <= w.max_width {
+                    bad.push(format!(
+                        "a run of {run} blocks, which does not exceed the class's widest \
+                         cross-section of {}. A way is a place that is longer than it is wide \
+                         by kind and not by margin, so this box is a room — give it a \
+                         `size_class` instead, or make it longer",
+                        w.max_width
+                    ));
+                }
+                ("way", bad)
+            }
+        };
         if let Ceiling::Clearance(c) = p.plan.ceiling
-            && c.get() < sc.min_clearance
+            && c.get() < class.min_clearance()
         {
             bad.push(format!(
                 "{c} cells of headroom, under the class's minimum of {}",
-                sc.min_clearance
+                class.min_clearance()
             ));
         }
         if bad.is_empty() {
@@ -2003,10 +2262,10 @@ fn size_classes(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
             "site-plan",
             format!("/content/boxes/{}", p.index),
             format!(
-                "the box for `{node}` is not built to its declared size class: {bad}. The class \
-                 is the vocabulary the graph chose this place's scale in, and this is the one \
-                 place it becomes geometry — either build the box to it, or declare the place a \
-                 different class in the layout graph and say so there.",
+                "the box for `{node}` is not built to its declared {kind} class: {bad}. The \
+                 class is the vocabulary the graph chose this place's scale in, and this is the \
+                 one place it becomes geometry — either build the box to it, or declare the \
+                 place a different class in the layout graph and say so there.",
                 node = p.plan.node,
                 bad = bad.join("; "),
             ),
@@ -2170,6 +2429,9 @@ struct SeamCtx<'a> {
     a: &'a Placed<'a>,
     b: &'a Placed<'a>,
     face: SharedFace,
+    /// The `dsl_version` the SITE PLAN stage declares — what the contact fence
+    /// is judged against.
+    version: &'a str,
 }
 
 /// `DW0828`–`DW0831`: every seam sits on a face its two boxes share, at cells
@@ -2180,6 +2442,7 @@ fn seams(
     graph: &LayoutGraphContent,
     placed: &[Placed<'_>],
     table: &Metrics,
+    version: &str,
     reads: &mut Reads,
     d: &mut Vec<Diagnostic>,
 ) {
@@ -2209,17 +2472,6 @@ fn seams(
             }
         };
 
-        let opening = match table.resolve(MetricKind::Opening, &s.opening) {
-            Ok(e) => match e.value(reads) {
-                MetricValue::Opening(o) => *o,
-                _ => continue,
-            },
-            Err(unknown) => {
-                d.push(unknown.diagnostic("site-plan", &format!("/content/seams/{i}/opening")));
-                continue;
-            }
-        };
-
         let ctx = SeamCtx {
             index: i,
             seam: s,
@@ -2227,12 +2479,50 @@ fn seams(
             a,
             b,
             face,
+            version,
         };
-        opening_fits(&ctx, opening, d);
+
+        // `DW0876`, first: a seam that does not state exactly one kind of
+        // connection has no crossing for any rule below to judge, and telling
+        // an author both that and what the crossing they did not state would
+        // have meant prescribes two repairs for one mistake.
+        if !contact_declaration(&ctx, table, reads, d) {
+            continue;
+        }
+
+        let opening = if s.contact.is_some() {
+            // A contact has no opening name to resolve and no single sill, so
+            // `DW0829` does not run over it. That is stated rather than
+            // shoehorned: calling a 55-cell front a door would make every
+            // downstream door check wrong (spec-0053 §4).
+            None
+        } else {
+            match table.resolve(
+                MetricKind::Opening,
+                s.opening.as_deref().unwrap_or_default(),
+            ) {
+                Ok(e) => match e.value(reads) {
+                    MetricValue::Opening(o) => Some(*o),
+                    _ => continue,
+                },
+                Err(unknown) => {
+                    d.push(unknown.diagnostic("site-plan", &format!("/content/seams/{i}/opening")));
+                    continue;
+                }
+            }
+        };
+
+        if let Some(opening) = opening {
+            opening_fits(&ctx, opening, d);
+        }
         match edge {
             Edge::Stair { .. } => stair(&ctx, table, reads, d),
             Edge::Drop { falls, .. } => drop_seam(&ctx, *falls, table, reads, d),
-            Edge::Walk { .. } | Edge::Barred { .. } => sill(&ctx, opening, d),
+            Edge::Walk { .. } | Edge::Barred { .. } => {
+                if let Some(opening) = opening {
+                    sill(&ctx, opening, d);
+                }
+            }
             Edge::Vision { .. } => {}
         }
         if matches!(edge, Edge::Stair { .. }) && s.stair_in.is_none() {
@@ -2311,6 +2601,174 @@ fn not_shared(
     )
 }
 
+/// **`DW0876` and the per-stage fence**: this seam states exactly one kind of
+/// connection, and if it is a contact, one this engine builds (spec-0053 §4).
+///
+/// Returns `false` when the seam has no usable crossing, in which case the
+/// caller stops: everything below reads the crossing rectangle.
+fn contact_declaration(
+    ctx: &SeamCtx<'_>,
+    table: &Metrics,
+    reads: &mut Reads,
+    d: &mut Vec<Diagnostic>,
+) -> bool {
+    let (i, s) = (ctx.index, ctx.seam);
+    let mut refuse = |what: String, remedy: String| {
+        d.push(Diagnostic::error(
+            DW_CONTACT,
+            "site-plan",
+            format!("/content/seams/{i}"),
+            format!(
+                "the seam for `{edge}` {what}. To fix it, {remedy}.",
+                edge = s.edge,
+            ),
+        ));
+    };
+
+    // ---- Shape 1: exactly one kind.
+    match (s.opening.as_ref(), s.contact.as_ref()) {
+        (Some(o), Some(_)) => {
+            refuse(
+                format!(
+                    "declares BOTH an `opening` (`{o}`) and a `contact` — a hand-off is one \
+                     kind or the other"
+                ),
+                "delete whichever this is not. A portal allocates the cells a body crosses \
+                 at and every one of them must be passable; a contact is a front along which \
+                 two places simply meet and needs only one crossable column. The derivation \
+                 builds them differently and the byte observer measures them differently, so \
+                 there is no world in which a seam is both"
+                    .to_string(),
+            );
+            return false;
+        }
+        (None, None) => {
+            refuse(
+                "declares neither an `opening` nor a `contact`, so it states no way across"
+                    .to_string(),
+                format!(
+                    "give it one. A doorway is `\"opening\": \"<name>\"` — defined \
+                     standards: {names}. A front where the two places simply meet is \
+                     `\"contact\": {{}}`, which spans from `at` to the far edge of the \
+                     shared face",
+                    names = table.names_of(MetricKind::Opening).join(", "),
+                ),
+            );
+            return false;
+        }
+        (Some(_), None) => return true,
+        (None, Some(_)) => {}
+    }
+
+    // ---- The fence. A WELLFORMEDNESS rule, judged against the version this
+    // document declares. Below it there is nothing else to say about a contact.
+    if !crate::is_v19(ctx.version) {
+        d.push(Diagnostic::error(
+            crate::codes::RESERVED,
+            "site-plan",
+            format!("/content/seams/{i}/contact"),
+            format!(
+                "the seam for `{edge}` declares a `contact`, which requires dsl_version \
+                 {since} and this stage declares `{version}` — raise this stage's \
+                 `dsl_version` to {since}, or give the seam a standard `opening` instead \
+                 (below {since} two places meet only through a doorway a table names).",
+                edge = s.edge,
+                since = crate::WAY_AND_CONTACT_SINCE,
+                version = ctx.version,
+            ),
+        ));
+        return false;
+    }
+
+    // ---- Shape 4: the classes a contact may carry.
+    //
+    // `walk` and `drop` only. A rim falling to a lower court is a genuine broad
+    // hand-off, so `drop` is in; `stair`, `barred` and `vision` are excluded
+    // until a campaign brief demands one (spec-0053 §4, the falsifier re-armed).
+    if !matches!(ctx.edge, Edge::Walk { .. } | Edge::Drop { .. }) {
+        refuse(
+            format!(
+                "is a contact on a `{class}` connection, and a contact carries `walk` or \
+                 `drop` only",
+                class = ctx.edge.class(),
+            ),
+            "give the seam a standard `opening`, or declare the connection `walk` or \
+             `drop` in the layout graph. A stair needs a run and a pitch, a barred door \
+             needs a gate region that seals and clears, and a sightline is not a crossing \
+             at all — none of the three is a thing a front can be, and this engine does \
+             not have them as contacts until a campaign brief demands one"
+                .to_string(),
+        );
+        return false;
+    }
+
+    // ---- Shape 3: wider than the broadest standard opening.
+    //
+    // The floor is derived from the standard set, so anything at or under it
+    // could have been a portal. That is what makes it a demand the defect
+    // cannot supply: a door declared a contact is refused by its own width.
+    let Some(floor) = table.broadest_opening_width(reads) else {
+        return false; // `Metrics::self_check` reports a table with no openings.
+    };
+    let (u_span, v_span) = (ctx.face.u, ctx.face.v);
+    let (u_hi, v_hi) = crossing_hi(ctx);
+    let width = u_hi - s.at[0] + 1;
+    if width <= i64::from(floor) {
+        refuse(
+            format!(
+                "is a contact {width} cell(s) wide, which is not wider than the broadest \
+                 standard opening ({floor} cells)"
+            ),
+            format!(
+                "widen the span, or declare it a portal — anything this narrow could have \
+                 been one, and a doorway called a contact would dodge the standard set \
+                 while every downstream door check went on being wrong about it. Defined \
+                 openings: {names}",
+                names = table.names_of(MetricKind::Opening).join(", "),
+            ),
+        );
+        return false;
+    }
+
+    // ---- Shape 2: the span lies on the shared face.
+    let mut off: Vec<String> = Vec::new();
+    if s.at[0] < u_span.0 || u_hi > u_span.1 {
+        off.push(format!(
+            "{}..{} on {}, against the face's {}..{}",
+            s.at[0], u_hi, ctx.face.u_axis, u_span.0, u_span.1
+        ));
+    }
+    if s.at[1] < v_span.0 || v_hi > v_span.1 {
+        off.push(format!(
+            "{}..{} on {}, against the face's {}..{}",
+            s.at[1], v_hi, ctx.face.v_axis, v_span.0, v_span.1
+        ));
+    }
+    if !off.is_empty() {
+        refuse(
+            format!(
+                "is a contact whose span leaves the face the two boxes share: {}",
+                off.join("; ")
+            ),
+            "move `at` onto the shared face, or shorten `contact.extent` — the span is \
+             where the derivation writes no wall, and a span running off the face would \
+             ask it to open a wall that is not there. Omitting `contact.extent` runs the \
+             span from `at` to the far edge of the face, which never leaves it"
+                .to_string(),
+        );
+        return false;
+    }
+    true
+}
+
+/// The far corner of a seam's crossing rectangle, on the face's own two in-plane
+/// axes — [`contact_extent`] resolved against the seam's own anchor, so this
+/// rule and the derivation describe one rectangle.
+fn crossing_hi(ctx: &SeamCtx<'_>) -> (i64, i64) {
+    let e = contact_extent(ctx.seam, &ctx.face);
+    (ctx.seam.at[0] + e[0] - 1, ctx.seam.at[1] + e[1] - 1)
+}
+
 /// `DW0828`'s anchor half and `DW0829`'s geometric half: the opening's cells are
 /// cells the shared face has.
 fn opening_fits(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec<Diagnostic>) {
@@ -2358,7 +2816,7 @@ fn opening_fits(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec
              shared face ends at {ua} {u1}, {va} {v1}. Move the anchor, choose a narrower \
              standard opening, or grow the overlap between the two boxes — the standard set is \
              the vocabulary, so the opening is never quietly cropped to fit.",
-            name = s.opening,
+            name = s.opening.as_deref().unwrap_or_default(),
             w = opening.width,
             h = opening.height,
             an = edge.a(),

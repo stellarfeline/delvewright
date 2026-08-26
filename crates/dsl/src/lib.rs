@@ -51,10 +51,10 @@ pub use effects::{
 pub use envelope::{
     Campaign, DETAIL_PLAN_SINCE, Envelope, HORIZON_LIBRARY_SINCE, LAYOUT_GRAPH_SINCE,
     OPEN_WAY_SINCE, OPTIONAL_QUESTS_SINCE, RESERVED_DSL_VERSIONS, RawCampaign, SITE_PLAN_SINCE,
-    STATIONS_SINCE, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage, accepted_versions,
-    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, is_v11, is_v12, is_v13, is_v14, is_v15, is_v16, is_v17, is_v18, minor_ordinal,
-    parse_campaign, reserved_for,
+    STATIONS_SINCE, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage, WAY_AND_CONTACT_SINCE,
+    accepted_versions, check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06,
+    is_v07, is_v08, is_v09, is_v10, is_v11, is_v12, is_v13, is_v14, is_v15, is_v16, is_v17, is_v18,
+    is_v19, minor_ordinal, parse_campaign, reserved_for,
 };
 pub use fence::Fenced;
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};

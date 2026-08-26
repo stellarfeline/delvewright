@@ -150,6 +150,12 @@
         "b": "node/loft",
         "class": "vision",
         "id": "edge/loft-sightline"
+      },
+      {
+        "a": "node/far-hall",
+        "b": "node/causeway",
+        "class": "walk",
+        "id": "edge/causeway-front"
       }
     ],
     "entry": "node/near-hall",
@@ -205,9 +211,15 @@
             "kind": "point"
           }
         ]
+      },
+      {
+        "id": "node/causeway",
+        "intent": "approach",
+        "note": "A place that is a ROUTE: eight cells across and twenty-four long, bounded in one axis and free in the other. No rung of the size ladder admits it and no calibration of the ladder could — for a rung to span 8..24 on an axis, an alcove and a hall would be the same thing.",
+        "way_class": "road"
       }
     ]
   },
-  "dsl_version": "0.18.0",
+  "dsl_version": "0.19.0",
   "stage": "layout-graph"
 }

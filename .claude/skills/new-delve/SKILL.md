@@ -466,17 +466,30 @@ form and the commands are in *Reference: drawing the map's reference*.
    authority: an identity binds to a number, never to a picture.
 
 2. **`layout-graph.json`** — the space as a graph, **before any coordinate
-   exists**. `nodes[]` are places (`{id, intent, size_class, note?}`); `edges[]`
-   are connections (`walk | stair | drop | barred | vision`, with `gating`,
-   `one_way`, `shortcut`, `opens_from`). Plus `entry`, `goal`, an authored
-   `critical_path[]`, and `beats[]` binding every place-bound quest beat to the
-   node it happens in.
-   - `size_class` and every seam `opening` name an entry in the **metrics
-     table**. `delvec metrics` prints it — 333 lines of JSON on stdout, and a
-     summary plus its binding counts on stderr, so read them separately:
+   exists**. `nodes[]` are places (`{id, intent, size_class | way_class, note?}`);
+   `edges[]` are connections (`walk | stair | drop | barred | vision`, with
+   `gating`, `one_way`, `shortcut`, `opens_from`). Plus `entry`, `goal`, an
+   authored `critical_path[]`, and `beats[]` binding every place-bound quest beat
+   to the node it happens in.
+   - **A place is classified exactly once, and there are two vocabularies.**
+     `size_class` is a rung of the size ladder and bounds the footprint on BOTH
+     horizontal axes — that is what a room, a hall or an arena is. `way_class` is
+     for a place bounded in one axis and free in the other: a road, a causeway, a
+     corridor, a duct. Write a way when the shape is a ROUTE — a cut ledge one
+     body wide climbing a whole cliff face is 4 by 90, and no rung admits that,
+     because a class spanning 4..90 on an axis has stopped classifying. Declaring
+     both, or neither, is `DW0875`.
+     - A way class bounds the **cross-section** only. There is no length
+       standard and there never will be one: the run is your plan's business, and
+       all the engine asks is that the box's longer extent EXCEED the class's
+       widest cross-section (`DW0832`). A square box can never be a way, which is
+       the point — it is a room.
+   - `size_class`, `way_class` and every seam `opening` name an entry in the
+     **metrics table**. `delvec metrics` prints it — 341 lines of JSON on stdout,
+     and a summary plus its binding counts on stderr, so read them separately:
      `delvec metrics > table.json`. The keys are the names to write
-     (`size-class.hall`, `opening.arch`); a name the table does not define is
-     `DW0812`.
+     (`size-class.hall`, `way-class.road`, `opening.arch`); a name the table does
+     not define is `DW0812`.
    - The graph is checked as a graph, cheaply, before geometry exists to make
      it expensive: every place reachable under gating (`DW0816`), the authored
      critical path actually a quest-legal path (`DW0817`), no one-way edge that
@@ -504,9 +517,29 @@ form and the commands are in *Reference: drawing the map's reference*.
      `min` and `extent` are two horizontal numbers each, never three — the
      vertical position is `floor` and the vertical size is `ceiling`.
    - **Seams are allocated, not discovered.** A seam sits on a face the two
-     boxes already share, at declared cells, at a standard opening (`DW0828`,
-     `DW0829`). Two places that cannot mate is resolved here, while both boxes
-     are still free.
+     boxes already share, at declared cells (`DW0828`). Two places that cannot
+     mate is resolved here, while both boxes are still free.
+   - **A seam is one of two kinds, and both or neither is `DW0876`.** Write
+     `opening` for a PORTAL — a doorway at a standard the table names, whose
+     every cell the built world must have open (`DW0829`, `DW0836`). Write
+     `contact` for a FRONT — two places that simply meet, along a span of the
+     face they share:
+     `{"edge": …, "face": …, "at": [u, v], "contact": {"extent": [u, v]}}`, and
+     omit `extent` to run the span from `at` to the far edge of the face.
+     - A contact means **continuous ground**: no wall along the span, no frame,
+       no sill, and crossing legitimate anywhere along it the step rule admits.
+       Do not reach for a wide `opening` to spell a front — there is no standard
+       the width of your courtyard and there is not going to be one, because a
+       front's width is a fact of your two boxes and a table that enumerated it
+       would gain an entry per campaign.
+     - A contact must be **wider than the broadest standard opening**. Anything
+       narrower could have been a portal, and is refused as one (`DW0876`).
+     - A contact carries `walk` or `drop` only. A rim falling to a lower court is
+       a real broad hand-off; a stair, a barred door and a sightline are not
+       things a front can be.
+     - The engine MEASURES which columns of the span a body crosses, over the
+       built bytes, and refuses a front nothing can cross (`DW0877`). Saying the
+       face is fine is not a declaration it accepts.
    - A stair's rise is not authored — it is the difference between the two
      floors the plan already chose — and its `stair_in` names which box pays for
      the run (`DW0830`). Treads rise off a walk plane, so `stair_in` is always
@@ -535,8 +568,9 @@ answer (`DW0429`) — a `use` trigger anchored on the gate.
 gym has been walked, and every build says so (`DW0813`). That is the gym's
 second job: `delvec metrics --gym <dir>` builds a site-plan campaign out of the
 table itself — one place per rung of the size-class ladder at each of its
-bounds, every standard opening, both stair pitches, a designed fall at the drop
-policy's cap. It reports what the table defines that it could not instantiate
+bounds, one way per class at each width the kit grid lets a plan draw it at,
+every standard opening, both stair pitches, a designed fall at the drop policy's
+cap. It reports what the table defines that it could not instantiate
 (`DW0840`) — read that line, not just the green.
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
