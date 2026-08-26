@@ -1,0 +1,670 @@
+# Friction log — walking `.claude/skills/new-delve/SKILL.md` end to end as a person
+
+Instrument: engine worktree at `90cf2051f6b8c38f41e77577f1f58698f75dc363`
+(`origin/main`, branch `docs/the-drill-friction-log`), macOS, clean shell.
+Stance: I have this repository and that page and nothing else. Written as I go.
+
+Subject invented for the drill: **"The Weighbridge"** — a disused customs post on
+a road. Three places: the road gate, the weigh house, the ledger room. One spine,
+no branching. Nothing to do with priories, tides or bells.
+
+---
+
+## F0 — Reading the page is itself the first cost
+- **Page said**: (implicitly) read this and do it.
+- **What happened**: `SKILL.md` is 1940 lines / 128,146 bytes. Read in full before
+  Init, because the page's own Init step 6 turns out to be a hard stop that only
+  makes sense if you have read as far as "The map pipeline" (line 1212) to know
+  whether you are a site-plan campaign or an `areas[]` one.
+- **A person concludes**: this is a manual, not a procedure. They will skim, and
+  the skim will miss which of the two placement models they are on — the one
+  decision the page says (line 1218) is "taken once, at the start".
+- **Would have unstuck them**: a 20-line "the shape of the run" at the top:
+  Init → pick placement model → stages → gates, with line references.
+- **Severity**: costs an hour (of reading before anything runs).
+
+## F1 — Init step 1: the page's own verification command does not exist
+- **Page said** (Init 1): "from a pipeline checkout: `cargo build --release -p delvec` …
+  Then `delvec --version` must print an engine version inside this skill's declared
+  `requires.delvec` range. **It is a hard stop if it does not.**"
+- **What happened**:
+  ```
+  $ cargo build --release -p delvec     # exit 0, 32s (warm target; see caveat)
+  $ delvec --version
+  (eval):1: command not found: delvec        EXIT=127
+  $ ./target/release/delvec --version
+  delvec 1.1.0, dsl 0.17.0, mc 1.21.11       EXIT=0
+  ```
+- **A person concludes**: read literally, `command not found` is the hard stop the
+  page just declared, at Init step 1 of 6. Nothing on the page says the source
+  build lands at `target/release/delvec`, or to put it on `PATH`. The page uses
+  THREE spellings for running the binary and never reconciles them:
+  `delvec …` (Init, and ~40 later commands), `cargo run -q -p delvec --bin delvec -- …`
+  ("The loop", line 361), and `./target/release/delvec` (nowhere).
+- **Would have unstuck them**: one line in Init — "a source build puts it at
+  `target/release/delvec`; either `export PATH=$PWD/target/release:$PATH` or read
+  every `delvec` below as `cargo run -q -p delvec --bin delvec --`."
+- **Severity**: mild friction for someone who knows cargo; **stops the drill dead**
+  for anyone taking "hard stop" at its word.
+
+## F1b — Init and The loop disagree about `--release`
+- Init 1 says build `--release`. Line 361 says "**Do not** reach for `--release`
+  mid-loop: it is ~20s slower to rebuild after every edit and the output is
+  byte-identical either way." So the page tells a person to build the binary twice,
+  in two profiles, and never says the Init build is the throwaway.
+- **Severity**: mild friction (one extra cold build ≈ minutes), but it is exactly
+  the kind of thing that reads as "I did something wrong".
+
+## Instrument caveat on every build time below
+This worktree's `target/` was cloned from a donor (6.1 GB, populated before I
+started). **Every build figure I report is a WARM figure and understates a fresh
+clone**, which is the state the drill is actually run from. I did not measure cold.
+
+## F2 — Init step 3: the second binary lands in a second, undisclosed target dir
+- **Page said**: "`cargo build --release --manifest-path crates/render/Cargo.toml`
+  (`--manifest-path`, not `-p`: it is its own cargo workspace). Then
+  `delve-render fidelity-gate` must exit 0."
+- **What happened**: build exit 0 (74s warm; pulls a git dependency, so network is
+  required and the page never says so). Then:
+  ```
+  $ delve-render fidelity-gate
+  (eval):2: command not found: delve-render
+  $ ./crates/render/target/release/delve-render fidelity-gate
+  fidelity gate PASSED: no missing-texture placeholder in the newest-block fixture   EXIT=0
+  ```
+- **A person concludes**: the page explains *why* `--manifest-path` is needed — that
+  it is its own workspace — and then does not follow that thought to its
+  consequence, which is that the binary is at `crates/render/target/release/`, NOT
+  beside `delvec`. Someone who solved F1 by putting `target/release` on `PATH` has
+  now solved nothing for this binary and will hit `command not found` a second time.
+- **Would have unstuck them**: name the two output paths once, in Init.
+- **Severity**: mild friction, twice.
+
+## F3 — Init step 4 is the one step with no way to confirm it
+- **Page said**: "4. **Python 3** — the skin toolchain is a declared prerequisite
+  too, and a missing skin is a build error rather than a silent skip."
+- **What happened**: `python3 --version` → 3.14.7. Box ticked. But
+  `python3 -c "import delve_skin"` → `ModuleNotFoundError`, and line 1088 later
+  demands `python -m delve_skin all <cast.json> … **in its own venv**` with no
+  instructions anywhere for creating that venv (`tools/skin/requirements.txt` and
+  `pyproject.toml` exist; the page never mentions either).
+- **A person concludes**: Init 4 is satisfied, because "Python 3" is satisfied. They
+  discover at the skin step that it is not, which is precisely the failure mode
+  Init exists to prevent and which step 5 explicitly calls out for `metrics`
+  ("confirm it answers here rather than discovering at stage 3…").
+- **Would have unstuck them**: give step 4 a confirmation command like every other
+  step has — `python3 -m venv .venv-skin && .venv-skin/bin/pip install -r
+  tools/skin/requirements.txt && .venv-skin/bin/python -m delve_skin --help`.
+- **Severity**: costs an hour, at the moment an NPC needs a skin.
+- Related, and reported honestly as NOT a finding for this drill: Init says nothing
+  about `pytest`, but no step of this skill invokes `pytest`, so a person walking
+  this page never needs it. The omission is real; the cost for this walk is zero.
+
+## F4 — Init step 5: "must print the table" prints 333 lines of JSON
+- **Page said**: "**The metrics standard** — `delvec metrics` must print the table.
+  It is the single authority for the size classes, seam openings and stair pitches
+  a layout graph and a site plan name, so read it before writing either; a name it
+  does not define cannot compile (`DW0812`)."
+- **What happened**: exit 0. stdout is 333 lines of JSON; a three-line human summary
+  including `DW0813` goes to **stderr**, correctly separated.
+- **Correction to my own first reading**: I first piped it with `2>&1`, got
+  `JSONDecodeError: Extra data`, and was about to log "the output is not valid
+  JSON". That was **my measurement failing, not the tool** — re-measured with the
+  streams apart, stdout parses. Recording the withdrawal rather than deleting it.
+- **The real friction**: the page calls it "the table" and says a layout graph
+  "names an entry in" it. It does not say what the names LOOK like in a document.
+  The JSON keys are `size-class.hall`, `opening.arch`; whether a `size_class` field
+  takes `hall` or `size-class.hall` is not answerable from the page or from the
+  output. I have not yet reached the document that needs it — carried forward.
+- **Severity**: mild here; see F11 for where it lands.
+
+## F5 — Init step 6 is a genuine hard stop, and its diagnostic is exemplary
+- **Page said**: confirm `python3 tools/refimg.py --prompt "smoke test" --dry-run`;
+  "Absent config exits 2 saying what to add".
+- **What happened**, exactly as promised:
+  ```
+  refimg: no delvewright.local.toml — create it with a [refimg] section.
+  See the commented convention block in delvewright.toml.        EXIT=2
+  ```
+- **A person concludes**: correctly, that they need an image-provider API key before
+  they may start. This is the page working. Recorded as evidence of what good looks
+  like: the message names the file, the section, and where the template is.
+- **Consequence for this walk**: I have no key, so for a **site-plan** campaign the
+  page's own rule ("If any step here cannot be completed, say so and stop") ends the
+  drill at Init 6. I therefore took the `areas[]` branch, where the same wall stands
+  one gate later at 4b — and I will hit it there. **Deviation declared.**
+- **Severity for a keyless person**: stops the drill dead — by design, but the page
+  never tells them at the TOP that a paid third-party API key is a prerequisite of
+  the whole skill. It is disclosed at Init step 6 of 6, after two cargo builds.
+
+## F6 — Init step 1's first sentence is false, and it is the sentence Init rests on
+- **Page said** (Init 1): "**`delvec`** — **one binary, and it carries the whole
+  authoring surface** including the CPU render arms".
+- **What happened** — measured by grepping the page itself for each binary it
+  invokes (instrument: `grep -c` over `.claude/skills/new-delve/SKILL.md` at
+  `90cf2051`, counting matching LINES not occurrences):
+
+  | binary | lines on the page | established by Init? |
+  |---|---|---|
+  | `delvec` | 51 | yes (step 1) |
+  | `delve-render` | 8 | yes (step 3) |
+  | `delve-grammar` | 6 | **no** |
+  | `delve-admit` | 4 | **no** |
+  | `delve-harvest` | 2 | **no** |
+  | `delve-schem` | 1 | **no** |
+
+  Init mentions exactly two of the six. The four it omits are the entire
+  "the layout needs a prefab the library doesn't have" procedure, which the page
+  calls "**the procedure, and these are its mandatory steps, in order. Do not
+  improvise around them**" (line 888).
+- **A person concludes**: nothing, until step 3 of the prefab procedure tells them
+  to run `delve-grammar list` and the shell says `command not found`. Then they must
+  leave the page for `docs/reference/tools.md` — a document whose rows are
+  single paragraphs running to 8,000+ characters — to learn the
+  `cargo run -q -p <package> --bin <bin>` form. It is findable. It is not on this
+  page, and Init's own promise says it should not need to be.
+- **What I ESTABLISHED vs did not**: I established the counts above and that all
+  six binaries exist as workspace targets. I did **not** establish that a fresh
+  clone lacks them at that moment — my `target/` was donor-populated before I
+  started, so `delve-grammar` was already sitting in it. The claim that a person
+  hits `command not found` there follows from `cargo build -p delvec` building only
+  the `delvec` package, which I did not separately demonstrate.
+- **Would have unstuck them**: Init step 1 says "one binary" → make it
+  "`cargo build --release --workspace` builds all five; `delve-render` is the sixth
+  and its own workspace", and name the two target directories.
+- **Severity**: costs an hour, on any campaign needing a prefab that does not exist
+  — which the page treats as the normal case for a map that is the point.
+
+---
+# Part 2 — authoring the six stages
+
+## F7 — the page contains ZERO complete stage documents
+- **Page said** (The loop, step 1): "`… schema --stage <n>` — generate AGAINST the
+  live schema, never from memory."
+- **What happened**: `grep -n 'dsl_version"' .claude/skills/new-delve/SKILL.md`
+  returns **nothing**. In 1940 lines there is not one example of a stage document.
+  The envelope every stage needs — `{dsl_version, campaign_id, stage, content}` —
+  appears nowhere on the page; I learned it from `schema --stage 1`'s `required`.
+  The page names `dsl_version` ~20 times, always as a *fence* ("needs
+  `dsl_version` 0.10.0 on the quests stage") and never as a field you write.
+- **A person concludes**: they write `{"areas": [...]}` and get a schema error.
+  Worse — nothing tells them **what number to put in `dsl_version`**. The page
+  states minimum fences per feature (0.8.0, 0.9.0, 0.10.0, 0.11.0, 0.12.0, 0.15)
+  and never says whether you write the minimum, the maximum, or the engine's.
+  I wrote `0.17.0` (from `delvec --version`'s `dsl 0.17.0`) on a guess. It worked.
+  I do not know that it was right and the page cannot tell me.
+- **Would have unstuck them**: one 30-line `world.json` at the top of "The loop".
+- **Severity**: costs an hour; **stops the drill dead** for a person who does not
+  think to read `required` out of a 26 KB JSON schema.
+
+## F8 — the six file NAMES are never stated; the tool spells them one at a time
+- **Page said**: "Create `campaigns/campaigns/<campaign-id>/` with **the six stage
+  JSONs**" — and never names one of them.
+- **What happened**: I guessed `world.json` from the stage list. Then:
+  ```
+  $ delvec validate <dir>
+  internal error: cannot read campaign dir: npcs.json: No such file or directory (os error 2)
+  EXIT=10
+  ```
+- **A person concludes**: two things, and the second is the finding. (1) The path
+  IS discoverable — the tool names the next missing file, so six runs of `validate`
+  spell the six filenames out. That is a real, if grudging, affordance. (2) It is
+  reported as "**internal error**" with **no DW code** and exit 10, for the state
+  the page explicitly tells you to be in ("When authoring stages incrementally,
+  stub the later stages"). "internal error" is what you print when the compiler is
+  broken, not when the author has done what the manual said.
+- **Would have unstuck them**: name the six files once; and make the missing-stage
+  message an ordinary diagnostic that says "stage documents are `world.json`,
+  `npcs.json`, `classes.json`, `quest-plan.json`, `quests.json`, `dialogue.json`".
+- **Severity**: mild friction, but it is the first thing the tool ever says to a
+  new author and it says "internal error".
+
+## F9 — the page's `happening` rule over-reaches, and the schema is the one that is right
+- **Page said** (line 668): "Required on every quest, every objective, every
+  staging / wave / gate / `campaign-complete` effect, **and every dialogue option
+  that sets a flag**".
+- **What happened**: reading "every dialogue option that sets a flag needs one", I
+  put a `happening` on a quest-level `set-flag` effect. Refused:
+  ```
+  DW0100 [error] quests: … unknown field `happening`, expected one of `flag`,
+  `requires_flags`, `forbids_flags`, `requires_state` at line 27 column 9.
+  Fix the offending field … run `delvec schema --stage <1..7>` to see the exact shape.
+  ```
+- **A person concludes**: correctly, and fast. **This diagnostic is the best thing
+  I met all round** — it names the field, enumerates the legal alternatives, gives
+  `line:column`, and names the command that shows the truth. Recorded as the
+  standard the others should be held to.
+- **Cost**: one loop iteration. Mild friction — but note the page's enumeration is
+  loose enough to produce it, and a looser reader would try it on more effects.
+- **Severity**: mild friction.
+
+## F10 — the page says six stages; the engine has seven, and the seventh is a campaign document
+- **What happened**: that same diagnostic says `--stage <1..7>`. And:
+  ```
+  $ delvec schema --stage 8
+  unknown stage `8` (want 1..7, `geometry-brief`, `layout-graph`, `site-plan`, `detail-plan`, or `all`)
+  $ delvec schema --stage 7   →  content: WorldEditsContent
+  ```
+  Stage 7 is `world-edits.json`. The page mentions that filename **once** (line
+  869, inside a symptom row about terrain fixes) and never as a stage, never with a
+  schema command, and the "Campaign workspace" section says "**the six** stage
+  JSONs".
+- **A person concludes**: nothing bad immediately — but a campaign that needs a
+  terrain fix has a seventh document whose existence the page hides.
+- **Severity**: mild friction. Noted also: the page uses "stage 6" for two
+  different things — `dialogue` (the loop) and `detail-plan.json` (the map
+  pipeline, line 1388, "**Stage 6 — `detail-plan.json`**").
+
+## F11 — **the biggest one: `collect` + `container` is unsatisfiable in the tileset the page recommends**
+- **Page said** (line 450): "**A `collect` takes its item from the room's own
+  furniture, and the item has a name.** Point the objective's `container` at the
+  anchor of a chest/barrel the prefab already placed… The container must really be
+  there in the piece (`DW0438`)". And earlier (line 386): "Areas: prefer
+  `prefab_pool` (**stone-keep tileset**) for real layouts".
+- **What happened**: I bound `container: "anchor/chest"` — the anchor
+  `keep-room-small-a`'s own metadata declares, under that exact name. Build:
+  ```
+  DW0438 [error] build: 1 `collect` objective(s) adopt a container that is not there.
+    collect `obj/take-ledger` -> container anchor `anchor/chest` at [259, 65, 4]
+    holds `minecraft:air`, not a container
+  ```
+- **I then measured the library** (instrument: `delvec palette` over all 36
+  `campaigns/prefabs/*.nbt` at the `campaigns/` symlink's current head, plus a
+  JSON scan of the 36 metadata files):
+  - **5 of 36** prefabs contain a chest/barrel/shulker blockstate at all:
+    `hero-galleon-oak`, `hero-standing-monolith`, `island-beach-camp`,
+    `island-galley`, `island-mountain`.
+  - **3 of 36** declare a container-named anchor: `cave-room-small`
+    (`anchor/chest`), `keep-room-small-a` (`anchor/chest`), `island-mountain`
+    (four `anchor/cheese-barrel*`).
+  - **The intersection is exactly ONE prefab**: `island-mountain`. Both prefabs
+    named `anchor/chest` — the obvious thing an author reaches for — contain **no
+    container anywhere in the piece**. `keep-room-small-a` holds four blockstates
+    total: `chiseled_stone_bricks`, `glowstone`, `jigsaw`, `stone_bricks`.
+  - So in the **stone-keep tileset the page recommends, the page's `collect`
+    instruction cannot be followed at all**, and the one library piece where it can
+    be followed is a `dark`-profile mountain cave with 33 anchors.
+- **The diagnostic's prescription, followed literally**: it offers three moves and
+  forbids the third. (a) "put a `minecraft:chest` … at the anchor's cell and
+  re-export the `.nbt`" — the page itself forbids this ("Never hand-patch `.nbt`"),
+  and re-exporting means the whole `delve-grammar` + `delve-admit` chain Init never
+  built. (b) "point `container` at an anchor whose cell already has one" — measured
+  above: for a keep campaign there is none. (c) "Dropping the `container` field to
+  make this go away is **NOT** the fix". **I did (c)**, because it was the only
+  move left, and the build accepted it.
+- **A person concludes**: that the engine is contradicting itself. They will do (c),
+  which the message tells them is wrong, and ship the floating chest the field
+  exists to prevent — believing they were forced to.
+- **Would have unstuck them**: a line in the page saying which prefabs actually
+  carry containers, or a `DW0438` that names the ones that do.
+- **Severity**: **stops the drill dead** — or worse, produces the exact defect the
+  diagnostic was written to catch, with the author's full knowledge.
+
+## F12 — **the one I could only answer from the compiler source**: multi-area transport is silently skipped, and DW0311 blames the geometry
+This is the entry the brief asked for: *what I used that a person does not have.*
+
+- **Page said** (Supported techniques, line 809): "**Multi-area + automatic
+  inter-area transport is a physically enforced point of no return.** Placing beats
+  in separate areas (256 blocks apart across void, no walkable link) **makes the
+  compiler emit a one-way teleport on the objective that crosses areas** — the
+  player *cannot* walk back."
+- **What happened** on an ordinary three-area campaign with one objective per area:
+  ```
+  DW0311 [error] build: critical path: the player cannot walk from [259, 65, 4]
+  to [513, 65, 2] over the assembled geometry — no collision-free path.
+  A same-area leg must be walkable end to end; this is a wedged doorway seam, a
+  void gap in the assembled layout, or an unbroken 1.5-tall barrier (fence/wall)
+  ring … (or, if the jump is intended, a missing inter-area transport).
+  ```
+  The two anchors are 254 blocks apart in different areas. The page says the
+  teleport is automatic. The build says it is missing. The message's own guesses —
+  wedged doorway, void gap, fence ring — are all wrong, and its phrase "**A
+  same-area leg**" tells the author the compiler thinks these are one area.
+- **What a person has to work with**: I grepped the entire live schema export for
+  all six stages. `"transport"` — **zero hits**. `"inter-area"` — **zero hits**.
+  The page's own instruction is "generate AGAINST the live schema"; the schema has
+  no spelling for this. `docs/reference/compiler.md`'s `DW0311` row repeats the
+  phrase "no inter-area transport" and names no remedy.
+- **What I ruled out first, as a person would**: both areas declared an anchor
+  named `anchor/npc-stand`, so I suspected a name collision. I rebuilt with unique
+  anchor names in every area. **Identical DW0311.** Not the cause.
+- **Then I read `crates/compiler/src/plan.rs`. A person cannot.** The rule is at
+  `build_critical_path`, line ~4086:
+  ```rust
+  if prev_area != next_area
+      && let Some(ResolvedAnchor::Point { pos, .. }) = anchors.entry_anchor(next_area)
+  { transport.insert(prev_id.clone(), *pos); … }
+  ```
+  **The transport fires only if the DESTINATION area's prefab declares an
+  entry-point anchor.** If it does not, the `if` is false, no teleport is emitted,
+  nothing is said, and the leg is then judged as a walk — which is DW0311.
+- **Proof, single variable**: I changed exactly one thing — the third area's prefab,
+  from `keep-room-small-b` (no entry anchor) to `hello-room` (declares `spawn`) —
+  and moved the NPC to an anchor that piece has. **`BUILD EXIT=0`.** Nothing else
+  changed.
+- **How rare the qualifying pieces are** (instrument: JSON scan of all 36
+  `campaigns/prefabs/*.json` for an anchor named `spawn`/`entry`/`entrance`/
+  `threshold` or carrying a declared role): **5 of 36** — `cave-shore`,
+  `hello-room`, `island-beach-camp`, `island-galley`, `keep-spawn-hall`. In the
+  stone-keep tileset the page recommends, **exactly one piece of eleven** can be
+  transported INTO. So a two-area keep campaign fails unless its second area is the
+  spawn hall again.
+- **A person concludes**: "the engine is broken", or "my prefabs don't fit
+  together", and starts moving areas around, checking for fences, and re-reading
+  the jigsaw docs. Nothing they can read tells them the answer. **They give up
+  here**, and it is the second real thing they tried to build.
+- **What a person without engine knowledge would have done instead**: collapsed the
+  campaign into one area — which silently deletes the "physically enforced point of
+  no return" the page sold them, and they would never know that is what happened.
+- **Would have unstuck them**: `DW0311` naming the real condition —
+  "areas differ and `<area>`'s prefab declares no entry anchor (`spawn`/`entry`/
+  `entrance`/`threshold`), so no transport was emitted" — instead of guessing at
+  fences. This is the same class of defect `plan.rs`'s own comment at line 1905
+  records as having happened before: "*the island-tileset area was silently never
+  transported into, never framed*".
+- **Severity**: **stops the drill dead.** Highest-ranked item in this log.
+
+---
+# Part 3 — the machine ladder, and the second half of the transport defect
+
+## F13 — **a green build + green PackTest + a bot that cannot leave the spawn area**
+This is F12's twin and it is worse, because nothing goes red until the ladder.
+
+- **What happened**: with the destination area's entry anchor fixed, `delvec build`
+  exits 0 and `packtest-run.sh` passes **20/20 game tests**. Then:
+  ```
+  bot-1 | FAILED: step 1 (talk-to) failed: failed npc npc/toll-keeper at
+          [261, 65, 4] (range 3); bot at [4.5, 65.0, 4.5]: No path to the goal!
+  ::error:: bot ladder FAILED in project 'dw-wb-r2' (exit 1)
+  ```
+  The bot is standing at the campaign spawn. The first objective is in a different
+  area, 256 blocks across the void.
+- **Why** (again from `plan.rs`, again unreachable for a person): the transport map
+  is built by `for pair in obj_areas.windows(2)` — it pairs **consecutive
+  objectives**. The leg from the campaign spawn to the FIRST objective has no
+  earlier objective, so it is in no pair, so **no transport is ever emitted for
+  it**, and `DW0311` — which walks the same pair list — never examines it either.
+  **The compile-time completability proof does not cover the first leg.**
+- **Proof, by construction**: I inserted a `reach-anchor` objective in the spawn
+  area ahead of the first talk-to, so that a consecutive pair now spans the two
+  areas. `critical-path.json` step 1 gained `"transport": [261, 65, 2]` — the
+  destination's entry anchor — and the bot ladder went **PASSED (6 steps)**.
+  Before the insertion: no `transport` key on any step, bot red. One variable.
+- **So the undocumented rule, in full, is**: *inter-area transport is emitted on the
+  earlier objective of a consecutive objective pair whose areas differ, and only if
+  the later area's prefab declares an entry anchor; therefore the campaign's FIRST
+  objective must be in the spawn area.* **Not one clause of that sentence exists in
+  `SKILL.md`, in the live schema, or in `compiler.md`'s `DW0311` row.**
+- **What the page offers a person at this exact symptom** (line 1110): "**A
+  `talk-to` / `interact` step that times out with 'objective … did not complete'**:
+  read the rest of that line… *the server ANSWERED* … a re-used world … run
+  `fresh-volumes.sh --project <id>` and re-run before believing the content is at
+  fault." My failure is a **different string** ("No path to the goal!"), so that
+  advice does not apply — but it is the only entry on the page for a failing bot
+  step, so a person will run `fresh-volumes.sh`, get the same red, and conclude the
+  harness is broken.
+- **A person concludes**: the delve is fine and the bot is broken. They would ship
+  it, or give up. Note the shape: **green build + green PackTest + red bot with no
+  DW code** is the most demoralising ordering there is.
+- **Severity**: **stops the drill dead**, and it is the second-cheapest campaign
+  anyone can write.
+
+## F14 — a diagnostic whose prescription the author is not allowed to perform
+- **What happened**: using `hello-room` for two areas —
+  ```
+  DW0857 [error] gate anchor `anchor/door` is provided by 2 of this campaign's
+  areas (`area/ledger-room`, `area/weigh-house`) … An anchor name is unique per
+  AREA … **Rename the gate in one of these areas.**
+  ```
+- **The message is excellent about the problem and impossible about the remedy.**
+  The anchor name is not mine: it is `hello-room.json`'s, in the shared prefab
+  library, used by every campaign. "Rename the gate" means editing library
+  metadata — which the page's own rules forbid an author from doing casually and
+  which the whole `delve-admit` chain exists to govern. The remedy that IS
+  available — *use a different prefab for one of the two areas* — is not named.
+- **Same shape as F11**: a correct refusal whose only stated fix is out of the
+  author's reach. Two instances in one walk suggests the class is worth a sweep.
+- **Severity**: costs an hour.
+
+## F15 — the prefab library forces the fiction, and the page never warns you
+Cumulative, and it is the honest shape of the `areas[]` path today. To get a
+three-place customs post onto a green ladder I had to swap prefabs five times, and
+each swap produced a different error class:
+
+| attempt | area 3 piece | outcome |
+|---|---|---|
+| 1 | `keep-room-small-b` | `DW0311` — no entry anchor, no transport (F12) |
+| 2 | `keep-gate-room` | `DW0311` — same |
+| 3 | `hello-room` | build green; then `DW0317` (its `anchor/door` ships shut — the page DID warn, line 545) |
+| 4 | `hello-room` twice | `DW0857` — duplicate anchor across areas (F14) |
+| 5 | `island-galley` | `DW0318` — 8381 fluid cells leak into the void under `horizon: void` |
+
+Final shape: a customs post on a hill road made of a stone keep hall and a
+`hello-room`. **The library decided the fiction.** The page says "prefer
+`prefab_pool` (stone-keep tileset) for real layouts" and never says that of 36
+pieces, 5 can be entered, 5 contain a container, and 1 does both.
+- **Severity**: costs an hour, repeatedly — and it is where the "showcase mode"
+  ambition on line 96 quietly dies.
+
+## F16 — what worked, unprompted, and should be said plainly
+Recorded because a friction log that only lists breakage is not a measurement.
+- `packtest-run.sh` and `bot-run.sh` did **exactly** what the page says, first try,
+  with a compose project id, and tore their own volumes down: "fresh-volumes:
+  project verified clean (containers + volumes + networks)". 20/20 game tests.
+- `delvec fmt` — "examined 6 file(s); reformatted 6, 0 unparseable" — states its
+  binding count without being asked.
+- `delvec validate` reached green in **two** iterations from a first draft.
+- The DW messages I met (`DW0100`, `DW0205`, `DW0317`, `DW0438`, `DW0467`,
+  `DW0857`) are, as *explanations*, the best-written diagnostics I have seen in any
+  codebase: they say what is wrong, why the rule exists, and what the defect would
+  have cost in play. The failures above are failures of the PAGE and of two
+  *silent* paths — not of the diagnostic catalogue.
+
+---
+# Part 4 — review, staging, and the shape of the page itself
+
+## F17 — the step the page calls the PRIMARY review evidence needs a tool `Init` never establishes
+- **Page said** (step 9): "read the **POV sequence in route order** before you open
+  a single orbit render, and treat it as the primary evidence… Whole-scene and
+  player-POV shots come from `validation/render-shots.sh <build-dir>`… path-tracing
+  those scenes is Chunky, run as a separate process — **not wired into CI**."
+- **What happened**: `render-shots.sh` exits 0 and emits **Chunky scene JSONs, not
+  images**: "emitted 11 Chunky scene(s) … render with
+  `chunky-core-2.5.0-SNAPSHOT.474.g156e2bb`". To see a single POV frame a person
+  needs Java, a `ChunkyLauncher.jar`, and that exact pinned SNAPSHOT core.
+- **`Init` establishes none of them.** The word "chunky" appears 8 times on the
+  page; exactly once inside `Init`, and there only as a filesystem path for the
+  *client jar* (`~/.chunky/resources/minecraft.jar`) — not as a tool to install.
+- **A person concludes**: the review step produced no pictures, and goes hunting.
+  On this machine Chunky happens to be installed (`~/.chunky/lib/` carries the
+  pinned SNAPSHOT core) — **that is the owner's machine, not a property of the
+  procedure**, and I did not test the path from a machine without it.
+- **Severity**: costs an hour; **stops the drill dead** on a machine without Chunky,
+  at the step the page says not to skip ("A visual channel that fails soft is a
+  review that passed without looking").
+
+## F18 — the visual-review command renders the whole library, not the campaign
+- **Page said** (step 9): "`… delve-render -- batch campaigns/prefabs -o <workspace>/renders`".
+- **What happened**: exit 0 in 9s — **"batch: 36 prefab(s), 435 shot(s)"**. My
+  campaign uses **two** pieces. The page then says "Open the exterior/top/interior/
+  anchor PNGs and check each against its `expect` line", where the `expect` lines
+  live in the *build's* `render-plan.json` (11 shots, of a different kind:
+  4 `pov`, 2 `interior`, 2 `npc`, 2 `gate`, 1 `spawn`). Nothing states how the 435
+  library images relate to the 11 planned shots.
+- **A person concludes**: they are supposed to look at 435 pictures, most of them of
+  pieces their delve does not contain. They will look at none of them.
+- **Severity**: mild friction, but it converts a mandatory review step into theatre.
+
+## F19 — the last gate before play refuses a first campaign, 61 items deep
+- **Page said** (Playtest rounds, rule 5): run
+  `python3 tools/staging-gate.py --campaign <dir> --build <out> --report round-N-gate.md`
+  … "**A red is not permission to stop**".
+- **What happened**:
+  ```
+  staging-gate: REFUSED — 61 of 93 findings have no live, binding check on `wb-exp5`
+    … 40 UNBOUND, 21 INAPPLICABLE
+  staging-gate: this build is NOT stageable. Fix the red list, or override deliberately:
+    --stage-anyway "<why this session needs a red build>" --acknowledge-red 61
+  ```
+  Almost every UNBOUND row reads "0 × [X] in quests.json — **and the row declares no
+  `applies_when` probe, so which kind of zero this is was never measured**".
+- **Measured** (instrument: `docs/playtest-findings.json` at `90cf2051`):
+  **93 rows, 26 carry `applies_when`, 67 do not.** So the refusal is mostly a
+  property of the LEDGER, not of the campaign: a small campaign cannot bind rows
+  whose probe was never written, and the gate correctly refuses to call that a pass.
+- **A person concludes**: their first campaign is 61 defects deep. It is not.
+  They will use the override, on their first ever run, which is exactly the
+  "convenient override becomes habit" shape.
+- **The gate itself is exemplary**: the override prints all 61 classes, records the
+  reason, mints `staging-admission.json`, and the server announces it at boot
+  ("Anything the owner hits from those classes in this session is this override,
+  not a new finding"). That is the rule working. The friction is the ledger.
+- **Severity**: costs an hour on the first run, and trains the override.
+
+## F20 — `fresh-volumes.sh --project` cannot clean the stack the owner actually plays on
+- **Page said**: the entry scripts "fresh-volume their own project before and after
+  every run… To clean up by hand: `validation/fresh-volumes.sh --project <id>`.
+  `--project` is required everywhere and there is no daemon-wide mode."
+- **What happened**: after `docker compose … owner-play.yaml --profile play up` and
+  `down -v`, `fresh-volumes.sh --project dw-wb-play` answered:
+  ```
+  461e0a81cfb0  delvewright-server  127.0.0.1:25565->25565/tcp
+    A worker stack publishes NO host port; check the --project you passed.
+  ```
+  and cleaned nothing. Left behind: container `delvewright-server` (a **fixed**
+  container name from `owner-play.yaml`, so it is outside the project-scoped
+  reclaimer), volume `dw-wb-play_server-data`, network `dw-wb-play_default`. I
+  removed all three by hand.
+- **A person concludes**: nothing — which is the problem. It is silent, and it
+  accumulates one container + one volume + one network per play session.
+- **Severity**: mild friction per run; it is the "runnable locally decays with use"
+  shape, and the play path is the one a person runs most.
+
+## F21 — the page cannot be followed in the order it is written
+Measured against the heading map of `SKILL.md` at `90cf2051`:
+
+| what | where | why it breaks |
+|---|---|---|
+| `## The loop` steps 1–4 | 357–711 | tells you to write **all six stages** |
+| `### 4b … MANDATORY between the plan and the content` | **713** | "**Do not begin stage 5 until the Artifact is confirmed**" — i.e. the gate that forbids stages 5–6 is printed AFTER the instruction to write them |
+| `delvec fmt … — MANDATORY, before analyze` | **1191** | sits **inside** `### Localization stage (only when the prompt asks for other languages)` (1148–1211). A person with no second language skips that whole section and misses a step marked MANDATORY for every campaign, which CI then reds (`delvec fmt --check`) |
+| loop steps **5–11** (`analyze`, `build`, chronicle, ladder, visual, storybook, report) | **1445–1679** | **734 lines after step 4**, and nested inside `### The map pipeline` (1212–1679), a section that only applies to site-plan campaigns |
+
+- **A person concludes**: they have finished, at step 4. I only found steps 5–11
+  because I had read the whole file first. Someone working section by section — the
+  way a procedure is meant to be used — writes six stage documents and stops.
+- **Would have unstuck them**: the eleven numbered steps in one contiguous block,
+  with the reference material moved behind them.
+- **Severity**: **stops the drill dead**, silently, which is the worst kind.
+
+## F22 — gate 4b was never executed in this walk, and I am declaring it
+I produced **no** design-alignment Artifact and **no** reference images, because
+`Init` step 6 could not be completed (no image-provider API key — F5). The page's
+own rule is "Do not begin stage 5 until the Artifact is confirmed. A confirmation
+is an explicit yes, not the absence of an objection." **I began stage 5 anyway.**
+So this log says nothing about whether gate 4b works — only that the walk past it
+is not blocked by anything mechanical. A person without a key can walk straight
+through the only human-judgment gate on the page and nothing stops them.
+
+---
+# Verdict
+
+**Could a person with this repository and this page, and nothing else, reach a
+walkable delve by following it? No — not without four interventions, three of
+which are not available to them.**
+
+I did reach one. `localhost:25565` accepted a connection; the bot walked the
+critical path in 6 steps; PackTest passed 20/20. The route there ran through:
+
+1. **F12 — read the compiler source.** Nothing else on any surface a person is
+   pointed at contains the rule that inter-area transport requires the destination
+   area's prefab to declare an entry anchor. Not available to a person.
+2. **F13 — infer that the first objective must live in the spawn area**, because
+   the transport map only pairs consecutive objectives. Derived from the same
+   source read. Not available to a person.
+3. **F11 — do what a diagnostic explicitly forbids** (drop `container`), because
+   the two things it prescribes instead are impossible in the recommended tileset.
+   Available to a person, and it ships the defect the field exists to prevent.
+4. **F21 — read the whole 1940-line page before starting**, in order to know that
+   the procedure has eleven steps and that steps 5–11 are 734 lines below step 4,
+   inside a section about a pipeline my campaign does not use. Available in
+   principle; nobody works this way.
+
+Without 1 and 2, the honest answer is that a person stops at `DW0311` on their
+first multi-area campaign, or ships a build that is green everywhere and that the
+bot cannot walk out of the spawn room.
+
+# Ranked, in her terms
+
+**Stops the drill dead**
+1. **F12/F13 — inter-area transport.** Undocumented precondition; `DW0311` blames
+   the wrong thing; the first leg is not covered by the compile-time proof at all,
+   so the failure arrives from the bot as "No path to the goal!" after a green
+   build and a green PackTest. *This is the one to fix before she starts.*
+2. **F21 — the page's order is not followable.** Steps 5–11 are unreachable by
+   anyone reading in order; a MANDATORY `fmt` step hides inside the optional
+   localization section; gate 4b is printed after the work it forbids.
+3. **F11 — `collect` + `container` is unsatisfiable in the recommended tileset.**
+   1 of 36 library prefabs can satisfy it, and it is a dark cave.
+4. **F1 — Init's own verification command is `command not found`**, at step 1 of 6,
+   under a sentence that says a failure here is a hard stop.
+5. **F5/F22 — the whole page presupposes a paid image-provider API key**, disclosed
+   at Init step 6 of 6, after two cargo builds; and if you do not have one, nothing
+   mechanically stops you walking through the one human-judgment gate.
+
+**Costs an hour**
+6. F7 — no complete stage document anywhere on the page, and no rule for what
+   `dsl_version` to write.
+7. F15 — five prefab swaps, five different error classes, to place three rooms.
+8. F17 — the primary visual evidence needs Chunky, which Init never establishes.
+9. F6 — Init builds 2 of the 6 binaries the page invokes.
+10. F19 — the staging gate refuses a first campaign 61 items deep, 40 of them
+    because ledger rows lack a probe.
+11. F14 — `DW0857` prescribes a remedy (rename a library anchor) the author may not
+    perform.
+12. F3 — Init step 4 ("Python 3") is the one step with no way to confirm it, and the
+    thing it stands for (`delve_skin` in a venv) has no setup instructions anywhere.
+
+**Mild friction**
+13. F2 (second binary, second target dir) · F1b (`--release` twice) · F4 ("the
+    table" is 333 lines of JSON) · F8 ("internal error" for the documented
+    incremental state) · F9 (`happening` over-reach) · F10 (six stages vs seven) ·
+    F18 (435 renders for a 2-piece campaign) · F20 (the play stack leaks).
+
+# What I used that a person does not have
+
+**Established, with the instrument named:**
+- `crates/compiler/src/plan.rs` ~4086, `build_critical_path` — the transport rule.
+  A person cannot: the page forbids nothing here, it simply never points anywhere
+  that says it, and the live schema for all six stages contains **zero** matches
+  for `transport` or `inter-area`. *A person without this would have collapsed the
+  campaign to one area and silently lost the point-of-no-return the page sells.*
+- `crates/compiler/src/plan.rs` ~1905 — a comment recording that this same class of
+  silence has happened before ("the island-tileset area was silently never
+  transported into, never framed").
+- The library sweeps (5/36 with a container blockstate, 3/36 with a container
+  anchor, 5/36 with an entry anchor) — instrument: `delvec palette` over all 36
+  `campaigns/prefabs/*.nbt` plus a JSON scan of the 36 metadata files, at whatever
+  revision the shared `campaigns/` symlink stood at during this round. **That
+  checkout is mutable and I did not pin it**; the counts are true of what I read.
+- The page-structure counts (F6, F21) — instrument: `grep -c` and a heading map over
+  `.claude/skills/new-delve/SKILL.md` at `90cf2051f6b8c38f41e77577f1f58698f75dc363`.
+- 93 ledger rows, 26 with `applies_when` — `docs/playtest-findings.json` at the same
+  revision.
+
+**What I did NOT establish (did not contradict, but did not prove):**
+- That a fresh clone lacks `delve-grammar`/`delve-admit` at the moment the prefab
+  procedure asks for them. My `target/` was donor-populated before I started.
+- Any build TIME. Every figure here is warm and understates a fresh clone.
+- Anything about gate 4b, `tools/refimg.py` beyond its refusal, the map pipeline
+  (`geometry-brief`/`layout-graph`/`site-plan`/`detail-plan`), `delve-grammar`,
+  `delve-admit`, the skin toolchain, localization, branch chronicles, or
+  `delvec metrics --gym`. **This walk took the `areas[]` branch only.** The
+  site-plan branch — the one a map-is-the-point campaign takes — is unwalked, and
+  its `Init` hard-stops on the API key I do not have.
+- Whether Chunky can be obtained by someone who does not already have it.
+
+**Aids I deliberately did not use**, because the page never points at them:
+`delvec metrics --gym`, `campaigns/the-bowl`, the gallery. The brief named the
+first two; the page mentions `--gym` only inside the map pipeline, which this
+campaign is not on.
