@@ -763,10 +763,21 @@ labelled button that swings the camera around the outside for a look at the
 massing; while it is on, dragging orbits, and any movement key puts the reviewer
 back on their feet with the button visibly released.
 
-The whole mapping lives in one file, `crates/render/src/viewer/controls.js`,
-which knows nothing about how the page draws. `crates/render/tests/controls.test.mjs`
+The whole mapping lives in one file, `crates/compiler/src/view/viewer/controls.js`,
+which knows nothing about how the page draws. `crates/compiler/tests/controls.test.mjs`
 executes it — pressing keys and checking where the body ends up in each of the
 four cardinal facings — and CI runs it as a step of `rust (fmt, clippy, test)`.
+
+**A page of several prefabs is several scenes, and everything on screen belongs
+to the one being shown.** The picker at the top switches between them; the
+anchor labels, like the camera presets, the anchor list and the block list, are
+rebuilt for the prefab on screen and hold nothing from the one before it. The
+label pass reads which prefab is current rather than being told by whoever
+switched, so the rule holds however the scene changed — the picker, a `#model=`
+fragment, or the headless surface. `crates/compiler/tests/labels.test.mjs` boots
+the real page over a small DOM and checks what the label layer holds across a
+switch, in both directions, over every ordered pair of models; CI runs it as a
+step of the same job.
 
 **Cameras.** `Ground level`, `Exterior ¾` and `Plan` always exist; every declared
 anchor and jigsaw socket adds a **point of view** — eye at **1.62 blocks** above

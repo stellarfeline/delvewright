@@ -646,6 +646,38 @@
   }
 
   const labelEls = new Map();
+  let labelModel = null;
+
+  /**
+   * The label elements belong to the model on screen, not to the page.
+   *
+   * They are a per-model panel structure exactly like the preset buttons, the
+   * anchor list and the legend — and like those three, the whole of them is
+   * discarded when the model changes. The difference is where the rebuild can
+   * live: those are built once per model in `selectModel`, while these are
+   * built lazily inside the draw pass, so `selectModel` is not the place that
+   * can empty them.
+   *
+   * That is deliberately not repaired by clearing the layer at the switch. The
+   * pool is asked here, in the pass that draws it, whose model it holds, so a
+   * label cannot outlive its scene by ANY route — the picker, a `#model=`
+   * fragment at boot, the headless surface, or a front end this page has not
+   * grown yet. A clearing call at a switch site would be correct only for the
+   * switch sites that exist today.
+   *
+   * Keying by name is also only sound within one model: names are unique per
+   * prefab and not across a page of them (a page of the eight Halgrave zones
+   * has 187 anchors under 181 distinct names). Held across a switch, a shared
+   * name would hand the new scene the old scene's element — with the old
+   * scene's socket and way-in styling frozen in at creation.
+   */
+  function labelPoolFor(model) {
+    if (labelModel === model) return labelEls;
+    labelLayer.textContent = "";
+    labelEls.clear();
+    labelModel = model;
+    return labelEls;
+  }
 
   /**
    * Place anchor labels nearest-first, dropping any that would land on one
@@ -658,6 +690,7 @@
    */
   function positionLabels() {
     const model = state.model;
+    labelPoolFor(model);
     const wanted = state.show.anchors && state.show.labels;
     if (!wanted) {
       for (const el of labelEls.values()) el.style.display = "none";
@@ -1483,6 +1516,16 @@
     }),
     applyPreset: (id) => { applyPreset(id); draw(); },
     selectModel: (i) => { selectModel(i); draw(); },
+    // The label pass, and what it left in the layer. `draw` cannot stand in for
+    // it: `draw` returns at once without a WebGL context, and a check that can
+    // only run where there is one is a check CI cannot run. The pass itself
+    // needs no context — it is the projection matrix, the DOM and nothing else.
+    positionLabels: () => { positionLabels(); },
+    labels: () => [...labelLayer.children].map((el) => ({
+      text: el.textContent,
+      className: el.className,
+      shown: el.style.display !== "none",
+    })),
     // The control surface, reachable without synthesising events, so a headless
     // check can drive exactly what a pair of hands drives.
     controls: C,
