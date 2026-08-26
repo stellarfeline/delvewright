@@ -709,8 +709,8 @@ pub struct BodyTraversal {
     pub locomotion: Locomotion,
 }
 
-/// One object class that has a body, a position, and a compiler-emitted route —
-/// i.e. one consumer of [`BodyTraversal`].
+/// One object class that has a **body the compiler stages**: a declared
+/// position, a declared species, and a compiler-emitted route.
 ///
 /// A sum type rather than a flattened tuple, so **adding a body class is a
 /// compile error at every consumer** until each one says what it does with it.
@@ -718,12 +718,24 @@ pub struct BodyTraversal {
 /// the defect class CLAUDE.md names: a hand-rolled walk that
 /// enumerated three of five effect roots.
 ///
+/// **Keyed to the object, not to the verb that first needed it.** This type was
+/// introduced for [`BodyTraversal`] and read, for a while, as "one consumer of
+/// `BodyTraversal`" — which is why its only enumeration
+/// ([`body_traversal_sites`]) was filtered to bodies declaring a traversal, and
+/// why the second property a body carries, its [`NpcSkin`], had no enumeration
+/// at all: the bake walked the stage-2 npc list by hand, and an actor's skin was
+/// emitted into the summon, never baked into the pack, and never refused.
+/// A body's properties belong to the body. [`body_sites`] is the unfiltered
+/// walk; a per-property enumeration is a *filter* over it, never a second walk.
+///
 /// Deliberately NOT a member: [`WaveMob`]. A wave mob has a body and a position,
 /// but it is driven by **native vanilla AI**, never by a compiler-emitted route,
 /// so the compiler makes no claim about the moves it makes and a locomotion
-/// declaration on it could change no verdict. It becomes a consumer the day the
-/// lane proof reasons about how its bodies move — and it joins here, through
-/// this same type, rather than through a field of its own.
+/// declaration on it could change no verdict. It declares no `skin` either — the
+/// exclusion holds for both properties, and the schema says so
+/// (`crates/dsl/tests/body_skin_sites.rs`). It becomes a member the day the lane
+/// proof reasons about how its bodies move — and it joins here, through this
+/// same type, rather than through a field of its own.
 #[derive(Clone, Copy, Debug)]
 pub enum BodyRef<'a> {
     /// A stage-2 NPC, walked by `move-npc`.
@@ -767,6 +779,73 @@ impl<'a> BodyRef<'a> {
             BodyRef::Actor(a) => a.traversal.as_ref(),
         }
     }
+
+    /// This body's skin declaration, if it carries one.
+    ///
+    /// A skinned body of **either** class ships as a `minecraft:mannequin`
+    /// whose `profile.texture` resolves to `delvewright:npc/<texture_id>`, so
+    /// either one owes the same `skins/<texture_id>.png` under the same refusal
+    /// (`DW0309`). Answering it here is what stops the bake from being a
+    /// property of one class.
+    pub fn skin(self) -> Option<&'a NpcSkin> {
+        match self {
+            BodyRef::Npc(n) => n.skin.as_ref(),
+            BodyRef::Actor(a) => a.skin.as_ref(),
+        }
+    }
+
+    /// This class's name in the JSON Schema export (`delvec schema --stage all`).
+    ///
+    /// The join between the closed Rust set and the schema, which is the only
+    /// authority on *which object classes declare what*. `body_skin_sites.rs`
+    /// compares the two.
+    pub fn class(self) -> &'static str {
+        match self {
+            BodyRef::Npc(_) => "Npc",
+            BodyRef::Actor(_) => "Actor",
+        }
+    }
+
+    /// Every body class, by schema name. The closed set, stated once.
+    pub const ALL_CLASSES: [&'static str; 2] = ["Npc", "Actor"];
+}
+
+/// A staged body declaration, with the JSON pointer at the declaration itself.
+///
+/// The pointer is at the OBJECT (`/content/npcs/3`), not at any one of its
+/// fields: a per-property site appends its own field name. A pointer built per
+/// property is how two walks of one population start disagreeing about where a
+/// thing was declared.
+#[derive(Clone, Debug)]
+pub struct BodySite<'a> {
+    /// Which object class declared it, and the object itself.
+    pub body: BodyRef<'a>,
+    /// JSON pointer at the declaration, for a diagnostic path.
+    pub path: String,
+}
+
+/// **Every** body the campaign declares, in stage order: stage-2 npcs in
+/// declaration order, then stage-5 actors in declaration order.
+///
+/// The one walk of the campaign's bodies. A rule about a property a body carries
+/// is a *filter* over this ([`body_traversal_sites`], [`body_skin_sites`]) — never
+/// a second traversal, and never a hand-written loop over one stage's list,
+/// which is exactly how an actor's skin came to be emitted but never baked.
+pub fn body_sites(c: &crate::envelope::Campaign) -> Vec<BodySite<'_>> {
+    let mut out: Vec<BodySite<'_>> = Vec::new();
+    for (i, n) in c.npcs.content.npcs.iter().enumerate() {
+        out.push(BodySite {
+            body: BodyRef::Npc(n),
+            path: format!("/content/npcs/{i}"),
+        });
+    }
+    for (i, a) in c.quests.content.actors.iter().enumerate() {
+        out.push(BodySite {
+            body: BodyRef::Actor(a),
+            path: format!("/content/actors/{i}"),
+        });
+    }
+    out
 }
 
 /// A body that carries a [`BodyTraversal`] declaration, with the JSON pointer at
@@ -787,26 +866,49 @@ pub struct BodyTraversalSite<'a> {
 /// check (`DW0455`) and by the compiler's proof (`DW0454`), so "which object
 /// classes carry this" is answered in exactly one place.
 pub fn body_traversal_sites(c: &crate::envelope::Campaign) -> Vec<BodyTraversalSite<'_>> {
-    let mut out: Vec<BodyTraversalSite<'_>> = Vec::new();
-    for (i, n) in c.npcs.content.npcs.iter().enumerate() {
-        if let Some(t) = &n.traversal {
-            out.push(BodyTraversalSite {
-                body: BodyRef::Npc(n),
-                path: format!("/content/npcs/{i}/traversal"),
+    body_sites(c)
+        .into_iter()
+        .filter_map(|s| {
+            s.body.traversal().map(|t| BodyTraversalSite {
+                body: s.body,
+                path: format!("{}/traversal", s.path),
                 traversal: t,
-            });
-        }
-    }
-    for (i, a) in c.quests.content.actors.iter().enumerate() {
-        if let Some(t) = &a.traversal {
-            out.push(BodyTraversalSite {
-                body: BodyRef::Actor(a),
-                path: format!("/content/actors/{i}/traversal"),
-                traversal: t,
-            });
-        }
-    }
-    out
+            })
+        })
+        .collect()
+}
+
+/// A body that carries an [`NpcSkin`] declaration, with the JSON pointer at it.
+#[derive(Clone, Debug)]
+pub struct BodySkinSite<'a> {
+    /// Which object class declared it, and the object itself.
+    pub body: BodyRef<'a>,
+    /// JSON pointer at the `skin` field, for a diagnostic path.
+    pub path: String,
+    /// The declaration.
+    pub skin: &'a NpcSkin,
+}
+
+/// Every body in the campaign that DECLARES a skin, in stage order.
+///
+/// The one enumeration of what the resource-pack bake must serve and what
+/// `DW0309` must refuse, for every class alike — a skinned npc and a skinned
+/// actor are the same fact about two bodies.
+///
+/// **Declarations, not textures.** Two bodies may name one `texture_id` (an npc
+/// and the puppet that plays it), and the caller decides what that means; the
+/// bake reads each file once.
+pub fn body_skin_sites(c: &crate::envelope::Campaign) -> Vec<BodySkinSite<'_>> {
+    body_sites(c)
+        .into_iter()
+        .filter_map(|s| {
+            s.body.skin().map(|k| BodySkinSite {
+                body: s.body,
+                path: format!("{}/skin", s.path),
+                skin: k,
+            })
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

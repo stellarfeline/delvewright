@@ -1962,7 +1962,7 @@ fn is_verbatim_binary_output(path: &str) -> bool {
 
 /// The `SKINS.md` build-output note: how the packaging task wires the emitted
 /// resource pack into the delve image (itzg env), plus the pack SHA-1. The pack
-/// carries the mannequin NPC skins (spec-0009) and/or the `delve:art` title font
+/// carries the mannequin skins every staged body declares (spec-0009) and/or the `delve:art` title font
 /// (spec-0014), depending on what the campaign uses.
 fn pack_note(
     sha1: &str,

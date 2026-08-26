@@ -110,7 +110,10 @@ pub use stages::{
     WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
     is_potion_bearing_item,
 };
-pub use stages::{BodyRef, BodyTraversalSite, body_traversal_sites, for_each_campaign_effect};
+pub use stages::{
+    BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,
+    body_traversal_sites, for_each_campaign_effect,
+};
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,
     SocketState, TreeKind, WorldEdit, WorldEditsContent,
