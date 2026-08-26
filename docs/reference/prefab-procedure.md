@@ -252,12 +252,16 @@ names. **The authoring surface, with a worked example, is
 only one that says how; `delve-grammar show --program spatial-contract` prints a
 runnable one.
 
-**Write one whenever the piece has more than one way in and out**, and always
-when those ways are not the region's north and south faces — §4's `traversable`
-has nothing else to read, and a corner passage or an east–west corridor fails it
-outright without one. A piece is also worth contracting whenever a campaign will
-place it next to something: the face contract is what the compiler mates seams
-with (§9).
+**Write one whenever the piece has more than one way in and out.** §4's
+`traversable` judges a piece that has none — it derives the sides the piece
+opens on from the blocks — but what it proves then is that some sides of the
+region are joined, not that the ways in you *meant* are, and it says so where it
+prints its count. A contract makes them declared ways in, gives each one a class
+(`walk`, `stair`, `barred`), and is the only way to state a way out the blocks
+cannot show: a piece entered from **above** has no open vertical side at all, so
+that gate binds **zero** and reds until the face is declared. A piece is also
+worth contracting whenever a campaign will place it next to something: the face
+contract is what the compiler mates seams with (§9).
 
 **An `exterior` edge is one claim per space, not one per door.** The faces it
 exports are *derived from the blocks*: an exterior edge that names no `via`
@@ -343,41 +347,38 @@ once the prefab exists, so a `pass` never sits above a failure.
 | `non-empty` | the expansion built something |
 | `stair-shape` (only when the piece holds a stair) | every written stair `shape` is the one vanilla derives from that stair's own neighbours (`DW0801`). A stair's `shape` is not stored — the world recomputes it on the first horizontal block update — so a wrong one survives the `.nbt`, the render and the contact sheet, and resets in play. A stair that writes no `shape` makes no claim and nothing can disagree with it |
 | `fluid-contained` (only when the piece holds fluid) | every fluid cell is a source, and no source has an open cell beside or below it (`DW0800`). A run direction that leaves the piece's own outer face is counted and never judged here — a shoreline piece's water is the sea — and reported as a finding on every piece that has one. The compiler decides it at placement (`DW0318`): fluid outside every placed piece is refused under a void horizon and is fine under an ocean one |
-| `traversable` (`--traversable`) | a walk connects every pair of the piece's ways in and out. Which cells those are depends on whether the piece declares a spatial contract, and the difference decides whether the gate is satisfiable at all — read the two paragraphs under this table. Add `--allow-falls` for a piece entered by stepping off a ledge |
+| `traversable` (`--traversable`) | a body can walk between every pair of the piece's ways in and out — its declared `exterior` edges where it has a spatial contract, and otherwise the sides of the region its standable floor reaches, whichever those turn out to be. It asks the piece which faces it opens on, so a passage that runs east–west, or turns a corner, is judged the same as one that runs north–south. The two paragraphs under this table say what the binding count is counting and what a red does. Add `--allow-falls` for a piece entered by stepping off a ledge |
 | `symmetric` (`--symmetric x\|y\|z`) | the piece is its own mirror image across the mid-plane of that world axis, compared by presence rather than by block state |
 | `reachable-floor` (`--reachable-floor`) | every cell of floor **under a roof** can be walked to from the grade entrance |
 
 `--traversable` is opt-in because it is a claim about a *kind* of piece: a room
-with one door has no far end and would fail it correctly and uselessly. **Pass
-it whenever the piece is a passage, a stair or a route** — that is most of them,
-and a route nobody proved walkable is the defect the gate exists for.
+with one way out has nothing to walk through and would fail it correctly and
+uselessly. **Pass it whenever the piece is a passage, a stair or a route** —
+that is most of them, and a route nobody proved walkable is the defect the gate
+exists for. It does not matter which way the route runs: the gate reads the
+sides the piece actually opens on, so a corridor along `X`, a corridor along
+`Z`, and a passage that turns a corner all get the same question.
 
-**It needs a spatial contract to know where the piece's ways in are, and without
-one it looks at the north and south faces of the region box and nowhere else.**
-A piece that declares no contract has declared no doors, so the gate falls back
-to counting standable cells on those two faces — and it says so in its own
-detail line. Everything about that fallback is a fact about the region box
-rather than about the passage: a corridor that turns a corner has its ends on
-*perpendicular* faces and fails; a perfectly straight corridor running east to
-west has its ends on the two faces the gate never looks at, and fails with a
-binding of **zero**. Both are as walkable as anything the rule library builds,
-and the same report says so a few lines further down, where the always-on
-`reachability` line reads `100.0%`. **The gate is not disagreeing with that line
-— it is answering a question about two particular faces.**
+**The binding count means one of two things, and the gate's own detail line says
+which.** With a spatial contract it is **declared ways in and out** — the piece's
+`exterior` faces, in any of the six directions, each named with its class.
+Without one it is **open sides derived from the blocks**: a side of the region
+its standable floor reaches, counted as sides and not as cells. A derived side is
+a side the floor happens to reach — a terrace edge, a ledge, a gap nobody meant
+as an entrance — so the line prints *these are not doors* beside the number.
+Both kinds go through the same walk, so one piece with and without a contract is
+judged by the same rule.
 
-So the rule above has one condition on it: **a piece whose ways in and out are
-not the north and south faces declares a spatial contract, and then this gate is
-about the ways the piece itself declared, in any direction** (§3, *Say where a
-body goes*). With a contract the same corner passage reads
+**Fewer than two ways out is a refusal, and it names both repairs**: open or
+declare the second way out, or stop claiming the piece is a route. A room with
+one door belongs there and should not carry the flag at all. So does a piece
+entered from **above**, and that one is a real route: its opening is the one a
+derivation cannot read, because a standable cell never lies on the region's top
+or bottom plane. It binds **zero** until the face is declared, which a contract
+exports on any of the six sides, `up` included. A red here writes no `.nbt`, so
+this is not a warning to ship past.
 
-```text
-traversable  pass  bound 4   4 declared way(s) in or out — west walk, west walk,
-             north walk, north walk — and a walk connects every pair of them
-```
-
-A red here writes no `.nbt`, so this is not a warning to ship past.
-
-`--traversable` is a claim about the **route only**. Both ends it joins are at
+`--traversable` is a claim about the **route only**. The ways in it joins are at
 ground level, so a green `traversable` says nothing about the storeys above: a cathedral has
 passed it with 45% of its floor reachable and nothing at all reachable above the
 nave. **Pass `--reachable-floor` whenever the piece has an inside a body is meant
@@ -681,8 +682,12 @@ whose lowest walkable course is `y` and whose opening spans cells `c1..c2` acros
 the wall, `--pos` is `y` at the middle of that span, on the face's own plane
 (`x=0` for a west face, `z=0` for a north face). `--facing` is the direction
 **out** of the piece. A `--pos` outside the structure is refused; one that is
-merely in the wrong place is not, so read it off the piece's own declared
-opening — §4's contract report prints each exterior face as a cell range.
+merely in the wrong place is not, so read it off the piece rather than recall it.
+Where the piece declares a spatial contract, the metadata written beside it
+carries every exterior face's opening as a `from`/`to` cell pair
+(`spatial_contract.faces[]`) — the expand report and `audit` name that face's
+direction and its cell **count**, never its span. Where it declares none, a
+`mark` whose scope is the mouth itself (§3) records that cell in `anchors`.
 
 `--name` and `--target` are the jigsaw's own name and the name it seeks; a pair
 of pieces mate when one's `--name` is the other's `--target`. `--pool` is the

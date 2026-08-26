@@ -1850,9 +1850,12 @@ this needs were built at Init step 2.
    **The authoring surface is `docs/reference/grammar.md` §2d** — that section is
    the only place that says how, and `delve-grammar show --program
    spatial-contract` prints a runnable one. Write one whenever the piece has more
-   than one way in and out, and always when those ways are not the region's north
-   and south faces (step 4 says why). Budget it as part of authoring: the moment a
-   `contract` block is present, **nine obligations run with no flag** at both
+   than one way in and out. Step 4's `traversable` judges a piece that has none —
+   it derives the sides the piece opens on from the blocks — but only a contract
+   turns that count into declared ways in, and only a contract can state a way
+   out the blocks cannot show: a piece entered from **above** binds zero there
+   and reds. Budget it as part of authoring: the moment a `contract` block is
+   present, **nine obligations run with no flag** at both
    doors that read the piece — every name must resolve, every standable cell must
    lie in something declared, an `enclosed` space must be closed except at a
    claimed opening, every declared edge must hold on the bytes, and every anchor
@@ -1881,15 +1884,18 @@ this needs were built at Init step 2.
    no `.nbt` (exit 4). **Read the `findings` in the report** — a gate that bound to
    zero objects, or a program that declared no anchors, is a finding, not a pass.
 
-   **`--traversable` on a piece with no spatial contract asks only about the
-   north and south faces of the region box**, because a piece that declares no
-   contract has declared no doors and the gate has nothing else to read. So a
-   corridor that turns a corner fails it — its ends are on perpendicular faces —
-   and a straight corridor running east to west fails it with a binding of
-   **zero**, both while the always-on `reachability` line further down the same
-   report reads `100.0%`. That is not a contradiction: the gate is answering
-   about two particular faces. **The fix is step 3's contract, not the flag** — declare
-   one and the gate counts the ways the piece itself declared, in any direction.
+   `--traversable` asks the piece which faces it opens on, so a route is judged
+   the same whichever way it runs and a passage that turns a corner is judged the
+   same as a straight one. Where the piece declares a spatial contract those faces
+   are its `exterior` edges and the binding count is doors; where it declares
+   none they are the sides of the region its standable floor reaches, and the
+   count is open sides — and a derived side is not a door, which the detail line
+   says beside the number. Fewer than two is a refusal that names both repairs:
+   open or declare the second way out, or stop claiming the piece is a route. A
+   red here writes no `.nbt`, so it is not a warning to ship past. A piece
+   entered from **above** lands there with a binding of **zero**, because a
+   standable cell never lies on the region's top plane; that one is repaired by
+   declaring the face at step 3, not by dropping the flag.
 
    Three of the always-on gates are about how a block state is SPELLED —
    `shape-complete` (`DW0735`), `states-complete` (`DW0737`) and `oriented-fills`
@@ -1908,7 +1914,7 @@ this needs were built at Init step 2.
    `{"local": …}` and the answer becomes `pass` at every region.
 
    **Read the `reachability` line too**, which prints whether you asked or not:
-   `traversable` joins two ground-level faces and says nothing about the storeys
+   `traversable` joins ground-level ways in and says nothing about the storeys
    above, so a building can pass every gate with half its floor stranded.
    Unreachable floor **under a roof** is a room with no way in, and the report
    gives you the box to go and look at. Unreachable floor open to the sky is a
@@ -2001,8 +2007,11 @@ this needs were built at Init step 2.
 
    **`socket --pos` is the jigsaw cell: bottom-centre of the opening, in the wall
    plane.** The opening is built from it — width centred on it, height climbing
-   from it — so read it off the piece's own declared opening, which step 4's
-   contract report prints as a cell range. `--facing` points **out** of the piece;
+   from it — so read it off the piece: with a spatial contract, the metadata
+   written beside it carries each exterior face's opening as a `from`/`to` cell
+   pair (`spatial_contract.faces[]`), where step 4's report and `audit` name only
+   the face's direction and cell count; with none, a `mark` whose scope is the
+   mouth itself records that cell. `--facing` points **out** of the piece;
    `--name`/`--target` are what mate one piece to another; `--pool` is the
    `prefab_pool` the far side comes from. The carved socket leaves a
    `minecraft:jigsaw` block in the doorway carrying `final_state: minecraft:air`,
