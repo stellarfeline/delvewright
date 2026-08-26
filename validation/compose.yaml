@@ -70,7 +70,12 @@ services:
       # than a missing one, because the caller believes it. Same default, so an
       # invocation that names no tree is unchanged.
       context: ${DELVE_OUTPUT:-./delve-output}
-      dockerfile: ../Dockerfile.delve
+      # Relative to the CONTEXT, so a build tree outside `validation/` cannot
+      # resolve it — the failure is `failed to read dockerfile: open
+      # Dockerfile.delve`, which reads as a missing file rather than as a
+      # tree in the wrong place. The entry scripts export an absolute path;
+      # the default keeps a bare `docker compose` on the default tree working.
+      dockerfile: ${DELVE_DOCKERFILE:-../Dockerfile.delve}
     # …and the TAG follows the tree, for the same reason the compose project
     # follows the ladder: an image tag is global to the daemon, so two ladders
     # building different trees into one tag race, and the loser boots the other's
@@ -130,7 +135,12 @@ services:
     profiles: ["playtest"]
     build:
       context: ./delve-output
-      dockerfile: ../Dockerfile.delve
+      # Relative to the CONTEXT, so a build tree outside `validation/` cannot
+      # resolve it — the failure is `failed to read dockerfile: open
+      # Dockerfile.delve`, which reads as a missing file rather than as a
+      # tree in the wrong place. The entry scripts export an absolute path;
+      # the default keeps a bare `docker compose` on the default tree working.
+      dockerfile: ${DELVE_DOCKERFILE:-../Dockerfile.delve}
     image: delvewright/delve:local
     environment:
       EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}

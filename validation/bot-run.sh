@@ -68,6 +68,9 @@ fi
 mkdir -p "$here/${run_out#./}"
 
 export DELVE_OUTPUT="$output"
+# The Dockerfile lives beside THIS script, never beside the build tree. Left
+# relative to the context, any tree outside `validation/` fails to resolve it.
+export DELVE_DOCKERFILE="$here/Dockerfile.delve"
 # The image tag follows the project, because an image TAG is global to the daemon
 # in exactly the way a container name is: two ladders building different trees into
 # `delvewright/delve:local` race, and the loser boots the other ladder's delve.
