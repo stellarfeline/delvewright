@@ -347,7 +347,7 @@ once the prefab exists, so a `pass` never sits above a failure.
 | `non-empty` | the expansion built something |
 | `stair-shape` (only when the piece holds a stair) | every written stair `shape` is the one vanilla derives from that stair's own neighbours (`DW0801`). A stair's `shape` is not stored — the world recomputes it on the first horizontal block update — so a wrong one survives the `.nbt`, the render and the contact sheet, and resets in play. A stair that writes no `shape` makes no claim and nothing can disagree with it |
 | `fluid-contained` (only when the piece holds fluid) | every fluid cell is a source, and no source has an open cell beside or below it (`DW0800`). A run direction that leaves the piece's own outer face is counted and never judged here — a shoreline piece's water is the sea — and reported as a finding on every piece that has one. The compiler decides it at placement (`DW0318`): fluid outside every placed piece is refused under a void horizon and is fine under an ocean one |
-| `traversable` (`--traversable`) | a body can walk between every pair of the piece's ways in and out — its declared `exterior` edges where it has a spatial contract, and otherwise the sides of the region its standable floor reaches, whichever those turn out to be. It asks the piece which faces it opens on, so a passage that runs east–west, or turns a corner, is judged the same as one that runs north–south. The two paragraphs under this table say what the binding count is counting and what a red does. Add `--allow-falls` for a piece entered by stepping off a ledge |
+| `traversable` (`--traversable`) | a body can walk between every pair of the piece's ways in and out — its declared `exterior` edges where it has a spatial contract, and otherwise the sides of the region its standable floor reaches, whichever those turn out to be. It asks the piece which faces it opens on, so a passage that runs east–west, or turns a corner, is judged the same as one that runs north–south. The paragraphs below say what the binding count is counting and what a red does. Add `--allow-falls` for a piece entered by stepping off a ledge |
 | `symmetric` (`--symmetric x\|y\|z`) | the piece is its own mirror image across the mid-plane of that world axis, compared by presence rather than by block state |
 | `reachable-floor` (`--reachable-floor`) | every cell of floor **under a roof** can be walked to from the grade entrance |
 
@@ -371,11 +371,11 @@ judged by the same rule.
 
 **Fewer than two ways out is a refusal, and it names both repairs**: open or
 declare the second way out, or stop claiming the piece is a route. A room with
-one door belongs there and should not carry the flag at all. So does a piece
-entered from **above**, and that one is a real route: its opening is the one a
-derivation cannot read, because a standable cell never lies on the region's top
-or bottom plane. It binds **zero** until the face is declared, and a contract
-exports a face on any side, `up` included. A red here writes no `.nbt`, so this
+one door belongs there and should not carry the flag at all. A piece entered
+from **above** belongs there too, and that one *is* a route: its opening is the
+one a derivation cannot read, because a standable cell never lies on the
+region's top or bottom plane. It binds **zero** until the face is declared, and
+a contract exports a face on any side, `up` included. A red here writes no `.nbt`, so this
 is not a warning to ship past.
 
 `--traversable` is a claim about the **route only**. The ways in it joins are at
