@@ -84,7 +84,14 @@ export DW_BOT_OUT="./run-out/$PROJECT"
 # this script runs the same `validate` profile with `up --build` and was missed
 # when that fix landed -- the fix enumerated the scripts that call compose
 # rather than the directory that holds them.
-export DELVE_DOCKERFILE="$here/Dockerfile.delve"
+# ABSOLUTE, and that is the whole point: compose resolves a RELATIVE
+# `dockerfile` against the build CONTEXT, so `$here` -- which is the bare
+# string "validation" in this script -- would become <build tree>/validation
+# and fail as `lstat <tree>/validation: no such file or directory`. bot-run.sh
+# computes an absolute $here and did not show this; the first version of this
+# export was proven with an absolute value and therefore proved nothing about
+# what this script actually exports.
+export DELVE_DOCKERFILE="$PWD/validation/Dockerfile.delve"
 TIER="${DELVEWRIGHT_BRANCHES:-all}"
 
 COMPOSE=(docker compose -p "$PROJECT" -f "$here/compose.yaml" --profile validate)
