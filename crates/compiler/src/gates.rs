@@ -12,7 +12,7 @@ use delvewright_dsl::{Campaign, Diagnostic};
 
 use crate::registry::PrefabRegistry;
 use delvewright_dsl::DwCode;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// `DW0343`: a `close-gate` targets a gate anchor that declares no fill `block` in
 /// its prefab metadata (or is not a gate region), so the compiler cannot seal it.
@@ -99,8 +99,9 @@ pub const DW_GATE_ANCHOR_AMBIGUOUS: DwCode = DwCode::every_version("DW0857");
 /// here would be secured by nothing the defect could not also supply.
 pub const DW_ANCHOR_AMBIGUOUS: DwCode = DwCode::every_version("DW0859");
 
-/// Every area of `c` that provides `anchor` as a gate the compiler can fill,
-/// paired with the refusals the authority raised while asking.
+/// Every area of `c` that provides `anchor` as a gate the compiler can fill —
+/// **and which of that area's pieces provides it** — paired with the refusals
+/// the authority raised while asking.
 ///
 /// The denominator is **this campaign's own pieces** — each area's bare `prefab`,
 /// or every member of its `prefab_pool` — and never the loaded library. A piece
@@ -108,18 +109,27 @@ pub const DW_ANCHOR_AMBIGUOUS: DwCode = DwCode::every_version("DW0859");
 /// about what this campaign's gates are made of. Asking the library is what let
 /// two pieces belonging to no area of the campaign satisfy `DW0343` on a shortcut
 /// they had nothing to do with.
+///
+/// The **piece** is kept, not just the area, because it is the difference between
+/// a refusal an author can act on and one they cannot. The remedy for an
+/// ambiguous gate is to change which piece one of the areas binds, and an author
+/// cannot choose which area to change without knowing what each one is bound to.
+/// The walk already had the answer in hand and threw it away.
 fn gate_providers(
     c: &Campaign,
     prefabs: &PrefabRegistry,
     anchor: &str,
-) -> (BTreeSet<String>, Vec<String>) {
-    let mut areas = BTreeSet::new();
+) -> (BTreeMap<String, BTreeSet<String>>, Vec<String>) {
+    let mut areas: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut refusals = Vec::new();
     for area in &c.world.content.areas {
         for piece in prefabs.area_pieces(area) {
             match prefabs.gate_anchor_in(&piece, anchor) {
                 Ok(Some(_)) => {
-                    areas.insert(area.id.as_str().to_string());
+                    areas
+                        .entry(area.id.as_str().to_string())
+                        .or_default()
+                        .insert(piece.clone());
                 }
                 Ok(None) => {}
                 Err(why) => refusals.push(format!("`{piece}`: {why}")),
@@ -129,13 +139,80 @@ fn gate_providers(
     (areas, refusals)
 }
 
+/// **What an author may do about an ambiguous anchor name, and what they may
+/// not.**
+///
+/// One writer, because [`DW_GATE_ANCHOR_AMBIGUOUS`] and
+/// [`DW_ANCHOR_AMBIGUOUS`] are one finding — a name two of this campaign's
+/// buildings answer to — reached through two doors, and both used to lead with
+/// *"rename the anchor in one of these areas"*.
+///
+/// **That prescription is not available to the author it is printed for.** The
+/// anchor name is not the campaign's: it is a key in the piece's exported
+/// metadata, shared by every campaign that binds that piece, and changing it goes
+/// through the prefab library's own admission. A campaign author reading their
+/// own refusal is told to edit a file they do not own, in a repository the
+/// campaign does not include, for a change that would move every other campaign
+/// using the piece.
+///
+/// The remedy that IS theirs is one line of `world.areas[]`: bind a different
+/// piece to one of the named areas. That is why [`gate_providers`] keeps the
+/// piece — an author cannot choose which area to change without being told what
+/// each is bound to.
+///
+/// And where that is not what they want, the honest thing is to say the change is
+/// in the piece and not here. "You cannot fix this from these documents" is a
+/// remedy. Naming a repair the reader is not allowed to perform is not.
+///
+/// Reached only by a campaign whose space is stage-1 `areas[]`: this walks
+/// `world.areas`, and a campaign carrying a `site-plan.json` is required to
+/// declare that list empty (`DW0839`), so `areas.len() >= 2` cannot hold for a
+/// derived map. A campaign carrying both is refused by `DW0839`, whose own
+/// prescription — declare the empty list — also dissolves this one, so the two
+/// do not pull against each other.
+/// `areas` maps each provider area to the pieces of it that provide the name.
+/// The piece set may be empty at a call site that does not know it, and the
+/// clause naming pieces is then simply not written — never rendered as an empty
+/// parenthetical.
+pub(crate) fn anchor_ambiguity_remedy(areas: &BTreeMap<String, BTreeSet<String>>) -> String {
+    format!(
+        "An anchor name is unique per AREA, which is the scope `DW0142` already resolves every \
+         reference in. What to do about it: the name itself belongs to the PIECE, not to this \
+         campaign — it is a key in that piece's exported metadata, shared by every campaign that \
+         binds the piece — so renaming it is a prefab-library change and is not something these \
+         campaign documents can make. What they can make is the binding: in `world.areas[]`, give \
+         one of these areas a `prefab` (or a `prefab_pool`) that does not declare this name, and \
+         the remaining one provider resolves from anywhere exactly as before. If both areas must \
+         keep the pieces they have, then the two names have to stop colliding in the pieces \
+         themselves, and that change lives in the prefab library, through the piece's own \
+         admission — you cannot reach it from here. The areas that provide it: {list}.",
+        list = areas
+            .iter()
+            .map(|(a, pieces)| {
+                if pieces.is_empty() {
+                    return format!("`{a}`");
+                }
+                format!(
+                    "`{a}` (through {})",
+                    pieces
+                        .iter()
+                        .map(|p| format!("`{p}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+    )
+}
+
 /// The `DW0857` a gate verb earns, or `None` when its anchor names one area.
 ///
 /// One writer for the wording, because `open-gate` and the three fill-block verbs
 /// raise the identical finding and a second copy of the sentence is how two rules
 /// for one thing start.
 fn ambiguous(
-    areas: &BTreeSet<String>,
+    areas: &BTreeMap<String, BTreeSet<String>>,
     anchor: &str,
     verb: &str,
     path: String,
@@ -152,15 +229,14 @@ fn ambiguous(
              nothing says which one `{verb}` addresses. The compiler resolves a gate anchor by \
              name across every area and takes the first match, which is whichever area id sorts \
              first — a different building from the one the beat was written about, and a green \
-             indistinguishable from the right answer. An anchor name is unique per AREA, which is \
-             the scope `DW0142` already resolves every reference in. Rename the gate in one of \
-             these areas.",
+             indistinguishable from the right answer. {remedy}",
             n = areas.len(),
             list = areas
-                .iter()
+                .keys()
                 .map(|a| format!("`{a}`"))
                 .collect::<Vec<_>>()
                 .join(", "),
+            remedy = anchor_ambiguity_remedy(areas),
         ),
     ))
 }

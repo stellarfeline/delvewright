@@ -11,7 +11,9 @@ use clap::{Parser, Subcommand};
 use delvewright_compiler::analyze::analyze_campaign;
 use delvewright_compiler::commands::CommandTree;
 use delvewright_compiler::emit;
-use delvewright_compiler::load::load_campaign_dir;
+use delvewright_compiler::load::{
+    LoadedCampaign, load_campaign_dir, missing_stage_documents_diagnostic,
+};
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
@@ -558,14 +560,47 @@ fn parse_sidecars(
     out
 }
 
+/// **Read a campaign directory, or say which of the two things went wrong.**
+///
+/// The four verbs that read a campaign directory (`validate` and everything
+/// built on it, `l10n-inventory`, `edit`, `allocation`) each carried their own
+/// copy of one error arm, and every copy said the same thing:
+/// `internal error: cannot read campaign dir: <name>`, exit 10, no `DW` code.
+/// That answer is right for exactly one of the two states it covered. A campaign
+/// directory holding a document this process cannot open IS an internal
+/// condition worth stopping hard on; a campaign directory that does not hold all
+/// six stage documents yet is an author part-way through writing one, which is
+/// the state the authoring skill puts them in on purpose.
+///
+/// So the two are told apart here, once, and the authoring state gets an ordinary
+/// coded refusal ([`DW_STAGE_DOCUMENT_MISSING`]) at the validation tier. Nothing
+/// else moves: an unreadable document, a bad encoding, a path that is not a
+/// directory each print exactly what they printed, at exit 10.
+///
+/// The order matters and is deliberate. The missing-document question is asked
+/// only **after** the load has failed, so a directory that loads is never
+/// probed and no verb pays for a check on its success path.
+fn load_or_refuse(campaign_dir: &Path, json: bool) -> Result<LoadedCampaign, u8> {
+    match load_campaign_dir(campaign_dir) {
+        Ok(l) => Ok(l),
+        Err(e) => match missing_stage_documents_diagnostic(campaign_dir) {
+            Some(d) => {
+                print_diags(&Fenced::structural(vec![d]), json);
+                Err(1)
+            }
+            None => {
+                eprintln!("internal error: cannot read campaign dir: {e}");
+                Err(EXIT_INTERNAL)
+            }
+        },
+    }
+}
+
 /// Validate and return the parsed campaign + shared context (prefabs, loaded dir,
 /// l10n sidecars) + diagnostics; prints diagnostics. Returns `Err(exit)` on
 /// internal error.
 fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result<Validated, u8> {
-    let loaded = load_campaign_dir(campaign_dir).map_err(|e| {
-        eprintln!("internal error: cannot read campaign dir: {e}");
-        EXIT_INTERNAL
-    })?;
+    let loaded = load_or_refuse(campaign_dir, json)?;
     validate_loaded(loaded, prefabs_dir, json)
 }
 
@@ -821,12 +856,9 @@ struct NpcContext<'a> {
 /// normal state when you ask for the inventory. Only an unparseable campaign fails
 /// (exit 1); no prefab library is needed.
 fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
-    let loaded = match load_campaign_dir(campaign_dir) {
+    let loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
-        Err(e) => {
-            eprintln!("internal error: cannot read campaign dir: {e}");
-            return ExitCode::from(EXIT_INTERNAL);
-        }
+        Err(exit) => return ExitCode::from(exit),
     };
     let campaign = match parse_campaign(&loaded.raw) {
         Ok(c) => c,
@@ -1737,12 +1769,9 @@ fn run_edit(
         self, Camera, DEFAULT_FOV, DEFAULT_HEIGHT, DEFAULT_WIDTH,
     };
 
-    let mut loaded = match load_campaign_dir(campaign_dir) {
+    let mut loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
-        Err(e) => {
-            eprintln!("internal error: cannot read campaign dir: {e}");
-            return ExitCode::from(EXIT_INTERNAL);
-        }
+        Err(exit) => return ExitCode::from(exit),
     };
 
     // Append the candidate batch to the (possibly absent) stage-7 document, in
@@ -2268,12 +2297,9 @@ fn print_one_diag(d: &Diagnostic, json: bool) {
 /// is why it can be asked for before the piece is built — which is the only
 /// moment it is any use.
 fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: bool) -> ExitCode {
-    let loaded = match load_campaign_dir(campaign_dir) {
+    let loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
-        Err(e) => {
-            eprintln!("internal error: cannot read campaign dir: {e}");
-            return ExitCode::from(EXIT_INTERNAL);
-        }
+        Err(exit) => return ExitCode::from(exit),
     };
     // Parsed rather than fully validated, on the precedent `l10n-inventory`
     // sets: this verb's stdout is a machine-readable document an authoring loop

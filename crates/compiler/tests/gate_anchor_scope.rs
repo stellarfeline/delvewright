@@ -284,6 +284,35 @@ fn a_gate_two_areas_provide_is_dw0857() {
     assert!(hit.message.contains("area/keep"), "{}", hit.message);
     assert!(hit.message.contains("anchor/door"), "{}", hit.message);
     assert_eq!(hit.code, "DW0857");
+
+    // **The remedy is one a campaign author can perform, and the message says
+    // which is which.** This diagnostic used to end "Rename the gate in one of
+    // these areas" — the anchor name is a key in the piece's exported metadata,
+    // shared by every campaign that binds that piece, so a campaign author was
+    // being sent to edit a library the campaign does not contain.
+    assert!(
+        !hit.message
+            .contains("Rename the gate in one of these areas"),
+        "the old prescription told the author to edit a library they do not own: {}",
+        hit.message
+    );
+    // The campaign-side move, named where it lives.
+    assert!(hit.message.contains("`world.areas[]`"), "{}", hit.message);
+    // And which piece each area is bound THROUGH, without which an author
+    // cannot choose which of the two areas to change.
+    assert!(
+        hit.message.contains("prefab/hello-room")
+            && hit.message.contains("prefab/keep-room-small-a"),
+        "the message must name the piece each area provides the anchor through: {}",
+        hit.message
+    );
+    // Where the change genuinely is in the piece, that is said rather than
+    // prescribed: silence dressed as advice is not a remedy.
+    assert!(
+        hit.message.contains("you cannot reach it from here"),
+        "{}",
+        hit.message
+    );
 }
 
 /// The same campaign untouched: one area provides `anchor/door`, so the anchor

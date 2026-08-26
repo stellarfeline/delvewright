@@ -4,7 +4,31 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use delvewright_dsl::RawCampaign;
+use delvewright_dsl::{Diagnostic, DwCode, RawCampaign};
+
+/// `DW0874`: a campaign directory is present and does not hold all six stage
+/// documents.
+///
+/// **The state this names is the one the authoring skill tells an author to be
+/// in.** A campaign is written a document at a time, and until the sixth is
+/// written the directory is incomplete by construction. Every one of the four
+/// verbs that reads a campaign directory used to answer that with
+/// `internal error: cannot read campaign dir: npcs.json`, exit 10, and no code
+/// at all — the phrasing this compiler reserves for its own bugs, printed at the
+/// first thing it ever says to a new author, about the thing the page had just
+/// told them to do.
+///
+/// Being uncoded was the load-bearing half. Every other authoring mistake here
+/// is a `DW` code with a documented row, an exit of 1, and a sentence saying what
+/// to write; this one had none of the three, so nothing about it could be looked
+/// up, asserted by a test, or told apart from a crash.
+///
+/// Validation tier (exit 1), because that is what it is: the campaign is refused,
+/// the compiler is fine. Raised through [`delvewright_dsl::Fenced::structural`],
+/// which is the fence for a finding that exists **before a campaign has parsed** —
+/// there is no declared `dsl_version` to grandfather against, which is also why
+/// the code binds every version.
+pub const DW_STAGE_DOCUMENT_MISSING: DwCode = DwCode::every_version("DW0874");
 
 /// The six stage filenames a campaign directory must contain.
 pub const STAGE_FILES: [&str; 6] = [
@@ -25,6 +49,23 @@ pub const WORLD_EDITS_FILE: &str = "world-edits.json";
 /// edit script: absent is never an error, and present is hashed into the
 /// manifest inputs like any other stage document.
 pub const GEOMETRY_BRIEF_FILE: &str = "geometry-brief.json";
+
+/// **Every document a campaign directory may carry and is never refused for
+/// omitting**, in the order a diagnostic should name them.
+///
+/// Written down here, beside [`STAGE_FILES`], because the two lists are the
+/// halves of one fact: what a campaign directory must have, and what it may.
+/// A refusal that names only the first half tells an author which six documents
+/// are required and leaves them unable to tell whether the seventh they have not
+/// written is the next thing they owe.
+pub const OPTIONAL_FILES: [&str; 6] = [
+    WORLD_EDITS_FILE,
+    GEOMETRY_BRIEF_FILE,
+    LAYOUT_GRAPH_FILE,
+    SITE_PLAN_FILE,
+    DETAIL_PLAN_FILE,
+    WALK_RECORD_FILE,
+];
 
 /// The layout graph's filename (spec-0049 §3) — see [`GEOMETRY_BRIEF_FILE`].
 pub const LAYOUT_GRAPH_FILE: &str = "layout-graph.json";
@@ -99,6 +140,114 @@ fn optional(r: std::io::Result<String>) -> std::io::Result<Option<String>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e),
     }
+}
+
+/// **Which of the six stage documents this directory does not have** — the
+/// authoring state, told apart from the crash.
+///
+/// A campaign directory missing one of the six is not a compiler fault and never
+/// was: it is what a campaign looks like while it is being written, and it is the
+/// state the authoring skill tells an author to be in ("stub the later stages").
+/// Reported as `internal error` with no code, it was the first thing this
+/// compiler ever said to a new author, and it said the tool was broken.
+///
+/// Absence is probed by **opening**, never by `is_file()`. A directory standing
+/// where `npcs.json` belongs answers `false` to `is_file()`, so a probe built on
+/// it would call an unreadable document absent and send the author to write one
+/// they already have — the shape [`optional`] carries the same rule for.
+/// `NotFound` is absent; every other error means the document is there and
+/// something else is wrong, which is [`load_campaign_dir`]'s own error to raise.
+///
+/// Returns the missing names in [`STAGE_FILES`] order — document order, so the
+/// list reads as a position in the authoring sequence rather than as a set.
+///
+/// **Empty when `dir` is not a directory**, and that is a correctness rule rather
+/// than a guard. A path that does not exist has six absent stage documents by
+/// arithmetic, and answering `world.json, npcs.json, …` for a mistyped path would
+/// be a true sentence about a campaign directory that is not there — a worse
+/// message than the one it replaced, and a refusal whose remedy (write six
+/// documents) does nothing. Absence OF the directory is [`load_campaign_dir`]'s
+/// own finding, which it already names by path.
+#[must_use]
+pub fn missing_stage_documents(dir: &Path) -> Vec<&'static str> {
+    if !matches!(std::fs::metadata(dir), Ok(m) if m.is_dir()) {
+        return Vec::new();
+    }
+    STAGE_FILES
+        .iter()
+        .copied()
+        .filter(|name| {
+            matches!(
+                std::fs::File::open(dir.join(name)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound
+            )
+        })
+        .collect()
+}
+
+/// Render a list of filenames as `` `a`, `b` and `c` ``.
+fn and_list(names: &[&str]) -> String {
+    let quoted: Vec<String> = names.iter().map(|n| format!("`{n}`")).collect();
+    match quoted.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// The [`DW_STAGE_DOCUMENT_MISSING`] refusal `dir` has earned, or `None` when it
+/// holds all six stage documents.
+///
+/// **One writer for the sentence.** Four CLI verbs read a campaign directory and
+/// all four printed the same uncoded internal error beside their own copy of the
+/// handling; a rule that lives in one call site's error arm is a rule the next
+/// three callers cannot reuse.
+///
+/// It names **every** missing document, not the first. The loader reads in
+/// document order and stops at the first absence, so an author starting from
+/// `world.json` alone learned the remaining five filenames by running `validate`
+/// five more times. Five runs to be told a fixed list is not an affordance.
+///
+/// Both lists are rendered from [`STAGE_FILES`] and [`OPTIONAL_FILES`] rather
+/// than written out here: a hand-copied enumeration is how a seventh document
+/// would arrive without the sentence that tells authors it exists.
+#[must_use]
+pub fn missing_stage_documents_diagnostic(dir: &Path) -> Option<Diagnostic> {
+    let missing = missing_stage_documents(dir);
+    if missing.is_empty() {
+        return None;
+    }
+    Some(Diagnostic::error(
+        DW_STAGE_DOCUMENT_MISSING,
+        "campaign",
+        dir.display().to_string(),
+        format!(
+            "this campaign directory is missing {n} of the {total} stage documents every \
+             campaign is made of: {missing}. That is an authoring state, not a fault — a \
+             campaign is written a document at a time — but all {total} have to be ON DISK \
+             before any verb can read the campaign, so the way to work through them in order \
+             is to STUB the ones you have not reached yet, never to leave them out. The {total} \
+             are {all}. A stub is that document's envelope and nothing else: `dsl_version`, \
+             `campaign_id`, `stage`, and a `content` carrying only the fields its schema \
+             requires. Run `delvec schema --stage <name>` for the exact shape of each one, \
+             where `<name>` is the filename without `.json` ({names}). Stubbing is not the \
+             same as omitting: a stub is a campaign that has not declared anything yet, so \
+             the next thing it owes comes back as an ordinary diagnostic naming it — `DW0100` \
+             for whatever its schema requires and has not been given. The \
+             optional documents are NOT in this list and are never required — {optional}, and \
+             an `l10n/` directory — so their absence is not what stopped this run.",
+            n = missing.len(),
+            total = STAGE_FILES.len(),
+            missing = and_list(&missing),
+            all = and_list(&STAGE_FILES),
+            names = STAGE_FILES
+                .iter()
+                .map(|f| format!("`{}`", f.trim_end_matches(".json")))
+                .collect::<Vec<_>>()
+                .join(", "),
+            optional = and_list(&OPTIONAL_FILES),
+        ),
+    ))
 }
 
 /// Read all six stage files from `dir` plus any `l10n/*.json` sidecars. Fails if a
