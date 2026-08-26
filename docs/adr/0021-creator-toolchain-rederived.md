@@ -1,6 +1,7 @@
 # ADR-0021: Creator toolchain re-derived — one distributed binary, registry Nucleation, an off-the-shelf viewer core
 
-- **Status**: Proposed
+- **Status**: Accepted (§1, §3, §4 implemented and machine-confirmed; §2 and §5
+  not yet implemented — see Realisation)
 - **Date**: 2026-08-13
 - **Source**: the toolchain shape re-derived under the dependencies as they are
   today, not as they were when ADR-0017/0018 were written. The rules it rests on:
@@ -318,6 +319,30 @@ else is either a wheel kept in its upstream language or CI-only Python.
   and the adoption spike disproved it: the payload goes from
   `{palette, RLE voxels, box}` to `{nbt, blockstates, models, textures, flags,
   defaults}`. Nothing about the two page formats is compatible.
+
+## Realisation
+
+Acceptance follows the draft-first discipline: the effect was confirmed after
+implementation, section by section, by the gate able to judge it.
+
+- **§1 is implemented and machine-confirmed.** The CPU render arms are `delvec`
+  subcommands (`crates/compiler/src/view/cli.rs`, flattened into the top-level
+  surface in `main.rs`), no cargo feature gates any of them, and
+  `tools/build-release-binaries.sh` asserts per target that the built binary's
+  `--help` lists the clap surface parsed from source.
+- **§3 is implemented**: `delve-render` carries exactly `piece`, `batch`,
+  `fidelity-gate`, built from a checkout, and the skill's `Init` builds that
+  crate as part of establishing the toolchain.
+- **§4 is implemented**: the viewer renders through the vendored deepslate
+  bundle (`crates/compiler/src/view/viewer.rs`), with the banner/shield
+  texture-id patch carried locally.
+- **§2 is not implemented**: `crates/render` remains its own workspace with the
+  git-pinned Nucleation dependency, and the workspace-exclusion rationale is
+  still recorded beside the root `Cargo.toml` members list. Moving to the
+  registry pin is an engine change with its own round.
+- **§5 is not implemented**: `versions.toml [minecraft]` carries no client-jar
+  pin and no fetch-once cache exists; the acquisition-policy half of §5 is
+  recorded in ADR-0023 §6, which this section is the mechanism for.
 
 ## Revisit triggers
 
