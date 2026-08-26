@@ -38,8 +38,8 @@ usage: EULA=TRUE validation/bot-run.sh --project <compose-project>
              Distinct per concurrent ladder; there is no default, because a
              shared default is what made ladders queue on each other.
   --output   Build tree to boot, relative to validation/ (default ./delve-output).
-  --run-out  Where the bot writes its run report, relative to validation/
-             (default ./run-out/<project>).
+  --run-out  Where the bot writes its run report: relative to validation/,
+             or an absolute path. (default ./run-out/<project>).
 USAGE
   exit 2
 }
@@ -65,7 +65,19 @@ fi
 : "${EULA:?set EULA=TRUE to accept the Mojang EULA (https://aka.ms/MinecraftEULA)}"
 
 [ -n "$run_out" ] || run_out="./run-out/$project"
-mkdir -p "$here/${run_out#./}"
+# Resolve ONCE, and resolve the absolute case as itself. `$here/${run_out#./}`
+# concatenates unconditionally, so an absolute --run-out became
+# `<validation>//abs/path` for the mkdir and for the report lookup -- while
+# DW_BOT_OUT reached compose unchanged and the bot wrote to the real absolute
+# path. The bot wrote one place, the script looked in another, and the script
+# then reported the absence as "a validation-infrastructure fault, not a verdict
+# on the delve" -- a FALSE infra verdict, which is the direction nobody
+# re-checks.
+case "$run_out" in
+  /*) run_abs="$run_out" ;;
+  *)  run_abs="$here/${run_out#./}" ;;
+esac
+mkdir -p "$run_abs"
 
 export DELVE_OUTPUT="$output"
 # The Dockerfile lives beside THIS script, never beside the build tree. Left
@@ -75,7 +87,7 @@ export DELVE_DOCKERFILE="$here/Dockerfile.delve"
 # in exactly the way a container name is: two ladders building different trees into
 # `delvewright/delve:local` race, and the loser boots the other ladder's delve.
 export DELVE_IMAGE="delvewright/delve:$project"
-export DW_BOT_OUT="$run_out"
+export DW_BOT_OUT="$run_abs"
 COMPOSE=(docker compose -p "$project" -f "$here/compose.yaml" --profile validate)
 
 cleanup() { "$here/fresh-volumes.sh" --project "$project" >/dev/null 2>&1 || true; }
@@ -92,7 +104,7 @@ set +e
 rc=$?
 set -e
 
-report="$here/${run_out#./}/run-report.json"
+report="$run_abs/run-report.json"
 if [ -f "$report" ]; then
   echo "==> run report: $report"
 else
