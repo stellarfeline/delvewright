@@ -1,13 +1,45 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
-version: 1.7.0
+version: 1.8.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
 verified_with: 1.1.0
 ---
 
 # /new-delve — building a delve, end to end
+
+## Who runs this page, and what is not yours
+
+**You are the agent, and this page is your procedure.** The skill is the
+generation front-end; Claude Code is the runtime that executes it, and building
+a separate agent runtime is permanently out of scope (ADR-0012). Someone typed
+`/new-delve <prompt>`; that person is **the user** for the rest of this page,
+and their prompt is a constraint set — what it pins down is honoured verbatim,
+what it leaves open is yours to invent.
+
+Every command below is yours to run and every document below is yours to write.
+**Two things are not**, because they need a body in the game or a judgement that
+is the user's to make. At each one you stop, hand over exactly what is needed,
+and **wait for an answer**:
+
+| where | what you hand the user | what you wait for |
+|---|---|---|
+| **§4** the design gate | the design walkthrough — every scene, near view and far | an explicit yes |
+| **§9** the walk | a running server, the connect line, and what to look for item by item | what they saw |
+
+Stopping means: say what you have done, hand over the thing, say what you need
+back, and **end your turn there**. Do not proceed on silence, do not substitute
+your own judgement for the answer, and **never write anything that asserts a
+step whose actor is the user actually happened** — a walk nobody walked and an
+approval nobody gave are the two ways this pipeline produces a green run and a
+delve no one has ever looked at.
+
+§14 is also a hand-over, but nothing comes back: it ends the run. Anywhere else
+the user *may* be offered a choice — which candidate piece, which frame — the
+offer is optional and you proceed without it.
+
+## What you are building
 
 You author a delve as a set of **JSON documents**. `delvec` turns them into a
 datapack and a world. You never write mcfunction, dialog files or datapack JSON,
@@ -29,12 +61,12 @@ Decide          areas[] or a site plan — one campaign, one    ── §Which p
  1  workspace   the campaign directory and its documents
  2  placement   world.json areas[]   OR   brief → graph → plan
  3  story       npcs · classes · quest-plan
- 4  GATE        the design walkthrough — someone says yes
+ 4  GATE        STOP — the design walkthrough, the user says yes
  5  content     quests · dialogue
  6  fmt         delvec fmt              ← every campaign, not optional
  7  analyze     delvec analyze
  8  build       delvec build
- 9  walk it     get into the world yourself, first thing
+ 9  the walk    STOP — the user walks the blockout, you wait
 10  ladder      PackTest · bot · branch runs
 11  chronicle   only when the plan declares branch_points
 12  visual      the POV sequence, then the renders
@@ -126,9 +158,16 @@ export PATH="$PWD/target/release:$PWD/crates/render/target/release:$PATH"
 workspace on purpose, so `-p delve-render` resolves to nothing. Its build
 fetches a git dependency, so it needs the network once.
 
-Add the `export PATH` line to your shell profile, or re-run it in every new
-shell. Everything below is written as `delvec …`, and it will be
-`command not found` until you have.
+Everything below is written as `delvec …`, and it is `command not found`
+until that `PATH` line has run in the shell running the command.
+
+**Check whether your shell carries state between commands, before step 1.** Run
+`export DW_PROBE=1` and then, as a *separate* command, `echo $DW_PROBE`. An
+empty answer means every command you issue gets a fresh shell — the normal case
+for an agent — and the `export` above is lost each time. Then do one of these
+and do it consistently: prefix the `export PATH=…` line onto every command, or
+call the binaries by the absolute paths in the table above. Choosing per command
+is how a run reaches step 8 and fails on `delve-render` alone.
 
 Confirm both:
 
@@ -144,8 +183,10 @@ hard stop. **Write down the `dsl` number it prints** — step 1 needs it.
 ### 3. The 1.21.11 client jar
 
 Every picture in this pipeline is drawn with Minecraft's own textures, and this
-toolchain never downloads, bundles or redistributes them. Supply your own,
-from your own Minecraft installation:
+toolchain never downloads, bundles or redistributes them. The jar comes from a
+Minecraft installation, and that installation is **the user's** — if none of the
+three paths below already answers, ask them where their Minecraft directory is
+rather than searching the machine for it:
 
 ```sh
 mkdir -p ~/.chunky/resources
@@ -176,9 +217,12 @@ java -jar ChunkyLauncher.jar --update snapshot
 ```
 
 The launcher self-installs the pinned core into `~/.chunky/lib`. A snapshot
-core is required — the stable line does not read 1.21.x worlds. Keep
-`ChunkyLauncher.jar` somewhere you can name later; step 12 and step 14 both run
-it.
+core is required — the stable line does not read 1.21.x worlds.
+
+`curl -LO` drops the jar in the current directory and `java -jar
+ChunkyLauncher.jar` only resolves from there. **Write down the absolute path you
+put it at** — steps 12 and 14 both invoke it, quite possibly in a later session,
+and this page prints the bare form for readability.
 
 Confirm: `java -jar ChunkyLauncher.jar --version` prints a launcher version, and
 `--update snapshot` ends in either an install or "No updates found".
@@ -212,10 +256,11 @@ in place before step 4 — establish them here, not at the gate:
 - a `[refimg]` section in `delvewright.local.toml` at the repository root — the
   file is gitignored; copy the commented convention block out of
   `delvewright.toml`;
-- the API key **exported in your shell**, in the environment variable that
-  section's `api_key_env` names. The key never enters a file, so it is never in
-  the repository and never in the config — which also means nothing carries it
-  over from your last session;
+- the API key present in **the environment your shell sees**, in the variable
+  that section's `api_key_env` names. The key never enters a file, so it is never
+  in the repository and never in the config — which also means nothing carries it
+  over from a previous session, and if it is not there, **ask the user for it
+  rather than guessing at a provider**;
 - a confirmation that costs no call:
 
 ```sh
@@ -602,9 +647,10 @@ If someone else gave you the brief, show them a 3–6 line summary of each
 document — the summary, not the JSON — and wait, unless they asked for an
 uninterrupted run.
 
-## 4. The design gate — pictures, and someone says yes
+## 4. The design gate — STOP, the user says yes
 
-**Stop here. Do not begin step 5 until this gate is passed.** Steps 1–3 settle
+**Stop here, end your turn, and do not begin step 5 until the user has said
+yes.** Steps 1–3 settle
 *what the delve is*; step 5 is where the expensive authoring happens, and every
 problem this gate would have caught gets paid for twice once it is written.
 
@@ -615,10 +661,11 @@ surroundings, so staging and sightlines read. Not a document with pictures in it
 — a visual walkthrough, in the medium the review happens in. A design the
 reviewer cannot see is a design they cannot approve.
 
-**A confirmation is an explicit yes, not the absence of an objection.** If you
-are running the whole thing uninterrupted, this gate still happens — an
-uninterrupted run removes the per-step pauses, not the one gate whose whole
-purpose is human judgment.
+**A confirmation is an explicit yes, not the absence of an objection**, and it
+is the user's — never yours, and never a reviewer you invented. If you were told
+to run the whole thing uninterrupted, this gate still happens: an uninterrupted
+run removes the per-step pauses, not the two gates whose whole purpose is the
+user's judgement.
 
 **Which pictures these are.** At this gate they are **reference images**:
 concept art drawn from the scene description *before any prefab exists*, so what
@@ -759,11 +806,17 @@ where it was allocated (`DW0836`), every place reached from the entry
 (`DW0837`), and no crossing between places anywhere a seam was not allocated
 (`DW0838`).
 
-## 9. Walk it yourself
+## 9. The walk — STOP, this one is the user's
 
-Get into the world **now**, before the ladder and before any review. A blockout
-you have stood in tells you things no picture and no green check will: scale,
-whether the route reads, whether the silhouette is the thing you designed.
+**You have no body in the game.** You bring the world up and the user walks it;
+a blockout somebody has stood in tells them things no picture and no green check
+will: scale, whether the route reads, whether the silhouette is the thing that
+was designed.
+
+It happens **now**, before the ladder and before any review — every step after
+this costs more to redo than to defer.
+
+Run the gate, then start the server:
 
 ```sh
 python3 tools/staging-gate.py --campaign campaigns/campaigns/<id> \
@@ -772,7 +825,20 @@ EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yam
     --profile play up
 ```
 
-Then Minecraft → Multiplayer → Direct Connect → `localhost:25565`.
+Then hand the user, in one message:
+
+- **how to get in** — Minecraft Java 1.21.11 → Multiplayer → Direct Connect →
+  `localhost:25565`;
+- **what to look for, item by item.** Not "have a look". Name the scale
+  question, the route, each silhouette you are unsure of, and — per item — every
+  finding still open from an earlier round that they must **not** test (see
+  *Playtest rounds*, rule 2). Anything the staging gate reported red goes in this
+  list by class;
+- **how to tell you they are done.**
+
+**Then end your turn and wait.** Do not run the ladder, do not start step 12,
+and do not write `walk-record.json`. When they report back, their words are the
+finding — record them, and take the server down: `tools/playtest-server.sh down`.
 
 The staging gate is not optional here and not skippable by going around it:
 `owner-play.yaml` is the only file that publishes 25565, and it refuses to start
@@ -782,8 +848,8 @@ the server without a token the gate minted for *that exact build tree*.
 playtester is not protected from, drawn from every finding ever reported on any
 campaign — so a campaign that contains none of the objects a row is about shows
 as `UNBOUND`, and that is a fact about the ledger, not about your delve. Read
-the list, put it in the round summary item by item, and never backfill a weak
-check to turn a row green. To go in anyway on a build you know is red:
+the list, put it in what you hand the user item by item, and never backfill a
+weak check to turn a row green. To go in anyway on a build you know is red:
 
 ```sh
 python3 tools/staging-gate.py --campaign <dir> --build <out> \
@@ -795,12 +861,12 @@ announces it at boot — so anything hit from those classes in that session is t
 override, not a new finding.
 
 For a site-plan campaign **this walk is the campaign's first real gate**: scale,
-pacing, route legibility, and the silhouette from the declared `views[]`. A
-finding edits the graph or the plan and regenerates — there is no hand edit to
+pacing, route legibility, and the silhouette from the declared `views[]`. Say so
+when you hand it over — the user is not being asked to admire it, they are the
+gate. A finding edits the graph or the plan and regenerates — there is no hand edit to
 lose, because there was never a hand edit to make.
 
-Tear the server down when you are out: `tools/playtest-server.sh down`, or
-`docker compose … down -v` for the compose path.
+`docker compose … down -v` is the compose path's teardown.
 
 ## 10. The machine ladder
 
@@ -968,8 +1034,10 @@ Open the exterior/top/interior/anchor PNGs and check each against its `expect`
 line: marker visible? room not dark? NPC facing the camera with its name as text
 rather than JSON? seam clean? **Findings are document-level** — fix the campaign
 (lighting profile, anchor, NPC facing, name string) and rebuild. Never hand-edit
-output. Declared-dark interiors render faithfully dark; review those in-game
-under the night-vision mitigation rather than brightening a scene to pass review.
+output. Declared-dark interiors render faithfully dark, and no render will tell you
+whether one is playable: that judgement belongs to the user's walk at step 9,
+under the night-vision mitigation. Put it on the list you hand them there.
+Never brighten a scene to make a review pass.
 
 `delvec viewer <nbt|dir|manifest.json> -o <page.html>` is the CPU half of the
 same channel and needs no GPU. Read its fidelity list before handing the page to
@@ -1007,7 +1075,9 @@ undersize is refused the same way oversize is (`DW0843`), because the box is the
 footprint and a smaller building means a smaller box, which is a site-plan edit
 and another walk.
 
-1. **Record the walk you did at step 9.** Write `walk-record.json` beside the
+1. **Record the walk the user did at step 9.** The `verdict` is theirs, not
+   yours; if nobody has walked this build, you cannot write this file and detail
+   does not start. Write `walk-record.json` beside the
    documents — `delvec schema --stage walk-record` is its shape. It is a
    campaign artifact rather than a stage document, so it carries no
    `dsl_version`, no `campaign_id` and no `stage`. Fill it with the three hashes
@@ -1084,8 +1154,10 @@ python3 tools/check-storybook-version.py --campaigns campaigns/campaigns
 Green before you report. A stale marker waves a host on an old engine straight
 into a delve their engine cannot run.
 
-**Then report**: the campaign summary, the playtime estimate, the validation
-results, and the two commands anyone will actually use.
+**Then report to the user** — this hand-over ends the run: the campaign
+summary, the playtime estimate, the validation results, what the walk found and
+what was done about it, anything still open, and the two commands they will
+actually use.
 
 ```sh
 
