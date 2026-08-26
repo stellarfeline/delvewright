@@ -76,7 +76,7 @@ Decide          areas[] or a site plan — one campaign, one    ── §Which p
 
 Steps 1–14 are printed below in that order, one after another, with nothing
 between them. Everything else on this page is **reference**: what the DSL can
-express, how to write the prose, what to do when the piece library has no piece
+express, how to write the prose, what to do when the prefab library has no piece
 you need, what to do when something goes red. Reference sections come after the
 steps, and a step names the one it needs.
 
@@ -1098,7 +1098,7 @@ and another walk.
    `delve-admit`; the engine consumes the object, never the tool that made it.
    It must carry a spatial contract (`DW0843`), answer every seam, and open no
    way the plan did not allocate (`DW0844`, both directions). See *Reference:
-   when the library has no piece you need*.
+   when the prefab library has no piece you need*.
 4. **Bind it**, re-binding each owed anchor name to one of the piece's own
    anchors (`DW0845`). That is what keeps the quest layer working: those names
    were bound to places before any detail existed, and detailing must never
@@ -1284,8 +1284,8 @@ this section is what they are *for* and the traps in each.
      Legitimate when the room genuinely has no furniture, and the thing to avoid
      is a conjured chest standing *beside* a container the room already has.
   4. If the beat really needs a piece with a container in it and none exists,
-     that is a piece to make: *Reference: when the library has no piece you
-     need*.
+     that is a piece to make: *Reference: when the prefab library has no piece
+     you need*.
 - **An elite or boss leaves ONE thing behind, and you say which.** Give the
   fight's `drops[]` a declared subset — a `{"slot": "main_hand"}` for the axe
   the player watched swing, or a `{"item": …, "name": …}` for a quest token —
@@ -1849,7 +1849,7 @@ directory is bound to nothing, and the sidecar is what makes a view re-issuable
 with one word changed: it carries the prompt, the style note, the resolved frame
 and the anchor id.
 
-## Reference: when the library has no piece you need
+## Reference: when the prefab library has no piece you need
 
 Follow `docs/reference/prefab-procedure.md` — it is the procedure, and these are
 its mandatory steps, in order. Do not improvise around them. All four binaries
@@ -1949,6 +1949,35 @@ this needs were built at Init step 2.
    any tiling, so a repeat whose absolutes sum to 8 across a 7-deep box is a hard
    refusal. Guard the extent and give the short box an `otherwise` arm.
 
+   **Then say where a body goes — the spatial contract.** The rules say what
+   blocks stand where; they never say which voids are rooms, where the doors are,
+   or what a neighbour may mate with. That is a `claim` node per body of space
+   plus one `contract` block classifying the names, written in the same document.
+   **The authoring surface is `docs/reference/grammar.md` §2d** — that section is
+   the only place that says how, and `delve-grammar show --program
+   spatial-contract` prints a runnable one. Write one whenever the piece has more
+   than one way in and out. Step 4's `traversable` judges a piece that has none —
+   it derives the sides the piece opens on from the blocks — but only a contract
+   turns that count into declared ways in, and only a contract can state a way
+   out the blocks cannot show: a piece entered from **above** binds zero there
+   and reds. Budget it as part of authoring: the moment a `contract` block is
+   present, **nine obligations run with no flag** at both
+   doors that read the piece — every name must resolve, every standable cell must
+   lie in something declared, an `enclosed` space must be closed except at a
+   claimed opening, every declared edge must hold on the bytes, and every anchor
+   must land in a declared element. An `exterior` edge is **one claim per space,
+   not one per door**: with no `via` it exports one face for every outer face its
+   space reaches, so writing one edge per end on an L-shaped passage exports each
+   end twice.
+
+   **Anchors are part of this step too.** `mark` (`grammar.md` §2b) is the only
+   way a campaign can name a place inside the piece, and it is also what gives
+   step 5 its interior cameras — a piece with no anchor gets no eye shots at all.
+   `at: floor_center` takes the lowest **world** Y of the scope it sits on, so a
+   mark wrapping a column that includes its own floor slab lands *in* the floor
+   and reds `contract-anchors`; mark the void, or use `at: offset` with the
+   walkable Y.
+
 4. **Expand and let the machine judge**:
 
    ```sh
@@ -1966,8 +1995,13 @@ this needs were built at Init step 2.
    same as a straight one. Where the piece declares a spatial contract those faces
    are its `exterior` edges and the binding count is doors; where it declares
    none they are the sides of the region its standable floor reaches, and the
-   count is open sides. Fewer than two is a refusal that names both repairs: open
-   or declare the second way out, or stop claiming the piece is a route.
+   count is open sides — and a derived side is not a door, which the detail line
+   says beside the number. Fewer than two is a refusal that names both repairs:
+   open or declare the second way out, or stop claiming the piece is a route. A
+   red here writes no `.nbt`, so it is not a warning to ship past. A piece
+   entered from **above** lands there with a binding of **zero**, because a
+   standable cell never lies on the region's top plane; that one is repaired by
+   declaring the face at step 3, not by dropping the flag.
 
    Three of the always-on gates are about how a block state is SPELLED —
    `shape-complete` (`DW0735`), `states-complete` (`DW0737`) and `oriented-fills`
@@ -2025,9 +2059,17 @@ this needs were built at Init step 2.
 
    **Open the `eye-<anchor>.png` frames FIRST.** They are the only cameras inside
    the piece — a body's eye at 1.62, at each declared anchor, looking the way that
-   anchor faces. The orbit shots (`ext-*`, `top`, `door-*`, `anchor-*`) are fitted
-   from outside, and on a roofed piece they are all the same picture of the same
-   rock. Read `<id>-shots.json` beside the images for which cell each body is
+   anchor faces. A piece that declares no anchor gets **none of them**, and the run
+   says so in its binding count; that is step 3's `mark` still owed, not a render
+   fault. The exterior orbit shots (`ext-*`, `door-*`, `anchor-*`) are fitted from
+   outside, and on a roofed piece they are all the same picture of the same rock —
+   but **`top` is a cutaway plan**, the roof taken off, and on a piece whose
+   identity is a route rather than a face — a passage, a junction, a stair — it is
+   the only planned camera that sees the route. Do **not** re-aim it by hand: a
+   `--view name=…,face=up` is `"cutaway": false` at the same pitch and
+   photographs the roof. Where a loud palette flattens the plan, add a `--view`
+   square at each open face (`--view name=east-mouth,face=east`) and read the two
+   together. Read `<id>-shots.json` beside the images for which cell each body is
    standing in: a camera whose anchor cell held a gate or a barrel steps back
    along the facing and says so (`DW0727`), and an anchor with no body cell gets no
    eye shot at all — the run states that count. A flat grey frame is outside the
@@ -2044,11 +2086,48 @@ this needs were built at Init step 2.
    instead of at the façade, and the forecourt shrinks the building in every
    exterior frame. Keys: `docs/reference/tools.md` §4.
 
-6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` → `anchor` →
-   `lighting --write` → `catalog validate`), then `audit` again. For a tile set,
-   `audit` and `lighting` both take the **manifest** and answer about one zone;
-   handing any command a single tile is `DW0739`, and so is handing it a tile
-   copied away from its manifest.
+6. **Admit it**: the `delve-admit` chain, which for a generated piece is
+   `audit` → `socket` → `lighting --write` → `audit` again.
+
+   ```sh
+   delve-admit audit    out/<id>.nbt        # a TILE SET passes out/<id>.json
+   delve-admit socket   out/<id>.nbt --pos X,Y,Z --facing <dir> --opening 3,3 \
+                        --name <ns>:<name> --target <ns>:<name> --pool pool/<name>
+   delve-admit lighting out/<id>.nbt --write
+   delve-admit audit    out/<id>.nbt
+   ```
+
+   **Hand `audit` the `.nbt`, not the `.json`** — the metadata beside a single
+   template is not a manifest and is refused (`DW0732`, exit 2). Only a tile set
+   has a manifest, and then `audit` and `lighting` both take it and answer about
+   one zone; handing any command a single tile is `DW0739`, and so is handing it
+   a tile copied away from its manifest.
+
+   Two subcommands are **not** on this route. `delve-admit anchor` writes a place
+   into an anchor whose producer could not — a hand-built or ingested piece; a
+   grammar program already declared its anchors with `mark` at step 3.
+   `delve-admit catalog validate` reads a **catalog card**, the per-asset
+   verification record of the ingestion route (`catalog/<asset-id>.json`), which
+   is a different document from prefab metadata — run on a prefab's `.json` it
+   correctly reports that file is not a catalog card.
+
+   **`socket --pos` is the jigsaw cell: bottom-centre of the opening, in the wall
+   plane.** The opening is built from it — width centred on it, height climbing
+   from it — so read it off the piece: with a spatial contract, the metadata
+   written beside it carries each exterior face's opening as a `from`/`to` cell
+   pair (`spatial_contract.faces[]`), where step 4's report and `audit` name only
+   the face's direction and cell count; with none, a `mark` whose scope is the
+   mouth itself records that cell. `--facing` points **out** of the piece;
+   `--name`/`--target` are what mate one piece to another; `--pool` is the
+   `prefab_pool` the far side comes from. The carved socket leaves a
+   `minecraft:jigsaw` block in the doorway carrying `final_state: minecraft:air`,
+   so the world replaces it with air at placement — a re-run `audit` reporting one
+   fewer cell on that face, and `minecraft:jigsaw` in the palette, is the marker
+   being counted and not a blocked door.
+
+   `socket` is also the **only** step that edits the blocks, so a piece that
+   carries one no longer matches what its `license.generated_by` row regenerates;
+   that row reproduces the `.nbt` as step 4 expanded it.
 
    A grammar prefab has **no connectors and no lighting** until this step, so it
    cannot enter a `prefab_pool` and will be dark, until you do it. `lighting`
