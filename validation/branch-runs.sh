@@ -68,7 +68,22 @@ if [ -z "$PROJECT" ]; then
 fi
 : "${EULA:?set EULA=TRUE to accept the Mojang EULA (https://aka.ms/MinecraftEULA)}"
 
-OUT="${DELVE_OUTPUT:-validation/delve-output}"
+# ONE variable, ONE base. This script cd's to the engine ROOT, so a relative
+# DELVE_OUTPUT read here named `<root>/<value>` -- while the compose invocation
+# below inherits the same variable and compose resolves a relative context
+# against the COMPOSE FILE's directory, which is validation/. One relative value
+# therefore named two different trees: the plan was checked in one and the
+# server booted from the other, with nothing anywhere saying so. bot-run.sh and
+# packtest-run.sh both resolve against validation/; this now matches them, and
+# the value is exported absolute so compose cannot re-resolve it a third way.
+# The DEFAULT is unchanged: `validation/delve-output` from the root and
+# `./delve-output` from validation/ are the same directory.
+case "${DELVE_OUTPUT:-}" in
+  "")  OUT="$PWD/validation/delve-output" ;;
+  /*)  OUT="$DELVE_OUTPUT" ;;
+  *)   OUT="$PWD/validation/${DELVE_OUTPUT#./}" ;;
+esac
+export DELVE_OUTPUT="$OUT"
 PLAN="$OUT/validation/branch-plan.json"
 [ -n "$RUN_OUT" ] || RUN_OUT="validation/run-out/$PROJECT"
 # Where the compose bot actually writes its report. The mount follows DW_BOT_OUT
