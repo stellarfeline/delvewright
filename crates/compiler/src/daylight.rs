@@ -37,7 +37,7 @@
 //! `#minecraft:burn_in_daylight` is a **built-in vanilla `entity_type` tag**, and
 //! since 1.21 it is the thing the engine itself tests before running a mob's
 //! sun-burn tick. It is vendored verbatim from Mojang's generated reports
-//! (`data/entity-tags-1.21.11.json`, `data/PROVENANCE.md`), so the question "does
+//! (`crates/dsl/data/entity-tags-1.21.11.json`, `data/PROVENANCE.md`), so the question "does
 //! this species burn?" is answered by the game, not by a species table the
 //! compiler invented — the refusal this codebase already makes for mob health
 //! (`DW0475`) and aggro range ([`crate::nav::DEFAULT_FOLLOW_RANGE`]).
@@ -137,7 +137,7 @@ use delvewright_dsl::DwCode;
 pub const DW_DAYLIGHT_BURNS_STAGING: DwCode = DwCode::every_version("DW0496");
 
 /// Vanilla's built-in daylight-burn tag, vendored from Mojang's generated
-/// reports (`data/entity-tags-1.21.11.json`; `data/PROVENANCE.md`).
+/// reports (`crates/dsl/data/entity-tags-1.21.11.json`; `data/PROVENANCE.md`).
 const BURN_IN_DAYLIGHT_TAG: &str = "minecraft:burn_in_daylight";
 
 /// The one member of `#minecraft:burn_in_daylight` the fire cannot hurt.

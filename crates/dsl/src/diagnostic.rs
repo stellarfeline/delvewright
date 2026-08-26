@@ -646,9 +646,10 @@ pub mod codes {
     pub const LANE_INVALID: DwCode = DwCode::every_version("DW0381");
     /// (spec-0016 §6) A lane wave contains a non-raider species. `Patrolling` /
     /// `patrol_target` are Raider NBT: on anything else they are dropped and the
-    /// mob simply stands where it spawned. Live-verified marching: pillager,
-    /// vindicator, evoker, ravager, witch. Non-raiders use
-    /// `summon: aggro-edge` instead.
+    /// mob simply stands where it spawned. The admitted set is vanilla's own
+    /// `#minecraft:raiders` tag, read from the vendored tag table — never a
+    /// species list this engine keeps. Non-raiders use `summon: aggro-edge`
+    /// instead.
     pub const LANE_NOT_RAIDER: DwCode = DwCode::every_version("DW0382");
     /// (spec-0016 §6) A lane wave fields fewer than 2 mobs. A lone patroller
     /// sets `Patrolling:0b` on itself when it finds no companion within its
