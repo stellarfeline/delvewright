@@ -78,6 +78,13 @@ PLAN="$OUT/validation/branch-plan.json"
 # custom DW_RUN_OUT silently lost every per-branch report.
 BOT_OUT="$here/run-out/$PROJECT"
 export DW_BOT_OUT="./run-out/$PROJECT"
+# The Dockerfile lives beside compose.yaml, never beside the build tree. Left to
+# compose's default it is resolved relative to the CONTEXT, so any tree outside
+# validation/ fails with `failed to read dockerfile`. bot-run.sh exports this;
+# this script runs the same `validate` profile with `up --build` and was missed
+# when that fix landed -- the fix enumerated the scripts that call compose
+# rather than the directory that holds them.
+export DELVE_DOCKERFILE="$here/Dockerfile.delve"
 TIER="${DELVEWRIGHT_BRANCHES:-all}"
 
 COMPOSE=(docker compose -p "$PROJECT" -f "$here/compose.yaml" --profile validate)
