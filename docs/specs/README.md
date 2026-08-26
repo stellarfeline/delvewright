@@ -67,3 +67,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0054](spec-0054-a-light-figure-names-its-sky.md) | A light figure names its sky — the lighting record carries its measurement context, so a gate can re-judge it | Proposed |
 | [spec-0055](spec-0055-the-scope-belongs-to-the-object.md) | The scope belongs to the object — an anchor reference resolves where its object stands | Proposed |
 | [spec-0056](spec-0056-one-rule-for-what-a-body-can-pass-through.md) | One rule for what a body can pass through — the block-shape authority shared by walk and compiler | Proposed |
+| [spec-0057](spec-0057-water-is-a-way-while-the-tide-holds-it.md) | Water is a way while the tide holds it — the swim credit, bound to the level in force | Proposed |
