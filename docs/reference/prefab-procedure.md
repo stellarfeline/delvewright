@@ -361,7 +361,7 @@ sides the piece actually opens on, so a corridor along `X`, a corridor along
 
 **The binding count means one of two things, and the gate's own detail line says
 which.** With a spatial contract it is **declared ways in and out** — the piece's
-`exterior` faces, in any of the six directions, each named with its class.
+`exterior` faces, on whichever sides it declared them, each named with its class.
 Without one it is **open sides derived from the blocks**: a side of the region
 its standable floor reaches, counted as sides and not as cells. A derived side is
 a side the floor happens to reach — a terrace edge, a ledge, a gap nobody meant
@@ -374,9 +374,9 @@ declare the second way out, or stop claiming the piece is a route. A room with
 one door belongs there and should not carry the flag at all. So does a piece
 entered from **above**, and that one is a real route: its opening is the one a
 derivation cannot read, because a standable cell never lies on the region's top
-or bottom plane. It binds **zero** until the face is declared, which a contract
-exports on any of the six sides, `up` included. A red here writes no `.nbt`, so
-this is not a warning to ship past.
+or bottom plane. It binds **zero** until the face is declared, and a contract
+exports a face on any side, `up` included. A red here writes no `.nbt`, so this
+is not a warning to ship past.
 
 `--traversable` is a claim about the **route only**. The ways in it joins are at
 ground level, so a green `traversable` says nothing about the storeys above: a cathedral has
