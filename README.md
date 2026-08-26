@@ -43,8 +43,10 @@ server in a box. Everything else is a build step.
 
 ## The `/new-delve` flow
 
-Open Claude Code **in this repo** (the skill and the whole toolchain live here;
-finished campaigns land in the separate content repo), type
+Open Claude Code **in this repo** (the skill and the whole toolchain live here
+today; finished campaigns land in the separate content repo — the decided end
+state, where a creator clones only the content repo, is
+[ADR-0014](docs/adr/0014-creator-distribution.md) and is not built yet), type
 `/new-delve <your prompt>`, and this happens.
 
 The agent runs every box in the diagram except the two marked 🖐 — those are
@@ -105,7 +107,7 @@ is written for the agent that executes it; you never have to read it.
 
 ## The tools
 
-One `cargo build --release --workspace` produces six binaries, plus
+One `cargo build --release --workspace` produces five binaries, plus
 `delve-render` from its own workspace. What each is for:
 
 | tool | the question it answers |
@@ -169,11 +171,7 @@ above — and the renderer, which needs a GPU — are built from source, which i
 the floor this project guarantees and never an afterthought: everything an
 author needs is reachable from a clone.
 
-```sh
-cargo install delvec           # from crates.io
-```
-
-Or download a prebuilt archive for your platform from the
+Download a prebuilt archive for your platform from the
 [latest release](https://github.com/stellarfeline/delvewright/releases/latest) —
 Linux (x86-64 / arm64, statically linked), macOS (Apple Silicon / Intel) and
 Windows (x86-64). Every archive's SHA-256 is published beside it in
@@ -185,8 +183,11 @@ sha256sum --check --ignore-missing SHA256SUMS     # `shasum -a 256 -c` on macOS
 ./delvec --version
 ```
 
-Building from a checkout of this repo (`cargo build -p delvec --bin delvec`)
-gives you the same tool, and is the path to take if you are changing it.
+If you already live in a Rust toolchain, `cargo install delvec` gets you the
+same tool from crates.io — but nothing here requires cargo unless you are
+building from source. Building from a checkout of this repo
+(`cargo build -p delvec --bin delvec`) also gives you the same tool, and is the
+path to take if you are changing it.
 
 ## Map of the repo
 
