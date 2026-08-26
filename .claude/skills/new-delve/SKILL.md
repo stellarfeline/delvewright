@@ -109,9 +109,17 @@ and nothing downstream reports that.
 | `git` | both repositories | `git --version` |
 | Rust (stable) | every binary is built from source | `cargo --version` |
 | Python 3.10+ | the checkers, the reference-image tool, the staging gate | `python3 --version` |
-| Java 17+ | Chunky, the renderer for review and storybook frames | `java -version` |
+| **Java 21+** | the pinned server, PackTest, the patrol-species gate, and Chunky | `java -version` |
 | Docker | the machine ladder and the play server | `docker info` |
 | A 1.21.11 Minecraft client jar | textures — never downloaded or redistributed by this toolchain | see step 3 |
+
+**Java 21 is the pinned game's own requirement, not a preference** — Mojang's
+version manifest for 1.21.11 declares `javaVersion.majorVersion: 21`, so an
+older JDK runs neither the server nor anything that loads its jar. A machine
+whose newest JDK is 17 reaches step 8 and fails at the first thing that starts a
+server, several hours in. Check it here, and if `java -version` answers with
+anything below 21, say so and stop — installing a JDK is the user's action on
+their own machine, not yours.
 
 ### 1. Two repositories, and the link between them
 
