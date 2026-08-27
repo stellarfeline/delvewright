@@ -160,6 +160,14 @@ jobs:
           node-version: "24"
       - name: the viewer's key and mouse mapping does what it says (node --test)
         run: node --test crates/compiler/tests/controls.test.mjs
+      # The second defect of this class reported from her hands: switching prefab
+      # left the previous prefab's anchor labels drawn over the new one. Same
+      # reason nothing caught it — the label pass runs only in a browser. This
+      # boots the real `page.js` over a small DOM and checks what the label layer
+      # holds after the displayed model changes. A step for the same reason as
+      # the line above.
+      - name: a label belongs to the model that drew it (node --test)
+        run: node --test crates/compiler/tests/labels.test.mjs
       # Authored JSON has ONE canonical form, so an insertion is a one-line
       # diff instead of a whole-file rewrite
       # — a three-key insertion into a non-canonical zh-cn sidecar once produced

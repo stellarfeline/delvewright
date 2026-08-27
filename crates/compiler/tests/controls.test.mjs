@@ -18,7 +18,7 @@
  *   - Keys match on the PHYSICAL key, so an input method cannot silence them.
  *   - The list printed in the panel is the table, not a second copy of it.
  *
- * Run: node --test crates/render/tests/
+ * Run: node --test crates/compiler/tests/controls.test.mjs
  * No dependencies, no build step, no browser.
  */
 import { test } from "node:test";

@@ -200,24 +200,61 @@ fn a_non_raider_lane_species_is_dw0382() {
     );
 }
 
-/// Every species the spike verified marching is accepted — the roster is a
-/// live-verified list, not a guess.
+/// Every member of vanilla's own `#minecraft:raiders` is accepted on a lane, and
+/// the population is read from the tag rather than typed here.
+///
+/// A hand-written roster is what this replaces. The previous one named five
+/// species and the pinned game names six — it omitted `minecraft:illusioner`,
+/// so a lane of illusioners was refused a march the game would have walked. A
+/// literal list in the test would have gone stale in exactly the same way, and
+/// silently, so the loop enumerates the objects and states how many it bound.
 #[test]
-fn every_verified_raider_is_accepted_on_a_lane() {
-    for species in [
-        "minecraft:pillager",
-        "minecraft:vindicator",
-        "minecraft:evoker",
-        "minecraft:ravager",
-        "minecraft:witch",
-    ] {
-        let q = QUESTS_V06.replace("\"minecraft:vindicator\"", &format!("\"{species}\""));
+fn every_member_of_the_raiders_tag_is_accepted_on_a_lane() {
+    let roster = delvewright_dsl::registry::entity_tag_members_bare("minecraft:raiders");
+    assert!(
+        roster.len() >= 5,
+        "the vendored `#minecraft:raiders` tag bound {} species — a lane roster \
+         that small is the tag table failing to load, not a game that changed",
+        roster.len()
+    );
+    let mut bound = 0;
+    for species in &roster {
+        let q = QUESTS_V06.replace(
+            "\"minecraft:vindicator\"",
+            &format!("\"minecraft:{species}\""),
+        );
         let diags = diags_for(&q);
         assert!(
             !diags.iter().any(|d| d.code == "DW0382"),
-            "{species} is raider-family and must be accepted: {diags:#?}"
+            "minecraft:{species} is in `#minecraft:raiders` and must be accepted: {diags:#?}"
         );
+        bound += 1;
     }
+    assert_eq!(
+        bound,
+        roster.len(),
+        "every tag member must have been exercised"
+    );
+}
+
+/// `minecraft:illusioner` is the member the hand-written roster left out, and it
+/// gets its own test because the regression it stands for is a *false refusal* —
+/// the direction nobody re-checks, because a refusal reads as the engine being
+/// careful.
+///
+/// It is not a guess about vanilla. In the pinned 1.21.11 server jar the
+/// illusioner's class is a `PatrollingMonster`, whose `registerGoals` adds the
+/// `LongDistancePatrolGoal` every one of its subclasses inherits, and the three
+/// patrol NBT keys are string constants of that one class. `tools/check-patrol-types.py`
+/// re-derives all of that from the pinned jar.
+#[test]
+fn an_illusioner_may_march_a_lane() {
+    let q = QUESTS_V06.replace("\"minecraft:vindicator\"", "\"minecraft:illusioner\"");
+    let diags = diags_for(&q);
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0382"),
+        "an illusioner honours patrol NBT and must not be refused: {diags:#?}"
+    );
 }
 
 /// A lone patroller sets `Patrolling:0b` on itself when it finds no companion —

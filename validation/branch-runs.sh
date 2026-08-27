@@ -68,7 +68,22 @@ if [ -z "$PROJECT" ]; then
 fi
 : "${EULA:?set EULA=TRUE to accept the Mojang EULA (https://aka.ms/MinecraftEULA)}"
 
-OUT="${DELVE_OUTPUT:-validation/delve-output}"
+# ONE variable, ONE base. This script cd's to the engine ROOT, so a relative
+# DELVE_OUTPUT read here named `<root>/<value>` -- while the compose invocation
+# below inherits the same variable and compose resolves a relative context
+# against the COMPOSE FILE's directory, which is validation/. One relative value
+# therefore named two different trees: the plan was checked in one and the
+# server booted from the other, with nothing anywhere saying so. bot-run.sh and
+# packtest-run.sh both resolve against validation/; this now matches them, and
+# the value is exported absolute so compose cannot re-resolve it a third way.
+# The DEFAULT is unchanged: `validation/delve-output` from the root and
+# `./delve-output` from validation/ are the same directory.
+case "${DELVE_OUTPUT:-}" in
+  "")  OUT="$PWD/validation/delve-output" ;;
+  /*)  OUT="$DELVE_OUTPUT" ;;
+  *)   OUT="$PWD/validation/${DELVE_OUTPUT#./}" ;;
+esac
+export DELVE_OUTPUT="$OUT"
 PLAN="$OUT/validation/branch-plan.json"
 [ -n "$RUN_OUT" ] || RUN_OUT="validation/run-out/$PROJECT"
 # Where the compose bot actually writes its report. The mount follows DW_BOT_OUT
@@ -78,6 +93,20 @@ PLAN="$OUT/validation/branch-plan.json"
 # custom DW_RUN_OUT silently lost every per-branch report.
 BOT_OUT="$here/run-out/$PROJECT"
 export DW_BOT_OUT="./run-out/$PROJECT"
+# The Dockerfile lives beside compose.yaml, never beside the build tree. Left to
+# compose's default it is resolved relative to the CONTEXT, so any tree outside
+# validation/ fails with `failed to read dockerfile`. bot-run.sh exports this;
+# this script runs the same `validate` profile with `up --build` and was missed
+# when that fix landed -- the fix enumerated the scripts that call compose
+# rather than the directory that holds them.
+# ABSOLUTE, and that is the whole point: compose resolves a RELATIVE
+# `dockerfile` against the build CONTEXT, so `$here` -- which is the bare
+# string "validation" in this script -- would become <build tree>/validation
+# and fail as `lstat <tree>/validation: no such file or directory`. bot-run.sh
+# computes an absolute $here and did not show this; the first version of this
+# export was proven with an absolute value and therefore proved nothing about
+# what this script actually exports.
+export DELVE_DOCKERFILE="$PWD/validation/Dockerfile.delve"
 TIER="${DELVEWRIGHT_BRANCHES:-all}"
 
 COMPOSE=(docker compose -p "$PROJECT" -f "$here/compose.yaml" --profile validate)

@@ -1,13 +1,45 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
-version: 1.7.0
+version: 1.8.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
 verified_with: 1.1.0
 ---
 
 # /new-delve — building a delve, end to end
+
+## Who runs this page, and what is not yours
+
+**You are the agent, and this page is your procedure.** The skill is the
+generation front-end; Claude Code is the runtime that executes it, and building
+a separate agent runtime is permanently out of scope (ADR-0012). Someone typed
+`/new-delve <prompt>`; that person is **the user** for the rest of this page,
+and their prompt is a constraint set — what it pins down is honoured verbatim,
+what it leaves open is yours to invent.
+
+Every command below is yours to run and every document below is yours to write.
+**Two things are not**, because they need a body in the game or a judgement that
+is the user's to make. At each one you stop, hand over exactly what is needed,
+and **wait for an answer**:
+
+| where | what you hand the user | what you wait for |
+|---|---|---|
+| **§4** the design gate | the design walkthrough — every scene, near view and far | an explicit yes |
+| **§9** the walk | a running server, the connect line, and what to look for item by item | what they saw |
+
+Stopping means: say what you have done, hand over the thing, say what you need
+back, and **end your turn there**. Do not proceed on silence, do not substitute
+your own judgement for the answer, and **never write anything that asserts a
+step whose actor is the user actually happened** — a walk nobody walked and an
+approval nobody gave are the two ways this pipeline produces a green run and a
+delve no one has ever looked at.
+
+§14 is also a hand-over, but nothing comes back: it ends the run. Anywhere else
+the user *may* be offered a choice — which candidate piece, which frame — the
+offer is optional and you proceed without it.
+
+## What you are building
 
 You author a delve as a set of **JSON documents**. `delvec` turns them into a
 datapack and a world. You never write mcfunction, dialog files or datapack JSON,
@@ -29,12 +61,12 @@ Decide          areas[] or a site plan — one campaign, one    ── §Which p
  1  workspace   the campaign directory and its documents
  2  placement   world.json areas[]   OR   brief → graph → plan
  3  story       npcs · classes · quest-plan
- 4  GATE        the design walkthrough — someone says yes
+ 4  GATE        STOP — the design walkthrough, the user says yes
  5  content     quests · dialogue
  6  fmt         delvec fmt              ← every campaign, not optional
  7  analyze     delvec analyze
  8  build       delvec build
- 9  walk it     get into the world yourself, first thing
+ 9  the walk    STOP — the user walks the blockout, you wait
 10  ladder      PackTest · bot · branch runs
 11  chronicle   only when the plan declares branch_points
 12  visual      the POV sequence, then the renders
@@ -44,7 +76,7 @@ Decide          areas[] or a site plan — one campaign, one    ── §Which p
 
 Steps 1–14 are printed below in that order, one after another, with nothing
 between them. Everything else on this page is **reference**: what the DSL can
-express, how to write the prose, what to do when the piece library has no piece
+express, how to write the prose, what to do when the prefab library has no piece
 you need, what to do when something goes red. Reference sections come after the
 steps, and a step names the one it needs.
 
@@ -77,9 +109,17 @@ and nothing downstream reports that.
 | `git` | both repositories | `git --version` |
 | Rust (stable) | every binary is built from source | `cargo --version` |
 | Python 3.10+ | the checkers, the reference-image tool, the staging gate | `python3 --version` |
-| Java 17+ | Chunky, the renderer for review and storybook frames | `java -version` |
+| **Java 21+** | the pinned server, PackTest, the patrol-species gate, and Chunky | `java -version` |
 | Docker | the machine ladder and the play server | `docker info` |
 | A 1.21.11 Minecraft client jar | textures — never downloaded or redistributed by this toolchain | see step 3 |
+
+**Java 21 is the pinned game's own requirement, not a preference** — Mojang's
+version manifest for 1.21.11 declares `javaVersion.majorVersion: 21`, so an
+older JDK runs neither the server nor anything that loads its jar. A machine
+whose newest JDK is 17 reaches step 8 and fails at the first thing that starts a
+server, several hours in. Check it here, and if `java -version` answers with
+anything below 21, say so and stop — installing a JDK is the user's action on
+their own machine, not yours.
 
 ### 1. Two repositories, and the link between them
 
@@ -126,9 +166,16 @@ export PATH="$PWD/target/release:$PWD/crates/render/target/release:$PATH"
 workspace on purpose, so `-p delve-render` resolves to nothing. Its build
 fetches a git dependency, so it needs the network once.
 
-Add the `export PATH` line to your shell profile, or re-run it in every new
-shell. Everything below is written as `delvec …`, and it will be
-`command not found` until you have.
+Everything below is written as `delvec …`, and it is `command not found`
+until that `PATH` line has run in the shell running the command.
+
+**Check whether your shell carries state between commands, before step 1.** Run
+`export DW_PROBE=1` and then, as a *separate* command, `echo $DW_PROBE`. An
+empty answer means every command you issue gets a fresh shell — the normal case
+for an agent — and the `export` above is lost each time. Then do one of these
+and do it consistently: prefix the `export PATH=…` line onto every command, or
+call the binaries by the absolute paths in the table above. Choosing per command
+is how a run reaches step 8 and fails on `delve-render` alone.
 
 Confirm both:
 
@@ -144,8 +191,10 @@ hard stop. **Write down the `dsl` number it prints** — step 1 needs it.
 ### 3. The 1.21.11 client jar
 
 Every picture in this pipeline is drawn with Minecraft's own textures, and this
-toolchain never downloads, bundles or redistributes them. Supply your own,
-from your own Minecraft installation:
+toolchain never downloads, bundles or redistributes them. The jar comes from a
+Minecraft installation, and that installation is **the user's** — if none of the
+three paths below already answers, ask them where their Minecraft directory is
+rather than searching the machine for it:
 
 ```sh
 mkdir -p ~/.chunky/resources
@@ -176,9 +225,12 @@ java -jar ChunkyLauncher.jar --update snapshot
 ```
 
 The launcher self-installs the pinned core into `~/.chunky/lib`. A snapshot
-core is required — the stable line does not read 1.21.x worlds. Keep
-`ChunkyLauncher.jar` somewhere you can name later; step 12 and step 14 both run
-it.
+core is required — the stable line does not read 1.21.x worlds.
+
+`curl -LO` drops the jar in the current directory and `java -jar
+ChunkyLauncher.jar` only resolves from there. **Write down the absolute path you
+put it at** — steps 12 and 14 both invoke it, quite possibly in a later session,
+and this page prints the bare form for readability.
 
 Confirm: `java -jar ChunkyLauncher.jar --version` prints a launcher version, and
 `--update snapshot` ends in either an install or "No updates found".
@@ -212,10 +264,11 @@ in place before step 4 — establish them here, not at the gate:
 - a `[refimg]` section in `delvewright.local.toml` at the repository root — the
   file is gitignored; copy the commented convention block out of
   `delvewright.toml`;
-- the API key **exported in your shell**, in the environment variable that
-  section's `api_key_env` names. The key never enters a file, so it is never in
-  the repository and never in the config — which also means nothing carries it
-  over from your last session;
+- the API key present in **the environment your shell sees**, in the variable
+  that section's `api_key_env` names. The key never enters a file, so it is never
+  in the repository and never in the config — which also means nothing carries it
+  over from a previous session, and if it is not there, **ask the user for it
+  rather than guessing at a provider**;
 - a confirmation that costs no call:
 
 ```sh
@@ -602,9 +655,10 @@ If someone else gave you the brief, show them a 3–6 line summary of each
 document — the summary, not the JSON — and wait, unless they asked for an
 uninterrupted run.
 
-## 4. The design gate — pictures, and someone says yes
+## 4. The design gate — STOP, the user says yes
 
-**Stop here. Do not begin step 5 until this gate is passed.** Steps 1–3 settle
+**Stop here, end your turn, and do not begin step 5 until the user has said
+yes.** Steps 1–3 settle
 *what the delve is*; step 5 is where the expensive authoring happens, and every
 problem this gate would have caught gets paid for twice once it is written.
 
@@ -615,10 +669,11 @@ surroundings, so staging and sightlines read. Not a document with pictures in it
 — a visual walkthrough, in the medium the review happens in. A design the
 reviewer cannot see is a design they cannot approve.
 
-**A confirmation is an explicit yes, not the absence of an objection.** If you
-are running the whole thing uninterrupted, this gate still happens — an
-uninterrupted run removes the per-step pauses, not the one gate whose whole
-purpose is human judgment.
+**A confirmation is an explicit yes, not the absence of an objection**, and it
+is the user's — never yours, and never a reviewer you invented. If you were told
+to run the whole thing uninterrupted, this gate still happens: an uninterrupted
+run removes the per-step pauses, not the two gates whose whole purpose is the
+user's judgement.
 
 **Which pictures these are.** At this gate they are **reference images**:
 concept art drawn from the scene description *before any prefab exists*, so what
@@ -759,11 +814,17 @@ where it was allocated (`DW0836`), every place reached from the entry
 (`DW0837`), and no crossing between places anywhere a seam was not allocated
 (`DW0838`).
 
-## 9. Walk it yourself
+## 9. The walk — STOP, this one is the user's
 
-Get into the world **now**, before the ladder and before any review. A blockout
-you have stood in tells you things no picture and no green check will: scale,
-whether the route reads, whether the silhouette is the thing you designed.
+**You have no body in the game.** You bring the world up and the user walks it;
+a blockout somebody has stood in tells them things no picture and no green check
+will: scale, whether the route reads, whether the silhouette is the thing that
+was designed.
+
+It happens **now**, before the ladder and before any review — every step after
+this costs more to redo than to defer.
+
+Run the gate, then start the server:
 
 ```sh
 python3 tools/staging-gate.py --campaign campaigns/campaigns/<id> \
@@ -772,7 +833,20 @@ EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yam
     --profile play up
 ```
 
-Then Minecraft → Multiplayer → Direct Connect → `localhost:25565`.
+Then hand the user, in one message:
+
+- **how to get in** — Minecraft Java 1.21.11 → Multiplayer → Direct Connect →
+  `localhost:25565`;
+- **what to look for, item by item.** Not "have a look". Name the scale
+  question, the route, each silhouette you are unsure of, and — per item — every
+  finding still open from an earlier round that they must **not** test (see
+  *Playtest rounds*, rule 2). Anything the staging gate reported red goes in this
+  list by class;
+- **how to tell you they are done.**
+
+**Then end your turn and wait.** Do not run the ladder, do not start step 12,
+and do not write `walk-record.json`. When they report back, their words are the
+finding — record them, and take the server down: `tools/playtest-server.sh down`.
 
 The staging gate is not optional here and not skippable by going around it:
 `owner-play.yaml` is the only file that publishes 25565, and it refuses to start
@@ -782,8 +856,8 @@ the server without a token the gate minted for *that exact build tree*.
 playtester is not protected from, drawn from every finding ever reported on any
 campaign — so a campaign that contains none of the objects a row is about shows
 as `UNBOUND`, and that is a fact about the ledger, not about your delve. Read
-the list, put it in the round summary item by item, and never backfill a weak
-check to turn a row green. To go in anyway on a build you know is red:
+the list, put it in what you hand the user item by item, and never backfill a
+weak check to turn a row green. To go in anyway on a build you know is red:
 
 ```sh
 python3 tools/staging-gate.py --campaign <dir> --build <out> \
@@ -795,12 +869,12 @@ announces it at boot — so anything hit from those classes in that session is t
 override, not a new finding.
 
 For a site-plan campaign **this walk is the campaign's first real gate**: scale,
-pacing, route legibility, and the silhouette from the declared `views[]`. A
-finding edits the graph or the plan and regenerates — there is no hand edit to
+pacing, route legibility, and the silhouette from the declared `views[]`. Say so
+when you hand it over — the user is not being asked to admire it, they are the
+gate. A finding edits the graph or the plan and regenerates — there is no hand edit to
 lose, because there was never a hand edit to make.
 
-Tear the server down when you are out: `tools/playtest-server.sh down`, or
-`docker compose … down -v` for the compose path.
+`docker compose … down -v` is the compose path's teardown.
 
 ## 10. The machine ladder
 
@@ -968,8 +1042,10 @@ Open the exterior/top/interior/anchor PNGs and check each against its `expect`
 line: marker visible? room not dark? NPC facing the camera with its name as text
 rather than JSON? seam clean? **Findings are document-level** — fix the campaign
 (lighting profile, anchor, NPC facing, name string) and rebuild. Never hand-edit
-output. Declared-dark interiors render faithfully dark; review those in-game
-under the night-vision mitigation rather than brightening a scene to pass review.
+output. Declared-dark interiors render faithfully dark, and no render will tell you
+whether one is playable: that judgement belongs to the user's walk at step 9,
+under the night-vision mitigation. Put it on the list you hand them there.
+Never brighten a scene to make a review pass.
 
 `delvec viewer <nbt|dir|manifest.json> -o <page.html>` is the CPU half of the
 same channel and needs no GPU. Read its fidelity list before handing the page to
@@ -1007,7 +1083,9 @@ undersize is refused the same way oversize is (`DW0843`), because the box is the
 footprint and a smaller building means a smaller box, which is a site-plan edit
 and another walk.
 
-1. **Record the walk you did at step 9.** Write `walk-record.json` beside the
+1. **Record the walk the user did at step 9.** The `verdict` is theirs, not
+   yours; if nobody has walked this build, you cannot write this file and detail
+   does not start. Write `walk-record.json` beside the
    documents — `delvec schema --stage walk-record` is its shape. It is a
    campaign artifact rather than a stage document, so it carries no
    `dsl_version`, no `campaign_id` and no `stage`. Fill it with the three hashes
@@ -1028,7 +1106,7 @@ and another walk.
    `delve-admit`; the engine consumes the object, never the tool that made it.
    It must carry a spatial contract (`DW0843`), answer every seam, and open no
    way the plan did not allocate (`DW0844`, both directions). See *Reference:
-   when the library has no piece you need*.
+   when the prefab library has no piece you need*.
 4. **Bind it**, re-binding each owed anchor name to one of the piece's own
    anchors (`DW0845`). That is what keeps the quest layer working: those names
    were bound to places before any detail existed, and detailing must never
@@ -1084,8 +1162,10 @@ python3 tools/check-storybook-version.py --campaigns campaigns/campaigns
 Green before you report. A stale marker waves a host on an old engine straight
 into a delve their engine cannot run.
 
-**Then report**: the campaign summary, the playtime estimate, the validation
-results, and the two commands anyone will actually use.
+**Then report to the user** — this hand-over ends the run: the campaign
+summary, the playtime estimate, the validation results, what the walk found and
+what was done about it, anything still open, and the two commands they will
+actually use.
 
 ```sh
 
@@ -1212,8 +1292,8 @@ this section is what they are *for* and the traps in each.
      Legitimate when the room genuinely has no furniture, and the thing to avoid
      is a conjured chest standing *beside* a container the room already has.
   4. If the beat really needs a piece with a container in it and none exists,
-     that is a piece to make: *Reference: when the library has no piece you
-     need*.
+     that is a piece to make: *Reference: when the prefab library has no piece
+     you need*.
 - **An elite or boss leaves ONE thing behind, and you say which.** Give the
   fight's `drops[]` a declared subset — a `{"slot": "main_hand"}` for the axe
   the player watched swing, or a `{"item": …, "name": …}` for a quest token —
@@ -1777,7 +1857,7 @@ directory is bound to nothing, and the sidecar is what makes a view re-issuable
 with one word changed: it carries the prompt, the style note, the resolved frame
 and the anchor id.
 
-## Reference: when the library has no piece you need
+## Reference: when the prefab library has no piece you need
 
 Follow `docs/reference/prefab-procedure.md` — it is the procedure, and these are
 its mandatory steps, in order. Do not improvise around them. All four binaries
@@ -1877,6 +1957,35 @@ this needs were built at Init step 2.
    any tiling, so a repeat whose absolutes sum to 8 across a 7-deep box is a hard
    refusal. Guard the extent and give the short box an `otherwise` arm.
 
+   **Then say where a body goes — the spatial contract.** The rules say what
+   blocks stand where; they never say which voids are rooms, where the doors are,
+   or what a neighbour may mate with. That is a `claim` node per body of space
+   plus one `contract` block classifying the names, written in the same document.
+   **The authoring surface is `docs/reference/grammar.md` §2d** — that section is
+   the only place that says how, and `delve-grammar show --program
+   spatial-contract` prints a runnable one. Write one whenever the piece has more
+   than one way in and out. Step 4's `traversable` judges a piece that has none —
+   it derives the sides the piece opens on from the blocks — but only a contract
+   turns that count into declared ways in, and only a contract can state a way
+   out the blocks cannot show: a piece entered from **above** binds zero there
+   and reds. Budget it as part of authoring: the moment a `contract` block is
+   present, **nine obligations run with no flag** at both
+   doors that read the piece — every name must resolve, every standable cell must
+   lie in something declared, an `enclosed` space must be closed except at a
+   claimed opening, every declared edge must hold on the bytes, and every anchor
+   must land in a declared element. An `exterior` edge is **one claim per space,
+   not one per door**: with no `via` it exports one face for every outer face its
+   space reaches, so writing one edge per end on an L-shaped passage exports each
+   end twice.
+
+   **Anchors are part of this step too.** `mark` (`grammar.md` §2b) is the only
+   way a campaign can name a place inside the piece, and it is also what gives
+   step 5 its interior cameras — a piece with no anchor gets no eye shots at all.
+   `at: floor_center` takes the lowest **world** Y of the scope it sits on, so a
+   mark wrapping a column that includes its own floor slab lands *in* the floor
+   and reds `contract-anchors`; mark the void, or use `at: offset` with the
+   walkable Y.
+
 4. **Expand and let the machine judge**:
 
    ```sh
@@ -1894,8 +2003,13 @@ this needs were built at Init step 2.
    same as a straight one. Where the piece declares a spatial contract those faces
    are its `exterior` edges and the binding count is doors; where it declares
    none they are the sides of the region its standable floor reaches, and the
-   count is open sides. Fewer than two is a refusal that names both repairs: open
-   or declare the second way out, or stop claiming the piece is a route.
+   count is open sides — and a derived side is not a door, which the detail line
+   says beside the number. Fewer than two is a refusal that names both repairs:
+   open or declare the second way out, or stop claiming the piece is a route. A
+   red here writes no `.nbt`, so it is not a warning to ship past. A piece
+   entered from **above** lands there with a binding of **zero**, because a
+   standable cell never lies on the region's top plane; that one is repaired by
+   declaring the face at step 3, not by dropping the flag.
 
    Three of the always-on gates are about how a block state is SPELLED —
    `shape-complete` (`DW0735`), `states-complete` (`DW0737`) and `oriented-fills`
@@ -1953,9 +2067,17 @@ this needs were built at Init step 2.
 
    **Open the `eye-<anchor>.png` frames FIRST.** They are the only cameras inside
    the piece — a body's eye at 1.62, at each declared anchor, looking the way that
-   anchor faces. The orbit shots (`ext-*`, `top`, `door-*`, `anchor-*`) are fitted
-   from outside, and on a roofed piece they are all the same picture of the same
-   rock. Read `<id>-shots.json` beside the images for which cell each body is
+   anchor faces. A piece that declares no anchor gets **none of them**, and the run
+   says so in its binding count; that is step 3's `mark` still owed, not a render
+   fault. The exterior orbit shots (`ext-*`, `door-*`, `anchor-*`) are fitted from
+   outside, and on a roofed piece they are all the same picture of the same rock —
+   but **`top` is a cutaway plan**, the roof taken off, and on a piece whose
+   identity is a route rather than a face — a passage, a junction, a stair — it is
+   the only planned camera that sees the route. Do **not** re-aim it by hand: a
+   `--view name=…,face=up` is `"cutaway": false` at the same pitch and
+   photographs the roof. Where a loud palette flattens the plan, add a `--view`
+   square at each open face (`--view name=east-mouth,face=east`) and read the two
+   together. Read `<id>-shots.json` beside the images for which cell each body is
    standing in: a camera whose anchor cell held a gate or a barrel steps back
    along the facing and says so (`DW0727`), and an anchor with no body cell gets no
    eye shot at all — the run states that count. A flat grey frame is outside the
@@ -1972,11 +2094,48 @@ this needs were built at Init step 2.
    instead of at the façade, and the forecourt shrinks the building in every
    exterior frame. Keys: `docs/reference/tools.md` §4.
 
-6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` → `anchor` →
-   `lighting --write` → `catalog validate`), then `audit` again. For a tile set,
-   `audit` and `lighting` both take the **manifest** and answer about one zone;
-   handing any command a single tile is `DW0739`, and so is handing it a tile
-   copied away from its manifest.
+6. **Admit it**: the `delve-admit` chain, which for a generated piece is
+   `audit` → `socket` → `lighting --write` → `audit` again.
+
+   ```sh
+   delve-admit audit    out/<id>.nbt        # a TILE SET passes out/<id>.json
+   delve-admit socket   out/<id>.nbt --pos X,Y,Z --facing <dir> --opening 3,3 \
+                        --name <ns>:<name> --target <ns>:<name> --pool pool/<name>
+   delve-admit lighting out/<id>.nbt --write
+   delve-admit audit    out/<id>.nbt
+   ```
+
+   **Hand `audit` the `.nbt`, not the `.json`** — the metadata beside a single
+   template is not a manifest and is refused (`DW0732`, exit 2). Only a tile set
+   has a manifest, and then `audit` and `lighting` both take it and answer about
+   one zone; handing any command a single tile is `DW0739`, and so is handing it
+   a tile copied away from its manifest.
+
+   Two subcommands are **not** on this route. `delve-admit anchor` writes a place
+   into an anchor whose producer could not — a hand-built or ingested piece; a
+   grammar program already declared its anchors with `mark` at step 3.
+   `delve-admit catalog validate` reads a **catalog card**, the per-asset
+   verification record of the ingestion route (`catalog/<asset-id>.json`), which
+   is a different document from prefab metadata — run on a prefab's `.json` it
+   correctly reports that file is not a catalog card.
+
+   **`socket --pos` is the jigsaw cell: bottom-centre of the opening, in the wall
+   plane.** The opening is built from it — width centred on it, height climbing
+   from it — so read it off the piece: with a spatial contract, the metadata
+   written beside it carries each exterior face's opening as a `from`/`to` cell
+   pair (`spatial_contract.faces[]`), where step 4's report and `audit` name only
+   the face's direction and cell count; with none, a `mark` whose scope is the
+   mouth itself records that cell. `--facing` points **out** of the piece;
+   `--name`/`--target` are what mate one piece to another; `--pool` is the
+   `prefab_pool` the far side comes from. The carved socket leaves a
+   `minecraft:jigsaw` block in the doorway carrying `final_state: minecraft:air`,
+   so the world replaces it with air at placement — a re-run `audit` reporting one
+   fewer cell on that face, and `minecraft:jigsaw` in the palette, is the marker
+   being counted and not a blocked door.
+
+   `socket` is also the **only** step that edits the blocks, so a piece that
+   carries one no longer matches what its `license.generated_by` row regenerates;
+   that row reproduces the `.nbt` as step 4 expanded it.
 
    A grammar prefab has **no connectors and no lighting** until this step, so it
    cannot enter a `prefab_pool` and will be dark, until you do it. `lighting`

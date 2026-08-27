@@ -2225,6 +2225,134 @@ fn a_missing_skin_png_is_dw0309() {
     assert_ne!(code(&out), 0, "a missing skin PNG must fail the build");
 }
 
+/// A v0.6 campaign whose only skinned body is a stage-5 **actor**, patched onto
+/// hello-world. Shared by the two tests below so the negative and the positive
+/// are the same campaign minus one file.
+fn actor_skin_campaign(name: &str) -> std::path::PathBuf {
+    let camp = tmp(name);
+    copy_dir(&common::hello_world_dir(), &camp);
+    common::patch_file(&camp.join("quests.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.6.0");
+        common::objective_effects(d, 0, "obj/talk").push(serde_json::json!({
+            "type": "spawn-actor", "actor": "actor/giant"
+        }));
+        d["content"]["actors"] = serde_json::json!([
+            { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
+              "anchor": "anchor/exit", "facing": "east",
+              "skin": { "texture_id": "giant-idle", "model": "wide" } }
+        ]);
+    });
+    camp
+}
+
+/// `DW0309` for an **actor**, by the same code and at the same tier as for an
+/// npc — the whole point of the walk being over bodies.
+///
+/// This is the deletion experiment's other half. `read_skins` used to enumerate
+/// `campaign.npcs.content.npcs`, so this exact campaign built green, emitted
+/// `profile:{texture:"delvewright:npc/giant-idle"}` into the puppet's summon,
+/// and shipped a resource pack with no such texture in it. Nothing said
+/// anything. Same deletion as `a_missing_skin_png_is_dw0309`, and it must now
+/// cost the same thing.
+#[test]
+fn a_missing_actor_skin_png_is_dw0309() {
+    let camp = actor_skin_campaign("actor-skin-missing");
+    // Deliberately do NOT create `skins/giant-idle.png`.
+    let out = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        tmp("actor-skin-missing-out").to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stderr.contains("DW0309") || stdout.contains("DW0309"),
+        "expected DW0309 for an actor's missing skin PNG:\nstderr: {stderr}\nstdout: {stdout}"
+    );
+    assert!(
+        stderr.contains("actor/giant") || stdout.contains("actor/giant"),
+        "the refusal must NAME the declaration that asked for the file:\n\
+         stderr: {stderr}\nstdout: {stdout}"
+    );
+    assert_eq!(
+        code(&out),
+        3,
+        "an actor's missing skin PNG must fail the build at the same tier an npc's does"
+    );
+}
+
+/// **Baked and served, for either class.** With both PNGs on disk, the pack
+/// carries both textures and `SKINS.md` lists both.
+///
+/// The positive direction of the same fact: an emitted
+/// `delvewright:npc/<texture_id>` is only true if the pack holds
+/// `assets/delvewright/textures/npc/<texture_id>.png`, and until this walk was
+/// over bodies exactly one of these two was in there.
+#[test]
+fn every_declared_skin_is_baked_into_the_pack() {
+    let camp = actor_skin_campaign("actor-skin-baked");
+    // Give the stage-2 npc a skin too, so one build carries one of each class.
+    common::patch_file(&camp.join("npcs.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.4.0");
+        d["content"]["npcs"][0]["skin"] =
+            serde_json::json!({ "texture_id": "keeper", "model": "slim" });
+    });
+    let skins = camp.join("skins");
+    std::fs::create_dir_all(&skins).unwrap();
+    // Distinctive payloads: the archive is written with the STORE method, so
+    // finding these bytes proves the FILE was baked, not merely that a path
+    // string was written somewhere.
+    std::fs::write(skins.join("keeper.png"), b"NPC-SKIN-KEEPER-PAYLOAD").unwrap();
+    std::fs::write(skins.join("giant-idle.png"), b"ACTOR-SKIN-GIANT-PAYLOAD").unwrap();
+
+    let out = tmp("actor-skin-baked-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&b),
+        0,
+        "both PNGs present, so the build must be green: {}\n{}",
+        String::from_utf8_lossy(&b.stderr),
+        String::from_utf8_lossy(&b.stdout)
+    );
+
+    let zip = std::fs::read(out.join("resourcepack.zip")).expect("a skinned campaign ships a pack");
+    let text = String::from_utf8_lossy(&zip).to_string();
+    // Binding, stated: 2 skin declarations of 2 body classes, and both must be in
+    // the archive. A pass that found one of them is the defect this test exists
+    // for, so both are asserted separately and named.
+    for (class, id, payload) in [
+        ("npc/keeper", "keeper", "NPC-SKIN-KEEPER-PAYLOAD"),
+        ("actor/giant", "giant-idle", "ACTOR-SKIN-GIANT-PAYLOAD"),
+    ] {
+        assert!(
+            text.contains(&format!("assets/delvewright/textures/npc/{id}.png")),
+            "`{class}` declares `skin.texture_id` `{id}` and the pack has no entry for it — \
+             its mannequin would ship pointing at a texture nothing serves"
+        );
+        assert!(
+            text.contains(payload),
+            "`{class}`'s PNG bytes are not in the pack: the entry was named but the file was \
+             not baked"
+        );
+    }
+
+    let note = std::fs::read_to_string(out.join("SKINS.md")).unwrap();
+    assert!(
+        note.contains("`keeper`") && note.contains("`giant-idle`"),
+        "SKINS.md tells the host what the pack carries; it must list every baked skin: {note}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // spec-0025 — the branch artifacts, and the v0.8 emission fence
 // ---------------------------------------------------------------------------

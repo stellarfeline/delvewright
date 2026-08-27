@@ -716,24 +716,47 @@ fn the_page_carries_the_shared_control_table_and_only_that_one() {
     );
 }
 
-/// A gate nothing invokes is not a gate (CLAUDE.md). The control tests are
-/// JavaScript, so `cargo test` cannot reach them — which is exactly the shape
-/// that lets a check rot into a line in a document. This binds them to a job
-/// that already has to pass, and fails if the invocation is ever removed.
+/// A gate nothing invokes is not a gate (CLAUDE.md). The viewer's browser-side
+/// tests are JavaScript, so `cargo test` cannot reach them — which is exactly
+/// the shape that lets a check rot into a line in a document. This binds them
+/// to a job that already has to pass, and fails if an invocation is removed.
+///
+/// The set is ENUMERATED FROM THE DIRECTORY, never listed here. Naming them
+/// would gate the ones whoever wrote this happened to know about, and the next
+/// `.test.mjs` file would land ungated and green — the same defect one layer
+/// out from the one this file's neighbours exist to catch.
 #[test]
-fn ci_runs_the_control_mapping_tests() {
+fn ci_runs_every_javascript_test_beside_this_one() {
+    let here = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
     let ci = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows/ci.yml");
     let Ok(text) = std::fs::read_to_string(&ci) else {
         panic!("cannot read {}", ci.display());
     };
+
+    let mut found: Vec<String> = std::fs::read_dir(&here)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", here.display()))
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".test.mjs"))
+        .collect();
+    found.sort();
+
     assert!(
-        text.contains("node --test crates/compiler/tests/controls.test.mjs"),
-        "ci.yml no longer runs the viewer's control mapping tests"
+        !found.is_empty(),
+        "no .test.mjs beside {} — the viewer's browser-side coverage has vanished",
+        here.display()
     );
-    assert!(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/controls.test.mjs")
-            .exists(),
-        "the control mapping tests are gone but CI still claims to run them"
+    for name in &found {
+        let invocation = format!("node --test crates/compiler/tests/{name}");
+        assert!(
+            text.contains(&invocation),
+            "ci.yml does not run {name}: expected a step invoking `{invocation}`"
+        );
+    }
+    // Binding count, computed from the objects rather than written down.
+    eprintln!(
+        "bound {} javascript test file(s): {}",
+        found.len(),
+        found.join(", ")
     );
 }

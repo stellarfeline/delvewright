@@ -11,7 +11,9 @@ use clap::{Parser, Subcommand};
 use delvewright_compiler::analyze::analyze_campaign;
 use delvewright_compiler::commands::CommandTree;
 use delvewright_compiler::emit;
-use delvewright_compiler::load::load_campaign_dir;
+use delvewright_compiler::load::{
+    LoadedCampaign, load_campaign_dir, missing_stage_documents_diagnostic,
+};
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
@@ -19,8 +21,9 @@ use delvewright_dsl::{
     Diagnostic, DwCode, Fenced, Stage, parse_campaign, stage_schema, validate_campaign_with,
 };
 
-/// `DW0309`: a mannequin NPC declares a `skin.texture_id` for which the campaign
-/// ships no `skins/<texture_id>.png`. Build-tier (exit 3).
+/// `DW0309`: a staged **body** — a stage-2 npc or a stage-5 actor alike —
+/// declares a `skin.texture_id` for which the campaign ships no
+/// `skins/<texture_id>.png`. Build-tier (exit 3).
 const DW_SKIN_PNG_MISSING: DwCode = DwCode::every_version("DW0309");
 
 /// Internal-error exit code (spec-0002: ≥10).
@@ -558,14 +561,47 @@ fn parse_sidecars(
     out
 }
 
+/// **Read a campaign directory, or say which of the two things went wrong.**
+///
+/// The four verbs that read a campaign directory (`validate` and everything
+/// built on it, `l10n-inventory`, `edit`, `allocation`) each carried their own
+/// copy of one error arm, and every copy said the same thing:
+/// `internal error: cannot read campaign dir: <name>`, exit 10, no `DW` code.
+/// That answer is right for exactly one of the two states it covered. A campaign
+/// directory holding a document this process cannot open IS an internal
+/// condition worth stopping hard on; a campaign directory that does not hold all
+/// six stage documents yet is an author part-way through writing one, which is
+/// the state the authoring skill puts them in on purpose.
+///
+/// So the two are told apart here, once, and the authoring state gets an ordinary
+/// coded refusal ([`DW_STAGE_DOCUMENT_MISSING`]) at the validation tier. Nothing
+/// else moves: an unreadable document, a bad encoding, a path that is not a
+/// directory each print exactly what they printed, at exit 10.
+///
+/// The order matters and is deliberate. The missing-document question is asked
+/// only **after** the load has failed, so a directory that loads is never
+/// probed and no verb pays for a check on its success path.
+fn load_or_refuse(campaign_dir: &Path, json: bool) -> Result<LoadedCampaign, u8> {
+    match load_campaign_dir(campaign_dir) {
+        Ok(l) => Ok(l),
+        Err(e) => match missing_stage_documents_diagnostic(campaign_dir) {
+            Some(d) => {
+                print_diags(&Fenced::structural(vec![d]), json);
+                Err(1)
+            }
+            None => {
+                eprintln!("internal error: cannot read campaign dir: {e}");
+                Err(EXIT_INTERNAL)
+            }
+        },
+    }
+}
+
 /// Validate and return the parsed campaign + shared context (prefabs, loaded dir,
 /// l10n sidecars) + diagnostics; prints diagnostics. Returns `Err(exit)` on
 /// internal error.
 fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result<Validated, u8> {
-    let loaded = load_campaign_dir(campaign_dir).map_err(|e| {
-        eprintln!("internal error: cannot read campaign dir: {e}");
-        EXIT_INTERNAL
-    })?;
+    let loaded = load_or_refuse(campaign_dir, json)?;
     validate_loaded(loaded, prefabs_dir, json)
 }
 
@@ -821,12 +857,9 @@ struct NpcContext<'a> {
 /// normal state when you ask for the inventory. Only an unparseable campaign fails
 /// (exit 1); no prefab library is needed.
 fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
-    let loaded = match load_campaign_dir(campaign_dir) {
+    let loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
-        Err(e) => {
-            eprintln!("internal error: cannot read campaign dir: {e}");
-            return ExitCode::from(EXIT_INTERNAL);
-        }
+        Err(exit) => return ExitCode::from(exit),
     };
     let campaign = match parse_campaign(&loaded.raw) {
         Ok(c) => c,
@@ -1662,37 +1695,53 @@ fn run_build(
     ExitCode::SUCCESS
 }
 
-/// Read the NPC-skin PNGs referenced by mannequin NPCs (spec-0009 bake). The PNG
+/// Read the skin PNGs every staged **body** references (spec-0009 bake). The PNG
 /// lives in the campaign dir at `skins/<texture_id>.png`; a missing one is a
 /// build error (`DW0309`), not a silent skip. Shared by `build` and by `edit`'s
 /// build-tier proof run — the editor must prove exactly what `build` proves.
+///
+/// **Enumerated from [`delvewright_dsl::body_skin_sites`], never from one
+/// stage's list.** This walked `campaign.npcs.content.npcs` by hand, so a
+/// stage-5 actor's skin was read into its summon
+/// (`profile:{texture:"delvewright:npc/<id>"}`), shipped in a resource pack that
+/// carried no such texture, and refused by nothing: deleting an npc's PNG exited
+/// 3 with `DW0309` while deleting an actor's built green. A skin is a property
+/// of a body, so the walk is over bodies.
+///
+/// One texture is read once however many bodies name it — a character and the
+/// puppet that plays it are one face.
 fn read_skins(
     campaign_dir: &Path,
     campaign: &delvewright_dsl::Campaign,
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for npc in &campaign.npcs.content.npcs {
-        let Some(skin) = &npc.skin else { continue };
-        if skins.contains_key(&skin.texture_id) {
+    for site in delvewright_dsl::body_skin_sites(campaign) {
+        if skins.contains_key(&site.skin.texture_id) {
             continue;
         }
         let path = campaign_dir
             .join("skins")
-            .join(format!("{}.png", skin.texture_id));
+            .join(format!("{}.png", site.skin.texture_id));
         match std::fs::read(&path) {
             Ok(bytes) => {
-                skins.insert(skin.texture_id.clone(), bytes);
+                skins.insert(site.skin.texture_id.clone(), bytes);
             }
             Err(e) => {
                 print_build_error(
                     DW_SKIN_PNG_MISSING,
                     &format!(
-                        "cannot read skin PNG `{}`: {e} — a mannequin npc declares this \
-                         `skin.texture_id` but the campaign has no matching \
-                         `skins/<texture_id>.png`. Add the PNG at that path, or remove the \
-                         npc's `skin`",
-                        path.display()
+                        "cannot read skin PNG `{}`: {e} — `{}` declares this `skin.texture_id` \
+                         at `{}` `{}`, but the campaign has no matching \
+                         `skins/<texture_id>.png`. A body that declares a skin ships as a \
+                         mannequin pointing at `delvewright:npc/{}`, and the resource pack is \
+                         where that texture comes from. Add the PNG at that path, or remove \
+                         the `skin`",
+                        path.display(),
+                        site.body.id(),
+                        site.body.stage(),
+                        site.path,
+                        site.skin.texture_id,
                     ),
                     json,
                 );
@@ -1737,12 +1786,9 @@ fn run_edit(
         self, Camera, DEFAULT_FOV, DEFAULT_HEIGHT, DEFAULT_WIDTH,
     };
 
-    let mut loaded = match load_campaign_dir(campaign_dir) {
+    let mut loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
-        Err(e) => {
-            eprintln!("internal error: cannot read campaign dir: {e}");
-            return ExitCode::from(EXIT_INTERNAL);
-        }
+        Err(exit) => return ExitCode::from(exit),
     };
 
     // Append the candidate batch to the (possibly absent) stage-7 document, in
@@ -2268,12 +2314,9 @@ fn print_one_diag(d: &Diagnostic, json: bool) {
 /// is why it can be asked for before the piece is built — which is the only
 /// moment it is any use.
 fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: bool) -> ExitCode {
-    let loaded = match load_campaign_dir(campaign_dir) {
+    let loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
-        Err(e) => {
-            eprintln!("internal error: cannot read campaign dir: {e}");
-            return ExitCode::from(EXIT_INTERNAL);
-        }
+        Err(exit) => return ExitCode::from(exit),
     };
     // Parsed rather than fully validated, on the precedent `l10n-inventory`
     // sets: this verb's stdout is a machine-readable document an authoring loop

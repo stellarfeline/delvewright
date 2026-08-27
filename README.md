@@ -45,70 +45,89 @@ server in a box. Everything else is a build step.
 
 Open Claude Code **in this repo** (the skill and the whole toolchain live here;
 finished campaigns land in the separate content repo), type
-`/new-delve <your prompt>`, and this happens:
+`/new-delve <your prompt>`, and this happens.
+
+The agent runs every box in the diagram except the two marked 🖐 — those are
+**yours**. The line stops there and waits for you.
 
 ```mermaid
 flowchart TD
-    P(["📜 your prompt<br/>(theme one-liner or full brief)"]) --> A
+    P(["📜 your prompt — a theme, or a full brief"]) --> INIT
+    INIT["🔧 Init — build the toolchain from source"] --> PICK{"how is this map made?"}
 
-    subgraph AUTHOR ["✍️ staged authoring — one stage at a time"]
-        A["world → npcs → classes →<br/>quest-plan → quests → dialogue"]
-        A -->|"delvec validate<br/>(fix & re-check loop)"| A
-        A -.->|"interactive mode:<br/>summary checkpoint per stage"| U([you])
-        U -.-> A
-    end
+    PICK -->|"a few rooms the piece library already has"| AREAS["<b>areas[]</b> — pieces seated on a fixed stride"]
+    PICK -->|"the place itself is the content"| GB
 
-    A --> L["🌐 translations<br/>(only if you asked for other languages;<br/>always from the finished English)"]
-    L --> AN["delvec analyze<br/>reachability · deadlocks · dark rooms"]
-    AN --> B["delvec build<br/>deterministic: datapack + world +<br/>everything the checks below need"]
+    GB["<b>geometry-brief</b> — what the place is, in words"] -->|delvec| LG["<b>layout-graph</b> — what connects to what"]
+    LG -->|delvec| SP["<b>site-plan</b> — every part's box, datum and seams"]
 
-    subgraph MACHINE ["🤖 machine gauntlet"]
-        PT["PackTest —<br/>mechanism tests"] --> BOT["mineflayer bot<br/>plays it start → credits"]
-    end
-    B --> PT
+    AREAS --> STORY
+    SP --> STORY
 
-    BOT --> V["👁 visual review<br/>screenshots checked against<br/>what each scene is supposed to show"]
-    V --> SB["📖 storybook<br/>non-spoiler README + media<br/>(exterior/starting shots only)"]
-    SB --> R(["report + play commands<br/>EULA=TRUE docker compose … --profile play up"])
+    STORY["<b>npcs · classes · quest-plan</b><br/>who is here, and what it is about"] --> GATE
 
-    AN -->|red| A
-    BOT -->|red = DSL bug| A
-    V -->|finding = DSL fix| A
+    GATE{{"🖐 <b>the design gate</b><br/>concept art of every scene, near and far<br/>you say yes"}}:::human
+    GATE -->|"not yet"| STORY
+    GATE -->|yes| CONTENT
+
+    CONTENT["<b>quests · dialogue</b> — the long step"] -->|"delvec fmt"| AN
+    AN["<b>delvec analyze</b><br/>reachability · deadlocks · dark rooms"] -->|red| CONTENT
+    AN --> BUILD["<b>delvec build</b><br/>datapack + world, byte-identical every run"]
+
+    BUILD --> WALK{{"🖐 <b>the walk</b><br/>a server on localhost:25565<br/>you walk the blockout"}}:::human
+    WALK -->|"scale · route · silhouette wrong"| SP
+    WALK -->|"it reads"| PT
+
+    PT["🤖 <b>PackTest</b> — mechanism tests"] --> BOT["🤖 <b>a bot plays it</b> — start to credits"]
+    BOT -->|"red = a bug in the documents"| CONTENT
+    BOT --> VIS["👁 <b>visual review</b><br/>the player's-eye frames first,<br/>each against what it should show"]
+    VIS -->|finding| CONTENT
+    VIS --> DET["🏛 <b>detail</b> — one place at a time<br/><i>site-plan maps only</i>"]
+    DET --> SB["📖 <b>storybook</b> — a spoiler-free README and art"]
+    SB --> OUT(["▶️ play it"])
+
+    classDef human fill:#ffd76e,stroke:#a9761a,color:#241a00
 ```
 
-Three rules keep the loop honest: every red goes back to the **DSL** (nobody ever
-hand-edits compiler output), the campaign is **committed before validation** (a
-crash can't lose it), and the finished delve must be **rebuildable byte-identically
-from the committed documents alone** — the JSON is the artifact of record, not the
-build.
+Three rules keep the loop honest: every red goes back to the **documents**
+(nobody ever hand-edits compiler output), the campaign is **committed before
+validation** (a crash can't lose it), and the finished delve must be
+**rebuildable byte-identically from the committed documents alone** — the JSON is
+the artifact of record, not the build.
 
-## How it works (the assembly line)
+And the rule behind the whole design: **if a machine can't finish the dungeon,
+you never see it.** One QA hour per delve is the budget — the pipeline's job is
+to make sure that hour goes on *is this fun?*, never on *is this broken?*
 
-```
-  ✍️  LLM writes a campaign        — as strict JSON, six stages deep:
-                                     world → NPCs → classes → quest plan
-                                     → quests → dialogue (+ translations)
-        │
-        ▼
-  ⚙️  delvec, a deterministic      — same input + same seed = byte-identical
-      Rust compiler                  output, every single time. No exceptions.
-        │                            The LLM NEVER writes a raw command; the
-        ▼                            compiler writes ALL of them.
-  📦  a datapack + a world         — rooms assembled from a curated prefab
-                                     library, quests wired with scoreboards,
-        │                            dialogs, and advancements
-        ▼
-  🤖  the gauntlet                 — a graph analyzer proves every quest is
-                                     completable; a headless server must load it
-        │                            with zero errors; PackTest checks the
-        ▼                            mechanisms; then a mineflayer bot actually
-  🧑‍🌾  humans                       PLAYS the whole thing, start to credits.
-                                     Only then do humans get to see it.
-```
+The procedure itself lives in
+[`.claude/skills/new-delve/SKILL.md`](.claude/skills/new-delve/SKILL.md), which
+is written for the agent that executes it; you never have to read it.
 
-The rule behind the whole design: **if a machine can't finish the dungeon, humans
-never see it.** The maintainer budgets one QA hour per delve — the pipeline's job is
-to make sure that hour is spent on "is this *fun*?", never on "is this *broken*?"
+## The tools
+
+One `cargo build --release --workspace` produces six binaries, plus
+`delve-render` from its own workspace. What each is for:
+
+| tool | the question it answers |
+|---|---|
+| `delvec` | the compiler. `validate` · `analyze` · `build` · `fmt` — plus `schema`, which prints the exact shape of every campaign document |
+| `delvec viewer` | *what does this actually look like?* One self-contained web page you orbit, cut the roof off, and stand inside at eye height — every block drawn from the pinned version's own models |
+| `delvec panorama` · `scene` · `snapshot` | frames to look at: the whole-map hero shot, the player's-eye review shots, quick drafts |
+| `delvec contact-sheet` | *several candidate rooms, one slot* — all of them on one page to choose from |
+| `delvec allocation` | *what box does this part get?* The extents, datum and seams a piece must answer |
+| `delve-grammar` | *the library has no piece for this* — writes a new one from a rule program |
+| `delve-admit` | *is this piece fit to ship?* — admits a prefab into the library |
+| `delve-schem` | *I have a build from elsewhere* — converts an outside schematic |
+| `delve-render` | GPU renders of one piece or a whole directory |
+| `delve-harvest` | *what did the playtester write down?* — turns in-game notes into a report |
+| `tools/refimg.py` | draws the concept art the design gate is confirmed on |
+| `tools/staging-gate.py` | *is this build fit for a person to walk?* — it holds the only key to the play port |
+| Chunky | every frame that has to *look* like Minecraft |
+
+The complete inventory, flag by flag, is
+[`docs/reference/tools.md`](docs/reference/tools.md); what the compiler does and
+every diagnostic it can print is
+[`docs/reference/compiler.md`](docs/reference/compiler.md).
 
 ## The house rules
 
@@ -145,6 +164,11 @@ compiles campaign documents into a playable delve, analyses the result for
 reachability, deadlocks and dark rooms, and renders what you have built so you
 can look at it before you believe it. `--help` lists the subcommands.
 
+It is the one tool you can install without a checkout. The rest of the table
+above — and the renderer, which needs a GPU — are built from source, which is
+the floor this project guarantees and never an afterthought: everything an
+author needs is reachable from a clone.
+
 ```sh
 cargo install delvec           # from crates.io
 ```
@@ -172,7 +196,9 @@ gives you the same tool, and is the path to take if you are changing it.
 | [`docs/adr/`](docs/adr/README.md) | Why everything is the way it is (decision records) |
 | [`docs/specs/`](docs/specs/README.md) | Owner-approved specs; no spec, no feature |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Where this is going, milestone by milestone |
-| `crates/` | Rust workspace: `dsl` (schemas + validation), `compiler` (`delvec`), `orchestrator` |
+| `.claude/skills/` | The procedures the agent executes — [`/new-delve`](.claude/skills/new-delve/SKILL.md) is the one above |
+| `docs/reference/` | What the tools do today — [the compiler](docs/reference/compiler.md), [the tool inventory](docs/reference/tools.md), [how a piece is admitted](docs/reference/prefab-procedure.md) |
+| `crates/` | Rust workspace: `dsl` (schemas + validation), `compiler` (`delvec`), `grammar`, `admit`, `schem`, `render`, `orchestrator` |
 | `prefabs/` | Tileset generators (GPL) + docs; the `.nbt` room library itself lives in the content repo under `prefabs/` |
 | `harness/` | The robot player (TypeScript + mineflayer) |
 | `packtest/` | PackTest templates for mechanism assertions |

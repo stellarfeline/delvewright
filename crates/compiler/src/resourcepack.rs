@@ -1,7 +1,8 @@
-//! The per-delve NPC-skin resource pack (spec-0009 "bake").
+//! The per-delve skin resource pack (spec-0009 "bake").
 //!
-//! A campaign with skinned (mannequin) NPCs ships an original PNG per skin in a
-//! server resource pack: `pack.mcmeta` (`min_format`/`max_format` = 75.0 for
+//! A campaign with skinned (mannequin) BODIES — stage-2 npcs and stage-5 actors
+//! alike, enumerated by `dsl::body_skin_sites` — ships an original PNG per skin in
+//! a server resource pack: `pack.mcmeta` (`min_format`/`max_format` = 75.0 for
 //! 1.21.11) plus `assets/delvewright/textures/npc/<id>.png` for each skin. The
 //! mannequin's `profile.texture` resolves to `delvewright:npc/<id>`.
 //!
@@ -27,7 +28,7 @@ use serde_json::json;
 /// on the owner's 1.21.11 client as
 /// `Couldn't load file/<pack>.zip pack metadata: Pack declares support for version
 /// newer than 64, but is missing mandatory fields min_format and max_format`, i.e.
-/// every NPC skin silently never loaded. Emitted as `[major, minor]` arrays, the
+/// every baked skin silently never loaded. Emitted as `[major, minor]` arrays, the
 /// shape already proven live for the datapack at 94.1.
 pub const RESOURCE_PACK_FORMAT: [u32; 2] = [75, 0];
 

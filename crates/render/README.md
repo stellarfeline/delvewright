@@ -450,6 +450,21 @@ hand-built prefabs work today and a grammar snapshot's semantics sidecar loads
 through the same reader. Zero anchors is a stated finding (`DW0726`), and the
 page still renders with exterior and plan only.
 
+Anchors draw as markers with a name label beside them, nearest first, dropping
+any label that would land on one already placed — a prefab can declare thirty in
+a small box, and a stack of them hides the model it is annotating. Every anchor
+is still a marker, and the panel lists them all.
+
+**A label belongs to the prefab that drew it.** On a page of several prefabs the
+labels are a per-prefab structure like the camera presets, the anchor list and
+the block list: switching prefab discards them and builds the new one's. The
+label pass reads which prefab is current rather than being told by whoever
+switched it, so this holds however the scene changed — the picker, a `#model=`
+fragment, or the headless surface. `crates/compiler/tests/labels.test.mjs` boots
+the real page over a small DOM and checks what the label layer holds across a
+switch, over every ordered pair of models; CI runs it as a step of
+`rust (fmt, clippy, test)`.
+
 **A tiled zone is one building.** A zone past the 48-per-axis structure-template
 cap ships as several `.nbt` files and one manifest; `viewer` reassembles it
 before it draws anything, exactly as `piece` does, and a lone tile passed by name
