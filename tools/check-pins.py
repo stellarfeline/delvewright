@@ -94,6 +94,33 @@ different:
   declares, and a workflow really runs it. The arm is not the author's to pick —
   see `has_pin_shape`.
 
+## Identity: a pin is its ENTRY and its SITE, never its bare value
+
+Two entries answer different questions and may legitimately hold the same
+revision — and where both track a moving tip, coinciding is their NORMAL state
+rather than an exception. The live pair is a content repository's `admit-ref`
+(which engine's rules judge a prefab) and `engine-authoring` (which engine an
+author builds their toolchain from): neither value is wrong, and the day they
+agree is not a defect.
+
+Resolving an occurrence by its value cannot tell that from the defect it is
+looking for — one pin standing at a file it never declared. So it reported each
+pin's own correctly-declared site as the other pin's undeclared second copy: a
+resolve-by-name over a scope where names are not unique, which returns an honest,
+affirmative answer about a different object.
+
+An OCCURRENCE is a value standing in a file, and it is accounted for when SOME
+entry holding that value lists that file among its sites. The rule is unchanged
+and is asserted over the union of those sites: a value appearing where no holder
+declared it is a pin held in a place it did not declare, and it moves in one.
+
+What a shared value may NOT do is claim one occurrence twice. Two entries naming
+the same value AND the same site put two decisions on one literal, and the
+effective obligation is then the disjunction of their policies — only as strong
+as the weakest, with the kind chosen by whoever wrote the second entry rather
+than determined by the object. That is the collision worth a red, and it is what
+the old value-uniqueness rule was reaching for.
+
 ## Discovery, and why this enumeration is closed
 
 A pin that nothing reads cannot select anything, so the places a pin can live are
@@ -874,34 +901,52 @@ def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[s
 
     discovered, keyed_errors = literals(root, sites)
     errors.extend(keyed_errors)
-    by_value = {p.get("value"): p for p in registry}
+
+    # An occurrence is identified by (entry, site), never by the bare value —
+    # see the docstring section "Identity". `sites_by_value` is the union of the
+    # sites declared by every entry holding a value, which is what an occurrence
+    # of that value is accounted against; `claims` is the inverse, and a
+    # (value, site) pair claimed twice is the collision that matters.
+    registered_values: set[str] = set()
+    sites_by_value: dict[str, set[str]] = {}
+    holders_by_value: dict[str, list[str]] = {}
+    claims: dict[tuple[str, str], list[str]] = {}
+    for pin in registry:
+        val = pin.get("value")
+        if not val:
+            continue
+        pid = pin.get("id", "<unnamed>")
+        registered_values.add(val)
+        holders_by_value.setdefault(val, []).append(pid)
+        sites_by_value.setdefault(val, set())
+        for site in pin.get("sites", []):
+            sites_by_value[val].add(site)
+            claims.setdefault((val, site), []).append(pid)
+    for (val, site), ids in sorted(claims.items()):
+        if len(ids) > 1:
+            errors.append(
+                f"{', '.join(ids)}: all declare the value {val} at the same "
+                f"site {site}. One literal cannot carry two decisions about "
+                f"when it may move: the effective obligation becomes the "
+                f"disjunction of their policies, only as strong as the weakest, "
+                f"with the kind chosen by whoever wrote the second entry rather "
+                f"than by the object. Two pins may share a value; they may not "
+                f"share an occurrence of it."
+            )
+    for val, ids in sorted(holders_by_value.items()):
+        if len(ids) > 1:
+            print(
+                f"-- shared value: {val} is held by {len(ids)} entries "
+                f"({', '.join(ids)}), each accounted at its own site(s)"
+            )
 
     # Every registry entry is well-formed and still describes its files.
     seen_ids: set[str] = set()
-    seen_values: dict[str, str] = {}
     for pin in registry:
         pid = pin.get("id", "<unnamed>")
         if pid in seen_ids:
             errors.append(f"{pid}: declared twice in the registry")
         seen_ids.add(pid)
-        # Discovery is keyed by the VALUE, so two entries sharing one would
-        # silently merge their site sets and one of them would vanish from
-        # `by_value` — a plausible wrong answer rather than an error, which is
-        # the family this project keeps paying for. Two unrelated things at the
-        # same version is an ordinary state of the world (a node line and a
-        # python line can both be "24"), so it reds here and is repaired by
-        # making the value distinguishable, never by dropping an entry.
-        val = pin.get("value")
-        if val is not None:
-            if val in seen_values:
-                errors.append(
-                    f"{pid}: value {val} is also declared by "
-                    f"{seen_values[val]}. Discovery is keyed by the value, so "
-                    f"two entries sharing one merge into whichever the registry "
-                    f"lists last and the other stops being checked at all."
-                )
-            else:
-                seen_values[val] = pid
         for field in ("id", "value", "policy", "why", "sites"):
             if not pin.get(field):
                 errors.append(f"{pid}: registry entry is missing `{field}`")
@@ -1006,11 +1051,9 @@ def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[s
                 f"{pid}: declares site {missing} but the value {value} is not "
                 f"there any more — the registry drifted from the file"
             )
-        for extra in sorted(actual - declared):
-            errors.append(
-                f"{pid}: value {value} also appears in {extra}, which the entry "
-                f"does not list. A pin held in two places moves in one."
-            )
+        # The other direction — an occurrence at a file nobody declared — is
+        # asked once per VALUE rather than once per entry, below, because the
+        # question is whether ANY holder of the value declared that file.
         # `builds` is what the online half derives its watch set from, so a
         # build out of the pinned checkout that `builds` omits is a red here.
         # Only a `track` pin has a checkout to build out of.
@@ -1027,14 +1070,23 @@ def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[s
                         f"so the drift check would not watch its sources"
                     )
 
-    # Every discovered literal is registered.
+    # Every discovered occurrence is accounted for: the value carries an entry,
+    # and the file it stands in is a site SOME entry holding that value declares.
     for value, where in sorted(discovered.items()):
-        if value not in by_value:
+        if value not in registered_values:
             errors.append(
                 f"unregistered pin {value} in {', '.join(sorted(where))} — "
                 f"every literal that decides which version of an external thing "
                 f"this repo fetches needs an entry in the pin registry, with the "
                 f"policy that says whether it may drift"
+            )
+            continue
+        holders = ", ".join(holders_by_value[value])
+        for extra in sorted(where - sites_by_value.get(value, set())):
+            errors.append(
+                f"{holders}: value {value} also appears in {extra}, which no "
+                f"entry holding that value lists as a site. A pin held in a "
+                f"place it did not declare moves in one."
             )
 
     return len(discovered), errors

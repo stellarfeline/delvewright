@@ -41,9 +41,14 @@ and a RANGE is not (a range names no version, and demanding a decision about a
 value that does not exist is how a correct gate teaches people to write
 exemptions); an install naming no version is a finding in a workflow step and in
 a shell script, and the identical words printed by a Python program are prose.
-Two entries claiming one value is its own red, because discovery is keyed by the
-value and a collision would merge their sites and erase one silently — an answer
-rather than an error.
+IDENTITY is asserted in all three directions, because it is where this gate
+answered honestly about the wrong object. A pin is its ENTRY AND ITS SITE: two
+entries may hold one value at their own sites, which for two pins that both
+track a moving tip is the normal state and not an exception; an occurrence at a
+file no holder of the value declared still reds, over the UNION of their sites;
+and two entries claiming one value at ONE site reds, because that literal would
+carry two decisions about when it may move and the effective obligation is their
+disjunction — only as strong as the weaker.
 
 The last group is about the OTHER direction — a refusal the tree cannot satisfy.
 The enumeration that keeps `FETCH_SITES` honest reads a verb in the language of
@@ -942,13 +947,14 @@ def test_a_continued_install_command_is_read_whole(repo: Path) -> None:
     assert "installs `somepkg` without naming a version" in r.stderr
 
 
-def test_two_entries_may_not_claim_one_value(repo: Path) -> None:
-    """Discovery is keyed by the value, so a collision would erase an entry.
+def test_two_entries_may_not_claim_one_occurrence(repo: Path) -> None:
+    """One literal, two decisions about when it may move.
 
-    Not an error but a plausible wrong answer: the site sets merge, one entry
-    stops being checked at all, and the registry reads complete. Two unrelated
-    things at the same version is an ordinary state of the world, so it reds here
-    and is repaired by making the value distinguishable — never by dropping one.
+    The effective obligation becomes the disjunction of the two policies — only
+    as strong as the weakest, with the kind chosen by whoever wrote the second
+    entry rather than by the object. It reds here and is repaired by deciding
+    which entry owns the site, never by dropping one and never by widening the
+    other's policy.
     """
     write_registry(
         repo,
@@ -964,4 +970,63 @@ why = "the same bytes, claimed twice"
     )
     r = run(repo)
     assert r.returncode == 1
-    assert "is also declared by image" in r.stderr
+    assert "all declare the value" in r.stderr
+    assert "may not share an occurrence" in r.stderr
+    assert "image, twin" in r.stderr
+
+
+def test_two_entries_may_share_a_value_at_their_own_sites(repo: Path) -> None:
+    """The newly permitted case, and it is the normal state of two tracked tips.
+
+    Two pins that both follow a moving default branch coincide on the day the
+    branch is where both were last re-pinned; the live pair is one repository's
+    `admit-ref` and `engine-authoring`. Identifying an occurrence by its bare
+    VALUE cannot tell that from a pin standing at a file it never declared, so
+    it reported each pin's own declared site as the other's undeclared copy —
+    an honest, affirmative answer about a different object.
+    """
+    add_file(repo, "build/other.yml", f"image: {DIGEST}\n")
+    write_registry(
+        repo,
+        COMPLETE
+        + f"""
+[[pin]]
+id = "twin"
+value = "{DIGEST}"
+sites = ["build/other.yml"]
+policy = "immutable"
+why = "the same bytes, held for a different reason, at its own site"
+""",
+    )
+    r = run(repo)
+    assert r.returncode == 0, r.stderr
+    assert "shared value" in r.stdout
+    assert "held by 2 entries (image, twin)" in r.stdout
+
+
+def test_a_shared_value_still_reds_where_no_holder_declared_it(repo: Path) -> None:
+    """The still-guarded direction, asked over the UNION of the holders' sites.
+
+    A shared value must not become a licence: an occurrence at a file no entry
+    holding that value lists is the defect the old key was protecting against,
+    and it still reds, naming every holder.
+    """
+    add_file(repo, "build/other.yml", f"image: {DIGEST}\n")
+    add_file(repo, "build/undeclared.yml", f"image: {DIGEST}\n")
+    write_registry(
+        repo,
+        COMPLETE
+        + f"""
+[[pin]]
+id = "twin"
+value = "{DIGEST}"
+sites = ["build/other.yml"]
+policy = "immutable"
+why = "the same bytes, held for a different reason, at its own site"
+""",
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert "build/undeclared.yml" in r.stderr
+    assert "no entry holding that value lists as a site" in r.stderr
+    assert "image, twin" in r.stderr
