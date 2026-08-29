@@ -31,9 +31,10 @@ tier* (validation), and both are avoidable — see §2.
 
 ## 2. What the skill's authoring loop genuinely needs
 
-Established by reading `.claude/skills/new-delve/SKILL.md` (the loop, §"The
-loop", and §"Authoring tools") against [`tools.md`](tools.md), not from
-assumption.
+Established by reading the `/new-delve` page (the loop, §"The loop", and
+§"Authoring tools") against [`tools.md`](tools.md), not from assumption. The
+page lives in the campaigns repository, at
+[`.claude/skills/new-delve/SKILL.md`](https://github.com/stellarfeline/delvewright-campaigns/blob/main/.claude/skills/new-delve/SKILL.md).
 
 ### Required
 

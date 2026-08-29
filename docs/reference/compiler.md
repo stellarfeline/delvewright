@@ -3900,7 +3900,8 @@ forth**, and a shelf of sliding captions is unreadable to choose from.
 (**×1**), so one font pixel is one GUI pixel — unlike `DW0330`'s titles at ×4/×2.
 Rules of thumb from the advances, for authoring: ~24 Latin or ~16 Han characters at
 the threshold, so author to **~20 / ~12** and leave a translation room to grow
-(`.claude/skills/new-delve/SKILL.md` *Writing craft* §C; `docs/reference/i18n.md`).
+(the `/new-delve` page, *Writing craft* §C, in the campaigns repository;
+`docs/reference/i18n.md`).
 
 **Why error, not warning.** `DW0330` warns because its reference GUI width is a guess
 about the *player's window*, which the compiler cannot know, and rejecting a build on

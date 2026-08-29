@@ -143,14 +143,6 @@ def procedure_md(techniques: str = "three") -> str:
     )
 
 
-def skill_md(techniques: str = "three") -> str:
-    return (
-        "# /new-delve\n\nRead the idiom index: "
-        f"{techniques} techniques with a runnable program each. A scene that "
-        f"looks impossible is usually one of the {techniques}.\n"
-    )
-
-
 # The emitter-table oracle reads a committed fixture rather than a page, so the
 # miniature tree carries a miniature one. Three rows whose third column sums to
 # 30, and `compiler.md` below states exactly those two numbers: the point of the
@@ -194,9 +186,6 @@ def build_tree(root: Path, **kw) -> Path:
         "docs/reference/tools.md": tools_md(kw.get("programs", "four")),
         "docs/reference/prefab-procedure.md": procedure_md(
             kw.get("procedure_techniques", "three")
-        ),
-        ".claude/skills/new-delve/SKILL.md": skill_md(
-            kw.get("skill_techniques", "three")
         ),
         "crates/compiler/tests/fixtures/light/emission-1.21.11.tsv": emission_tsv(
             rows=kw.get("emission_rows", 3), states=kw.get("emission_states", 30)
@@ -247,15 +236,22 @@ def test_a_stale_count_in_one_page_is_a_finding(checker, tmp_path, capsys):
 def test_the_count_is_checked_in_every_page_that_states_it(
     checker, tmp_path, capsys
 ):
-    """One oracle, four pages. A gate bound only to the page that first stated
-    the number leaves the second consumer with no surface."""
+    """One oracle, several pages. A gate bound only to the page that first
+    stated the number leaves the second consumer with no surface.
+
+    The `/new-delve` skill was the fourth page here until it moved to the
+    content repository (ADR-0014). Its claim did not go unchecked: it is
+    asserted by that repository's `tools/check-skill-version.py`, which imports
+    a vendored copy of the checker under test for the oracle and the phrasings.
+    A row here cannot reach a file in another repository, and a test asserting
+    one would be asserting the reachability rather than the claim."""
     checker.ROOT = build_tree(
-        tmp_path, procedure_techniques="four", skill_techniques="two"
+        tmp_path, procedure_techniques="four", heading_count="two"
     )
     assert checker.main() == 1
     err = capsys.readouterr().err
     assert "docs/reference/prefab-procedure.md" in err
-    assert ".claude/skills/new-delve/SKILL.md" in err
+    assert "docs/reference/grammar.md" in err
 
 
 def test_digits_and_words_are_the_same_claim(checker, tmp_path, capsys):
@@ -277,7 +273,6 @@ def test_an_ordinal_claim_states_a_cardinal_fact(checker, tmp_path, capsys):
         heading_count="Four",
         programs="five",
         procedure_techniques="four",
-        skill_techniques="four",
         library_count="seven",
         below_count="four",
     )
@@ -432,7 +427,6 @@ def _tree_from(root: Path, section_text: str, techniques: int) -> Path:
         heading_count=heading,
         programs=programs,
         procedure_techniques=lower,
-        skill_techniques=lower,
         library_count=libc,
     )
     if section_text:
