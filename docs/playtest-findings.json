@@ -1690,6 +1690,7 @@
       "finding": "the shipped release notes advertised a player count and a playtime that the delve did not have, and a host-facing instruction named a version that was no longer current",
       "general_form": "release notes are rendered from the storybook, and a release refuses when storybook and campaign disagree",
       "id": "isl-60",
+      "note": "This row declares no `applies_when` and must not be given one. The storybook is `campaigns/<id>/README.md` — a FILE, not a declaration — so the only probe that could answer \"does this campaign publish release notes\" is the binding itself, which `load_ledger` refuses as an exemption a row grants itself. The binding is instead self-measuring by shape (`probe_is_self_measuring`): a campaign-source file glob with no `contains` counts the object class itself. On an assembled campaign its zero is still UNBOUND; only the twice-measured pre-detail blockout reads it OUT-OF-STAGE, which is the stage at which the storybook has not been written yet (skill-workflow step 14 follows the step-9 walk).",
       "round": "post-release-2026-08-06",
       "triage": "capability"
     },
@@ -2259,6 +2260,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "difficulty"
+          ]
+        }
+      },
       "binding": {
         "glob": "packtest-datapack/**/declared_difficulty.mcfunction",
         "kind": "out"
@@ -2271,6 +2283,7 @@
       "finding": "a shipped hosting readme hardcoded a server difficulty the delve was not designed for",
       "general_form": "the shipped server configuration is emitted from the campaign's declared difficulty, never hand-written beside it",
       "id": "tm-03",
+      "note": "The binding counts a DERIVED artifact, so its zero is ambiguous by itself and the row owed a precondition: `emit_declared_difficulty` emits the PackTest only `if let Some(diff) = declared_difficulty(c)`, so the class this check quantifies over is campaigns that DECLARE `world.difficulty` (compiler.md's world-stage row: absent = the historical derivation, declared = both `server/server.properties` and the sealing `/difficulty` come from the declaration). The precondition counts the declaration in the campaign SOURCE while the binding counts the emitted artifact in the BUILD, so the pair separates the two zeros: a declaring campaign whose PackTest went missing measures precondition 1, binding 0 and reds UNBOUND.",
       "round": "2026-08-04",
       "triage": "capability"
     },
