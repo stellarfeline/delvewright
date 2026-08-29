@@ -366,6 +366,54 @@ fn dw0818_a_beat_naming_a_quest_or_objective_that_does_not_exist() {
     assert!(validate(Some(g)).contains(&"DW0818".to_string()));
 }
 
+/// A graph whose beats name quests **stage 5 has not been written yet** is not
+/// a graph mistake. It is the ordinary state of a campaign between the plan and
+/// the quests, `DW0150` is the one diagnostic that names it, and every beat in
+/// the graph says the same thing — so none of them is the finding. The message
+/// says so and points at that code, instead of reporting a fault per beat in a
+/// document the author finished two steps ago.
+///
+/// The second half is the discriminator: with stage 5 written, a beat naming a
+/// quest that is not in it is a real mistake and must not be excused.
+#[test]
+fn dw0818_an_unwritten_stage_five_points_at_dw0150_instead_of_blaming_the_graph() {
+    let raw = RawCampaign {
+        quests: common::patch_doc(&common::read_valid("quests.json"), |v| {
+            v["content"] = json!({ "quests": [] });
+        }),
+        ..campaign(Some(GREEN.to_string()), Some(BRIEF.to_string()))
+    };
+    let diags = check_campaign(&raw);
+    // Two beats and one gated way borrow a quest name from a stage 5 that is
+    // not written: all three carry the clause, because they are the same
+    // borrowing and a clause on only the one that was noticed would be the
+    // narrow binding.
+    let borrowed: Vec<_> = diags
+        .iter()
+        .filter(|d| d.code == "DW0818" && d.path.ends_with("/quest"))
+        .collect();
+    assert_eq!(
+        borrowed.len(),
+        3,
+        "two beats and one gated connection: {diags:#?}"
+    );
+    for d in &borrowed {
+        assert!(d.message.contains("DW0150"), "{}", d.message);
+        assert!(
+            d.message.contains("Stage 5 declares no quests at all"),
+            "{}",
+            d.message
+        );
+    }
+
+    let g = graph_with(|v| v["content"]["beats"][0]["quest"] = json!("quest/nowhere"));
+    let d = check_campaign(&campaign(Some(g), Some(BRIEF.to_string())))
+        .into_iter()
+        .find(|d| d.code == "DW0818")
+        .expect("a beat naming a quest stage 5 does not have is still DW0818");
+    assert!(!d.message.contains("DW0150"), "{}", d.message);
+}
+
 #[test]
 fn dw0818_gating_on_state_the_campaign_never_produces() {
     let g = graph_with(|v| edges(v)[1]["gating"] = json!({ "flags": ["flag/never-set"] }));

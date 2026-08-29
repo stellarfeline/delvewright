@@ -128,6 +128,32 @@ fn the_refusal_names_every_missing_document_at_once() {
     }
 }
 
+/// **The recipe is exact for five of the six, and the sixth is named.**
+///
+/// *"A stub is that document's envelope and nothing else: a `content` carrying
+/// only the fields its schema requires"* cannot be followed for
+/// `quest-plan.json`. Its schema requires `finale` as well as `quests`, and
+/// `finale` must name a member of `quests`, so the literal recipe — an empty
+/// `quests` — is refused by `DW0131`, whose own remedy cannot be performed
+/// without authoring a quest. An author following the recipe document by
+/// document hits that on the fourth of six, having been told the recipe is
+/// exact.
+///
+/// So the message names the exception and gives the smallest stub that
+/// satisfies the document's own rule, and names `DW0150` — the ordinary
+/// consequence of stubbing a plan — so it does not arrive later as a surprise.
+#[test]
+fn the_recipe_names_the_one_document_it_cannot_be_followed_for() {
+    let dir = campaign_without("stub-recipe", &STAGE_FILES[1..]);
+    let d = missing_stage_documents_diagnostic(&dir).expect("five documents are missing");
+    let m = &d.message;
+    assert!(m.contains("cannot be stubbed"), "{m}");
+    assert!(m.contains("quest-plan.json"), "{m}");
+    assert!(m.contains("DW0131"), "{m}");
+    assert!(m.contains("one planned quest"), "{m}");
+    assert!(m.contains("DW0150"), "{m}");
+}
+
 /// **Every entry point.** `validate` is one of four verbs that read a campaign
 /// directory, and the old uncoded error was written out separately at all four.
 #[test]

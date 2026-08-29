@@ -47,6 +47,22 @@ macro_rules! prefixed_id {
             pub fn is_valid_syntax(&self) -> bool {
                 is_prefixed(&self.0, Self::PREFIX)
             }
+
+            /// The form THIS id has to take, for the diagnostic that rejected
+            /// one — `` `npc/<kebab>` ``, `` `dlg/<kebab>` ``, and so on.
+            ///
+            /// A refusal that says only "ids must be lowercase kebab-case with
+            /// their type prefix" and then lists three examples of other types
+            /// has told the author the general rule and withheld the one fact
+            /// they were missing: which prefix THIS field takes. The prefix is
+            /// a property of the id type, so the answer is derived from the
+            /// type at every site rather than hand-written per site — the
+            /// per-section refusals that already name their own prefix
+            /// (`wave/`, `trap/`, `loot/`, …) are that fact copied by hand,
+            /// which is exactly why the general path never had it.
+            pub fn syntax_form(&self) -> String {
+                format!("`{}/<kebab>`", Self::PREFIX)
+            }
         }
 
         impl std::fmt::Display for $name {

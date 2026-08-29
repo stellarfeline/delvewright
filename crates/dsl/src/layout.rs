@@ -1419,6 +1419,27 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
         .collect();
     let produced = crate::validate::produced_flags(c);
 
+    // **Stage 5 being empty is not a graph mistake.** It is the ordinary state
+    // of a campaign whose plan is written and whose quests are not — the state
+    // `DW0150` names — and in it EVERY name the graph borrows from the mission
+    // is absent, so every such refusal says the same thing and none of them is
+    // the finding. Without this clause a finished layout graph reports a fault
+    // per beat and per gated way, in a document the author completed two steps
+    // ago, at exactly the moment they are being told to loop validation until
+    // it is clean.
+    //
+    // It is attached to every refusal in this function that reads the stage-5
+    // quest list, not to the one that was noticed: a beat and a gated
+    // connection are the same borrowing, and a clause on one of them would be
+    // the narrow binding this codebase keeps finding.
+    let unwritten = if quests.is_empty() {
+        " Stage 5 declares no quests at all here, so everything this graph borrows from the \
+         mission is missing, every one of these lines says the same thing, and none of them is \
+         the finding: see `DW0150`, which names that state. This clears when stage 5 is written."
+    } else {
+        ""
+    };
+
     // Direction one: nothing the graph names may be absent from the mission.
     let mut bound: BTreeMap<(&str, &str), usize> = BTreeMap::new();
     for (i, beat) in graph.beats.iter().enumerate() {
@@ -1429,8 +1450,9 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
                 format!("/content/beats/{i}/quest"),
                 format!(
                     "beat names quest `{}`, which the quest documents do not declare — the graph \
-                     says where the mission happens, so it can only name beats the mission has.",
-                    beat.quest
+                     says where the mission happens, so it can only name beats the mission \
+                     has.{unwritten}",
+                    beat.quest,
                 ),
             )),
             Some(objectives) if !objectives.contains(beat.objective.0.as_str()) => {
@@ -1479,7 +1501,7 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
                 format!("/content/edges/{i}/gating/quest"),
                 format!(
                     "connection `{e_id}` waits on quest `{q}`, which the quest documents do not \
-                     declare.",
+                     declare.{unwritten}",
                     e_id = e.id(),
                 ),
             ));

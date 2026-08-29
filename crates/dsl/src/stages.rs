@@ -46,7 +46,16 @@ pub struct WorldContent {
     pub seed: u64,
     /// Informational pacing target in minutes (v0: not enforced).
     pub target_minutes: u32,
-    /// 1..N areas; each binds exactly one of `prefab` / `prefab_pool`.
+    /// The areas the delve is made of; each binds exactly one of `prefab` /
+    /// `prefab_pool`.
+    ///
+    /// **A campaign declares its placement in exactly one document, so this
+    /// list is empty on a site-plan campaign** (`DW0839`): where a
+    /// `site-plan.json` is present the plan is the placement authority, its one
+    /// place is `area/site`, and declaring `areas[]` as well gives every
+    /// question about where something is two answers. Empty is therefore a
+    /// legitimate and common value, not a campaign that forgot to place
+    /// anything.
     pub areas: Vec<Area>,
     /// Additional author-declared translation languages (BCP-47-style codes, e.g.
     /// `["zh-cn"]`). English (`en`) is implicit, always canonical, and is **never**
