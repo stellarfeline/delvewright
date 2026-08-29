@@ -49,8 +49,13 @@ services:
   staging-admission:
     profiles: ["play", "playtest"]
     build:
-      context: ./delve-output
-      dockerfile: ../Dockerfile.delve
+      # The owner's play server boots the tree the owner BUILT. Left hardcoded,
+      # a creator who builds into their own workdir -- which is where the skill
+      # now tells them to work -- gets a server booting whatever happens to sit
+      # in validation/delve-output, or `failed to read dockerfile`, and neither
+      # says the tree was in the wrong place.
+      context: ${DELVE_OUTPUT:-./delve-output}
+      dockerfile: ${DELVE_DOCKERFILE:-../Dockerfile.delve}
     image: delvewright/delve:local
     entrypoint: ["/bin/bash", "/verify/staging-admission.sh", "/delve-output"]
     command: []
