@@ -134,7 +134,12 @@ services:
   playtest:
     profiles: ["playtest"]
     build:
-      context: ./delve-output
+      # Same variable as `server` above, for the same reason: this service builds
+      # the tree the ladder built, and a hardcoded context boots a DIFFERENT tree
+      # from the one the caller named -- silently, because the default exists.
+      # Carrying only the `dockerfile` half of that repair fixed the site that had
+      # been noticed and left this one able to boot the wrong delve.
+      context: ${DELVE_OUTPUT:-./delve-output}
       # Relative to the CONTEXT, so a build tree outside `validation/` cannot
       # resolve it — the failure is `failed to read dockerfile: open
       # Dockerfile.delve`, which reads as a missing file rather than as a
