@@ -392,10 +392,14 @@ SITES: list[dict] = [
     {"oracle": "library-programs", "path": _GRAMMAR_MD},
     {"oracle": "idiom-techniques", "path": _GRAMMAR_MD, "section": _INDEX_SECTION},
     {"oracle": "idiom-techniques", "path": "docs/reference/prefab-procedure.md"},
-    # The skill reads the same index, and the tooling-sync rule lands it in the
-    # same PR as the reference — the same claim, in the place the second
-    # consumer of a class always turns out to live.
-    {"oracle": "idiom-techniques", "path": ".claude/skills/new-delve/SKILL.md"},
+    # The `/new-delve` skill states this count too and is NOT listed here,
+    # because the page lives in the content repository (ADR-0014). A SITES row
+    # cannot reach across a repository, so the claim did not stay behind: it
+    # moved with the page, into that repository's `tools/check-skill-version.py`
+    # check 6, which imports THIS file — vendored there byte-for-byte — for the
+    # oracle and its phrasings rather than re-implementing either. Dropping the
+    # row without moving the claim would have been a silent loosening, invisible
+    # in either repository's diff.
     # The emitter table's own size. Scoped to the DW02xx section, because
     # "N rows" and "N blockstates" are ordinary English and would otherwise
     # bind sentences about some other table on a 4000-line page.

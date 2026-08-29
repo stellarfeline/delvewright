@@ -779,29 +779,17 @@ jobs:
       # quietly stops running. Deterministic, offline, stdlib-only python3.
       - name: required status checks and ci.yml job names agree
         run: python3 tools/check-required-contexts.py
-      # ADR-0016's third version line: the `/new-delve` skill (the product,
-      # ADR-0012) declares its own version and the `delvec` range it drives. All
-      # hand-typed frontmatter, so without this they are a `requires:` nobody
-      # reads — the unbound declaration this project keeps being bitten by (the
-      # island's combat floor gate was green for nineteen rounds having examined
-      # zero enemies). Two declarations, two DIFFERENT claims, so two bindings:
-      # `requires.delvec` is a COMPATIBILITY window (ADR-0016's own major-window
-      # shape) checked by MEMBERSHIP — this repo's engine must fall inside it;
-      # `verified_with` is EVIDENCE checked by EQUALITY against
-      # `crates/compiler/Cargo.toml`'s version (== DELVEC_VERSION), both
-      # directions. Pinning the window's floor to the engine instead would make
-      # the frontmatter assert, after every release, that older engines are
-      # unsupported — untested, and probably false. Plus: every `delvec`
-      # subcommand and flag the skill names must exist in the clap CLI in
-      # `crates/compiler/src/main.rs`, which is what makes the window a claim
-      # about a real command surface. States its binding count; extracting zero
-      # subcommand references is a red. What it does NOT prove — a window floor
-      # that has drifted too LOW — is stated in the script's own docstring.
-      # A STEP, not a job: every job name here is a required status context and
-      # renaming/adding one is a three-part change (see required-status-checks.txt).
-      # Deterministic, offline, stdlib-only python3.
-      - name: the /new-delve skill's declared delvec range is true
-        run: python3 tools/check-skill-version.py
+      # ADR-0016's third version line — the `/new-delve` skill's own version and
+      # the `delvec` window it drives — is checked in the CONTENT repository, by
+      # `tools/check-skill-version.py` there, because that is where the page
+      # lives (ADR-0014: a creator clones only `delvewright-campaigns`). It runs
+      # in that repository's `NBT palette audit` job and judges the page against
+      # the engine at `versions.toml` `[engine].authoring_ref` — the revision an
+      # author's Init step 2 builds, which is what the page's `requires:` and
+      # `verified_with` are claims about. This repository held that gate while
+      # holding a second copy of the page; the copy is gone, and a gate over a
+      # page this repository does not have would be the unbound declaration it
+      # was written to prevent.
       # A trial's rubric answer is a judgement, and a judgement is bounded by the
       # instrument that took the picture. Trial 0001 answered R1 `partial` for
       # run 1 and, three paragraphs later, recorded that the renderer had no

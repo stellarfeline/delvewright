@@ -3,8 +3,15 @@
 **Audience: internal (agents, planner).** Model tiers, subagent dispatch and
 pipeline plumbing are in scope here and nowhere player-facing (CLAUDE.md,
 audience separation). This is a **current-state record**, the same class as
-`compiler.md` — it describes the skill that is checked in at
-`.claude/skills/new-delve/SKILL.md` today, not the one we intend to build.
+`compiler.md` — it describes the skill as it is checked in today, not the one we
+intend to build.
+
+The page itself lives in the CAMPAIGNS repository, at
+[`.claude/skills/new-delve/SKILL.md`](https://github.com/stellarfeline/delvewright-campaigns/blob/main/.claude/skills/new-delve/SKILL.md),
+because a creator clones that repository and no other (ADR-0014). So do the two
+gates over it. This file stays here: it is about how an agent driving the page
+splits the work, which is engine-side planner material and is deliberately not
+on the page.
 
 Two things it is deliberately not: a spec (nothing here is a decision being
 proposed) and a tutorial (a creator never reads it).
@@ -204,9 +211,11 @@ validates only against a graph and a brief, and there is no blockout document at
 all, so no later stage can reach green first. The geometry is derived by
 `delvec build`, which also runs the battery over the bytes it laid.
 
-`tools/check-skill-version.py` binds this in the direction that actually drifts:
-every campaign stage document the engine defines must be named in the skill, with
-`Stage::name` as the denominator. Every other gate on that pair asks whether the
+The campaigns repository's `tools/check-skill-version.py` binds this in the
+direction that actually drifts: every campaign stage document the engine defines
+must be named in the skill, with `Stage::name` as the denominator — read out of
+the engine at `versions.toml` `[engine].authoring_ref`, the revision an author's
+Init step 2 builds. Every other gate on that pair asks whether the
 skill's claims are real; this one asks whether the engine's surfaces are driven,
 which is the question a skill written once and an engine that keeps moving needs
 somebody to ask.
@@ -321,10 +330,11 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    arrives as `DW0438` at build.
 5. ~~**ADR-0016's third version line is undelivered.**~~ **Closed** — the
    frontmatter carries `version:`, `requires: delvec:` and `verified_with:`, and
-   `tools/check-skill-version.py` binds all three: the window must contain this
-   repo's engine, `verified_with` must equal `crates/compiler/Cargo.toml`'s
-   version in **both** directions, and every subcommand and long flag the skill
-   names must exist in the clap CLI. The values and the counts are not copied
+   the campaigns repository's `tools/check-skill-version.py` binds all three: the
+   window must contain the engine at `[engine].authoring_ref`, `verified_with`
+   must equal that engine's `crates/compiler/Cargo.toml` version in **both**
+   directions, and every subcommand and long flag the skill names must exist in
+   its clap CLI. The values and the counts are not copied
    here — the checker prints its own binding count on every run, and a literal
    restated in prose is false the moment the thing it names moves, with nothing
    anywhere to notice. What is still hand-carried is a

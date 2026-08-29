@@ -218,11 +218,13 @@ import importlib.util, pathlib, re, subprocess, sys
 sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 root, binary = pathlib.Path(sys.argv[1]), sys.argv[2]
 
-# ONE parser. `tools/check-skill-version.py` already reads the clap surface out
-# of the crate's sources, and a second copy here would be a mirror that drifts —
-# which is the defect this project names rather than a saving.
+# ONE parser. `tools/lib/clap_surface.py` reads the clap surface out of the
+# crate's sources for every gate that asks — here, and in the campaigns
+# repository, which vendors that file byte-for-byte. A second copy would be a
+# mirror that drifts, which is the defect this project names rather than a
+# saving.
 spec = importlib.util.spec_from_file_location(
-    "check_skill_version", root / "tools" / "check-skill-version.py")
+    "clap_surface", root / "tools" / "lib" / "clap_surface.py")
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 main_rs = root / "crates" / "compiler" / "src" / "main.rs"

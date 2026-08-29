@@ -20,8 +20,9 @@ That line was bound to nothing. It read `delvec 0.1.0`, `dsl 0.8.0` and listed
 the same document described the v0.9 surface correctly; only the header a reader
 consults first was wrong. `tools/check-dw-codes.py` keeps the DIAGNOSTICS
 catalog honest against the source in both directions; nothing did the same for
-the versions, and `tools/check-skill-version.py` binds only the *skill's*
-`verified_with` to the engine, never the reference doc's.
+the versions, and the skill's own gate — in the campaigns repository, where the
+page lives — binds only the *skill's* `verified_with` to the engine, never the
+reference doc's.
 
 ## What is bound, and to what
 
@@ -29,7 +30,7 @@ Every claim below is bound by EQUALITY, not by "at least" — a claim may be
 neither stale-older nor prematurely-newer:
 
 - `delvec <X>`  == `crates/compiler/Cargo.toml` `[package] version`
-  (the same constant `tools/check-skill-version.py` calls the engine version)
+  (the same constant the skill gate calls the engine version)
 - `dsl <Y>`     == `crates/dsl/src/envelope.rs` `SUPPORTED_DSL_VERSION`
 - `mc <Z>`      == `versions.toml` `[minecraft] version`
 - the bold supported-`dsl_version` list == `crates/dsl/src/envelope.rs`

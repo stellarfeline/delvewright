@@ -217,8 +217,10 @@ echo "== Engine release line ([engine], ADR-0016 / ADR-0017) =="
 # skill declares. Before this block they agreed only by intention, and this
 # repo's history is a list of contracts that lived in comments. Here they are
 # bound; `.github/workflows/engine-release.yml` binds the git tag at release time
-# (it cannot be checked from a working tree), and `tools/check-skill-version.py`
-# binds the skill's window.
+# (it cannot be checked from a working tree), and the skill's window is bound in
+# the campaigns repository, by `tools/check-skill-version.py` there — the page
+# lives with the creator who clones that repository (ADR-0014), and a gate over a
+# page this repository does not carry would bind to nothing.
 #
 # Cargo manifests are parsed with tomllib rather than grepped: `name = ` and
 # `version = ` occur inside dependency tables and inside comments, and a gate

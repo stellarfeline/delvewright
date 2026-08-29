@@ -99,9 +99,11 @@ And the rule behind the whole design: **if a machine can't finish the dungeon,
 you never see it.** One QA hour per delve is the budget — the pipeline's job is
 to make sure that hour goes on *is this fun?*, never on *is this broken?*
 
-The procedure itself lives in
-[`.claude/skills/new-delve/SKILL.md`](.claude/skills/new-delve/SKILL.md), which
-is written for the agent that executes it; you never have to read it.
+The procedure itself lives in the campaigns repository, at
+[`.claude/skills/new-delve/SKILL.md`](https://github.com/stellarfeline/delvewright-campaigns/blob/main/.claude/skills/new-delve/SKILL.md) —
+that is the repository you clone to build a delve, and it is the only one you
+need. The page is written for the agent that executes it; you never have to read
+it.
 
 ## The tools
 
@@ -196,7 +198,6 @@ gives you the same tool, and is the path to take if you are changing it.
 | [`docs/adr/`](docs/adr/README.md) | Why everything is the way it is (decision records) |
 | [`docs/specs/`](docs/specs/README.md) | Owner-approved specs; no spec, no feature |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Where this is going, milestone by milestone |
-| `.claude/skills/` | The procedures the agent executes — [`/new-delve`](.claude/skills/new-delve/SKILL.md) is the one above |
 | `docs/reference/` | What the tools do today — [the compiler](docs/reference/compiler.md), [the tool inventory](docs/reference/tools.md), [how a piece is admitted](docs/reference/prefab-procedure.md) |
 | `crates/` | Rust workspace: `dsl` (schemas + validation), `compiler` (`delvec`), `grammar`, `admit`, `schem`, `render`, `orchestrator` |
 | `prefabs/` | Tileset generators (GPL) + docs; the `.nbt` room library itself lives in the content repo under `prefabs/` |
