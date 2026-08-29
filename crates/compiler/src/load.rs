@@ -230,10 +230,18 @@ pub fn missing_stage_documents_diagnostic(dir: &Path) -> Option<Diagnostic> {
              are {all}. A stub is that document's envelope and nothing else: `dsl_version`, \
              `campaign_id`, `stage`, and a `content` carrying only the fields its schema \
              requires. Run `delvec schema --stage <name>` for the exact shape of each one, \
-             where `<name>` is the filename without `.json` ({names}). Stubbing is not the \
+             where `<name>` is the filename without `.json` ({names}). One of the six cannot \
+             be stubbed that way and it is `quest-plan.json`: its schema requires `finale` as \
+             well as `quests`, and `finale` has to name a member of `quests`, so an empty \
+             `quests` is refused by `DW0131` and the recipe cannot be followed literally. Its \
+             stub is the smallest one that satisfies its own rule — one planned quest, and \
+             `finale` set to that quest's id. Stubbing is not the \
              same as omitting: a stub is a campaign that has not declared anything yet, so \
              the next thing it owes comes back as an ordinary diagnostic naming it — `DW0100` \
-             for whatever its schema requires and has not been given. The \
+             for whatever its schema requires and has not been given, and `DW0150` for a \
+             planned quest that stage 5 has not expanded, which is the ordinary state of a \
+             campaign whose story documents are written and whose content documents are not. \
+             The \
              optional documents are NOT in this list and are never required — {optional}, and \
              an `l10n/` directory — so their absence is not what stopped this run.",
             n = missing.len(),

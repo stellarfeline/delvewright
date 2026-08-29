@@ -18,8 +18,8 @@ use crate::registry::{
     VendoredItemRegistry,
 };
 use crate::stages::{
-    EditFrame, EncounterTier, Locomotion, MorphOp, NarrateStyle, Objective, QuestEffect,
-    RegionShape, TriggerOn, WorldEdit, body_traversal_sites,
+    EditFrame, EncounterTier, Locomotion, MorphOp, NarrateStyle, Objective, PlannedQuest,
+    QuestEffect, RegionShape, TriggerOn, WorldEdit, body_traversal_sites,
 };
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
@@ -908,6 +908,15 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // ---------------------------------------------------------------------------
 
 fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // The form is taken from the id's own type (`syntax_form`), never written
+    // into this message. This macro is the ONE path every id type's syntax
+    // refusal goes through, and it used to answer all of them with the same
+    // three examples — `area/keep`, `npc/keeper`, `quest/find-key` — so a
+    // rejected dialogue node id was refused by a sentence that never spelled
+    // `dlg/<kebab>`, and the rule it needed lived only in the schema
+    // description. The prefix belongs to the id type, so every site gets it
+    // from the type: the general mechanism was here all along, and only its
+    // message was too narrow to reach what it was rejecting.
     macro_rules! chk {
         ($id:expr, $stage:expr, $path:expr) => {
             if !$id.is_valid_syntax() {
@@ -916,9 +925,11 @@ fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     $stage,
                     $path,
                     format!(
-                        "malformed id `{}` — ids must be lowercase kebab-case with their type \
-                         prefix (e.g. `area/keep`, `npc/keeper`, `quest/find-key`)",
-                        $id
+                        "malformed id `{}` — this field takes {}: the type prefix, a `/`, and \
+                         one lowercase kebab-case segment after it ([a-z0-9] and `-`, no second \
+                         `/`, no capitals, no underscores)",
+                        $id,
+                        $id.syntax_form()
                     ),
                 ));
             }
@@ -5208,6 +5219,66 @@ fn prefab_binding(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagno
 // Rule group 6 — cross-stage 1:1 (quest plan↔expansion, npc↔dialogue tree)
 // ---------------------------------------------------------------------------
 
+/// `DW0150` for the state a campaign is in when the stage-4 plan is written and
+/// stage 5 is not: **every** planned quest is unexpanded, because stage 5
+/// declares no quests at all.
+///
+/// **The state this names is the one the authoring page ends its story-document
+/// step in.** The plan is written before the quests that fill it — that is the
+/// order the stages are numbered in — so between the two there is necessarily a
+/// campaign that carries a plan and no expansion, and this code fires once for
+/// every quest in it. Per-quest, with the two ordinary remedies attached, that
+/// reads as one fault per planned quest with a repair the author is expected to
+/// perform now, and both of the repairs it names are wrong here: writing the
+/// expansions *is* the next authoring step and the plan is not a mistake to
+/// delete.
+///
+/// **There is no third, cheaper remedy, and the message says so rather than
+/// leaving the author to find out.** A stage-5 quest carrying only what the
+/// schema requires — a trigger and two empty arrays — is refused again by
+/// `DW0481`, which demands every quest say what it does to the story, and by
+/// `DW0460` once for every NPC live in it: measured on a five-quest plan,
+/// writing the five minimal expansions took the campaign from 5 errors to 15.
+/// A diagnostic that offered "stub it" here would be sending the author to a
+/// state three times worse than the one they are in.
+///
+/// So what changes is what the refusal SAYS, never whether it refuses. A plan
+/// with no expansion emits nothing and cannot build, so the error and the exit
+/// stand exactly as before; this is [`crate::diagnostic::codes::QUEST_NOT_EXPANDED`]
+/// telling the truth about where the author is standing. It is grouped into one
+/// diagnostic for the same reason `DW0874` names all five missing documents in
+/// one run: N copies of a sentence about one state is a count the reader has to
+/// discount, not information.
+fn plan_awaiting_expansion(unexpanded: &[&PlannedQuest]) -> Diagnostic {
+    let names = unexpanded
+        .iter()
+        .map(|q| format!("`{}`", q.id))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Diagnostic::error(
+        codes::QUEST_NOT_EXPANDED,
+        "quest-plan",
+        "/content/quests",
+        format!(
+            "stage 5 declares no quests at all, so none of the {n} planned quest(s) has an \
+             expansion: {names}. That is an authoring state, not a fault — the plan is written \
+             before the quests that fill it, and a campaign is written a document at a time. The \
+             refusal still stands, because a planned quest with no expansion has no trigger, no \
+             objective and no completion, so nothing of it is emitted and no campaign in this \
+             state can build. What there is NO route to is a cheaper way out: a stage-5 quest \
+             carrying only what its schema requires — a trigger and two empty arrays — is refused \
+             again by `DW0481`, because every quest must say what it does to the story, and by \
+             `DW0460` once for every NPC live in it, so writing empty expansions raises the error \
+             count instead of lowering it. Do not try to clear this code from the plan, and do \
+             not re-run validation expecting it to move. The two things that clear it are \
+             writing stage 5, which clears it for every quest at once, and dropping the quests \
+             from the stage-4 plan. Until stage 5 is written this is the expected state of a \
+             plan-only campaign and this code is what marks it.",
+            n = unexpanded.len(),
+        ),
+    )
+}
+
 fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let planned_ids: BTreeSet<&str> = c
         .quest_plan
@@ -5224,18 +5295,40 @@ fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
         .map(|q| q.id.as_str())
         .collect();
 
-    for (i, q) in c.quest_plan.content.quests.iter().enumerate() {
-        if !expanded_ids.contains(q.id.as_str()) {
-            d.push(Diagnostic::error(
-                codes::QUEST_NOT_EXPANDED,
-                "quest-plan",
-                format!("/content/quests/{i}"),
-                format!(
-                    "planned quest `{}` has no stage-5 expansion — add a stage-5 quest with id \
-                     `{}` (objectives/effects), or drop it from the stage-4 plan",
-                    q.id, q.id
-                ),
-            ));
+    // `DW0150` has two readings and only one of them is a mistake. When stage 5
+    // declares quests and this plan entry is not among them, the two remedies
+    // below are both available and one of them is what the author meant. When
+    // stage 5 declares NO quests at all, neither remedy is: the author is
+    // between writing the plan and writing the quests, every planned quest is
+    // unexpanded by construction, and the message has to say so — see
+    // [`plan_awaiting_expansion`].
+    let unexpanded: Vec<&PlannedQuest> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .filter(|q| !expanded_ids.contains(q.id.as_str()))
+        .collect();
+    if !unexpanded.is_empty() && c.quests.content.quests.is_empty() {
+        d.push(plan_awaiting_expansion(&unexpanded));
+    } else {
+        for (i, q) in c.quest_plan.content.quests.iter().enumerate() {
+            if !expanded_ids.contains(q.id.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::QUEST_NOT_EXPANDED,
+                    "quest-plan",
+                    format!("/content/quests/{i}"),
+                    format!(
+                        "planned quest `{}` has no stage-5 expansion — stage 5 declares {n} \
+                         quest(s) and none of them carries this id, so this is a mismatch rather \
+                         than an unwritten stage: add a stage-5 quest with id `{}` \
+                         (objectives/effects), or drop it from the stage-4 plan",
+                        q.id,
+                        q.id,
+                        n = c.quests.content.quests.len(),
+                    ),
+                ));
+            }
         }
     }
     for (i, q) in c.quests.content.quests.iter().enumerate() {

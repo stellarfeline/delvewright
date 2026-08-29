@@ -1429,8 +1429,22 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
                 format!("/content/beats/{i}/quest"),
                 format!(
                     "beat names quest `{}`, which the quest documents do not declare — the graph \
-                     says where the mission happens, so it can only name beats the mission has.",
-                    beat.quest
+                     says where the mission happens, so it can only name beats the mission \
+                     has.{unwritten}",
+                    beat.quest,
+                    // Stage 5 being empty is not a graph mistake: it is the
+                    // ordinary state of a campaign whose plan is written and
+                    // whose quests are not, and `DW0150` is the one diagnostic
+                    // that names it. Without this clause every beat in the
+                    // graph reports a fault the author did not commit, in a
+                    // document they finished two steps ago.
+                    unwritten = if quests.is_empty() {
+                        " Stage 5 declares no quests at all here, so every beat in this graph \
+                         says the same thing and none of them is the finding: see `DW0150`, \
+                         which names that state. This clears when stage 5 is written."
+                    } else {
+                        ""
+                    },
                 ),
             )),
             Some(objectives) if !objectives.contains(beat.objective.0.as_str()) => {
