@@ -122,7 +122,7 @@ flowchart LR
     W --> V{"delvec validate"}
     V -->|"DW####"| F[fix by diagnostic code]
     F --> V
-    V -->|clean| SUM[3–6 line summary to the user]
+    V -->|"clean, or only the<br/>step-3 residue"| SUM[3–6 line summary to the user]
     F -.->|3 failures on the SAME code| TH[[stop patching syntax —<br/>the DESIGN is wrong]]
     SUM --> NEXT([next document])
     NEXT -.after quest-plan.-> GATE([the design gate — step 4])
@@ -133,6 +133,20 @@ written against a DSL surface that has since moved. The page also points at
 `delvec metrics --gym <dir>`, which writes nine complete, buildable campaign
 documents in one command — the worked example the page itself does not print. The three-strikes rule on one
 diagnostic code is the loop's own anti-thrash guard.
+
+**The loop's exit condition is not "clean" from `quest-plan` onward, and that
+is why the page names the residue.** Stage 4 plans quests that stage 5 expands,
+so between them a campaign necessarily carries one `DW0150` naming every planned
+quest, one `DW0152` per NPC whose tree is still a stub, and — on a site-plan
+campaign — `DW0818` for every beat and quest-gated way the graph borrows from an
+unwritten mission. All three clear at step 5 and none of them is a repair
+anybody owes; the diagnostics say so themselves, `DW0150` at length. A loop
+whose exit condition is a green run cannot terminate here, and the cheapest-
+looking escape — writing schema-minimal stage-5 quests — is refused again by
+`DW0481` and `DW0460` and leaves the campaign with strictly more errors than it
+had. So the design gate is reached with a campaign that does not validate, on
+purpose, and the page's *Where step 3 ends* is what says which codes are
+allowed to be in that residue.
 
 ## 4. What each gate actually proves
 
