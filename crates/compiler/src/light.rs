@@ -1485,7 +1485,7 @@ fn dark_diagnostic(
 ) -> Option<LightDiag> {
     // Worst first: the place with the most dark cells is the one whose remedy is
     // a different act. Ties by the label, which is unique, so the order is total.
-    fn sorted<'a>(mut v: Vec<(String, &'a DarkSurvey)>) -> Vec<(String, &'a DarkSurvey)> {
+    fn sorted(mut v: Vec<(String, &DarkSurvey)>) -> Vec<(String, &DarkSurvey)> {
         v.sort_by_key(|(label, s)| (std::cmp::Reverse(s.dark.len()), label.clone()));
         v
     }
@@ -1852,12 +1852,17 @@ mod tests {
         placement: delvewright_dsl::Placement,
     ) -> Option<LightDiag> {
         let s = survey_undeclared(model, reachable, sky, night_vision);
-        dark_diagnostic(
-            &BTreeMap::from([(area_id.to_string(), s)]),
-            nav,
-            sky,
-            placement,
-        )
+        dark_diagnostic(&BTreeMap::from([(whole(area_id), s)]), nav, sky, placement)
+    }
+
+    /// A **whole-owned** dark site. Every fixture in this module is a plain
+    /// area with no detail plan behind it, which is the case the report must
+    /// still produce byte for byte.
+    fn whole(area: &str) -> DarkSite {
+        DarkSite {
+            area: area.to_string(),
+            owner: DarkOwner::Whole,
+        }
     }
 
     fn min_reachable_light(model: &LightModel, reachable: &BTreeSet<[i32; 3]>, sky: u8) -> u8 {
@@ -2769,10 +2774,7 @@ mod tests {
             "and so is the small one"
         );
 
-        let areas = BTreeMap::from([
-            ("area/annex".to_string(), small),
-            ("area/hall".to_string(), big),
-        ]);
+        let areas = BTreeMap::from([(whole("area/annex"), small), (whole("area/hall"), big)]);
         let diag = dark_diagnostic(&areas, &nav, 0, delvewright_dsl::Placement::Prefabs)
             .expect("two dark rooms must fail the gate");
         assert_eq!(diag.code, DW_DARK_UNMITIGATED);
@@ -2841,7 +2843,7 @@ mod tests {
         }
 
         let diag = dark_diagnostic(
-            &BTreeMap::from([("area/gallery".to_string(), s.clone())]),
+            &BTreeMap::from([(whole("area/gallery"), s.clone())]),
             &nav,
             0,
             delvewright_dsl::Placement::Prefabs,
@@ -2885,7 +2887,7 @@ mod tests {
         let (cell, level) = s.darkest().expect("one dark cell has a darkest");
 
         let diag = dark_diagnostic(
-            &BTreeMap::from([("area/hall".to_string(), s)]),
+            &BTreeMap::from([(whole("area/hall"), s)]),
             &nav,
             0,
             delvewright_dsl::Placement::Prefabs,
@@ -2928,7 +2930,7 @@ mod tests {
         assert!(s.dark.is_empty(), "fixture: the room is lit");
         assert!(
             dark_diagnostic(
-                &BTreeMap::from([("area/hall".to_string(), s)]),
+                &BTreeMap::from([(whole("area/hall"), s)]),
                 &nav,
                 0,
                 delvewright_dsl::Placement::Prefabs
@@ -2959,7 +2961,7 @@ mod tests {
         );
 
         let diag = dark_diagnostic(
-            &BTreeMap::from([("area/undercroft".to_string(), s)]),
+            &BTreeMap::from([(whole("area/undercroft"), s)]),
             &nav,
             0,
             delvewright_dsl::Placement::Prefabs,
@@ -3000,7 +3002,7 @@ mod tests {
             let cells = nav.reachable_walkable(&[[20 * i as i32 + 2, 1, 2]]);
             assert!(!cells.is_empty(), "fixture: room {i} must be walkable");
             areas.insert(
-                format!("area/cell-{i:02}"),
+                whole(&format!("area/cell-{i:02}")),
                 survey_undeclared(&model, &cells, 0, false),
             );
         }
@@ -3020,7 +3022,7 @@ mod tests {
         // The report's own ordering, re-derived here rather than read off it.
         let mut order: Vec<(usize, String)> = areas
             .iter()
-            .map(|(id, s)| (s.dark.len(), id.clone()))
+            .map(|(id, s)| (s.dark.len(), id.area.clone()))
             .collect();
         order.sort_by_key(|(c, id)| (std::cmp::Reverse(*c), id.clone()));
         let dropped: usize = order.iter().skip(DARK_AREAS_LISTED).map(|(c, _)| c).sum();
@@ -3046,7 +3048,7 @@ mod tests {
             (
                 s.regions(&nav),
                 dark_diagnostic(
-                    &BTreeMap::from([("area/gallery".to_string(), s)]),
+                    &BTreeMap::from([(whole("area/gallery"), s)]),
                     &nav,
                     0,
                     delvewright_dsl::Placement::Prefabs,

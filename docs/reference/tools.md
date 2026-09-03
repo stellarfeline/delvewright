@@ -150,11 +150,14 @@ every validation (`DW0842`–`DW0845`) and over the built bytes at every build
 (`DW0836`–`DW0838`). It exists for the authoring loop, on the creator's own
 machine.
 
-It **refuses without a passed, fresh walk record** (`DW0841`), and it refuses a
-campaign that has no `detail-plan` yet — which is exactly the campaign asking for
-its first allocation, and exactly the moment the ordering has to hold. Obtaining
-an allocation and compiling a binding are the two events that begin detail work;
-both are bound, and there is no third, because no other verb reads a detail plan.
+It **refuses without a passed, fresh walk record** (`DW0841`), and it asks that of
+a campaign that has no `detail-plan` yet as readily as of one that has — which is
+exactly the campaign asking for its first allocation, and exactly the moment the
+ordering has to hold. A campaign with a passed, fresh record and no detail plan is
+handed its frame and exits zero: the first allocation is what the author asks for
+before there is anything to bind. Obtaining an allocation and compiling a binding
+are the two events that begin detail work; both are bound, and there is no third,
+because no other verb reads a detail plan.
 
 ```
 delvec allocation <campaign-dir> node/near-hall   # one place
@@ -414,10 +417,27 @@ outside**, and its report states the binding it took that minimum over:
 `standable_cells` in the whole region box, of which `measured_cells` are
 reachable on foot from `entry_cells` at grade. The flood is the compiler's own
 (`delvewright_compiler::light`) — block light and sky light, the same model
-`DW0210`/`DW0211` measure the assembled world with — and the piece is modelled
-**standing in open air**, so sky light enters through its openings from the side.
-That is the only way a roof over open ground is ever lit, and a probe without it
-reads a colonnade, a portico or a pier under a deck as pitch black.
+`DW0210`/`DW0211` measure the assembled world with.
+
+**Which sky the piece stands under is the piece's own claim, read off its
+`spatial_contract`.** A piece that declares no contract, or one declaring any
+space `open` or `open_top`, is modelled **standing in open air**: sky light enters
+through its openings from the side, which is the only way a roof over open ground
+is ever lit, and a probe without it reads a colonnade, a portico or a pier under a
+deck as pitch black. A piece whose contract declares **every** space `enclosed`
+claims no floor of its own stands under the sky, so it is measured with no sky at
+all and its figure is its own block light. That is the honest measurement for a
+piece bound by a `detail-plan` row: its frame is the play space plus one floor
+course and the roof over it belongs to the whole (spec-0050 §3), so a `lit`
+verdict borrowed from open sky would be true of no world it can be placed in — and
+`DW0210` would red the same piece at the first build. The report says which sky
+was applied and why, in `assumed_sky.admits_sky` and `assumed_sky.why`, and the
+written `method` sentence says it again.
+
+The probe measures the piece **alone**; the build measures it in the assembly,
+where light crosses a frame boundary from whatever the fixture pass hung next
+door. The two answer different questions — *what light does this piece bring* and
+*is this room dark where it was placed* — and both are stated as such.
 
 A prefab carries no campaign and therefore no hour, and a floor's light is not
 one number: the middle of a pavilion is bright at noon and black at midnight. So
@@ -425,7 +445,9 @@ the probe floods at both ends of the engine's sky table and reports both. The
 **profile** is taken at a clear night — the darkest state `effective_sky` models,
 which is where `darkest_effective_sky` bottoms out — and `min_light_daylight` is
 stated beside it, with the `assumed_sky` block naming the level each was taken
-at. A binding of **zero** is `DW0752` and fails the command: a sealed piece has
+at. For an enclosed piece both ends are sky 0, so the two figures coincide and the
+record says there is no brighter one rather than printing it twice. A binding of
+**zero** is `DW0752` and fails the command: a sealed piece has
 no player space to grade, and a pitch-dark crypt is exactly the piece that would
 otherwise pass by having nothing to measure. `--write` refuses (`DW0753`) when
 there is no metadata to write into, rather than manufacturing a skeleton that

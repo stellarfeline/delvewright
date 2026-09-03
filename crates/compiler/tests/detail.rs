@@ -683,8 +683,13 @@ fn dw0841_refuses_a_record_whose_verdict_is_findings() {
 }
 
 /// **Both entry points, demonstrated.** The handing refuses on the same rule and
-/// the same code — and it refuses a campaign that has no `detail-plan` yet,
-/// which is exactly the campaign asking for its first allocation.
+/// the same code, and it asks the question of a campaign that has no
+/// `detail-plan` yet — which is exactly the campaign asking for its first
+/// allocation, and the one `check_walk` lets through.
+///
+/// The absent detail plan is the STATE the record is demanded in, never itself a
+/// refusal: the third assertion is the one that says so, and it is the half a
+/// reader of the prose has twice taken the other way round.
 #[test]
 fn dw0841_guards_the_handing_too() {
     let c = campaign_at(&blockout_dir());
@@ -695,6 +700,12 @@ fn dw0841_guards_the_handing_too() {
         "and the campaign it refused has no detail plan at all — the gate fires \
          BEFORE the work it guards, not after"
     );
+    assert!(
+        detail::check_walk(&c, None).0.is_empty(),
+        "which is exactly what the OTHER door does not do: with no detail plan \
+         there is nothing for validation to gate, so the two doors are not one \
+         function called twice"
+    );
 
     let tmp = tempdir("dw0841-handing");
     let dd = detailed(&tmp, &["node/exit"]);
@@ -703,6 +714,37 @@ fn dw0841_guards_the_handing_too() {
     assert!(
         detail::allocation_walk_gate(&c, rec.as_deref()).is_none(),
         "and a fresh passed record opens it"
+    );
+}
+
+/// **A campaign with a passed, fresh record and NO detail plan is handed its
+/// allocation** — the state `tools.md` described as a refusal until it was
+/// measured, and the state the whole verb exists for: an author asks for a frame
+/// so they can build the piece that a `details[]` row will later bind.
+///
+/// Over the real binary, because the claim the record made was about the command
+/// a creator types, and `allocation_walk_gate` returning `None` is not the same
+/// fact as `delvec allocation` exiting zero with a frame on stdout.
+#[test]
+fn the_first_allocation_is_handed_out_before_any_detail_plan_exists() {
+    let tmp = tempdir("first-allocation");
+    let campaign = tmp.join("campaign");
+    common::copy_dir_all(&blockout_dir(), &campaign);
+    rerecord_walk(&campaign);
+    assert!(
+        !campaign.join("detail-plan.json").exists(),
+        "the state under test is a campaign with no detail plan"
+    );
+
+    let out = delvec(&["allocation", campaign.to_str().unwrap(), "node/exit"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{err}");
+    let a: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .expect("stdout carries the allocation and nothing else");
+    assert_eq!(a["place"], "node/exit");
+    assert!(
+        a["extent"].is_array() && a["world_min"].is_array(),
+        "and it is the frame that was handed: {a}"
     );
 }
 
