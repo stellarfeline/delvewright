@@ -28,7 +28,7 @@ setup. No "everyone install these 14 things first."
 ## Not an app. Not a service. A workshop.
 
 To be clear about what you're looking at: there is **no Delvewright server, no web
-UI, no binary to install and click**. This repo is a workshop, and you work in it
+UI, no binary to install and click**. Delvewright is a workshop you operate
 through [Claude Code](https://claude.com/claude-code) — that's the product form, by
 design (see [ADR-0012](docs/adr/0012-product-form-claude-code-skill.md)).
 
@@ -43,9 +43,11 @@ server in a box. Everything else is a build step.
 
 ## The `/new-delve` flow
 
-Open Claude Code **in this repo** (the skill and the whole toolchain live here;
-finished campaigns land in the separate content repo), type
-`/new-delve <your prompt>`, and this happens.
+Open Claude Code in the
+**[campaigns repository](https://github.com/stellarfeline/delvewright-campaigns)** —
+that is where the skill lives, and it is the only repository you clone; this one
+is built from source beside it during Init. Type `/new-delve <your prompt>`, and
+this happens.
 
 The agent runs every box in the diagram except the two marked 🖐 — those are
 **yours**. The line stops there and waits for you.
