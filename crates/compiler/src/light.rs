@@ -667,13 +667,14 @@ const P_EMISSION: u8 = 0b0000_1111;
 /// permanently non-passing. That is what the AABB test used to do — light does
 /// not flow out of the assembled bounds — expressed as data, so the frontier
 /// walk needs no bounds test at all.
-pub(crate) struct LightField {
+struct LightField {
     /// The model AABB's lower corner (the cell at padded index `[1, 1, 1]`).
     min: [i32; 3],
     /// Padded dimensions, `dim[a] = max[a] - min[a] + 3`.
     dim: [usize; 3],
-    /// `dim[0]`, the x stride (z is `dim[0]`, y is `dim[0] * dim[2]`).
+    /// One step along z, `dim[0]`. (One step along x is 1.)
     stride_z: usize,
+    /// One step along y, `dim[0] * dim[2]`.
     stride_y: usize,
     /// Effective sky light at a sky-open cell, as [`LightModel::flood`] takes it.
     sky: u8,
@@ -685,7 +686,7 @@ pub(crate) struct LightField {
 
 impl LightField {
     /// Build and flood the field of `model` under `effective_sky`.
-    pub(crate) fn new(model: &LightModel, effective_sky: u8) -> Self {
+    fn new(model: &LightModel, effective_sky: u8) -> Self {
         let dim = [
             (model.max[0] - model.min[0]) as usize + 3,
             (model.max[1] - model.min[1]) as usize + 3,
@@ -857,7 +858,7 @@ impl LightField {
 
     /// The flooded light at a world cell (0 outside the AABB, as the map form's
     /// `unwrap_or(0)` readers already treat it).
-    pub(crate) fn light_at(&self, c: [i32; 3]) -> u8 {
+    fn light_at(&self, c: [i32; 3]) -> u8 {
         self.index(c).map(|i| self.light[i]).unwrap_or(0)
     }
 
@@ -872,7 +873,7 @@ impl LightField {
     /// A placement that fails either half of that — a `shroomlight` written over
     /// a pane of glass darkens the room behind it — is not an increase anywhere,
     /// so the field is built again from nothing.
-    pub(crate) fn set(&mut self, c: [i32; 3], block: &str) {
+    fn set(&mut self, c: [i32; 3], block: &str) {
         let Some(i) = self.index(c) else { return };
         let old = self.prop[i];
         let packed = Self::pack(block);
@@ -893,7 +894,7 @@ impl LightField {
 
     /// The field as the map [`LightModel::flood`] hands out: one entry per lit
     /// cell, none for a cell the flood never reached.
-    pub(crate) fn clone_map(&self) -> BTreeMap<[i32; 3], u8> {
+    fn clone_map(&self) -> BTreeMap<[i32; 3], u8> {
         let mut out = BTreeMap::new();
         let (nx, ny, nz) = (self.dim[0], self.dim[1], self.dim[2]);
         for y in 1..ny - 1 {
