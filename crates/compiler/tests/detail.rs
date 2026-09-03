@@ -1753,7 +1753,103 @@ fn the_key_is_each_document_and_the_key_is_closed() {
 #[test]
 fn the_whole_does_not_light_a_bound_place_and_a_dark_one_is_a_finding() {
     let tmp = tempdir("relight");
-    let d = detailed(&tmp, &["node/exit"]);
+    let (out, s) = unlit_bound_place(&tmp, "node/exit");
+    assert_ne!(out.status.code(), Some(0), "a dark place is a finding: {s}");
+    assert!(
+        s.contains("DW0210"),
+        "and it is the darkness gate that says so, not a silence: {s}"
+    );
+    assert!(
+        s.contains("area/site"),
+        "over the site area the piece stands in: {s}"
+    );
+}
+
+/// **The refusal names a remedy this author can take** — the second half of the
+/// rule `delvewright_dsl::placement` opened, one layer in.
+///
+/// `CLAUDE.md`: *a gate that names a remedy owes a check that the remedy is
+/// reachable*. The blockout fixture's plan **declares** `lighting`, and a bound
+/// frame is exactly where that declaration does not reach (spec-0050 §3), so the
+/// old message told an author who had already declared it to declare it — and
+/// said the campaign had no `lighting` declaration while the document on disk
+/// carried one. Both halves are asserted here: what the refusal must now say,
+/// and the sentence it must no longer print.
+///
+/// The negative is the load-bearing half. A message can name the piece and still
+/// carry the unreachable prescription three lines further down, and a test that
+/// only greps for the new words would pass over exactly that.
+#[test]
+fn a_dark_bound_place_is_told_what_it_owes_and_not_to_declare_the_plans_lighting() {
+    let tmp = tempdir("relight-remedy");
+    // The precondition the whole finding rests on: the plan the fixture ships
+    // ALREADY declares the lighting the old message prescribed.
+    let base = campaign_at(&blockout_dir());
+    assert!(
+        base.site_plan
+            .as_ref()
+            .expect("the blockout fixture carries a site plan")
+            .content
+            .lighting
+            .is_some(),
+        "fixture: the plan must declare `lighting` for the old remedy to be unreachable"
+    );
+
+    let (out, s) = unlit_bound_place(&tmp, "node/exit");
+    assert_ne!(
+        out.status.code(),
+        Some(0),
+        "a dark bound place refuses: {s}"
+    );
+    assert!(s.contains("DW0210"), "under the darkness gate: {s}");
+
+    assert!(
+        s.contains("bound place(s) measure dark"),
+        "the refusal must say the dark cells are in a BOUND place, which is the fact \
+         that decides the remedy: {s}"
+    );
+    let line = s
+        .lines()
+        .find(|l| l.trim_start().starts_with("place `"))
+        .unwrap_or_else(|| panic!("the report names no bound place:\n{s}"));
+    assert!(
+        line.contains("place `node/exit`") && line.contains("bound to `prefab/exit`"),
+        "and it names the place AND the piece, because the remedy is taken in the \
+         piece and nothing else says which one: {line}"
+    );
+    assert!(
+        line.contains("in the piece's own coordinates"),
+        "and it states the darkest cell where the author edits it — a world coordinate \
+         is unusable inside a `.nbt` whose origin is its own corner: {line}"
+    );
+    assert!(
+        s.contains("INSIDE THE PIECE BOUND TO IT"),
+        "and the remedy it prescribes is the one that exists: {s}"
+    );
+
+    // The negative.
+    assert!(
+        !s.contains("Mitigate each area one of"),
+        "the plan-level remedy must NOT be prescribed over a bound place: the fixture's \
+         plan declares `lighting` already and the fixture pass never enters a bound \
+         frame, so that sentence asks for an act that changes nothing: {s}"
+    );
+    assert!(
+        !s.contains("with no `lighting` declaration"),
+        "nor may the refusal claim the campaign declared no lighting while its plan \
+         carries one: {s}"
+    );
+}
+
+/// Build the blockout fixture with `node` bound to a piece cut from the massing
+/// and its own torches removed — the one state that puts a dark place inside a
+/// bound frame. Returns the run and its combined output.
+///
+/// Shared by the two tests above rather than written twice: they assert
+/// different things about the same world, and two copies of the perturbation is
+/// two places for the state under test to drift.
+fn unlit_bound_place(tmp: &Path, node: &str) -> (std::process::Output, String) {
+    let d = detailed(tmp, &[node]);
     // Green first, so what follows is measured against a piece that was lit.
     let out = delvec(&[
         "--prefabs",
@@ -1772,7 +1868,7 @@ fn the_whole_does_not_light_a_bound_place_and_a_dark_one_is_a_finding() {
 
     // Now put the piece's own lights out, changing nothing else.
     let c = campaign_at(&d.campaign);
-    let a = detail::allocation(&c, &NodeId("node/exit".into())).unwrap();
+    let a = detail::allocation(&c, &NodeId(node.into())).unwrap();
     let mass = massing(&c);
     let cells: Vec<([i32; 3], String)> = piece_cells(&c, &a, &mass)
         .into_iter()
@@ -1788,7 +1884,7 @@ fn the_whole_does_not_light_a_bound_place_and_a_dark_one_is_a_finding() {
         cells.iter().all(|(_, b)| b != "minecraft:torch"),
         "the perturbation actually removed something"
     );
-    write_piece(&d.prefabs, "exit", &a, &cells);
+    write_piece(&d.prefabs, node.split('/').nth(1).unwrap(), &a, &cells);
 
     let out = delvec(&[
         "--prefabs",
@@ -1798,16 +1894,9 @@ fn the_whole_does_not_light_a_bound_place_and_a_dark_one_is_a_finding() {
         "--out",
         tmp.join("out-dark").to_str().unwrap(),
     ]);
-    let s = String::from_utf8_lossy(&out.stdout) + String::from_utf8_lossy(&out.stderr);
-    assert_ne!(out.status.code(), Some(0), "a dark place is a finding: {s}");
-    assert!(
-        s.contains("DW0210"),
-        "and it is the darkness gate that says so, not a silence: {s}"
-    );
-    assert!(
-        s.contains("area/site"),
-        "over the site area the piece stands in: {s}"
-    );
+    let s =
+        String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+    (out, s)
 }
 
 /// **The UNFENCED vacuity mode, closed at the type level.**

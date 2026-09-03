@@ -894,11 +894,14 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
 
     let mut model = LightModel::from_blocks(assembled.blocks.clone());
     let mut out = Relight::default();
-    // The dark set of the whole build, kept per area and reported once at the end
+    // The dark set of the whole build, kept per SITE and reported once at the end
     // (`dark_diagnostic`). Accumulated rather than raised per area because the
     // build fails on its first diagnostic: raising one per area meant every area
     // but the alphabetically-first was measured and thrown away.
-    let mut dark: BTreeMap<String, DarkSurvey> = BTreeMap::new();
+    //
+    // A site is an area *and whose cells they are*, because those are two
+    // different refusals with two different remedies — see [`DarkOwner`].
+    let mut dark: BTreeMap<DarkSite, DarkSurvey> = BTreeMap::new();
 
     for area in &plan.areas {
         let (amin, amax) = area.bounds();
@@ -961,27 +964,42 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
         //
         // Empty for every campaign with no detail plan, so nothing moves for
         // anybody who has not opted in.
-        let frames: Vec<([i32; 3], [i32; 3])> = if area.area_id == delvewright_dsl::SITE_AREA {
+        //
+        // The frame is kept WITH the row that bound it, not as a bare box. What
+        // the author has to be told is not "some cells are dark" but *which
+        // place is dark and which piece stands in it*, because that is the only
+        // document the remedy is taken in — see [`DarkOwner`].
+        let frames: Vec<BoundFrame> = if area.area_id == delvewright_dsl::SITE_AREA {
             let mut reads = delvewright_dsl::metrics::Reads::new();
             delvewright_dsl::placed_boxes(c, &mut reads)
                 .iter()
-                .filter(|b| delvewright_dsl::is_bound(c, &b.node))
-                .map(|b| {
+                .filter_map(|b| {
+                    let row = c
+                        .detail_plan
+                        .as_ref()
+                        .and_then(|e| e.content.detail_of(&b.node))?;
                     let f = delvewright_dsl::Frame::of(b);
-                    (
-                        [f.lo[0] as i32, f.lo[1] as i32, f.lo[2] as i32],
-                        [f.hi[0] as i32, f.hi[1] as i32, f.hi[2] as i32],
-                    )
+                    Some(BoundFrame {
+                        place: b.node.0.clone(),
+                        piece: row.piece.0.clone(),
+                        lo: [f.lo[0] as i32, f.lo[1] as i32, f.lo[2] as i32],
+                        hi: [f.hi[0] as i32, f.hi[1] as i32, f.hi[2] as i32],
+                    })
                 })
                 .collect()
         } else {
             Vec::new()
         };
-        let detailed: BTreeSet<[i32; 3]> = reachable
-            .iter()
-            .copied()
-            .filter(|c| frames.iter().any(|(lo, hi)| in_bounds(*c, *lo, *hi)))
-            .collect();
+        // Per bound place, so the report can name it. A cell lies in at most one
+        // frame — boxes do not overlap (`DW0828`) — so the first match is the
+        // only one, and the union below is exactly the old `detailed` set.
+        let mut detailed_by_place: BTreeMap<&BoundFrame, BTreeSet<[i32; 3]>> = BTreeMap::new();
+        for cell in &reachable {
+            if let Some(f) = frames.iter().find(|f| in_bounds(*cell, f.lo, f.hi)) {
+                detailed_by_place.entry(f).or_default().insert(*cell);
+            }
+        }
+        let detailed: BTreeSet<[i32; 3]> = detailed_by_place.values().flatten().copied().collect();
         let reachable: BTreeSet<[i32; 3]> = reachable.difference(&detailed).copied().collect();
 
         if !reachable.is_empty() {
@@ -1005,7 +1023,12 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
                     // Measured-darkness gate over the assembled reachable walkable cells.
                     let night_vision = dsl_area.is_some_and(area_night_vision);
                     let s = survey_undeclared(&model, &reachable, sky, night_vision);
-                    dark.entry(area.area_id.clone()).or_default().absorb(&s);
+                    dark.entry(DarkSite {
+                        area: area.area_id.clone(),
+                        owner: DarkOwner::Whole,
+                    })
+                    .or_default()
+                    .absorb(&s);
                 }
             }
         }
@@ -1016,9 +1039,22 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
         // measuring before that would report it dark for want of a fixture this
         // same pass was about to place three cells away. Ordering is the whole of
         // the difference — the set and the gate are the same either way.
-        if !detailed.is_empty() {
-            let s = survey_undeclared(&model, &detailed, sky, false);
-            dark.entry(area.area_id.clone()).or_default().absorb(&s);
+        //
+        // Kept per place rather than folded into the area, because the remedy is
+        // per place: it is taken inside one piece, and an author handed the union
+        // is told a room is dark without being told which one to open.
+        for (frame, cells) in &detailed_by_place {
+            let s = survey_undeclared(&model, cells, sky, false);
+            dark.entry(DarkSite {
+                area: area.area_id.clone(),
+                owner: DarkOwner::Bound {
+                    place: frame.place.clone(),
+                    piece: frame.piece.clone(),
+                    lo: frame.lo,
+                },
+            })
+            .or_default()
+            .absorb(&s);
         }
     }
 
@@ -1292,73 +1328,83 @@ const DARK_AREAS_LISTED: usize = 8;
 /// See [`DARK_AREAS_LISTED`].
 const DARK_REGIONS_LISTED: usize = 4;
 
-/// Build the one `DW0210` diagnostic for a whole build from the per-area surveys,
-/// or `None` when nothing measured dark.
+/// A bound place's frame, carried with the row that bound it.
 ///
-/// **One diagnostic, not one per area.** A build fails on its *first* diagnostic
-/// (`emit::BuildFailure` carries one code and one message, as every other check in
-/// this compiler does), so a per-area diagnostic per dark area meant the sort
-/// picked the alphabetically-first area's message and the rest were never printed
-/// at all. The object this gate measures is the campaign's dark set; the report
-/// now says so, and nothing about the fail-fast build channel had to move.
+/// The box alone is enough to *subtract* the frame from the fixture pass, which
+/// is all the derivation ever needed; it is not enough to *report* one, because
+/// the remedy for a dark bound place is taken in the piece and the author has to
+/// be told which piece. Ordered so the report's grouping is total and
+/// deterministic (ADR-0006).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct BoundFrame {
+    /// The layout-graph node the `details[]` row binds.
+    place: String,
+    /// The prefab standing in it.
+    piece: String,
+    /// Lower corner of the frame, in world cells — the piece's own origin, so a
+    /// world cell can be stated in the coordinates the author edits in.
+    lo: [i32; 3],
+    /// Upper corner of the frame, in world cells.
+    hi: [i32; 3],
+}
+
+/// **Whose cells a dark measurement is over** — which is what decides the remedy,
+/// and therefore what the refusal may prescribe.
 ///
-/// **The remedy it prescribes is the one this author can reach.** `placement` is
-/// the campaign's single placement authority, asked once in [`relight_over`] —
-/// one campaign, one authority, so it belongs to the whole-build report exactly
-/// as the report itself does, rather than being asked again per area.
-fn dark_diagnostic(
-    areas: &BTreeMap<String, DarkSurvey>,
-    nav: &World,
-    sky: u8,
-    placement: delvewright_dsl::Placement,
-) -> Option<LightDiag> {
-    let mut dark: Vec<(&String, &DarkSurvey)> =
-        areas.iter().filter(|(_, s)| !s.dark.is_empty()).collect();
-    if dark.is_empty() {
-        return None;
-    }
-    // Worst first: the area with the most dark cells is the one whose remedy is a
-    // different act. Ties by area id, which is unique, so the order is total.
-    dark.sort_by_key(|(id, s)| (std::cmp::Reverse(s.dark.len()), (*id).clone()));
+/// The two halves of `DW0210` are not one rule with two wordings. They are two
+/// different facts about the same world:
+///
+/// * [`Self::Whole`] — cells the derivation wrote and no `lighting` declaration
+///   covers. The remedy is to declare one, or to brighten the scene.
+/// * [`Self::Bound`] — cells inside a frame a `detail-plan` row bound. The
+///   fixture pass does not enter a bound frame by design (spec-0050 §3: *a bound
+///   place lights itself*), so declaring `lighting` — or raising one already
+///   declared — changes nothing here. **The remedy is in the piece.**
+///
+/// Folding both into one per-area survey is how the refusal came to prescribe an
+/// act its own reader had already taken: a plan carrying `lighting` and one dark
+/// bound place was told to declare `lighting`. `CLAUDE.md`: *a gate that names a
+/// remedy owes a check that the remedy is reachable.*
+///
+/// `Whole` sorts before `Bound` so the report reads outward-in, and so a campaign
+/// with no detail plan produces exactly the message it produced before.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum DarkOwner {
+    /// The whole's own derived interior.
+    Whole,
+    /// A place bound by a `detail-plan` row.
+    Bound {
+        /// The layout-graph node.
+        place: String,
+        /// The prefab standing in it.
+        piece: String,
+        /// The frame's lower corner, for stating a world cell in piece-local
+        /// coordinates.
+        lo: [i32; 3],
+    },
+}
 
-    let total: usize = dark.iter().map(|(_, s)| s.dark.len()).sum();
-    let examined: usize = dark.iter().map(|(_, s)| s.examined).sum();
-    let (wcell, wl) = dark
-        .iter()
-        .filter_map(|(_, s)| s.darkest())
-        .min_by_key(|&(cell, l)| (l, cell))
-        .expect("a non-empty dark set has a darkest cell");
+/// One place a dark measurement was taken over: the area, and whose cells they
+/// were.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct DarkSite {
+    /// The area id the cells lie in.
+    area: String,
+    /// Whose cells they are.
+    owner: DarkOwner,
+}
 
-    // **A refusal offers only the surfaces this campaign HAS.** `mitigation`
-    // lives on an `areas[]` entry, which a site-plan campaign is required to
-    // leave empty (`DW0839`), so on a derived map the third way does not exist
-    // and naming it sends the author at a document another gate refuses. The
-    // count moves with the list rather than being written down beside it, so a
-    // surface added or removed later cannot leave the sentence claiming a way
-    // that is not offered.
-    let (declared, ways, mitigation) = if placement.has_area_mitigation() {
-        (
-            " and no `mitigation`",
-            "three ways",
-            ", or declare `world.areas[].mitigation: \"night-vision\"` on it (the compiler then \
-             emits a clocked `effect give … night_vision` over its bounds)",
-        )
-    } else {
-        ("", "two ways", "")
-    };
-
-    let n = dark.len();
-    let mut m = format!(
-        "{n} area(s) measure dark: {total} of the {examined} reachable walkable cell(s) measured \
-         in them are below light {DARK_THRESHOLD} under the darkest reachable (time, weather) sky \
-         (effective {sky}), with no `lighting`{declared} declaration. The darkest \
-         reachable walkable cell is at {wcell:?}, measured at light {wl} \
-         (< {DARK_THRESHOLD}).\n"
-    );
-    for (id, s) in dark.iter().take(DARK_AREAS_LISTED) {
+/// Render one section's dark places — the per-place lines and their regions,
+/// with both caps stated whenever they bite.
+///
+/// One renderer for both sections rather than two: the listing is the same
+/// object either way (a place, its counts, its contiguous regions), and only the
+/// label above it and the remedy below it differ.
+fn list_dark_places(rows: &[(String, &DarkSurvey)], nav: &World, kind: &str, m: &mut String) {
+    for (label, s) in rows.iter().take(DARK_AREAS_LISTED) {
         let regions = s.regions(nav);
         m.push_str(&format!(
-            "  area `{id}`: {d} of {e} measured cell(s) dark, in {r} contiguous region(s):\n",
+            "  {label}: {d} of {e} measured cell(s) dark, in {r} contiguous region(s):\n",
             d = s.dark.len(),
             e = s.examined,
             r = regions.len(),
@@ -1385,26 +1431,169 @@ fn dark_diagnostic(
             ));
         }
     }
-    if n > DARK_AREAS_LISTED {
-        let rest: usize = dark
+    if rows.len() > DARK_AREAS_LISTED {
+        let rest: usize = rows
             .iter()
             .skip(DARK_AREAS_LISTED)
             .map(|(_, s)| s.dark.len())
             .sum();
         m.push_str(&format!(
-            "  … and {k} further dark area(s) covering {rest} cell(s), not listed\n",
-            k = n - DARK_AREAS_LISTED,
+            "  … and {k} further dark {kind} covering {rest} cell(s), not listed\n",
+            k = rows.len() - DARK_AREAS_LISTED,
         ));
     }
-    m.push_str(&format!(
-        "Mitigate each area one of {ways}: declare {} (a relight \
-         `fixture` + `min_light`) for it, brighten the scene (`world.time`/`weather`)\
-         {mitigation} — or re-arrange the room, or raise the \
-         density of what is already lit in it, and measure again. A renamed potion in a class kit \
-         is NOT a mitigation — it grants nothing. Do NOT lower `DARK_THRESHOLD` or trim the \
-         reachable set — the darkness is real (spec-0010 DW0210)",
-        placement.lighting_field()
-    ));
+}
+
+/// Totals for one section: dark cells, cells examined, and the darkest cell.
+fn dark_totals(rows: &[(String, &DarkSurvey)]) -> (usize, usize, [i32; 3], u8) {
+    let total: usize = rows.iter().map(|(_, s)| s.dark.len()).sum();
+    let examined: usize = rows.iter().map(|(_, s)| s.examined).sum();
+    let (cell, l) = rows
+        .iter()
+        .filter_map(|(_, s)| s.darkest())
+        .min_by_key(|&(cell, l)| (l, cell))
+        .expect("a non-empty dark section has a darkest cell");
+    (total, examined, cell, l)
+}
+
+/// Build the one `DW0210` diagnostic for a whole build from the per-site surveys,
+/// or `None` when nothing measured dark.
+///
+/// **One diagnostic, not one per area.** A build fails on its *first* diagnostic
+/// (`emit::BuildFailure` carries one code and one message, as every other check in
+/// this compiler does), so a per-area diagnostic per dark area meant the sort
+/// picked the alphabetically-first area's message and the rest were never printed
+/// at all. The object this gate measures is the campaign's dark set; the report
+/// now says so, and nothing about the fail-fast build channel had to move.
+///
+/// **The remedy it prescribes is the one this author can reach.** `placement` is
+/// the campaign's single placement authority, asked once in [`relight_over`] —
+/// one campaign, one authority, so it belongs to the whole-build report exactly
+/// as the report itself does, rather than being asked again per area. The second
+/// half of the same rule is [`DarkOwner`]: a dark bound place is a different fact
+/// with a different remedy, and it gets its own paragraph rather than being
+/// folded into a sentence that would then be false about it.
+///
+/// A build whose dark set holds no bound place produces byte-for-byte the message
+/// it produced before that split existed — which is every campaign with no detail
+/// plan.
+fn dark_diagnostic(
+    sites: &BTreeMap<DarkSite, DarkSurvey>,
+    nav: &World,
+    sky: u8,
+    placement: delvewright_dsl::Placement,
+) -> Option<LightDiag> {
+    // Worst first: the place with the most dark cells is the one whose remedy is
+    // a different act. Ties by the label, which is unique, so the order is total.
+    fn sorted<'a>(mut v: Vec<(String, &'a DarkSurvey)>) -> Vec<(String, &'a DarkSurvey)> {
+        v.sort_by_key(|(label, s)| (std::cmp::Reverse(s.dark.len()), label.clone()));
+        v
+    }
+    let whole: Vec<(String, &DarkSurvey)> = sorted(
+        sites
+            .iter()
+            .filter(|(k, s)| !s.dark.is_empty() && k.owner == DarkOwner::Whole)
+            .map(|(k, s)| (format!("area `{}`", k.area), s))
+            .collect(),
+    );
+    let bound: Vec<(String, &DarkSurvey)> = sorted(
+        sites
+            .iter()
+            .filter_map(|(k, s)| {
+                if s.dark.is_empty() {
+                    return None;
+                }
+                let DarkOwner::Bound { place, piece, lo } = &k.owner else {
+                    return None;
+                };
+                // The darkest cell twice: once in world coordinates, which is
+                // where the build measured it, and once in the piece's own, which
+                // is where the author has to go and put a light.
+                let (dc, _) = s.darkest()?;
+                let local = [dc[0] - lo[0], dc[1] - lo[1], dc[2] - lo[2]];
+                Some((
+                    format!(
+                        "place `{place}` in area `{}`, bound to `{piece}` (frame at {lo:?}, so its \
+                         darkest cell {dc:?} is {local:?} in the piece's own coordinates)",
+                        k.area
+                    ),
+                    s,
+                ))
+            })
+            .collect(),
+    );
+    if whole.is_empty() && bound.is_empty() {
+        return None;
+    }
+
+    let mut m = String::new();
+
+    if !whole.is_empty() {
+        // **A refusal offers only the surfaces this campaign HAS.** `mitigation`
+        // lives on an `areas[]` entry, which a site-plan campaign is required to
+        // leave empty (`DW0839`), so on a derived map the third way does not exist
+        // and naming it sends the author at a document another gate refuses. The
+        // count moves with the list rather than being written down beside it, so a
+        // surface added or removed later cannot leave the sentence claiming a way
+        // that is not offered.
+        let (declared, ways, mitigation) = if placement.has_area_mitigation() {
+            (
+                " and no `mitigation`",
+                "three ways",
+                ", or declare `world.areas[].mitigation: \"night-vision\"` on it (the compiler \
+                 then emits a clocked `effect give … night_vision` over its bounds)",
+            )
+        } else {
+            ("", "two ways", "")
+        };
+        let n = whole.len();
+        let (total, examined, wcell, wl) = dark_totals(&whole);
+        m.push_str(&format!(
+            "{n} area(s) measure dark: {total} of the {examined} reachable walkable cell(s) \
+             measured in them are below light {DARK_THRESHOLD} under the darkest reachable (time, \
+             weather) sky (effective {sky}), with no `lighting`{declared} declaration. The darkest \
+             reachable walkable cell is at {wcell:?}, measured at light {wl} \
+             (< {DARK_THRESHOLD}).\n"
+        ));
+        list_dark_places(&whole, nav, "area(s)", &mut m);
+        m.push_str(&format!(
+            "Mitigate each area one of {ways}: declare {} (a relight \
+             `fixture` + `min_light`) for it, brighten the scene (`world.time`/`weather`)\
+             {mitigation} — or re-arrange the room, or raise the \
+             density of what is already lit in it, and measure again. A renamed potion in a class \
+             kit is NOT a mitigation — it grants nothing. Do NOT lower `DARK_THRESHOLD` or trim \
+             the reachable set — the darkness is real (spec-0010 DW0210)",
+            placement.lighting_field()
+        ));
+    }
+
+    if !bound.is_empty() {
+        if !m.is_empty() {
+            m.push('\n');
+        }
+        let n = bound.len();
+        let (total, examined, wcell, wl) = dark_totals(&bound);
+        m.push_str(&format!(
+            "{n} bound place(s) measure dark: {total} of the {examined} reachable walkable cell(s) \
+             measured in them are below light {DARK_THRESHOLD} under the darkest reachable (time, \
+             weather) sky (effective {sky}). The darkest reachable walkable cell in them is at \
+             {wcell:?}, measured at light {wl} (< {DARK_THRESHOLD}).\n"
+        ));
+        list_dark_places(&bound, nav, "bound place(s)", &mut m);
+        m.push_str(&format!(
+            "Light each of these places INSIDE THE PIECE BOUND TO IT. A bound place lights itself \
+             (spec-0050 §3): the fixture pass writes into the derived interiors only and never \
+             inside a bound frame, so declaring {} — or raising a `min_light` already declared \
+             there — moves nothing in the cells listed above. Put emitters in the piece at the \
+             cells named (the piece-local coordinates are the ones its program and its `.nbt` are \
+             written in), re-export it and build again; or bind a different piece to the place, or \
+             leave the place undetailed so the whole lights it. Light does cross a frame boundary, \
+             so brightening what stands OUTSIDE the frame is a real remedy too. Do NOT lower \
+             `DARK_THRESHOLD` or trim the reachable set — the darkness is real (spec-0050 §3, \
+             spec-0010 DW0210)",
+            placement.lighting_field()
+        ));
+    }
     Some(LightDiag {
         code: DW_DARK_UNMITIGATED,
         message: m,
