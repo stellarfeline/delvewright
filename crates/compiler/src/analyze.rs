@@ -96,15 +96,21 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
 
     let mut diags = Vec::new();
 
-    // spec-0049 §3.3: the layout graph's analysis-tier proofs (DW0816 / DW0817 /
-    // DW0819) — a place a body can never reach, an authored critical path that
-    // does not hold, and a one-way connection that strands. They live here
-    // rather than in `dsl::validate` because the tier is decided by the pass
-    // that raises them, and these are the graph's REACHABILITY questions: the
-    // same tier `DW0202`/`DW0203`/`DW0204` answer for the quest graph, and for
-    // the same reason. Empty for a campaign with no layout graph, and
-    // `LayoutBinding` states that zero rather than leaving it implied.
-    diags.extend(delvewright_dsl::layout::analyze(c));
+    // THE LAYOUT GRAPH'S REACHABILITY PROOFS ARE NOT HERE ANY MORE.
+    //
+    // `DW0816` / `DW0817` / `DW0819` used to be raised from this pass, sorted
+    // by KIND: they are reachability questions like `DW0202`–`DW0204`, so they
+    // went where reachability goes. Measured, that argument put them somewhere
+    // no verb could reach them at the step they exist for. This pass runs only
+    // on a campaign that already validates, and a campaign at the graph step
+    // carries `DW0150` by construction — the plan is written and stage 5 is not
+    // — so `delvec analyze` returned at the validation gate and the graph went
+    // unchecked until stage 5 was written, which is past the design gate. They
+    // now run in `dsl::layout::check`, which is what `delvec validate` goes
+    // through, and there is exactly one call site — see
+    // `delvewright_dsl::layout::reachability`. Nothing is lost here: `analyze`
+    // and `build` both validate first, so a graph fault still cannot reach a
+    // built world.
 
     // DW0202: quests never activated, in any world.
     for (i, q) in quests.iter().enumerate() {
