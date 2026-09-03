@@ -958,7 +958,8 @@ impl LayoutBinding {
 }
 
 // ---------------------------------------------------------------------------
-// Validation tier (spec-0049 §3.3): DW0814, DW0818, DW0820, DW0822, DW0812
+// Validation tier (spec-0049 §3.3): DW0814, DW0818, DW0820, DW0822, DW0812,
+// and — since the reachability battery moved here — DW0816, DW0817, DW0819
 // ---------------------------------------------------------------------------
 
 /// Every check the layout documents owe at **validation** tier.
@@ -990,6 +991,11 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     mission(c, graph, d);
     shortcut_loops(graph, d);
     pacing(c, graph, &table, reads, d);
+    // The reachability proofs run HERE and nowhere else — see [`reachability`]
+    // for why they are no longer raised from the analysis pass. The page tells
+    // an author to loop `validate` at the graph step; this is what makes that
+    // instruction true.
+    d.extend(reachability(c));
 }
 
 /// **The three refusals a declared station owes** (spec-0052 §7.1, §7.2, and the
@@ -1761,17 +1767,35 @@ fn pacing(
 }
 
 // ---------------------------------------------------------------------------
-// Analysis tier (spec-0049 §3.3): DW0816, DW0817, DW0819
+// Reachability (spec-0049 §3.3): DW0816, DW0817, DW0819
 // ---------------------------------------------------------------------------
 
-/// Every check the layout graph owes at **analysis** tier (exit 2).
+/// The graph's reachability proofs — a place a body can never reach
+/// (`DW0816`), an authored critical path that does not hold (`DW0817`), and a
+/// one-way connection that strands (`DW0819`).
 ///
-/// Invoked from `compiler::analyze::analyze_campaign`, which is the one pass
-/// `delvec analyze` and `delvec build` both run — so there is no path to a built
-/// world that skips it. A campaign with no layout graph returns nothing, and the
-/// binding count says so.
+/// # Why this runs at VALIDATION tier
+///
+/// It used to be raised from `compiler::analyze::analyze_campaign`, on the
+/// argument that a tier is decided by the pass that raises it and these are
+/// reachability questions like `DW0202`–`DW0204`. The argument sorts the check
+/// by its KIND; what decides a tier here is when the check can fire, and by
+/// that measure it was unreachable at the step it exists for. `delvec analyze`
+/// returns at the first validation-tier error, and a campaign at the graph step
+/// carries `DW0150` by construction — the plan is written and stage 5 is not —
+/// so **no verb raised these proofs until stage 5 was written**, which is after
+/// the design gate and after the expensive authoring the gate exists to
+/// protect. spec-0049 §3 is explicit that the graph is checked "cheaply, before
+/// geometry exists to make it expensive"; a proof that first fires two steps
+/// later is not that.
+///
+/// Nothing here reads geometry: the whole battery is a function of the campaign
+/// documents, which is why it can move. Called from [`check`] and from nowhere
+/// else, so there is one battery in one place and no second copy of any rule; a
+/// campaign with no layout graph returns nothing and [`LayoutBinding`] states
+/// that zero.
 #[must_use]
-pub fn analyze(c: &Campaign) -> Vec<Diagnostic> {
+pub fn reachability(c: &Campaign) -> Vec<Diagnostic> {
     let mut d = Vec::new();
     let Some(graph) = c.layout_graph.as_ref().map(|g| &g.content) else {
         return d;
@@ -1782,14 +1806,51 @@ pub fn analyze(c: &Campaign) -> Vec<Diagnostic> {
     }
     let grants = Grants::of(c, graph);
     let closure = Closure::run(graph, &grants);
-    unreached(graph, &closure, &mut d);
-    critical_path(c, graph, &grants, &mut d);
-    strands(graph, &closure, &mut d);
+    let caveat = unwritten_mission_caveat(c, graph);
+    unreached(graph, &closure, caveat, &mut d);
+    critical_path(c, graph, &grants, caveat, &mut d);
+    strands(graph, &closure, caveat, &mut d);
     d
 }
 
+/// The caveat a reachability refusal owes while **stage 5 is unwritten**.
+///
+/// [`Closure`] reads the mission for its flag grants ([`Grants::of`]), so a
+/// campaign between the plan and the quests has no `set-flag` anywhere and every
+/// flag-gated way in its graph is shut to this proof. Now that the battery runs
+/// at validation tier that state is the ordinary one at the graph step, and
+/// without this the proof reports a fault in a document the author finished two
+/// steps ago and cannot yet answer. `mission` says the same thing about
+/// `DW0818` in its own words and for the same reason; the shared authority is
+/// the PREDICATE below, not the wording, because the two consequences differ.
+///
+/// A quest-gated way is NOT affected: `Grants::of` credits a quest once every
+/// one of its beats sits at a reached place, and beats are the graph's own
+/// document. Only `gating.flags` needs an effect stage 5 has not written.
+///
+/// It is a CAVEAT and never a dismissal. A place can be unreached, a path can
+/// fail to be a path and a drop can strand for reasons the mission has nothing
+/// to do with, and every one of those is a finding now — so it is attached only
+/// where the mission's absence could be the cause (a graph that gates on a flag
+/// at all) and it says which half is which.
+fn unwritten_mission_caveat(c: &Campaign, graph: &LayoutGraphContent) -> &'static str {
+    let gates_on_a_flag = graph
+        .edges
+        .iter()
+        .any(|e| e.gating().is_some_and(|g| !g.flags.is_empty()));
+    if c.quests.content.quests.is_empty() && gates_on_a_flag {
+        " Stage 5 declares no quests here, so no `set-flag` effect exists yet and every \
+         flag-gated way in this graph is shut to this proof: a place behind one is closed off \
+         for that reason alone and opens when stage 5 is written (see `DW0150`). Anything \
+         unreached for any OTHER reason is a real finding now, and this line does not say which \
+         of the two you are looking at — the graph does."
+    } else {
+        ""
+    }
+}
+
 /// `DW0816`: a node the closure never reaches.
-fn unreached(graph: &LayoutGraphContent, closure: &Closure, d: &mut Vec<Diagnostic>) {
+fn unreached(graph: &LayoutGraphContent, closure: &Closure, caveat: &str, d: &mut Vec<Diagnostic>) {
     for (i, n) in graph.nodes.iter().enumerate() {
         if closure.reached.contains(n.id.0.as_str()) {
             continue;
@@ -1822,7 +1883,8 @@ fn unreached(graph: &LayoutGraphContent, closure: &Closure, d: &mut Vec<Diagnost
             format!("/content/nodes/{i}"),
             format!(
                 "place `{id}` is never reached: {hint}. Of the {total} place(s) this graph \
-                 declares, {n} are reachable from `{entry}` under the campaign's own gating.",
+                 declares, {n} are reachable from `{entry}` under the campaign's own \
+                 gating.{caveat}",
                 id = n.id,
                 total = graph.nodes.len(),
                 n = closure.reached.len(),
@@ -1837,6 +1899,7 @@ fn critical_path(
     c: &Campaign,
     graph: &LayoutGraphContent,
     grants: &Grants,
+    caveat: &str,
     d: &mut Vec<Diagnostic>,
 ) {
     let path = &graph.critical_path;
@@ -1885,17 +1948,29 @@ fn critical_path(
                      the other way."
                 ),
             ),
-            Some(e) if !Closure::satisfied(e.gating(), &held) => fault(
-                &format!("/{}", i + 1),
-                format!(
-                    "the critical path steps from `{from}` to `{to}` over `{e_id}`, which is not \
-                     open yet at that point in the walk: nothing bound to the {v} place(s) \
-                     already visited grants what it waits on. Move the beat that opens it earlier \
-                     on the path, or route the path through the place that grants it.",
-                    e_id = e.id(),
-                    v = visited.len(),
-                ),
-            ),
+            Some(e) if !Closure::satisfied(e.gating(), &held) => {
+                // The caveat rides only the GATING fault. A step with no
+                // connection at all, a path that does not run entry to goal and
+                // a missed spine beat are judgements about the graph alone, and
+                // an unwritten mission has nothing to say about any of them.
+                let unwritten = if e.gating().is_some_and(|g| !g.flags.is_empty()) {
+                    caveat
+                } else {
+                    ""
+                };
+                fault(
+                    &format!("/{}", i + 1),
+                    format!(
+                        "the critical path steps from `{from}` to `{to}` over `{e_id}`, which is \
+                         not open yet at that point in the walk: nothing bound to the {v} \
+                         place(s) already visited grants what it waits on. Move the beat that \
+                         opens it earlier on the path, or route the path through the place that \
+                         grants it.{unwritten}",
+                        e_id = e.id(),
+                        v = visited.len(),
+                    ),
+                );
+            }
             Some(_) => {}
         }
         steps += 1;
@@ -1950,7 +2025,7 @@ fn collect_grants(grants: &Grants, visited: &BTreeSet<&str>, held: &mut BTreeSet
 }
 
 /// `DW0819`: a one-way edge strands.
-fn strands(graph: &LayoutGraphContent, closure: &Closure, d: &mut Vec<Diagnostic>) {
+fn strands(graph: &LayoutGraphContent, closure: &Closure, caveat: &str, d: &mut Vec<Diagnostic>) {
     let spine: BTreeSet<&str> = graph.critical_path.iter().map(|n| n.0.as_str()).collect();
     for (i, e) in graph.edges.iter().enumerate() {
         if !e.is_traversal() {
@@ -1977,7 +2052,8 @@ fn strands(graph: &LayoutGraphContent, closure: &Closure, d: &mut Vec<Diagnostic
                 "connection `{e_id}` runs one way from `{from}` into `{to}`, and from `{to}` \
                  there is no way back to the critical path. A body can only be in `{to}` having \
                  taken this connection, so a walk that takes it is a softlock. Add a way out of \
-                 `{to}` — the shortcut back is the usual one — or make the connection two-way.",
+                 `{to}` — the shortcut back is the usual one — or make the connection \
+                 two-way.{caveat}",
                 e_id = e.id(),
             ),
         ));
