@@ -49,7 +49,6 @@ fn build_campaign_dir(dir: &std::path::Path) -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("build succeeds")

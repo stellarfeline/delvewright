@@ -97,7 +97,6 @@ fn build(campaign: &Campaign) -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates")

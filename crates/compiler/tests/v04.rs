@@ -60,7 +60,6 @@ fn build_showcase() -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
     .expect("every emitted command validates")

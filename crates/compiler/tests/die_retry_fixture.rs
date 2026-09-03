@@ -99,7 +99,6 @@ fn build(campaign: &Campaign, dir: &std::path::Path) -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("the die-retry fixture must build")

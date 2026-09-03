@@ -112,7 +112,6 @@ fn build_code(body: &str) -> Option<String> {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     ) {
         Ok(_) => None,

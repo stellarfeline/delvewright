@@ -95,7 +95,6 @@ fn night_vision_clock(quests: String, world: String) -> String {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("build succeeds");

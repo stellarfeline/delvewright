@@ -123,7 +123,6 @@ fn try_build(fields: &str, edits: Option<&str>) -> Result<emit::BuildOutput, emi
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

@@ -39,7 +39,6 @@ fn build_campaign(dir: &Path) -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("emission succeeds")

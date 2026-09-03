@@ -58,7 +58,6 @@ fn build_dir(dir: &Path) -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
     .expect("emission succeeds")
