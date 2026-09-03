@@ -2175,8 +2175,8 @@ mod tests {
         for &l in dim.values() {
             seen[l as usize] = true;
         }
-        for l in 1..=15usize {
-            assert!(seen[l], "no cell of the falloff corridor measures {l}");
+        for (l, reached) in seen.iter().enumerate().skip(1) {
+            assert!(reached, "no cell of the falloff corridor measures {l}");
         }
     }
 
