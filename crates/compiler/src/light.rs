@@ -2138,15 +2138,45 @@ mod tests {
         m
     }
 
+    /// A sealed corridor twenty cells long with one emitter at the end of it, so
+    /// the answer holds the WHOLE falloff: every value from the source down to 1,
+    /// and then the dark beyond where it runs out.
+    ///
+    /// `mixed_room` alone cannot see the last step. Everything in it is within
+    /// reach of a source, so a flood that stopped one level early — never letting
+    /// a cell at 2 light its neighbour to 1 — measured the room exactly right and
+    /// the comparison below stayed green. A test that cannot fail on the dimmest
+    /// step is not testing the falloff.
+    fn falloff_corridor() -> BTreeMap<[i32; 3], String> {
+        let mut m = room(22, 4, 3, false);
+        m.insert([1, 1, 1], "minecraft:glowstone".to_string());
+        m
+    }
+
     #[test]
     fn the_dense_field_measures_what_the_spec_flood_measures() {
-        let model = LightModel::from_blocks(mixed_room());
-        for sky in [0u8, 4, 7, 12, 15] {
-            assert_eq!(
-                model.flood(sky),
-                reference_flood(&model, sky),
-                "the dense field and the spec flood disagree at sky {sky}"
-            );
+        for (what, blocks) in [
+            ("mixed room", mixed_room()),
+            ("falloff", falloff_corridor()),
+        ] {
+            let model = LightModel::from_blocks(blocks);
+            for sky in [0u8, 4, 7, 12, 15] {
+                assert_eq!(
+                    model.flood(sky),
+                    reference_flood(&model, sky),
+                    "the dense field and the spec flood disagree over the {what} at sky {sky}"
+                );
+            }
+        }
+        // The falloff really does reach the dimmest step, or the comparison above
+        // is green about a shape it never met.
+        let dim = LightModel::from_blocks(falloff_corridor()).flood(0);
+        let mut seen = [false; 16];
+        for &l in dim.values() {
+            seen[l as usize] = true;
+        }
+        for l in 1..=15usize {
+            assert!(seen[l], "no cell of the falloff corridor measures {l}");
         }
     }
 
