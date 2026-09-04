@@ -37,7 +37,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_compiler::assembled::Occupancy;
-use delvewright_compiler::nav::World;
+use delvewright_compiler::nav::{Premises, World};
 use delvewright_dsl::metrics::{
     self, MAX_AUTO_STEP_16, MAX_JUMP_RISE_16, METRICS_VERSION, Metrics,
 };
@@ -90,13 +90,16 @@ fn two_ledges(rise: i64) -> (World, [i32; 3], [i32; 3]) {
     }
     let goal = [1, 65, 1];
 
-    let world = World::from_occupancy(Occupancy {
-        solid,
-        tall: BTreeSet::new(),
-        use_gates: BTreeSet::new(),
-        flooded: BTreeSet::new(),
-        partial,
-    });
+    let world = World::from_occupancy(
+        Occupancy {
+            solid,
+            tall: BTreeSet::new(),
+            use_gates: BTreeSet::new(),
+            flooded: BTreeSet::new(),
+            partial,
+        },
+        Premises::geometry_only(),
+    );
     (world, start, goal)
 }
 

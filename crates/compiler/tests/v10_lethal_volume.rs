@@ -55,6 +55,17 @@ fn quests_doc(volumes: &str, talk_effects: &str) -> String {
 /// bare `{"text": …}` literal, so an untagged test would silently stop proving
 /// that the death wording travels as a translatable component.
 fn parse_hw(quests: &str) -> Campaign {
+    parse_hw_with_edits(quests, None)
+}
+
+/// [`parse_hw`], with an optional stage-7 `world-edits` document.
+///
+/// Declaring one is what puts a campaign on `emit::build`'s **`edit_replay`
+/// arm**, and that arm builds the navigation world itself instead of taking
+/// `nav::World::from_plan`. Every proof below therefore has two arms to be true
+/// on, and for as long as the arms applied different premises only one of them
+/// was ever tested — see `a_volume_across_the_only_route_is_dw0510_under_edits`.
+fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
     let raw = RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
@@ -62,7 +73,7 @@ fn parse_hw(quests: &str) -> Campaign {
         quest_plan: hw("quest-plan.json"),
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
-        world_edits: None,
+        world_edits: world_edits.map(str::to_string),
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
@@ -72,6 +83,44 @@ fn parse_hw(quests: &str) -> Campaign {
     delvewright_dsl::tag_translatables(&mut c);
     c
 }
+
+/// The smallest `world-edits` document that puts a hello-world campaign on the
+/// edit-replay arm: one batch that re-dresses a 2×2 patch of the keep's floor in
+/// cobblestone. Both blocks are full cubes, so the geometry every proof reasons
+/// over is untouched and the only thing this changes is WHICH ARM builds the
+/// world.
+const ONE_BATCH: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/dress-a-corner",
+        "area": "area/keep",
+        "note": "a floor patch, so this campaign takes the edit-replay arm",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/corner",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [1, 0, 1],
+              "max": [2, 0, 2]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/corner",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:cobblestone", "weight": 1.0 }] }
+          }
+        ]
+      }
+    ]
+  }
+}"#;
 
 fn structures(plan: &Plan) -> BTreeMap<String, Vec<u8>> {
     let mut out = BTreeMap::new();
@@ -263,6 +312,52 @@ fn a_volume_across_the_only_route_is_dw0510() {
         "",
     ));
     assert_eq!(failure_code(&c), "DW0510");
+}
+
+/// **The same volume, the other arm.** A campaign that declares `world-edits`
+/// takes `emit::build`'s `edit_replay` arm, which builds the navigation world
+/// from the EDITED bytes rather than through `nav::World::from_plan` — and for
+/// as long as that arm assembled the world's premises by hand it applied the
+/// ambient and the gate seals and not the lethal volumes. Every proof the volume
+/// backs (`DW0510`, `DW0311`, the exported-route check) was therefore vacuous for
+/// every edit-carrying campaign, including the engine's own gallery, whose bot
+/// walked its critical path into a wither box and died there.
+///
+/// The edit is two-by-two of floor re-dressed in cobblestone: it changes nothing
+/// a route can feel, so a difference in verdict between this test and its
+/// no-edits twin above can only be the arm.
+#[test]
+fn a_volume_across_the_only_route_is_dw0510_under_edits() {
+    let c = parse_hw_with_edits(
+        &quests_doc(
+            r#"{ "id": "lethal/the-threshold",
+             "region": { "anchor": "anchor/door", "extent": [3, 3, 0] },
+             "message": "The threshold burns." }"#,
+            "",
+        ),
+        Some(ONE_BATCH),
+    );
+    assert_eq!(failure_code(&c), "DW0510");
+}
+
+/// The **binding count** the same defect showed from the other side, and the
+/// reason it survived review: an edit-carrying campaign emitted its lethal tick
+/// driver, its kill function and its ledger, and the ledger said `"cells": 0`.
+/// Every gate over it was green about a world with no kill boxes in it.
+///
+/// A binding count is a claim that a proof examined something; this one is
+/// asserted non-zero on the arm where it was zero.
+#[test]
+fn the_lethal_ledger_binds_on_the_edit_replay_arm() {
+    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(ONE_BATCH));
+    let out = build(&c);
+    let ledger: serde_json::Value =
+        serde_json::from_str(&text(&out, "validation/lethal-gate.json")).unwrap();
+    assert_eq!(ledger["volumes"]["resolved"], 1, "the volume resolved");
+    assert_ne!(
+        ledger["cells"], 0,
+        "an edited campaign's nav world carries the volume's cells: {ledger}"
+    );
 }
 
 /// The same proof, one step earlier: an objective whose only footing lies inside a
