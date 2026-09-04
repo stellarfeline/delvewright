@@ -3531,7 +3531,7 @@ export class MineflayerExecutor implements StepExecutor {
       const swings = new Map<number, number>();
       // The wave's own census: every "the fight is over" test below is
       // a guess made from SHAPES, and the server can simply be asked. See
-      // `waveStillStands`.
+      // {@link pollWaveCensus}.
       const enc = this.encounterFor(step.wave);
       let lastCensusAt = 0;
       const askCensus = async (): Promise<number | undefined> => {
