@@ -710,13 +710,27 @@ The minimum is taken over the **floor a body can walk to from a ground-level
 entrance**, and the report states how many cells that was, out of how many are
 standable in the region box. That filter is what makes the number readable: the
 region box also holds the sealed voids between a vault and its roof, which no
-lantern reaches and no player ever stands in. The piece is measured standing in
-open air, so sky light reaches under a roof from the side — which is why an
-open-air piece grades like any other, and why a `dark` verdict on a colonnade is
-about the hour rather than about the openings. The profile is taken at a clear
-night, the darkest sky the engine models, and the daylight minimum is printed
-beside it: "black at night, lit by day" is the sentence to act on, and `dark`
-alone is not. A binding of zero is `DW0752` and fails the step — carve the
+lantern reaches and no player ever stands in.
+
+**Which sky the piece is measured under is read off its own `spatial_contract`.**
+A piece declaring no contract, or one declaring any space `open` or `open_top`,
+is measured standing in open air, so sky light reaches under a roof from the
+side — which is why an open-air piece grades like any other, and why a `dark`
+verdict on a colonnade is about the hour rather than about the openings. There
+the profile is taken at a clear night, the darkest sky the engine models, and the
+daylight minimum is printed beside it: "black at night, lit by day" is the
+sentence to act on, and `dark` alone is not.
+
+A piece whose contract declares **every** space `enclosed` is measured with no
+sky at all, and both figures are that one. That is the piece a `detail-plan` row
+binds: it stands inside the box a site plan gave it, under a roof the whole owns,
+and never meets the sky — so a `lit` taken off the night sky floor would be true
+of nowhere it can stand, and `DW0210` would say so at the first build. Such a
+piece with no emitter in it reads `dark` here, which is the number to act on:
+put light in the program. The report names the sky it used and why, in
+`assumed_sky`, and the written `method` says it again.
+
+A binding of zero is `DW0752` and fails the step — carve the
 sockets before probing a piece whose only way in is one. `--write` without metadata beside the
 piece is `DW0753`: the measurement still prints, but nothing is written, because
 a manufactured `spdx: UNKNOWN` skeleton is worse than an error.
