@@ -52,6 +52,9 @@ import tempfile
 import tomllib
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from delvec_bin import resolve as resolve_delvec  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 EXCLUSIONS = REPO / ".github" / "campaign-build-exclusions.toml"
 VERSIONS = REPO / "versions.toml"
@@ -182,17 +185,17 @@ def main() -> int:
     ap.add_argument(
         "--delvec",
         type=Path,
-        required=True,
         help="the `delvec` binary to build with. Required and never inferred: "
         "the whole point of this gate is WHICH engine built the campaign, so "
-        "the caller names it.",
+        "the caller names it. The refusal, and the staleness refusal beside it, "
+        "belong to `tools/lib/delvec_bin.py` — one authority for every tool in "
+        "this directory that runs an engine.",
     )
     args = ap.parse_args()
 
-    delvec: Path = args.delvec.resolve()
-    if not delvec.is_file():
-        print(f"build-every-campaign: FAIL — no delvec binary at {delvec}", file=sys.stderr)
-        return 1
+    delvec = resolve_delvec(
+        args.delvec, repo=REPO, caller="build-every-campaign", required=True
+    ).resolve()
 
     sources = args.content / "campaigns"
     prefabs = args.content / "prefabs"
