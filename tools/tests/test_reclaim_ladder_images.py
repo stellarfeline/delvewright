@@ -339,6 +339,33 @@ def test_a_daemon_refusal_keeps_the_image_and_names_the_reason(tmp_path):
     assert "the daemon refused" in proc.stdout
 
 
+def test_an_unreadable_service_set_refuses_rather_than_judging_everything_foreign(tmp_path):
+    """An empty service answer would make every image foreign: the sweep would
+    remove nothing and report success. That is the vacuous direction, so the
+    library refuses and the sweep exits non-zero."""
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    docker = shim_dir / "docker"
+    docker.write_text(SHIM)
+    docker.chmod(0o755)
+    state = json.loads(json.dumps(FIXTURE))
+    state["services"] = []
+    fixture = tmp_path / "fixture.json"
+    fixture.write_text(json.dumps(state))
+    log = tmp_path / "rmi.log"
+    log.write_text("")
+    env = dict(os.environ)
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+    env["DW_FIXTURE"] = str(fixture)
+    env["DW_RMI_LOG"] = str(log)
+    proc = subprocess.run(
+        ["bash", str(SWEEP), "--apply"], capture_output=True, text=True, env=env
+    )
+    assert proc.returncode != 0, proc.stdout
+    assert "refusing" in proc.stderr
+    assert log.read_text().strip() == ""
+
+
 def test_bad_arguments_refuse_before_the_daemon_is_touched():
     for args in (["--project", "../etc"], ["--nonsense"], ["--project"]):
         proc = subprocess.run(

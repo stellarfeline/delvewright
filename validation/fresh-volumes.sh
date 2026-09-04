@@ -232,6 +232,14 @@ fi
 
 # The image proof. A survivor is NAMED with its reason and does not red the
 # ladder (see the header): a stale image is disk, not a poisoned world.
+if [ "$DW_IMG_UNJUDGED" = 1 ]; then
+  echo "fresh-volumes: project '$project' — the image class was NOT JUDGED: the services of" >&2
+  echo "  $DW_IMG_COMPOSE could not be read, so no image was examined. This is not" >&2
+  echo "  'nothing to remove'; run validation/reclaim-ladder-images.sh once it reads." >&2
+  echo "fresh-volumes: project '$project' verified clean (containers + volumes + networks;" \
+    "images NOT judged)."
+  exit 0
+fi
 remaining_i="$(dw_project_images_remaining "$project")"
 if [ -n "$DW_IMG_KEPT_LINES" ] || [ -n "$remaining_i" ]; then
   echo "fresh-volumes: project '$project' KEPT images (named, not silently skipped):" >&2

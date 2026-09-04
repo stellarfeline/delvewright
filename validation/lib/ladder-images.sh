@@ -244,6 +244,10 @@ dw_tag_is_project_owned() {
 #   DW_IMG_KEPT          how many were kept, each with a reason
 #   DW_IMG_EXAMINED      how many carried this project's label at all — the
 #                        binding count, and a zero is a fact worth printing
+#   DW_IMG_UNJUDGED      1 when the service set could not be read, so NOTHING was
+#                        judged. Not the same as "nothing to remove", and the
+#                        caller must say which — a tool that reclaims nothing
+#                        while reporting clean is the vacuity this file is against
 #   DW_IMG_REMOVED_LINES / DW_IMG_KEPT_LINES   one `  <name>  <why>` line each
 dw_reclaim_project_images() {
   local project="$1" dry="${2:-}"
@@ -254,6 +258,15 @@ dw_reclaim_project_images() {
   DW_IMG_EXAMINED=0
   DW_IMG_REMOVED_LINES=""
   DW_IMG_KEPT_LINES=""
+  DW_IMG_UNJUDGED=0
+
+  # Resolve the service set ONCE, up front. Asking per image would let a
+  # transient failure read as "every image is foreign", i.e. reclaim nothing and
+  # report success — so the failure is recorded as a state the caller must print.
+  if ! dw_ladder_services >/dev/null; then
+    DW_IMG_UNJUDGED=1
+    return 0
+  fi
 
   held="$(dw_container_image_ids)"
   local table
