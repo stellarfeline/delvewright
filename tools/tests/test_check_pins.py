@@ -1104,15 +1104,17 @@ def test_an_install_inside_a_shell_string_is_prose(repo: Path) -> None:
     """A quoted string is text the shell never executes.
 
     The live shape, twice in this repository: a script that finishes by telling
-    the operator what its work now makes possible. Read as a command, the words
-    after the crate name become packages nobody pinned.
+    the operator what its work now makes possible. Written without the backticks
+    the live lines happen to carry, because a backtick is a command break and
+    would end the arguments anyway — and a fixture some OTHER rule can catch
+    proves nothing about the rule it is named for.
     """
     write_registry(repo, COMPLETE)
     add_file(
         repo,
         "tools/probe-publish.sh",
         "#!/usr/bin/env bash\n"
-        'echo "probe: \\`cargo install $CRATE\\` now resolves to $VERSION"\n',
+        'echo "probe: to get it yourself, run cargo install probe-tool --locked"\n',
     )
     r = run(repo)
     assert r.returncode == 0, r.stdout + r.stderr
