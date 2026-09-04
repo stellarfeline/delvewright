@@ -2911,3 +2911,139 @@ test("a trigger echo never leaks into the next step's failure", async () => {
     },
   );
 });
+
+// --- die-retry: the re-approach must not take the process down ----------------
+
+import { createRequire } from "node:module";
+
+// The REAL mineflayer-pathfinder goto helper. Every other fake in this file stubs
+// `goto` as a promise that resolves, which is why 414 green tests sat beside a live
+// run that died: the whole defect is a behaviour of goto.js — the four listeners it
+// leaves on the bot, and the fact that ANY later `setGoal` rejects a trip still
+// holding them, from a zero timer, outside the caller's stack. A model of that could
+// agree with the harness and disagree with the library.
+const requireCjs = createRequire(import.meta.url);
+const gotoUtil = requireCjs("mineflayer-pathfinder/lib/goto.js") as (
+  bot: unknown,
+  goal: unknown,
+) => Promise<void>;
+
+/**
+ * The greyhithe-saltworks rehearsal, in a test.
+ *
+ * A boss encounter whose wave stands off the anchor, so the mid-fight trade has to
+ * WALK into melee; that walk finds no path first time, and the wave kills the bot
+ * while the harness is waiting out its retry settle. The bot comes back at the
+ * checkpoint — somewhere else — so the re-approach really does have to pathfind,
+ * and it is that `setGoal` which rejects whatever trip the death left behind.
+ *
+ * Live, that rejection had no handler and Node killed the process: `bot-1 exited
+ * with code 1`, no run report, a red stage that read as a content verdict on a
+ * delve the bot had just walked end to end in two and a quarter minutes.
+ */
+class RealGotoCombatBot extends CombatFakeBot {
+  /** Where the checkpoint puts the bot back — deliberately not the anchor. */
+  checkpointAt: [number, number, number] = [20, 64, 0];
+  /** The one hop that finds no path and gets the bot killed while it settles. */
+  strandAt: [number, number, number] | undefined;
+  private goalNow: unknown;
+
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+      this.goalNow = goal;
+      // index.js:145. This is the line the whole defect hangs on.
+      this.emit("goal_updated", goal, false);
+      if (goal === null) return;
+      const g = goal as { x: number; y: number; z: number };
+      setTimeout(() => {
+        if (this.goalNow !== goal) return; // a superseded goal never arrives
+        this.entity.position = new FakeVec3(g.x, g.y, g.z);
+        this.emit("goal_reached");
+      }, 5);
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    // Optional, to stay assignable to the stub it overrides; the executor always
+    // passes a goal, and a call without one is a fault in the test, not in the bot.
+    goto: (goal?: unknown): Promise<void> => {
+      this.calls.push("goto");
+      if (goal === undefined) throw new Error("the fake pathfinder was given no goal");
+      const g = goal as { x: number; y: number; z: number };
+      const strand = this.strandAt;
+      if (strand && g.x === strand[0] && g.y === strand[1] && g.z === strand[2]) {
+        this.strandAt = undefined;
+        // The wave lands the killing blow while the harness sits in its settle
+        // between the failed attempt and the retry.
+        setTimeout(() => this.dieAtTheCheckpoint(), 200);
+        return Promise.reject(new Error("No path to the goal!"));
+      }
+      return gotoUtil(this, goal);
+    },
+  };
+
+  /** An unscripted death, delivered as a server delivers one: the message, the
+   * death, then a fast respawn AT THE CHECKPOINT. */
+  private dieAtTheCheckpoint(): void {
+    this.emit("messagestr", "delve-bot was slain by The Court Watch");
+    this.emit("death");
+    setTimeout(() => {
+      this.entity.position = new FakeVec3(...this.checkpointAt);
+      this.emit("spawn");
+    }, 10);
+  }
+}
+
+test("a wave that kills the bot mid-walk does not crash the harness on the re-approach", async () => {
+  // Reproduces the greyhithe-saltworks rehearsal crash and asserts the two things
+  // that separate a harness fault from a content verdict:
+  //   * NOTHING rejects into the void — a `GoalChanged` on an abandoned trip is an
+  //     expected outcome the navigation owner collects, not a fatal error;
+  //   * the run CONTINUES: both trials still take their scripted death and reach a
+  //     verdict, which is what the stage exists to measure.
+  const bot = new RealGotoCombatBot();
+  // The wave stands off the anchor, so the trade has to walk into melee.
+  bot.seat(1, { distance: 6 });
+  bot.reSeat = { count: 1, distance: 6 };
+  // The bot starts away from the anchor, so the approach is a real hop.
+  bot.entity.position = new FakeVec3(20, 64, 0);
+  // …and the walk into melee is the hop that strands and gets it killed.
+  bot.strandAt = [6, 64, 0];
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+
+  const unhandled: unknown[] = [];
+  const capture = (err: unknown): void => void unhandled.push(err);
+  process.on("unhandledRejection", capture);
+  try {
+    await executor.kill(KILL_STEP);
+    // The rejection lands from a zero timer, so give the loop turns to deliver it.
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 5));
+  } finally {
+    process.off("unhandledRejection", capture);
+  }
+
+  assert.deepEqual(
+    unhandled.map((e) => (e instanceof Error ? `${e.name}: ${e.message}` : String(e))),
+    [],
+    "no pathfinder rejection escaped: an unhandled one here kills the whole run",
+  );
+  // The bot really did walk its hops — otherwise the test proves nothing about the
+  // path it is named for.
+  assert.ok(
+    bot.calls.filter((c) => c === "goto").length >= 3,
+    `the stage walked its hops: ${bot.calls.filter((c) => c === "goto").length}`,
+  );
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 2, "both scripted deaths were still taken");
+  assert.ok(
+    trials.every((t) => t.completed),
+    "and both loops reached a verdict rather than dying with the process",
+  );
+  assert.deepEqual(dieRetryFindings(trials), []);
+});
