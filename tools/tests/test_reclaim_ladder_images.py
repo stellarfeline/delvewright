@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -66,6 +67,10 @@ def emit(lines):
 
 if argv[:1] == ["version"]:
     print("29.0.0")
+elif argv[:1] == ["compose"]:
+    # `docker compose -f <file> --profile '*' config --services`
+    for svc in state.get("services", ["server", "bot", "packtest", "playtest"]):
+        print(svc)
 elif argv[:2] == ["system", "df"]:
     print("Images %d 0B 0B" % len(state["images"]))
 elif argv[:1] == ["images"]:
@@ -142,6 +147,14 @@ FIXTURE = {
         # Compose's default project — where the owner's play session lands.
         {"id": "sha256:ggg", "project": "validation", "service": "bot", "size": 900_000_000,
          "tags": ["validation-bot:latest"]},
+        # Another program's compose project on the same daemon. Its service is
+        # not one this repository's compose file declares.
+        {"id": "sha256:iii", "project": "mimicat", "service": "app", "size": 300_000_000,
+         "tags": ["mimicat-app:latest"]},
+        # A project named like a ladder, but built from a service this repository
+        # does not declare — the second key catching what the first would miss.
+        {"id": "sha256:jjj", "project": "dw-imposter", "service": "app", "size": 300_000_000,
+         "tags": ["dw-imposter-app:latest"]},
         # Pulled, so no compose label: must never be selected at all.
         {"id": "sha256:hhh", "project": "", "service": "", "size": 900_000_000,
          "tags": ["itzg/minecraft-server:java21"]},
@@ -230,6 +243,53 @@ def test_the_default_project_is_swept_only_when_named(sweep):
 
     proc, removed = sweep("--project", "validation", "--apply")
     assert removed == ["validation-bot:latest"], proc.stdout
+
+
+def test_another_program_s_project_on_the_same_daemon_is_out_of_scope(sweep):
+    """The daemon is the creator's, not this repository's."""
+    proc, removed = sweep("--apply")
+    assert "mimicat-app:latest" not in removed
+    assert "mimicat" not in proc.stdout
+
+    # Even asked for by name, the service key still refuses it.
+    proc, removed = sweep("--project", "mimicat", "--apply")
+    assert removed == [], proc.stdout
+    assert "is not one" in proc.stdout
+
+
+def test_a_ladder_named_project_built_from_a_foreign_service_is_kept(sweep):
+    proc, removed = sweep("--apply")
+    assert "dw-imposter-app:latest" not in removed
+    assert "is not one" in proc.stdout
+
+
+def test_the_project_prefix_is_the_one_every_entry_script_uses():
+    """`DW_IMG_PROJECT_PREFIX` is a claim about this repository's own callers, so
+    it is checked against them rather than remembered. The population is every
+    LITERAL project name the entry scripts write down — their `--project dw-<id>`
+    usage lines and the two flows' own defaults — never a placeholder."""
+    prefix = [
+        line.split("=", 1)[1].strip().strip("'")
+        for line in LIB.read_text().splitlines()
+        if line.startswith("DW_IMG_PROJECT_PREFIX=")
+    ]
+    assert len(prefix) == 1
+    prefix = prefix[0]
+
+    literals = []
+    for path in sorted((REPO / "validation").glob("*.sh")):
+        for line in path.read_text().splitlines():
+            # Only lines that are an INVOCATION: prose saying "--project is
+            # REQUIRED" is not a project name, and reading it as one is the
+            # count-that-measures-mentions defect.
+            if ".sh " in line or "docker compose" in line:
+                for match in re.finditer(r"--project[= ]([A-Za-z0-9][A-Za-z0-9_.\-]*)", line):
+                    literals.append((path.name, match.group(1)))
+            for match in re.finditer(r"DW_COMPOSE_PROJECT:-([A-Za-z0-9][^}\"]*)", line):
+                literals.append((path.name, match.group(1)))
+    assert literals, "no entry script writes a project name down — the prefix binds to nothing"
+    for name, literal in literals:
+        assert literal.startswith(prefix), (name, literal)
 
 
 def test_a_pulled_image_carrying_no_compose_label_is_never_selected(sweep):

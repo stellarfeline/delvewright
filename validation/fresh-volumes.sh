@@ -245,8 +245,8 @@ fi
 # is how many images carried this project's label at all; zero is the honest
 # answer for a project that never built one (the PackTest profile pulls a pinned
 # digest and builds nothing), never a pass smuggled in as silence. The byte
-# figure is the summed `.Size` of what went and is an UPPER bound on disk
-# returned — layers shared between images are counted once per image.
+# figure is summed IMAGE SIZE, not disk: every delve image carries the whole itzg
+# base and the daemon stores that once, so the sum counts it per image.
 echo "fresh-volumes: project '$project' verified clean (containers + volumes + networks + images:" \
-  "$DW_IMG_EXAMINED examined, $DW_IMG_REMOVED removed, $(dw_img_human_bytes "$DW_IMG_BYTES") ≤ reclaimed," \
+  "$DW_IMG_EXAMINED examined, $DW_IMG_REMOVED removed, $(dw_img_human_bytes "$DW_IMG_BYTES") of image size," \
   "$DW_IMG_KEPT kept). Build cache is content-addressed and global — no project owns one, so none is pruned."

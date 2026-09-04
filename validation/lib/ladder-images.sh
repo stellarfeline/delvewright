@@ -66,6 +66,26 @@
 # global prune would be the `--all` shape this teardown already deleted once — an
 # operation no caller on a shared host is entitled to. It is left alone, and said.
 #
+# **Another program's compose project.** The daemon is the creator's, not this
+# repository's: the first sweep written here found `mimicat-app:latest`, a
+# project belonging to unrelated software on the same machine, sitting in a
+# population defined as "every compose project with an image". Two independent
+# keys keep this repository's tools inside this repository's objects, and they
+# are independent so that a collision in either one is caught by the other:
+#
+#   * the image's compose SERVICE must be one `validation/compose.yaml` itself
+#     declares, read from compose's own parse of that file
+#     (`docker compose --profile '*' config --services`) rather than a list
+#     anybody has to maintain;
+#   * the PROJECT must be named the way every entry script in this repository
+#     names one — `--project dw-<id>` in `bot-run.sh`, `packtest-run.sh`,
+#     `branch-runs.sh` and `world-save.sh`, `dw-noteflow-$$` / `dw-rehearsal-$$`
+#     in the two host-driven flows — unless the caller names it explicitly.
+#
+# Neither is a substitute for the other and neither is a substitute for the tag
+# rule above: they narrow the POPULATION, and the tag rule decides what inside it
+# may go.
+#
 # **Pulled images.** No compose label, never selected: the pinned toolserver
 # digest, `itzg/minecraft-server`, and every base layer.
 #
@@ -80,12 +100,63 @@
 DW_IMG_LABEL_KEY='com.docker.compose.project'
 DW_IMG_SERVICE_KEY='com.docker.compose.service'
 
+# Where this library sits, so it can find the compose file it derives from.
+dw_img_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DW_IMG_COMPOSE="${DW_IMG_COMPOSE:-$dw_img_lib_dir/../compose.yaml}"
+
+# How every entry script in this repository names a ladder project. It is a
+# claim about THIS repository's callers, checked against them by
+# `tools/tests/test_reclaim_ladder_images.py`, and it exists to keep a sweep from
+# reaching software that merely shares the daemon.
+DW_IMG_PROJECT_PREFIX='dw'
+
 # The compose project a bare `docker compose -f validation/compose.yaml …` lands
 # in (the basename of the compose file's directory). It is a real project like
 # any other and this library treats it as one — but it is also where the OWNER's
 # `owner-play.yaml` session lands, so the sweep requires it to be named
 # explicitly rather than swept by default.
 DW_IMG_DEFAULT_PROJECT='validation'
+
+# The services `validation/compose.yaml` declares, from compose's OWN parse of
+# it — a checker reads a document the way its consumer reads it, and a
+# hand-written list of four names is a second authority that goes stale the first
+# time a service is added. `--profile '*'` is what reaches the profiled ones;
+# `EULA` is supplied only because the file refuses to interpolate without it, and
+# nothing is started. A parse that yields nothing is a REFUSAL: an empty service
+# set would silently make every image foreign and the sweep would reclaim
+# nothing while reporting success.
+DW_IMG_SERVICES=""
+dw_ladder_services() {
+  if [ -z "$DW_IMG_SERVICES" ]; then
+    DW_IMG_SERVICES="$(EULA=enumerate-only docker compose -f "$DW_IMG_COMPOSE" \
+      --profile '*' config --services 2>/dev/null || true)"
+    if [ -z "$DW_IMG_SERVICES" ]; then
+      echo "ladder-images: could not read the services of $DW_IMG_COMPOSE — refusing" >&2
+      echo "  to judge any image foreign on an empty answer." >&2
+      return 1
+    fi
+  fi
+  printf '%s\n' "$DW_IMG_SERVICES"
+}
+
+# Is this image one THIS repository's compose file builds?
+dw_service_is_ladder() {
+  local svc="$1" known
+  [ -n "$svc" ] || return 1
+  known="$(dw_ladder_services)" || return 1
+  case $'\n'"$known"$'\n' in
+    *$'\n'"$svc"$'\n'*) return 0 ;;
+  esac
+  return 1
+}
+
+# Does this project name follow this repository's own ladder convention?
+dw_project_is_ladder() {
+  case "$1" in
+    "$DW_IMG_PROJECT_PREFIX"*) return 0 ;;
+  esac
+  return 1
+}
 
 # Every image the daemon holds that compose stamped for this project, tagged or
 # not. Full ids (`--no-trunc`), so they compare against a container's `.Image`.
@@ -206,6 +277,12 @@ dw_reclaim_project_images() {
         ;;
     esac
 
+    if ! dw_service_is_ladder "$service"; then
+      DW_IMG_KEPT=$((DW_IMG_KEPT + 1))
+      DW_IMG_KEPT_LINES="$DW_IMG_KEPT_LINES  ${tags:-${id#sha256:}}  service '${service:-<none>}' is not one $(basename "$DW_IMG_COMPOSE") declares — another program's project"$'\n'
+      continue
+    fi
+
     if [ -z "$tags" ]; then
       # No tag, so no other claimant: remove by id.
       if [ -n "$dry" ]; then
@@ -279,6 +356,7 @@ dw_project_images_remaining() {
   [ -n "$table" ] || return 0
   while IFS=$'\t' read -r id size service tags; do
     [ -n "$id" ] || continue
+    dw_service_is_ladder "$service" || continue
     if [ -z "$tags" ]; then
       printf '%s  (untagged %s build)\n' "${id#sha256:}" "${service:-?}"
       continue

@@ -34,9 +34,13 @@
 #      are the three classes `fresh-volumes.sh` proves, so a project holding any
 #      of them is mid-run or half-torn-down, and it is skipped with the class
 #      named. This is checked per project, live, at the moment of the sweep.
-#   2. NOT THE DEFAULT PROJECT — a bare `docker compose -f validation/compose.yaml`
-#      with no `-p` lands in `validation`, which is where the OWNER's
-#      `owner-play.yaml` session lands too. It is swept only when named
+#   2. THIS REPOSITORY'S — the project is named the way this repository's entry
+#      scripts name one (`dw…`) and the image's compose service is one
+#      `validation/compose.yaml` declares. The daemon belongs to the creator, not
+#      to this repository: the first sweep written here would have removed
+#      `mimicat-app:latest`, from unrelated software on the same machine.
+#      Compose's default project `validation` is where the OWNER's
+#      `owner-play.yaml` session lands, so it is swept only when named
 #      explicitly with `--project validation`.
 #   3. OWNED NAMES ONLY — an image is removed only if every repository tag on it
 #      is a name that ladder minted (`<project>-<service>:latest` or
@@ -55,10 +59,15 @@
 #
 # ## The figure this prints, and what it is a figure OF
 #
-# Bytes are the summed `.Size` of the images removed. Layers shared between
-# images are counted once per image, so it is an UPPER bound on the disk
-# returned; `docker system df` before and after is the second measurement, and
-# `--apply` prints both so the two can disagree out loud.
+# Bytes are the summed `.Size` of the images removed, and that is a figure of
+# IMAGE SIZE, not of disk. Every delve image carries the whole 863 MB itzg base
+# and every bot image the whole node base; the daemon stores each of those once
+# and `.Size` reports it for each image, so the sum runs an order of magnitude
+# above the disk that comes back (measured here: 165 GB of image size against a
+# daemon holding 11.99 GB in total). It is reported because it is the only
+# per-project figure there is. The DISK figure is `docker system df`, printed
+# before and after under `--apply` — a second measurement whose failure mode is
+# unrelated to the sum, and the two are expected to disagree by that much.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=validation/lib/ladder-images.sh
@@ -118,8 +127,19 @@ docker version >/dev/null 2>&1 || {
 if [ -n "$restrict" ]; then
   projects="$restrict"
 else
-  projects="$(dw_image_projects | grep -vxF "$DW_IMG_DEFAULT_PROJECT" || true)"
+  projects=""
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    [ "$candidate" != "$DW_IMG_DEFAULT_PROJECT" ] || continue
+    dw_project_is_ladder "$candidate" || continue
+    projects="$projects$candidate"$'\n'
+  done <<EOF
+$(dw_image_projects)
+EOF
 fi
+# The service half of the same question is asked per IMAGE, inside the shared
+# rule — a project can only be judged by what it built.
+dw_ladder_services >/dev/null
 
 # One place decides the mode, and the SAFE value is the one a missing flag gives.
 dry="dry"
@@ -185,8 +205,9 @@ verb="would remove"
 [ -z "$apply" ] || verb="removed"
 echo "reclaim-ladder-images: $examined_projects project(s) examined," \
   "$skipped_projects skipped as mid-run, $swept_projects with images;" \
-  "$verb $total_removed image(s), $(dw_img_human_bytes "$total_bytes") (upper bound: shared layers" \
-  "are counted once per image), kept $total_kept."
+  "$verb $total_removed image(s), $(dw_img_human_bytes "$total_bytes") of IMAGE SIZE" \
+  "(not disk — each image's shared base layers are counted in it; see docker system df)," \
+  "kept $total_kept."
 if [ "$examined_projects" -eq 0 ]; then
   echo "reclaim-ladder-images: examined ZERO projects — nothing on this daemon carries" >&2
   echo "  the label '$DW_IMG_LABEL_KEY'. That is a finding if a ladder has ever run here." >&2
