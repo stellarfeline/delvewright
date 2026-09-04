@@ -801,7 +801,10 @@ sconces.
 It matters because a piece that places no light **is** dark, the grammar cannot
 warn about it, and the emitted metadata says `"profile": "unmeasured"` and means
 it: expansion places blocks, not photons. `delve-admit lighting --write`
-(procedure §7) is where the number comes from.
+(procedure §7) is where the number comes from — and a program whose contract
+declares every space `enclosed` is measured there with no sky at all, so the
+figure is exactly the light this program placed. Nothing is borrowed from an
+open air the piece will not be standing in.
 
 ### 10. Arguments
 

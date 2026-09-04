@@ -412,11 +412,16 @@ pub fn check_walk(c: &Campaign, record: Option<&str>) -> (Vec<Diagnostic>, WalkB
 
 /// **`DW0841`** — at the *obtaining an allocation* event.
 ///
-/// The same rule and the same code as [`check_walk`], asked of a campaign that
-/// has no `detail-plan` yet — which is exactly the campaign asking for its first
-/// allocation, and exactly the moment the ordering has to hold. A gate that only
-/// fired once a detail plan existed would fire after the work it guards had
-/// begun.
+/// The same rule and the same code as [`check_walk`], with one difference that is
+/// the whole reason this door exists: [`check_walk`] returns nothing when there is
+/// no `detail-plan`, and this one asks anyway. A campaign with no detail plan is
+/// exactly the campaign asking for its first allocation, and exactly the moment
+/// the ordering has to hold; a gate that only fired once a detail plan existed
+/// would fire after the work it guards had begun.
+///
+/// The absent detail plan is therefore not itself a refusal — it is the state the
+/// walk record is demanded IN. A campaign with a passed, fresh record and no
+/// detail plan is handed its allocation and exits zero.
 #[must_use]
 pub fn allocation_walk_gate(c: &Campaign, record: Option<&str>) -> Option<Diagnostic> {
     walk_gate(

@@ -14,11 +14,12 @@
 //! Block light, sky light, the 1.21.11 emitter table and the opacity table are
 //! [`delvewright_compiler::light`]'s — the same model spec-0010 measures the
 //! *assembled* world with (`DW0210`/`DW0211`). This module contributes the one
-//! thing that model cannot know about a prefab: the piece stands in open air, so
-//! the box handed to [`LightModel::from_blocks_within`] is a cell larger than the
-//! piece on every horizontal side and above it. That ring is absent, therefore
-//! air, therefore sky-open, so daylight enters through the piece's openings from
-//! the side exactly as it does in the game.
+//! thing that model cannot know about a prefab: which sky the piece stands under.
+//! For a piece that stands in open air the box handed to
+//! [`LightModel::from_blocks_within`] is a cell larger than the piece on every
+//! horizontal side and above it. That ring is absent, therefore air, therefore
+//! sky-open, so daylight enters through the piece's openings from the side
+//! exactly as it does in the game.
 //!
 //! A private second copy of the model is what left this probe with **no sky term
 //! at all**, and a sealed-edge box is what made that invisible: a roofed-but-open
@@ -26,24 +27,36 @@
 //! cliff overhang — measured pitch black at exit 0 while being daylit from every
 //! side in the game.
 //!
-//! # The sky the probe assumes, and why the verdict states it
+//! Open air is not, however, a fact about every piece, and hard-writing it here
+//! is the same defect one turn out — a claim about the world a piece will stand
+//! in, made by the instrument rather than by the piece. A piece placed inside a
+//! site plan's box stands under the whole's roof and never meets the sky at all.
+//! [`SkyClaim`] is where that is decided, off the piece's own spatial contract.
+//!
+//! # The sky the probe measures under, and why the verdict states it
 //!
 //! A prefab is authored without a campaign, so nothing tells the probe which hour
 //! the delve is pinned to — and a floor's light is not one number: the middle of
 //! a 7×7 pavilion is bright at noon and black at midnight. Both are true, and a
 //! bare `dark` says neither. So the probe floods the piece at **both ends of the
-//! engine's own sky table** ([`delvewright_compiler::light::effective_sky`], never
-//! a number restated here) and reports both:
+//! sky table the piece admits** ([`SkyClaim::night_sky`] and
+//! [`SkyClaim::daylight_sky`], which read
+//! [`delvewright_compiler::light::effective_sky`] rather than restating a number)
+//! and reports both:
 //!
-//! * the **profile** is taken at the darkest sky the engine models — a clear
-//!   night — which is the state `darkest_effective_sky` bottoms out at and the
-//!   only direction that can never call a genuinely dark interior `lit`;
+//! * the **profile** is taken at the darkest sky this piece can meet — a clear
+//!   night for a piece standing in the open, which is where
+//!   `darkest_effective_sky` bottoms out, and nothing at all for an enclosed one.
+//!   It is the only direction that can never call a genuinely dark interior `lit`;
 //! * the **daylight** minimum is stated beside it, because *"black at night, lit
-//!   by day"* is the sentence an author can act on and `dark` alone is not.
+//!   by day"* is the sentence an author can act on and `dark` alone is not. For an
+//!   enclosed piece there is no brighter hour, and the report says so rather than
+//!   printing the same number twice.
 //!
-//! Both numbers and the sky each was taken at go into the printed report, the
-//! `DW0751` message and the `method` line written into the metadata. A light
-//! level with no sky written beside it cannot be read afterwards.
+//! Both numbers, the sky each was taken at, and *why that was the sky* go into the
+//! printed report, the `DW0751` message and the `method` line written into the
+//! metadata. A light level with no sky written beside it cannot be read
+//! afterwards.
 //!
 //! # What the minimum is taken over, and why it is not the region box
 //!
@@ -94,6 +107,117 @@ use crate::structure::Structure;
 /// compiler's `DW0210` "floor light < 3" rule). Configurable — FLAGGED for owner
 /// review (the lit/dark cutoff is policy, not mechanism).
 pub const DEFAULT_DARK_THRESHOLD: i32 = 3;
+
+/// **Which sky a piece stands under — asked of the piece, never assumed.**
+///
+/// The open-air assumption above is what makes a colonnade measurable, and it is
+/// *false for a whole class of piece*. A `detail-plan` piece is placed inside the
+/// box a site plan gave it: its frame is the play space plus the one floor course
+/// under it (spec-0050 §3), everything above is the whole's, and it is walked
+/// under the whole's roof. Probed as if it stood in open air, an emitterless
+/// detail piece measures the night sky floor at every cell and is written `lit` —
+/// a profile true of no world it will ever be placed in, which is the vacuity
+/// mode `CLAUDE.md` names, and the reason `delve-admit lighting` and `DW0210`
+/// could disagree about one piece.
+///
+/// The piece already answers the question, and the mechanism is spec-0036's: a
+/// space's `envelope` is a claim about its own boundary, and `enclosed` means
+/// nothing of it is open air that no declared opening accounts for. So the sky a
+/// piece is measured under is read off its spatial contract rather than assumed
+/// by this module:
+///
+/// * a contract whose every space is `enclosed` claims no floor of its own stands
+///   under the sky, so it is measured with **no sky at all** and its figure is
+///   its own block light — the quantity an enclosed room's lighting design
+///   actually is;
+/// * any `open` or `open_top` space is a claim that the sky reaches this piece by
+///   design, so the open-air model stands, unchanged;
+/// * **no contract at all** is not a claim either way, so nothing moves: the
+///   open-air model stands there too.
+///
+/// Measured against the content library at `54e0ed1`: **0 of its 36 prefab
+/// documents declare a spatial contract**, so no committed figure moves. The
+/// population this binds to is exactly the one the defect is about — a detail
+/// piece that declares no contract is refused outright (`DW0843`), so every piece
+/// a `detail-plan` row can bind has one.
+///
+/// What this deliberately does NOT do is model the whole's roof. An enclosed
+/// piece measured here stands alone, and the build measures it in the assembly,
+/// where light crosses the frame boundary from whatever the fixture pass hung
+/// next door. The two answer different questions and both are honest: this one is
+/// *what light does this piece bring*, and the build's is *is this room dark in
+/// the world it was placed in*.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkyClaim {
+    /// The piece stands in open air: sky seeds in the ring around and above the
+    /// frame and floods inward through every opening.
+    OpenAir,
+    /// Every space the piece declares is `enclosed`: no sky reaches it.
+    Enclosed,
+}
+
+impl SkyClaim {
+    /// Ask the piece, once.
+    ///
+    /// A contract that declares no space at all is not a claim of enclosure — it
+    /// is a contract with nothing in it — so it answers [`Self::OpenAir`] with
+    /// the contractless pieces.
+    #[must_use]
+    pub fn of(contract: Option<&delvewright_dsl::prefab::SpatialContract>) -> SkyClaim {
+        match contract {
+            Some(c)
+                if !c.spaces.is_empty() && c.spaces.values().all(|s| s.envelope == "enclosed") =>
+            {
+                SkyClaim::Enclosed
+            }
+            _ => SkyClaim::OpenAir,
+        }
+    }
+
+    /// Whether any sky reaches this piece.
+    #[must_use]
+    pub fn admits_sky(self) -> bool {
+        matches!(self, SkyClaim::OpenAir)
+    }
+
+    /// The sky the **profile** is taken at: the darkest this piece can meet.
+    ///
+    /// For an open-air piece that is the engine's own night floor; for an
+    /// enclosed one it is nothing at all, which is darker and is the point.
+    #[must_use]
+    pub fn night_sky(self) -> i32 {
+        match self {
+            SkyClaim::OpenAir => night_sky(),
+            SkyClaim::Enclosed => 0,
+        }
+    }
+
+    /// The sky the **daylight** figure is taken at. An enclosed piece admits no
+    /// sky at noon either, so the two figures coincide there — and they should:
+    /// "black at night, lit by day" is a sentence about a piece the sky reaches.
+    #[must_use]
+    pub fn daylight_sky(self) -> i32 {
+        match self {
+            SkyClaim::OpenAir => daylight_sky(),
+            SkyClaim::Enclosed => 0,
+        }
+    }
+
+    /// Why this piece was measured under that sky, in the words the report and
+    /// the written `method` both print.
+    #[must_use]
+    pub fn why(self) -> &'static str {
+        match self {
+            SkyClaim::OpenAir => {
+                "the piece stands in open air, so sky light enters through its openings"
+            }
+            SkyClaim::Enclosed => {
+                "every space this piece's spatial contract declares is `enclosed`, so no sky \
+                 reaches it and the figure is its own block light"
+            }
+        }
+    }
+}
 
 /// The darkest sky the engine models: a clear night. The profile is taken here,
 /// which is where [`delvewright_compiler::light::darkest_effective_sky`] bottoms
@@ -213,9 +337,10 @@ pub struct LightProbe {
     /// Minimum light over the measured cells **at [`night_sky`]** — the number
     /// the profile is taken from. `None` when nothing bound.
     pub measured_min_light: Option<i32>,
-    /// The same minimum at [`daylight_sky`]. Reported beside the profile so a
-    /// roofed-but-open piece can say "black at night, lit by day" instead of
-    /// leaving a reader to guess which of the two `dark` meant.
+    /// The same minimum at [`SkyClaim::daylight_sky`]. Reported beside the
+    /// profile so a roofed-but-open piece can say "black at night, lit by day"
+    /// instead of leaving a reader to guess which of the two `dark` meant. For an
+    /// enclosed piece it equals the figure above, because no sky reaches either.
     pub min_light_daylight: Option<i32>,
     /// The darkest measured cell at [`night_sky`], in zone coordinates — where to
     /// put a light.
@@ -224,7 +349,13 @@ pub struct LightProbe {
     pub profile: &'static str,
     /// The threshold used.
     pub dark_threshold: i32,
-    /// The effective sky level the profile was taken at ([`night_sky`]).
+    /// **Which sky this piece claimed to stand under**, which is what decided the
+    /// two sky levels below. Kept beside the figures because a light level whose
+    /// sky is not written next to it cannot be read afterwards, and a figure
+    /// taken under the wrong sky is worse than none.
+    pub sky: SkyClaim,
+    /// The effective sky level the profile was taken at
+    /// ([`SkyClaim::night_sky`]).
     pub sky_light: i32,
     /// The effective sky level [`Self::min_light_daylight`] was taken at.
     pub daylight_sky_light: i32,
@@ -272,9 +403,14 @@ impl LightProbe {
 
 /// Run the engine's light flood over `zone` at both ends of the sky table and
 /// take the minimum over player space.
-pub fn probe(zone: &Zone, dark_threshold: i32) -> LightProbe {
+///
+/// `sky` is the piece's own claim about which sky it stands under
+/// ([`SkyClaim::of`]), passed rather than defaulted: a caller that does not state
+/// it is a caller measuring a piece under a sky nobody asked about, which is the
+/// defect this argument exists to end.
+pub fn probe(zone: &Zone, dark_threshold: i32, sky: SkyClaim) -> LightProbe {
     let model = light_model(zone);
-    let (sky_light, daylight) = (night_sky(), daylight_sky());
+    let (sky_light, daylight) = (sky.night_sky(), sky.daylight_sky());
     let night_field = model.flood(sky_light as u8);
     let day_field = model.flood(daylight as u8);
 
@@ -309,6 +445,7 @@ pub fn probe(zone: &Zone, dark_threshold: i32) -> LightProbe {
         darkest_cell: darkest,
         profile,
         dark_threshold,
+        sky,
         sky_light,
         daylight_sky_light: daylight,
         standable_cells: standable.len(),
@@ -317,7 +454,7 @@ pub fn probe(zone: &Zone, dark_threshold: i32) -> LightProbe {
     }
 }
 
-/// The zone as the compiler's light model, **standing in open air**.
+/// The zone as the compiler's light model, in a box that lets sky in.
 ///
 /// The stated box is a cell larger than the piece on ±x, ±z and above it. Those
 /// cells are absent, therefore air, therefore sky-open — so the sky seeds there
@@ -325,6 +462,11 @@ pub fn probe(zone: &Zone, dark_threshold: i32) -> LightProbe {
 /// colonnade is lit in the game and the only way a probe can see it. Inferring
 /// the box from the piece's own cells instead treats every opening as a sealed
 /// edge, and a building with a roof over it can then only measure zero.
+///
+/// The box is the same for an enclosed piece; what changes there is the sky
+/// LEVEL, which [`SkyClaim`] takes to zero. Sealing the box instead would make
+/// the choice a geometry change and lose the one thing the two cases must share
+/// — that a cell's block light is measured by exactly the same flood.
 ///
 /// Nothing is added below the piece: what is under a prefab is the ground it
 /// sits on, and no sky arrives from underneath.
