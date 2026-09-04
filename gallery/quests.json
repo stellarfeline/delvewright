@@ -864,22 +864,22 @@
         "id": "quest/far-hall",
         "objectives": [
           {
-            "id": "obj/answer-the-marshal",
-            "type": "talk-to",
-            "npc": "npc/marshal",
-            "title": "Answer the Marshal",
-            "hint": "She is at the muster line, and she wants the lectern accounted for.",
             "after": [],
-            "requires_flags": [],
             "forbids_flags": [
               "flag/hall-sealed"
             ],
-            "stealth": false,
             "happening": {
               "subject": "npc/marshal",
-              "verb": "arrives",
-              "text": "The Marshal stops the party at the muster line and asks after the lectern."
-            }
+              "text": "The Marshal stops the party at the muster line and asks after the lectern.",
+              "verb": "arrives"
+            },
+            "hint": "She is at the muster line, and she wants the lectern accounted for.",
+            "id": "obj/answer-the-marshal",
+            "npc": "npc/marshal",
+            "requires_flags": [],
+            "stealth": false,
+            "title": "Answer the Marshal",
+            "type": "talk-to"
           },
           {
             "after": [],
