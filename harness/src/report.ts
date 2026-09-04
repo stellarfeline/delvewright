@@ -140,6 +140,11 @@ export class RunReport {
   private readonly assists: AssistWindow[] = [];
   private readonly trials: DeathTrial[] = [];
   private readonly floor: string[] = [];
+  /** Bodies that outlived the melee budget their encounter's arithmetic gave
+   * them. A separate channel from {@link floor}: the floor gate is about a
+   * fight being too EASY for its billing, this is about a body not dying at
+   * all, and folding them together would make each read as the other. */
+  private readonly unkillable: string[] = [];
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
   private readonly namedEntityDeaths: ClassifiedDeath[] = [];
@@ -197,6 +202,11 @@ export class RunReport {
 
   recordFloorFinding(finding: string): void {
     this.floor.push(finding);
+  }
+
+  /** A body that did not fall inside its encounter's own melee budget. */
+  recordUnkillableFinding(finding: string): void {
+    this.unkillable.push(finding);
   }
 
   recordEncounters(entries: readonly EncounterReport[]): void {
@@ -300,7 +310,11 @@ export class RunReport {
 
   /** Every advisory the run produced, for the one-line stderr summary. */
   findings(): string[] {
-    return [...this.floor, ...[...this.stages.values()].flatMap((s) => [...s.findings])];
+    return [
+      ...this.floor,
+      ...this.unkillable,
+      ...[...this.stages.values()].flatMap((s) => [...s.findings]),
+    ];
   }
 
   toJSON(): Record<string, unknown> {
@@ -586,6 +600,7 @@ export class RunReport {
         aborted_with: t.abortedWith ?? null,
       })),
       floor_findings: [...this.floor],
+      unkillable_findings: [...this.unkillable],
     };
   }
 }

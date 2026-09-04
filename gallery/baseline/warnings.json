@@ -166,6 +166,11 @@
       "stage": "quests"
     },
     {
+      "code": "DW0475",
+      "pointer": "/content/waves",
+      "stage": "quests"
+    },
+    {
       "code": "DW0477",
       "pointer": "/content/waves/1/tier",
       "stage": "quests"
@@ -340,6 +345,11 @@
     {
       "code": "DW0453",
       "pointer": "/content/actors/1",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0475",
+      "pointer": "/content/waves",
       "stage": "quests"
     },
     {
@@ -525,6 +535,11 @@
       "stage": "quests"
     },
     {
+      "code": "DW0475",
+      "pointer": "/content/waves",
+      "stage": "quests"
+    },
+    {
       "code": "DW0477",
       "pointer": "/content/waves/1/tier",
       "stage": "quests"
@@ -702,6 +717,11 @@
       "stage": "quests"
     },
     {
+      "code": "DW0475",
+      "pointer": "/content/waves",
+      "stage": "quests"
+    },
+    {
       "code": "DW0477",
       "pointer": "/content/waves/1/tier",
       "stage": "quests"
@@ -876,6 +896,11 @@
     {
       "code": "DW0453",
       "pointer": "/content/actors/1",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0475",
+      "pointer": "/content/waves",
       "stage": "quests"
     },
     {
@@ -1100,6 +1125,11 @@
     {
       "code": "DW0453",
       "pointer": "/content/actors/1",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0475",
+      "pointer": "/content/waves",
       "stage": "quests"
     },
     {
