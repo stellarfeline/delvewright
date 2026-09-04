@@ -1,8 +1,0 @@
-{
-  "code": "DW0141",
-  "units": [
-    "Role::vendor",
-    "Role::boss"
-  ],
-  "why": "`vendor` and `boss` are declared in the schema and implemented at no version. Raising `dsl_version` does not enable them — the refusal says so in as many words. Use `quest-giver` or `flavor`."
-}

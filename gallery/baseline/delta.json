@@ -1,7 +1,17 @@
 {
   "added": [],
-  "base_commit": "f4780559713124eaca0204c0fb29c21f2c9cf4f8",
-  "changed": [],
-  "classes": {},
+  "base_commit": "fe068c90c4f8f3346bdce6bcda3d8e5a52f2e734",
+  "changed": [
+    "easy.en:server/README.md",
+    "hard.en:server/README.md",
+    "ocean-horizon.en:server/README.md",
+    "primary.en:server/README.md",
+    "primary.zh-cn:server/README.md",
+    "site-plan.en:server/README.md",
+    "void-horizon.en:server/README.md"
+  ],
+  "classes": {
+    "server config": 7
+  },
   "removed": []
 }

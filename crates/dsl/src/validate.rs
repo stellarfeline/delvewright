@@ -1870,23 +1870,8 @@ fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
 fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // The v0.3 verbs (`kill`/`collect`/`interact`, `give-item`/`set-flag`/
     // `spawn-wave`) are implemented under dsl_version 0.3.0 and reserved under
-    // 0.2.0. NPC roles `vendor`/`boss` remain reserved in both.
+    // 0.2.0.
     let v03 = is_v03(c.quests.dsl_version.as_str());
-
-    for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-        if let Some(name) = npc.role.reserved() {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "npcs",
-                format!("/content/npcs/{i}/role"),
-                format!(
-                    "npc role `{name}` is reserved and not implemented in v0 — use role \
-                     `quest-giver` or `flavor`. Do NOT raise `dsl_version` to try to enable it: \
-                     `vendor`/`boss` are not implemented at any version yet"
-                ),
-            ));
-        }
-    }
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         for (j, obj) in q.objectives.iter().enumerate() {
             if let Some(name) = obj.v03_verb()
