@@ -70,7 +70,9 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import gallery_domain  # noqa: E402
+from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gallery_units import Binder, Enumerator, stage_files  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -80,25 +82,6 @@ GALLERY = REPO / "gallery"
 def die(msg: str) -> "None":
     print(f"error: {msg}", file=sys.stderr)
     raise SystemExit(1)
-
-
-def find_delvec(explicit: str | None) -> Path:
-    if explicit:
-        p = Path(explicit)
-        if not p.is_file():
-            die(f"--delvec `{p}` is not a file")
-        return p
-    for rel in ("target/release/delvec", "target/debug/delvec"):
-        p = REPO / rel
-        if p.is_file():
-            return p
-    die(
-        "no delvec binary found. The unit set is derived from the compiler in "
-        "THIS tree and from nothing else, so there is no fallback: build one "
-        "with `cargo build -p delvec --bin delvec` (add `--release` for speed) "
-        "or pass --delvec."
-    )
-    raise AssertionError("unreachable")
 
 
 def schema_export(delvec: Path) -> dict:
@@ -332,7 +315,7 @@ def main() -> int:
     ap.add_argument("--index", help="write the reader-facing element index here (Markdown)")
     args = ap.parse_args()
 
-    delvec = find_delvec(args.delvec)
+    delvec = resolve_delvec(args.delvec, repo=REPO, caller="check-gallery-coverage")
     prefabs = Path(args.prefabs)
     if not prefabs.is_dir():
         die(

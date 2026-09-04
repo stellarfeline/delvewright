@@ -222,7 +222,9 @@ def test_zero_units_is_refused_not_passed(tmp_path, monkeypatch, capsys):
     """A gate that enumerated nothing must fail loudly, not pass universally."""
     mod = _load_checker()
     monkeypatch.setattr(mod, "schema_export", lambda _d: {})
-    monkeypatch.setattr(mod, "find_delvec", lambda _e: pathlib.Path("/nonexistent/delvec"))
+    monkeypatch.setattr(
+        mod, "resolve_delvec", lambda *_a, **_k: pathlib.Path("/nonexistent/delvec")
+    )
     prefabs = tmp_path / "prefabs"
     prefabs.mkdir()
     monkeypatch.setattr(sys, "argv", ["check", "--prefabs", str(prefabs)])
@@ -369,7 +371,11 @@ def test_a_demonstration_discharges_nothing_and_the_verdict_says_so(tmp_path, mo
         report = root / "report.json"
         monkeypatch.setattr(mod, "GALLERY", gallery)
         monkeypatch.setattr(mod, "schema_export", lambda _d: export)
-        monkeypatch.setattr(mod, "find_delvec", lambda _e: pathlib.Path("/nonexistent/delvec"))
+        monkeypatch.setattr(
+            mod,
+            "resolve_delvec",
+            lambda *_a, **_k: pathlib.Path("/nonexistent/delvec"),
+        )
         monkeypatch.setattr(mod, "run_probe", lambda *_a: (1, ["DW9999"], "validate"))
         monkeypatch.setattr(
             sys, "argv", ["check", "--prefabs", str(prefabs), "--report", str(report)]

@@ -65,6 +65,8 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gallery_domain import GALLERY, materialise, overlays  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -149,14 +151,12 @@ def covers(chunks: list[list[int]], lo: list[int], hi: list[int]) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--delvec", default=str(REPO / "target/release/delvec"))
+    ap.add_argument("--delvec", help="the `delvec` this tool runs. Default: `target/release/delvec` then `target/debug/delvec` in this tree — resolved, NAMED on stderr, and refused when it is older than the compiler sources it was built from (`tools/lib/delvec_bin.py`).")
     ap.add_argument("--prefabs", required=True)
     ap.add_argument("--work", help="scratch dir (default: a temp dir, removed)")
     args = ap.parse_args()
 
-    delvec = Path(args.delvec)
-    if not delvec.is_file():
-        die(f"no delvec at `{delvec}`")
+    delvec = resolve_delvec(args.delvec, repo=REPO, caller="check-whole-map-render")
 
     bases = declared_bases(delvec)
     found = points_by_base()
