@@ -609,6 +609,8 @@ export class RunReport {
                 carried_over: t.reengage.carriedOver,
                 health_readable: t.reengage.healthReadable,
                 damaged: t.reengage.damaged,
+                // The count half's correction, stated beside the count it corrects.
+                credited: t.reengage.credited,
                 nearest_blocks: t.reengage.nearest ?? null,
                 farthest_blocks: t.reengage.farthest ?? null,
                 settle_ms: t.reengage.settleMs,

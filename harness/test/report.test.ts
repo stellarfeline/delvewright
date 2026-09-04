@@ -464,6 +464,7 @@ test("a die-retry entry publishes what the settled re-engage probe saw", () => {
         carriedOver: 0,
         healthReadable: 3,
         damaged: 0,
+        credited: 2,
         nearest: 12.5,
         farthest: 61.25,
         settleMs: 750,
@@ -475,6 +476,7 @@ test("a die-retry entry publishes what the settled re-engage probe saw", () => {
   assert.equal(json["die_retry"][0]!["reseats_on_rest"], true);
   assert.equal(re["present"], 3);
   assert.equal(re["carried_over"], 0);
+  assert.equal(re["credited"], 2, "the correction the count half was judged against");
   assert.equal(re["farthest_blocks"], 61.25, "how far a feral mob strayed is evidence");
   assert.equal(re["settle_ms"], 750);
 });

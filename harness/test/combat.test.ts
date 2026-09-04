@@ -23,6 +23,7 @@ import {
   CombatPlanParseError,
   parseCombatPlan,
   reseatFidelityFinding,
+  reseatFidelityUnjudged,
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
@@ -551,6 +552,48 @@ test("a short re-seat names the observed and declared counts", () => {
 test("a whole but wounded re-seat is red on health alone", () => {
   const obs = observationOf(census([mob({ health: 11 }), mob()]), 2, [...ANCHOR], 40);
   assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /BELOW full/);
+});
+
+// The gallery's own die-retry death 1, reproduced: the return leg is assisted and
+// the bot DEFENDS itself on it — `[defend] die-retry return wave/muster …:
+// zombie#63 is down` — so the settle that follows counted 2 of a cohort of 3 that
+// had come back whole, and the stage reported the bot's own kill as a short
+// re-seat. `credited` is the server's count of this wave's deaths since its
+// seating, which is exactly the correction, and is a thing the defect this check
+// exists to catch cannot produce.
+test("a body the party felled since the re-seat is not a body the re-seat withheld", () => {
+  const obs = observationOf(census([mob(), mob()], { credited: 1 }), 3, [...ANCHOR], 6_000);
+  assert.equal(obs.credited, 1);
+  assert.equal(reseatFidelityFinding("wave/x", 1, "first-contact", obs), undefined);
+});
+
+test("a genuinely short re-seat still reds when nothing was credited", () => {
+  const obs = observationOf(census([mob(), mob()]), 3, [...ANCHOR], 6_000);
+  assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /came back SHORT/);
+});
+
+test("credit corrects the count, it does not cover a shortfall it cannot reach", () => {
+  // One felled on the way back, and the cohort is STILL one short of three.
+  const obs = observationOf(census([mob()], { credited: 1 }), 3, [...ANCHOR], 6_000);
+  assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /came back SHORT/);
+});
+
+test("the health half is UNJUDGED, by name, over a cohort the party has fought", () => {
+  const obs = observationOf(census([mob({ health: 11 }), mob()], { credited: 1 }), 3, [...ANCHOR], 40);
+  assert.equal(
+    reseatFidelityFinding("wave/x", 1, "first-contact", obs),
+    undefined,
+    "not a failure: the wound may be the bot's own",
+  );
+  const gap = reseatFidelityUnjudged("wave/x", 1, "first-contact", obs);
+  assert.match(String(gap), /UNJUDGED/);
+  assert.match(String(gap), /credited with 1 of this wave since it was re-seated/);
+});
+
+test("an untouched cohort's health half is judged, and its gap is silent", () => {
+  const obs = observationOf(census([mob({ health: 11 }), mob()]), 2, [...ANCHOR], 40);
+  assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /BELOW full/);
+  assert.equal(reseatFidelityUnjudged("wave/x", 1, "first-contact", obs), undefined);
 });
 
 test("only a re-seating wave owes fidelity — a persisting wave is judged by outcome alone", () => {

@@ -1190,6 +1190,20 @@ export interface ReengageObservation {
    * view, which is never sent an unmodified max health at all. */
   readonly healthReadable: number;
   readonly damaged: number;
+  /**
+   * Deaths of this wave the party was credited with SINCE ITS SEATING — the
+   * census's own last total, zeroed by `spawn_<wave>` and therefore zeroed by
+   * every re-seat.
+   *
+   * It is here because the walk back is not a walk. The return leg is assisted
+   * and the bot DEFENDS itself on it: a re-seated mob that hits the bot twice
+   * within four blocks is put down before the leg resumes
+   * (`[defend] die-retry return …: zombie#63 is down`), and the settle that
+   * follows then counts one body fewer. Without this field the fidelity verdict
+   * cannot tell "the re-seat came back short" from "I killed one of them on my
+   * way to look", and it reported the second as the first.
+   */
+  readonly credited: number;
   /** Distance spread from the encounter anchor, for the wandered-mob case. */
   readonly nearest: number | undefined;
   readonly farthest: number | undefined;
@@ -1222,6 +1236,7 @@ export function observationOf(
     carriedOver: census.summary.branded,
     healthReadable: census.mobs.length,
     damaged: census.summary.damaged,
+    credited: census.summary.credited,
     nearest: distances.length > 0 ? Math.min(...distances) : undefined,
     farthest: distances.length > 0 ? Math.max(...distances) : undefined,
     settleMs,
@@ -1252,19 +1267,59 @@ export function reseatFidelityFinding(
       `grinds it down one swing per death.`
     );
   }
-  if (obs.present < obs.declared) {
+  // The shortfall is measured against what the wave BROUGHT BACK, not against
+  // what is left standing when the probe finally looks: a body the party was
+  // credited with since the seating is a body the re-seat did produce and the
+  // bot then felled on its own assisted way back. The correction can only ever
+  // be supplied by a kill vanilla actually credited, which is exactly what a
+  // genuinely short re-seat cannot produce — a cohort that came back two-strong
+  // has no third death to its name and still reds here.
+  if (obs.present + obs.credited < obs.declared) {
     return (
-      `${where}: the re-seated wave came back SHORT — ${obs.present} mob(s) standing, ` +
+      `${where}: the re-seated wave came back SHORT — ${obs.present} mob(s) standing` +
+      `${obs.credited > 0 ? ` and ${obs.credited} felled by the party since the re-seat` : ""}, ` +
       `${obs.declared} declared. A retry must face the fight the first life faced.`
     );
   }
-  if (obs.damaged > 0) {
+  // The health half takes the same confound and has NO exact correction: the
+  // census counts credited DEATHS, never blows landed, so a mob the bot traded
+  // with on the way back and left standing is indistinguishable from one the
+  // re-seat brought back wounded. Judged only over a cohort the party has not
+  // touched since its seating; otherwise the reading is declared unjudged by
+  // name (see {@link reseatFidelityUnjudged}) rather than passed in silence.
+  if (obs.damaged > 0 && obs.credited === 0) {
     return (
       `${where}: ${obs.damaged} of the ${obs.healthReadable} wave mob(s) whose health could ` +
       `be read came back BELOW full. The player respawns whole; so must the wave.`
     );
   }
   return undefined;
+}
+
+/**
+ * Why this trial's HEALTH half proved nothing, or `undefined` when it proved
+ * something.
+ *
+ * A gap, never a failure: the encounter is not at fault and the bot is not
+ * either — the return leg defends itself, and a cohort the party has traded
+ * blows with since its seating cannot be read for the wounds the RE-SEAT left.
+ * It is stated so that a stage which judged no health reading is never mistaken
+ * for one that judged them all and found them whole.
+ */
+export function reseatFidelityUnjudged(
+  wave: string,
+  attempt: number,
+  phase: DeathPhase,
+  obs: ReengageObservation,
+): string | undefined {
+  if (obs.credited === 0) return undefined;
+  return (
+    `${wave} death ${attempt} (${phase}): re-seat health fidelity UNJUDGED — the party was ` +
+    `credited with ${obs.credited} of this wave since it was re-seated (the return leg ` +
+    `defends itself), so ${obs.damaged} of ${obs.healthReadable} readable mob(s) standing ` +
+    `below full health says nothing about what the re-seat brought back. The count half was ` +
+    `still judged, corrected by those ${obs.credited}.`
+  );
 }
 
 /** One scripted death and everything proved about the loop it opened. */
@@ -1552,6 +1607,17 @@ export function checkpointPrecondition(
 /** Every finding across a stage's trials, in order. */
 export function dieRetryFindings(trials: readonly DeathTrial[]): string[] {
   return trials.map(trialVerdict).filter((v): v is string => v !== undefined);
+}
+
+/**
+ * Every re-seat reading this stage could NOT judge, in order — advisories, never
+ * failures. Empty when every re-seating trial's health half was judged.
+ */
+export function dieRetryFidelityGaps(trials: readonly DeathTrial[]): string[] {
+  return trials
+    .filter((t) => t.reseats && t.outcome === "re-engaged" && t.reengage !== undefined)
+    .map((t) => reseatFidelityUnjudged(t.wave, t.attempt, t.phase, t.reengage!))
+    .filter((v): v is string => v !== undefined);
 }
 
 /**

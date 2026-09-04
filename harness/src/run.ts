@@ -24,6 +24,7 @@ import {
   assistPolicy,
   dieRetryBinding,
   dieRetryCoverageFailures,
+  dieRetryFidelityGaps,
   dieRetryFindings,
   loadCombatPlanForCriticalPath,
 } from "./combat.ts";
@@ -645,6 +646,10 @@ async function main(): Promise<number> {
           // restart, which is a content staging fact the compiler's retry-cost and
             // checkpoint rules judge, not this stage.
             ...executor.dieRetryPreconditionAdvisories(),
+            // …and every re-seat reading the return leg's own defence confounded.
+            // Named here so a stage that judged no health reading can never be
+            // read as one that judged them all and found the wave whole.
+            ...dieRetryFidelityGaps(trials),
           ]
         : [
             combatPlan === undefined
