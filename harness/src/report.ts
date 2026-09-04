@@ -22,6 +22,7 @@ import type {
   DieRetryBinding,
   EncounterPhase,
   EncounterTier,
+  FightAttribution,
   FloorLedger,
   PerformedRest,
 } from "./combat.ts";
@@ -68,6 +69,18 @@ export interface EncounterReport {
   readonly assistPolicy: "assisted" | "unassisted-first";
   readonly phaseReached: EncounterPhase;
   readonly assistWindows: number;
+  /**
+   * Who felled this encounter's bodies, as the compiler's census answered.
+   *
+   * `phase_reached: cleared` says the step ended; it has never said who ended it.
+   * A delve is full of things that kill a mob with no bot in them, and the
+   * engine's own gallery seats `wave/muster` within a stride of a lethal volume
+   * and a drop — so an encounter can read `cleared` over a cohort the bot barely
+   * touched. This is the evidence that separates the two, and `unattributed` (with
+   * its reason) is a legitimate value: no census answered is a fact about the
+   * probe, and it must not be readable as a clean win.
+   */
+  readonly attribution: FightAttribution;
 }
 
 /**
@@ -401,6 +414,15 @@ export class RunReport {
         assist_policy: e.assistPolicy,
         phase_reached: e.phaseReached,
         assist_windows: e.assistWindows,
+        attribution:
+          e.attribution.kind === "measured"
+            ? {
+                bodies: e.attribution.bodies,
+                standing: e.attribution.standing,
+                credited: e.attribution.credited,
+                uncredited: e.attribution.uncredited,
+              }
+            : { unattributed: e.attribution.reason },
       })),
       // spec-0023 §3: "the run artifact names every assist window (encounter id,
       // ticks)". Loudly, and including any the harness failed to close.
@@ -587,6 +609,8 @@ export class RunReport {
                 carried_over: t.reengage.carriedOver,
                 health_readable: t.reengage.healthReadable,
                 damaged: t.reengage.damaged,
+                // The count half's correction, stated beside the count it corrects.
+                credited: t.reengage.credited,
                 nearest_blocks: t.reengage.nearest ?? null,
                 farthest_blocks: t.reengage.farthest ?? null,
                 settle_ms: t.reengage.settleMs,

@@ -24,10 +24,12 @@ import {
   CombatPlanParseError,
   parseCombatPlan,
   reseatFidelityFinding,
+  reseatFidelityUnjudged,
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
   trialVerdict,
+  waveAttribution,
   type DeathTrial,
   type Encounter,
 } from "../src/combat.ts";
@@ -215,7 +217,11 @@ test("an assist window the harness never closed is reported, not swallowed", () 
 // --- the inverted floor gate ------------------------------------------------
 
 test("an elite the unassisted bot beats first try is a floor finding", () => {
-  const finding = floorFinding(encounter({ tier: "elite" }), { attempted: true, won: true });
+  const finding = floorFinding(
+    encounter({ tier: "elite" }),
+    { attempted: true, won: true },
+    waveAttribution(2, 0, 2),
+  );
   assert.ok(finding);
   assert.match(finding, /billed `elite`/);
   assert.match(finding, /Advisory/);
@@ -223,13 +229,67 @@ test("an elite the unassisted bot beats first try is a floor finding", () => {
 
 test("an elite the unassisted bot LOSES to says nothing", () => {
   assert.equal(
-    floorFinding(encounter({ tier: "boss" }), { attempted: true, won: false }),
+    floorFinding(
+      encounter({ tier: "boss" }),
+      { attempted: true, won: false },
+      waveAttribution(2, 2, 0),
+    ),
     undefined,
   );
 });
 
 test("an ordinary encounter carries no floor expectation however easily it falls", () => {
-  assert.equal(floorFinding(encounter(), { attempted: true, won: true }), undefined);
+  assert.equal(
+    floorFinding(encounter(), { attempted: true, won: true }, waveAttribution(2, 0, 2)),
+    undefined,
+  );
+});
+
+// **The defect.** The gallery seats `wave/muster`'s three bodies within a stride
+// of `lethal/east-pit` and a drop. On the ladder run that measured this, one
+// withered, one fell, the bot felled the third — and the gate advised the author
+// to make an `elite` HARDER because the unassisted bot had "beaten it cold".
+test("a cohort the world mostly killed is not a fight the bot beat", () => {
+  const finding = floorFinding(
+    encounter({ tier: "elite", count: 3 }),
+    { attempted: true, won: true },
+    waveAttribution(3, 0, 1),
+  );
+  assert.ok(finding, "the encounter is still worth the author's attention");
+  assert.match(finding, /2 of its 3 bodies died with NO player credited/);
+  assert.match(finding, /does not measure the fight/);
+  assert.doesNotMatch(finding, /Advisory: raise the stack/);
+});
+
+// The step can END without the wave being down: with nothing eligible left to
+// attack it returns having SAID the census still counts mobs alive, and
+// `attemptUnassisted` reads that as `won`. Nothing fell, so nothing was credited,
+// and the gate must not advise on it.
+test("an encounter cleared with the party credited for nothing draws no advisory", () => {
+  const finding = floorFinding(
+    encounter({ tier: "boss", count: 2 }),
+    { attempted: true, won: true },
+    waveAttribution(2, 2, 0),
+  );
+  assert.match(String(finding), /credited with none of its 2 bodies/);
+  assert.doesNotMatch(String(finding), /Advisory: raise the stack/);
+});
+
+test("an attempt no census could attribute says so instead of claiming a clean win", () => {
+  const finding = floorFinding(encounter({ tier: "elite" }), { attempted: true, won: true }, {
+    kind: "unattributed",
+    reason: "no wave census answered during the unassisted attempt",
+  });
+  assert.match(String(finding), /cannot say who felled it/);
+  assert.match(String(finding), /no wave census answered/);
+});
+
+test("the attribution floors at zero rather than reporting a negative body count", () => {
+  // The three numbers are read at slightly different instants; a body dying
+  // between them must not produce -1 uncredited.
+  const a = waveAttribution(3, 1, 3);
+  assert.equal(a.kind, "measured");
+  assert.equal(a.kind === "measured" ? a.uncredited : -1, 0);
 });
 
 // --- die-retry (spec-0023 §1) -----------------------------------------------
@@ -455,7 +515,7 @@ function mob(over: Partial<{ distance: number; health: number; maxHealth: number
 /** A settled census: the server's totals plus the mob lines that closed it. */
 function census(
   mobs: ReturnType<typeof mob>[],
-  over: Partial<{ present: number; branded: number; damaged: number }> = {},
+  over: Partial<{ present: number; branded: number; damaged: number; credited: number }> = {},
 ) {
   return {
     summary: {
@@ -465,6 +525,7 @@ function census(
       present: over.present ?? mobs.length,
       branded: over.branded ?? 0,
       damaged: over.damaged ?? mobs.filter((m) => m.health < m.maxHealth).length,
+      credited: over.credited ?? 0,
     },
     mobs,
   };
@@ -519,6 +580,48 @@ test("a short re-seat names the observed and declared counts", () => {
 test("a whole but wounded re-seat is red on health alone", () => {
   const obs = observationOf(census([mob({ health: 11 }), mob()]), 2, [...ANCHOR], 40);
   assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /BELOW full/);
+});
+
+// The gallery's own die-retry death 1, reproduced: the return leg is assisted and
+// the bot DEFENDS itself on it — `[defend] die-retry return wave/muster …:
+// zombie#63 is down` — so the settle that follows counted 2 of a cohort of 3 that
+// had come back whole, and the stage reported the bot's own kill as a short
+// re-seat. `credited` is the server's count of this wave's deaths since its
+// seating, which is exactly the correction, and is a thing the defect this check
+// exists to catch cannot produce.
+test("a body the party felled since the re-seat is not a body the re-seat withheld", () => {
+  const obs = observationOf(census([mob(), mob()], { credited: 1 }), 3, [...ANCHOR], 6_000);
+  assert.equal(obs.credited, 1);
+  assert.equal(reseatFidelityFinding("wave/x", 1, "first-contact", obs), undefined);
+});
+
+test("a genuinely short re-seat still reds when nothing was credited", () => {
+  const obs = observationOf(census([mob(), mob()]), 3, [...ANCHOR], 6_000);
+  assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /came back SHORT/);
+});
+
+test("credit corrects the count, it does not cover a shortfall it cannot reach", () => {
+  // One felled on the way back, and the cohort is STILL one short of three.
+  const obs = observationOf(census([mob()], { credited: 1 }), 3, [...ANCHOR], 6_000);
+  assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /came back SHORT/);
+});
+
+test("the health half is UNJUDGED, by name, over a cohort the party has fought", () => {
+  const obs = observationOf(census([mob({ health: 11 }), mob()], { credited: 1 }), 3, [...ANCHOR], 40);
+  assert.equal(
+    reseatFidelityFinding("wave/x", 1, "first-contact", obs),
+    undefined,
+    "not a failure: the wound may be the bot's own",
+  );
+  const gap = reseatFidelityUnjudged("wave/x", 1, "first-contact", obs);
+  assert.match(String(gap), /UNJUDGED/);
+  assert.match(String(gap), /credited with 1 of this wave since it was re-seated/);
+});
+
+test("an untouched cohort's health half is judged, and its gap is silent", () => {
+  const obs = observationOf(census([mob({ health: 11 }), mob()]), 2, [...ANCHOR], 40);
+  assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /BELOW full/);
+  assert.equal(reseatFidelityUnjudged("wave/x", 1, "first-contact", obs), undefined);
 });
 
 test("only a re-seating wave owes fidelity — a persisting wave is judged by outcome alone", () => {

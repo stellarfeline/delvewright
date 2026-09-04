@@ -2800,6 +2800,25 @@ fn emit_functions(
             plan::WAVE_OBJECTIVE
         ));
     }
+    // The credited-kill ledger, one holder per wave that gets machinery
+    // ([`wave_credited_holder`]). Seeded here rather than left to `spawn_<wave>`
+    // because the census RENDERS it as a `score` component: a holder with no
+    // score renders as the empty string, which would put two spaces in the middle
+    // of an anchored line the harness matches whole — a census that silently
+    // stops parsing, which reads to the ladder as "the census did not answer".
+    // Every other read of a wave holder is a guarded `execute if score`, where
+    // absence is a legitimate false; a `tellraw` has no such guard, so the holder
+    // must exist from world init. Empty for a campaign with no waves, so v0.2
+    // setup is byte-identical.
+    for w in &c.quests.content.waves {
+        if !wave_placements.contains_key(w.id.as_str()) {
+            continue;
+        }
+        setup.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_credited_holder(w.id.as_str())
+        ));
+    }
     for flag in declared_flags(c) {
         setup.push(format!(
             "scoreboard objectives add {} dummy",
@@ -4223,6 +4242,14 @@ fn emit_functions(
             plan::WAVE_OBJECTIVE,
             plan::wave_total(w)
         ));
+        // A fresh seating starts a fresh attribution ([`wave_credited_holder`]):
+        // the credited-kill ledger is about THIS cohort, so a re-seat's own
+        // `kill @e[tag=…]` sweep — which credits nobody — must not be carried into
+        // the count of what the party felled afterwards.
+        body.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_credited_holder(w.id.as_str())
+        ));
         // spec-0016 §6: a lane wave spawns as a Raider PATROL SQUAD — one leader,
         // everyone `Patrolling:1b` and pointed at the first proven waypoint. The
         // squad's own march clock starts with it. Empty for every other wave, so
@@ -4444,7 +4471,10 @@ fn emit_functions(
                 ]),
             ));
         }
-        // kill reward: each slain wave mob decrements the countdown, then re-arms.
+        // kill reward: each slain wave mob decrements the countdown, records that
+        // a PLAYER was credited with the death ([`wave_credited_holder`]), then
+        // re-arms. The advancement's trigger is `player_killed_entity` over this
+        // wave's tag, so reaching here IS the credit — nothing else can.
         fns.push((
             format!("k_reward_{}", plan::safe_local(w.id.as_str())),
             lines(&[
@@ -4452,6 +4482,10 @@ fn emit_functions(
                     "scoreboard players remove {} {} 1",
                     plan::wave_counter(w.id.as_str()),
                     plan::WAVE_OBJECTIVE
+                ),
+                format!(
+                    "scoreboard players add {} dw.sys 1",
+                    wave_credited_holder(w.id.as_str())
                 ),
                 format!(
                     "advancement revoke @s only {ns}:k_{}",
@@ -7059,6 +7093,40 @@ fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
 /// spawn every future wave in the delve at once.
 fn wave_seated_holder(wave_id: &str) -> String {
     format!("#wseat_{}", plan::safe_local(wave_id))
+}
+
+/// The fake-player scoreboard holder counting the wave's deaths **a player was
+/// credited with**, since the seating in force — written by `spawn_<wave>` (which
+/// zeroes it) and by `k_reward_<wave>` (which adds one per credited kill), and
+/// stated on the census line.
+///
+/// ## What it exists to separate
+///
+/// The countdown is a measurement of what still STANDS, so it clears whether a
+/// body was cut down or fell into a lethal volume — which is the whole point of
+/// it, and which is also why nothing downstream can tell the two apart any more.
+/// The floor gate needs exactly that distinction: it reports an encounter the
+/// content billed `elite`/`boss` that the UNASSISTED bot beat cold, and a
+/// cohort the world killed is not a fight the bot beat. Measured on the gallery's
+/// own bot ladder: of three `wave/muster` bodies one withered in `lethal/east-pit`
+/// and one fell, the bot felled the third, and the advisory said the bot had
+/// beaten the encounter on its first attempt.
+///
+/// `minecraft:player_killed_entity` is the only trigger vanilla has here, and it
+/// fires exactly for the case this holder is about, so the ledger is the
+/// advancement's own count and never a table the compiler invents.
+///
+/// ## Why the SEATING is not on the wire beside it
+///
+/// A reader wants "how many died with nobody credited", which is
+/// `seated - standing - credited`. `standing` and `credited` are runtime facts
+/// only the server holds. `seated` is not: `spawn_<wave>` writes
+/// [`plan::wave_total`], a compile-time constant, and the same constant already
+/// reaches the harness as `combat-plan.json`'s `count`. Putting it on the census
+/// line too would ship one fact by two routes, which is a pair that can disagree
+/// rather than a second measurement.
+fn wave_credited_holder(wave_id: &str) -> String {
+    format!("#wcred_{}", plan::safe_local(wave_id))
 }
 
 /// The re-seat lines a bonfire runs on every rest and on every respawn at it
@@ -11652,13 +11720,21 @@ fn census_component(ns: &str, token: &str, wave_id: &str, holders: &[&str]) -> V
 }
 
 /// The census SUMMARY line: sequence, how many of the wave stand, how many of
-/// those are branded (fought in a previous life), how many are below full health.
+/// those are branded (fought in a previous life), how many are below full health,
+/// and how many of its deaths since the seating in force a player was credited
+/// with ([`wave_credited_holder`]).
+///
+/// The last field is the one that is not about the bodies standing there: every
+/// other number describes the survivors, and `credited` describes the fallen. It
+/// is what lets a reader subtract — `count - present - credited` is how many of
+/// the wave died with nobody credited, i.e. how many the WORLD killed.
 fn census_summary_component(ns: &str, wave_id: &str) -> Value {
+    let credited = wave_credited_holder(wave_id);
     census_component(
         ns,
         plan::MARKER_TOKEN_CENSUS,
         wave_id,
-        &["#wcen_seq", "#wcen_n", "#wcen_b", "#wcen_d"],
+        &["#wcen_seq", "#wcen_n", "#wcen_b", "#wcen_d", &credited],
     )
 }
 
