@@ -309,7 +309,7 @@
             },
             "hint": "The case stands in the middle of the near hall.",
             "id": "obj/press-the-case",
-            "missing_item_hint": "The case wants a key, and the key is in the case. Ask the Factor.",
+            "missing_item_hint": "The Curator gave you the case key. It only opens the case from your hand.",
             "prop": {
               "block": "minecraft:stone_button"
             },
@@ -532,6 +532,24 @@
               ],
               "item": "minecraft:torch",
               "name": "Hall Torch",
+              "requires_flags": [],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "type": "give-item"
+            },
+            {
+              "carrier": "all",
+              "count": 1,
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "item": "minecraft:iron_pickaxe",
+              "name": "Case Key",
               "requires_flags": [],
               "requires_state": [
                 {
