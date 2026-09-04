@@ -70,14 +70,22 @@ different:
       setup-python actions exist in order to fetch the version their input names,
       so that input is a fetched version by the definition of the action being
       used. The claim is about the action, and is true of it in any repository.
-    - An INSTALL COMMAND in a step this repository runs (`RE_PIP_INSTALL`). A
-      manifest states a requirement and a range is a legitimate one; an install
-      is an ACT, and a package argument naming no exact version is a fetch nobody
-      pinned. That is a finding rather than a pin — there is no value for an
-      entry to record and nothing to hold still — and it is the general form of a
-      live defect: `beet`, which re-validates every emitted mcfunction in a
-      required status check, was installed unpinned on the same line as a pinned
-      `mecha`.
+    - An INSTALL COMMAND in a step this repository runs. A manifest states a
+      requirement and a range is a legitimate one; an install is an ACT, and a
+      package argument naming no exact version is a fetch nobody pinned. That is
+      a finding rather than a pin — there is no value for an entry to record and
+      nothing to hold still — and it is the general form of a live defect:
+      `beet`, which re-validates every emitted mcfunction in a required status
+      check, was installed unpinned on the same line as a pinned `mecha`.
+
+      The schema is INSTALLING, not one installer's spelling of it, so it reads
+      `pip install` (`RE_PIP_INSTALL`) and `cargo install` (`RE_CARGO_INSTALL`)
+      by the same rule. Keyed to `pip` alone it would have been keyed to the verb
+      that first needed it: a brand-new `cargo install cargo-deny --locked` in a
+      workflow, with no registry entry, left this tool and
+      `validation/check-versions.sh` both green — a floating cargo-installed
+      binary nobody registers, which is the class the `beet` entry already calls
+      a finding in its own right.
 
   What all four have in common is the rule that decides membership: **an entry
   exists because discovery found the value, never because the value looked
@@ -411,6 +419,49 @@ RE_STEP_BREAK = re.compile(r"^[ \t]*-[ \t]", re.M)
 RE_PIP_INSTALL = re.compile(
     r"\b(?:pip3?|python3?[ \t]+-m[ \t]+pip)[ \t]+install\b(?P<args>[^\n]*)"
 )
+# The same claim for the other package manager whose binaries this repository
+# runs. `cargo install` fetches a crate from a registry and builds a tool CI then
+# decides with, which is what `pip install` does — so it is the same schema, and
+# writing it as a second one would key the rule to the verb that first needed it.
+# Measured before this existed: a brand-new `cargo install cargo-deny --locked`
+# planted in `.github/workflows/ci.yml` with no registry entry left this tool and
+# `validation/check-versions.sh` both green.
+#
+# `cargo +<toolchain> install` is the same act with the toolchain named, so the
+# optional `+…` word is part of the verb rather than an argument.
+RE_CARGO_INSTALL = re.compile(
+    r"\bcargo\b(?:[ \t]+\+[^\s]+)?[ \t]+install\b(?P<args>[^\n]*)"
+)
+# Options of `cargo install` whose VALUE is the next token, so that token is not
+# a crate. An option this set does not name is read as a flag, which is the
+# fail-closed direction: its value would then be read as a crate argument and red
+# for naming no version, rather than swallowing the crate beside it.
+CARGO_VALUE_OPTIONS = {
+    "--version", "--vers", "--git", "--branch", "--tag", "--rev", "--path",
+    "--root", "--index", "--registry", "--profile", "--target", "--target-dir",
+    "--bin", "--example", "--features", "-F", "--jobs", "-j", "--config",
+    "-Z", "--message-format", "--color", "--manifest-path",
+}
+# A crate argument, with the `<name>@<version>` form cargo also accepts.
+RE_CARGO_CRATE = re.compile(
+    r"(?P<name>[A-Za-z0-9][A-Za-z0-9_-]*)(?:@(?P<ver>[^@\s]+))?"
+)
+# A version requirement that names ONE version. `=1.2.3` is exact by its
+# operator; a bare `1.2.3` is the three-component form a crate is published
+# under, which is what a diff shows and what an entry records.
+#
+# NAMED WEAK SPOT, and it is not closed here: cargo reads a bare `0.22.2` as the
+# CARET requirement `^0.22.2`, so a `cargo install foo --version 0.22.2` can
+# still resolve upward when the publisher ships `0.22.3`. Demanding `=0.22.2` is
+# a stricter rule than this one, and a stricter gate is decided against the
+# branches it reds rather than added on the way past — so what is asserted here
+# is the weaker, honest claim: the file names a version, and somebody registered
+# it. A requirement carrying a range operator (`^`, `~`, `>`, `<`, `*`) or naming
+# only a major/minor line names no single version and is the unpinned finding.
+RE_CARGO_EXACT = re.compile(
+    r"=?(?P<ver>[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.][0-9A-Za-z.-]*)?)"
+)
+
 # The languages an install command IS one in. It is a shell command line, so it
 # is a real invocation in a shell script and in a workflow's `run:` block — and
 # in a Python file the identical characters are what a program PRINTS to tell a
@@ -640,44 +691,226 @@ def action_input_versions(text: str, env: dict[str, str]) -> list[str]:
     return out
 
 
-def pip_install_arguments(text: str) -> tuple[list[str], list[str]]:
-    """(exact versions this file installs, package arguments naming none).
+def quote_mask(text: str) -> list[bool]:
+    """Per character: is it inside a quotation?
+
+    Shell quoting, which is what decides whether the characters `cargo install`
+    are a command or the contents of a string some command is being handed. Quote
+    state resets at every newline, because an unterminated quote is a mistake
+    rather than a construct and carrying it on would silently mask the whole rest
+    of a file.
+    """
+    mask = [False] * len(text)
+    quote: str | None = None
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\n":
+            quote = None
+            i += 1
+            continue
+        if quote is None:
+            if ch == "\\" and i + 1 < n and text[i + 1] != "\n":
+                i += 2  # an escaped character is itself, and is not a quote
+                continue
+            if ch in ("'", '"'):
+                quote = ch
+                mask[i] = True
+            i += 1
+            continue
+        mask[i] = True
+        if quote == '"' and ch == "\\" and i + 1 < n and text[i + 1] != "\n":
+            mask[i + 1] = True
+            i += 2
+            continue
+        if ch == quote:
+            quote = None
+        i += 1
+    return mask
+
+
+def strip_comments(text: str) -> str:
+    """`text` with each line's comment tail removed.
+
+    A comment is prose, and prose is not an act. Shell and a workflow's YAML both
+    open one with `#` at the start of a line or after whitespace, and neither
+    does so inside a quotation — so this is a fact about both languages an
+    install command is read in, not a filter over files.
+
+    It is load-bearing rather than tidy: the lines of this repository that quote
+    ``cargo install delvec`` inside a `#` comment, to explain what ADR-0017
+    promises a stranger, would otherwise be read as installs and demand a pin for
+    a command nobody runs — which is exactly the pressure that produces an
+    exception list, and an exception list is what later covers a real one.
+
+    WEAK SPOT, stated rather than smoothed: quote state is tracked per line, so a
+    quotation spanning a newline whose second line carries a `#` loses its tail.
+    Both languages make that rare, and the cost is discovering less, which is the
+    direction that hides rather than the direction that shouts.
+    """
+    out = []
+    for line in text.split("\n"):
+        mask = quote_mask(line)
+        cut = None
+        for i, ch in enumerate(line):
+            if ch == "#" and not mask[i] and (i == 0 or line[i - 1] in " \t"):
+                cut = i
+                break
+        out.append(line if cut is None else line[:cut])
+    return "\n".join(out)
+
+
+# Where one command ends, in a shell line. Reading an install's arguments to the
+# end of the line makes every later word a package argument: `pip install foo &&
+# echo bar` would have reported `echo` and `bar` as packages nobody pinned.
+COMMAND_BREAK = frozenset(";|&<>()`")
+
+
+def invocation_arguments(
+    text: str, mask: list[bool], rx: re.Pattern[str], quoted_is_data: bool
+) -> list[str]:
+    """The argument string of each real invocation of `rx` in `text`.
+
+    `quoted_is_data` is the shell's own rule and is asked only of a shell script:
+    a quoted string is text the shell never executes, so ``echo "`cargo install
+    $CRATE` now resolves to $VERSION"`` is a sentence being printed. It is the
+    same claim already made about a `pip install` standing in a Python string —
+    what a program says to a creator, not what it does. The residue, named: a
+    `bash -c "cargo install …"` is a real install inside a quotation and escapes
+    this, exactly as a Python program that shells out would; no reading of the
+    characters alone can separate the two.
+
+    A workflow's `run:` value is NOT read that way, because the quotes around it
+    are YAML's and are gone before the shell sees the line — so a quotation there
+    says nothing about whether the command runs, and reading it is the
+    fail-closed direction (a workflow that echoes an install line reds, which is
+    a false red rather than a silent pass).
+    """
+    out: list[str] = []
+    for m in rx.finditer(text):
+        if quoted_is_data and mask[m.start()]:
+            continue
+        args, off = m.group("args"), m.start("args")
+        end = len(args)
+        for i, ch in enumerate(args):
+            if ch in COMMAND_BREAK and not mask[off + i]:
+                end = i
+                break
+        out.append(args[:end])
+    return out
+
+
+def split_arguments(args: str) -> list[str]:
+    try:
+        return shlex.split(args, comments=True)
+    except ValueError:
+        return args.split()
+
+
+def pip_install_arguments(args: str) -> tuple[list[str], list[tuple[str, str]]]:
+    """(exact versions installed, (package, remedy) for arguments naming none)."""
+    pinned: list[str] = []
+    unpinned: list[tuple[str, str]] = []
+    skip = False
+    for tok in split_arguments(args):
+        if skip:
+            skip = False
+            continue
+        if tok in PIP_VALUE_OPTIONS:
+            skip = True
+            continue
+        if tok.startswith("-"):
+            continue
+        if tok.startswith("git+"):
+            # A VCS install pins by revision or by nothing. A revision is
+            # already found by the shape scan wherever it sits, so only the
+            # unpinned case is this scan's to report.
+            if RE_REV.search(tok):
+                pinned.append(tok)
+            else:
+                unpinned.append((tok, f"`{tok}@<40-hex revision>`"))
+            continue
+        if tok in (".", "..") or "/" in tok or tok.startswith("$"):
+            continue  # a local path or a shell expansion, not a package name
+        exact = RE_PIP_EXACT.fullmatch(tok)
+        if exact:
+            pinned.append(exact.group("ver"))
+        else:
+            unpinned.append((tok, f"`{tok}==<version>`"))
+    return pinned, unpinned
+
+
+def cargo_install_arguments(args: str) -> tuple[list[str], list[tuple[str, str]]]:
+    """(exact versions installed, (crate, remedy) for arguments naming none)."""
+    opts: dict[str, str] = {}
+    flags: set[str] = set()
+    crates: list[str] = []
+    awaiting: str | None = None
+    for tok in split_arguments(args):
+        if awaiting is not None:
+            opts[awaiting] = tok
+            awaiting = None
+            continue
+        if tok.startswith("-") and tok != "-":
+            name, eq, val = tok.partition("=")
+            if eq:
+                opts[name] = val
+            elif name in CARGO_VALUE_OPTIONS:
+                awaiting = name
+            else:
+                flags.add(name)
+            continue
+        crates.append(tok)
+    if "--path" in opts or "--list" in flags:
+        # A build of a directory already in the tree, or a query. Neither
+        # resolves a version from a registry, so there is nothing to pin.
+        return [], []
+    if "--git" in opts:
+        rev = opts.get("--rev", "")
+        if RE_REV.fullmatch(rev):
+            return [], []  # the revision is found by the shape scan itself
+        url = opts["--git"]
+        return [], [(url, f"`--git {url} --rev <40-hex revision>`")]
+    version = opts.get("--version") or opts.get("--vers")
+    pinned: list[str] = []
+    unpinned: list[tuple[str, str]] = []
+    for tok in crates:
+        m = RE_CARGO_CRATE.fullmatch(tok)
+        if m is None:
+            continue  # a path, a shell expansion, a word of a sentence
+        req = m.group("ver") or version
+        exact = RE_CARGO_EXACT.fullmatch(req) if req else None
+        if exact:
+            pinned.append(exact.group("ver"))
+        else:
+            name = m.group("name")
+            unpinned.append((name, f"`cargo install {name} --version <version>`"))
+    return pinned, unpinned
+
+
+def install_arguments(
+    text: str, lang: str | None
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Every install this file performs, as (versions pinned, nothing pinned).
 
     A backslash continuation is joined first: a command split across lines is one
     command, and reading only its first line would find fewer packages than are
-    installed — which is truncation faking coverage.
+    installed — which is truncation faking coverage. Comments go before that,
+    since a `#` ends the line it is on and not the command a later line carries.
     """
+    prepared = strip_comments(text).replace("\\\n", " ")
+    mask = quote_mask(prepared)
+    quoted_is_data = lang == "shell"
     pinned: list[str] = []
-    unpinned: list[str] = []
-    joined = text.replace("\\\n", " ")
-    for m in RE_PIP_INSTALL.finditer(joined):
-        try:
-            tokens = shlex.split(m.group("args"), comments=True)
-        except ValueError:
-            tokens = m.group("args").split()
-        skip = False
-        for tok in tokens:
-            if skip:
-                skip = False
-                continue
-            if tok in PIP_VALUE_OPTIONS:
-                skip = True
-                continue
-            if tok.startswith("-"):
-                continue
-            if tok.startswith("git+"):
-                # A VCS install pins by revision or by nothing. A revision is
-                # already found by the shape scan wherever it sits, so only the
-                # unpinned case is this scan's to report.
-                (pinned if RE_REV.search(tok) else unpinned).append(tok)
-                continue
-            if tok in (".", "..") or "/" in tok or tok.startswith("$"):
-                continue  # a local path or a shell expansion, not a package name
-            exact = RE_PIP_EXACT.fullmatch(tok)
-            if exact:
-                pinned.append(exact.group("ver"))
-            else:
-                unpinned.append(tok)
+    unpinned: list[tuple[str, str]] = []
+    for rx, reader in (
+        (RE_PIP_INSTALL, pip_install_arguments),
+        (RE_CARGO_INSTALL, cargo_install_arguments),
+    ):
+        for args in invocation_arguments(prepared, mask, rx, quoted_is_data):
+            p, u = reader(args)
+            pinned += p
+            unpinned += u
     return pinned, unpinned
 
 
@@ -764,15 +997,15 @@ def literals(
         # version is a fetch nobody pinned, which is a finding rather than a pin:
         # there is no value for an entry to record and nothing to hold still.
         if lang in INSTALL_VERB_LANGUAGES:
-            pinned, unpinned = pip_install_arguments(text)
+            pinned, unpinned = install_arguments(text, lang)
             for value in pinned:
                 found.setdefault(value, set()).add(rel)
-            for pkg in sorted(set(unpinned)):
+            for pkg, remedy in sorted(set(unpinned)):
                 keyed_errors.append(
                     f"{rel} installs `{pkg}` without naming a version, so the "
                     f"instrument of whatever that step decides can move with "
                     f"nothing in any diff to show it did. Pin it exactly "
-                    f"(`{pkg}==<version>`) and register the pin, or the frozen "
+                    f"({remedy}) and register the pin, or the frozen "
                     f"measurement beside it names an instrument that is not "
                     f"frozen."
                 )

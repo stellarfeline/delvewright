@@ -41,6 +41,14 @@ and a RANGE is not (a range names no version, and demanding a decision about a
 value that does not exist is how a correct gate teaches people to write
 exemptions); an install naming no version is a finding in a workflow step and in
 a shell script, and the identical words printed by a Python program are prose.
+The install schema is INSTALLING rather than one installer's spelling of it, so
+`cargo install` is asserted on the same terms as `pip install` — measured, a
+brand-new `cargo install cargo-deny --locked` left this gate and
+`validation/check-versions.sh` both green. Its own two directions come with the
+two the widening needed: a comment and a quoted `echo` string are prose in a
+shell script as much as in a Python one, and an install's arguments end where the
+command does.
+
 IDENTITY is asserted in all three directions, because it is where this gate
 answered honestly about the wrong object. A pin is its ENTRY AND ITS SITE: two
 entries may hold one value at their own sites, which for two pins that both
@@ -945,6 +953,190 @@ def test_a_continued_install_command_is_read_whole(repo: Path) -> None:
     r = run(repo)
     assert r.returncode == 1
     assert "installs `somepkg` without naming a version" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# The same schema, for the other package manager whose binaries CI decides with.
+# `cargo install` was outside it, measured: a brand-new
+# `cargo install cargo-deny --locked` planted in `.github/workflows/ci.yml` with
+# no registry entry left both `check-pins.py` and `validation/check-versions.sh`
+# green. Keyed to `pip` the rule was keyed to the verb that first needed it, and
+# the second installer to arrive had no surface — so the object class is
+# INSTALLING, and these assert the cargo half in both directions.
+#
+# The last two are about the repair the widening needed rather than about cargo:
+# this repository quotes `cargo install delvec` inside `#` comments and inside
+# `echo` strings, to explain what ADR-0017 promises a stranger, and reading those
+# as installs would have demanded a pin for a command nobody runs — which is the pressure that produces an exception list, and an
+# exception list is what later covers a real one.
+# ---------------------------------------------------------------------------
+def _job_running(command: str) -> str:
+    return f"name: probe\njobs:\n  a:\n    steps:\n      - run: {command}\n"
+
+
+def _registered_cargo_install(repo: Path, command: str) -> None:
+    """A pinned `cargo install`, with the binder a version string owes."""
+    add_file(repo, ".github/workflows/probe.yml", _job_running(command))
+    add_file(
+        repo,
+        BINDER,
+        "#!/usr/bin/env bash\n"
+        "# reads toolchain_version and asserts .github/workflows/probe.yml "
+        "holds it\n",
+    )
+    add_file(
+        repo,
+        ".github/workflows/hold.yml",
+        f"name: hold\njobs:\n  a:\n    steps:\n      - run: bash {BINDER}\n",
+    )
+    write_registry(
+        repo,
+        COMPLETE
+        + f"""
+[[pin]]
+id = "probe-tool"
+value = "{TOOLVER}"
+sites = [".github/workflows/probe.yml"]
+policy = "immutable"
+bound_by = "{BINDER}"
+bound_key = "toolchain_version"
+why = "the auditor a required check decides with"
+""",
+    )
+
+
+@pytest.mark.parametrize(
+    ("rel", "body"),
+    [
+        (
+            ".github/workflows/probe.yml",
+            _job_running("cargo install cargo-deny --locked"),
+        ),
+        (
+            "tools/probe-install.sh",
+            "#!/usr/bin/env bash\nset -euo pipefail\n"
+            "cargo install cargo-deny --locked\n",
+        ),
+    ],
+    ids=["workflow-run-step", "shell-script"],
+)
+def test_a_cargo_install_naming_no_version_is_a_finding(
+    repo: Path, rel: str, body: str
+) -> None:
+    """The measured hole: `--locked` freezes a lockfile, never a version."""
+    write_registry(repo, COMPLETE)
+    add_file(repo, rel, body)
+    r = run(repo)
+    assert r.returncode == 1
+    assert "installs `cargo-deny` without naming a version" in r.stderr
+    assert "cargo install cargo-deny --version <version>" in r.stderr
+
+
+def test_a_pinned_cargo_install_is_discovered_as_a_pin(repo: Path) -> None:
+    """The other direction: a version named is a value the registry must hold.
+
+    Without this the widening could pass by discovering nothing, which is how an
+    unregistered pin gets through in the first place.
+    """
+    write_registry(repo, COMPLETE)
+    add_file(
+        repo,
+        ".github/workflows/probe.yml",
+        _job_running(f"cargo install probe-tool --locked --version {TOOLVER}"),
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert f"unregistered pin {TOOLVER} in .github/workflows/probe.yml" in r.stderr
+
+
+def test_a_pinned_cargo_install_the_registry_holds_passes(repo: Path) -> None:
+    _registered_cargo_install(
+        repo, f"cargo install probe-tool --locked --version {TOOLVER}"
+    )
+    r = run(repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_dropping_the_version_from_a_registered_cargo_install_reds(
+    repo: Path,
+) -> None:
+    """Both halves fire, and they are different findings.
+
+    The install stops naming what it fetches, and the entry that recorded the
+    decision now describes a file the value has left — a pin cannot be retired by
+    deleting the version and leaving its entry standing.
+    """
+    _registered_cargo_install(repo, "cargo install probe-tool --locked")
+    r = run(repo)
+    assert r.returncode == 1
+    assert "installs `probe-tool` without naming a version" in r.stderr
+    assert "is not there any more" in r.stderr
+
+
+@pytest.mark.parametrize(
+    ("rel", "body"),
+    [
+        (
+            "tools/probe-install.sh",
+            "#!/usr/bin/env bash\n"
+            "# ADR-0017: `cargo install delvec` has to keep working\n",
+        ),
+        (
+            ".github/workflows/probe.yml",
+            "name: probe\njobs:\n  a:\n    steps:\n"
+            "      # ADR-0017: `cargo install delvec` has to keep working\n"
+            "      - run: echo done\n",
+        ),
+    ],
+    ids=["shell-comment", "workflow-comment"],
+)
+def test_an_install_quoted_in_a_comment_is_prose(
+    repo: Path, rel: str, body: str
+) -> None:
+    """A comment is prose, and prose is not an act — in either language."""
+    write_registry(repo, COMPLETE)
+    add_file(repo, rel, body)
+    r = run(repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_an_install_inside_a_shell_string_is_prose(repo: Path) -> None:
+    """A quoted string is text the shell never executes.
+
+    The live shape, twice in this repository: a script that finishes by telling
+    the operator what its work now makes possible. Written without the backticks
+    the live lines happen to carry, because a backtick is a command break and
+    would end the arguments anyway — and a fixture some OTHER rule can catch
+    proves nothing about the rule it is named for.
+    """
+    write_registry(repo, COMPLETE)
+    add_file(
+        repo,
+        "tools/probe-publish.sh",
+        "#!/usr/bin/env bash\n"
+        'echo "probe: to get it yourself, run cargo install probe-tool --locked"\n',
+    )
+    r = run(repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_command_ends_at_a_shell_operator(repo: Path) -> None:
+    """An install's arguments stop where the command does.
+
+    Read to the end of the line, every later word is a package argument: this
+    reported `echo` and `done` as packages nobody pinned.
+    """
+    write_registry(repo, COMPLETE)
+    add_file(
+        repo,
+        "tools/probe-install.sh",
+        "#!/usr/bin/env bash\n"
+        f'pip install "pinned=={TOOLVER}" && echo done\n',
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert f"unregistered pin {TOOLVER}" in r.stderr
+    assert "without naming a version" not in r.stderr
 
 
 def test_two_entries_may_not_claim_one_occurrence(repo: Path) -> None:
