@@ -69,20 +69,60 @@ if [ -z "$WORK" ]; then
   WORK="$here/determinism-subject-work"
 fi
 rm -rf "$WORK"
-mkdir -p "$WORK/campaign"
+mkdir -p "$WORK/campaign" "$WORK/prefabs"
 
-echo "determinism-subject: engine — $("$DELVEC" --version)"
+echo "determinism-subject: engine   — $("$DELVEC" --version)"
+echo "determinism-subject: cwd      — $(pwd)"
+echo "determinism-subject: work dir — $WORK"
+
+# Run one delvec verb, say what is being run BEFORE running it, and on a
+# non-zero exit print what the engine itself said.
+#
+# The first version of this script sent both verbs' output to a log file and let
+# `set -e` end the run. The macOS runner then failed with a bare
+# `Process completed with exit code 10` and NOTHING else — the engine's own
+# diagnostic, which named the missing path in one line, was sitting in a file
+# nobody read. A command whose response nobody reads cannot fail informatively.
+run_verb() {
+  label="$1"; shift
+  echo "determinism-subject: $label — $DELVEC $*"
+  set +e
+  "$DELVEC" "$@" > "$WORK/$label.log" 2>&1
+  status=$?
+  set -e
+  if [ "$status" -ne 0 ]; then
+    echo "determinism-subject: \`$label\` exited $status. What the engine said:" >&2
+    sed 's/^/    /' "$WORK/$label.log" >&2
+    exit "$status"
+  fi
+}
 
 # The campaign, generated from the compiler's own metrics table.
-"$DELVEC" metrics --gym "$WORK/campaign" > "$WORK/metrics.log" 2>&1
+run_verb metrics metrics --gym "$WORK/campaign"
 
-# The build. No `--prefabs`: a site-plan campaign places its geometry from its
-# own plan, so nothing outside this tree is read.
-"$DELVEC" build "$WORK/campaign" -o "$WORK/out" > "$WORK/build.log" 2>&1
+# The build, with an EMPTY prefab library of its own.
+#
+# `--prefabs` defaults to `campaigns/prefabs`, and `delvec build` READS that
+# directory whatever the campaign turns out to place — so a site-plan campaign,
+# which places nothing from a library, still refuses at exit 10 (`internal
+# error: cannot read prefabs dir campaigns/prefabs`) when the directory is not
+# there. This script's claim is that the subject is self-contained; that claim
+# was true of what the gym PLACES and false of what the compiler READS, and it
+# went unnoticed because both places it had been run carried the directory —
+# a dev worktree through the `campaigns/` symlink, and the `rust` job through
+# `./.github/actions/checkout-content`. The macOS runner has neither, which is
+# the one host where the claim was ever actually tested.
+#
+# An empty directory rather than the content library, deliberately: it makes the
+# independence STRUCTURAL instead of incidental. The subject cannot come to
+# depend on a prefab, the content pin cannot move its bytes, and no runner needs
+# git-lfs. Measured: the digest with an empty library is byte-identical to the
+# digest with the real one.
+run_verb build build "$WORK/campaign" -o "$WORK/out" --prefabs "$WORK/prefabs"
 
-# `metrics.log` and `build.log` are deliberately OUTSIDE the digested root: they
-# carry the tool's own diagnostics, not the artifact, and the artifact is what
-# ADR-0006 makes a promise about.
+# `metrics.log`, `build.log` and the empty prefab directory are deliberately
+# OUTSIDE the digested root: they carry the tool's own diagnostics and its
+# inputs, not the artifact, and the artifact is what ADR-0006 promises about.
 mkdir -p "$WORK/subject"
 mv "$WORK/campaign" "$WORK/subject/campaign"
 mv "$WORK/out" "$WORK/subject/out"
