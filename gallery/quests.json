@@ -127,11 +127,11 @@
       {
         "damage_type": "fall",
         "id": "lethal/west-pit",
-        "message": "The floor of the west bay is not a floor.",
+        "message": "The floor in the west corner is not a floor.",
         "region": {
           "anchor": "anchor/west-pit",
           "extent": [
-            2,
+            1,
             2,
             1
           ]
@@ -140,13 +140,13 @@
       {
         "damage_type": "wither",
         "id": "lethal/east-pit",
-        "message": "The air in the east bay does not agree with you.",
+        "message": "The air along the north wall does not agree with you.",
         "region": {
           "anchor": "anchor/east-pit",
           "extent": [
             1,
             2,
-            1
+            0
           ]
         }
       }

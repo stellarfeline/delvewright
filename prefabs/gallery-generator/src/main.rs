@@ -328,27 +328,26 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/west-pit",
-        pos: [9, 1, 22],
+        pos: [2, 1, 3],
         facing: None,
         trigger_block: None,
-        note: "a killing volume with nothing posted in it (DW0511). Its box is \
-               three cells deep rather than five, because a five-deep box reaches \
-               z=25 and `anchor/exit` — the finale — stands at z=25 with a body \
-               0.6 wide: the volume selects on hitbox intersection, so the last \
-               anchor of the delve was a fifth of a block from a fatal one",
+        note: "a killing volume with nothing posted in it (DW0511), in the near \
+               hall's west corner — the deadest floor in the piece, four blocks \
+               clear of anything that stands or walks there. It is in the near \
+               hall and not in a bay because a killing volume may not share a \
+               room with a fight: see MUSTER_PIT_CLEARANCE",
         role: None,
     },
     Anchor {
         name: "anchor/east-pit",
-        pos: [22, 1, 22],
+        pos: [20, 1, 1],
         facing: None,
         trigger_block: None,
-        note: "the second killing volume, so the two never share a box. One cell \
-               east of the bay's middle, and its `extent` is 1 on x rather than \
-               2, because a 5-wide box centred here reaches x=19 — which is the \
-               broken flight, the ONLY way onto the mezzanine. A volume that \
-               covers the single route to a `reach-anchor` objective is a hall \
-               nobody can finish (DW0510)",
+        note: "the second killing volume, so the two never share a box: a strip \
+               against the near hall's north wall, east of the arrival, off every \
+               route the piece's own bodies are teleported along. Its `extent` is \
+               0 on z, so it is one cell deep and the wall behind it is not part \
+               of it",
         role: None,
     },
     Anchor {
@@ -818,26 +817,23 @@ fn assert_anchors_are_standable(s: &Structure) {
     );
 }
 
-/// How far a wave anchor must stand from a killing volume's own anchor, in
-/// blocks, centre to centre.
+/// The floor, in blocks, on how far a wave anchor stands from a killing
+/// volume's own anchor — the weaker half of the rule below.
 ///
-/// **What the number is made of, so it can be re-derived rather than believed.**
-/// The campaign centres each pit's box on the pit anchor and gives it a half
-/// extent of two cells on `x` and one on `z`, so a box reaches at most 3.0
-/// blocks from its centre on either axis. A wave seats its bodies on the
-/// standable cells NEAREST its anchor, so a seat can be one cell out. And a
-/// lethal volume's selector takes any entity whose HITBOX intersects the box —
-/// a spider is 1.4 wide, so 0.7 more. Three plus one plus 0.7 is the distance
-/// at which a seated body merely touches the box; eight leaves the four blocks
-/// of open floor a fight needs to sprawl into without the world joining in.
+/// **Distance is not the rule, and this number is not where the safety comes
+/// from.** A wave staged 4.72 blocks clear of the nearer box still lost a body
+/// to it, and the bot fighting that wave died in it twice, because a fight does
+/// not stay where it is staged: the census found a re-seated cohort spread
+/// 14.4 blocks from its own anchor, and the unassisted attempt ended with the
+/// bot dead at `[12, 65, 21]` — the cell OUTSIDE the volume whose 0.6-wide
+/// occupant reaches the boundary. Any distance short of the room's own diameter
+/// is a number a roaming fight walks through.
 ///
-/// The extents this reads off live in `gallery/quests.json`, which this program
-/// never sees — so this is a stated premise, not a derivation, and a campaign
-/// that grows its pits past a half extent of two invalidates it. The proof that
-/// cannot go stale is the one the engine does not have yet: `DW0511` refuses a
-/// body PUT inside a lethal volume by declaration, and its `posted_places`
-/// enumeration reaches entry cells, checkpoints, NPCs, cast placements and
-/// actors — every place a body is put except a wave's seated cells.
+/// So the rule is the one [`assert_the_muster_clears_the_pits`] states first: a
+/// killing volume does not share a ROOM with the fight a gate measures. The
+/// hall is two rooms and the generator knows where the wall is, which is why
+/// that half can be checked rather than assumed. This number stays as a second,
+/// weaker guard for a volume that clears the wall by a cell and nothing else.
 const MUSTER_PIT_CLEARANCE: f64 = 8.0;
 
 /// How far the patrol lane must keep from the wave anchor the floor gate
@@ -868,28 +864,40 @@ fn plan_dist(a: [i32; 3], b: [i32; 3]) -> f64 {
     (dx * dx + dz * dz).sqrt()
 }
 
-/// **A measured fight does not share its floor with a killing volume.**
+/// **A killing volume does not share a room with a fight a gate measures.**
 ///
-/// Found by watching a body die to neither the party nor the design: a muster
-/// seated on the bay line lost its spider to `lethal/west-pit` mid-fight — the
-/// hitbox reached the box from outside it — and the floor gate then graded a
-/// wave the world had helped kill.
+/// Measured on the bot ladder, twice, in that order. A muster staged on the bay
+/// line lost its spider to `lethal/west-pit` mid-fight — a lethal volume
+/// selects on HITBOX intersection, so a 1.4-wide body two cells outside the box
+/// is inside it — and the floor gate then graded a wave the world had helped
+/// kill. Moving the muster to the far end of the same room bought 4.72 blocks
+/// of clearance and did not help: the bot chased the cohort across the hall and
+/// died in the same volume, at the cell whose occupant merely reaches its edge.
 ///
-/// This is the strongest form available to a piece generator: the campaign's
-/// boxes are not visible from here, so the premise [`MUSTER_PIT_CLEARANCE`]
-/// states is what a reader has to check. The number fails on the staging that
-/// produced that run, which is what makes it more than decoration.
+/// A fight roams; a room is what bounds it. The hall is two rooms with one wall
+/// between them, so this is checkable rather than assumed: the fight is beyond
+/// the wall, and both volumes are in front of it.
 fn assert_the_muster_clears_the_pits() {
     let muster = anchor_at("anchor/muster");
     let mut pits = Vec::new();
     for pit in ["anchor/west-pit", "anchor/east-pit"] {
-        let d = plan_dist(muster, anchor_at(pit));
+        let at = anchor_at(pit);
+        assert!(
+            (muster[2] > DIVIDER_Z) != (at[2] > DIVIDER_Z),
+            "{ID}: `{pit}` stands at z={} and `anchor/muster` at z={}, both on the \
+             same side of the dividing wall (z={DIVIDER_Z}) — a fight roams the room \
+             it is staged in, so a killing volume sharing that room takes bodies out \
+             of the fight the floor gate is grading, and takes the party's own body \
+             out of it too",
+            at[2],
+            muster[2]
+        );
+        let d = plan_dist(muster, at);
         assert!(
             d >= MUSTER_PIT_CLEARANCE,
             "{ID}: `anchor/muster` stands {d:.2} blocks from `{pit}`, under the \
-             {MUSTER_PIT_CLEARANCE:.1} a seated body needs to clear a killing volume's \
-             hitbox reach — the wave will lose members to the world and the floor \
-             gate will grade the remainder"
+             {MUSTER_PIT_CLEARANCE:.1} that keeps a volume off the wall the two \
+             rooms share"
         );
         pits.push(format!("{pit} {d:.2}"));
     }
@@ -900,7 +908,8 @@ fn assert_the_muster_clears_the_pits() {
         pits.len()
     );
     println!(
-        "{ID}: muster clearance bound — {} (floor {MUSTER_PIT_CLEARANCE:.1} block(s))",
+        "{ID}: muster clearance bound — 2 killing volume(s), both across the wall at \
+         z={DIVIDER_Z} from the muster: {} (floor {MUSTER_PIT_CLEARANCE:.1} block(s))",
         pits.join(", ")
     );
 }

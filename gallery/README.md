@@ -380,23 +380,25 @@ see below.
 ## The fight, and the floor it needs
 
 The far hall carries the one encounter the inverted floor gate measures — the
-muster, billed `elite` — and it also carries every hazard the DSL declares. A
-gate can only grade a fight the fight's own room did not interfere with, so
-three facts about the far hall are load-bearing rather than decorative.
+muster, billed `elite`. A gate can only grade a fight nothing else in the room
+took part in, so three facts about where things stand are load-bearing rather
+than decorative.
 
-**A killing volume selects on hitbox intersection, not on cells.** A lethal
-volume emits `@e[x=…,dx=…,…]`, and a selector takes any entity whose bounding
-box touches the region — a spider is 1.4 blocks wide, so it is inside a box
-while its feet are still 0.7 blocks outside it. The muster therefore forms up
-on the strip between the dividing wall and the bay line, the far hall's only
-floor that belongs to no bay, equidistant from both pits and as far from both
-as the room has to give. The nearest of its three seated bodies clears the
-nearer box by 4.72 blocks.
+**A killing volume does not share a room with a fight.** A lethal volume emits
+`@e[x=…,dx=…,…]`, and a selector takes any entity whose bounding box touches
+the region — a spider is 1.4 blocks wide, so it is inside a box while its feet
+are still 0.7 blocks outside it, and the cell immediately beside a volume is
+fatal to anything standing at that cell's near edge. Distance does not answer
+this, because a fight does not stay where it is staged: the ladder's own census
+found a re-seated cohort spread 14.4 blocks from its anchor. So both killing
+volumes live in the NEAR hall — the west corner and the north wall — and the
+muster forms up beyond the dividing wall, in the far hall the quest's beat
+names. The wall is the guarantee; the generator checks the sides, not a radius.
 
-**Each pit is three cells deep, not five.** A five-deep west box reaches z=25,
-and `anchor/exit` — the finale, the last thing a player reaches — stands at
-z=25 with a body 0.6 wide. The delve's last anchor was a fifth of a block from
-a fatal one; it clears by 1.2 now.
+**The pits sit where nothing walks.** Each is four blocks clear of every anchor
+and of every cell the piece's own bodies are teleported through on their way to
+the pocket, and neither touches a gate mouth. The east one is a single cell
+deep on `z`, against the north wall.
 
 **The patrol lane walks the back wall.** A lane squad's `follow_range` is its
 lane's `aggro_radius` verbatim, and `DW0477` records in writing that nothing
@@ -408,7 +410,7 @@ between them was not, which is the shape an endpoint check misses.
 The generator holds all three, on every run, and prints what it examined:
 
 ```
-gallery-hall: muster clearance bound — anchor/west-pit 9.22, anchor/east-pit 8.49 (floor 8.0 block(s))
+gallery-hall: muster clearance bound — 2 killing volume(s), both across the wall at z=15 from the muster: anchor/west-pit 19.10, anchor/east-pit 15.52 (floor 8.0 block(s))
 gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at [16, 1, 28], 12.00 block(s) away (floor 10.0)
 ```
 
