@@ -71,6 +71,21 @@
 //! *walked onto* an affordance and left there — which wants a `move-npc`
 //! destination rule of its own, not a guess bolted onto this one.
 //!
+//! ## Why this is build tier, and not `analyze`
+//!
+//! Because its input is an anchor's **cell**, and a cell is not a document fact.
+//! On a site plan the synthesized vocabulary is read off the DERIVED MASS —
+//! [`crate::blockout`]'s `footing` and `station_cell` — for a reason that
+//! module states in its own words: a box's floor centre *"is sometimes wrong — a
+//! stair the plan hosts in that box legitimately stands on it — so an anchor
+//! placed by arithmetic over the plan alone lands inside the massing perhaps one
+//! box in five"*. On a prefab map the cell is what placement produces. Neither
+//! exists at `validate` or at `analyze`, so this rule stated at either tier
+//! would be a second implementation over positions nobody has computed. It runs
+//! at the first point in the pipeline where its own inputs exist, which is also
+//! why a slow build argues nothing here: the time is spent producing the cells,
+//! upstream of every check that reads them.
+//!
 //! ## Prescription, and the fix that is never prescribed
 //!
 //! Move the NPC's anchor, or move the interaction's anchor. **Never** make the

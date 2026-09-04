@@ -27,6 +27,7 @@ import pytest
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-storybook-version.py"
 
 ENGINE_DELVEC = "0.1.0"
+ENGINE_MC = "1.21.11"
 
 
 @pytest.fixture
@@ -51,6 +52,10 @@ def gate(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "COMPILER_CARGO_TOML", cargo_toml)
     monkeypatch.setattr(module, "DEFAULT_CAMPAIGNS_ROOT", root)
     monkeypatch.setattr(module, "ALLOWLIST", {})
+    # The Minecraft pin is engine state exactly as `DELVEC_VERSION` is, and the
+    # synthetic repo above has no `versions.toml`; substituting the reader keeps
+    # these tests about the gate rather than about this repository's own pin.
+    monkeypatch.setattr(module, "minecraft_version", lambda: ENGINE_MC)
     module.ROOT = root
     return module
 
@@ -93,7 +98,7 @@ def run(gate) -> int:
 
 
 def test_a_marker_matching_the_declared_versions_is_green(gate, capsys):
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     make_campaign(gate, "greenfield", "0.9.0", readmes={"README.md": storybook(marker)})
     assert run(gate) == 0
     assert "storybook version markers OK: 1 campaign(s)" in capsys.readouterr().out
@@ -103,7 +108,7 @@ def test_the_marker_states_the_MAX_per_stage_dsl_version(gate):
     """Stages adopt versions one at a time; the host needs the highest of them."""
     versions = dict.fromkeys(gate.STAGE_FILES, "0.6.0")
     versions["quests.json"] = "0.10.0"
-    marker = gate.marker_line("0.10.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.10.0", ENGINE_DELVEC, ENGINE_MC)
     make_campaign(gate, "mixed", versions, readmes={"README.md": storybook(marker)})
     assert run(gate) == 0
 
@@ -111,7 +116,7 @@ def test_the_marker_states_the_MAX_per_stage_dsl_version(gate):
 def test_a_marker_naming_an_older_delvec_is_green(gate):
     """`last verified with` is a fact about a past ladder run — an older compiler
     is a true statement, and staleness is version-adoption's job, not this gate's."""
-    marker = gate.marker_line("0.9.0", "0.0.9")
+    marker = gate.marker_line("0.9.0", "0.0.9", ENGINE_MC)
     make_campaign(gate, "verified-earlier", readmes={"README.md": storybook(marker)})
     assert run(gate) == 0
 
@@ -121,7 +126,7 @@ def test_a_marker_naming_an_older_delvec_is_green(gate):
 
 def test_a_marker_behind_the_declared_dsl_version_is_RED(gate, capsys):
     """The motivating scenario: the campaign moved to 0.9.0, the README says 0.3.0."""
-    marker = gate.marker_line("0.3.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.3.0", ENGINE_DELVEC, ENGINE_MC)
     make_campaign(gate, "drifted", "0.9.0", readmes={"README.md": storybook(marker)})
     assert run(gate) == 1
     err = capsys.readouterr().err
@@ -131,10 +136,66 @@ def test_a_marker_behind_the_declared_dsl_version_is_RED(gate, capsys):
 
 def test_a_marker_ahead_of_the_declared_dsl_version_is_RED(gate, capsys):
     """Over-claiming is drift too: a host on 0.9.0 is turned away for nothing."""
-    marker = gate.marker_line("0.11.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.11.0", ENGINE_DELVEC, ENGINE_MC)
     make_campaign(gate, "overclaimed", "0.9.0", readmes={"README.md": storybook(marker)})
     assert run(gate) == 1
     assert "claims delve engine 0.11.0" in capsys.readouterr().err
+
+
+def test_a_marker_naming_another_minecraft_is_RED(gate, capsys):
+    """The pin, not a claim: `versions.toml` says which game the delve runs on,
+    and the storybook may only restate it. A reader cannot guess this number and
+    cannot play without it, so it carries equality like the engine version and
+    not the `<=` the delvec claim carries."""
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, "1.20.4")
+    make_campaign(gate, "wrong-game", readmes={"README.md": storybook(marker)})
+    assert run(gate) == 1
+    err = capsys.readouterr().err
+    assert "says Minecraft Java 1.20.4" in err
+    assert f"the engine pins {ENGINE_MC}" in err
+
+
+def test_the_minecraft_version_is_bound_ON_the_marker_and_refused_off_it(gate, capsys):
+    """The two halves of the repair, in one campaign.
+
+    The marker carries `1.21.11` and is green, so the storybook can finally tell a
+    player which client to install — the thing the unbound-literal rule had left
+    it unable to say. The same number in prose is still refused, because the rule
+    did not move: it is bound now, and a second hand-typed copy of a bound number
+    is exactly the drift the rule exists for.
+    """
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
+    body = storybook(marker) + f"\nRuns on Minecraft Java {ENGINE_MC}.\n"
+    make_campaign(gate, "restated", readmes={"README.md": body})
+    assert run(gate) == 1
+    err = capsys.readouterr().err
+    assert f"carries the version literal `{ENGINE_MC}`" in err
+    assert "MALFORMED" not in err
+    assert "carries NO engine-version marker" not in err
+
+
+def test_a_version_at_the_END_OF_A_SENTENCE_is_a_literal(gate, capsys):
+    """The shape the recogniser could not see, and the likeliest one in prose.
+
+    `Runs on Minecraft Java 1.21.11.` passed for as long as the guard forbade a
+    trailing dot outright: the full stop failed the lookahead and no backtrack
+    could satisfy it, so the number was invisible wherever a sentence ended on
+    it. The guard is for a LONGER dotted number, and it says so now.
+    """
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
+    body = storybook(marker) + "\nThe delve was cut against engine 0.4.0.\n"
+    make_campaign(gate, "sentence-end", readmes={"README.md": body})
+    assert run(gate) == 1
+    assert "carries the version literal `0.4.0`" in capsys.readouterr().err
+
+
+def test_a_longer_dotted_number_is_not_a_version_literal(gate):
+    """What the trailing guard is really for: `1.21.11.2` is not `1.21.11`, and
+    reporting the prefix of a number nobody wrote would be a false refusal."""
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
+    body = storybook(marker) + "\nThe pack format is 94.1.0.3 and means nothing here.\n"
+    make_campaign(gate, "longer", readmes={"README.md": body})
+    assert run(gate) == 0
 
 
 def test_a_missing_marker_is_RED(gate, capsys):
@@ -142,7 +203,7 @@ def test_a_missing_marker_is_RED(gate, capsys):
     assert run(gate) == 1
     err = capsys.readouterr().err
     assert "carries NO engine-version marker" in err
-    assert gate.marker_line("0.9.0", ENGINE_DELVEC) in err
+    assert gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC) in err
 
 
 def test_a_missing_storybook_is_RED(gate, capsys):
@@ -164,7 +225,7 @@ def test_a_malformed_marker_is_RED_and_not_read_as_missing(gate, capsys):
 
 
 def test_a_marker_buried_below_the_fold_is_RED(gate, capsys):
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     body = "\n".join(["# The Test Delve", ""] + ["filler"] * 12 + [marker, ""])
     make_campaign(gate, "buried", readmes={"README.md": body})
     assert run(gate) == 1
@@ -172,7 +233,7 @@ def test_a_marker_buried_below_the_fold_is_RED(gate, capsys):
 
 
 def test_two_markers_in_one_storybook_are_RED(gate, capsys):
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     body = "\n".join(["# The Test Delve", "", marker, "", marker, ""])
     make_campaign(gate, "doubled", readmes={"README.md": body})
     assert run(gate) == 1
@@ -181,7 +242,7 @@ def test_two_markers_in_one_storybook_are_RED(gate, capsys):
 
 def test_a_delvec_newer_than_the_engine_is_RED(gate, capsys):
     """`last verified with delvec 9.9.9` names a compiler that does not exist."""
-    marker = gate.marker_line("0.9.0", "9.9.9")
+    marker = gate.marker_line("0.9.0", "9.9.9", ENGINE_MC)
     make_campaign(gate, "time-traveller", readmes={"README.md": storybook(marker)})
     assert run(gate) == 1
     assert "NEWER than this engine's own delvec" in capsys.readouterr().err
@@ -191,7 +252,7 @@ def test_a_delvec_newer_than_the_engine_is_RED(gate, capsys):
 
 
 def test_every_declared_language_edition_needs_the_marker_too(gate, capsys):
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     make_campaign(
         gate,
         "localized",
@@ -205,7 +266,7 @@ def test_every_declared_language_edition_needs_the_marker_too(gate, capsys):
 def test_the_marker_is_byte_identical_across_editions(gate):
     """It is a version stamp, not prose: a translated gloss may follow it, but a
     translated version number is a wrong version number."""
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     make_campaign(
         gate,
         "localized-ok",
@@ -228,7 +289,7 @@ def test_the_marker_is_byte_identical_across_editions(gate):
 def test_a_campaign_version_stamp_beside_the_marker_is_RED(gate, capsys):
     """Literal 2: `**v1.0.0** (exact engine pin: …)` — read by nothing, and a lie
     by construction between releases, since `main` is not a released version."""
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     body = "\n".join(
         [
             "# The Test Delve",
@@ -248,7 +309,7 @@ def test_a_campaign_version_stamp_beside_the_marker_is_RED(gate, capsys):
 
 def test_a_pinned_image_tag_in_the_host_command_is_RED(gate, capsys):
     """Literal 3, the one that actually hurt: a host copy-pastes this line."""
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     body = "\n".join(
         [
             "# The Test Delve",
@@ -273,7 +334,7 @@ def test_a_pinned_image_tag_in_the_host_command_is_RED(gate, capsys):
 def test_a_pinned_image_tag_is_reported_ONCE_not_also_as_a_bare_literal(gate, capsys):
     """One line, one finding: the tag's own version is inside the image span, so
     the actionable message ("name `:latest`") is not buried under a duplicate."""
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     body = "\n".join(
         ["# The Test Delve", "", marker, "", "ghcr.io/x/delve-y:v1.0.0", ""]
     )
@@ -287,7 +348,7 @@ def test_a_pinned_image_tag_is_reported_ONCE_not_also_as_a_bare_literal(gate, ca
 def test_the_host_command_naming_latest_is_green(gate, capsys):
     """`:latest` IS the storybook's claim — this is the current delve. The port
     mapping, the volume and `localhost:25565` on the same lines are not tags."""
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     body = "\n".join(
         [
             "# The Test Delve",
@@ -316,7 +377,7 @@ def test_the_host_command_naming_latest_is_green(gate, capsys):
 def test_a_localized_gloss_restating_the_markers_numbers_is_RED(gate, capsys):
     """Literal 4: the zh gloss carried a TRANSLATED copy of the delvec number and
     drifted to 1.0.0 while the untranslated stamp one line above said 1.1.0."""
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     gloss = (
         "> 需要 delve 引擎 0.9.0 或更高版本 — "
         f"最近一次通过验证的 delvec 版本为 {ENGINE_DELVEC}。"
@@ -339,7 +400,7 @@ def test_a_localized_gloss_restating_the_markers_numbers_is_RED(gate, capsys):
 def test_a_localized_gloss_carrying_NO_number_is_green(gate):
     """A gloss may say what the untranslated line above it means — just not in
     numbers, which is what the content round shipped."""
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     gloss = "> (上一行是版本印记,不翻译:它声明本战役需要的引擎版本。)"
     make_campaign(
         gate,
@@ -355,7 +416,7 @@ def test_a_localized_gloss_carrying_NO_number_is_green(gate):
 
 def test_a_two_component_number_is_NOT_a_version_literal(gate):
     """`CC BY-SA 4.0` and `GPL-3.0` are licences a storybook names legitimately."""
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     body = "\n".join(
         [
             "# The Test Delve",
@@ -387,7 +448,7 @@ def test_an_unbound_literal_is_RED_even_with_no_marker_at_all(gate, capsys):
 
 def test_the_marker_line_itself_is_never_read_as_an_unbound_literal(gate):
     """The marker holds two version numbers by design — it is the bound one."""
-    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC)
     make_campaign(gate, "just-the-marker", readmes={"README.md": storybook(marker)})
     assert run(gate) == 0
 
@@ -416,7 +477,7 @@ def test_an_allowlisted_campaign_is_skipped_and_ANNOUNCED(gate, capsys, monkeypa
     make_campaign(
         gate,
         "fine",
-        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC))},
+        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC))},
     )
     assert run(gate) == 0
     out = capsys.readouterr().out
@@ -431,7 +492,7 @@ def test_an_allowlisted_campaign_that_now_PASSES_is_RED(gate, capsys, monkeypatc
     make_campaign(
         gate,
         "fixed",
-        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC))},
+        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC))},
     )
     assert run(gate) == 1
     assert "delete its entry from ALLOWLIST" in capsys.readouterr().err
@@ -442,7 +503,7 @@ def test_an_allowlist_entry_for_an_absent_campaign_is_RED(gate, capsys, monkeypa
     make_campaign(
         gate,
         "fine",
-        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC))},
+        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC))},
     )
     assert run(gate) == 1
     assert "names a campaign that is not under" in capsys.readouterr().err
@@ -478,7 +539,7 @@ def test_a_directory_without_stage_documents_is_not_a_campaign(gate):
     make_campaign(
         gate,
         "real",
-        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC))},
+        readmes={"README.md": storybook(gate.marker_line("0.9.0", ENGINE_DELVEC, ENGINE_MC))},
     )
     assert run(gate) == 0
 

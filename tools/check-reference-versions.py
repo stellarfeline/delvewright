@@ -110,6 +110,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
 
 from lib import mdtable  # noqa: E402
 from publishable import DerivationError, readmes  # noqa: E402
+from versions import PinError, minecraft_version  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOC = REPO_ROOT / "docs" / "reference" / "compiler.md"
@@ -156,8 +157,9 @@ RS_RESERVED_RE = re.compile(
 )
 RESERVED_ROW_RE = re.compile(r'\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')
 
-# `[minecraft]` ... `version = "1.21.11"`
-MC_VERSION_RE = re.compile(r'(?ms)^\[minecraft\]\s*$.*?^version\s*=\s*"([^"]+)"')
+# The Minecraft pin is read by `lib/versions.py`, through `tomllib` — a real
+# implementation of the format the file is written in, and the one reading every
+# gate that wants a pin shares. A regex here was a second parser of TOML.
 
 # The DW0102 catalog row restates the same set by hand:
 #   | `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,…,0.9.0}`). |
@@ -425,11 +427,11 @@ def main() -> int:
             "RS_RESERVED_RE",
         )
 
-    m = MC_VERSION_RE.search(VERSIONS_TOML.read_text(encoding="utf-8"))
-    if m is None:
+    try:
+        real_mc = minecraft_version()
+    except PinError:
         return fail_shape("`[minecraft]` `version = \"…\"`", VERSIONS_TOML,
-                          "MC_VERSION_RE")
-    real_mc = m.group(1)
+                          "lib/versions.py minecraft_version")
 
     problems: list[str] = []
     for label, claimed, real, source in (
