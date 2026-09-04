@@ -38,6 +38,7 @@ import type { NamedEntityDeath } from "./teardown.ts";
 import type { StageName } from "./report.ts";
 import {
   AssistLedger,
+  CONTROLLED_GAMEMODE,
   actorExercise,
   actorFloorFinding,
   assistClearCommand,
@@ -54,6 +55,7 @@ import {
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
+  scriptedDeathRefusal,
   type ActorEncounter,
   type ActorOutcome,
   type ActorTrial,
@@ -4258,18 +4260,29 @@ export class MineflayerExecutor implements StepExecutor {
       const trial = openTrial(enc, attempt, phase);
       this.trials.push(trial);
       try {
+        // A cutscene cannot be allowed to eat this death. The encounter's own
+        // objective completion may start one, and a cutscene's first act is
+        // `gamemode spectator @a` — so a trade that finished the wave hands the
+        // next scripted death an invulnerable body, `/damage` does nothing, and
+        // the stage used to report that as a missing op.
+        await this.awaitControlForScriptedDeath(step, enc);
         const seq = this.deathSeq;
         // What the bot carries INTO the death — the baseline `keep_inventory` is
         // judged against on the way out.
         this.itemsBeforeDeath = bot.inventory.items().length;
+        const chatFrom = this.recentChat.length;
         bot.chat(scriptedDeathCommand());
         if (!(await this.awaitDeathAfter(seq, RESPAWN_TIMEOUT_MS))) {
-          // The bot is opped for exactly this command; if no death followed, the
-          // command was refused (or the op seed drifted) and the stage proves
-          // nothing. Fail the trial rather than walk a loop nobody opened.
-          trial.abortedWith =
-            `the scripted death never landed within ${RESPAWN_TIMEOUT_MS}ms — ` +
-            `\`${scriptedDeathCommand()}\` was refused (is the bot opped?)`;
+          // No death followed, so the stage proves nothing and the trial fails —
+          // but it fails saying what it SAW. The bot is opped and receives the
+          // server's own answer on the chat stream, and its gamemode decides
+          // whether the command could ever have worked.
+          trial.abortedWith = scriptedDeathRefusal(
+            scriptedDeathCommand(),
+            RESPAWN_TIMEOUT_MS,
+            this.gameModeNow(),
+            this.recentChat.slice(chatFrom),
+          );
           throw new Error(`die-retry: ${trial.abortedWith}`);
         }
         trial.cause = this.death?.likelyCause;
@@ -4350,6 +4363,63 @@ export class MineflayerExecutor implements StepExecutor {
         this.unbrandWave(enc);
       }
     }
+  }
+
+  /**
+   * The gamemode the client currently believes it is in, as a plain string.
+   *
+   * Widened deliberately: mineflayer's own type for `bot.game.gameMode` lists
+   * `survival | creative | spectator` and omits `adventure`, which is the mode every
+   * delve actually runs in. Comparing against the mode a delve uses is not an
+   * unintentional comparison; the library's enumeration is short.
+   */
+  private gameModeNow(): string | undefined {
+    return this.bot?.game?.gameMode;
+  }
+
+  /**
+   * Hold until the bot is a body a scripted death can reach — out of the spectator
+   * a cutscene put it in.
+   *
+   * The bound is the campaign's own number, never one invented here: a step whose
+   * completion fires a `Cutscene` carries `cutscene_seconds` in
+   * `critical-path.json`, and a `kill` step carries it exactly as a walking step
+   * does. The sequencer already waits it out AFTER a step; nothing waited it out
+   * inside one, which is where the die-retry stage lives — the general mechanism
+   * was there and its binding did not reach this caller. The grace on top is the
+   * same {@link awaitCutscene} uses.
+   *
+   * Bounded, and it never fails: a window that outlasts what the build declared is
+   * a finding, and the finding is the refusal {@link scriptedDeathRefusal} writes
+   * when the death then does not land — which says the gamemode it saw.
+   */
+  private async awaitControlForScriptedDeath(step: KillStep, enc: Encounter): Promise<void> {
+    this.requireBot();
+    if (this.gameModeNow() === CONTROLLED_GAMEMODE) return;
+    const declaredMs = (step.cutsceneSeconds ?? 0) * 1000;
+    const budget = declaredMs + this.cutsceneGraceMs;
+    const started = Date.now();
+    const deadline = started + budget;
+    process.stderr.write(
+      `[die-retry] ${enc.wave}: the bot is in \`${this.gameModeNow() ?? "?"}\`, not ` +
+        `\`${CONTROLLED_GAMEMODE}\` — waiting out the cutscene before scripting a death ` +
+        `(${step.cutsceneSeconds ?? 0}s declared + ${this.cutsceneGraceMs}ms grace)\n`,
+    );
+    while (Date.now() < deadline) {
+      if (this.death) throw this.death;
+      if (this.gameModeNow() === CONTROLLED_GAMEMODE) {
+        process.stderr.write(
+          `[die-retry] ${enc.wave}: control returned after ${Date.now() - started}ms\n`,
+        );
+        return;
+      }
+      await delay(CUTSCENE_POLL_MS);
+    }
+    process.stderr.write(
+      `[die-retry] ${enc.wave}: still \`${this.gameModeNow() ?? "?"}\` after ${budget}ms — ` +
+        `scripting the death anyway, so the refusal below says what was seen rather than ` +
+        `this wait swallowing it\n`,
+    );
   }
 
   /**

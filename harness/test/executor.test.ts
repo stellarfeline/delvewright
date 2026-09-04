@@ -1674,6 +1674,13 @@ class CombatFakeBot extends InteractFakeBot {
       return;
     }
     if (!message.startsWith("/damage") || !this.scriptedDeathsLand) return;
+    // A spectator is invulnerable, so a real server does NOTHING with this and
+    // says so. The gallery's muster completion starts two cutscenes, and a
+    // cutscene's first act is `gamemode spectator @a`.
+    if (this.game.gameMode === "spectator") {
+      this.emit("messagestr", "This entity cannot be damaged");
+      return;
+    }
     setTimeout(() => {
       this.died = true;
       this.emit("messagestr", "delve-bot was slain by Vindicator");
@@ -1910,6 +1917,60 @@ test("die-retry assist windows are named in the ledger, not taken silently", asy
     "every die-retry window names its encounter and is closed",
   );
   assert.deepEqual(executor.leakedAssists(), [], "and none of them leaked");
+});
+
+test("a cutscene's spectator window cannot eat a scripted death", async () => {
+  // The gallery, measured: `complete_o_clear_the_muster` fires two cutscenes, and
+  // each one opens with `tag @a add dw_cutscene` + `gamemode spectator @a`. A
+  // mid-fight trade that finishes the wave therefore completes the objective, the
+  // cutscene starts, and the next `/damage @s 1000` hits an invulnerable body. The
+  // stage waited its full respawn timeout and then blamed the op seed.
+  //
+  // The window is the campaign's own number: the `kill` step carries
+  // `cutscene_seconds`, exactly as a walking step does, and the stage now waits it
+  // out before scripting a death.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "2000" });
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+
+  // The cutscene the fight started: spectator now, control back in a moment.
+  bot.game.gameMode = "spectator";
+  setTimeout(() => {
+    bot.game.gameMode = "adventure";
+  }, 400);
+
+  await executor.kill({ ...KILL_STEP, cutsceneSeconds: 1 });
+
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 2, "both scripted deaths were taken");
+  assert.deepEqual(
+    trials.map((t) => t.abortedWith),
+    [undefined, undefined],
+    "and neither was abandoned",
+  );
+  assert.ok(
+    trials.every((t) => t.completed),
+    "both loops reached a verdict",
+  );
+});
+
+test("a death that never lands says what it SAW, not what it assumed", async () => {
+  // The window outlasts everything the build declared: the stage scripts the death
+  // anyway rather than swallowing the finding in its own wait, and the refusal
+  // names the gamemode it read and the answer the server gave.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "200" });
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  bot.game.gameMode = "spectator"; // and it never comes back
+
+  await assert.rejects(() => executor.kill({ ...KILL_STEP, cutsceneSeconds: 1 }));
+
+  const t = executor.deathTrials()[0]!;
+  assert.match(t.abortedWith ?? "", /spectator/);
+  assert.match(t.abortedWith ?? "", /This entity cannot be damaged/);
+  assert.doesNotMatch(t.abortedWith ?? "", /is the bot opped\?/);
 });
 
 test("a wave that kills the bot mid-trade does not get credited as the scripted death", async () => {
