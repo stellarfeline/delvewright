@@ -67,7 +67,7 @@ use crate::failure::Failure;
 use crate::nav::{LegRoute, World};
 use crate::plan::{Plan, ResolvedAnchor, Step};
 use delvewright_dsl::stages::Objective;
-use delvewright_dsl::{DwCode, envelope::is_v03};
+use delvewright_dsl::{DwCode, ExitTier, envelope::is_v03};
 
 /// `DW0850`: **a `reach` the party can arrive at without completing.**
 ///
@@ -78,7 +78,7 @@ use delvewright_dsl::{DwCode, envelope::is_v03};
 /// remedy is the same: move the anchor onto the footing, or give the footing to
 /// the anchor. Nudging the waypoint is never the fix; the waypoint is where the
 /// world put it.
-pub const DW_REACH_UNCOMPLETABLE: DwCode = DwCode::every_version("DW0850");
+pub const DW_REACH_UNCOMPLETABLE: DwCode = DwCode::every_version("DW0850", ExitTier::Build);
 
 /// The volume a body has to be in for a `reach` objective to complete.
 ///

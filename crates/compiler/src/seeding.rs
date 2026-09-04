@@ -81,7 +81,7 @@
 //! ordering is the emitter's to guarantee, and the check would only guess. Both
 //! limits are directional: they admit, they never accuse.
 
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::failure::Failure;
@@ -101,7 +101,7 @@ use crate::integrity::Tier;
 /// obligation here for a `dsl_version` to grandfather. Fencing it would mean
 /// deciding that campaigns below some version keep shipping a first death that
 /// does nothing, which is the opposite of what a fence is for.
-pub const DW_UNSEEDED_SCORE_READ: DwCode = DwCode::every_version("DW0495");
+pub const DW_UNSEEDED_SCORE_READ: DwCode = DwCode::every_version("DW0495", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // ranges

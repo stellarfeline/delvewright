@@ -33,7 +33,7 @@
 //! and every prefab in the library predates the contract. The adoption round
 //! that gives them contracts is what turns this binding from zero into a number.
 
-use delvewright_dsl::{Diagnostic, DwCode};
+use delvewright_dsl::{Diagnostic, DwCode, ExitTier};
 
 use crate::plan::{AreaPlacement, PlanError};
 use crate::registry::PrefabRegistry;
@@ -41,11 +41,11 @@ use crate::solver::Rotation;
 
 /// `DW0780`: two placed pieces whose declared exterior faces do not mate — a way
 /// out that the piece on the other side of it does not answer.
-pub const DW_FACE_MISMATCH: DwCode = DwCode::every_version("DW0780");
+pub const DW_FACE_MISMATCH: DwCode = DwCode::every_version("DW0780", ExitTier::Build);
 
 /// `DW0781` (advisory): no placed pair declared a face contract, so the mating
 /// check examined nothing.
-pub const DW_FACE_UNBOUND: DwCode = DwCode::every_version("DW0781");
+pub const DW_FACE_UNBOUND: DwCode = DwCode::every_version("DW0781", ExitTier::Build);
 
 /// One declared way in or out, resolved to where it actually is in the world.
 #[derive(Debug, Clone)]

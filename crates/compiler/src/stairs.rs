@@ -63,7 +63,7 @@ use crate::assembled::{base_id, state_value};
 use crate::failure::Failure;
 use crate::plan::Plan;
 use crate::solver::Facing;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// A stair whose `facing` contradicts the climb a proven route makes across it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +80,7 @@ pub struct ReversedStair {
     pub piece: Option<String>,
 }
 
-const DW_STAIR_REVERSED: DwCode = DwCode::every_version("DW0430");
+const DW_STAIR_REVERSED: DwCode = DwCode::every_version("DW0430", ExitTier::Build);
 
 /// Whether `name` is a stair block laid the normal way up. Upside-down stairs
 /// (`half=top`) present a flat full-height top face, so they carry no climb and

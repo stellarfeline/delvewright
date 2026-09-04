@@ -100,7 +100,7 @@
 //! so the message text is a function of the tree alone.
 
 use crate::failure::Failure;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// `DW0807`: a generated PackTest template runs the campaign's real `tick` and
@@ -111,7 +111,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// the time — that is the failure mode, not a mitigation. A template whose
 /// verdict depends on batch order is not a proof, and re-running it discards the
 /// finding.
-pub const DW_PACKTEST_UNOWNED_GATE: DwCode = DwCode::every_version("DW0807");
+pub const DW_PACKTEST_UNOWNED_GATE: DwCode = DwCode::every_version("DW0807", ExitTier::Build);
 
 /// The batch-global progression holder every gate term is read from
 /// (spec-0018). Mirrors `plan::PARTY`; kept as its own constant so this module

@@ -70,7 +70,7 @@ use delvewright_dsl::siteplan::{
     Crossing, ENTRY_ANCHOR, PlacedBox, PlacedSeam, SITE_AREA, VolumeRole, node_anchor, seam_anchor,
     seam_unlock_anchor,
 };
-use delvewright_dsl::{Campaign, Diagnostic, DwCode, NodeId};
+use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, NodeId};
 use serde::Serialize;
 
 use crate::plan::{AnchorRole, AreaPlacement, PiecePlacement, ResolvedAnchor};
@@ -1292,10 +1292,10 @@ pub fn seam_cells(seams: &[PlacedSeam]) -> BTreeSet<[i32; 3]> {
 // ---------------------------------------------------------------------------
 
 /// `DW0836`: a built seam disagrees with its allocation.
-pub const DW_SEAM_BUILT: DwCode = DwCode::every_version("DW0836");
+pub const DW_SEAM_BUILT: DwCode = DwCode::every_version("DW0836", ExitTier::Build);
 
 /// `DW0837`: a node's floor is unreached.
-pub const DW_NODE_UNREACHED: DwCode = DwCode::every_version("DW0837");
+pub const DW_NODE_UNREACHED: DwCode = DwCode::every_version("DW0837", ExitTier::Build);
 
 /// `DW0877`: a contact nothing can cross (spec-0053 §6).
 ///
@@ -1318,13 +1318,13 @@ pub const DW_NODE_UNREACHED: DwCode = DwCode::every_version("DW0837");
 /// compiler taken under different physics.
 ///
 /// Build tier (exit 3), `every_version`.
-pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::every_version("DW0877");
+pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::every_version("DW0877", ExitTier::Build);
 
 /// `DW0838`: a connection nothing allocated.
-pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::every_version("DW0838");
+pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::every_version("DW0838", ExitTier::Build);
 
 /// `DW0821`: a sightline is blocked. Warning in the slice — see [`sightlines`].
-pub const DW_SIGHTLINE_BLOCKED: DwCode = DwCode::every_version("DW0821");
+pub const DW_SIGHTLINE_BLOCKED: DwCode = DwCode::every_version("DW0821", ExitTier::Build);
 
 /// What the battery examined. Stated on every build, zero or not.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]

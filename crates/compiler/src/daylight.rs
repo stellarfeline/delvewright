@@ -130,12 +130,12 @@ use delvewright_dsl::{Campaign, Objective, WorldTime, WorldWeather};
 use crate::light::LightModel;
 use crate::nav::{DEFAULT_FOLLOW_RANGE, World};
 use crate::plan::Plan;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0496`: a body vanilla burns in daylight is staged for a fight whose ground
 /// reaches open sky, in a delve pinned to a burning hour, with nothing on its
 /// head.
-pub const DW_DAYLIGHT_BURNS_STAGING: DwCode = DwCode::every_version("DW0496");
+pub const DW_DAYLIGHT_BURNS_STAGING: DwCode = DwCode::every_version("DW0496", ExitTier::Build);
 
 /// Vanilla's built-in daylight-burn tag, vendored from Mojang's generated
 /// reports (`crates/dsl/data/entity-tags-1.21.11.json`; `data/PROVENANCE.md`).

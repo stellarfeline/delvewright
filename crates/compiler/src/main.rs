@@ -18,13 +18,14 @@ use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 use delvewright_dsl::{
-    Diagnostic, DwCode, Fenced, Stage, parse_campaign, stage_schema, validate_campaign_with,
+    Diagnostic, DwCode, ExitTier, Fenced, Stage, parse_campaign, stage_schema,
+    validate_campaign_with,
 };
 
 /// `DW0309`: a staged **body** — a stage-2 npc or a stage-5 actor alike —
 /// declares a `skin.texture_id` for which the campaign ships no
 /// `skins/<texture_id>.png`. Build-tier (exit 3).
-const DW_SKIN_PNG_MISSING: DwCode = DwCode::every_version("DW0309");
+const DW_SKIN_PNG_MISSING: DwCode = DwCode::every_version("DW0309", ExitTier::Build);
 
 /// Internal-error exit code (spec-0002: ≥10).
 const EXIT_INTERNAL: u8 = 10;
@@ -1668,21 +1669,13 @@ fn run_build(
             return ExitCode::from(3);
         }
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
-            // Analysis-tier build diagnostics (exit 2, like DW02xx reachability): a
-            // content/prefab defect the author fixes in the content, not a
-            // compiler/geometry defect. These are the DW02xx lighting codes
-            // (DW0210/DW0211, spec-0010), wave-capacity DW0312 (a wave too
-            // big for its room), and DW0313 (a gravity floor that despawns
-            // into the void — fix the prefab with a substrate). Geometry/navigation
-            // diagnostics (DW0307/DW0308/DW0311) print like a solver DW03xx error and
-            // exit 3.
+            // The tier is the code's own ([`ExitTier`]) — an analysis-tier
+            // refusal (exit 2) says the CONTENT is the defect, a build-tier one
+            // (exit 3) says the compiler could not produce a tree. It used to be
+            // re-derived here from the code's spelling, in a copy of the same
+            // expression this verb, `edit` and `edit --check` each kept.
             print_build_error(code, &message, json);
-            let analysis_tier = code.id().starts_with("DW02")
-                || code == emit::DW_WAVE_NO_ROOM
-                || code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
-                || code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
-            let exit = if analysis_tier { 2 } else { 3 };
-            return ExitCode::from(exit);
+            return ExitCode::from(code.exit_tier().exit_status());
         }
     };
 
@@ -1895,12 +1888,7 @@ fn run_edit(
         Ok(r) => r,
         Err(e) => {
             print_build_error(e.code, &e.message, json);
-            // Same tier mapping as `build` (analysis-tier content defects → 2).
-            let analysis_tier = e.code.id().starts_with("DW02")
-                || e.code == emit::DW_WAVE_NO_ROOM
-                || e.code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
-                || e.code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
-            return ExitCode::from(if analysis_tier { 2 } else { 3 });
+            return ExitCode::from(e.code.exit_tier().exit_status());
         }
     };
     let Some(replay) = replay else {
@@ -2019,11 +2007,7 @@ fn run_edit(
         }
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
             print_build_error(code, &message, json);
-            let analysis_tier = code.id().starts_with("DW02")
-                || code == emit::DW_WAVE_NO_ROOM
-                || code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
-                || code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
-            return ExitCode::from(if analysis_tier { 2 } else { 3 });
+            return ExitCode::from(code.exit_tier().exit_status());
         }
     }
 
@@ -2134,7 +2118,7 @@ fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
             Ok(s) => s,
             Err(e) => {
                 diags.push(Diagnostic::error(
-                    DwCode::every_version(e.code),
+                    e.code,
                     "fmt",
                     format!("{shown}:{}:{}", e.line, e.col),
                     e.message,
@@ -2148,7 +2132,7 @@ fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
         changed.push(path.clone());
         if check {
             diags.push(Diagnostic::error(
-                DwCode::every_version(fmt::DW_FMT_UNFORMATTED),
+                fmt::DW_FMT_UNFORMATTED,
                 "fmt",
                 shown.clone(),
                 format!(
@@ -2172,7 +2156,7 @@ fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
     // fixture directory, a path that no longer exists.
     if files.is_empty() {
         let d = Diagnostic::error(
-            DwCode::every_version(fmt::DW_FMT_NO_BINDING),
+            fmt::DW_FMT_NO_BINDING,
             "fmt",
             paths
                 .iter()

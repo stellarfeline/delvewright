@@ -115,7 +115,7 @@ use delvewright_dsl::Campaign;
 use crate::failure::Failure;
 use crate::nav::World;
 use crate::plan::Plan;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0525`: a death region has **no walkable route back** — from some respawn
 /// seat, under some quest state, there is no reachable cell at all that a stake
@@ -126,7 +126,7 @@ use delvewright_dsl::DwCode;
 /// your purse at the bottom, and the way back does not exist. The message names the
 /// death region and the quest state, because those are the two things the author has
 /// to change.
-pub const DW_STAKE_NO_ROUTE_BACK: DwCode = DwCode::every_version("DW0525");
+pub const DW_STAKE_NO_ROUTE_BACK: DwCode = DwCode::every_version("DW0525", ExitTier::Build);
 
 /// `DW0526`: every cell a stake could be projected onto for a death region sits on
 /// a block **runtime removes** — so the marker would be destroyed by the next ride,
@@ -134,7 +134,7 @@ pub const DW_STAKE_NO_ROUTE_BACK: DwCode = DwCode::every_version("DW0525");
 ///
 /// Distinguished from [`DW_STAKE_NO_ROUTE_BACK`] because the prescription is
 /// opposite: there *is* a route back, and the ground it ends on is the problem.
-pub const DW_STAKE_UNSAFE_ANCHOR: DwCode = DwCode::every_version("DW0526");
+pub const DW_STAKE_UNSAFE_ANCHOR: DwCode = DwCode::every_version("DW0526", ExitTier::Build);
 
 /// One respawn seat the table is keyed on: the value `#cp dw.sys` holds while it is
 /// in force, a human label, the standable cell, and the earliest critical-path step

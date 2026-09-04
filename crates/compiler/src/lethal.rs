@@ -32,7 +32,7 @@ use delvewright_dsl::Campaign;
 
 use crate::failure::Failure;
 use crate::plan::{LethalVolumePlan, Plan};
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0511`: a **posted place** — somewhere the campaign requires the party or a
 /// declared body to BE — lies inside a lethal volume (spec-0031).
@@ -52,7 +52,7 @@ use delvewright_dsl::DwCode;
 ///   is deleted on the first tick, the delve loses its speaker, and every static
 ///   proof stays green. Found while writing this feature's own CI fixture, which
 ///   is exactly the shape the rule now refuses.
-pub const DW_LETHAL_RESPAWN_SEAT: DwCode = DwCode::every_version("DW0511");
+pub const DW_LETHAL_RESPAWN_SEAT: DwCode = DwCode::every_version("DW0511", ExitTier::Build);
 
 /// The binding ledger for the lethal-volume proofs.
 #[derive(Clone, Debug, Default)]

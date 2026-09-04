@@ -85,12 +85,12 @@ use delvewright_dsl::{Campaign, Diagnostic, Objective, QuestEffect, TriggerOn};
 
 use crate::nav::entity_dims;
 use crate::plan::Plan;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0359`: an NPC or actor body stands on (error) or immediately in front of
 /// (warning) an interaction affordance, so the player's crosshair reaches the
 /// body instead of the affordance.
-pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359");
+pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359", ExitTier::Build);
 
 /// `DW0422`: a **pressable body's hitbox** shares a cell with another
 /// compiler-owned interaction affordance (DSL v0.8; widened to the whole
@@ -114,7 +114,7 @@ pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359");
 /// the protrusion exists to beat the block the body stands in, and
 /// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
 /// into a neighbouring cell's affordances.
-pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::every_version("DW0422");
+pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::every_version("DW0422", ExitTier::Build);
 
 /// Every affordance the compiler summons is `minecraft:interaction` with
 /// `width:1.0f` — exactly one cell across, centred on the cell.

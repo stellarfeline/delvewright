@@ -11,12 +11,12 @@
 use delvewright_dsl::{Campaign, Diagnostic};
 
 use crate::registry::PrefabRegistry;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// `DW0343`: a `close-gate` targets a gate anchor that declares no fill `block` in
 /// its prefab metadata (or is not a gate region), so the compiler cannot seal it.
-pub const DW_GATE_NO_BLOCK: DwCode = DwCode::every_version("DW0343");
+pub const DW_GATE_NO_BLOCK: DwCode = DwCode::every_version("DW0343", ExitTier::Build);
 
 /// `DW0423`: two `close-gate` effects seal the **same** gate anchor with
 /// different `sealed_hint` wordings.
@@ -26,7 +26,7 @@ pub const DW_GATE_NO_BLOCK: DwCode = DwCode::every_version("DW0343");
 /// wording has nowhere to live and would be silently dropped. Rejected instead —
 /// a line an author wrote and a player can never read is the same silence class
 /// as the finding this verb exists to close.
-pub const DW_SEAL_HINT_CONFLICT: DwCode = DwCode::every_version("DW0423");
+pub const DW_SEAL_HINT_CONFLICT: DwCode = DwCode::every_version("DW0423", ExitTier::Build);
 
 /// `DW0857`: a gate verb names an anchor **more than one of the campaign's areas
 /// provides as a gate**, so which building it addresses is decided by nothing an
@@ -65,7 +65,7 @@ pub const DW_SEAL_HINT_CONFLICT: DwCode = DwCode::every_version("DW0423");
 /// areas. There is no second way, deliberately: an escape hatch here would have
 /// to be the author naming which area they meant, and that is the area-scoped
 /// resolution this diagnostic exists because the compiler does not have.
-pub const DW_GATE_ANCHOR_AMBIGUOUS: DwCode = DwCode::every_version("DW0857");
+pub const DW_GATE_ANCHOR_AMBIGUOUS: DwCode = DwCode::every_version("DW0857", ExitTier::Build);
 
 /// `DW0859`: an anchor reference **no scope settles** names a place more than one
 /// of the campaign's areas provides.
@@ -97,7 +97,7 @@ pub const DW_GATE_ANCHOR_AMBIGUOUS: DwCode = DwCode::every_version("DW0857");
 /// the area-scoped resolution the DSL cannot express for these classes — the
 /// escape hatch and the missing capability are the same thing, so an opt-out
 /// here would be secured by nothing the defect could not also supply.
-pub const DW_ANCHOR_AMBIGUOUS: DwCode = DwCode::every_version("DW0859");
+pub const DW_ANCHOR_AMBIGUOUS: DwCode = DwCode::every_version("DW0859", ExitTier::Build);
 
 /// Every area of `c` that provides `anchor` as a gate the compiler can fill —
 /// **and which of that area's pieces provides it** — paired with the refusals
