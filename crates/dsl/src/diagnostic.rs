@@ -23,6 +23,44 @@
 //!
 //! The fence itself — the pass that drops a `Since(n)` diagnostic raised against
 //! a campaign below `n` — is [`crate::fence`].
+//!
+//! # One cause, one line
+//!
+//! **A secondary whose premise is an already-reported primary is folded into
+//! that primary or suppressed, and the line that survives says how many
+//! dependants it stands for.** A refusal is the whole product at the moment an
+//! author meets it, and N copies of one sentence is a count the reader has to
+//! discount rather than information — worse, the copies come first and bury the
+//! one line that is theirs to act on.
+//!
+//! Measured on a 24-place campaign: deleting `layout-graph.json` printed
+//! `DW0824` (correct, one line) and then **`DW0842` twenty-four times**, once
+//! per `details[]` row, each saying the plan resolves 0 boxes; shortening the
+//! region by five courses printed **`DW0826` twenty-four times**, once per box,
+//! for one number in one document.
+//!
+//! The rule has two shapes, and which one applies is decided by whether the
+//! secondary still has anything of its own to say:
+//!
+//! 1. **Fold.** Every finding shares one cause and one repair, so they are one
+//!    diagnostic naming all of them. The code is unchanged and still fires per
+//!    item the moment the items differ — the folded arm is reachable only in the
+//!    state that makes them identical. Instances: [`codes::QUEST_NOT_EXPANDED`]
+//!    when stage 5 is empty (`crate::validate`), `DW0842` at a zero box count
+//!    (`compiler::detail`), `DW0826` when more than one thing leaves the region
+//!    (`crate::siteplan`).
+//! 2. **Defer.** The secondary is a real, separate finding whose NUMBER was
+//!    measured against something already refused, so it keeps its own line and
+//!    gains a clause naming what it is downstream of. Instances: `DW0818`'s
+//!    clause when stage 5 declares no quests (`crate::layout`), and
+//!    `crate::siteplan::off_grid_note` on every verdict computed from a box
+//!    `DW0825` has refused.
+//!
+//! What the rule never does is drop a code's ability to refuse. Folding changes
+//! how many lines say a thing, never whether the run stops: every fold above is
+//! an error tier that still exits non-zero, and each has a test on both sides —
+//! primary present, one line; primary absent, the secondary fires per item as
+//! before.
 
 use serde::Serialize;
 
@@ -74,6 +112,7 @@ pub enum Binds {
 pub struct DwCode {
     id: &'static str,
     binds: Binds,
+    subject: Subject,
 }
 
 impl DwCode {
@@ -83,6 +122,7 @@ impl DwCode {
         DwCode {
             id,
             binds: Binds::EveryVersion,
+            subject: Subject::Campaign,
         }
     }
 
@@ -92,6 +132,20 @@ impl DwCode {
         DwCode {
             id,
             binds: Binds::Since(minor),
+            subject: Subject::Campaign,
+        }
+    }
+
+    /// Mark this code an **engine-property notice** — see [`Subject::Engine`]
+    /// for the test to apply before choosing it. Chained onto whichever
+    /// constructor states when the rule binds, because the two questions are
+    /// independent: *when does this start applying to a campaign* and *whose
+    /// state is it about*.
+    pub const fn about_the_engine(self) -> DwCode {
+        DwCode {
+            id: self.id,
+            binds: self.binds,
+            subject: Subject::Engine,
         }
     }
 
@@ -103,6 +157,11 @@ impl DwCode {
     /// When this rule starts binding a campaign.
     pub const fn binds(self) -> Binds {
         self.binds
+    }
+
+    /// Whose state this code's verdict is about.
+    pub const fn subject(self) -> Subject {
+        self.subject
     }
 }
 
@@ -195,6 +254,14 @@ pub struct Diagnostic {
     /// off one that was reported.
     #[serde(skip)]
     pub binds: Binds,
+    /// Whose state this verdict is about, carried over from the [`DwCode`] that
+    /// raised it — the key `delvec` groups its output by.
+    ///
+    /// Not part of the `--json` wire shape either, for the same reason `binds`
+    /// is not: it decides how the run PRESENTS a diagnostic, never something a
+    /// consumer reads off one.
+    #[serde(skip)]
+    pub subject: Subject,
 }
 
 impl Diagnostic {
@@ -212,6 +279,7 @@ impl Diagnostic {
             path: path.into(),
             message: message.into(),
             binds: code.binds(),
+            subject: code.subject(),
         }
     }
 
@@ -229,6 +297,79 @@ impl Diagnostic {
             path: path.into(),
             message: message.into(),
             binds: code.binds(),
+            subject: code.subject(),
+        }
+    }
+
+    /// **Which of a run's three groups this line belongs in**, lowest first.
+    ///
+    /// The one authority on the order `delvec` prints in. See [`Subject`] for
+    /// what the split is and why.
+    #[must_use]
+    pub fn group(&self) -> Group {
+        match (self.severity, self.subject) {
+            (Severity::Error, _) => Group::Refusal,
+            (Severity::Warning, Subject::Campaign) => Group::AboutTheCampaign,
+            (Severity::Warning, Subject::Engine) => Group::AboutTheEngine,
+        }
+    }
+}
+
+/// **Whose state a code's verdict is about.**
+///
+/// The question this answers, and the only question it answers: *if the author
+/// changed nothing about their campaign and the engine's own tables were
+/// finished, would this line go away?*
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum Subject {
+    /// The campaign. Every refusal, and every advisory whose verdict is a fact
+    /// about the documents in front of the author — the default, because a
+    /// diagnostic is addressed to an author unless it says otherwise.
+    #[default]
+    Campaign,
+    /// **The ENGINE**, regardless of the campaign: an engine table that is still
+    /// seeded, a standard that has not been calibrated. Nothing the author can
+    /// write moves it, and it is identical on every campaign the engine
+    /// compiles, so it prints after the lines that ARE theirs — see [`Group`].
+    ///
+    /// This is not a licence to make a campaign's problem quiet. The test is
+    /// whether the line would read the same on a different campaign; where it
+    /// names something the author wrote, it is a [`Subject::Campaign`] verdict
+    /// however advisory its tier.
+    Engine,
+}
+
+/// **The order a run's diagnostics are printed in**, and the labels they are
+/// printed under.
+///
+/// Author-actionable first, then advisories about the campaign, then notices
+/// about the engine. Measured on every site-plan run before this existed: four
+/// to six paragraphs saying "this is fine" or "the engine's own table is
+/// provisional", ahead of the one line the author was there to act on.
+///
+/// Ordering only — nothing is dropped, and every code that reported before
+/// reports now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Group {
+    /// A hard rejection. Yours to act on.
+    Refusal,
+    /// An advisory about the campaign: a measurement, or a verdict that depends
+    /// on something outside the documents.
+    AboutTheCampaign,
+    /// A notice about this engine, true regardless of the campaign.
+    AboutTheEngine,
+}
+
+impl Group {
+    /// The heading this group is printed under, with `n` lines in it.
+    #[must_use]
+    pub fn heading(self, n: usize) -> String {
+        match self {
+            Group::Refusal => format!("-- {n} refusal(s): these are yours to act on"),
+            Group::AboutTheCampaign => format!("-- {n} advisory(ies) about this campaign"),
+            Group::AboutTheEngine => {
+                format!("-- {n} notice(s) about this engine, true of any campaign")
+            }
         }
     }
 }
