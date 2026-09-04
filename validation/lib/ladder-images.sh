@@ -213,6 +213,9 @@ dw_container_holding() {
       return 0
     fi
   done
+  # The holder went away between the two queries. Say that, rather than leaving
+  # the caller's line ending in "held by container " and nothing.
+  echo "<one that has since gone>"
 }
 
 # Is this tag a name THIS ladder minted for THIS project? See the header: the
@@ -239,8 +242,9 @@ dw_tag_is_project_owned() {
 # caller's shell (never call this in a subshell — the counts are the binding):
 #
 #   DW_IMG_REMOVED       how many images/tags went (or would go)
-#   DW_IMG_BYTES         their summed `.Size`, an UPPER bound on disk returned:
-#                        layers shared between images are counted once per image
+#   DW_IMG_BYTES         their summed `.Size` — a figure of IMAGE SIZE and not of
+#                        disk: every delve image carries the whole itzg base, the
+#                        daemon stores that once, and `.Size` reports it for each
 #   DW_IMG_KEPT          how many were kept, each with a reason
 #   DW_IMG_EXAMINED      how many carried this project's label at all — the
 #                        binding count, and a zero is a fact worth printing
