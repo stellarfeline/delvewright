@@ -36,10 +36,13 @@ use crate::light::LightProbe;
 /// beside it cannot be read afterwards — a `lit` taken over four cells and a
 /// `lit` taken over four thousand are the same word.
 ///
-/// It also states the **sky the profile was taken at**, and the daylight figure
-/// beside it. A floor's light is not one number — the middle of a pavilion is
-/// bright at noon and black at midnight — so a level with no sky written beside
-/// it is unreadable in exactly the way an unstated binding is.
+/// It also states the **sky the profile was taken at**, the daylight figure
+/// beside it, and *why that was the sky*
+/// ([`crate::light::SkyClaim`]). A floor's light is not one number — the middle
+/// of a pavilion is bright at noon and black at midnight — so a level with no sky
+/// written beside it is unreadable in exactly the way an unstated binding is; and
+/// a piece the sky never reaches has one figure rather than two, which the
+/// sentence says instead of printing the same number twice.
 ///
 /// A probe that bound to nothing is never written; the caller refuses first
 /// (`DW0752`), because "unbound" is a finding about the piece and not a
@@ -53,19 +56,31 @@ pub fn set_lighting_from_probe(doc: &mut PrefabMeta, p: &LightProbe) {
         .min_light_daylight
         .map(|d| format!("{d}"))
         .unwrap_or_else(|| "n/a".to_string());
+    // The sky HALF of the sentence is chosen by the piece, not written here: an
+    // enclosed piece is measured under no sky at all, and a record saying it was
+    // taken at a clear night would be a figure filed under a sky it never met.
+    let sky = if p.sky.admits_sky() {
+        format!(
+            "Taken at effective sky {} (a clear night, the darkest the engine models); under full \
+             daylight (sky {}) the same minimum is {}.",
+            p.sky_light, p.daylight_sky_light, daylight
+        )
+    } else {
+        format!(
+            "Taken at effective sky {}, which is the sky at every hour here, so there is no \
+             second and brighter figure to state.",
+            p.sky_light
+        )
+    };
     let method = Some(format!(
         "static light estimate (delve-admit, the compiler's block+sky flood): min over {} floor \
          cell(s) reachable on foot from {} ground-level entry cell(s), of {} standable in the \
-         region box; the piece stands in open air, so sky light enters through its openings. \
-         Taken at effective sky {} (a clear night, the darkest the engine models); under full \
-         daylight (sky {}) the same minimum is {}. NOT a live-server probe; dark_threshold={}. \
+         region box; {}. {sky} NOT a live-server probe; dark_threshold={}. \
          Re-probe live for borderline pieces.",
         p.measured_cells,
         p.entry_cells,
         p.standable_cells,
-        p.sky_light,
-        p.daylight_sky_light,
-        daylight,
+        p.sky.why(),
         p.dark_threshold
     ));
     doc.lighting = Some(match (p.profile, p.measured_min_light) {
