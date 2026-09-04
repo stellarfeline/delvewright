@@ -34,7 +34,7 @@
     "reviewer has the number to check. Nothing in this repo can verify a content",
     "branch; the content repo's own `zone-audit.yml` runs the same sweep there."
   ],
-  "content_sha": "f38ed73a12b26231c962f9288cc90806deaca849",
+  "content_sha": "42ee707db69b83d27534608b2758d8697ad2c46e",
   "off_pin": [
     {
       "branch": "campaign/bell-r2",
