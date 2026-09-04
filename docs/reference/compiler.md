@@ -208,6 +208,19 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   placed geometry) but is analysis-tier: `main` maps a `DW02xx` build diagnostic to
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
   re-verification in pass 9.
+- The light field itself (`compiler::light`) is **dense**: over the assembled
+  AABB, each cell is one byte holding whether light passes it, whether the sky is
+  above it and what it emits, resolved from its block id once. Sky exposure is one
+  top-down sweep per column; the frontier drains brightest-first, so each cell is
+  relaxed once. The greedy relight loop floods once and **extends** the field per
+  fixture — a fixture written into a cell whose passability it does not change,
+  emitting at least as much as what it replaced, can only make the field
+  brighter, so the new field is the old one with that seed flooded into it; a
+  write failing either half floods again from nothing. Determinism does not rest
+  on the walk order: the field is the pointwise maximum over every seed of
+  `seed − distance`, one value per cell however the frontier drains. The one
+  order that IS a decision — the darkest deficient cell, ties by ascending
+  `(y, z, x)` — is an explicit sort.
 - Every emitted `.mcfunction` line is checked against the vendored 1.21.11
   Brigadier tree (`compiler::commands`, `data/commands-1.21.11.json`;
   structure-only — arity/paths, not arg values). mecha re-validates in CI
