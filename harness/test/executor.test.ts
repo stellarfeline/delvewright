@@ -1576,6 +1576,9 @@ class CombatFakeBot extends InteractFakeBot {
   /** Server-side census state: which mobs wear the brand, and how many censuses
    * have been answered (the sequence the harness tells fresh from stale by). */
   private readonly branded = new Set<number>();
+  /** Ids parked by {@link addBystander}, and the arguments they were parked with. */
+  private readonly bystanders = new Set<number>();
+  private readonly bystanderArgs = new Map<number, [number, number]>();
   private censusSeq = 0;
   /** The server's credited-kill ledger for the seating in force: `k_reward_<wave>`
    * adds one per `player_killed_entity`, and `spawn_<wave>` zeroes it. A body the
@@ -1623,6 +1626,12 @@ class CombatFakeBot extends InteractFakeBot {
       this.nextId += 1;
     }
     for (const id of seated.slice(0, opts.worldKills ?? 0)) this.worldKill(id);
+    // Bystanders are not of the wave, so the re-seat's tag sweep never touched
+    // them: they are still standing where they were.
+    for (const id of [...this.bystanders]) {
+      const [d, h] = this.bystanderArgs.get(id) ?? [1, 1];
+      this.addBystander(id, d, h);
+    }
   }
 
   /** The ids of everything currently wearing the wave tag. */
@@ -1728,6 +1737,11 @@ class CombatFakeBot extends InteractFakeBot {
    * census — exactly the drowned bell's belfry. */
   addBystander(id: number, distance = 1, hitsToKill = 1): void {
     const self = this;
+    // A re-seat clears the WAVE (`kill @e[tag=dw_wave_<id>]`) and nothing else, so
+    // a body belonging to no wave outlives it — which is the whole reason one is
+    // parked here. `seat` re-installs these for the same reason.
+    this.bystanders.add(id);
+    this.bystanderArgs.set(id, [distance, hitsToKill]);
     this.entities[id] = {
       id,
       name: "husk",
