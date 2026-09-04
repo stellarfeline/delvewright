@@ -830,6 +830,84 @@ fn dw0842_refuses_an_anchor_key_the_place_does_not_owe() {
     assert!(e.contains("is not a name"), "{e}");
 }
 
+/// **One cause, one line — the primary-absent side.** With a map to be wrong
+/// about, one bad `place` is one row's mistake: it is refused on its own, at its
+/// own path, and the rows either side of it are not.
+#[test]
+fn dw0842_refuses_one_bad_row_per_row_while_the_map_exists() {
+    let tmp = tempdir("dw0842-one-row");
+    let places = every_place();
+    let refs: Vec<&str> = places.iter().map(String::as_str).collect();
+    let d = detailed(&tmp, &refs);
+    patch_detail_plan(&d, |v| {
+        v["content"]["details"][1]["place"] = serde_json::json!("node/nowhere");
+    });
+    let (diags, binding) = check_at(&d);
+    let hit: Vec<_> = diags
+        .iter()
+        .filter(|x| x.code == "DW0842" && x.severity == Severity::Error)
+        .collect();
+    assert_eq!(
+        hit.len(),
+        1,
+        "one wrong row is one refusal: {:?}",
+        codes(&diags)
+    );
+    assert_eq!(hit[0].path, "/content/details[1]/place");
+    assert!(
+        hit[0].message.contains("node/nowhere"),
+        "{}",
+        hit[0].message
+    );
+    assert_eq!(
+        binding.bound,
+        places.len() - 1,
+        "and every other row still bound"
+    );
+}
+
+/// **One cause, one line — the primary-present side.** A site plan that resolves
+/// ZERO boxes makes every `details[]` row miss by construction, so the per-row
+/// refusal says one sentence once per row and none of the copies is the finding.
+/// Measured on a 24-place campaign before this fold: `DW0824` (correct, one
+/// line) followed by 24 copies of `DW0842`. The count, every row and the primary
+/// it is downstream of are stated once — and the run still stops.
+#[test]
+fn dw0842_states_a_zero_box_plan_once_and_names_every_row() {
+    let tmp = tempdir("dw0842-zero-boxes");
+    let places = every_place();
+    let refs: Vec<&str> = places.iter().map(String::as_str).collect();
+    let d = detailed(&tmp, &refs);
+    std::fs::remove_file(d.campaign.join("layout-graph.json")).unwrap();
+    let (diags, binding) = check_at(&d);
+    let hit: Vec<_> = diags
+        .iter()
+        .filter(|x| x.code == "DW0842" && x.severity == Severity::Error)
+        .collect();
+    assert_eq!(
+        hit.len(),
+        1,
+        "one line for one map, not one per row: {:?}",
+        codes(&diags)
+    );
+    assert_eq!(hit[0].path, "/content/details");
+    for p in &places {
+        assert!(
+            hit[0].message.contains(p.as_str()),
+            "a fold names every row it stands for; `{p}` is missing from: {}",
+            hit[0].message
+        );
+    }
+    assert!(
+        hit[0].message.contains("DW0824"),
+        "and it names the primary it defers to: {}",
+        hit[0].message
+    );
+    assert_eq!(binding.rows, places.len(), "the row count is still stated");
+    assert_eq!(binding.boxes, 0, "against a zero denominator");
+    assert_eq!(binding.bound, 0);
+}
+
 /// The limiting case, named rather than inferred.
 #[test]
 fn dw0842_refuses_a_detail_plan_with_no_site_plan() {
@@ -979,6 +1057,65 @@ fn dw0844_refuses_a_face_answering_no_seam() {
     });
     let e = check_and_expect(&d, "DW0844");
     assert!(e.contains("DISCOVERED rather than designed"), "{e}");
+}
+
+/// **One cause, one line — the DEFER shape** (`dsl::diagnostic`).
+///
+/// A `details[]` row is judged against a FRAME and a SEAM SET the site plan
+/// computed, so a plan whose own checks have already refused them makes a
+/// stage-6 line a true measurement against a number the map does not keep — and
+/// the primary is in ANOTHER document, where the reader cannot see the relation.
+/// Measured on a 24-place campaign: widening one box by one block printed
+/// `DW0825` and `DW0828` in the site plan and then `DW0843` and `DW0844` in the
+/// detail plan, five codes over three documents, with nothing saying which was
+/// the edit.
+///
+/// The stage-6 lines keep their own refusals — each names a real mismatch, and
+/// suppressing them is how fixing one thing produces a fresh crop nobody was
+/// shown — and gain a clause naming what they stand downstream of.
+#[test]
+fn a_stage_six_verdict_names_the_site_plan_refusal_it_stands_downstream_of() {
+    let tmp = tempdir("upstream-refused");
+    let d = detailed(&tmp, &["node/exit"]);
+    // One block wider on x: off the kit grid (`DW0825`), and the frame the piece
+    // is measured against moves with it.
+    common::patch_file(&d.campaign.join("site-plan.json"), |v| {
+        let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+        let b = boxes
+            .iter_mut()
+            .find(|b| b["node"] == "node/exit")
+            .expect("the fixture places `node/exit`");
+        let x = b["extent"][0].as_i64().unwrap();
+        b["extent"][0] = serde_json::json!(x + 1);
+    });
+    let e = check_and_expect(&d, "DW0843");
+    assert!(
+        e.contains("is not the shape of the box"),
+        "the verdict still refuses on its own terms: {e}"
+    );
+    assert!(
+        e.contains("downstream of a site-plan refusal") && e.contains("DW0825"),
+        "and says what it is downstream of: {e}"
+    );
+}
+
+/// The other side of the same rule: with a plan the plan's own checks accept,
+/// the clause is ABSENT. A deferral that fired on a settled plan would be
+/// telling every author their measurement is provisional.
+#[test]
+fn a_stage_six_verdict_carries_no_deferral_when_the_plan_is_settled() {
+    let tmp = tempdir("upstream-settled");
+    let d = detailed(&tmp, &["node/exit"]);
+    patch_piece(&d, "exit", |v| {
+        let n = v["structure"]["size"][0].as_i64().unwrap();
+        v["structure"]["size"][0] = serde_json::json!(n + 1);
+    });
+    let e = check_and_expect(&d, "DW0843");
+    assert!(e.contains("1 too many"), "the ordinary refusal: {e}");
+    assert!(
+        !e.contains("downstream of a site-plan refusal"),
+        "and nothing upstream to defer to: {e}"
+    );
 }
 
 #[test]

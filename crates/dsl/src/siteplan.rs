@@ -69,7 +69,7 @@ use crate::envelope::Campaign;
 use crate::ids::{DatumId, EdgeId, FactId, NodeId, ViewId, VolumeId};
 use crate::layout::{Edge, LayoutGraphContent, StationKind};
 use crate::metrics::{
-    MAX_JUMP_RISE_16, MetricKind, MetricValue, Metrics, Reads, SizeClass, WayClass,
+    MAX_JUMP_RISE_16, MetricKind, MetricValue, Metrics, Pitch, Reads, SizeClass, WayClass,
     passable_clearance_cells, passable_width_cells,
 };
 use crate::stages::AreaLighting;
@@ -1125,6 +1125,217 @@ fn contact_extent(s: &Seam, face: &SharedFace) -> [i64; 2] {
     }
 }
 
+/// Which axis a face is flat in: 0 = x, 1 = y, 2 = z.
+#[must_use]
+pub fn normal_axis_of(face: Face) -> usize {
+    match face {
+        Face::East | Face::West => 0,
+        Face::Up | Face::Down => 1,
+        Face::South | Face::North => 2,
+    }
+}
+
+/// A seam's crossing rectangle as an inclusive world AABB, flat in the face's
+/// normal axis — [`crossing_rect`]'s two numbers put where the world is.
+///
+/// Extracted rather than written twice because [`stair_run`] needs the same
+/// rectangle at validation tier, before any `PlacedSeam` exists.
+fn crossing_aabb(s: &Seam, face: &SharedFace, extent: [i64; 2]) -> ([i64; 3], [i64; 3]) {
+    let normal_axis = normal_axis_of(s.face);
+    let (u_axis, v_axis) = in_plane_axes(s.face);
+    let mut lo = [0i64; 3];
+    let mut hi = [0i64; 3];
+    lo[normal_axis] = face.plane;
+    hi[normal_axis] = face.plane;
+    lo[u_axis] = s.at[0];
+    hi[u_axis] = s.at[0] + extent[0] - 1;
+    lo[v_axis] = s.at[1];
+    hi[v_axis] = s.at[1] + extent[1] - 1;
+    (lo, hi)
+}
+
+/// **What a stair costs the box that hosts it** — the one place the geometry of
+/// a run is worked out, for both the check that refuses a plan (`DW0830`) and
+/// the derivation that lays the treads.
+///
+/// # Why this is one function and not two
+///
+/// It was two, and the two disagreed. `DW0830` measured the run against the
+/// seam's **rise** and against the host's whole **extent**; the derivation
+/// measures it against the **climb** the opening really asks for and against
+/// the run the host really has beside the hole. Both readings are defensible
+/// in isolation and neither is the other, so a plan could pass the check by one
+/// arithmetic and be refused by the other at build time — the treads then went
+/// unlaid, and the place they were the only way into came back as `DW0837` with
+/// nothing pointing at the stair. Found by building: a two-place plan whose
+/// lower room is entered through a hole in the upper room's floor reached green
+/// at stage 4 with `needs 8, affords 8` and built no stair at all, because the
+/// climb to the pierced plane is 7 and the run beside a centred hole is 6.
+///
+/// So the rule lives here and both readers call it. A plan that reaches green
+/// is a plan the derivation can build, by construction rather than by two
+/// arithmetics agreeing.
+///
+/// # What the numbers mean
+///
+/// * `climb` — how high the courses must carry a body. Across a **vertical**
+///   face that is the seam's own sill, because the body stands at the sill and
+///   steps through; through a **floor or ceiling** it is the pierced plane,
+///   because the body stands in the hole and steps out beside it. Both come out
+///   as the floor difference on an ordinary plan and differ exactly where the
+///   plan puts the sill somewhere other than the far floor.
+/// * `run_axis` — the horizontal axis the run is spent on. Across a vertical
+///   face it is that face's normal; through a floor or ceiling the run may go
+///   either way, so it is the host's longer horizontal axis.
+/// * `start`/`step` — the stair arrives AT its seam, so course 0 is the one the
+///   body steps off and the run walks back into the room.
+/// * `available` — how many cells of that walk the host really has. Across a
+///   vertical face the run walks the whole footprint. Through a floor or a
+///   ceiling it leaves along **one** side of the hole, so it is the room on the
+///   roomier side plus the hole's own width — never the host's whole extent,
+///   which is a run that only exists if the stair could run both ways at once.
+///
+/// `None` where there is no run to lay or judge: a host at or above what the
+/// stair has to reach (the plan named the higher place, which `DW0830` refuses
+/// by name), or a hole that is not over this host at all (`DW0828`'s finding).
+#[must_use]
+pub fn stair_run(
+    host_floor: i64,
+    host_foot: [i64; 4],
+    normal_axis: usize,
+    plane: i64,
+    opening: ([i64; 3], [i64; 3]),
+) -> Option<StairRun> {
+    let (olo, ohi) = opening;
+    let lo = [host_foot[0], host_floor, host_foot[2]];
+    let hi = [host_foot[1], host_floor, host_foot[3]];
+    let target = if normal_axis == 1 { plane } else { olo[1] };
+    let climb = target - host_floor;
+    if climb <= 0 {
+        return None;
+    }
+    let run_axis = if normal_axis == 1 {
+        let ex = host_foot[1] - host_foot[0] + 1;
+        let ez = host_foot[3] - host_foot[2] + 1;
+        if ex >= ez { 0usize } else { 2 }
+    } else {
+        normal_axis
+    };
+    let (start, step, available) = if normal_axis == 1 {
+        let (olo_r, ohi_r) = (
+            olo[run_axis].max(lo[run_axis]),
+            ohi[run_axis].min(hi[run_axis]),
+        );
+        if olo_r > ohi_r {
+            return None;
+        }
+        let width = ohi_r - olo_r + 1;
+        let room_lo = olo_r - lo[run_axis];
+        let room_hi = hi[run_axis] - ohi_r;
+        if room_lo >= room_hi {
+            (ohi_r, -1, room_lo + width)
+        } else {
+            (olo_r, 1, room_hi + width)
+        }
+    } else if plane > hi[run_axis] {
+        (hi[run_axis], -1, hi[run_axis] - lo[run_axis] + 1)
+    } else {
+        (lo[run_axis], 1, hi[run_axis] - lo[run_axis] + 1)
+    };
+    Some(StairRun {
+        climb,
+        run_axis,
+        start,
+        step,
+        available,
+    })
+}
+
+/// What a stair's treads cost their host — see [`stair_run`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StairRun {
+    /// How high the courses must carry a body, off the host's own walk plane.
+    pub climb: i64,
+    /// The horizontal axis the run walks: 0 = x, 2 = z.
+    pub run_axis: usize,
+    /// Where course 0 — the one the body steps off — stands on `run_axis`.
+    pub start: i64,
+    /// Which way the run walks back into the host: `+1` or `-1`.
+    pub step: i64,
+    /// How many cells of that walk the host really affords.
+    pub available: i64,
+}
+
+/// The run one standard pitch costs a climb, rounded up: a course is a whole
+/// cell, and a run two-thirds of a cell short is a run the host does not have.
+#[must_use]
+pub fn run_of(pitch: &Pitch, climb: i64) -> i64 {
+    let (span, per) = (climb.abs() * i64::from(pitch.run), i64::from(pitch.rise));
+    if per == 0 {
+        span
+    } else {
+        span / per + i64::from(span % per != 0)
+    }
+}
+
+/// **The gentlest standard pitch a climb fits in `available` cells of run**, or
+/// `None` when the table defines none that does.
+///
+/// The walk is over [`Metrics::names_of`] in table order — gentlest first — and
+/// takes the first that fits. One authority, so the verdict `DW0830` reaches and
+/// the geometry the derivation lays cannot be about different standards.
+#[must_use]
+pub fn gentlest_pitch(
+    table: &Metrics,
+    reads: &mut Reads,
+    climb: i64,
+    available: i64,
+) -> Option<Pitch> {
+    for name in table.names_of(MetricKind::Pitch) {
+        let Ok(entry) = table.resolve(MetricKind::Pitch, name) else {
+            continue;
+        };
+        let MetricValue::Pitch(p) = entry.value(reads) else {
+            continue;
+        };
+        if p.rise == 0 {
+            continue;
+        }
+        if run_of(p, climb) <= available {
+            return Some(*p);
+        }
+    }
+    None
+}
+
+/// The standard pitch that costs a climb the LEAST run, and what that run is —
+/// the number `DW0830`'s refusal quotes, because it is the shortest run any
+/// standard could do the climb in.
+#[must_use]
+pub fn tightest_pitch(
+    table: &Metrics,
+    reads: &mut Reads,
+    climb: i64,
+) -> Option<(&'static str, i64)> {
+    let mut best: Option<(&'static str, i64)> = None;
+    for name in table.names_of(MetricKind::Pitch) {
+        let Ok(entry) = table.resolve(MetricKind::Pitch, name) else {
+            continue;
+        };
+        let MetricValue::Pitch(p) = entry.value(reads) else {
+            continue;
+        };
+        if p.rise == 0 {
+            continue;
+        }
+        let needed = run_of(p, climb);
+        if best.is_none_or(|(_, b)| needed < b) {
+            best = Some((name, needed));
+        }
+    }
+    best
+}
+
 /// The plan's seams, resolved by the code the stage-4 checks judge with.
 ///
 /// A seam whose face the two boxes do not share, or whose opening the table does
@@ -1162,21 +1373,10 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
         let Some((crossing, extent)) = crossing_rect(s, &face, &table, reads) else {
             continue;
         };
-        let normal_axis = match s.face {
-            Face::East | Face::West => 0,
-            Face::Up | Face::Down => 1,
-            Face::South | Face::North => 2,
-        };
+        let normal_axis = normal_axis_of(s.face);
         // The face's two in-plane axes, in the order `at` names them.
         let (u_axis, v_axis) = in_plane_axes(s.face);
-        let mut lo = [0i64; 3];
-        let mut hi = [0i64; 3];
-        lo[normal_axis] = face.plane;
-        hi[normal_axis] = face.plane;
-        lo[u_axis] = s.at[0];
-        hi[u_axis] = s.at[0] + extent[0] - 1;
-        lo[v_axis] = s.at[1];
-        hi[v_axis] = s.at[1] + extent[1] - 1;
+        let (lo, hi) = crossing_aabb(s, &face, extent);
         let mut smin = [0i64; 3];
         let mut smax = [0i64; 3];
         smin[normal_axis] = face.plane;
@@ -1979,7 +2179,7 @@ fn grid(placed: &[Placed<'_>], table: &Metrics, reads: &mut Reads, d: &mut Vec<D
     for p in placed {
         for (axis, name) in [(0usize, "x"), (1usize, "z")] {
             let e = p.plan.extent[axis].get();
-            if e % q == 0 {
+            if !off_grid(e, q) {
                 continue;
             }
             d.push(Diagnostic::error(
@@ -2000,6 +2200,113 @@ fn grid(placed: &[Placed<'_>], table: &Metrics, reads: &mut Reads, d: &mut Vec<D
     }
 }
 
+/// **`DW0825`'s own test, for one footprint on one axis.** One function so that
+/// a verdict computed from a box can ask the SAME question the refusal asked,
+/// rather than re-deriving the kit-grid rule beside it.
+fn off_grid(extent: u32, quantum: u32) -> bool {
+    quantum != 0 && !extent.is_multiple_of(quantum)
+}
+
+/// **The clause a stage-6 verdict owes when the allocation it measured against
+/// is one this plan has already refused** — the DEFER shape of
+/// [`crate::diagnostic`]'s "one cause, one line".
+///
+/// A `details[]` row is judged against a FRAME and a SEAM SET, and both are
+/// computed from the site plan. When the plan's own refusals have already
+/// touched them, the stage-6 line is a true, separate finding measured against a
+/// number the map does not really have — and, worse, the primary is in another
+/// document, so the reader has no way to see the relation. Measured: widening
+/// one box by one block printed `DW0825` and `DW0828` in the site plan and then
+/// `DW0843` and `DW0844` in the detail plan, five codes over three documents,
+/// with nothing saying which was the edit.
+///
+/// So the stage-6 verdicts keep their own lines — each still names a real
+/// mismatch, and suppressing them is how fixing one thing produces a fresh crop
+/// of refusals nobody was shown — and gain a clause saying what they are
+/// downstream of. Two things can be already-refused:
+///
+/// 1. the place's own box is off the kit grid (`DW0825`), so its frame is not a
+///    frame this map will keep;
+/// 2. the plan DECLARES a seam on this place that it did not resolve — a face
+///    the two boxes do not share (`DW0828`) or an opening that does not fit
+///    (`DW0829`) — so the allocated seam set this place answers is short of what
+///    the author wrote.
+///
+/// Empty when the plan settled both, which is the ordinary case and costs one
+/// pass over the plan's seams.
+#[must_use]
+pub fn refused_upstream(
+    c: &Campaign,
+    node: &NodeId,
+    resolved: &[PlacedSeam],
+    reads: &mut Reads,
+) -> String {
+    let Some(plan) = c.site_plan.as_ref().map(|p| &p.content) else {
+        return String::new();
+    };
+    let mut parts: Vec<String> = Vec::new();
+
+    if let Some(q) = Metrics::table().grid(reads).map(|g| g.quantum)
+        && let Some(b) = plan.boxes.iter().find(|b| &b.node == node)
+    {
+        let axes: Vec<&str> = [(0usize, "x"), (1usize, "z")]
+            .into_iter()
+            .filter(|(a, _)| off_grid(b.extent[*a].get(), q))
+            .map(|(_, name)| name)
+            .collect();
+        if !axes.is_empty() {
+            parts.push(format!(
+                "this place's box is off the kit grid on {axes} and `DW0825` has already refused \
+                 it, so the frame above is not one this map keeps",
+                axes = axes.join(" and "),
+            ));
+        }
+    }
+
+    // A seam the plan wrote and did not resolve: the graph edge names this
+    // place, the plan has a seam row for it, and nothing came out the other end.
+    let graph_edges: BTreeMap<&str, &Edge> = c
+        .layout_graph
+        .as_ref()
+        .map(|g| {
+            g.content
+                .edges
+                .iter()
+                .map(|e| (e.id().0.as_str(), e))
+                .collect()
+        })
+        .unwrap_or_default();
+    let unresolved: Vec<String> = plan
+        .seams
+        .iter()
+        .filter(|s| {
+            graph_edges
+                .get(s.edge.0.as_str())
+                .is_some_and(|e| e.a() == node || e.b() == node)
+                && !resolved.iter().any(|r| r.edge == s.edge)
+        })
+        .map(|s| format!("`{}`", s.edge))
+        .collect();
+    if !unresolved.is_empty() {
+        parts.push(format!(
+            "the plan writes {n} seam(s) on this place that it does not resolve ({list}), which \
+             `DW0828` or `DW0829` has already refused, so the allocation this piece is answering \
+             is short of what the plan says",
+            n = unresolved.len(),
+            list = unresolved.join(", "),
+        ));
+    }
+
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!(
+        " This measurement stands downstream of a site-plan refusal: {parts}. Repair the plan \
+         first — this line moves with it.",
+        parts = parts.join("; "),
+    )
+}
+
 /// `DW0826`: nothing the plan places leaves the region.
 ///
 /// **The region is the brief's number flowing down.** A box is never grounds to
@@ -2011,81 +2318,188 @@ fn grid(placed: &[Placed<'_>], table: &Metrics, reads: &mut Reads, d: &mut Vec<D
 /// Whole-owned volumes answer to it too. A `massif` outside the region is the
 /// whole owning mass beyond its own declared extent, which is the same
 /// extent-flows-up defect arriving through the back door.
+///
+/// **One region number is one finding, however many boxes stand outside it**
+/// (`crate::diagnostic`'s "one cause, one line"). The region is a single fact
+/// handed down by the brief, so a region a course too short puts *every* box
+/// over the same edge and each per-box refusal prints the same two numbers with
+/// a different name in front: measured on a 24-place campaign, shortening the
+/// region by five courses printed 24 identical paragraphs. When more than one
+/// thing leaves it, this states the count, names every offender with its own
+/// overrun, and prescribes once. A single offender still gets its own line
+/// exactly as before — the fold is reachable only where the copies would have
+/// been.
 fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
     let r = &plan.region;
     let spans = [region_span(r, 0), region_span(r, 1), region_span(r, 2)];
+    // How the region reads once, for the folded arms: the per-item clause
+    // repeats it, and repeating it N times is most of what made N copies
+    // unreadable.
+    let region_text = format!(
+        "x {}..{}, y {}..{}, z {}..{}",
+        spans[0].0, spans[0].1, spans[1].0, spans[1].1, spans[2].0, spans[2].1
+    );
+
+    // ---- boxes ----
+    let mut boxes_out: Vec<Overrun<'_>> = Vec::new();
     for p in placed {
-        let mut bad: Vec<String> = Vec::new();
+        let mut bad: Vec<(&'static str, i64, i64)> = Vec::new();
         if !within((p.x0(), p.x1()), spans[0]) {
-            bad.push(format!(
-                "x {}..{} against the region's {}..{}",
-                p.x0(),
-                p.x1(),
-                spans[0].0,
-                spans[0].1
-            ));
-        }
-        if !within((p.z0(), p.z1()), spans[2]) {
-            bad.push(format!(
-                "z {}..{} against the region's {}..{}",
-                p.z0(),
-                p.z1(),
-                spans[2].0,
-                spans[2].1
-            ));
+            bad.push(("x", p.x0(), p.x1()));
         }
         if let Some(y) = p.y_span()
             && !within(y, spans[1])
         {
-            bad.push(format!(
-                "y {}..{} against the region's {}..{}",
-                y.0, y.1, spans[1].0, spans[1].1
-            ));
+            bad.push(("y", y.0, y.1));
         }
-        if bad.is_empty() {
-            continue;
+        if !within((p.z0(), p.z1()), spans[2]) {
+            bad.push(("z", p.z0(), p.z1()));
         }
+        if !bad.is_empty() {
+            boxes_out.push(Overrun {
+                index: p.index,
+                name: p.plan.node.0.as_str(),
+                axes: bad,
+            });
+        }
+    }
+    if boxes_out.len() == 1 {
+        let o = &boxes_out[0];
         d.push(Diagnostic::error(
             DW_BOX_LEAVES_REGION,
             "site-plan",
-            format!("/content/boxes/{}", p.index),
+            format!("/content/boxes/{}", o.index),
             format!(
                 "box for `{node}` leaves the region: {bad}. The region is the whole map's \
                  extent, and it comes from the brief — a box is never grounds to grow it. Move \
                  the box, shrink it, or change the brief's fact and re-derive the region so the \
                  change is visible in the document that owns it.",
-                node = p.plan.node,
-                bad = bad.join("; "),
+                node = o.name,
+                bad = against_region(&o.axes, &spans),
             ),
         ));
-    }
-    for (i, v) in plan.volumes.iter().enumerate() {
-        let vmax = v.region.max();
-        let mut bad: Vec<String> = Vec::new();
-        for (axis, name) in [(0usize, "x"), (1, "y"), (2, "z")] {
-            if !within((v.region.min[axis], vmax[axis]), spans[axis]) {
-                bad.push(format!(
-                    "{name} {}..{} against the region's {}..{}",
-                    v.region.min[axis], vmax[axis], spans[axis].0, spans[axis].1
-                ));
-            }
-        }
-        if bad.is_empty() {
-            continue;
-        }
+    } else if boxes_out.len() > 1 {
         d.push(Diagnostic::error(
             DW_BOX_LEAVES_REGION,
             "site-plan",
-            format!("/content/volumes/{i}"),
+            "/content/boxes",
+            format!(
+                "{n} of the {total} box(es) this plan places leave the region, which is \
+                 {region_text}: {list}. The region is the whole map's extent, and it comes from \
+                 the brief — a box is never grounds to grow it. One region is the cause of all \
+                 {n} of these, which is why they are one line and not {n}: move or shrink the \
+                 boxes, or change the brief's fact and re-derive the region so the change is \
+                 visible in the document that owns it.",
+                n = boxes_out.len(),
+                total = placed.len(),
+                list = named_overruns(&boxes_out),
+            ),
+        ));
+    }
+
+    // ---- whole-owned volumes ----
+    let mut volumes_out: Vec<Overrun<'_>> = Vec::new();
+    for (i, v) in plan.volumes.iter().enumerate() {
+        let vmax = v.region.max();
+        let mut bad: Vec<(&'static str, i64, i64)> = Vec::new();
+        for (axis, name) in [(0usize, "x"), (1, "y"), (2, "z")] {
+            if !within((v.region.min[axis], vmax[axis]), spans[axis]) {
+                bad.push((name, v.region.min[axis], vmax[axis]));
+            }
+        }
+        if !bad.is_empty() {
+            volumes_out.push(Overrun {
+                index: i,
+                name: v.id.0.as_str(),
+                axes: bad,
+            });
+        }
+    }
+    if volumes_out.len() == 1 {
+        let o = &volumes_out[0];
+        d.push(Diagnostic::error(
+            DW_BOX_LEAVES_REGION,
+            "site-plan",
+            format!("/content/volumes/{}", o.index),
             format!(
                 "whole-owned volume `{id}` leaves the region: {bad}. The region is the whole's \
                  own extent; mass outside it is the whole growing to fit what was put in it, \
                  which is the direction this stage exists to forbid.",
-                id = v.id,
-                bad = bad.join("; "),
+                id = o.name,
+                bad = against_region(&o.axes, &spans),
+            ),
+        ));
+    } else if volumes_out.len() > 1 {
+        d.push(Diagnostic::error(
+            DW_BOX_LEAVES_REGION,
+            "site-plan",
+            "/content/volumes",
+            format!(
+                "{n} of the {total} whole-owned volume(s) leave the region, which is \
+                 {region_text}: {list}. The region is the whole's own extent; mass outside it is \
+                 the whole growing to fit what was put in it, which is the direction this stage \
+                 exists to forbid. One region is the cause of all {n} of these, which is why \
+                 they are one line and not {n}.",
+                n = volumes_out.len(),
+                total = plan.volumes.len(),
+                list = named_overruns(&volumes_out),
             ),
         ));
     }
+}
+
+/// One offender's overrun, spelled against the region on each axis it leaves —
+/// the wording a single finding carries, where the region's own numbers are
+/// stated beside the box's because there is only one line to read them in.
+fn against_region(bad: &[(&'static str, i64, i64)], spans: &[(i64, i64); 3]) -> String {
+    bad.iter()
+        .map(|(name, lo, hi)| {
+            let axis = match *name {
+                "x" => 0,
+                "y" => 1,
+                _ => 2,
+            };
+            format!(
+                "{name} {lo}..{hi} against the region's {}..{}",
+                spans[axis].0, spans[axis].1
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// One thing the plan places that stands outside the region, and where.
+///
+/// A named struct rather than a tuple because both arms read it: the single
+/// finding addresses its own `index`, the folded one prints `name` and `axes`,
+/// and boxes and volumes differ in nothing else.
+struct Overrun<'a> {
+    /// Position in its own array — the path a single finding is addressed at.
+    index: usize,
+    /// The id an author reads.
+    name: &'a str,
+    /// Each axis it leaves, with its own inclusive span on that axis.
+    axes: Vec<(&'static str, i64, i64)>,
+}
+
+/// The offender list a folded finding carries: every name with its own overrun,
+/// and no repeat of the region — the folded message states that once.
+fn named_overruns(items: &[Overrun<'_>]) -> String {
+    items
+        .iter()
+        .map(|o| {
+            format!(
+                "`{}` ({})",
+                o.name,
+                o.axes
+                    .iter()
+                    .map(|(ax, lo, hi)| format!("{ax} {lo}..{hi}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// `DW0827`: the boxes are disjoint.
@@ -2940,44 +3354,42 @@ fn stair(ctx: &SeamCtx<'_>, table: &Metrics, reads: &mut Reads, d: &mut Vec<Diag
         return;
     }
     let host = if host_id == edge.a() { a } else { b };
-    // The run a stair needs is horizontal. Across a vertical face it is spent
-    // along that face's normal; through a floor or ceiling it may run either
-    // way, so the host's longer horizontal axis is what it has.
-    let (available, run_axis) = if face.v_axis == "y" {
-        match s.face {
-            Face::East | Face::West => (i64::from(host.plan.extent[0].get()), "x"),
-            _ => (i64::from(host.plan.extent[1].get()), "z"),
-        }
-    } else {
-        let (ex, ez) = (
-            i64::from(host.plan.extent[0].get()),
-            i64::from(host.plan.extent[1].get()),
-        );
-        if ex >= ez { (ex, "x") } else { (ez, "z") }
+    // **The run is measured the way the derivation lays it**, by the function
+    // that lays it — [`stair_run`]. What this check used to measure instead was
+    // the seam's rise against the host's whole extent, and neither is what a
+    // tread run costs: the courses carry a body to the OPENING, and through a
+    // pierced floor they leave along one side of the hole. See [`stair_run`] for
+    // the plan that reached green at `needs 8, affords 8` and built no stair.
+    let Some((_, extent)) = crossing_rect(s, face, table, reads) else {
+        return; // `DW0812` refused the opening; there is no rectangle to measure.
     };
-
-    let mut best: Option<(&'static str, i64)> = None;
-    for name in table.names_of(MetricKind::Pitch) {
-        let Ok(entry) = table.resolve(MetricKind::Pitch, name) else {
-            continue;
-        };
-        let MetricValue::Pitch(p) = entry.value(reads) else {
-            continue;
-        };
-        if p.rise == 0 {
-            continue;
-        }
-        let (span, per) = (rise.abs() * i64::from(p.run), i64::from(p.rise));
-        let needed = span / per + i64::from(span % per != 0);
-        if needed <= available {
-            return; // some standard pitch fits.
-        }
-        if best.is_none_or(|(_, b)| needed < b) {
-            best = Some((name, needed));
-        }
+    let Some(run) = stair_run(
+        host.floor,
+        host.foot,
+        normal_axis_of(s.face),
+        face.plane,
+        crossing_aabb(s, face, extent),
+    ) else {
+        return; // no run to lay: the higher host is refused above, the stray hole by `DW0828`.
+    };
+    let run_axis = if run.run_axis == 0 { "x" } else { "z" };
+    if gentlest_pitch(table, reads, run.climb, run.available).is_some() {
+        return; // some standard pitch fits.
     }
-    let Some((name, needed)) = best else {
+    let Some((name, needed)) = tightest_pitch(table, reads, run.climb) else {
         return; // the table defines no pitch; `Metrics::self_check` owns that.
+    };
+    let carries = if run.climb == rise.abs() {
+        String::new()
+    } else {
+        format!(
+            " The treads carry {climb}, not {rise}: they rise off `{host_id}`'s floor at \
+             {hf} and stop at {target}, which is where the opening puts a body.",
+            climb = run.climb,
+            rise = rise.abs(),
+            hf = host.floor,
+            target = host.floor + run.climb,
+        )
     };
     d.push(Diagnostic::error(
         DW_STAIR_PITCH,
@@ -2985,16 +3397,20 @@ fn stair(ctx: &SeamCtx<'_>, table: &Metrics, reads: &mut Reads, d: &mut Vec<Diag
         format!("/content/seams/{i}"),
         format!(
             "the stair for `{id}` climbs {rise} block(s) between `{an}` (floor {af}) and `{bn}` \
-             (floor {bf}), and no standard pitch fits inside `{host_id}`. The gentlest fit is \
-             `{name}`, which needs {needed} block(s) of run, and `{host_id}` affords {available} \
-             on {run_axis}. Give the host a longer footprint on that axis, host the stair in the \
-             other place, or bring the two floors closer together — the pitches are standards, \
-             so a steeper one is not on offer.",
+             (floor {bf}), and no standard pitch fits inside `{host_id}`. The tightest standard \
+             is `{name}`, which needs {needed} block(s) of run for a climb of {climb}, and \
+             `{host_id}` affords {available} of run on {run_axis}.{carries} Give the host a \
+             longer footprint on that axis, move the opening so the run has more room beside it, \
+             host the stair in the other place, or bring the two floors closer together — the \
+             pitches are standards, so a steeper one is not on offer.",
             id = s.edge,
             an = edge.a(),
             bn = edge.b(),
             af = a.floor,
             bf = b.floor,
+            rise = rise.abs(),
+            climb = run.climb,
+            available = run.available,
         ),
     ));
 }
@@ -3341,4 +3757,70 @@ fn lighting(plan: &SitePlanContent, d: &mut Vec<Diagnostic>) {
 #[must_use]
 pub fn passable_opening_cells() -> (u32, u32) {
     (passable_width_cells(), passable_clearance_cells())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **The run beside a pierced floor is not the host's extent**, and this is
+    /// the arithmetic the whole one-authority repair turns on.
+    ///
+    /// An eight-by-eight host with a three-wide hole cut through the ceiling
+    /// above it: the treads leave along ONE side of the hole, so what they have
+    /// is the room on the roomier side plus the hole's own width. Centre the
+    /// hole and that is 3 + 3 = 6, not 8 — and the courses have to carry the
+    /// body to the pierced plane, which is one below the floor of the place
+    /// above it.
+    ///
+    /// The numbers are read off the geometry by hand rather than recomputed
+    /// here, so a change to the rule shows up as a failure rather than as two
+    /// arithmetics agreeing.
+    #[test]
+    fn a_run_beside_a_pierced_floor_is_the_room_on_one_side_plus_the_hole() {
+        // Host x 4..11, z 4..11, walk plane y 56; the hole is cut at y 63 and
+        // spans x 7..9 — three of the eight cells, three to the low side and
+        // two to the high.
+        let run = stair_run(56, [4, 11, 4, 11], 1, 63, ([7, 63, 6], [9, 63, 8]))
+            .expect("the hole is over this host and the plane is above its floor");
+        assert_eq!(run.climb, 7, "56 up to the pierced plane at 63");
+        assert_eq!(run.run_axis, 0, "the host is square, so the run takes x");
+        assert_eq!(
+            run.available, 6,
+            "three cells of room on the low side, plus the hole's three"
+        );
+        assert_eq!(
+            run.start, 9,
+            "course 0 stands under the far edge of the hole"
+        );
+        assert_eq!(run.step, -1, "and the run walks back into the room");
+    }
+
+    /// The same host, the same hole, and the check and the derivation asking the
+    /// same question: seven courses do not fit six cells, so no standard pitch
+    /// does either. Measured against the host's extent it would — which is the
+    /// green a plan used to reach before building nothing.
+    #[test]
+    fn no_standard_pitch_fits_a_climb_of_seven_in_six_cells_of_run() {
+        let table = Metrics::table();
+        let mut reads = Reads::default();
+        assert!(gentlest_pitch(&table, &mut reads, 7, 6).is_none());
+        assert!(gentlest_pitch(&table, &mut reads, 7, 7).is_some());
+        assert_eq!(tightest_pitch(&table, &mut reads, 7), Some(("stair", 7)));
+    }
+
+    /// Across a vertical face the run walks the whole footprint and the climb is
+    /// the seam's own sill — the body stands at the sill and steps through.
+    #[test]
+    fn a_run_across_a_vertical_face_is_the_whole_footprint() {
+        // Host x 4..11, z 4..11, walk plane y 64; the wall is at x 12 and the
+        // opening's low corner is at y 72.
+        let run = stair_run(64, [4, 11, 4, 11], 0, 12, ([12, 72, 6], [12, 74, 8]))
+            .expect("the wall is beyond the host, so the run walks back from it");
+        assert_eq!(run.climb, 8, "64 up to the sill at 72");
+        assert_eq!(run.run_axis, 0);
+        assert_eq!(run.available, 8, "the host's whole extent on x");
+        assert_eq!(run.start, 11, "course 0 stands against the wall");
+        assert_eq!(run.step, -1);
+    }
 }

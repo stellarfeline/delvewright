@@ -116,11 +116,6 @@
       "stage": "layout-graph"
     },
     {
-      "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
-      "stage": "layout-graph:"
-    },
-    {
       "code": "DW0188",
       "pointer": "l10n/zh-cn.json",
       "stage": "l10n"
@@ -139,6 +134,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
     },
     {
       "code": "DW0498",
@@ -293,11 +293,6 @@
       "stage": "layout-graph"
     },
     {
-      "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
-      "stage": "layout-graph:"
-    },
-    {
       "code": "DW0188",
       "pointer": "l10n/zh-cn.json",
       "stage": "l10n"
@@ -316,6 +311,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
     },
     {
       "code": "DW0498",
@@ -470,11 +470,6 @@
       "stage": "layout-graph"
     },
     {
-      "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
-      "stage": "layout-graph:"
-    },
-    {
       "code": "DW0188",
       "pointer": "l10n/zh-cn.json",
       "stage": "l10n"
@@ -493,6 +488,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
     },
     {
       "code": "DW0498",
@@ -652,11 +652,6 @@
       "stage": "layout-graph"
     },
     {
-      "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
-      "stage": "layout-graph:"
-    },
-    {
       "code": "DW0188",
       "pointer": "l10n/zh-cn.json",
       "stage": "l10n"
@@ -675,6 +670,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
     },
     {
       "code": "DW0498",
@@ -829,11 +829,6 @@
       "stage": "layout-graph"
     },
     {
-      "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
-      "stage": "layout-graph:"
-    },
-    {
       "code": "DW0188",
       "pointer": "l10n/zh-cn.json",
       "stage": "l10n"
@@ -852,6 +847,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
     },
     {
       "code": "DW0498",
@@ -896,11 +896,6 @@
       "stage": "layout-graph"
     },
     {
-      "code": "DW0813",
-      "pointer": "12 of the 12 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
-      "stage": "site-plan:"
-    },
-    {
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
@@ -919,6 +914,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/warden",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "12 of the 12 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "site-plan:"
     },
     {
       "code": "DW0781",
@@ -1053,11 +1053,6 @@
       "stage": "layout-graph"
     },
     {
-      "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them, so every verdict above that used one is resting on a seed rather than on a standard",
-      "stage": "layout-graph:"
-    },
-    {
       "code": "DW0188",
       "pointer": "l10n/zh-cn.json",
       "stage": "l10n"
@@ -1076,6 +1071,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
     },
     {
       "code": "DW0498",

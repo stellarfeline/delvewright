@@ -38,6 +38,33 @@
 # stamps. Never a bare match, and the built-in `bridge`/`host`/`none` carry
 # neither and cannot be selected.
 #
+# ## Images are the FOURTH class, and they were the whole leak
+#
+# The paragraph above is the shape repeating itself one class further out: the
+# teardown proved containers, volumes and networks and said so, and a ladder
+# creates a fourth thing nothing ever removed. Both image tags a run mints are
+# project-scoped BY DESIGN — `delvewright/delve:<project>` (an image tag is
+# global to the daemon exactly as a container name is, so the entry scripts give
+# each ladder its own) and compose's own `<project>-bot:latest` — which is
+# precisely what makes them a per-project LEAK rather than one shared tag being
+# rebuilt. Nothing reuses them and nothing removed them.
+#
+# Measured on the creator's workstation before this: 260 images, 11.99 GB, 239 of
+# them carrying a compose project label from 67 finished projects. CI never sees
+# it, for the same reason it never saw the networks — a runner is fresh every job.
+#
+# The rule for what a project OWNS, and the safety that keeps a shared tag out of
+# it, is `validation/lib/ladder-images.sh`; it is a library because the sweep over
+# what earlier runs already left (`validation/reclaim-ladder-images.sh`) is the
+# second caller, and the rule may not exist twice.
+#
+# One thing about it belongs here rather than there: an image that survives is
+# NAMED, with the daemon's own reason, and does NOT fail the teardown. A stale
+# image cannot poison the next run the way a stale volume does — `up --build`
+# rebuilds the tag — so reddening a ladder over disk hygiene would manufacture
+# exactly the false CONTENT failure the paragraph below is about. Containers,
+# volumes and networks still fail it.
+#
 # It also fixes the defect that motivated the project scoping (island round 13): a
 # `docker compose -p <proj> … down -v` leaves `<proj>_server-data` behind whenever an
 # EXITED container of that project still holds it, and the stale volume carries the
@@ -60,15 +87,20 @@
 # live world.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
+# The ONE rule for which images a compose project owns, shared with the sweep.
+# shellcheck source=validation/lib/ladder-images.sh
+. "$here/lib/ladder-images.sh"
 
 usage() {
   cat >&2 <<'USAGE'
 usage: fresh-volumes.sh --project <compose-project>
 
-Tears down exactly that compose project (containers + volumes) and proves it is
-clean. The project name is REQUIRED — pass the same one you gave `docker compose
--p`. There is no daemon-wide mode: a teardown that can reach another project (or
-the owner's play session) is not a teardown, it is an outage.
+Tears down exactly that compose project — containers, volumes, networks AND the
+images it built — and proves each class gone. The project name is REQUIRED — pass
+the same one you gave `docker compose -p`. There is no daemon-wide mode: a
+teardown that can reach another project (or the owner's play session) is not a
+teardown, it is an outage. For what EARLIER runs left behind, the sweep is
+`validation/reclaim-ladder-images.sh` (dry-run by default).
 USAGE
   exit 2
 }
@@ -176,6 +208,9 @@ if [ -n "$networks" ]; then
   # shellcheck disable=SC2086  # deliberate word splitting: one id/name per argument
   docker network rm $networks >/dev/null 2>&1 || true
 fi
+# Images last: the container removal above is what releases them, and an image a
+# container of ANOTHER project still holds is exempted by id rather than forced.
+dw_reclaim_project_images "$project"
 
 # GUARD: prove it, never assume it. A surviving container is reported too: it is
 # the reason a volume survives.
@@ -194,4 +229,32 @@ if [ -n "$remaining_c" ] || [ -n "$remaining_v" ] || [ -n "$remaining_n" ]; then
   echo "  (a stale world persists scoreboard state — completed objectives stay completed)." >&2
   exit 1
 fi
-echo "fresh-volumes: project '$project' verified clean (containers + volumes + networks)"
+
+# The image proof. A survivor is NAMED with its reason and does not red the
+# ladder (see the header): a stale image is disk, not a poisoned world.
+if [ "$DW_IMG_UNJUDGED" = 1 ]; then
+  echo "fresh-volumes: project '$project' — the image class was NOT JUDGED: the services of" >&2
+  echo "  $DW_IMG_COMPOSE could not be read, so no image was examined. This is not" >&2
+  echo "  'nothing to remove'; run validation/reclaim-ladder-images.sh once it reads." >&2
+  echo "fresh-volumes: project '$project' verified clean (containers + volumes + networks;" \
+    "images NOT judged)."
+  exit 0
+fi
+remaining_i="$(dw_project_images_remaining "$project")"
+if [ -n "$DW_IMG_KEPT_LINES" ] || [ -n "$remaining_i" ]; then
+  echo "fresh-volumes: project '$project' KEPT images (named, not silently skipped):" >&2
+  [ -z "$DW_IMG_KEPT_LINES" ] || printf '%s' "$DW_IMG_KEPT_LINES" >&2
+  if [ -n "$remaining_i" ]; then
+    echo "  still carrying a name this project owns — the sweep will report them again:" >&2
+    printf '%s\n' "$remaining_i" | sed 's/^/    /' >&2
+  fi
+fi
+# BINDING (CLAUDE.md: a green gate that binds to nothing is VACUOUS). `examined`
+# is how many images carried this project's label at all; zero is the honest
+# answer for a project that never built one (the PackTest profile pulls a pinned
+# digest and builds nothing), never a pass smuggled in as silence. The byte
+# figure is summed IMAGE SIZE, not disk: every delve image carries the whole itzg
+# base and the daemon stores that once, so the sum counts it per image.
+echo "fresh-volumes: project '$project' verified clean (containers + volumes + networks + images:" \
+  "$DW_IMG_EXAMINED examined, $DW_IMG_REMOVED removed, $(dw_img_human_bytes "$DW_IMG_BYTES") of image size," \
+  "$DW_IMG_KEPT kept). Build cache is content-addressed and global — no project owns one, so none is pruned."
