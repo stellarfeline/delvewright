@@ -9,6 +9,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use delvewright_compiler::analyze::analyze_campaign;
+use delvewright_compiler::blockout::{Knob, Perturb};
 use delvewright_compiler::commands::CommandTree;
 use delvewright_compiler::emit;
 use delvewright_compiler::load::{
@@ -76,9 +77,36 @@ enum Command {
     Build {
         /// Campaign directory.
         campaign_dir: PathBuf,
-        /// Output tree directory.
-        #[arg(short, long)]
-        out: PathBuf,
+        /// Output tree directory. Required for an ordinary build, and refused
+        /// beside `--perturb`: a perturbed build has nowhere to write.
+        #[arg(
+            short,
+            long,
+            required_unless_present = "perturb",
+            conflicts_with = "perturb"
+        )]
+        out: Option<PathBuf>,
+        /// Ask the derivation for a named defect and watch the observer.
+        ///
+        /// The stage-5 blockout battery claims to observe the built bytes
+        /// rather than replay the arithmetic that laid them, and the only way
+        /// to see that claim tested is to make the derivation build the map
+        /// wrong in a named way. One knob per run. The run writes NO output —
+        /// `--out` is refused beside it — so a perturbed tree does not exist to
+        /// be shipped, walked or admitted, and the exit is always non-zero.
+        #[arg(long, value_name = "KNOB", value_enum)]
+        perturb: Vec<Knob>,
+        /// Which place `--perturb sink|brick-up|low-ceiling` damages. Required
+        /// for those three and refused for the others, and it must name a box
+        /// the site plan declares.
+        ///
+        /// Not declared `requires = "perturb"`. That attribute was written and
+        /// measured: with it in place, `--perturb-place X` with no `--perturb`
+        /// parsed cleanly and reached the program, so it bound nothing here.
+        /// `resolve_build_kind` refuses the combination instead, and says what
+        /// the flag would have decided.
+        #[arg(long, value_name = "PLACE")]
+        perturb_place: Option<String>,
     },
     /// Emit the l10n key inventory (key → canonical English) as JSON, with the
     /// existing `--lang` sidecar and NPC persona context — the machine-readable
@@ -284,9 +312,20 @@ fn main() -> ExitCode {
     match command {
         Command::Validate { campaign_dir } => run_validate(campaign_dir, &cli.prefabs, cli.json),
         Command::Analyze { campaign_dir } => run_analyze(campaign_dir, &cli.prefabs, cli.json),
-        Command::Build { campaign_dir, out } => {
-            run_build(campaign_dir, out, &cli.prefabs, &cli.lang, cli.json)
-        }
+        Command::Build {
+            campaign_dir,
+            out,
+            perturb,
+            perturb_place,
+        } => run_build(
+            campaign_dir,
+            out.as_deref(),
+            perturb,
+            perturb_place.as_deref(),
+            &cli.prefabs,
+            &cli.lang,
+            cli.json,
+        ),
         Command::L10nInventory { campaign_dir } => {
             run_l10n_inventory(campaign_dir, &cli.lang, cli.json)
         }
@@ -1581,13 +1620,42 @@ fn run_blocking_chart(
     ExitCode::SUCCESS
 }
 
+/// **A perturbed build is structurally unable to produce a tree.**
+///
+/// `--out` and `--perturb` are declared as conflicting arguments, so this pair
+/// has exactly two inhabited shapes and the parser refuses the other two: an
+/// ordinary build carrying a directory, or a demonstration carrying a defect and
+/// no directory at all. It is a type here rather than two `Option`s and a
+/// comment because the guarantee is worth stating in a form a reader cannot
+/// misread: the perturbed arm has nowhere to write, so it does not decline to
+/// write a tree — it has no path to write one to. No tree means no
+/// `manifest.json`, and `tools/staging-gate.py` fingerprints a build by hashing
+/// exactly that file: *a tree with no manifest has no identity and therefore
+/// cannot be admitted at all*.
+enum BuildKind<'a> {
+    /// The build as it ships.
+    Ship(&'a Path),
+    /// The derivation asked for a named defect, so its observer can be watched.
+    Demonstrate(Knob, Perturb),
+}
+
 fn run_build(
     campaign_dir: &Path,
-    out: &Path,
+    out: Option<&Path>,
+    perturb: &[Knob],
+    perturb_place: Option<&str>,
     prefabs_dir: &Path,
     lang: &str,
     json: bool,
 ) -> ExitCode {
+    let kind = match resolve_build_kind(out, perturb, perturb_place) {
+        Ok(k) => k,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            return ExitCode::from(1);
+        }
+    };
+
     let v = match validate_stage(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
@@ -1606,6 +1674,36 @@ fn run_build(
     if !adiags.reported().is_empty() {
         print_diags(&adiags, json);
         return ExitCode::from(2);
+    }
+
+    // A perturbation naming a place no box declares would derive a perfectly
+    // clean map, and the run would then report an observer that failed to
+    // observe — a true sentence about the wrong thing. So the name is checked
+    // against the site plan's own boxes, which is the one authority for what a
+    // place is, before anything is derived.
+    if let BuildKind::Demonstrate(knob, p) = &kind
+        && let Some(place) = p.place()
+    {
+        let declared: Vec<&str> = campaign
+            .site_plan
+            .as_ref()
+            .map(|sp| sp.content.boxes.iter().map(|b| b.node.0.as_str()).collect())
+            .unwrap_or_default();
+        if !declared.contains(&place) {
+            eprintln!(
+                "error: --perturb {} --perturb-place `{place}`: this campaign's site plan \
+                 declares no such place. It declares {}: {}",
+                knob.name(),
+                declared.len(),
+                if declared.is_empty() {
+                    "(this campaign has no site plan, so there is no derivation to perturb)"
+                        .to_string()
+                } else {
+                    declared.join(", ")
+                }
+            );
+            return ExitCode::from(1);
+        }
     }
 
     // i18n: resolve the requested build language. `en` is the implicit canonical
@@ -1641,7 +1739,25 @@ fn run_build(
         delvewright_dsl::tag_translatables(&mut campaign);
     }
 
-    let plan = match Plan::build(&campaign, &prefabs) {
+    // The one caller of `Plan::build_with` outside a test, and the ordinary arm
+    // is still `Plan::build` — the constructor that passes `Perturb::none()` as
+    // a literal — so a build with no `--perturb` reaches the derivation through
+    // exactly the code path it always did.
+    let built = match &kind {
+        BuildKind::Ship(_) => Plan::build(&campaign, &prefabs),
+        BuildKind::Demonstrate(knob, p) => {
+            eprintln!(
+                "perturbed build: the derivation is asked for `{}` ({}{}); the observer this \
+                 defect is documented to redden is {}. This run writes NO output tree.",
+                knob.name(),
+                knob.blurb(),
+                p.place().map(|n| format!(" at `{n}`")).unwrap_or_default(),
+                knob.documented_code(),
+            );
+            Plan::build_with(&campaign, &prefabs, p.clone())
+        }
+    };
+    let plan = match built {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:
@@ -1698,7 +1814,50 @@ fn run_build(
             // re-derived here from the code's spelling, in a copy of the same
             // expression this verb, `edit` and `edit --check` each kept.
             print_build_error(code, &message, json);
+            if let BuildKind::Demonstrate(knob, _) = &kind {
+                let got = code.to_string();
+                eprintln!(
+                    "perturbed build: the observer REFUSED the derivation's `{}` defect. The \
+                     build stops at the FIRST refusal, {got}{}. No output tree was written.",
+                    knob.name(),
+                    if got == knob.documented_code() {
+                        ", which is the code this knob is documented to redden".to_string()
+                    } else {
+                        format!(
+                            "; this knob is documented to redden {} — the battery's refusal \
+                             line above names every rule that saw the defect, and one \
+                             derivation defect is routinely seen by two of them",
+                            knob.documented_code()
+                        )
+                    }
+                );
+            }
             return ExitCode::from(code.exit_tier().exit_status());
+        }
+    };
+
+    // **The demonstration's own verdict, and the only place a perturbed run can
+    // reach with a datapack in hand.** Getting here means the derivation built
+    // the named defect and every observer passed it — which is the failure the
+    // whole facility exists to be able to see, so it is a refusal rather than a
+    // success, and the output is dropped unwritten. `BuildKind::Demonstrate`
+    // carries no path, so this is a statement about what did not happen rather
+    // than a decision not to do it.
+    let out = match kind {
+        BuildKind::Ship(out) => out,
+        BuildKind::Demonstrate(knob, p) => {
+            eprintln!(
+                "perturbed build: the derivation was asked for `{}`{} and produced a datapack that \
+                 NOTHING refused — {} did not fire, and neither did any other build-tier \
+                 check. Either this campaign has nothing for that defect to damage, or an \
+                 observer that claims to read the built bytes is reciting the arithmetic that \
+                 laid them. The output was discarded; a perturbed run has no `--out` to write \
+                 to.",
+                knob.name(),
+                p.place().map(|n| format!(" at `{n}`")).unwrap_or_default(),
+                knob.documented_code(),
+            );
+            return ExitCode::from(3);
         }
     };
 
@@ -1707,6 +1866,69 @@ fn run_build(
         return ExitCode::from(EXIT_INTERNAL);
     }
     ExitCode::SUCCESS
+}
+
+/// Which of the two builds this invocation is, or why it is neither.
+///
+/// `clap` already refuses `--out` beside `--perturb` and refuses a knob it does
+/// not know, so what is left here is the arity — `--perturb` is a `Vec` so that
+/// a second one is an ERROR rather than the silent last-wins a `Option` would
+/// give, which on a defect-injection flag is the shape that reports a
+/// demonstration of the knob nobody asked about — and the place, which three of
+/// the knobs need and the other three refuse.
+fn resolve_build_kind<'a>(
+    out: Option<&'a Path>,
+    perturb: &[Knob],
+    place: Option<&str>,
+) -> Result<BuildKind<'a>, String> {
+    let knob = match perturb {
+        [] => {
+            let out = out.ok_or_else(|| {
+                "`--out` is required for a build that is not perturbed".to_string()
+            })?;
+            if place.is_some() {
+                return Err(
+                    "`--perturb-place` names the place `--perturb` damages, and this \
+                            run asks for no perturbation"
+                        .to_string(),
+                );
+            }
+            return Ok(BuildKind::Ship(out));
+        }
+        [one] => *one,
+        many => {
+            return Err(format!(
+                "`--perturb` takes exactly one knob and this run names {}: {}. One defect per \
+                 run is what makes the refusal attributable — two at once and the code that \
+                 fires says nothing about which defect it saw",
+                many.len(),
+                many.iter().map(|k| k.name()).collect::<Vec<_>>().join(", ")
+            ));
+        }
+    };
+    match (knob.takes_place(), place) {
+        (true, None) => Err(format!(
+            "`--perturb {}` damages ONE place and this run names none — add `--perturb-place \
+             <place>`",
+            knob.name()
+        )),
+        (false, Some(p)) => Err(format!(
+            "`--perturb {}` damages the whole derivation, not one place, so `--perturb-place \
+             {p}` would decide nothing. The knobs that take a place are: {}",
+            knob.name(),
+            Knob::ALL
+                .iter()
+                .filter(|k| k.takes_place())
+                .map(|k| k.name())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+        (_, p) => Ok(BuildKind::Demonstrate(
+            knob,
+            knob.perturb(p)
+                .expect("the arity was just checked against `takes_place`"),
+        )),
+    }
 }
 
 /// Read the skin PNGs every staged **body** references (spec-0009 bake). The PNG

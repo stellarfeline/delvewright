@@ -132,6 +132,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 delvec validate <dir>                      # stages 1–7 schema + referential
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
+delvec build    <dir> --perturb <knob> [--perturb-place <place>]
+                                           # ask the derivation for a named defect and
+                                           #   watch the observer; writes NO tree (§5.3)
 delvec fmt      <path>… [--check]          # canonical form for authored JSON (§9)
 delvec schema   --stage <1..7|all>         # export JSON Schema
 delvec metrics                             # export the metrics standard as JSON (§10)
@@ -5837,6 +5840,37 @@ production path passes `Perturb::none()` as a literal with a test asserting it.
 `low_ceiling` closes one place a course under its plan's ceiling and moves nothing
 else — no datum, no opening, no footing — so the whole error list under it is
 `DW0833` alone, which is what makes it a defect only the headroom measure can see.
+
+**And the demonstration is reachable from the command line.** `delvec build
+<dir> --perturb <knob>` asks the derivation for one named defect and runs the
+observer over the result, so the claim above is something a creator watches
+happen on their own campaign rather than something they take from a test
+transcript. The knobs are every field of `Perturb`, offered under
+`--help` from `blockout::Knob` — `slide-openings`, `sink`, `short-walls`,
+`brick-up`, `low-ceiling`, `wall-contacts` — and the three that damage one place
+(`sink`, `brick-up`, `low-ceiling`) take `--perturb-place <place>`, checked
+against the site plan's own boxes before anything derives. One knob per run: two
+at once and the code that fires says nothing about which defect it saw.
+
+**A perturbed build writes nothing, and cannot.** `--out` and `--perturb` are
+declared as conflicting arguments, so the invocation carrying both is refused by
+the parser; a perturbed run has no output path at all, rather than a decision not
+to use one. No tree means no `manifest.json`, which is the file
+`tools/staging-gate.py` hashes to give a build the identity an admission token
+binds to — so a perturbed tree is unadmittable by construction. The exit is the
+build tier whatever happens, and a perturbed derivation that NOTHING refuses is
+itself a refusal, in those words: that outcome is precisely the failure the
+facility exists to be able to see, and it also occurs honestly when a campaign
+has nothing for that defect to damage (the metrics gym allocates no contact, so
+`wall-contacts` reaches nothing there).
+
+**A build stops at its first refusal and the battery states all of them.**
+`BuildFailure` carries one code and one message, as every check in this compiler
+does; one derivation defect is routinely seen by two of these rules, so the
+battery prints a refusal line counting every code it raised and the messages
+after the first, capped at twenty. Walls a course tall are the standing example:
+they open every wall above its allocation (`DW0836`, which stops the build) and
+join two places nothing connected (`DW0838`).
 
 The step rule is the compiler's own (`nav::World::neighbors`), whose visibility
 was widened for this rather than copied — a second step rule would make this the
