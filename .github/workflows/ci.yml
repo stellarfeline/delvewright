@@ -443,9 +443,13 @@ jobs:
       # refusal that SAYS so rather than a red that looks like a vulnerability.
       # It states every severity count on every run, including the ones below the
       # failing floor, so nothing sits behind a green tick unseen.
+      #
+      # Run from `harness/` (this job's default working directory) with the
+      # script named relatively rather than by overriding that default: the tool
+      # resolves the repository from its own file location, so `--dir .` is this
+      # project and nothing depends on where the shell is standing.
       - name: no published advisory matches what npm resolves
-        run: python3 tools/check-advisories.py --npm
-        working-directory: .
+        run: python3 ../tools/check-advisories.py --npm --dir .
 
   skin-tool:
     name: skin toolchain (pytest)
