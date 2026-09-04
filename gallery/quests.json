@@ -2000,6 +2000,22 @@
             "type": "set-flag"
           }
         ],
+        "on_objective_complete": {
+          "obj/look-in-the-east-bay": [
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "happening": {
+                "subject": "anchor/east-bay",
+                "text": "Something that was watching the east bay closes on it.",
+                "verb": "arrives"
+              },
+              "type": "spawn-wave",
+              "wave": "wave/edge"
+            }
+          ]
+        },
         "trigger": {
           "quest": "quest/near-hall",
           "type": "quest-complete"
