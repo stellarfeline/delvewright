@@ -225,6 +225,35 @@ jobs:
       - name: no internal reference reaches a crates.io front page
         run: python3 tools/check-crates-io-readmes.py
 
+      # SUPPLY CHAIN. Both repositories are public (ADR-0017) and neither had any
+      # dependency gate at all: no `dependabot.yml`, no `cargo audit`, no
+      # `npm audit`. `.github/dependabot.yml` is the half that opens a pull
+      # request; this is the half that refuses.
+      #
+      # A STEP, not a job: every job name here is a required status context.
+      #
+      # cargo-audit is an INSTRUMENT of a required check, so it is named
+      # literally (versions.toml [ci].cargo_audit_version) rather than resolved —
+      # an unpinned instrument moves a gate's verdict with nothing in any diff.
+      # `Swatinem/rust-cache` above caches `~/.cargo/bin`, so the compile is paid
+      # once per cache line and the install is a no-op afterwards.
+      - name: install cargo-audit (pinned)
+        run: cargo install cargo-audit --locked --version 0.22.2
+      # THE ONE LIVE REACH in this job besides the render workspace's pinned git
+      # dependency, and it is named here for the same reason: an advisory check
+      # cannot be offline (the RustSec database is cloned on every run), so a
+      # network failure must red in a step whose name says what it was reaching
+      # for. The tool refuses on a report it could not parse rather than reading
+      # an outage as a clean tree, and retries the transport a bounded number of
+      # times first.
+      #
+      # The population is DERIVED — `git ls-files '*Cargo.lock'`, all ten
+      # workspaces — never listed here, because a hand-written list of this
+      # repository's workspaces has gone stale before (the `fmt` sweep named nine
+      # of ten). Auditing zero lockfiles is a red.
+      - name: no published advisory matches what cargo resolves
+        run: python3 tools/check-advisories.py --cargo
+
       # ADR-0006's LINUX HALF. The determinism promise is "same DSL + same seed
       # -> byte-identical datapack and world", and until this step every gate
       # holding it ran on one machine: the double-build gate inside `cargo test`
@@ -401,6 +430,22 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test
+      # The other half of the supply-chain gate (see the cargo step in `rust`).
+      # `harness/package.json` declares `^` ranges over a committed lockfile, so
+      # what actually runs is whatever the lockfile pins and nothing was looking
+      # at it.
+      #
+      # NOT `npm audit --audit-level=high`. That was measured three times in
+      # sequence on one machine with one lockfile: exit 1, exit 1, exit 0 — the
+      # failing runs printed `undefined` and `audit endpoint returned an error`,
+      # a registry timeout, which the exit code presents as a finding. The tool
+      # reads the JSON report instead, so an audit that did not answer is a
+      # refusal that SAYS so rather than a red that looks like a vulnerability.
+      # It states every severity count on every run, including the ones below the
+      # failing floor, so nothing sits behind a green tick unseen.
+      - name: no published advisory matches what npm resolves
+        run: python3 tools/check-advisories.py --npm
+        working-directory: .
 
   skin-tool:
     name: skin toolchain (pytest)
