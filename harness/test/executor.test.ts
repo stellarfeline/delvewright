@@ -5,6 +5,7 @@ import type { Bot } from "mineflayer";
 import { MineflayerExecutor, completionWindowMs, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
+import { parseDeathPlan } from "../src/death-loop.ts";
 
 // Minimal Vec3 stand-in with the methods the executor reads off bot.entity.position.
 class FakeVec3 {
@@ -3140,4 +3141,100 @@ test("an encounter that states no budget for a kind gives up on nothing", async 
 
   assert.deepEqual(executor.unkillableFindings(), []);
   assert.equal(bot.calls.filter((c) => c === "attack").length, 6);
+});
+
+// --- the death loop: a trial that opens over a corpse -----------------------
+
+/** A body that can be driven: the walk in uses raw controls, never the pathfinder. */
+class DrivableFakeBot extends FakeBot {
+  async lookAt(): Promise<void> {}
+  setControlState(): void {}
+  clearControlStates(): void {}
+  /** Open air, so the declared box has cells a body could be in. */
+  override blockAt(): { name: string; boundingBox: string } | null {
+    return this.chunkLoaded ? { name: "air", boundingBox: "empty" } : null;
+  }
+}
+
+/** The smallest plan the stage will walk: one volume, one `on_death`, no stake. */
+function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
+  return parseDeathPlan({
+    format_version: 1,
+    version: "0.19.0",
+    campaign_id: "probe",
+    lethal_volumes: [
+      {
+        id: "lethal/the-pit",
+        region: { lo: [4, 65, 8], hi: [6, 65, 10] },
+        message: "The floor gives way.",
+        message_key: null,
+        damage_type: "minecraft:fall",
+      },
+    ],
+    on_death: { effects: 1, drops_stake: [] },
+    stakes: [],
+    placement: { seats: [], regions: [], rows: [] },
+    binding: {
+      lethal_volumes: 1,
+      on_death_effects: 1,
+      stakes: 0,
+      respawn_seats: 0,
+      placement_rows: 0,
+      unbound: false,
+      reason: null,
+    },
+  });
+}
+
+test("a lethal trial that opens over an unrecovered death is not credited to the volume", async () => {
+  // The previous trial's walk back killed the bot and nothing recovered from it.
+  // `stepInto` rethrows the death latch on its first line, so the bot never takes
+  // a step; the wait for a NEW death then runs out, and `deathPos` is read off the
+  // OLD death — which is how a volume that kills a real player at every cell of
+  // its box (measured live, 75 of 75) was reported as one the bot stood in and
+  // survived. The repair recovers first, so the trial is a trial.
+  const bot = new DrivableFakeBot();
+  bot.entity.position = new FakeVec3(0.5, 65, 0.5); // nowhere near the volume
+  const executor = attach(bot);
+  executor.useDeathPlan(oneVolumePlan());
+  bot.emit("death"); // the corpse the previous trial left behind
+  bot.emit("spawn"); // …and the respawn nobody consumed
+
+  // The death this trial is actually about, delivered while the walk in is
+  // driving. Recorded only if the latch was cleared first — `recordDeath` returns
+  // early while a death is already held.
+  setTimeout(() => {
+    bot.entity.position = new FakeVec3(5.4, 65, 9.4);
+    bot.emit("death");
+    setTimeout(() => bot.emit("spawn"), 100);
+  }, 300);
+
+  await executor.runDeathLoop();
+
+  const trials = executor.deathLoopTrials();
+  assert.equal(trials.length, 1);
+  const t = trials[0]!;
+  assert.equal(t.died, true, "the death inside the volume is this volume's kill");
+  assert.deepEqual(t.deathPos, [5, 65, 9], "and the position is THIS death's, not the last one's");
+  assert.equal(t.enteredVolume, true);
+  assert.equal(t.abandoned, undefined);
+});
+
+test("a volume whose every cell is filled by a block is a finding, not a ten-second drive", async () => {
+  // `FakeBot.blockAt` answers with a solid block everywhere, which is the shape of
+  // the gallery's east-pit corner: the cell nearest the approach, and one no body
+  // can be in. Before, the walk drove at it until its deadline and the trial then
+  // said the bot had stood there.
+  const bot = new DrivableFakeBot();
+  bot.entity.position = new FakeVec3(0.5, 65, 0.5);
+  const executor = attach(bot);
+  bot.blockAt = () => ({ name: "stone", boundingBox: "block" });
+  executor.useDeathPlan(oneVolumePlan());
+
+  await executor.runDeathLoop();
+
+  const t = executor.deathLoopTrials()[0]!;
+  assert.equal(t.enteredVolume, false);
+  assert.equal(t.died, false);
+  assert.match(t.abandoned ?? "", /can hold a body/);
 });
