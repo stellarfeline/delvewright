@@ -1,5 +1,19 @@
 {
   "code": "DW0858",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/cast/npc~1curator/dialogue",
+      "value": "none"
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/cast/npc~1curator/doing",
+      "value": "standing at the lectern with the catalogue shut"
+    }
+  ],
   "units": [],
   "why": "The gallery's opening beat asks the player to hear the curator out, and this variant declares that same curator silent for that same quest. `\"none\"` is a real scene and the emitter honours it exactly — the dispatch writes no clause, so right-click consumes the interaction and opens nothing. The objective is then a thing the player walks up to, presses, and cannot pass. It declares no unit: `\"none\"` is already written by the domain on npcs whose beats do not go through them, and nothing here is an unwritable surface — only a pairing that must not compile. What makes it worth committing is what the engine did with it before this refusal existed: it exited 0. `DW0123` measures the tree from its entry points and the completing option really is in the curator's tree, so coverage passed; `DW0467` is a whole-story staleness warning and the curator's scene is not static; and the deep fixpoint is cast-blind by construction, being monotone where the ledger is entirely about when. Three checks that look like they cover this, all green, on a campaign a player cannot finish."
 }

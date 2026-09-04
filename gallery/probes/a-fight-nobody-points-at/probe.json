@@ -1,5 +1,27 @@
 {
   "code": "DW0863",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/objectives/1/title"
+    },
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/objectives/1/hint"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/obj.far-hall.clear-the-muster.title"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/obj.far-hall.clear-the-muster.hint"
+    }
+  ],
   "units": [],
   "why": "The gallery's one kill objective with both of its player-facing lines removed, and the l10n sidecar following so the inventory stays exact. Nothing else in the campaign changes, and nothing else in the campaign notices: a wave is the one objective kind the compiler puts nothing in the world for - no marker, no prop, no name - so the emitted datapack is byte-for-byte a working delve in which the party is told to clear a muster and given no way to find it. Both lines go rather than one, so DW0862 (a hint the emitter never shows) stays silent and this document demonstrates exactly one refusal. It declares no unit: title and hint are bound in the gallery proper, and what must not compile is a fight that carries neither."
 }

@@ -1,5 +1,17 @@
 {
   "code": "DW0861",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/0/objectives/2/item_name"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/obj.near-hall.take-the-emeralds.item_name"
+    }
+  ],
   "units": [],
   "why": "The gallery's one collect that adopts a container the piece already placed, with the name on its stack removed. The objective still announces itself, the container still holds the right item in the right slot, DW0438 still proves a container is really there - and the party opens the case to find an anonymous vanilla stack that says nothing about what the quest asked for, with every other identical container in the piece just as plausible a place to have looked. The title is left in place so DW0862 and the objective's own announcement stay out of it, and the perturbation is one optional field. It declares no unit: item_name is bound in the gallery proper, and what must not compile is adopting scenery without saying which piece of it the party is being sent to."
 }

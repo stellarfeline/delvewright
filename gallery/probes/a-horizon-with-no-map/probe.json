@@ -1,5 +1,21 @@
 {
   "code": "DW0855",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/dsl_version",
+      "value": "0.16.0"
+    },
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/horizon",
+      "value": {
+        "base": "valley"
+      }
+    }
+  ],
   "units": [],
   "why": "A horizon whose base BUILDS terrain, on a campaign that never says how big its map is. The primary seats its pieces with `areas[]`, which states no extent — and the obvious substitute, the union of whatever got placed, is not a statement of extent but an artifact of the compiler's fixed area stride: two small areas sit 256 blocks apart with void between them, so their union is a rectangle that is mostly nothing. Ringing it would build a mountain range around empty space, and it was measured doing exactly that — the same surround around the site plan's declared 64x64 region is fourteen templates and about ninety seconds, and around this union it had not finished in ten minutes. The refusal is not a budget: it is the engine declining to guess an extent nobody stated. It declares no unit, because the surface it exercises is bound on the site-plan overlay, where a map says how big it is."
 }
