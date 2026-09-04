@@ -93,18 +93,19 @@
 //! cannot click is an NPC they cannot talk to, which trades a dead objective for
 //! a dead character. The affordance and the body each need their own cell.
 
+use crate::failure::Failure;
 use std::collections::BTreeSet;
 
 use delvewright_dsl::{Campaign, Diagnostic, Objective, QuestEffect, TriggerOn};
 
 use crate::nav::entity_dims;
 use crate::plan::Plan;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0359`: an NPC or actor body stands on (error) or immediately in front of
 /// (warning) an interaction affordance, so the player's crosshair reaches the
 /// body instead of the affordance.
-pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359");
+pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359", ExitTier::Build);
 
 /// `DW0422`: a **pressable body's hitbox** shares a cell with another
 /// compiler-owned interaction affordance (DSL v0.8; widened to the whole
@@ -128,17 +129,7 @@ pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359");
 /// the protrusion exists to beat the block the body stands in, and
 /// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
 /// into a neighbouring cell's affordances.
-pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::every_version("DW0422");
-
-/// A build failure raised by the eclipse proof (mapped to exit 3, like the
-/// `nav`/`edit` build errors it sits beside).
-#[derive(Debug)]
-pub struct EclipseError {
-    /// The stable diagnostic code ([`DW_BODY_ECLIPSE`]).
-    pub code: DwCode,
-    /// Human-readable explanation, naming both entities and both cells.
-    pub message: String,
-}
+pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::every_version("DW0422", ExitTier::Build);
 
 /// Every affordance the compiler summons is `minecraft:interaction` with
 /// `width:1.0f` — exactly one cell across, centred on the cell.
@@ -507,7 +498,7 @@ fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
 /// Empty for every campaign whose bodies and affordances keep two blocks apart —
 /// which is every campaign that already compiled clean, so output stays
 /// byte-identical.
-pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, EclipseError> {
+pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, Failure> {
     let bodies = bodies(plan);
     let affordances = affordances(plan);
     let mut warnings = Vec::new();
@@ -572,7 +563,7 @@ fn seal_box(cell: [i32; 3]) -> [Span; 3] {
 /// [`check_body_eclipse`], before any occupancy model. Empty (and byte-identical)
 /// for a campaign that seals no gate, and for every campaign whose other
 /// affordances simply are not inside a sealed region.
-pub fn check_seal_collisions(plan: &Plan) -> Result<(), EclipseError> {
+pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
     let mut affordances = affordances(plan);
     // An NPC's dialogue hitbox is an affordance too — the one whose loss the
     // round-6 island proved (Polyphemus untalkable after the boulder seal, because
@@ -675,8 +666,8 @@ fn seal_collision_error(
     anchor: &str,
     cell: [i32; 3],
     a: &Affordance,
-) -> EclipseError {
-    EclipseError {
+) -> Failure {
+    Failure {
         code: DW_SEAL_HITBOX_COLLISION,
         message: format!(
             "the {} `{}` at `{}` {:?} shares space with the {kind} at anchor `{anchor}`, which \
@@ -699,8 +690,8 @@ fn describe(b: &Body, w: f64, h: f64) -> String {
 }
 
 /// The `DW0359` error: the body sits on the affordance.
-fn eclipse_error(b: &Body, a: &Affordance, w: f64, h: f64) -> EclipseError {
-    EclipseError {
+fn eclipse_error(b: &Body, a: &Affordance, w: f64, h: f64) -> Failure {
+    Failure {
         code: DW_BODY_ECLIPSE,
         message: format!(
             "{} stands at `{}` {:?} and ECLIPSES the {} `{}`'s affordance at `{}` {:?}: the body's \
