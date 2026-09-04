@@ -27,7 +27,7 @@
 //! - [`daylight`]: a body the sun kills may not be staged where the sun reaches it (`DW0496`).
 //! - [`deathplan`]: `validation/death-plan.json` — the bot tier's contract for dying.
 //! - [`detail`]: a place is detailed inside the box the whole gave it.
-//! - [`eclipse`]: no body stands in front of an affordance the party clicks (`DW0359`), and no affordance shares a cell with a sealed gate's hitboxes (`DW0422`).
+//! - [`eclipse`]: no body stands in front of an affordance the party clicks (`DW0359`), no affordance shares a cell with a sealed gate's hitboxes (`DW0422`), and no two affordances share a cell with each other (`DW0878`).
 //! - [`edit`]: the map editor's stage-7 edit-script replay.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
 //! - [`faces`]: does the piece next to this one answer the way out it declares?
