@@ -68,7 +68,7 @@ jobs:
       version: ${{ steps.id.outputs.version }}
       targets: ${{ steps.id.outputs.targets }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
           # `merge-base --is-ancestor` below needs real history, and needs
@@ -135,7 +135,7 @@ jobs:
           # against the Windows SDK import libraries cannot be done elsewhere.
           - { target: x86_64-pc-windows-msvc,     runner: windows-latest }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ needs.identity.outputs.tag }}" }
       - uses: Swatinem/rust-cache@v2
         with: { key: "shelf-${{ matrix.target }}" }
@@ -143,7 +143,7 @@ jobs:
       - name: build + archive + checksum
         shell: bash
         run: bash tools/build-release-binaries.sh --target ${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: shelf-${{ matrix.target }}
           path: dist/
@@ -161,9 +161,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ needs.identity.outputs.tag }}" }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: shelf-*
           merge-multiple: true
@@ -231,7 +231,7 @@ jobs:
     needs: identity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ needs.identity.outputs.tag }}" }
       - uses: Swatinem/rust-cache@v2
       # The same gate CI runs on every push, re-run here against the exact tagged
@@ -282,7 +282,7 @@ jobs:
       # assertion fails closed, which is right but late.
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ needs.identity.outputs.tag }}" }
       # FIRST, before anything that touches the outside world: prove the pause
       # actually happened. GitHub records environment approvals against the run;

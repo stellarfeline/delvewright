@@ -34,12 +34,12 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-qemu-action@v3 # arm64 emulation for the Pi (ADR-0010)
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@v4 # arm64 emulation for the Pi (ADR-0010)
+      - uses: docker/setup-buildx-action@v4
       - name: log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -63,7 +63,7 @@ jobs:
       #    published (by digest), pushed to GHCR.
       - name: build + push delvewright-toolserver (amd64 + arm64)
         id: toolserver
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: validation
           file: validation/Dockerfile.toolserver

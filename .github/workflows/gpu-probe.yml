@@ -38,7 +38,7 @@ jobs:
     name: gpu arm probe (measurement, not a gate)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The whole question. A GitHub-hosted runner has no GPU, so an adapter can
       # only come from a software rasteriser; `lavapipe` is Mesa's, and it is the

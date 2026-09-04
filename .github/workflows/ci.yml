@@ -27,7 +27,7 @@ jobs:
     name: manifest consistency (versions.toml)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # ubuntu-latest ships python3 (>=3.11, has stdlib tomllib) and bash.
       - name: consumers agree with versions.toml
         run: bash validation/check-versions.sh
@@ -53,7 +53,7 @@ jobs:
     name: rust (fmt, clippy, test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The compiler tests read the prefab library (`campaigns/prefabs/*.nbt`,
       # git-lfs); it lives in the content repo now (spec-0007 Step 0), checked out
       # at the pinned SHA into ./campaigns. The ADR-0006 double-build byte-identity
@@ -155,7 +155,7 @@ jobs:
       # --test`, no dependencies and no browser, so it is a step in the job that
       # already builds this crate rather than a new required context (renaming or
       # adding one is a three-part change — see required-status-checks.txt).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - name: the viewer's key and mouse mapping does what it says (node --test)
@@ -276,7 +276,7 @@ jobs:
           cargo build --locked -p delvec --bin delvec
           bash tools/determinism-subject.sh \
             --delvec target/debug/delvec --out determinism-linux.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: determinism-digest-linux
           path: determinism-linux.txt
@@ -303,7 +303,7 @@ jobs:
     needs: rust
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
         with: { key: determinism-macos }
       - name: build the engine under test
@@ -312,7 +312,7 @@ jobs:
         run: |
           bash tools/determinism-subject.sh \
             --delvec target/debug/delvec --out determinism-macos.txt
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: determinism-digest-linux
       # The gate. Prints every differing path, so a divergence names the file
@@ -322,7 +322,7 @@ jobs:
           python3 tools/tree-digest.py \
             --compare determinism-linux.txt determinism-macos.txt
       # Both sides, kept, so a red can be read after the runners are gone.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: determinism-digests
@@ -349,7 +349,7 @@ jobs:
     name: engine binaries (cross-build shelf)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
         with: { key: cross-build-shelf }
       - name: every shelf target compiles
@@ -367,7 +367,7 @@ jobs:
     name: prefab generators (invariants + determinism)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -421,8 +421,8 @@ jobs:
       run:
         working-directory: harness
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -469,8 +469,8 @@ jobs:
       run:
         working-directory: tools/skin
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: install (pinned skinpy-extended) + pinned pytest
@@ -487,8 +487,8 @@ jobs:
     # `urlopen` (tools/tests/conftest.py), so no test can reach a real provider.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       # Stdlib-only tool (tomllib needs >=3.11); pytest is the only test dep,
@@ -505,7 +505,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # the build copies the prefab .nbt into the datapack — from the content repo
       - uses: ./.github/actions/checkout-content
       - uses: Swatinem/rust-cache@v2
@@ -514,7 +514,7 @@ jobs:
       # >=3.14, so the pinned validator cannot be installed on 3.12 at all.
       # versions.toml records that floor and check-versions.sh holds this value
       # at or above it (versions.toml [ci]).
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - name: install mecha + beet (both pinned)
@@ -543,7 +543,7 @@ jobs:
       # gate fails CLOSED without it (nothing is withdrawn, rule 1 is the union
       # it always was), so this is what makes a correct cancellation green
       # rather than what makes a collision red.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       # docs/reference/compiler.md is the authoritative current-behavior record;
       # its DW diagnostics catalog must match crates/**/*.rs exactly, both ways
@@ -963,7 +963,7 @@ jobs:
     name: campaign storybooks (engine-version marker)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Text-only gate — the campaign JSON and the storybooks, never the .nbt
       # bodies, so LFS stays off and the checkout is a few hundred KB.
       - uses: ./.github/actions/checkout-content
@@ -1002,7 +1002,7 @@ jobs:
     name: campaign builds (every campaign in the content repo)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # LFS on (the default): a campaign build copies the prefab `.nbt` BODIES
       # into the datapack, so pointers would fail here for a reason that has
       # nothing to do with the engine change under test.
@@ -1070,7 +1070,7 @@ jobs:
     name: gallery (coverage + build + baseline)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # `gallery-baseline.py` classifies a manifest mismatch partly by what the
           # diff touches, and that needs the merge base rather than a shallow head.
@@ -1181,7 +1181,7 @@ jobs:
             echo
             sed -n '1,12p' gallery-coverage.md 2>/dev/null || echo "(coverage report not produced)"
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: gallery-coverage
@@ -1206,7 +1206,7 @@ jobs:
       # jar at run time; it is never baked into or published from CI.
       EULA: "TRUE"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # delvec copies the prefab .nbt into the datapack — from the content repo
       - uses: ./.github/actions/checkout-content
 
