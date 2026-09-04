@@ -95,23 +95,24 @@
 //! body the route was never sized for — the fix is the route or the body, never
 //! a smaller number in the dims table.
 
+use crate::failure::Failure;
 use std::fmt::Write as _;
 
 use delvewright_dsl::Diagnostic;
 
 use crate::nav::{ActorMovePlan, BARRIER_HEIGHT, MovePlan, World, entity_dims};
 use crate::plan::Plan;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0450`: a body volume overlaps solid block geometry — the entity is inside
 /// a wall, at its spawn anchor or at some tick of a walked leg.
-pub const DW_BODY_CLEARANCE: DwCode = DwCode::every_version("DW0450");
+pub const DW_BODY_CLEARANCE: DwCode = DwCode::every_version("DW0450", ExitTier::Build);
 
 /// `DW0451`: a body volume is clear of solids but its rendered model overhangs
 /// into one ([`MODEL_MARGIN`]), or it contains a 1.5-tall fence/wall/gate cell.
 /// Advisory: both are measurements the compiler can state honestly and cannot
 /// adjudicate.
-pub const DW_BODY_CLEARANCE_ADVISORY: DwCode = DwCode::every_version("DW0451");
+pub const DW_BODY_CLEARANCE_ADVISORY: DwCode = DwCode::every_version("DW0451", ExitTier::Build);
 
 /// How far past its collision box a vanilla mob model may visibly render, per
 /// horizontal side, in blocks.
@@ -134,17 +135,6 @@ pub const DW_BODY_CLEARANCE_ADVISORY: DwCode = DwCode::every_version("DW0451");
 /// on the island: 0.25 flagged 38 bodies including every crew mannequin, 0.2
 /// flags only the genuinely flush ones.
 pub const MODEL_MARGIN: f64 = 0.2;
-
-/// A build failure raised by the clearance proof (mapped to exit 3, like the
-/// `nav` / `eclipse` build errors it sits beside).
-#[derive(Debug)]
-pub struct ClearanceError {
-    /// The stable diagnostic code ([`DW_BODY_CLEARANCE`]).
-    pub code: DwCode,
-    /// Human-readable explanation, naming the body, where it is, and what it is
-    /// inside — plus every further violation, so one build reports them all.
-    pub message: String,
-}
 
 /// Where a body volume comes from, for the diagnostic text.
 #[derive(Clone)]
@@ -441,7 +431,7 @@ pub fn check_body_clearance(
     world: &World,
     moves: &[MovePlan],
     actor_moves: &[ActorMovePlan],
-) -> Result<Vec<Diagnostic>, ClearanceError> {
+) -> Result<Vec<Diagnostic>, Failure> {
     let mut errors: Vec<(Volume, [i32; 3], f64, f64)> = Vec::new();
     let mut warnings: Vec<Diagnostic> = Vec::new();
     // A leg reports once: `(id, to_anchor)` of legs that already have a finding.
@@ -463,7 +453,7 @@ pub fn check_body_clearance(
         }
     }
     if let Some((first, cell, w, h)) = errors.first() {
-        return Err(ClearanceError {
+        return Err(Failure {
             code: DW_BODY_CLEARANCE,
             message: clearance_error(first, *cell, *w, *h, &errors[1..]),
         });
@@ -711,7 +701,7 @@ mod tests {
         let mut o = occ(solid);
         // A slab sitting in the feet cell's own floor cell: collision top 8/16.
         o.partial.insert([3, 68, 3], 8);
-        let world = World::from_occupancy(o);
+        let world = World::from_occupancy(o, crate::nav::Premises::geometry_only());
         let v = giant_at([3, 69, 3]);
         let (w, h) = entity_dims(&v.entity);
         assert!(verdict(&world, &v, w, h).is_none());
@@ -810,7 +800,7 @@ mod tests {
         }
         let mut o = occ(solid);
         o.tall.insert([3, 69, 3]);
-        let world = World::from_occupancy(o);
+        let world = World::from_occupancy(o, crate::nav::Premises::geometry_only());
         let v = giant_at([3, 69, 3]);
         let (w, h) = entity_dims(&v.entity);
         let (cell, hit) = verdict(&world, &v, w, h).expect("a fence in the body must be measured");

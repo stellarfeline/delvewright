@@ -25,9 +25,11 @@ No test may touch the network — `conftest.py` blocks `urlopen`, and every test
 here either stops at `--dry-run` or injects a canned response.
 """
 
+import base64
 import importlib.util
 import json
 import sys
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -231,7 +233,29 @@ def test_resolution_reaches_the_multipart_wire(root, capsys):
 # ---------------------------------------------------------------------------
 
 
-CANNED = {"id": "v1_abc", "object": "interaction", "steps": []}
+def _image_step(n: int = 1) -> dict:
+    """A canned `model_output` step carrying `n` inline JPEGs.
+
+    Longer than the extractor's 256-char floor so the walk finds it, shorter than
+    `REDACT_OVER_CHARS` so the redaction rule is not what these tests measure.
+    """
+    return {"type": "model_output",
+            "content": [{"type": "image", "mime_type": "image/jpeg",
+                         "data": base64.b64encode(b"\xff\xd8\xff" + bytes(400)).decode()}
+                        for _ in range(n)]}
+
+
+def canned(images: int = 1) -> dict:
+    """A response with a known image count.
+
+    One by default, and that default is load-bearing: a response carrying NO
+    image now exits non-zero, so a fixture with none in it would be measuring the
+    zero-return path in every test that only wanted a sidecar.
+    """
+    return {"id": "v1_abc", "object": "interaction", "steps": [_image_step(images)]}
+
+
+CANNED = canned()
 
 
 def _sidecar(root, monkeypatch, argv, cfg_body=GEMINI, **extra):
@@ -299,7 +323,7 @@ def test_the_response_still_drops_oversized_payloads(root, monkeypatch):
     monkeypatch.setenv("TEST_REFIMG_KEY", "k")
     payload = "A" * (t.REDACT_OVER_CHARS + 1)
     monkeypatch.setattr(t, "call",
-                        lambda cfg, p, f: {"id": "x", "junk": payload, "steps": []})
+                        lambda cfg, p, f: {**canned(), "junk": payload})
     out = root / "out" / "ref"
     assert run(["--prompt", "x", "--out", out]) == 0
     doc = json.loads(out.with_suffix(".json").read_text())
@@ -330,3 +354,222 @@ def test_chain_from_reaches_the_wire(root, capsys):
     assert run(["--prompt", "x", "--chain-from", "v1_abc", "--dry-run"]) == 0
     body = json.loads(capsys.readouterr().out.split("json body:", 1)[1])
     assert body["previous_interaction_id"] == "v1_abc"
+
+
+# ---------------------------------------------------------------------------
+# how many pictures came back, and what that cost
+#
+# A provider that has no count field decides for itself, and the decision is
+# billed. Measured over 48 calls in one round: 42 returned one image, one
+# returned 2, two returned 5, one returned ELEVEN, and two returned nothing at
+# all. None of that was visible in `--help`, in `--dry-run`, in the sidecar, or
+# in the exit code — which is what these tests are about.
+# ---------------------------------------------------------------------------
+
+
+def _canned_run(root, monkeypatch, response, argv=("--prompt", "x"), cfg_body=GEMINI):
+    config(root, cfg_body)
+    monkeypatch.setenv("TEST_REFIMG_KEY", "k")
+    monkeypatch.setattr(t, "call", lambda cfg, p, f: response)
+    out = root / "out" / "ref"
+    return run([*argv, "--out", out]), out
+
+
+def test_the_first_image_takes_the_name_that_was_asked_for(root, monkeypatch):
+    """One image, and it is `<stem>.jpg` — not `<stem>-0.jpg`."""
+    code, out = _canned_run(root, monkeypatch, canned(1))
+    assert code == 0
+    assert out.with_suffix(".jpg").exists()
+    assert not out.with_name("ref-0.jpg").exists()
+
+
+def test_a_multi_return_still_writes_the_requested_name(root, monkeypatch, capsys):
+    """THE defect: five images used to be written `ref-0.jpg` … `ref-4.jpg` with
+    no `ref.jpg` at all, so every existence check on the requested name reported
+    the picture missing. How many a provider chose to draw is not a fact about
+    what was asked for."""
+    code, out = _canned_run(root, monkeypatch, canned(5))
+    assert code == 0, "the requested image exists, so this is not a failure"
+    assert out.with_suffix(".jpg").exists(), "the name that was asked for"
+    for i in range(1, 5):
+        assert out.with_name(f"ref-{i}.jpg").exists(), i
+    assert not out.with_name("ref-0.jpg").exists(), "no image is named after index 0"
+
+
+def test_a_multi_return_says_how_many_and_that_they_were_billed(root, monkeypatch, capsys):
+    _, out = _canned_run(root, monkeypatch, canned(11))
+    err = capsys.readouterr().err
+    assert "11 images" in err
+    assert "billed" in err
+    assert "ref.jpg" in err and "ref-10.jpg" in err
+
+
+def test_the_sidecar_records_the_count_and_the_names(root, monkeypatch):
+    """A terminal line is gone by the next round; the sidecar travels with the
+    image into the campaign, and is the only place a later reader can tell a
+    one-image call from an eleven-image one."""
+    _, out = _canned_run(root, monkeypatch, canned(3))
+    doc = json.loads(out.with_suffix(".json").read_text())
+    assert doc["images"]["returned"] == 3
+    assert doc["images"]["written"] == ["ref.jpg", "ref-1.jpg", "ref-2.jpg"]
+
+
+def test_a_one_image_call_records_the_count_too(root, monkeypatch):
+    """Recorded on every call, not only the surprising ones — a field that is
+    absent when the answer is boring cannot be read as an answer."""
+    _, out = _canned_run(root, monkeypatch, canned(1))
+    doc = json.loads(out.with_suffix(".json").read_text())
+    assert doc["images"] == {"returned": 1, "written": ["ref.jpg"]}
+
+
+def test_a_response_with_no_image_leaves_non_zero_and_names_out(root, monkeypatch, capsys):
+    """It used to be a warning beside exit 0, so a script could not tell a drawn
+    image from a response nobody could extract one out of."""
+    code, out = _canned_run(root, monkeypatch, {"id": "v1_abc", "steps": []})
+    assert code == 1
+    err = capsys.readouterr().err
+    assert str(out) in err
+    assert "no image" in err
+    assert str(out.with_suffix(".json")) in err, "the paid response is still kept"
+    assert out.with_suffix(".json").exists()
+
+
+def test_count_is_refused_by_a_provider_that_has_no_count_field(root):
+    """The same rule the anchors and the frame follow. `--count 4` used to reach
+    `gemini-native` and be dropped on the floor — a flag that reads as a bound on
+    what you will be billed for and was not one."""
+    config(root, GEMINI)
+    with pytest.raises(SystemExit) as exc:
+        run(["--prompt", "x", "--count", "4", "--dry-run"])
+    message = str(exc.value)
+    assert "--count" in message and "gemini-native" in message
+
+
+def test_an_unset_count_is_not_a_refusal(root):
+    """The default has to be distinguishable from an explicit 1, or the refusal
+    above would refuse every ordinary call."""
+    config(root, GEMINI)
+    assert run(["--prompt", "x", "--dry-run"]) == 0
+
+
+def test_an_unset_count_asks_the_wire_that_has_one_for_exactly_one(root, capsys):
+    config(root, IDEOGRAM)
+    assert run(["--prompt", "x", "--dry-run"]) == 0
+    assert "num_images = 1" in capsys.readouterr().out
+
+
+def test_dry_run_says_a_call_may_return_more_than_one(root, capsys):
+    """`--dry-run` is the costless mode, so it is where a creator looks before
+    spending anything — and it said nothing at all about how many pictures a
+    call might bill for."""
+    config(root, GEMINI)
+    assert run(["--prompt", "x", "--out", root / "z", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "ELEVEN" in out and "billed" in out
+    assert "no count field" in out
+
+
+def test_dry_run_on_a_counted_provider_says_the_number(root, capsys):
+    config(root, IDEOGRAM)
+    assert run(["--prompt", "x", "--count", "3", "--dry-run"]) == 0
+    assert "images: exactly 3" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# a timeout is retried once, then NAMED
+# ---------------------------------------------------------------------------
+
+
+def _timeout_call(root, monkeypatch, failures, cfg_body=GEMINI):
+    """Drive the real `call` with a fake `urlopen` that times out `failures` times."""
+    config(root, cfg_body)
+    monkeypatch.setenv("TEST_REFIMG_KEY", "k")
+    calls = {"n": 0}
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps(canned(1)).encode()
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] <= failures:
+            raise TimeoutError("The read operation timed out")
+        return _Resp()
+
+    monkeypatch.setattr(t.urllib.request, "urlopen", fake_urlopen)
+    return calls
+
+
+def test_one_timeout_is_retried_and_the_call_succeeds(root, monkeypatch, capsys):
+    calls = _timeout_call(root, monkeypatch, failures=1)
+    out = root / "out" / "ref"
+    assert run(["--prompt", "x", "--out", out]) == 0
+    assert calls["n"] == 2, "one retry, and it was used"
+    assert out.with_suffix(".jpg").exists()
+    err = capsys.readouterr().err
+    assert "retrying once" in err
+    assert "billed" in err, "a timed-out attempt may still have been charged"
+
+
+def test_two_timeouts_fail_in_one_line_naming_out(root, monkeypatch, capsys):
+    """The traceback this replaces was twenty lines of `urllib` frames ending
+    `TimeoutError: The read operation timed out`, naming neither the prompt nor
+    the output path — so a round that lost two calls out of forty-eight could not
+    tell from the terminal which two."""
+    calls = _timeout_call(root, monkeypatch, failures=2)
+    out = root / "out" / "ref"
+    assert run(["--prompt", "x", "--out", out]) == 1
+    assert calls["n"] == t.CALL_ATTEMPTS == 2, "bounded: it does not retry forever"
+    err = capsys.readouterr().err.strip()
+    assert len(err.splitlines()) == 2, "the retry notice and one failure line"
+    failure = err.splitlines()[-1]
+    assert str(out) in failure
+    assert "twice" in failure and "billed" in failure
+
+
+def test_a_connect_timeout_wrapped_in_urlerror_is_the_same_finding(root, monkeypatch, capsys):
+    """A read timeout arrives bare; a connect timeout arrives inside a
+    `URLError`. Both are one finding to a creator."""
+    config(root, GEMINI)
+    monkeypatch.setenv("TEST_REFIMG_KEY", "k")
+
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.URLError(TimeoutError("timed out"))
+
+    monkeypatch.setattr(t.urllib.request, "urlopen", fake_urlopen)
+    out = root / "out" / "ref"
+    assert run(["--prompt", "x", "--out", out]) == 1
+    assert "twice" in capsys.readouterr().err
+
+
+def test_an_unreachable_provider_is_named_rather_than_traced(root, monkeypatch, capsys):
+    """Not retried — it is not transient — but still one line rather than a
+    traceback, because it is a case the tool can name."""
+    config(root, GEMINI)
+    monkeypatch.setenv("TEST_REFIMG_KEY", "k")
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        raise urllib.error.URLError("nodename nor servname provided")
+
+    monkeypatch.setattr(t.urllib.request, "urlopen", fake_urlopen)
+    out = root / "out" / "ref"
+    assert run(["--prompt", "x", "--out", out]) == 1
+    assert calls["n"] == 1, "a name-resolution failure is not retried"
+    err = capsys.readouterr().err.strip()
+    assert len(err.splitlines()) == 1
+    assert str(out) in err and "could not be reached" in err
+
+
+def test_dry_run_never_reaches_the_wire(root, monkeypatch):
+    """The retry lives inside `call`; `--dry-run` must still cost nothing.
+    `conftest.py` blocks `urlopen`, so a call here is an AssertionError."""
+    config(root, GEMINI)
+    assert run(["--prompt", "x", "--dry-run"]) == 0

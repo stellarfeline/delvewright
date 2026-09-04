@@ -52,6 +52,7 @@
 //! never a guess in either direction — an encounter is never failed on an
 //! assumption.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{
@@ -63,33 +64,33 @@ use serde_json::{Value, json};
 use crate::nav::{World, entity_dims};
 use crate::plan::{self, Plan, Step, safe_local};
 use crate::registry::{DamageTypeRegistry, ItemCombatRegistry};
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0470`: a hostile the party is *required* to kill can never be damaged.
-pub const DW_UNDAMAGEABLE: DwCode = DwCode::every_version("DW0470");
+pub const DW_UNDAMAGEABLE: DwCode = DwCode::every_version("DW0470", ExitTier::Build);
 
 /// `DW0471`: a hostile the party is required to kill has no cell to be fought
 /// from — its body is walled in.
-pub const DW_UNREACHABLE: DwCode = DwCode::every_version("DW0471");
+pub const DW_UNREACHABLE: DwCode = DwCode::every_version("DW0471", ExitTier::Build);
 
 /// `DW0472`: a mandatory encounter's declared health outlasts the best kit the
 /// party can field, by the [`TTK_BUDGET_HITS`] sanity bound.
-pub const DW_TTK_OVER_BUDGET: DwCode = DwCode::every_version("DW0472");
+pub const DW_TTK_OVER_BUDGET: DwCode = DwCode::every_version("DW0472", ExitTier::Build);
 
 /// `DW0473`: an unavoidable scripted hit on the critical path kills a
 /// full-health player outright.
-pub const DW_UNAVOIDABLE_LETHAL: DwCode = DwCode::every_version("DW0473");
+pub const DW_UNAVOIDABLE_LETHAL: DwCode = DwCode::every_version("DW0473", ExitTier::Build);
 
 /// `DW0474`: a campaign with mandatory combat hands the party no sustain at all.
-pub const DW_NO_SUSTAIN: DwCode = DwCode::every_version("DW0474");
+pub const DW_NO_SUSTAIN: DwCode = DwCode::every_version("DW0474", ExitTier::Build);
 
 /// `DW0475`: (warning) the numeric time-to-kill bound could not be computed.
-pub const DW_TTK_UNPROVEN: DwCode = DwCode::every_version("DW0475");
+pub const DW_TTK_UNPROVEN: DwCode = DwCode::every_version("DW0475", ExitTier::Build);
 
 /// `DW0477`: (warning) something the content bills `elite`/`boss` is one the
 /// inverted floor gate cannot measure — so its silence in the run report means
 /// "never fought", not "passed".
-pub const DW_FLOOR_UNCOVERED: DwCode = DwCode::every_version("DW0477");
+pub const DW_FLOOR_UNCOVERED: DwCode = DwCode::every_version("DW0477", ExitTier::Build);
 
 /// The vanilla player's `minecraft:max_health` base value. The DSL exposes no
 /// player-attribute surface at all, so this is not a default — it is the only
@@ -122,17 +123,6 @@ pub const TTK_BUDGET_HITS: u32 = 400;
 /// its PackTest scaffolding, and the only way a wave mob can be spelled
 /// unkillable.
 pub const RESISTANCE_IMMUNE_AMPLIFIER: u32 = 4;
-
-/// A build failure raised by the winnability proof (exit 3, like the `nav` /
-/// `clearance` build errors it sits beside).
-#[derive(Debug)]
-pub struct CombatError {
-    /// The stable diagnostic code.
-    pub code: DwCode,
-    /// Human-readable explanation: the arithmetic, the formula it used, and how
-    /// to retune without re-deriving any of it.
-    pub message: String,
-}
 
 /// One mandatory encounter: a wave a `kill` objective on the compiled critical
 /// path requires the party to clear.
@@ -1024,7 +1014,7 @@ pub fn check_winnability(
     plan: &Plan,
     world: &World,
     placements: &BTreeMap<String, Vec<[i32; 3]>>,
-) -> Result<Vec<Diagnostic>, CombatError> {
+) -> Result<Vec<Diagnostic>, Failure> {
     let c = plan.campaign;
     let items = ItemCombatRegistry::v1_21_11();
     let types = DamageTypeRegistry::v1_21_11();
@@ -1035,7 +1025,7 @@ pub fn check_winnability(
     // ---- DW0470: every required hostile can be hurt at all -----------------
     let undamageable = undamageable_hostiles(&c.quests.content.waves, &mandatory);
     if !undamageable.is_empty() {
-        return Err(CombatError {
+        return Err(Failure {
             code: DW_UNDAMAGEABLE,
             message: format!(
                 "a hostile the party is REQUIRED to kill can never be damaged, so its `kill` \
@@ -1060,7 +1050,7 @@ pub fn check_winnability(
     let seated = seated_hostiles(&c.quests.content.waves, &mandatory, placements);
     let unreachable = unreachable_hostiles(world, &seated);
     if !unreachable.is_empty() {
-        return Err(CombatError {
+        return Err(Failure {
             code: DW_UNREACHABLE,
             message: format!(
                 "a hostile the party is REQUIRED to kill has nowhere to be fought from — its \
@@ -1104,7 +1094,7 @@ pub fn check_winnability(
                     let sps = swings_per_second(item, &items);
                     #[allow(clippy::cast_precision_loss)]
                     let seconds = hits as f64 / sps;
-                    return Err(CombatError {
+                    return Err(Failure {
                         code: DW_TTK_OVER_BUDGET,
                         message: format!(
                             "encounter {} ({}) outlasts the best kit the party can field:\n\
@@ -1205,7 +1195,7 @@ pub fn check_winnability(
         }
     }
     if !lethal.is_empty() {
-        return Err(CombatError {
+        return Err(Failure {
             code: DW_UNAVOIDABLE_LETHAL,
             message: format!(
                 "an UNAVOIDABLE scripted hit on the critical path kills a full-health player \
@@ -1348,6 +1338,305 @@ fn has_any_sustain(c: &Campaign, items: &ItemCombatRegistry) -> bool {
     given
 }
 
+// ---------------------------------------------------------------------------
+// When to stop swinging at one body (the per-encounter half)
+// ---------------------------------------------------------------------------
+
+/// How many times over the arithmetic's fully-charged swing count a single body
+/// may be meleed before the validation ladder stops swinging at it and says so.
+///
+/// **Authored, not cited.** Vanilla scales a swing's damage by the attack-cooldown
+/// progress, and the ladder's bot swings on a fixed cadence without ever waiting
+/// the cooldown out, so it lands well under full damage every time and needs
+/// several times the count this arithmetic produces for the same body. No source
+/// gives the right multiple for a bot's fencing, so this is a sanity margin in
+/// exactly the spirit of [`TTK_BUDGET_HITS`]: deliberately generous, crossed only
+/// by a body that is not dying at all rather than by one that is merely tanky.
+///
+/// It lives here, beside the arithmetic, and not in the harness, because the
+/// number it multiplies is a fact about the ENCOUNTER — a harness constant would
+/// be the same figure for a hall of rats and for a boss.
+pub const GIVE_UP_SWING_MARGIN: u32 = 8;
+
+/// The smallest melee budget any body gets, whatever the arithmetic says.
+///
+/// **Authored, not cited**, and for one reason: a mob the best kit fells in a
+/// single fully-charged swing would otherwise get eight, which a bot that misses
+/// twice while a mob backs away can spend without the body being unkillable at
+/// all. The floor keeps the budget a statement about "this body is not dying"
+/// rather than about the bot's aim.
+pub const GIVE_UP_SWING_FLOOR: u32 = 16;
+
+/// One kind of body standing at an encounter, with the melee budget the
+/// encounter's own arithmetic gives it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyBound {
+    /// Entity kind in the client's vocabulary (`zombie`), which is the only
+    /// identity the bot can read off a body.
+    pub kind: String,
+    /// How many of them the wave seats.
+    pub count: u32,
+    /// Swings after which this body is not being killed by the class kit —
+    /// `None` when the arithmetic could not be computed.
+    pub give_up_swings: Option<u32>,
+    /// Why there is no budget. Present exactly when `give_up_swings` is `None`.
+    pub reason: Option<String>,
+}
+
+/// The melee budgets for one encounter's bodies, worst-case per kind.
+///
+/// # What this replaces
+///
+/// The bot used to decide a body was unkillable by meleeing it for a fixed six
+/// seconds — a combat-targeting policy with no author, written in the harness,
+/// reasoned about in the comments of one campaign ("a `minecraft:warden` posing
+/// as Polyphemus"). Six seconds is not a fact about anything: it is too long for
+/// a rat and too short for an elite, and when it fires it silently blacklists the
+/// body and reports nothing.
+///
+/// The encounter already knows better. `attributes.max_health`, the mob's
+/// resistance, and the best weapon any class kit carries are the same three
+/// numbers [`check_winnability`] bounds the whole fight with; per body they give
+/// the swings that body should take. A body that outlives them is a **content
+/// defect the run report names** — not a blacklist the harness invents.
+///
+/// # Grouping
+///
+/// A wave may seat two stacks of one entity with different tuning, and the bot
+/// cannot tell them apart (it reads a name, not NBT). So kinds are grouped and
+/// the budget is the WORST of the stacks — and a single unproven stack makes the
+/// whole kind unproven. Never the other direction: giving up early on a body that
+/// was merely tougher than the stack beside it would fail a delve that is fine.
+pub fn encounter_bodies(c: &Campaign, wave: &Wave, items: &ItemCombatRegistry) -> Vec<BodyBound> {
+    let best = best_melee_hit(c, items);
+    // kind -> (count, worst swings so far, first reason it could not be bounded)
+    let mut by_kind: BTreeMap<&str, (u32, Option<u32>, Option<String>)> = BTreeMap::new();
+    for mob in &wave.mobs {
+        let kind = client_name(&mob.entity);
+        let entry = by_kind.entry(kind).or_insert((0, Some(0), None));
+        entry.0 += mob.count;
+        let bound = body_swings(mob, best.as_ref());
+        match bound {
+            Ok(swings) => {
+                if let Some(worst) = entry.1 {
+                    entry.1 = Some(worst.max(swings));
+                }
+            }
+            Err(why) => {
+                entry.1 = None;
+                if entry.2.is_none() {
+                    entry.2 = Some(why);
+                }
+            }
+        }
+    }
+    by_kind
+        .into_iter()
+        .map(|(kind, (count, swings, reason))| BodyBound {
+            kind: kind.to_string(),
+            count,
+            give_up_swings: swings,
+            reason: swings.is_none().then(|| {
+                reason.unwrap_or_else(|| "the arithmetic could not be computed".to_string())
+            }),
+        })
+        .collect()
+}
+
+/// The melee budget for ONE body of `mob`, or why there is none.
+fn body_swings(mob: &WaveMob, best: Option<&(f64, String, String)>) -> Result<u32, String> {
+    let Some((hit, class, item)) = best else {
+        return Err(
+            "no class kit carries an item with an `attack_damage` attribute, so the party's \
+             damage output is unknown (a bow's damage is projectile code and appears in no \
+             vanilla data — absence is not zero). Nothing here can say how long a body should \
+             take to fall."
+                .to_string(),
+        );
+    };
+    let Some(max_health) = mob.attributes.and_then(|a| a.max_health) else {
+        return Err(format!(
+            "{} declares no `attributes.max_health`, and Mojang publishes no per-entity default \
+             attributes — so its health is genuinely unknown at build time and this compiler \
+             refuses to invent a health table. Declare `attributes.max_health` on the stack to \
+             give the ladder a melee budget for this body (the same declaration `DW0475` asks \
+             for).",
+            mob.entity
+        ));
+    };
+    let (multiplier, _) = mob_damage_multiplier(mob);
+    // multiplier 0 (total immunity) is `DW0470`, refused long before here.
+    let effective = max_health / multiplier;
+    let charged = (effective / hit).ceil().max(1.0) as u64;
+    let budget = charged
+        .saturating_mul(u64::from(GIVE_UP_SWING_MARGIN))
+        .max(u64::from(GIVE_UP_SWING_FLOOR));
+    debug_assert!(
+        !class.is_empty() && !item.is_empty(),
+        "best_melee_hit names the kit it came from"
+    );
+    Ok(u32::try_from(budget).unwrap_or(u32::MAX))
+}
+
+/// `bodies` for one encounter, in the plan's vocabulary.
+fn bodies_json(bodies: &[BodyBound]) -> Value {
+    Value::Array(
+        bodies
+            .iter()
+            .map(|b| {
+                let mut o = json!({
+                    "kind": b.kind,
+                    "count": b.count,
+                    "give_up_swings": b.give_up_swings,
+                });
+                if let Some(why) = &b.reason {
+                    o["reason"] = json!(why);
+                }
+                o
+            })
+            .collect(),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Who is not a fight (the cast half of the targeting policy)
+// ---------------------------------------------------------------------------
+
+/// Strip the namespace off an entity id, giving the name a client reports.
+///
+/// The validation bot classifies a body by `entity.name` — `"villager"`,
+/// `"mannequin"` — because that is the only identity mineflayer exposes on
+/// 1.21.11 (entity `Tags` are not readable from the client). So every entity id
+/// this module hands the harness is stated in that vocabulary, once, here.
+fn client_name(entity: &str) -> &str {
+    entity.rsplit(':').next().unwrap_or(entity)
+}
+
+/// The delve's cast statement: which entity kinds are never a combat target.
+///
+/// # Why the compiler owns this
+///
+/// The bot cannot read entity tags, so it decides what to swing at by SHAPE, and
+/// a shape test cannot tell a quest-giver from a zombie when the quest-giver *is*
+/// a zombie. The harness used to carry the answer as a literal set containing
+/// `mannequin` and `villager` — which is not a fact about Minecraft, it is a fact
+/// about what THIS compiler summons an NPC as, written down in the one place that
+/// cannot know it. An author who gives an NPC `base_entity: minecraft:zombie` gets
+/// a quest-giver the bot beats to death, and nothing anywhere would have said so.
+///
+/// Every NPC body the compiler emits is `Invulnerable:1b` — both the skinned
+/// `minecraft:mannequin` branch and the plain `base_entity` branch — so an NPC is
+/// never a fight, whatever it is wearing. That is the whole rule.
+///
+/// # The collision, and why it is stated rather than resolved
+///
+/// A kind can be an NPC body *and* a body the party fights: an NPC villager in a
+/// campaign whose wave is villagers. Excluding the kind would make the wave
+/// unkillable; not excluding it leaves the NPC attackable. The compiler resolves
+/// it in the only direction that cannot soft-lock a delve — the fightable kind
+/// wins — and says so in [`NonCombatants::ambiguous`], so the run report names
+/// the NPCs the bot may swing at instead of the harness silently deciding.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NonCombatants {
+    /// Entity kinds (client vocabulary) no body of which is ever a fight.
+    pub kinds: Vec<String>,
+    /// Kinds that are an NPC body *and* a fightable body — excluded from
+    /// [`Self::kinds`] with the reason.
+    pub ambiguous: Vec<(String, String)>,
+    /// How many NPC bodies were examined — the binding count.
+    pub examined: usize,
+}
+
+/// `non_combatants`'s reason when `examined == 0`: the campaign has no NPCs at
+/// all, so there is no body the bot must be told to leave alone.
+const NON_COMBATANTS_UNBOUND_REASON: &str = "this campaign stages no NPC, so no body in it is \
+    exempt from combat by cast. Stated explicitly so an empty `kinds` list is never read as \
+    \"the compiler forgot\": every mob-shaped body in this delve is either a wave mob, an \
+    actor, or vanilla furniture the bot classifies by shape.";
+
+/// Census the cast: what the bot must never swing at, and what it may.
+///
+/// Deterministic: both lists are built through a `BTreeSet`, never insertion
+/// order.
+pub fn non_combatants(c: &Campaign) -> NonCombatants {
+    // Every kind the party is meant to be able to fight. An actor's `entity` is
+    // here whether or not the puppet is currently `Invulnerable`: unleashing
+    // replaces the puppet with a real-AI twin summoned as that same entity and
+    // carrying no `Invulnerable` flag, so the kind is fightable and only the
+    // moment differs.
+    let mut fightable: BTreeSet<&str> = BTreeSet::new();
+    for w in &c.quests.content.waves {
+        for m in &w.mobs {
+            fightable.insert(client_name(&m.entity));
+        }
+    }
+    for a in &c.quests.content.actors {
+        fightable.insert(client_name(&a.entity));
+    }
+
+    let mut kinds: BTreeSet<&str> = BTreeSet::new();
+    let mut ambiguous: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut examined = 0usize;
+    for npc in &c.npcs.content.npcs {
+        examined += 1;
+        // The skinned branch re-dresses the NPC as a `minecraft:mannequin`; the
+        // plain branch summons `base_entity`. One rule, both branches, and it is
+        // the emitter's rule (`emit::npc_body_commands`), not a second opinion.
+        let body = if npc.skin.is_some() {
+            "mannequin"
+        } else {
+            client_name(&npc.base_entity)
+        };
+        if fightable.contains(body) {
+            ambiguous.entry(body).or_default().insert(npc.id.as_str());
+        } else {
+            kinds.insert(body);
+        }
+    }
+
+    NonCombatants {
+        kinds: kinds.into_iter().map(str::to_string).collect(),
+        ambiguous: ambiguous
+            .into_iter()
+            .map(|(kind, npcs)| {
+                (
+                    kind.to_string(),
+                    format!(
+                        "{} is also a wave mob or an actor in this campaign, so it cannot be \
+                         excluded from targeting without making that fight unwinnable. The bot \
+                         may therefore swing at {} — move the NPC onto a `base_entity` nothing \
+                         fights, or give it a `skin` (which embodies it as a \
+                         `minecraft:mannequin`).",
+                        kind,
+                        npcs.iter().copied().collect::<Vec<_>>().join(", ")
+                    ),
+                )
+            })
+            .collect(),
+        examined,
+    }
+}
+
+/// The `non_combatants` block of `critical-path.json`.
+pub fn non_combatants_json(c: &Campaign) -> Value {
+    let nc = non_combatants(c);
+    let mut o = json!({
+        "kinds": nc.kinds,
+        "ambiguous": nc.ambiguous.iter()
+            .map(|(kind, why)| json!({ "kind": kind, "why": why }))
+            .collect::<Vec<_>>(),
+        // playtest-methodology.md rule 1: the binding count, stated in the
+        // artifact, so a reader never has to notice an empty list to learn this
+        // census matched nothing.
+        "examined": nc.examined,
+        "unbound": nc.examined == 0,
+    });
+    if nc.examined == 0 {
+        o["reason"] = json!(NON_COMBATANTS_UNBOUND_REASON);
+    }
+    o
+}
+
 /// One staging beat, as the plan states it.
 fn beat_json(b: &ActorBeat) -> Value {
     let mut o = json!({ "site": b.site, "owner": b.owner, "path": b.path });
@@ -1460,9 +1749,17 @@ fn coverage_json(c: &FloorCoverage) -> Value {
 ///   text says so and points at `floor_gate.not_covered`.
 pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEncounter]) -> Value {
     let difficulty = effective_difficulty(plan.campaign);
+    let items = ItemCombatRegistry::v1_21_11();
     let entries: Vec<Value> = encounters
         .iter()
         .map(|e| {
+            // What stands at this encounter, and how long each body should take
+            // to fall. The bot picks its target by the name a client reports, so
+            // this is the encounter stating its own cast in that vocabulary —
+            // see `encounter_bodies` for what it replaces.
+            let bodies = plan::wave_of(plan.campaign, &e.wave_id)
+                .map(|w| encounter_bodies(plan.campaign, w, &items))
+                .unwrap_or_default();
             let mut o = json!({
                 "wave": e.wave_id,
                 "objective": e.objective_id,
@@ -1475,6 +1772,10 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
                 "pos": [e.pos[0], e.pos[1], e.pos[2]],
                 "count": e.count,
                 "respawns_on_rest": e.respawns_on_rest,
+                // The encounter's own cast and melee budgets. `bodies[].kind` is
+                // what the bot MAY swing at here; `give_up_swings` is when it
+                // must stop and let the report name the body.
+                "bodies": bodies_json(&bodies),
                 // The tag-census probe surface for this wave. The
                 // harness calls what the plan NAMES — `safe_local` is a compiler
                 // naming rule, and a harness that re-derived it would be exactly
@@ -1743,7 +2044,7 @@ mod tests {
         // Carve the pocket itself (the mob stands on [0,-1,0]).
         solid.remove(&[0, 0, 0]);
         solid.remove(&[0, 1, 0]);
-        let world = World::from_occupancy(occ(solid));
+        let world = World::from_occupancy(occ(solid), crate::nav::Premises::geometry_only());
         let seated = vec![(
             "wave/pit".to_string(),
             "minecraft:zombie".to_string(),
@@ -1760,7 +2061,7 @@ mod tests {
                 solid2.insert([dx, -1, dz]);
             }
         }
-        let open = World::from_occupancy(occ(solid2));
+        let open = World::from_occupancy(occ(solid2), crate::nav::Premises::geometry_only());
         assert!(unreachable_hostiles(&open, &seated).is_empty());
     }
 

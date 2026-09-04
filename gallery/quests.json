@@ -127,26 +127,26 @@
       {
         "damage_type": "fall",
         "id": "lethal/west-pit",
-        "message": "The floor of the west bay is not a floor.",
+        "message": "The floor in the west corner is not a floor.",
         "region": {
           "anchor": "anchor/west-pit",
           "extent": [
+            1,
             2,
-            2,
-            2
+            1
           ]
         }
       },
       {
         "damage_type": "wither",
         "id": "lethal/east-pit",
-        "message": "The air in the east bay does not agree with you.",
+        "message": "The air along the north wall does not agree with you.",
         "region": {
           "anchor": "anchor/east-pit",
           "extent": [
+            1,
             2,
-            2,
-            2
+            1
           ]
         }
       }
@@ -309,7 +309,7 @@
             },
             "hint": "The case stands in the middle of the near hall.",
             "id": "obj/press-the-case",
-            "missing_item_hint": "The case wants a key, and the key is in the case. Ask the Factor.",
+            "missing_item_hint": "The Curator gave you the case key. It only opens the case from your hand.",
             "prop": {
               "block": "minecraft:stone_button"
             },
@@ -469,28 +469,6 @@
             "wave": "wave/muster"
           },
           {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "happening": {
-              "subject": "anchor/march",
-              "text": "A lane opens down the far hall.",
-              "verb": "arrives"
-            },
-            "requires_flags": [
-              "flag/hall-open"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
-            "type": "spawn-wave",
-            "wave": "wave/lane"
-          },
-          {
             "happening": {
               "subject": "npc/warden",
               "text": "The Warden steps behind the wall and does not come back.",
@@ -532,6 +510,24 @@
               ],
               "item": "minecraft:torch",
               "name": "Hall Torch",
+              "requires_flags": [],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "type": "give-item"
+            },
+            {
+              "carrier": "all",
+              "count": 1,
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "item": "minecraft:iron_pickaxe",
+              "name": "Case Key",
               "requires_flags": [],
               "requires_state": [
                 {
@@ -1025,6 +1021,25 @@
               "verb": "survives"
             },
             "type": "campaign-complete"
+          },
+          {
+            "happening": {
+              "subject": "anchor/march",
+              "text": "A lane opens down the far hall behind them.",
+              "verb": "arrives"
+            },
+            "requires_flags": [
+              "flag/hall-open"
+            ],
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
+            "type": "spawn-wave",
+            "wave": "wave/lane"
           }
         ],
         "on_objective_complete": {
@@ -1907,6 +1922,17 @@
               ],
               "type": "open-way",
               "way": "broken-flight"
+            },
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/muster-cleared"
+              ],
+              "state": "state/labels-read",
+              "type": "set-state",
+              "value": 2
             }
           ]
         },
@@ -1982,6 +2008,22 @@
             "type": "set-flag"
           }
         ],
+        "on_objective_complete": {
+          "obj/look-in-the-east-bay": [
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "happening": {
+                "subject": "anchor/east-bay",
+                "text": "Something that was watching the east bay closes on it.",
+                "verb": "arrives"
+              },
+              "type": "spawn-wave",
+              "wave": "wave/edge"
+            }
+          ]
+        },
         "trigger": {
           "quest": "quest/near-hall",
           "type": "quest-complete"
@@ -2096,7 +2138,7 @@
             "type": "narrate"
           }
         ],
-        "unlock": "anchor/vantage"
+        "unlock": "anchor/side-lever"
       }
     ],
     "stakes": [
@@ -2202,7 +2244,7 @@
         "crush": true,
         "disarm": {
           "sets_flag": "flag/gate-jammed",
-          "via": "anchor/vantage"
+          "via": "anchor/clock-lever"
         },
         "gate": "anchor/timed-door-inner",
         "id": "timed-gate/inner-door",
@@ -2215,7 +2257,7 @@
         "at": "anchor/march",
         "disarm": {
           "sets_flag": "flag/plate-disarmed",
-          "via": "anchor/vantage"
+          "via": "anchor/plate-lever"
         },
         "effect": {
           "dispense": {
@@ -2316,7 +2358,7 @@
     ],
     "triggers": [
       {
-        "at": "anchor/pedestal",
+        "at": "anchor/label",
         "audience": "presser",
         "effects": [
           {
@@ -2345,7 +2387,7 @@
         "once": false
       },
       {
-        "at": "anchor/hearth",
+        "at": "anchor/hearth-stone",
         "audience": "party",
         "effects": [
           {
@@ -2502,6 +2544,11 @@
               }
             },
             "name": "Muster Hand"
+          },
+          {
+            "count": 1,
+            "entity": "minecraft:spider",
+            "name": "Muster Stray"
           }
         ],
         "respawns_on_rest": true,

@@ -12,6 +12,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/3/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/10/requires_state",
       "stage": "quests"
     },
@@ -127,7 +132,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/5",
+      "pointer": "/content/quests/0/on_complete/4",
       "stage": "quests"
     },
     {
@@ -163,6 +168,11 @@
     {
       "code": "DW0453",
       "pointer": "/content/actors/1",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0475",
+      "pointer": "/content/waves",
       "stage": "quests"
     },
     {
@@ -189,6 +199,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/3/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/10/requires_state",
       "stage": "quests"
     },
@@ -304,7 +319,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/5",
+      "pointer": "/content/quests/0/on_complete/4",
       "stage": "quests"
     },
     {
@@ -343,6 +358,11 @@
       "stage": "quests"
     },
     {
+      "code": "DW0475",
+      "pointer": "/content/waves",
+      "stage": "quests"
+    },
+    {
       "code": "DW0477",
       "pointer": "/content/waves/1/tier",
       "stage": "quests"
@@ -362,6 +382,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/2/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/3/requires_state",
       "stage": "quests"
     },
     {
@@ -481,7 +506,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/5",
+      "pointer": "/content/quests/0/on_complete/4",
       "stage": "quests"
     },
     {
@@ -525,6 +550,11 @@
       "stage": "quests"
     },
     {
+      "code": "DW0475",
+      "pointer": "/content/waves",
+      "stage": "quests"
+    },
+    {
       "code": "DW0477",
       "pointer": "/content/waves/1/tier",
       "stage": "quests"
@@ -544,6 +574,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/2/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/3/requires_state",
       "stage": "quests"
     },
     {
@@ -663,7 +698,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/5",
+      "pointer": "/content/quests/0/on_complete/4",
       "stage": "quests"
     },
     {
@@ -699,6 +734,11 @@
     {
       "code": "DW0453",
       "pointer": "/content/actors/1",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0475",
+      "pointer": "/content/waves",
       "stage": "quests"
     },
     {
@@ -725,6 +765,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/3/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/10/requires_state",
       "stage": "quests"
     },
@@ -840,7 +885,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/5",
+      "pointer": "/content/quests/0/on_complete/4",
       "stage": "quests"
     },
     {
@@ -876,6 +921,11 @@
     {
       "code": "DW0453",
       "pointer": "/content/actors/1",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0475",
+      "pointer": "/content/waves",
       "stage": "quests"
     },
     {
@@ -949,6 +999,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/3/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/10/requires_state",
       "stage": "quests"
     },
@@ -1064,7 +1119,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/5",
+      "pointer": "/content/quests/0/on_complete/4",
       "stage": "quests"
     },
     {
@@ -1100,6 +1155,11 @@
     {
       "code": "DW0453",
       "pointer": "/content/actors/1",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0475",
+      "pointer": "/content/waves",
       "stage": "quests"
     },
     {

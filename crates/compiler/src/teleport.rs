@@ -100,9 +100,9 @@
 
 use delvewright_dsl::stages::for_each_campaign_effect;
 
-use crate::nav::NavError;
+use crate::failure::Failure;
 use crate::plan::Plan;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0542`: a `teleport`'s source volume covers an interaction affordance the
 /// engine has bound to hardware the teleport does not move (spec-0031).
@@ -112,7 +112,7 @@ use delvewright_dsl::DwCode;
 /// campfire, a lever or a sealed door that no longer answers a right-click —
 /// visible, reachable, inert. It is the same silence `DW0426` and `DW0422` exist
 /// to refuse, arriving from a third direction.
-pub const DW_TELEPORT_BOUND_AFFORDANCE: DwCode = DwCode::every_version("DW0542");
+pub const DW_TELEPORT_BOUND_AFFORDANCE: DwCode = DwCode::every_version("DW0542", ExitTier::Build);
 
 /// The binding ledger for the teleport proof.
 #[derive(Clone, Debug, Default)]
@@ -211,7 +211,7 @@ fn volumes(plan: &Plan) -> (usize, Vec<Volume>) {
 ///
 /// Empty and free for every campaign that declares no `teleport` — the walk
 /// finds nothing, no affordance is enumerated, and the caller emits no ledger.
-pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, NavError> {
+pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, Failure> {
     let (declared, vols) = volumes(plan);
     let mut gate = TeleportGate {
         declared,
@@ -250,7 +250,7 @@ pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, NavError> {
             if !v.contains(*pos) {
                 continue;
             }
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_TELEPORT_BOUND_AFFORDANCE,
                 message: format!(
                     "the `teleport` at {} moves everything inside `{}` ± extent, and that volume \

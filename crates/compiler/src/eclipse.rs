@@ -1,7 +1,12 @@
 //! Body-eclipse proof: an NPC/actor body may not stand in front of an
 //! interaction affordance (`DW0359`, build tier) — and no affordance may share a
 //! cell with a sealed gate's answer hitboxes (`DW0422`, v0.8; see
-//! [`check_seal_collisions`], same box arithmetic, same tier).
+//! [`check_seal_collisions`], same box arithmetic, same tier) or with **another
+//! affordance** (`DW0878`; see [`check_affordance_contests`]).
+//!
+//! The three read one authority — [`affordances`] — so what they cover between
+//! them is decided by which PAIR each names, never by which affordance classes
+//! each remembered.
 //!
 //! ## The defect this exists for (owner playtest, island round 7)
 //!
@@ -71,6 +76,21 @@
 //! *walked onto* an affordance and left there — which wants a `move-npc`
 //! destination rule of its own, not a guess bolted onto this one.
 //!
+//! ## Why this is build tier, and not `analyze`
+//!
+//! Because its input is an anchor's **cell**, and a cell is not a document fact.
+//! On a site plan the synthesized vocabulary is read off the DERIVED MASS —
+//! [`crate::blockout`]'s `footing` and `station_cell` — for a reason that
+//! module states in its own words: a box's floor centre *"is sometimes wrong — a
+//! stair the plan hosts in that box legitimately stands on it — so an anchor
+//! placed by arithmetic over the plan alone lands inside the massing perhaps one
+//! box in five"*. On a prefab map the cell is what placement produces. Neither
+//! exists at `validate` or at `analyze`, so this rule stated at either tier
+//! would be a second implementation over positions nobody has computed. It runs
+//! at the first point in the pipeline where its own inputs exist, which is also
+//! why a slow build argues nothing here: the time is spent producing the cells,
+//! upstream of every check that reads them.
+//!
 //! ## Prescription, and the fix that is never prescribed
 //!
 //! Move the NPC's anchor, or move the interaction's anchor. **Never** make the
@@ -78,18 +98,19 @@
 //! cannot click is an NPC they cannot talk to, which trades a dead objective for
 //! a dead character. The affordance and the body each need their own cell.
 
+use crate::failure::Failure;
 use std::collections::BTreeSet;
 
 use delvewright_dsl::{Campaign, Diagnostic, Objective, QuestEffect, TriggerOn};
 
 use crate::nav::entity_dims;
 use crate::plan::Plan;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0359`: an NPC or actor body stands on (error) or immediately in front of
 /// (warning) an interaction affordance, so the player's crosshair reaches the
 /// body instead of the affordance.
-pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359");
+pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359", ExitTier::Build);
 
 /// `DW0422`: a **pressable body's hitbox** shares a cell with another
 /// compiler-owned interaction affordance (DSL v0.8; widened to the whole
@@ -113,17 +134,50 @@ pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359");
 /// the protrusion exists to beat the block the body stands in, and
 /// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
 /// into a neighbouring cell's affordances.
-pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::every_version("DW0422");
+pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::every_version("DW0422", ExitTier::Build);
 
-/// A build failure raised by the eclipse proof (mapped to exit 3, like the
-/// `nav`/`edit` build errors it sits beside).
-#[derive(Debug)]
-pub struct EclipseError {
-    /// The stable diagnostic code ([`DW_BODY_ECLIPSE`]).
-    pub code: DwCode,
-    /// Human-readable explanation, naming both entities and both cells.
-    pub message: String,
-}
+/// `DW0878`: **two interaction affordances stand on one cell** — two
+/// `minecraft:interaction` boxes the party clicks, coincident, so the pick ray is
+/// an exact tie.
+///
+/// The pair `DW0359`, `DW0422` and `DW0489` between them do not reach. Each of
+/// the three names one side of its pair:
+///
+/// * `DW0359` needs one side to be a standing **body** (an NPC or actor at an
+///   anchor) — here neither side is a body;
+/// * `DW0422` needs one side to be a compiler-owned **pressable body** (a
+///   `close-gate` seal's shell, a sealed shortcut door) — here neither side is;
+/// * `DW0489` needs both sides to be **NPCs in the cast ledger**, and its whole
+///   model is that ledger: scenes, flag co-presence, and a tier read off the
+///   dialogue root a right-click opens. An affordance has no ledger entry and no
+///   dialogue root, so the rule cannot be stated over it.
+///
+/// So the pairing that was left unexamined is affordance-against-affordance, and
+/// it shipped: the gallery declares the `interact` objective `obj/press-the-case`
+/// and the `use` trigger `trigger/read-the-label` both on `anchor/pedestal`, two
+/// `1.0 × 2.0` boxes at the same cell. The build was green and the bot's
+/// crosshair could acquire neither.
+///
+/// **The predicate is exact coincidence, and deliberately nothing wider.** Every
+/// affordance box is `1.0 × 2.0` at a cell centre, so two of them are identical
+/// exactly when their cells are, and identical boxes are entered by any ray at
+/// the same distance — an exact tie the client resolves by entity iteration
+/// order, which is not decidable from the campaign at all. Boxes that merely
+/// overlap (two affordances one block apart vertically share a one-block band)
+/// are at different ray distances from every stance, and a player aims past them
+/// by moving the crosshair up or down; refusing those would be a false certainty,
+/// and this is the same line [`DW_SEAL_HITBOX_COLLISION`] draws when it tests the
+/// cell rather than the emitted box.
+///
+/// **The pair must be able to share a MOMENT, not only a cell** — see
+/// [`can_share_a_moment`], which is where the rule's quantifier actually lives.
+/// A box armed by a quest beat and killed on completion is not in a contest with
+/// one down another arm of the story.
+///
+/// **Boundary.** Affordance-against-affordance only. A body over an affordance is
+/// `DW0359`'s rule and an affordance in a pressable body's cells is `DW0422`'s;
+/// neither is re-litigated here (one code, one rule).
+pub const DW_AFFORDANCE_CONTEST: DwCode = DwCode::every_version("DW0878", ExitTier::Build);
 
 /// Every affordance the compiler summons is `minecraft:interaction` with
 /// `width:1.0f` — exactly one cell across, centred on the cell.
@@ -165,6 +219,37 @@ pub(crate) struct Affordance {
     pub(crate) anchor: String,
     /// The resolved cell.
     pub(crate) pos: [i32; 3],
+    /// When this box is in the world — see [`Arming`]. Read only by `DW0878`;
+    /// `DW0359` and `DW0422` judge an affordance's PLACE, which does not depend
+    /// on when it is armed.
+    pub(crate) arming: Arming,
+}
+
+/// When an affordance's `minecraft:interaction` box exists.
+///
+/// Two boxes on one cell are only a contest if they can be there at the same
+/// time, and the compiler knows this from its own emitter rather than from a
+/// model it would have to invent.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum Arming {
+    /// Placed at world setup or by a beat that never retires it — a trigger's
+    /// body, a bonfire, a shortcut's unlock hardware, a disarm lever, a shop.
+    /// Live for the rest of the run once it exists, so it shares a moment with
+    /// anything.
+    Persistent,
+    /// An `interact` objective's box, which `emit::activation_commands` summons
+    /// under `emit::pending_guard` — its quest active, its `after` set complete,
+    /// its own gate open — and `emit::completion_cleanup` kills the moment the
+    /// objective completes. Carries the declaring quest and the objective's own
+    /// flag gate.
+    Objective {
+        /// Index of the declaring quest in `quests[]`.
+        quest: usize,
+        /// The objective's `requires_flags`.
+        requires: BTreeSet<String>,
+        /// The objective's `forbids_flags`.
+        forbids: BTreeSet<String>,
+    },
 }
 
 /// An axis-aligned interval `[lo, hi)`.
@@ -351,7 +436,7 @@ pub fn affordance_cells(plan: &Plan) -> Vec<(&'static str, String, [i32; 3])> {
 pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     let c = plan.campaign;
     let mut out = Vec::new();
-    for q in &c.quests.content.quests {
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         for o in &q.objectives {
             let Objective::Interact { id, anchor, .. } = o else {
@@ -362,11 +447,17 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             let Some(pos) = plan.point(area, anchor.as_str()) else {
                 continue;
             };
+            let gate = o.gate();
             out.push(Affordance {
                 kind: "interact objective",
                 id: id.as_str().to_string(),
                 anchor: anchor.as_str().to_string(),
                 pos,
+                arming: Arming::Objective {
+                    quest: qi,
+                    requires: gate.requires_flags.iter().map(|f| f.to_string()).collect(),
+                    forbids: gate.forbids_flags.iter().map(|f| f.to_string()).collect(),
+                },
             });
         }
     }
@@ -405,6 +496,9 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             id: t.id.as_str().to_string(),
             anchor: at.to_string(),
             pos,
+            // `env_trigger_setup` summons it in `setup_finish` and nothing ever
+            // kills it: a click trigger's body is there for the whole run.
+            arming: Arming::Persistent,
         });
     }
     for bf in plan.bonfires() {
@@ -413,6 +507,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             id: format!("bonfire #{}", bf.index),
             anchor: bf.anchor.clone(),
             pos: bf.pos,
+            arming: Arming::Persistent,
         });
     }
     for sc in &plan.shortcuts {
@@ -421,6 +516,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             id: sc.id.clone(),
             anchor: sc.unlock_anchor.clone(),
             pos: sc.unlock,
+            arming: Arming::Persistent,
         });
     }
     for tr in &plan.traps {
@@ -430,6 +526,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
                 id: tr.id.clone(),
                 anchor: d.via_anchor.clone(),
                 pos: d.via_cell,
+                arming: Arming::Persistent,
             });
         }
     }
@@ -440,6 +537,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
                 id: g.id.clone(),
                 anchor: d.via_anchor.clone(),
                 pos: d.via_cell,
+                arming: Arming::Persistent,
             });
         }
     }
@@ -456,6 +554,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             id: format!("{} (#{i})", sh.id),
             anchor: sh.anchor.as_str().to_string(),
             pos,
+            arming: Arming::Persistent,
         });
     }
     // spec-0032 recovery stakes are deliberately ABSENT, and that is a decision
@@ -492,7 +591,7 @@ fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
 /// Empty for every campaign whose bodies and affordances keep two blocks apart —
 /// which is every campaign that already compiled clean, so output stays
 /// byte-identical.
-pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, EclipseError> {
+pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, Failure> {
     let bodies = bodies(plan);
     let affordances = affordances(plan);
     let mut warnings = Vec::new();
@@ -557,7 +656,7 @@ fn seal_box(cell: [i32; 3]) -> [Span; 3] {
 /// [`check_body_eclipse`], before any occupancy model. Empty (and byte-identical)
 /// for a campaign that seals no gate, and for every campaign whose other
 /// affordances simply are not inside a sealed region.
-pub fn check_seal_collisions(plan: &Plan) -> Result<(), EclipseError> {
+pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
     let mut affordances = affordances(plan);
     // An NPC's dialogue hitbox is an affordance too — the one whose loss the
     // round-6 island proved (Polyphemus untalkable after the boulder seal, because
@@ -576,6 +675,7 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), EclipseError> {
                 id: b.id,
                 anchor: b.anchor,
                 pos: b.pos,
+                arming: Arming::Persistent,
             }),
     );
     for body in pressable_bodies(plan) {
@@ -590,6 +690,122 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), EclipseError> {
         }
     }
     Ok(())
+}
+
+/// Prove that no two interaction affordances stand on one cell (`DW0878`).
+///
+/// Build tier (exit 3), pure cell arithmetic over [`affordances`] — the same
+/// single authority `DW0359` measures bodies against and `DW0422` measures seals
+/// against, so an affordance class added to the engine enters this proof by
+/// existing rather than by being remembered a fourth time.
+///
+/// Every unordered pair, in the authority's own order, so the first report is
+/// deterministic (ADR-0006). Empty — and byte-identical — for every campaign
+/// whose affordances stand on distinct cells, which is every campaign that
+/// already compiled and could be walked.
+pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
+    let affordances = affordances(plan);
+    for (i, a) in affordances.iter().enumerate() {
+        for b in affordances.iter().skip(i + 1) {
+            if a.pos == b.pos && can_share_a_moment(&a.arming, &b.arming) {
+                return Err(affordance_contest_error(a, b));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether two affordances' boxes can be in the world at the same time.
+///
+/// **Sharing a cell is not yet a contest, and the first cut of this rule said it
+/// was.** It refused a released campaign whose two branch ENDINGS each hang an
+/// `interact` objective on the galley's deck — `obj/board-flee` in
+/// `quest/take-the-cheese` and `obj/board-nobody` in `quest/the-sail`, one cell,
+/// two quests a player reaches down different arms of the story. Those two boxes
+/// have never existed at the same moment and never will. The check was asserting
+/// co-presence it had not established, which is the defect a diagnostic's
+/// quantifier is there to prevent, and the content gate is what caught it.
+///
+/// The arming windows are read off the emitter, never modelled:
+///
+/// * an [`Arming::Persistent`] box is placed at setup or by a beat that never
+///   retires it, so it shares a moment with anything — every pair with one of
+///   these on either side is judged;
+/// * an [`Arming::Objective`] box is summoned under `emit::pending_guard` (its
+///   quest active, its `after` set complete, its own gate open) and killed by
+///   `emit::completion_cleanup` the moment the objective completes.
+///
+/// So two objective boxes are only known to coexist when they are declared in
+/// **one quest** — one quest is active as a whole, so its objectives' guards can
+/// all be open together — and then only if no flag proves them exclusive, the
+/// same test [`crate::crosshair`] applies to two NPCs the cast ledger puts in one
+/// scene. Across quests, co-presence is **unestablished**, and the compiler
+/// withholds rather than guesses.
+///
+/// That is a named blind spot, in the same family as `DW0359`'s parked-body rule
+/// and `DW0489`'s silence about actors: two objectives in different quests that a
+/// player really can hold open at once, on one cell, are not caught. Closing it
+/// needs a quest-co-activation model this compiler does not have — asserting it
+/// without one is what refused correct content, and the direction that withholds
+/// a diagnostic is the one that cannot invent a defect.
+fn can_share_a_moment(a: &Arming, b: &Arming) -> bool {
+    match (a, b) {
+        (Arming::Persistent, _) | (_, Arming::Persistent) => true,
+        (
+            Arming::Objective {
+                quest: qa,
+                requires: ra,
+                forbids: fa,
+            },
+            Arming::Objective {
+                quest: qb,
+                requires: rb,
+                forbids: fb,
+            },
+        ) => {
+            qa == qb && ra.intersection(fb).next().is_none() && rb.intersection(fa).next().is_none()
+        }
+    }
+}
+
+/// The binding ledger `DW0878` examined, as `(what declares it, its id, its
+/// cell)`.
+///
+/// CLAUDE.md: *a green gate that binds to nothing is vacuous, not a pass*. A
+/// campaign with one affordance has no pair to test and passes this proof for
+/// free, which from outside is the same silence as a campaign with forty that
+/// all stand clear. Stating the set is what separates them; it is
+/// [`affordance_cells`] under the name of the proof that reads it, so the two
+/// can never come to describe different sets.
+pub fn affordance_contest_binding(plan: &Plan) -> Vec<(&'static str, String, [i32; 3])> {
+    affordance_cells(plan)
+}
+
+/// The `DW0878` error: two interaction affordances on one cell.
+fn affordance_contest_error(a: &Affordance, b: &Affordance) -> Failure {
+    Failure {
+        code: DW_AFFORDANCE_CONTEST,
+        message: format!(
+            "the {} `{}` at anchor `{}` and the {} `{}` at anchor `{}` both stand at {:?}. Each \
+             summons its own `minecraft:interaction` box, `1.0 × 2.0` at that cell's centre, so \
+             the two boxes are COINCIDENT: a player's entity-pick ray enters both at exactly the \
+             same distance and the client resolves the tie by entity iteration order. Which of \
+             the two answers a click is therefore not decidable from the campaign at all — one of \
+             them silently stops working, the build stays green, and the beat riding on it never \
+             fires. **A left-click and a right-click do not divide the cell**: the pick happens \
+             before the button is read, so a `strike` trigger sharing a cell with a rest point \
+             loses its swings to that rest point's entity exactly as two right-clicks would. \
+             Prescription: give one of the two its own anchor, at least one cell clear of the \
+             other. Merging them into one hitbox is NOT available: a trigger rides an existing \
+             set only where the compiler owns that set for the whole run — a `close-gate` seal, a \
+             sealed shortcut door, an NPC's own dialogue body — and an affordance armed by a \
+             quest beat, or killed when an objective completes, would hand the trigger a lifetime \
+             its own declaration never asked for, silent at both ends. Do NOT make either box \
+             non-pickable to break the tie: an affordance the party cannot click is a beat they \
+             cannot reach.",
+            a.kind, a.id, a.anchor, b.kind, b.id, b.anchor, a.pos,
+        ),
+    }
 }
 
 /// A compiler-owned set of press hitboxes: what owns it, where it hangs, and the
@@ -660,8 +876,8 @@ fn seal_collision_error(
     anchor: &str,
     cell: [i32; 3],
     a: &Affordance,
-) -> EclipseError {
-    EclipseError {
+) -> Failure {
+    Failure {
         code: DW_SEAL_HITBOX_COLLISION,
         message: format!(
             "the {} `{}` at `{}` {:?} shares space with the {kind} at anchor `{anchor}`, which \
@@ -684,8 +900,8 @@ fn describe(b: &Body, w: f64, h: f64) -> String {
 }
 
 /// The `DW0359` error: the body sits on the affordance.
-fn eclipse_error(b: &Body, a: &Affordance, w: f64, h: f64) -> EclipseError {
-    EclipseError {
+fn eclipse_error(b: &Body, a: &Affordance, w: f64, h: f64) -> Failure {
+    Failure {
         code: DW_BODY_ECLIPSE,
         message: format!(
             "{} stands at `{}` {:?} and ECLIPSES the {} `{}`'s affordance at `{}` {:?}: the body's \

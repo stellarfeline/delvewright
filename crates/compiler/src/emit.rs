@@ -12,6 +12,7 @@
 //! documents, prefabs and flags it was handed, never of where it was launched
 //! from or what happens to sit above that directory.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
@@ -24,11 +25,11 @@ use crate::plan::{
 };
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
-use delvewright_dsl::DwCode;
 use delvewright_dsl::{
     CompareOp, EquipItem, Gate, MobEquipment, Objective, QuestEffect, StateCompare, StateId,
     StateScope, Trigger, is_v03, is_v04, is_v06,
 };
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
@@ -56,7 +57,7 @@ pub enum BuildFailure {
 /// letting mobs pile into blocks or spill across a socket seam. Analysis-tier
 /// (exit 2, like reachability `DW02xx`): the fix is a content-design capacity
 /// choice — shrink the wave or use a larger room — not a compiler/geometry defect.
-pub const DW_WAVE_NO_ROOM: DwCode = DwCode::every_version("DW0312");
+pub const DW_WAVE_NO_ROOM: DwCode = DwCode::every_version("DW0312", ExitTier::Analysis);
 
 /// `DW0310`: a `spawn-wave` references a wave whose spawn anchor resolves in no
 /// assembled area, so the emitted `function <ns>:spawn_<wave>` call would dangle
@@ -65,7 +66,7 @@ pub const DW_WAVE_NO_ROOM: DwCode = DwCode::every_version("DW0312");
 /// It was the workspace's last bare `"DWxxxx"` string literal in a code position
 /// — every other code already went through a named constant — and typing the
 /// codes is what turned that from a style difference into a compile error.
-pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::every_version("DW0310");
+pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::every_version("DW0310", ExitTier::Build);
 
 /// `DW0387`: a `summon: aggro-edge` wave (spec-0016 §6) whose perception ring
 /// offers too few valid cells. The ring is the standable, walk-reachable,
@@ -75,7 +76,7 @@ pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::every_version("DW0310");
 /// round-1 lesson was a "kill" objective whose wave never fully appeared, so the
 /// countdown could never reach zero and the delve soft-locked with every other
 /// proof green.
-pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::every_version("DW0387");
+pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::every_version("DW0387", ExitTier::Build);
 
 /// `DW0494`: completing ONE objective would cross into two different areas —
 /// one destination on the exported path, another on a branch.
@@ -87,10 +88,10 @@ pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::every_version("DW0387");
 /// the exported path's crossing is unconditional by construction. The content
 /// fix is to split the objective — one crossing objective per branch, each
 /// gated by that branch's own flags.
-pub const DW_BRANCH_TRANSPORT_DIVERGES: DwCode = DwCode::every_version("DW0494");
+pub const DW_BRANCH_TRANSPORT_DIVERGES: DwCode = DwCode::every_version("DW0494", ExitTier::Build);
 
-impl From<crate::nav::NavError> for BuildFailure {
-    fn from(e: crate::nav::NavError) -> Self {
+impl From<Failure> for BuildFailure {
+    fn from(e: Failure) -> Self {
         BuildFailure::Diagnostic {
             code: e.code,
             message: e.message,
@@ -199,7 +200,7 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
 /// prefab has the same exposure and had the same silence.
 ///
 /// Build tier: the world would be wrong, so it is not built.
-pub const DW_TEMPLATE_EXTENT: DwCode = DwCode::every_version("DW0803");
+pub const DW_TEMPLATE_EXTENT: DwCode = DwCode::every_version("DW0803", ExitTier::Build);
 
 /// How much of the world [`check_template_extents`] actually examined.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -518,26 +519,25 @@ pub fn build_with_warnings(
                 &er.assembled.open_gates,
             );
             occ.solid.extend(relight.extra_solid.iter().copied());
-            // The ambient is the world-generator PREMISE (spec-0013), not
-            // geometry, and `from_occupancy` defaults it to `Void`. The
-            // sibling arm gets it for free through `from_plan`; this arm
-            // has to say it, or an `ocean` campaign's proofs would run
-            // against a void world that does not exist. Harmless while
-            // nothing here read it — `verify_boundary_safety` below now
-            // does.
-            // The world-load gate seals travel with this arm too, and
-            // they are the prefab's measurement, not the edit script's:
-            // a batch that writes INTO a gate region already appears as
-            // ordinary solid blocks above (and is `DW0353`'s advisory).
-            // Missing this line is how an edit-carrying campaign — the
-            // island is one — would have got a vacuous green out of the
-            // completability model while every fixture went red.
-            crate::nav::World::from_occupancy(occ)
-                .with_ambient(
-                    crate::nav::Ambient::of_plan(plan),
-                    crate::nav::built_volume(plan),
-                )
-                .with_world_load_seals(plan, er.assembled.gate_seals.clone())
+            // The campaign's premises about this world — the generator
+            // ambient, the built extent, the declared LETHAL VOLUMES, the
+            // measured world-load gate seals, the clocked gate regions and
+            // the teleport sources — travel as one value, so this arm and
+            // its `from_plan` sibling below carry the identical set by
+            // construction rather than by two authors agreeing.
+            //
+            // They did not, and the cost was the whole point of the model:
+            // this arm applied the ambient and the seals and not the lethal
+            // volumes, so every campaign declaring `world-edits.json` proved
+            // its completability over a world with no kill boxes in it. The
+            // gallery's exported critical path walked six waypoints through
+            // its two declared lethal volumes, `validation/lethal-gate.json`
+            // reported `"cells": 0` beside them, and the bot withered to
+            // death at step 10 of the ladder.
+            crate::nav::World::from_occupancy(
+                occ,
+                crate::nav::Premises::of_plan(plan, er.assembled.gate_seals.clone()),
+            )
         }
         None => crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid),
     };
@@ -598,7 +598,46 @@ pub fn build_with_warnings(
         }
         if let Some(battery) = crate::blockout::check(plan, &blocks) {
             eprintln!("{}", battery.binding.line());
-            if let Some((code, refusal)) = battery.refusal() {
+            let refusals: Vec<&(delvewright_dsl::DwCode, delvewright_dsl::Diagnostic)> =
+                battery.refusals().collect();
+            if let Some(((code, refusal), rest)) = refusals.split_first() {
+                // **Every rule that saw this defect, not only the one that stops
+                // the build.** The failure channel carries one code and one
+                // message (`BuildFailure`), which is the compiler's contract and
+                // does not move; what used to be lost is that one derivation
+                // defect is routinely seen by two of these rules, and a report
+                // naming only the first sends a creator round the loop twice.
+                // The line states the whole refusal set, and the ones after the
+                // first print their own messages here — the failing one is
+                // printed by the caller through the ordinary diagnostic channel,
+                // so nothing is said twice.
+                let mut per_code: BTreeMap<String, usize> = BTreeMap::new();
+                for (c, _) in &refusals {
+                    *per_code.entry(c.to_string()).or_default() += 1;
+                }
+                eprintln!(
+                    "blockout battery: {} refusal(s) — {}; the build stops at the first.",
+                    refusals.len(),
+                    per_code
+                        .iter()
+                        .map(|(c, n)| format!("{c} ×{n}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                // The same cap `BuildFailure::Validation` prints under, and for
+                // the same reason: the set is what a reader needs, the whole
+                // list is what a terminal loses. The count above is never
+                // capped, so the cap cannot hide how much was found.
+                const LISTED: usize = 20;
+                for (c, d) in rest.iter().take(LISTED) {
+                    eprintln!("{c} [error] {}: {}", d.path, d.message);
+                }
+                if rest.len() > LISTED {
+                    eprintln!(
+                        "  … and {} further refusal(s), not listed",
+                        rest.len() - LISTED
+                    );
+                }
                 return Err(BuildFailure::Diagnostic {
                     code: *code,
                     message: refusal.message.clone(),
@@ -702,6 +741,31 @@ pub fn build_with_warnings(
     // two interaction entities in one cell is a ray-pick tie the client resolves
     // by iteration order, so one of them silently stops receiving clicks.
     crate::eclipse::check_seal_collisions(plan).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
+    // A shortcut whose sealed side the geometry does not name (DW0425) is
+    // refused BEFORE the affordance proof below, and that ordering is load-bearing
+    // rather than tidy. A `use` trigger on such a gate cannot ride the door —
+    // `pressable::body_at` only rides a shortcut whose sealed side resolved — so
+    // it falls back to summoning its own box on the gate anchor, exactly where the
+    // shortcut's `unlock` affordance may also stand. `DW0878` would then report a
+    // hitbox tie that is a CONSEQUENCE of the undecidable side, sending the author
+    // to move an anchor when what they have to fix is the door. Withhold the
+    // downstream verdict; name the cause. (It also widens `DW0425` to a campaign
+    // that assembles no world, which is a structural fault about the declaration
+    // either way.)
+    check_shortcut_sides(plan)?;
+
+    // …and no two AFFORDANCES may stand on one cell either (DW0878). The three
+    // proofs above each need one side of their pair to be something else — a
+    // standing body for `DW0359`, a compiler-owned press set for `DW0422`, a cast
+    // ledger entry for `DW0489` — so an `interact` objective and a `use` trigger
+    // on one anchor were nobody's rule, and the engine's own gallery shipped
+    // exactly that pair. Same box arithmetic, same tier, same authority
+    // (`eclipse::affordances`).
+    crate::eclipse::check_affordance_contests(plan).map_err(|e| BuildFailure::Diagnostic {
         code: e.code,
         message: e.message,
     })?;
@@ -944,14 +1008,11 @@ pub fn build_with_warnings(
                 // genuinely shorten the crossing. The critical path above was
                 // already proven with every shortcut gate SEALED (Plan::build seals
                 // them at step 0), so the delve is finishable the long way.
-                // Refuse to place a wrong-side answer on a side the
-                // geometry does not name (DW0425) — BEFORE the route proofs. A
-                // door whose two sides are not even distinguishable is a
-                // structural problem with the declaration, and reporting it under
-                // the route proof's name (`DW0374`, "opening it must pay") would
-                // send the author looking at their level layout instead.
-                check_shortcut_sides(plan)?;
-                // …and every click trigger must land on something (DW0426). The
+                // `DW0425` (the wrong-side refusal) is raised with the hitbox
+                // proofs above, well before this block — its own call site says
+                // why it has to reach the author first.
+                //
+                // Every click trigger must land on something (DW0426). The
                 // ledger it returns is emitted below: "how many clicks did this
                 // proof resolve a body for" is the one fact that distinguishes a
                 // campaign whose presses all land from one that arms none.
@@ -1060,14 +1121,14 @@ pub fn build_with_warnings(
                         let cp = plan
                             .branch_critical_path(&flow, &flow.playthrough_in(widx))
                             .map_err(|e| BuildFailure::Diagnostic {
-                                code: e.code,
-                                message: format!("branch `{}`: {}", r.branch.id, e.message),
+                                code: e.failure.code,
+                                message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
                             })?;
                         let (region_events, ancestors) = plan.branch_gate_model(&cp);
                         let ancestor = |g: usize, s: usize| {
                             g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
                         };
-                        let label = |e: crate::nav::NavError| crate::nav::NavError {
+                        let label = |e: Failure| Failure {
                             code: e.code,
                             message: format!("branch `{}`: {}", r.branch.id, e.message),
                         };
@@ -2226,7 +2287,7 @@ fn snbt_text_component(s: &str) -> String {
 /// emitter, including ones not yet written. This is the invariant that replaces
 /// "we enumerated every emission site once" with "the compiler re-proves it on
 /// every build" (spec-0029 Risks).
-pub const DW_UNTRANSLATED_LITERAL: DwCode = DwCode::every_version("DW0185");
+pub const DW_UNTRANSLATED_LITERAL: DwCode = DwCode::every_version("DW0185", ExitTier::Build);
 
 /// Lower an authored player-visible string into a JSON **text component**
 /// (spec-0029 §1): a translation-tagged string becomes
@@ -4793,7 +4854,7 @@ fn campaign_outro(c: &delvewright_dsl::Campaign) -> String {
 
 /// `DW0362`: a dialogue node declares more conditionally-visible options than the
 /// variant-dialog encoding can carry. Validation-tier content-shape limit.
-pub const DW_DIALOGUE_VARIANT_CAP: DwCode = DwCode::every_version("DW0362");
+pub const DW_DIALOGUE_VARIANT_CAP: DwCode = DwCode::every_version("DW0362", ExitTier::Build);
 
 /// The most gated options one dialogue node may declare.
 ///
@@ -4846,7 +4907,7 @@ fn check_dialogue_variant_cap(plan: &Plan) -> Result<(), BuildFailure> {
 
 /// `DW0361`: two distinct generated artifacts sanitize to the same name, so one
 /// would silently overwrite the other in the emitted pack.
-pub const DW_NAME_COLLISION: DwCode = DwCode::every_version("DW0361");
+pub const DW_NAME_COLLISION: DwCode = DwCode::every_version("DW0361", ExitTier::Build);
 
 /// Insert an emitted artifact, refusing to let one silently overwrite another
 /// (`DW0361`).
@@ -4902,7 +4963,7 @@ fn json_bytes(value: &Value) -> Vec<u8> {
 /// to no world position in the assembled build. Validation-tier content mistake
 /// (a typo'd or unassembled anchor), reported as a build diagnostic because only
 /// the assembled world knows which anchors actually exist.
-pub const DW_EFFECT_ANCHOR_UNRESOLVED: DwCode = DwCode::every_version("DW0360");
+pub const DW_EFFECT_ANCHOR_UNRESOLVED: DwCode = DwCode::every_version("DW0360", ExitTier::Build);
 
 /// Whether [`build`] assembles the voxel world — and therefore whether every
 /// proof that needs it actually runs, including [`plan_payload_verbs`] and its
@@ -8291,7 +8352,8 @@ fn emit_lethal_functions(plan: &Plan) -> Vec<(String, String)> {
 /// examine zero, find nothing, and pass — the truncated-input vacuity mode, where
 /// the number is neither zero nor wrong but is about a smaller world than the one
 /// the check claims to cover.
-pub const DW_STEALTH_JUDGE_NOT_POSITIONAL: DwCode = DwCode::every_version("DW0852");
+pub const DW_STEALTH_JUDGE_NOT_POSITIONAL: DwCode =
+    DwCode::every_version("DW0852", ExitTier::Build);
 
 /// The selector arguments a stealth judge's per-player test may use: the box, and
 /// nothing else. Sorted, and an allowlist rather than a denylist — see
@@ -10511,7 +10573,7 @@ fn press_dispatch_fn(plan: &Plan, t: &delvewright_dsl::EnvTrigger, id: &str) -> 
 /// `DW0363`: a trap declares a flag gate (`requires_flags` / `forbids_flags`) but
 /// its trigger hardware cannot be removed and put back exactly as authored, so the
 /// compiler refuses to pretend the gate works.
-pub const DW_TRAP_GATE_UNSUPPORTED: DwCode = DwCode::every_version("DW0363");
+pub const DW_TRAP_GATE_UNSUPPORTED: DwCode = DwCode::every_version("DW0363", ExitTier::Build);
 
 /// Trap flag-gating hardware: for every trap that declares a flag gate, the
 /// trigger block its `anchor/trap` prefab metadata declares — the thing the gate
@@ -10895,7 +10957,7 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
 
 /// `DW0447`: a trap-payload verb centres its volume on an anchor no placed
 /// prefab piece provides, so the kill zone / collapse region cannot be resolved.
-pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::every_version("DW0447");
+pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::every_version("DW0447", ExitTier::Build);
 
 /// A planned `volley`: the proven per-cell geometry plus its authored cadence.
 struct VolleyEmit {
@@ -20049,8 +20111,8 @@ pub fn branch_transport_overlay(plan: &Plan) -> Result<BranchTransportOverlay, B
         let cp = plan
             .branch_critical_path(&flow, &flow.playthrough_in(w))
             .map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: format!("branch `{}`: {}", r.branch.id, e.message),
+                code: e.failure.code,
+                message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
             })?;
         for (oid, pos) in &cp.transport {
             match plan.transport.get(oid) {
@@ -20100,8 +20162,8 @@ fn branch_paths(
         let cp = plan
             .branch_critical_path(&flow, &flow.playthrough_in(w))
             .map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: format!("branch `{}`: {}", r.branch.id, e.message),
+                code: e.failure.code,
+                message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
             })?;
         out.push((
             r.branch.slug.clone(),
@@ -20255,6 +20317,13 @@ fn critical_path_json(
         // proved by the anchored marker channel. The harness refuses anything else.
         "format_version": plan::CRITICAL_PATH_FORMAT_VERSION,
         "campaign_id": plan.namespace,
+        // Format 4: the delve's cast statement — which entity kinds are never a
+        // combat target. It rides on the path rather than on `combat-plan.json`
+        // because it is a fact about the WORLD the bot walks, not about a fight:
+        // a delve with NPCs and no combat ships no combat plan at all, and its
+        // bot must still know not to swing back at a quest-giver when a fall
+        // takes its health. See `combat::non_combatants`.
+        "non_combatants": crate::combat::non_combatants_json(plan.campaign),
         "steps": steps
     })
 }

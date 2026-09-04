@@ -224,28 +224,30 @@ targets = [
 # reds on a count instead of sweeping as a silent zero. Moving this `sha` without
 # it is a tier-1 red (validation/check-versions.sh).
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip at which `hollow-vigil`'s two over-wide dialogue option
-# labels are rewritten. The campaign builds again, in both the languages its
-# `world.json` declares — which is why moving this pin is the same act as
-# deleting its entry from `.github/campaign-build-exclusions.toml`. An exclusion
-# whose campaign has started building is a stale line that would excuse the next
-# regression, so `tools/build-every-campaign.py` reds on exactly that state: the
-# pin cannot land on its own, and neither can the deletion.
+# Content `main` tip that carries the storybook's Minecraft-version marker —
+# `nobodys-cave-island`'s two-language README restamped from the two-number
+# form to the three-number one, which is what the CI job "campaign storybooks
+# (engine-version marker)" (`tools/check-storybook-version.py`) reads — and the
+# release-workflow fix that stops the release job writing into the engine
+# checkout. Those two READMEs are the only files this pin moves under either
+# on-pin campaign's own directory; neither `hollow-vigil` nor
+# `nobodys-cave-island` gained, lost, or otherwise moved a build input
+# (`world.json`, `quests.json`, or any zone program — neither declares
+# `design/programs/`, unchanged from the previous pin).
 #
-# `nobodys-cave-island`'s three checkpoint seats and its storm-shore wave anchor
-# move here as well, so that campaign's emitted bytes move with the pin — the
-# only files that do, and each of them traceable to a line of its `quests.json`.
-# ADR-0006 is about a FIXED content SHA and is unaffected: at this pin every
-# campaign builds byte-identically twice.
+# The batch also carries several prefab pieces' re-measured lighting metadata
+# (the static block+sky-flood estimator, not a live-server probe) and new
+# authoring-pin / skill tooling upstream of the content repo's own CI — neither
+# is a campaign build input this repo's compiler reads through `--prefabs` in a
+# way that changes ADR-0006 determinism: at this pin every campaign still
+# builds byte-identically twice, which is the claim this comment can make
+# without restating a count that would go stale the moment the engine moves.
 #
-# The prefab library is byte-identical to the previous pin, so the shape rule
-# that pin was taken for is carried here unchanged rather than re-established:
 # `DW0735` says a state that omits a shape-carrying property drops the geometry
-# the property assembles, and the library sweep (`crates/admit/tests/library.rs`)
-# asks it of every admitted piece and finds nothing. That sweep prints its own
-# binding count on every run, which is where the number belongs — a count
-# restated here would be a frozen measurement of an engine that has since moved.
-sha = "f38ed73a12b26231c962f9288cc90806deaca849"
+# the property assembles; the library sweep (`crates/admit/tests/library.rs`)
+# asks it of every admitted piece on every run and prints its own binding count
+# there, which is where that number belongs.
+sha = "42ee707db69b83d27534608b2758d8697ad2c46e"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
@@ -340,6 +342,15 @@ beet_version = "0.116.0"
 # collection or assertion behaviour moves a required check's verdict.
 # Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool).
 pytest_version = "9.1.1"
+# cargo-audit: the RustSec advisory check `tools/check-advisories.py --cargo`
+# drives over all ten cargo lockfiles this repository tracks. An instrument of a
+# required status check (`rust (fmt, clippy, test)`), so it is named literally
+# for the same reason `beet` and `pytest` are: an unpinned instrument can move a
+# gate's verdict with nothing in any diff to show what changed. `cargo install
+# --locked` builds it from the version resolved here, and Swatinem/rust-cache
+# caches `~/.cargo/bin`, so the compile is paid once per cache line.
+# Consumed by: .github/workflows/ci.yml.
+cargo_audit_version = "0.22.2"
 
 [skin]
 # skinpy-extended (MIT, ADR-0013 allowlist), the part/face-addressable composer

@@ -25,20 +25,21 @@
 //! frontier drains in a fixed order, and site search breaks ties on
 //! `(distance², y, z, x)` — same DSL + seed → byte-identical placements.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{AreaLighting, AreaMitigation, Campaign, Fixture, WorldTime, WorldWeather};
 
 use crate::nav::World;
 use crate::plan::{Plan, ResolvedAnchor};
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0210`: a reachable walkable cell measured below light 3 in an area with no
 /// `lighting` declaration and no night-vision class-kit mitigation (spec-0010).
-pub const DW_DARK_UNMITIGATED: DwCode = DwCode::every_version("DW0210");
+pub const DW_DARK_UNMITIGATED: DwCode = DwCode::every_version("DW0210", ExitTier::Analysis);
 /// `DW0211`: a declared fixture cannot raise every reachable walkable cell to
 /// `min_light` — no valid placement site remains (spec-0010).
-pub const DW_RELIGHT_UNSATISFIABLE: DwCode = DwCode::every_version("DW0211");
+pub const DW_RELIGHT_UNSATISFIABLE: DwCode = DwCode::every_version("DW0211", ExitTier::Analysis);
 
 /// The measured-darkness threshold: a reachable walkable cell below this, with no
 /// declaration and no night-vision, is `DW0210` (spec-0010 mitigation hierarchy).
@@ -59,15 +60,6 @@ pub struct Placement {
     pub block: String,
 }
 
-/// A lighting diagnostic (`DW0210`/`DW0211`), mapped to exit 2 (spec-0010).
-#[derive(Clone, Debug)]
-pub struct LightDiag {
-    /// The stable code.
-    pub code: DwCode,
-    /// Human-readable explanation naming the area / cell.
-    pub message: String,
-}
-
 /// The result of the assembled-light + relight pass over a whole campaign.
 #[derive(Clone, Debug, Default)]
 pub struct Relight {
@@ -79,7 +71,7 @@ pub struct Relight {
     pub extra_solid: BTreeSet<[i32; 3]>,
     /// Gate diagnostics (`DW0210`/`DW0211`); non-empty means the build fails
     /// (exit 2). Sorted by `(code, message)`.
-    pub diagnostics: Vec<LightDiag>,
+    pub diagnostics: Vec<Failure>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1128,10 +1120,21 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
     let placement = delvewright_dsl::Placement::of(c);
 
     // The base assembled geometry (nav) and required-path cells fixtures must avoid.
-    let nav = World::from_occupancy(crate::assembled::occupancy_of(
-        assembled.blocks.clone(),
-        &assembled.open_gates,
-    ));
+    //
+    // **Geometry alone, and the decline is this pass's own** ([`nav::Premises`]).
+    // The darkness survey below floods `reachable_walkable` from an area's
+    // anchors and asks what a player can SEE; the campaign's premises are about
+    // what a player can survive, and applying them here would shrink the survey
+    // rather than sharpen it. A declared lethal volume is the concrete case: it
+    // is impassable to the router, so a kill box in the middle of a room would
+    // CUT the flood and drop every cell beyond it out of the `DW0210` survey —
+    // a silent coverage loss, in the direction that reads as a clean pass. A pit
+    // that kills is also a pit the player has to be able to see before stepping
+    // into it, so its own cells stay in the survey too.
+    let nav = World::from_occupancy(
+        crate::assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
+        crate::nav::Premises::geometry_only(),
+    );
     // move-npc waypoint cells are part of the required paths; plan them on the base
     // world (an unroutable move is a separate DW0307 handled by emit — here we
     // just collect paths, ignoring routing errors).
@@ -1384,7 +1387,7 @@ pub(crate) fn relight_area(
                 });
             }
             None => {
-                out.diagnostics.push(LightDiag {
+                out.diagnostics.push(Failure {
                     code: DW_RELIGHT_UNSATISFIABLE,
                     message: format!(
                         "area `{area_id}`: declared relight fixture `{}` cannot reach \
@@ -1738,7 +1741,7 @@ fn dark_diagnostic(
     nav: &World,
     sky: u8,
     placement: delvewright_dsl::Placement,
-) -> Option<LightDiag> {
+) -> Option<Failure> {
     // Worst first: the place with the most dark cells is the one whose remedy is
     // a different act. Ties by the label, which is unique, so the order is total.
     fn sorted(mut v: Vec<(String, &DarkSurvey)>) -> Vec<(String, &DarkSurvey)> {
@@ -1850,7 +1853,7 @@ fn dark_diagnostic(
             placement.lighting_field()
         ));
     }
-    Some(LightDiag {
+    Some(Failure {
         code: DW_DARK_UNMITIGATED,
         message: m,
     })
@@ -2084,10 +2087,10 @@ mod tests {
     /// as the shipped model does — unlike [`nav_of`], which force-solids every
     /// non-air cell.
     fn nav_occ_of(map: &BTreeMap<[i32; 3], String>) -> World {
-        World::from_occupancy(crate::assembled::occupancy_of(
-            map.clone(),
-            &BTreeSet::new(),
-        ))
+        World::from_occupancy(
+            crate::assembled::occupancy_of(map.clone(), &BTreeSet::new()),
+            crate::nav::Premises::geometry_only(),
+        )
     }
 
     /// [`reachable_of`] over the real collision classifier, seeded at `start`.
@@ -2106,7 +2109,7 @@ mod tests {
         night_vision: bool,
         area_id: &str,
         placement: delvewright_dsl::Placement,
-    ) -> Option<LightDiag> {
+    ) -> Option<Failure> {
         let s = survey_undeclared(model, reachable, sky, night_vision);
         dark_diagnostic(&BTreeMap::from([(whole(area_id), s)]), nav, sky, placement)
     }

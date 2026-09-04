@@ -32,17 +32,27 @@
     "`off_pin` is a queue, not an exemption. It records what a campaign owes and",
     "where that obligation is discharged today, so that when the pin moves the",
     "reviewer has the number to check. Nothing in this repo can verify a content",
-    "branch; the content repo's own `zone-audit.yml` runs the same sweep there."
+    "branch; the content repo's own `zone-audit.yml` runs the same sweep there.",
+    "",
+    "`the-drowned-bell-r2` carried an `off_pin` entry recording eight zone",
+    "programs. `origin/campaign/bell-r2` at its current tip",
+    "(c3a352d5a15b1d04bd3886462f0c7713c7705a52) declares zero: `git ls-tree -r",
+    "--name-only` over that ref has no `design/programs/` path anywhere under",
+    "`campaigns/the-drowned-bell-r2/`, and the branch history names the removal",
+    "explicitly (11f1af7, \"the old map does not exist — the eight zone programs,",
+    "their pieces and their review sets are removed\"). `crates/grammar/tests/",
+    "campaign_zones.rs` itself refuses an `off_pin` entry with `zone_programs: 0`",
+    "(\"owes no zone programs, so it records nothing\"), so the entry is dropped",
+    "rather than restated at zero; it returns when the branch declares zone",
+    "programs again. This is a queued-campaign note nothing verifies: the test",
+    "checks that an `off_pin` entry is absent from the pinned tree, that its",
+    "`branch` is non-empty and its `zone_programs` positive — it does not read",
+    "the named branch at all, so a wrong count or a stale branch name would sit",
+    "here unchallenged. `validation/check-versions.sh` does not read `off_pin`",
+    "either; it only compares `content_sha` against `versions.toml`."
   ],
-  "content_sha": "f38ed73a12b26231c962f9288cc90806deaca849",
-  "off_pin": [
-    {
-      "branch": "campaign/bell-r2",
-      "campaign": "the-drowned-bell-r2",
-      "note": "The remake in progress. Its eight zone programs are the artifact of record for its geometry and they are gated on that branch by the content repo's zone-audit workflow. They become this repo's obligation at the re-pin that follows the owner's acceptance, at which point this entry moves to on_pin and its count is checked against the tree.",
-      "zone_programs": 8
-    }
-  ],
+  "content_sha": "42ee707db69b83d27534608b2758d8697ad2c46e",
+  "off_pin": [],
   "on_pin": [
     {
       "campaign": "hollow-vigil",

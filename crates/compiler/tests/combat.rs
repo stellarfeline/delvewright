@@ -1126,3 +1126,217 @@ fn the_fights_block_counts_a_wave_fight_too() {
     assert_eq!(plan["fights"]["waves"][0], "wave/guards");
     assert_eq!(plan["fights"]["total"], 1);
 }
+
+// ---------------------------------------------------------------------------
+// The targeting policy the harness used to carry (the census round). Two facts
+// the bot cannot derive and used to hardcode: which bodies are never a fight,
+// and when to stop swinging at one.
+// ---------------------------------------------------------------------------
+
+/// Rewrite the fixture's `npcs.json` after materialization, so a case can move an
+/// NPC onto a different body without touching quests or classes.
+fn with_npcs(dst: &Path, mutate: impl FnOnce(&mut serde_json::Value)) {
+    let p = dst.join("npcs.json");
+    let mut npcs: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+    mutate(&mut npcs);
+    std::fs::write(&p, serde_json::to_string_pretty(&npcs).unwrap()).unwrap();
+}
+
+#[test]
+fn the_path_states_which_kinds_are_never_a_fight() {
+    // souls-bonfire stages one skinned NPC, which the emitter embodies as a
+    // `minecraft:mannequin`. That the harness must not swing at a mannequin is
+    // not a fact about Minecraft — it is a fact about what THIS compiler summons
+    // an NPC as, and this is the field that says it.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+    let (path, _) = path_and_plan(&out);
+    assert_eq!(path["format_version"], 4);
+    let nc = &path["non_combatants"];
+    assert_eq!(
+        nc["kinds"],
+        serde_json::json!(["mannequin"]),
+        "the skinned keeper's body is the one kind nothing may attack: {nc}"
+    );
+    assert_eq!(nc["examined"], 1, "one NPC examined: {nc}");
+    assert_eq!(nc["unbound"], false);
+    assert!(
+        nc.get("reason").is_none(),
+        "a bound census carries no reason to explain: {nc}"
+    );
+    assert_eq!(nc["ambiguous"], serde_json::json!([]));
+}
+
+#[test]
+fn an_npc_bodied_as_a_wave_mob_is_named_ambiguous_not_excluded() {
+    // The collision the harness's literal set could never have seen: an NPC on a
+    // `base_entity` the party also has to kill. Excluding the kind would make
+    // `wave/guards` unwinnable, so the fightable kind wins — and the plan SAYS so
+    // rather than leaving the bot to swing at a quest-giver in silence.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    with_npcs(tmp.path(), |npcs| {
+        let npc = &mut npcs["content"]["npcs"][0];
+        npc.as_object_mut().unwrap().remove("skin");
+        npc["base_entity"] = serde_json::json!("minecraft:zombie");
+    });
+    let (out, _) = build(tmp.path()).expect("the mutated campaign builds");
+    let (path, _) = path_and_plan(&out);
+    let nc = &path["non_combatants"];
+    assert_eq!(
+        nc["kinds"],
+        serde_json::json!([]),
+        "zombie is `wave/guards`, so it may not be excluded: {nc}"
+    );
+    assert_eq!(nc["examined"], 1);
+    let amb = nc["ambiguous"].as_array().expect("an array");
+    assert_eq!(amb.len(), 1, "{nc}");
+    assert_eq!(amb[0]["kind"], "zombie");
+    let why = amb[0]["why"].as_str().unwrap();
+    assert!(why.contains("npc/keeper"), "{why}");
+    assert!(why.contains("unwinnable"), "{why}");
+}
+
+#[test]
+fn a_campaign_with_no_npcs_states_its_own_zero() {
+    // playtest-methodology rule 1: an empty `kinds` list has two readings — "no
+    // NPC exists" and "the census never ran" — and only one of them is fine.
+    let tmp = TempCampaign::new();
+    common::materialize_from(
+        &common::compiler_fixtures_dir().join("souls-td-lanes"),
+        &serde_json::json!({}),
+        tmp.path(),
+    );
+    let (out, _) = build(tmp.path()).expect("souls-td-lanes builds");
+    let (path, _) = path_and_plan(&out);
+    let nc = &path["non_combatants"];
+    assert_eq!(nc["examined"], 0, "{nc}");
+    assert_eq!(nc["unbound"], true, "{nc}");
+    assert!(
+        nc["reason"]
+            .as_str()
+            .is_some_and(|r| r.contains("stages no NPC")),
+        "an unbound census states why: {nc}"
+    );
+}
+
+#[test]
+fn every_encounter_states_its_bodies_and_their_melee_budget() {
+    // `wave/guards` declares `max_health`, so its budget is arithmetic:
+    // ceil(12 / best-hit) fully-charged swings, times the ladder margin, floored.
+    // The unbounded state is the sibling case below — souls-bonfire's one
+    // MANDATORY encounter is `wave/guards`, and a wave nothing requires killing
+    // is not an encounter at all.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+    let (_, plan) = path_and_plan(&out);
+    let encounters = plan["encounters"].as_array().expect("encounters");
+    let mut seen_declared = false;
+    for e in encounters {
+        let bodies = e["bodies"]
+            .as_array()
+            .expect("every encounter states its bodies");
+        assert!(
+            !bodies.is_empty(),
+            "a wave with no bodies is not a wave: {e}"
+        );
+        for b in bodies {
+            assert!(b["kind"].as_str().is_some_and(|k| !k.contains(':')));
+            assert!(b["count"].as_u64().is_some_and(|c| c > 0));
+            match b["give_up_swings"].as_u64() {
+                Some(n) => {
+                    seen_declared = true;
+                    assert!(n >= 16, "the floor is the floor: {b}");
+                    assert!(
+                        b.get("reason").is_none(),
+                        "a bounded body carries no reason: {b}"
+                    );
+                }
+                None => {
+                    let why = b["reason"].as_str().expect("an unbounded body says why");
+                    assert!(why.contains("max_health"), "{why}");
+                }
+            }
+        }
+    }
+    assert!(
+        seen_declared,
+        "wave/guards declares health: {encounters:#?}"
+    );
+}
+
+#[test]
+fn a_tougher_body_of_the_same_kind_raises_the_kinds_budget() {
+    // The bot reads a NAME off a body, never its NBT, so two stacks of one entity
+    // are one budget — and it has to be the WORST of them. Giving up early on the
+    // tougher stack would fail a delve that is fine.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        let waves = quests["content"]["waves"].as_array_mut().unwrap();
+        let guards = waves
+            .iter_mut()
+            .find(|w| w["id"] == "wave/guards")
+            .expect("wave/guards");
+        let mut tough = guards["mobs"][0].clone();
+        tough["attributes"]["max_health"] = serde_json::json!(120.0);
+        tough["count"] = serde_json::json!(1);
+        tough["name"] = serde_json::json!("Keep Captain");
+        guards["mobs"].as_array_mut().unwrap().push(tough);
+    });
+    let (out, _) = build(tmp.path()).expect("the mutated campaign builds");
+    let (_, plan) = path_and_plan(&out);
+    let guards = plan["encounters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["wave"] == "wave/guards")
+        .expect("the guards encounter");
+    let bodies = guards["bodies"].as_array().unwrap();
+    assert_eq!(bodies.len(), 1, "one KIND, two stacks: {bodies:#?}");
+    assert_eq!(bodies[0]["kind"], "zombie");
+    assert_eq!(bodies[0]["count"], 3, "2 + 1: {bodies:#?}");
+    let ten_x = bodies[0]["give_up_swings"].as_u64().unwrap();
+    assert!(
+        ten_x > 16,
+        "a 120-HP body cannot share the 12-HP body's floor: {bodies:#?}"
+    );
+}
+
+#[test]
+fn one_unproven_stack_makes_the_whole_kind_unproven() {
+    // Same grouping rule, the other direction: the bot cannot tell which zombie
+    // it is hitting, so a kind is only bounded when EVERY stack of it is.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        let waves = quests["content"]["waves"].as_array_mut().unwrap();
+        let guards = waves
+            .iter_mut()
+            .find(|w| w["id"] == "wave/guards")
+            .expect("wave/guards");
+        let mut vanilla = guards["mobs"][0].clone();
+        vanilla.as_object_mut().unwrap().remove("attributes");
+        vanilla["count"] = serde_json::json!(1);
+        vanilla["name"] = serde_json::json!("Keep Recruit");
+        guards["mobs"].as_array_mut().unwrap().push(vanilla);
+    });
+    let (out, _) = build(tmp.path()).expect("the mutated campaign builds");
+    let (_, plan) = path_and_plan(&out);
+    let guards = plan["encounters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["wave"] == "wave/guards")
+        .expect("the guards encounter");
+    let bodies = guards["bodies"].as_array().unwrap();
+    assert_eq!(bodies.len(), 1);
+    assert!(bodies[0]["give_up_swings"].is_null(), "{bodies:#?}");
+    assert!(
+        bodies[0]["reason"]
+            .as_str()
+            .is_some_and(|r| r.contains("max_health")),
+        "{bodies:#?}"
+    );
+}

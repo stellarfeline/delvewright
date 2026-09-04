@@ -797,13 +797,29 @@ fn deleting_the_opening_effect_reds_naming_the_way_and_the_objective() {
         &dir,
         "an objective behind a way nothing opens is unwinnable",
     );
-    assert_eq!(err.code.id(), "DW0548");
-    assert!(err.message.contains("broken-flight"), "{}", err.message);
-    assert!(err.message.contains("obj/goal"), "{}", err.message);
-    assert!(err.message.contains("never opened"), "{}", err.message);
+    assert_eq!(err.failure.code.id(), "DW0548");
+    assert!(
+        err.failure.message.contains("broken-flight"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("obj/goal"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("never opened"),
+        "{}",
+        err.failure.message
+    );
     // The room behind it, counted: a verdict that cannot say how much building
     // is stranded is a verdict nobody can size.
-    assert!(err.message.contains("cell(s)"), "{}", err.message);
+    assert!(
+        err.failure.message.contains("cell(s)"),
+        "{}",
+        err.failure.message
+    );
 }
 
 /// **The same campaign with the effect moved after the objective is red**, and
@@ -817,14 +833,26 @@ fn an_opening_that_does_not_precede_the_objective_reds_naming_all_three() {
         &dir,
         "a deck laid on arrival is a deck the party fell past",
     );
-    assert_eq!(err.code.id(), "DW0548");
-    assert!(err.message.contains("broken-flight"), "{}", err.message);
-    assert!(err.message.contains("obj/goal"), "{}", err.message);
-    assert!(err.message.contains("open-way"), "{}", err.message);
+    assert_eq!(err.failure.code.id(), "DW0548");
     assert!(
-        err.message.contains("does not put before"),
+        err.failure.message.contains("broken-flight"),
         "{}",
-        err.message
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("obj/goal"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("open-way"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("does not put before"),
+        "{}",
+        err.failure.message
     );
 }
 
@@ -842,13 +870,21 @@ fn an_opening_on_an_unforced_root_reds_naming_the_beat() {
         &dir,
         "a deck laid only on death is a deck nobody must lay",
     );
-    assert_eq!(err.code.id(), "DW0548");
-    assert!(err.message.contains("broken-flight"), "{}", err.message);
-    assert!(err.message.contains("obj/goal"), "{}", err.message);
+    assert_eq!(err.failure.code.id(), "DW0548");
     assert!(
-        err.message.contains("not forced to play"),
+        err.failure.message.contains("broken-flight"),
         "{}",
-        err.message
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("obj/goal"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("not forced to play"),
+        "{}",
+        err.failure.message
     );
 }
 
@@ -915,9 +951,17 @@ fn a_declared_way_that_stages_no_cells_is_dw0549() {
     with_a_cell_less_way(&dir, "broken-threshold");
     let c = campaign(Opening::Before);
     let err = plan_err(&c, &dir, "a way with no cells opens nothing");
-    assert_eq!(err.code.id(), "DW0549");
-    assert!(err.message.contains("2 contingent way"), "{}", err.message);
-    assert!(err.message.contains("only 1"), "{}", err.message);
+    assert_eq!(err.failure.code.id(), "DW0549");
+    assert!(
+        err.failure.message.contains("2 contingent way"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("only 1"),
+        "{}",
+        err.failure.message
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -931,9 +975,17 @@ fn an_open_way_naming_no_staged_way_is_dw0547() {
     let (dir, _, _) = library("misnamed", "oak_planks");
     let c = campaign(Opening::Misnamed);
     let err = plan_err(&c, &dir, "a way that is not there cannot be opened");
-    assert_eq!(err.code.id(), "DW0547");
-    assert!(err.message.contains("no-such-way"), "{}", err.message);
-    assert!(err.message.contains("broken-flight"), "{}", err.message);
+    assert_eq!(err.failure.code.id(), "DW0547");
+    assert!(
+        err.failure.message.contains("no-such-way"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("broken-flight"),
+        "{}",
+        err.failure.message
+    );
 }
 
 /// **The reference is checked even when the world stages no way at all** — the
@@ -962,12 +1014,13 @@ fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
 }"#;
     let c = campaign_with(plain.to_string(), quests_doc(Opening::Before, false), false);
     let err = plan_err(&c, &dir, "a way no piece stages cannot be opened");
-    assert_eq!(err.code.id(), "DW0547");
+    assert_eq!(err.failure.code.id(), "DW0547");
     assert!(
-        err.message
+        err.failure
+            .message
             .contains("no placed piece stages any way at all"),
         "{}",
-        err.message
+        err.failure.message
     );
 }
 
@@ -985,9 +1038,17 @@ fn a_piece_placed_twice_makes_its_way_reference_ambiguous() {
     let world = serde_json::to_string_pretty(&world).unwrap();
     let c = campaign_with(world, quests_doc(Opening::Before, true), true);
     let err = plan_err(&c, &dir, "two placements, one reference");
-    assert_eq!(err.code.id(), "DW0547");
-    assert!(err.message.contains("2 placed pieces"), "{}", err.message);
-    assert!(err.message.contains("area/tower-b"), "{}", err.message);
+    assert_eq!(err.failure.code.id(), "DW0547");
+    assert!(
+        err.failure.message.contains("2 placed pieces"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("area/tower-b"),
+        "{}",
+        err.failure.message
+    );
 }
 
 // ---------------------------------------------------------------------------

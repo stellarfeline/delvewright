@@ -63,14 +63,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::StationKind;
-use delvewright_dsl::metrics::{
-    MetricKind, MetricValue, Metrics, Pitch, Reads, passable_width_cells,
-};
+use delvewright_dsl::metrics::{MetricKind, MetricValue, Metrics, Reads, passable_width_cells};
 use delvewright_dsl::siteplan::{
     Crossing, ENTRY_ANCHOR, PlacedBox, PlacedSeam, SITE_AREA, VolumeRole, node_anchor, seam_anchor,
     seam_unlock_anchor,
 };
-use delvewright_dsl::{Campaign, Diagnostic, DwCode, NodeId};
+use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, NodeId};
 use serde::Serialize;
 
 use crate::plan::{AnchorRole, AreaPlacement, PiecePlacement, ResolvedAnchor};
@@ -640,7 +638,7 @@ fn derive_bound(
         let (mut lo, mut hi) = b.space();
         lo[1] -= sink;
         hi[1] -= sink;
-        let block = if perturb.brick_up == Some(b.node.0.as_str()) {
+        let block = if perturb.brick_up.as_deref() == Some(b.node.0.as_str()) {
             palette::WALL
         } else {
             palette::AIR
@@ -650,7 +648,7 @@ fn derive_bound(
         // than in (2) because (2)'s course sits ABOVE the play space and this
         // pass would clear anything laid inside it — the defect has to survive
         // the clear to be a defect at all.
-        if perturb.low_ceiling == Some(b.node.0.as_str()) {
+        if perturb.low_ceiling.as_deref() == Some(b.node.0.as_str()) {
             mass.write(
                 [lo[0], hi[1], lo[2]],
                 [hi[0], hi[1], hi[2]],
@@ -1044,10 +1042,13 @@ fn station_cell(mass: &Mass, b: &PlacedBox, taken: &BTreeSet<[i64; 3]>) -> [i64;
 ///
 /// # The pitch, and a departure recorded where it is made
 ///
-/// The pitch is the **gentlest standard the host affords**, chosen by the same
-/// walk over the same table `DW0830` refuses with — so a plan that reached green
-/// is a plan this can build, and one that could not would have been refused
-/// before any block existed.
+/// The pitch is the **gentlest standard the host affords**, chosen by
+/// [`delvewright_dsl::siteplan::gentlest_pitch`] over the run
+/// [`delvewright_dsl::siteplan::stair_run`] reports — the same two calls
+/// `DW0830` makes, so a plan that reached green is a plan this can build, and
+/// one that could not was refused before any block existed. That is one
+/// function rather than a matching pair: the pair disagreed, and the plan it
+/// disagreed about built no stair at all.
 ///
 /// What is NOT taken from the table is [`Pitch::realization`]. The table names
 /// `minecraft:*_stairs` for `pitch.stair`, and the assembled world's occupancy
@@ -1073,82 +1074,30 @@ fn tread(
     let (lo, hi) = host.space();
     let (olo, ohi) = s.opening;
 
-    // **How high the treads must carry a body**, and it is read off the opening
-    // rather than off the rise, because the opening is what the body has to
-    // reach:
-    //
-    // * across a **vertical** face the body must stand with its feet at the
-    //   seam's own sill and step through, so the top course's face is the sill;
-    // * through a **floor or ceiling** the body must stand INSIDE the hole and
-    //   step out onto the other place's floor beside it, so the top course's
-    //   face is the plane the hole is cut in.
-    //
-    // Both come out as the floor difference on an ordinary plan; they differ
-    // exactly where the plan puts a stair's sill somewhere other than the far
-    // floor, and the opening is the half a body actually uses.
-    let target = if s.normal_axis == 1 { s.plane } else { olo[1] };
-    let climb = target - host.floor;
-    if climb <= 0 {
-        // The host is at or above what the stair has to reach. `DW0830` refuses
-        // that plan by name — treads rise off a walk plane and the only one this
-        // stair has is the lower place's — so there is nothing to build here and
-        // nothing to say about it that has not been said.
+    // **What the run costs this host** — the climb the courses must carry, the
+    // axis they walk, where course 0 stands and how much walk there really is.
+    // All four come from [`delvewright_dsl::siteplan::stair_run`], which is the
+    // same call `DW0830` makes: a plan that reached green is a plan this can
+    // build, by construction rather than by two arithmetics agreeing. `None` is
+    // a plan `DW0830` has already refused — a host at or above what the stair
+    // reaches, or a hole that is not over this host (`DW0828`).
+    let Some(run) = delvewright_dsl::siteplan::stair_run(
+        host.floor,
+        host.foot,
+        s.normal_axis,
+        s.plane,
+        (olo, ohi),
+    ) else {
         return false;
-    }
-
-    // The run is horizontal. Across a vertical face it is spent along that
-    // face's normal; through a floor or a ceiling it may run either way, so the
-    // host's longer horizontal axis is what it has. Same axis rule `DW0830`
-    // measures the plan against.
-    let run_axis = if s.normal_axis == 1 {
-        let ex = host.foot[1] - host.foot[0] + 1;
-        let ez = host.foot[3] - host.foot[2] + 1;
-        if ex >= ez { 0usize } else { 2 }
-    } else {
-        s.normal_axis
     };
+    let (climb, run_axis, start, step, available) =
+        (run.climb, run.run_axis, run.start, run.step, run.available);
 
-    // **Where the run starts, how it walks, and how much of it there really
-    // is** — one decision, because the third answer depends on the first two.
-    //
-    // **The stair arrives AT its seam**, so the top course is the one the body
-    // steps off from and the run walks back into the room. Across a vertical
-    // face that is the course against the wall, and the run walks the whole
-    // footprint, so the host's extent on this axis IS what it affords.
-    //
-    // Through a FLOOR or a CEILING it is the course under the hole, and the run
-    // leaves along whichever side of the hole the host has more of — so what
-    // the treads have is the room on THAT side plus the hole's own width, never
-    // the host's whole extent. Measuring the extent here measures the room on
-    // both sides of a stair that only ever runs down one, which is a run the
-    // host does not have; a pitch chosen against it does not fit, and the
-    // courses that fall off the far wall are a stair with its bottom missing.
-    let (start, step, available) = if s.normal_axis == 1 {
-        let (olo_r, ohi_r) = (
-            olo[run_axis].max(lo[run_axis]),
-            ohi[run_axis].min(hi[run_axis]),
-        );
-        if olo_r > ohi_r {
-            return false; // the hole is not over this host — `DW0828`'s finding.
-        }
-        let width = ohi_r - olo_r + 1;
-        let room_lo = olo_r - lo[run_axis];
-        let room_hi = hi[run_axis] - ohi_r;
-        if room_lo >= room_hi {
-            (ohi_r, -1, room_lo + width)
-        } else {
-            (olo_r, 1, room_hi + width)
-        }
-    } else if s.plane > host.foot[if run_axis == 0 { 1 } else { 3 }] {
-        (hi[run_axis], -1, hi[run_axis] - lo[run_axis] + 1)
-    } else {
-        (lo[run_axis], 1, hi[run_axis] - lo[run_axis] + 1)
-    };
-
-    let Some(pitch) = gentlest_pitch(table, reads, climb, available) else {
+    let Some(pitch) = delvewright_dsl::siteplan::gentlest_pitch(table, reads, climb, available)
+    else {
         return false; // `DW0830` refused this plan; there is no standard to build.
     };
-    let courses = ceil_div(climb * i64::from(pitch.run), i64::from(pitch.rise)).max(1);
+    let courses = delvewright_dsl::siteplan::run_of(&pitch, climb).max(1);
 
     // **A run is laid whole or not at all.** `gentlest_pitch` was asked for a
     // standard that fits exactly this span and `courses` is that standard's own
@@ -1214,45 +1163,6 @@ fn tread(
     laid
 }
 
-/// Ceiling division over non-negative operands.
-///
-/// Spelled out rather than `i64::div_ceil`, which is unstable on this
-/// toolchain — the same arithmetic `crate::plan`'s stair check uses, written the
-/// same way, so the plan-time verdict and the built run agree by construction.
-fn ceil_div(n: i64, d: i64) -> i64 {
-    if d == 0 {
-        n
-    } else {
-        n / d + i64::from(n % d != 0)
-    }
-}
-
-/// The gentlest standard pitch whose run fits `available`, or `None` when the
-/// table defines none that does.
-///
-/// The walk is over [`Metrics::names_of`] in table order and returns the first
-/// that fits — the identical rule `DW0830` refuses with, read from the identical
-/// table, so the plan-time verdict and the built geometry cannot be about
-/// different standards.
-fn gentlest_pitch(table: &Metrics, reads: &mut Reads, rise: i64, available: i64) -> Option<Pitch> {
-    for name in table.names_of(MetricKind::Pitch) {
-        let Ok(entry) = table.resolve(MetricKind::Pitch, name) else {
-            continue;
-        };
-        let MetricValue::Pitch(p) = entry.value(reads) else {
-            continue;
-        };
-        if p.rise == 0 {
-            continue;
-        }
-        let needed = ceil_div(rise * i64::from(p.run), i64::from(p.rise));
-        if needed <= available {
-            return Some(*p);
-        }
-    }
-    None
-}
-
 /// Every cell a set of region writes covers, for a caller that needs the whole
 /// blockout as a cell set (the stage-5 battery's ownership map).
 pub fn cells_of(lo: [i64; 3], hi: [i64; 3]) -> impl Iterator<Item = [i64; 3]> {
@@ -1292,10 +1202,10 @@ pub fn seam_cells(seams: &[PlacedSeam]) -> BTreeSet<[i32; 3]> {
 // ---------------------------------------------------------------------------
 
 /// `DW0836`: a built seam disagrees with its allocation.
-pub const DW_SEAM_BUILT: DwCode = DwCode::every_version("DW0836");
+pub const DW_SEAM_BUILT: DwCode = DwCode::every_version("DW0836", ExitTier::Build);
 
 /// `DW0837`: a node's floor is unreached.
-pub const DW_NODE_UNREACHED: DwCode = DwCode::every_version("DW0837");
+pub const DW_NODE_UNREACHED: DwCode = DwCode::every_version("DW0837", ExitTier::Build);
 
 /// `DW0877`: a contact nothing can cross (spec-0053 §6).
 ///
@@ -1318,13 +1228,13 @@ pub const DW_NODE_UNREACHED: DwCode = DwCode::every_version("DW0837");
 /// compiler taken under different physics.
 ///
 /// Build tier (exit 3), `every_version`.
-pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::every_version("DW0877");
+pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::every_version("DW0877", ExitTier::Build);
 
 /// `DW0838`: a connection nothing allocated.
-pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::every_version("DW0838");
+pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::every_version("DW0838", ExitTier::Build);
 
 /// `DW0821`: a sightline is blocked. Warning in the slice — see [`sightlines`].
-pub const DW_SIGHTLINE_BLOCKED: DwCode = DwCode::every_version("DW0821");
+pub const DW_SIGHTLINE_BLOCKED: DwCode = DwCode::every_version("DW0821", ExitTier::Build);
 
 /// What the battery examined. Stated on every build, zero or not.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -1410,9 +1320,23 @@ impl Battery {
     /// The first refusal, if the build must stop.
     #[must_use]
     pub fn refusal(&self) -> Option<&(DwCode, Diagnostic)> {
+        self.refusals().next()
+    }
+
+    /// **Every** refusal, in the order the battery raised them.
+    ///
+    /// A build stops at the first — `emit::BuildFailure` carries one code and
+    /// one message, as every check in this compiler does — but one defect is
+    /// routinely seen by more than one of these rules, and a report that names
+    /// only the first is a report about a smaller world than the battery
+    /// examined. Walls built a course tall are the standing example: the wall is
+    /// then open above every allocation (`DW0836`) *and* a body hops between two
+    /// places nothing connected (`DW0838`), and a creator who only ever sees the
+    /// first fixes it, rebuilds, and meets the second.
+    pub fn refusals(&self) -> impl Iterator<Item = &(DwCode, Diagnostic)> {
         self.findings
             .iter()
-            .find(|(_, d)| d.severity == delvewright_dsl::Severity::Error)
+            .filter(|(_, d)| d.severity == delvewright_dsl::Severity::Error)
     }
 
     /// The advisories, for the build's own warning list.
@@ -1466,21 +1390,36 @@ pub fn check(plan: &crate::plan::Plan, blocks: &BTreeMap<[i32; 3], String>) -> O
     let mut findings: Vec<(DwCode, Diagnostic)> = Vec::new();
     let mut binding = BatteryBinding::default();
 
+    // **Both worlds here are geometry alone** (`nav::Premises::geometry_only`),
+    // and the decline is this battery's own subject matter rather than an
+    // oversight. The blockout battery judges a MASSING against the site plan
+    // that produced it — is the hole the hole the plan cut, is there a second
+    // one, does a body fit through the seam — and its two worlds carry their own
+    // sealing authority (`seal_unopened`, from the quest graph's monotone
+    // closure). Handing them the campaign's world-load gate seals as well would
+    // put two answers to "what is shut" in one world.
+    //
+    // The one premise that would sharpen rather than duplicate is the declared
+    // lethal volumes: a blockout node reachable only through a kill box is not
+    // reached. That is a real gap and it is a finding, not a repair made here —
+    // it changes what `DW0837` refuses, which is spec-0049's stage-5 contract
+    // and belongs to a round that can judge the campaigns it would newly red.
+    //
     // The world as a body meets it once every declared way is open. `DW0836` and
     // `DW0838` are questions about GEOMETRY — is the hole the hole the plan cut,
     // and is there a second one — so they are asked with nothing shut.
-    let open = crate::nav::World::from_occupancy(crate::assembled::occupancy_of(
-        blocks.clone(),
-        &BTreeSet::new(),
-    ));
+    let open = crate::nav::World::from_occupancy(
+        crate::assembled::occupancy_of(blocks.clone(), &BTreeSet::new()),
+        crate::nav::Premises::geometry_only(),
+    );
     // The world with every way the graph's own gating closure never opens sealed
     // as the plan sealed it. The base assembled model deliberately holds gate
     // regions open (`crate::assembled`), so a reachability proof taken over it
     // would walk through a door nothing in the campaign ever unlocks.
-    let sealed = crate::nav::World::from_occupancy(crate::assembled::occupancy_of(
-        seal_unopened(c, b, blocks),
-        &BTreeSet::new(),
-    ));
+    let sealed = crate::nav::World::from_occupancy(
+        crate::assembled::occupancy_of(seal_unopened(c, b, blocks), &BTreeSet::new()),
+        crate::nav::Premises::geometry_only(),
+    );
 
     seams_built(b, &open, &mut binding, &mut findings);
     nodes_reached(c, b, &sealed, &mut binding, &mut findings);
@@ -2768,7 +2707,15 @@ fn pacing(
 ///
 /// It is not an escape hatch and grants nothing: every field makes the output
 /// *worse*, and the battery's whole job is to refuse the result.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+///
+/// # How a creator asks for one
+///
+/// Through [`Knob`] and `delvec build --perturb <knob>`, which is the only
+/// caller outside a test. A perturbed build takes **no output directory** — the
+/// parser refuses `--out` beside `--perturb` — so the demonstration cannot
+/// produce a tree, cannot produce a `manifest.json`, and therefore cannot be
+/// bound to a staging admission token, whatever the observer says.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Perturb {
     /// Cut every seam's opening this many cells along its face's first in-plane
     /// axis, without telling the plan. Reddens `DW0836` from both directions at
@@ -2779,21 +2726,21 @@ pub struct Perturb {
     /// put it. Reddens `DW0836`'s realized rise and `DW0833`'s second call site,
     /// and nothing at stage 4 — which is the point: a plan-time green cannot see
     /// a datum the derivation moved.
-    pub sink: Option<&'static str>,
+    pub sink: Option<String>,
     /// Build every shell wall one course tall instead of to the play space's
     /// full height. Reddens `DW0838`: a body can hop the wall between two places
     /// and drop into the next, which is a way nothing allocated.
     pub short_walls: bool,
     /// Leave this place's interior solid. Reddens `DW0837`: the place exists,
     /// its seams are cut, and there is nowhere in it to stand.
-    pub brick_up: Option<&'static str>,
+    pub brick_up: Option<String>,
     /// Close this place one course lower than the plan put its ceiling, leaving
     /// its floor, its walls and every opening exactly where they are. Reddens
     /// `DW0833`'s second call site on a `box-height` identity and NOTHING else —
     /// no datum moves, so `DW0836`'s realized rise is untouched, and the place
     /// stays walkable, so `DW0837` is untouched. That narrowness is the point:
     /// it is a defect only the headroom measure can see.
-    pub low_ceiling: Option<&'static str>,
+    pub low_ceiling: Option<String>,
     /// Fill every **contact's** span with wall, as if the massing had closed the
     /// front the plan allocated. Reddens `DW0877`: the plan says two places meet
     /// along this span and the world has a wall there.
@@ -2831,6 +2778,179 @@ impl Perturb {
 
     /// How far this place's mass is displaced downward.
     fn drop_of(&self, node: &NodeId) -> i64 {
-        i64::from(self.sink == Some(node.0.as_str()))
+        i64::from(self.sink.as_deref() == Some(node.0.as_str()))
+    }
+
+    /// The place this asks for, if it asks for one — so a caller can check the
+    /// name against the plan before deriving anything.
+    #[must_use]
+    pub fn place(&self) -> Option<&str> {
+        self.sink
+            .as_deref()
+            .or(self.brick_up.as_deref())
+            .or(self.low_ceiling.as_deref())
+    }
+}
+
+/// **Every defect the derivation can be asked for, named.**
+///
+/// The enumeration exists so that the surface a creator reaches — `delvec build
+/// --perturb <knob>` — is derived from [`Perturb`] rather than written beside
+/// it. A field of `Perturb` with no arm here is caught at COMPILE time by
+/// `every_perturb_field_has_a_knob`, which destructures the struct exhaustively:
+/// adding a seventh defect and forgetting to name it does not compile.
+///
+/// `slide_openings` is an `i64` and this offers the one-cell case, because the
+/// smallest slip is the strongest demonstration — an observer that catches a
+/// hole cut one cell over catches every larger miss for free.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Knob {
+    /// [`Perturb::slide_openings`] by one cell.
+    SlideOpenings,
+    /// [`Perturb::sink`] — takes a place.
+    Sink,
+    /// [`Perturb::short_walls`].
+    ShortWalls,
+    /// [`Perturb::brick_up`] — takes a place.
+    BrickUp,
+    /// [`Perturb::low_ceiling`] — takes a place.
+    LowCeiling,
+    /// [`Perturb::wall_contacts`].
+    WallContacts,
+}
+
+impl Knob {
+    /// Every knob, in declaration order.
+    pub const ALL: [Knob; 6] = [
+        Knob::SlideOpenings,
+        Knob::Sink,
+        Knob::ShortWalls,
+        Knob::BrickUp,
+        Knob::LowCeiling,
+        Knob::WallContacts,
+    ];
+
+    /// The kebab-case name a creator types.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Knob::SlideOpenings => "slide-openings",
+            Knob::Sink => "sink",
+            Knob::ShortWalls => "short-walls",
+            Knob::BrickUp => "brick-up",
+            Knob::LowCeiling => "low-ceiling",
+            Knob::WallContacts => "wall-contacts",
+        }
+    }
+
+    /// One line of help, for the surface that offers the knob.
+    #[must_use]
+    pub fn blurb(self) -> &'static str {
+        match self {
+            Knob::SlideOpenings => "cut every seam's opening one cell along its face",
+            Knob::Sink => "lay one place's shell and interior a block low",
+            Knob::ShortWalls => "build every shell wall one course tall",
+            Knob::BrickUp => "leave one place's interior solid",
+            Knob::LowCeiling => "close one place a course under its plan's ceiling",
+            Knob::WallContacts => "wall every contact's span the plan allocated",
+        }
+    }
+
+    /// Whether this defect is about ONE place, and therefore needs one named.
+    #[must_use]
+    pub fn takes_place(self) -> bool {
+        matches!(self, Knob::Sink | Knob::BrickUp | Knob::LowCeiling)
+    }
+
+    /// Which observer this defect is DOCUMENTED to redden — the code the knob's
+    /// own doc comment on [`Perturb`] names, so a surface offering the knob does
+    /// not carry a second opinion about what it does.
+    ///
+    /// It is not a prediction of which code will stop a build. A build fails on
+    /// its first refusal and one defect is routinely seen by two of these rules:
+    /// walls a course tall open every wall above its allocation (`DW0836`) as
+    /// well as joining two places nothing connected (`DW0838`), and `DW0836` is
+    /// raised first. [`Battery::refusals`] is what says which rules actually saw
+    /// it.
+    #[must_use]
+    pub fn documented_code(self) -> &'static str {
+        match self {
+            Knob::SlideOpenings => "DW0836",
+            Knob::Sink => "DW0836",
+            Knob::ShortWalls => "DW0838",
+            Knob::BrickUp => "DW0837",
+            Knob::LowCeiling => "DW0833",
+            Knob::WallContacts => "DW0877",
+        }
+    }
+
+    /// The defect itself. `place` is required exactly when [`Self::takes_place`]
+    /// is true; a caller that disagrees gets `None` rather than a silently
+    /// place-less perturbation, which would derive a clean map and read as an
+    /// observer that failed to observe.
+    #[must_use]
+    pub fn perturb(self, place: Option<&str>) -> Option<Perturb> {
+        if self.takes_place() != place.is_some() {
+            return None;
+        }
+        let p = place.map(str::to_string);
+        Some(match self {
+            Knob::SlideOpenings => Perturb {
+                slide_openings: 1,
+                ..Perturb::none()
+            },
+            Knob::Sink => Perturb {
+                sink: p,
+                ..Perturb::none()
+            },
+            Knob::ShortWalls => Perturb {
+                short_walls: true,
+                ..Perturb::none()
+            },
+            Knob::BrickUp => Perturb {
+                brick_up: p,
+                ..Perturb::none()
+            },
+            Knob::LowCeiling => Perturb {
+                low_ceiling: p,
+                ..Perturb::none()
+            },
+            Knob::WallContacts => Perturb {
+                wall_contacts: true,
+                ..Perturb::none()
+            },
+        })
+    }
+}
+
+/// `--perturb`'s value set, taken from [`Knob::ALL`] rather than restated.
+///
+/// Written by hand rather than `#[derive(ValueEnum)]` because the derive would
+/// name each value from its VARIANT identifier, which is a second spelling
+/// authority beside [`Knob::name`] — and the two disagree exactly when somebody
+/// renames one of them. This impl enumerates nothing of its own: the variants
+/// are `Knob::ALL`, the spellings are `Knob::name`, the help lines are
+/// `Knob::blurb` and `Knob::documented_code`, so a seventh defect appears in
+/// `delvec build --help` the moment it exists.
+///
+/// It lives beside the type rather than in `main.rs` because the orphan rule
+/// puts it there; `view::panorama::Bearing` already carries a `ValueEnum` in
+/// this crate for the same reason.
+impl clap::ValueEnum for Knob {
+    fn value_variants<'a>() -> &'a [Self] {
+        &Knob::ALL
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        Some(clap::builder::PossibleValue::new(self.name()).help(format!(
+            "{} — expect {}{}",
+            self.blurb(),
+            self.documented_code(),
+            if self.takes_place() {
+                " (needs --perturb-place)"
+            } else {
+                ""
+            }
+        )))
     }
 }

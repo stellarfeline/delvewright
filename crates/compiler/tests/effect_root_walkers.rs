@@ -163,13 +163,27 @@ fn prefabs_with_trap() -> PathBuf {
         let path = dir.join("hello-room.json");
         let mut meta: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        meta.get_mut("anchors")
+        let anchors = meta
+            .get_mut("anchors")
             .and_then(|a| a.as_object_mut())
-            .unwrap()
-            .insert(
-                "anchor/trap".to_string(),
-                serde_json::json!({ "pos": [5, 1, 6], "dispenser": [4, 1, 6] }),
-            );
+            .unwrap();
+        anchors.insert(
+            "anchor/trap".to_string(),
+            serde_json::json!({ "pos": [5, 1, 6], "dispenser": [4, 1, 6] }),
+        );
+        // …and a place for the shop probe to stand that nothing else claims.
+        // `hello-room` offers four anchors and every one of them is already
+        // spoken for by something that owns a hitbox: `anchor/exit` carries the
+        // shortcut's unlock affordance (two interaction boxes on one cell is
+        // `DW0878`), `anchor/door` is the gate region whose sealed door arms a
+        // press body (`DW0422`), `anchor/keeper-stand` is where `npc/keeper`
+        // stands (`DW0359`), and `spawn` is where the party arrives. The probe is
+        // about EFFECT ROOTS, so it must not be co-declaring a geometry defect on
+        // the way to exercising one.
+        anchors.insert(
+            "anchor/shop".to_string(),
+            serde_json::json!({ "pos": [7, 1, 8] }),
+        );
         std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
         dir
     })
@@ -240,7 +254,7 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
         // effects ARE the probe bundle.
         EffectRootKind::ShopOffer => {
             let mut shop: delvewright_dsl::Shop = serde_json::from_str(
-                r#"{ "id": "shop/probe", "anchor": "anchor/exit", "title": "Wares",
+                r#"{ "id": "shop/probe", "anchor": "anchor/shop", "title": "Wares",
                      "offers": [{ "label": "Buy", "effects": [] }] }"#,
             )
             .expect("probe shop parses");

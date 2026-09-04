@@ -9,6 +9,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use delvewright_compiler::analyze::analyze_campaign;
+use delvewright_compiler::blockout::{Knob, Perturb};
 use delvewright_compiler::commands::CommandTree;
 use delvewright_compiler::emit;
 use delvewright_compiler::load::{
@@ -18,13 +19,14 @@ use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 use delvewright_dsl::{
-    Diagnostic, DwCode, Fenced, Stage, parse_campaign, stage_schema, validate_campaign_with,
+    Diagnostic, DwCode, ExitTier, Fenced, Stage, parse_campaign, stage_schema,
+    validate_campaign_with,
 };
 
 /// `DW0309`: a staged **body** — a stage-2 npc or a stage-5 actor alike —
 /// declares a `skin.texture_id` for which the campaign ships no
 /// `skins/<texture_id>.png`. Build-tier (exit 3).
-const DW_SKIN_PNG_MISSING: DwCode = DwCode::every_version("DW0309");
+const DW_SKIN_PNG_MISSING: DwCode = DwCode::every_version("DW0309", ExitTier::Build);
 
 /// Internal-error exit code (spec-0002: ≥10).
 const EXIT_INTERNAL: u8 = 10;
@@ -75,9 +77,36 @@ enum Command {
     Build {
         /// Campaign directory.
         campaign_dir: PathBuf,
-        /// Output tree directory.
-        #[arg(short, long)]
-        out: PathBuf,
+        /// Output tree directory. Required for an ordinary build, and refused
+        /// beside `--perturb`: a perturbed build has nowhere to write.
+        #[arg(
+            short,
+            long,
+            required_unless_present = "perturb",
+            conflicts_with = "perturb"
+        )]
+        out: Option<PathBuf>,
+        /// Ask the derivation for a named defect and watch the observer.
+        ///
+        /// The stage-5 blockout battery claims to observe the built bytes
+        /// rather than replay the arithmetic that laid them, and the only way
+        /// to see that claim tested is to make the derivation build the map
+        /// wrong in a named way. One knob per run. The run writes NO output —
+        /// `--out` is refused beside it — so a perturbed tree does not exist to
+        /// be shipped, walked or admitted, and the exit is always non-zero.
+        #[arg(long, value_name = "KNOB", value_enum)]
+        perturb: Vec<Knob>,
+        /// Which place `--perturb sink|brick-up|low-ceiling` damages. Required
+        /// for those three and refused for the others, and it must name a box
+        /// the site plan declares.
+        ///
+        /// Not declared `requires = "perturb"`. That attribute was written and
+        /// measured: with it in place, `--perturb-place X` with no `--perturb`
+        /// parsed cleanly and reached the program, so it bound nothing here.
+        /// `resolve_build_kind` refuses the combination instead, and says what
+        /// the flag would have decided.
+        #[arg(long, value_name = "PLACE")]
+        perturb_place: Option<String>,
     },
     /// Emit the l10n key inventory (key → canonical English) as JSON, with the
     /// existing `--lang` sidecar and NPC persona context — the machine-readable
@@ -283,9 +312,20 @@ fn main() -> ExitCode {
     match command {
         Command::Validate { campaign_dir } => run_validate(campaign_dir, &cli.prefabs, cli.json),
         Command::Analyze { campaign_dir } => run_analyze(campaign_dir, &cli.prefabs, cli.json),
-        Command::Build { campaign_dir, out } => {
-            run_build(campaign_dir, out, &cli.prefabs, &cli.lang, cli.json)
-        }
+        Command::Build {
+            campaign_dir,
+            out,
+            perturb,
+            perturb_place,
+        } => run_build(
+            campaign_dir,
+            out.as_deref(),
+            perturb,
+            perturb_place.as_deref(),
+            &cli.prefabs,
+            &cli.lang,
+            cli.json,
+        ),
         Command::L10nInventory { campaign_dir } => {
             run_l10n_inventory(campaign_dir, &cli.lang, cli.json)
         }
@@ -987,7 +1027,7 @@ fn run_snapshot(
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
             print_diags(&Fenced::apply(&campaign, e.warnings), json);
-            print_build_error(e.code, &e.message, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };
@@ -1009,11 +1049,18 @@ fn run_snapshot(
     // The occupancy view of the same assembled model the grid rasterises: the
     // render plan's cameras are stood up and proven against it (`DW0724`), so a
     // `--shot` here frames exactly what the built plan states.
+    //
+    // Geometry alone (`nav::Premises::geometry_only`): a camera is stood up
+    // against BLOCKS — the question is whether the eye is inside one — and a
+    // reviewer framing a shot down into a declared lethal volume is looking at
+    // open air, not at a wall. The campaign's premises are about what a body may
+    // walk through, which is not what this command asks.
     let world = delvewright_compiler::nav::World::from_occupancy(
         delvewright_compiler::assembled::occupancy_of(
             assembled.blocks.clone(),
             &assembled.open_gates,
         ),
+        delvewright_compiler::nav::Premises::geometry_only(),
     );
     let blocks = assembled.blocks;
     let grid = snapshot::VoxelGrid::build(&blocks);
@@ -1474,7 +1521,7 @@ fn run_blocking_chart(
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
             print_diags(&Fenced::apply(&campaign, e.warnings), json);
-            print_build_error(e.code, &e.message, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };
@@ -1493,11 +1540,18 @@ fn run_blocking_chart(
         Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
+    // Every premise the campaign states (`nav::Premises::of_plan`), because the
+    // corridor this chart draws is `critical_path_routes` — the SAME derivation
+    // the build's completability proof takes — and a chart taken over a smaller
+    // premise set draws a corridor no proof ever walked. A route through a
+    // declared lethal volume was exactly that: a line on the blocking chart the
+    // author could read as cleared.
     let world = delvewright_compiler::nav::World::from_occupancy(
         delvewright_compiler::assembled::occupancy_of(
             assembled.blocks.clone(),
             &assembled.open_gates,
         ),
+        delvewright_compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
     );
     let blocks = assembled.blocks;
     let targets = delvewright_compiler::snapshot::collect_targets(&plan);
@@ -1566,13 +1620,42 @@ fn run_blocking_chart(
     ExitCode::SUCCESS
 }
 
+/// **A perturbed build is structurally unable to produce a tree.**
+///
+/// `--out` and `--perturb` are declared as conflicting arguments, so this pair
+/// has exactly two inhabited shapes and the parser refuses the other two: an
+/// ordinary build carrying a directory, or a demonstration carrying a defect and
+/// no directory at all. It is a type here rather than two `Option`s and a
+/// comment because the guarantee is worth stating in a form a reader cannot
+/// misread: the perturbed arm has nowhere to write, so it does not decline to
+/// write a tree — it has no path to write one to. No tree means no
+/// `manifest.json`, and `tools/staging-gate.py` fingerprints a build by hashing
+/// exactly that file: *a tree with no manifest has no identity and therefore
+/// cannot be admitted at all*.
+enum BuildKind<'a> {
+    /// The build as it ships.
+    Ship(&'a Path),
+    /// The derivation asked for a named defect, so its observer can be watched.
+    Demonstrate(Knob, Perturb),
+}
+
 fn run_build(
     campaign_dir: &Path,
-    out: &Path,
+    out: Option<&Path>,
+    perturb: &[Knob],
+    perturb_place: Option<&str>,
     prefabs_dir: &Path,
     lang: &str,
     json: bool,
 ) -> ExitCode {
+    let kind = match resolve_build_kind(out, perturb, perturb_place) {
+        Ok(k) => k,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            return ExitCode::from(1);
+        }
+    };
+
     let v = match validate_stage(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
@@ -1591,6 +1674,36 @@ fn run_build(
     if !adiags.reported().is_empty() {
         print_diags(&adiags, json);
         return ExitCode::from(2);
+    }
+
+    // A perturbation naming a place no box declares would derive a perfectly
+    // clean map, and the run would then report an observer that failed to
+    // observe — a true sentence about the wrong thing. So the name is checked
+    // against the site plan's own boxes, which is the one authority for what a
+    // place is, before anything is derived.
+    if let BuildKind::Demonstrate(knob, p) = &kind
+        && let Some(place) = p.place()
+    {
+        let declared: Vec<&str> = campaign
+            .site_plan
+            .as_ref()
+            .map(|sp| sp.content.boxes.iter().map(|b| b.node.0.as_str()).collect())
+            .unwrap_or_default();
+        if !declared.contains(&place) {
+            eprintln!(
+                "error: --perturb {} --perturb-place `{place}`: this campaign's site plan \
+                 declares no such place. It declares {}: {}",
+                knob.name(),
+                declared.len(),
+                if declared.is_empty() {
+                    "(this campaign has no site plan, so there is no derivation to perturb)"
+                        .to_string()
+                } else {
+                    declared.join(", ")
+                }
+            );
+            return ExitCode::from(1);
+        }
     }
 
     // i18n: resolve the requested build language. `en` is the implicit canonical
@@ -1626,14 +1739,32 @@ fn run_build(
         delvewright_dsl::tag_translatables(&mut campaign);
     }
 
-    let plan = match Plan::build(&campaign, &prefabs) {
+    // The one caller of `Plan::build_with` outside a test, and the ordinary arm
+    // is still `Plan::build` — the constructor that passes `Perturb::none()` as
+    // a literal — so a build with no `--perturb` reaches the derivation through
+    // exactly the code path it always did.
+    let built = match &kind {
+        BuildKind::Ship(_) => Plan::build(&campaign, &prefabs),
+        BuildKind::Demonstrate(knob, p) => {
+            eprintln!(
+                "perturbed build: the derivation is asked for `{}` ({}{}); the observer this \
+                 defect is documented to redden is {}. This run writes NO output tree.",
+                knob.name(),
+                knob.blurb(),
+                p.place().map(|n| format!(" at `{n}`")).unwrap_or_default(),
+                knob.documented_code(),
+            );
+            Plan::build_with(&campaign, &prefabs, p.clone())
+        }
+    };
+    let plan = match built {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
             print_diags(&Fenced::apply(&campaign, e.warnings), json);
-            print_build_error(e.code, &e.message, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };
@@ -1677,21 +1808,56 @@ fn run_build(
             return ExitCode::from(3);
         }
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
-            // Analysis-tier build diagnostics (exit 2, like DW02xx reachability): a
-            // content/prefab defect the author fixes in the content, not a
-            // compiler/geometry defect. These are the DW02xx lighting codes
-            // (DW0210/DW0211, spec-0010), wave-capacity DW0312 (a wave too
-            // big for its room), and DW0313 (a gravity floor that despawns
-            // into the void — fix the prefab with a substrate). Geometry/navigation
-            // diagnostics (DW0307/DW0308/DW0311) print like a solver DW03xx error and
-            // exit 3.
+            // The tier is the code's own ([`ExitTier`]) — an analysis-tier
+            // refusal (exit 2) says the CONTENT is the defect, a build-tier one
+            // (exit 3) says the compiler could not produce a tree. It used to be
+            // re-derived here from the code's spelling, in a copy of the same
+            // expression this verb, `edit` and `edit --check` each kept.
             print_build_error(code, &message, json);
-            let analysis_tier = code.id().starts_with("DW02")
-                || code == emit::DW_WAVE_NO_ROOM
-                || code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
-                || code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
-            let exit = if analysis_tier { 2 } else { 3 };
-            return ExitCode::from(exit);
+            if let BuildKind::Demonstrate(knob, _) = &kind {
+                let got = code.to_string();
+                eprintln!(
+                    "perturbed build: the observer REFUSED the derivation's `{}` defect. The \
+                     build stops at the FIRST refusal, {got}{}. No output tree was written.",
+                    knob.name(),
+                    if got == knob.documented_code() {
+                        ", which is the code this knob is documented to redden".to_string()
+                    } else {
+                        format!(
+                            "; this knob is documented to redden {} — the battery's refusal \
+                             line above names every rule that saw the defect, and one \
+                             derivation defect is routinely seen by two of them",
+                            knob.documented_code()
+                        )
+                    }
+                );
+            }
+            return ExitCode::from(code.exit_tier().exit_status());
+        }
+    };
+
+    // **The demonstration's own verdict, and the only place a perturbed run can
+    // reach with a datapack in hand.** Getting here means the derivation built
+    // the named defect and every observer passed it — which is the failure the
+    // whole facility exists to be able to see, so it is a refusal rather than a
+    // success, and the output is dropped unwritten. `BuildKind::Demonstrate`
+    // carries no path, so this is a statement about what did not happen rather
+    // than a decision not to do it.
+    let out = match kind {
+        BuildKind::Ship(out) => out,
+        BuildKind::Demonstrate(knob, p) => {
+            eprintln!(
+                "perturbed build: the derivation was asked for `{}`{} and produced a datapack that \
+                 NOTHING refused — {} did not fire, and neither did any other build-tier \
+                 check. Either this campaign has nothing for that defect to damage, or an \
+                 observer that claims to read the built bytes is reciting the arithmetic that \
+                 laid them. The output was discarded; a perturbed run has no `--out` to write \
+                 to.",
+                knob.name(),
+                p.place().map(|n| format!(" at `{n}`")).unwrap_or_default(),
+                knob.documented_code(),
+            );
+            return ExitCode::from(3);
         }
     };
 
@@ -1700,6 +1866,69 @@ fn run_build(
         return ExitCode::from(EXIT_INTERNAL);
     }
     ExitCode::SUCCESS
+}
+
+/// Which of the two builds this invocation is, or why it is neither.
+///
+/// `clap` already refuses `--out` beside `--perturb` and refuses a knob it does
+/// not know, so what is left here is the arity — `--perturb` is a `Vec` so that
+/// a second one is an ERROR rather than the silent last-wins a `Option` would
+/// give, which on a defect-injection flag is the shape that reports a
+/// demonstration of the knob nobody asked about — and the place, which three of
+/// the knobs need and the other three refuse.
+fn resolve_build_kind<'a>(
+    out: Option<&'a Path>,
+    perturb: &[Knob],
+    place: Option<&str>,
+) -> Result<BuildKind<'a>, String> {
+    let knob = match perturb {
+        [] => {
+            let out = out.ok_or_else(|| {
+                "`--out` is required for a build that is not perturbed".to_string()
+            })?;
+            if place.is_some() {
+                return Err(
+                    "`--perturb-place` names the place `--perturb` damages, and this \
+                            run asks for no perturbation"
+                        .to_string(),
+                );
+            }
+            return Ok(BuildKind::Ship(out));
+        }
+        [one] => *one,
+        many => {
+            return Err(format!(
+                "`--perturb` takes exactly one knob and this run names {}: {}. One defect per \
+                 run is what makes the refusal attributable — two at once and the code that \
+                 fires says nothing about which defect it saw",
+                many.len(),
+                many.iter().map(|k| k.name()).collect::<Vec<_>>().join(", ")
+            ));
+        }
+    };
+    match (knob.takes_place(), place) {
+        (true, None) => Err(format!(
+            "`--perturb {}` damages ONE place and this run names none — add `--perturb-place \
+             <place>`",
+            knob.name()
+        )),
+        (false, Some(p)) => Err(format!(
+            "`--perturb {}` damages the whole derivation, not one place, so `--perturb-place \
+             {p}` would decide nothing. The knobs that take a place are: {}",
+            knob.name(),
+            Knob::ALL
+                .iter()
+                .filter(|k| k.takes_place())
+                .map(|k| k.name())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+        (_, p) => Ok(BuildKind::Demonstrate(
+            knob,
+            knob.perturb(p)
+                .expect("the arity was just checked against `takes_place`"),
+        )),
+    }
 }
 
 /// Read the skin PNGs every staged **body** references (spec-0009 bake). The PNG
@@ -1891,7 +2120,7 @@ fn run_edit(
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
             print_diags(&Fenced::apply(&v.campaign, e.warnings), json);
-            print_build_error(e.code, &e.message, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };
@@ -1904,12 +2133,7 @@ fn run_edit(
         Ok(r) => r,
         Err(e) => {
             print_build_error(e.code, &e.message, json);
-            // Same tier mapping as `build` (analysis-tier content defects → 2).
-            let analysis_tier = e.code.id().starts_with("DW02")
-                || e.code == emit::DW_WAVE_NO_ROOM
-                || e.code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
-                || e.code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
-            return ExitCode::from(if analysis_tier { 2 } else { 3 });
+            return ExitCode::from(e.code.exit_tier().exit_status());
         }
     };
     let Some(replay) = replay else {
@@ -2028,11 +2252,7 @@ fn run_edit(
         }
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
             print_build_error(code, &message, json);
-            let analysis_tier = code.id().starts_with("DW02")
-                || code == emit::DW_WAVE_NO_ROOM
-                || code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
-                || code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
-            return ExitCode::from(if analysis_tier { 2 } else { 3 });
+            return ExitCode::from(code.exit_tier().exit_status());
         }
     }
 
@@ -2143,7 +2363,7 @@ fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
             Ok(s) => s,
             Err(e) => {
                 diags.push(Diagnostic::error(
-                    DwCode::every_version(e.code),
+                    e.code,
                     "fmt",
                     format!("{shown}:{}:{}", e.line, e.col),
                     e.message,
@@ -2157,7 +2377,7 @@ fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
         changed.push(path.clone());
         if check {
             diags.push(Diagnostic::error(
-                DwCode::every_version(fmt::DW_FMT_UNFORMATTED),
+                fmt::DW_FMT_UNFORMATTED,
                 "fmt",
                 shown.clone(),
                 format!(
@@ -2181,7 +2401,7 @@ fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
     // fixture directory, a path that no longer exists.
     if files.is_empty() {
         let d = Diagnostic::error(
-            DwCode::every_version(fmt::DW_FMT_NO_BINDING),
+            fmt::DW_FMT_NO_BINDING,
             "fmt",
             paths
                 .iter()
