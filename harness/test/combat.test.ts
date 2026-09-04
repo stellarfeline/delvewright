@@ -13,6 +13,7 @@ import {
   dieRetryBinding,
   dieRetryCoverageFailures,
   dieRetryFindings,
+  scriptedDeathRefusal,
   floorFinding,
   giveUpBudgetFor,
   openTrial,
@@ -343,6 +344,33 @@ function trial(over: Partial<DeathTrial> = {}): DeathTrial {
 test("a clean trial is silent", () => {
   assert.equal(trialVerdict(trial()), undefined);
   assert.deepEqual(dieRetryFindings([trial(), trial({ attempt: 2 })]), []);
+});
+
+test("a scripted death that did not land names the gamemode, never the op seed", () => {
+  // Spectator: the command could not have worked, and the refusal says so plus the
+  // server's own answer. The old sentence guessed — "was refused (is the bot
+  // opped?)" — at the one cause it had never checked.
+  const spec = scriptedDeathRefusal("/damage @s 1000 minecraft:generic", 15000, "spectator", [
+    "This entity cannot be damaged",
+  ]);
+  assert.match(spec, /`spectator`/);
+  assert.match(spec, /invulnerable/);
+  assert.match(spec, /This entity cannot be damaged/);
+  assert.doesNotMatch(spec, /opped/);
+
+  // Adventure: the mode a death IS takeable in, so the reader is sent somewhere
+  // else entirely — a different finding, and the two must not read alike.
+  const adv = scriptedDeathRefusal("/damage @s 1000 minecraft:generic", 15000, "adventure", []);
+  assert.match(adv, /the mode a death is takeable in/);
+  assert.match(adv, /the server answered nothing/);
+  assert.doesNotMatch(adv, /invulnerable/);
+
+  // And a client that could not read its own gamemode says THAT rather than
+  // asserting one.
+  assert.match(
+    scriptedDeathRefusal("/damage @s 1000 minecraft:generic", 15000, undefined, []),
+    /a gamemode the client could not read/,
+  );
 });
 
 test("a respawn away from the checkpoint fails the trial", () => {

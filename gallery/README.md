@@ -27,9 +27,10 @@ Surfaces do fail when something first reaches them, which is the whole reason
 this campaign exists: an ambush and a named mob drop could not compile at all, a
 generated flag-gate test could not pass, and a one-waypoint lane emitted a march
 test asserting an index it had no way to reach — each found here, by binding it.
-Still open: the build's render plan and the one `delvec snapshot` derives
-disagree whenever a world-edit blocks the route, because one is computed after
-the edits and the other before them.
+Three are still open: the build's render plan and the one `delvec snapshot`
+derives disagree whenever a world-edit blocks the route, nothing refuses a wave
+seated inside a killing volume, and nothing refuses an objective gated on a
+state an earlier forced beat clears.
 
 ## Reading it
 
@@ -109,11 +110,37 @@ holding them at once.
 | `a-prompt-nobody-sees` | `DW0862` | `validate` | writing a hint on an objective with no title to carry it |
 | `a-fight-nobody-points-at` | `DW0863` | `validate` | requiring a fight and saying nothing about where it happens |
 | `two-presses-on-one-cell` | `DW0878` | `build` | hanging an `interact` objective and a click trigger on one anchor |
+| `a-gate-the-path-already-cleared` | `DW0879` | `validate` | clearing a counter between the beat that fills it and the gate that reads it |
 
-A probe is an OVERLAY, not a campaign — it ships only the stage files it
-changes, so `delvec validate` pointed at a probe directory refuses the
-directory (`DW0874`) rather than the document. Materialise it over the primary
-first, exactly as the coverage gate does, and then run any of them yourself:
+**A probe is the primary plus one declared edit.** It carries no copy of any
+document the primary already holds; what it perturbs is written out in its own
+`probe.json`, as a `patch` of JSON-pointer edits over the primary's canonical
+form — so `peaceful-difficulty` is three lines:
+
+```json
+"patch": [
+  { "doc": "world.json", "op": "replace", "path": "/content/difficulty", "value": "peaceful" }
+]
+```
+
+The edits are `add`, `remove` and `replace`, applied in order by
+`tools/gallery_domain.py` while it materialises the point. Everything the probe
+does not name comes from the primary on every run, which is what makes a probe
+unable to drift from the campaign it perturbs. An edit whose pointer the primary
+no longer has is a red naming the probe and the pointer, rather than a probe
+quietly changing what it is about; `add` and `replace` are separate verbs so
+that a key the primary GAINS is that same red rather than a silent overwrite.
+
+A probe may ship a whole document, and four of them do: `site-plan.json`,
+`detail-plan.json` and `walk-record.json` are documents the primary cannot carry
+at all — `DW0839` refuses a campaign holding both `areas[]` and a site plan — so
+there is nothing for them to be a copy of. A file that shadows a primary
+document is refused.
+
+A probe is an OVERLAY, not a campaign, so `delvec validate` pointed at a probe
+directory refuses the directory (`DW0874`) rather than the document. Materialise
+it over the primary first, exactly as the coverage gate does, and then run any of
+them yourself:
 
 ```
 python3 -c "import sys, pathlib; sys.path.insert(0, 'tools'); import gallery_domain; \
@@ -179,7 +206,7 @@ what it reaches.
 
 ## What writing it turned up
 
-Three engine defects, each invisible for the same reason: the surface had never
+Four engine defects, each invisible for the same reason: the surface had never
 been written by anything, so nothing had ever compiled it. Each is attributed by
 a differential, because that is the only honest way to say "this one thing is
 responsible".
@@ -217,7 +244,19 @@ climb, a wall to fly over) rather than a declaration. The hall's one vertical
 route is the mezzanine's broken flight, and no body walks it — the climb is a
 player's, so it settles nothing about a declared locomotion.
 
-None of the three was found by reading code. Each was found by trying to write the
+**A wave nothing fires still gets its kill advancement.** All of a wave's
+machinery — `spawn_<wave>`, the census probe, the brand, the kill reward — is
+gated on the wave resolving a spawn AREA, which it does only through an effect
+that fires it. `advancement/k_<wave>.json` is not: it is emitted for every
+declared wave, and its `rewards.function` names the `k_reward_<wave>` a wave
+nothing fires never gets. *Attribution:* the gallery's `wave/edge` was declared
+and fired by nothing, and the build shipped `k_edge.json` pointing at a
+function that was not in the pack; arming the wave produced the function and
+five more beside it. *State:* not fixed. The gallery no longer holds the shape,
+which is why arming `wave/edge` rather than deleting it was the fix — the
+element now exercises `WaveSummon::aggro-edge` instead of merely naming it.
+
+None of the four was found by reading code. Each was found by trying to write the
 surface down.
 
 ## The annex, and what a socket is worth looking at
@@ -365,7 +404,61 @@ The pocket sits off the critical path on purpose. Blocking geometry on the route
 makes the build's render plan and the one `delvec snapshot` derives disagree —
 see below.
 
-## A finding still open
+## The fight, and the floor it needs
+
+The far hall carries the one encounter the inverted floor gate measures — the
+muster, billed `elite`. A gate can only grade a fight nothing else in the room
+took part in, so three facts about where things stand are load-bearing rather
+than decorative.
+
+**A killing volume does not share a room with a fight.** A lethal volume emits
+`@e[x=…,dx=…,…]`, and a selector takes any entity whose bounding box touches
+the region — a spider is 1.4 blocks wide, so it is inside a box while its feet
+are still 0.7 blocks outside it, and the cell immediately beside a volume is
+fatal to anything standing at that cell's near edge. Distance does not answer
+this, because a fight does not stay where it is staged: the ladder's own census
+found a re-seated cohort spread 14.4 blocks from its anchor. So both killing
+volumes live in the NEAR hall — the west corner and the north wall — and the
+muster forms up beyond the dividing wall, in the far hall the quest's beat
+names. The wall is the guarantee; the generator checks the sides, not a radius.
+
+**The pits sit where nothing walks.** Each is four blocks clear of every anchor
+and of every cell the piece's own bodies are teleported through on their way to
+the pocket, and neither touches a gate mouth. Both are three cells square,
+because a volume one cell deep has no interior — the death loop walks a body
+to a cell inside the box, and every cell inside it was also its edge.
+
+**The muster keeps two cells of air on every side.** A wave takes the standable
+cells NEAREST its anchor, and standable is judged for a body one cell wide, so
+an anchor with a wall two cells off seats the 1.4-wide member of the stack
+against that wall: the census then reads a mob below full health before the
+fight has started, and re-seat fidelity reds on a wave nothing has touched.
+Staged one cell from the mezzanine's corner, this wave came back `1 of 3` below
+full on both scripted deaths; in the open middle of the hall it comes back
+whole. The same two cells keep the fight out of the loft's own completion box,
+which stands three courses up and one cell wide along the dais's west face —
+a jump inside it finishes a later objective during this one.
+
+**The patrol comes down the hall as the party leaves it.** A lane squad's
+`follow_range` is its lane's `aggro_radius` verbatim — eight — and `DW0477`
+records in writing that nothing measures `wave/lane`. Eight blocks of
+perception in a hall fourteen deep covers the hall, so there is no line the
+patrol can walk that the party's route stays clear of: moved to the back wall,
+the crossbows stopped reaching the muster and killed the bot on its way to the
+finale instead. A fight the campaign does not bill and does not require is
+therefore armed by the hall's own closing beat rather than by the beat that
+opens it, and the back wall is where it walks when it arrives. Both halves are
+held: the arming is a beat, and the generator holds the geometry, because an
+ordering is the half a later edit can undo without moving a coordinate.
+
+The generator holds the geometry of all of it, on every run, and prints what it examined:
+
+```
+gallery-hall: muster clearance bound — 2 killing volume(s), both across the wall at z=15 from the muster: anchor/west-pit 20.62, anchor/east-pit 18.68 (floor 8.0 block(s))
+gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at [15, 1, 29], 10.00 block(s) away (floor 10.0)
+```
+
+## Three findings still open
 
 **The build's render plan and `snapshot`'s disagree when an edit blocks the
 route.** One is computed after world-edits and the other before them, so solid
@@ -374,6 +467,30 @@ geometry on the critical path makes the build's legs longer than the ones
 twice: first with four shards stamped across the far hall, then with a
 full-width barrier line. Both times the instance fix was to move the geometry off
 the route; the divergence itself is untouched.
+
+**An objective can be gated on a state an earlier forced beat clears, and
+nothing says so.** `obj/reach-the-end` requires `state/labels-read` `at-least`
+1; `obj/clear-the-muster`, four objectives ahead of it on the mandatory spine,
+clears that state to zero. Every static proof passes — the reachability model
+walks objectives and flags, not the arithmetic of the states their `requires_state`
+compares — and the delve is simply unfinishable, which is what the bot found by
+standing inside the finale's own completion box while no marker arrived.
+`DW0527` sees the same write and says nothing about this, because it is a rule
+about one bundle and these are two. The gallery lives with it by setting the
+count again on the bone's beat, LAST in its bundle so no reader follows the
+write; the general form has no diagnostic.
+
+**Nothing refuses a wave seated inside a killing volume.** `DW0511` is the
+rule that a body put somewhere by DECLARATION rather than by walking must not
+be put inside a lethal volume — no route proof can see it — and
+`lethal::posted_places` enumerates the entry cell, every checkpoint, every
+NPC, every per-quest `cast` placement and every actor. A wave's seated cells
+are not in that list, so a muster standing between two pits compiles green and
+loses bodies to the world at runtime. The clearances above are the strongest
+form a piece generator can carry, and they are weaker than the diagnostic
+would be twice over: the generator cannot see the campaign's own `extent`
+values, so its constants state that half as a premise, and it compares anchor
+to anchor where the real question is hitbox to box.
 
 ## Why the job gates
 

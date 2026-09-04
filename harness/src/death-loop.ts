@@ -432,6 +432,51 @@ export function inBox(cell: Vec3Tuple, box: Box): boolean {
   return [0, 1, 2].every((i) => box.lo[i]! <= cell[i]! && cell[i]! <= box.hi[i]!);
 }
 
+/**
+ * A player's collision box in blocks: `0.6` wide and deep, `1.8` tall, centred on
+ * the body's own `x`/`z` and standing on its `y`. Vanilla's `minecraft:player`
+ * dimensions — the numbers the server intersects a volume selector against.
+ */
+export const PLAYER_WIDTH = 0.6;
+export const PLAYER_HEIGHT = 1.8;
+
+/**
+ * **Would this volume's selector have matched a body standing at `pos`?**
+ *
+ * This is the server's own rule, and it is not {@link inBox}. A lethal volume is
+ * emitted as `@a[x=<lo.x>,dx=<hi.x - lo.x>,…]`; `dx` is a SPAN, so a one-cell
+ * region is `dx=0` and still selects the whole block — the region in continuous
+ * coordinates is `[lo, hi + 1]` on each axis. And vanilla tests **hitbox
+ * intersection**, not cell containment (`compiler::reach::reach_completion` says
+ * the same thing about the completion cube, from the other side of the same
+ * fact). A player is 0.6 wide, so a body whose feet cell is one outside the box
+ * is matched — and killed — whenever it stands within 0.3 of the face.
+ *
+ * The gallery's west pit measured it: the volume `[1, 63, 2]..[3, 67, 4]` killed
+ * the bot and its own promised line reached that player, while the position read
+ * back sat one cell past the `+z` face. Asked with `inBox` the stage answered
+ * that a real kill by that volume had happened outside it, refused to credit it,
+ * and reported the west pit as unexercised. A checker reads a document the way
+ * its CONSUMER reads it: the consumer here is a vanilla selector.
+ *
+ * Membership is the certain case in both directions — the same intersection the
+ * server computes — so this neither invents a kill nor disowns one.
+ */
+export function bodyInVolume(
+  pos: Vec3Tuple,
+  box: Box,
+  width = PLAYER_WIDTH,
+  height = PLAYER_HEIGHT,
+): boolean {
+  const half = width / 2;
+  const spans: readonly (readonly [number, number])[] = [
+    [pos[0] - half, pos[0] + half],
+    [pos[1], pos[1] + height],
+    [pos[2] - half, pos[2] + half],
+  ];
+  return spans.every(([min, max], i) => min <= box.hi[i]! + 1 && max >= box.lo[i]!);
+}
+
 /** Every cell of an inclusive box, in a fixed order. */
 export function boxCells(box: Box): Vec3Tuple[] {
   const out: Vec3Tuple[] = [];
@@ -446,27 +491,104 @@ export function boxCells(box: Box): Vec3Tuple[] {
 }
 
 /**
- * The cell of `box` the bot should walk into to die in it: the one nearest `from`,
- * ties broken lexicographically so the choice is stable across runs.
+ * The cell of `box` the bot should walk into to die in it: the one nearest `from`
+ * **that a body can be in**, ties broken lexicographically so the choice is stable
+ * across runs. `undefined` when no cell of the box can hold a body at all.
  *
  * Navigation, not game logic — which cell of a declared box a client approaches is
  * exactly the kind of decision the harness is allowed to make.
+ *
+ * `canOccupy` is the caller's reading of the world; it defaults to "every cell",
+ * which is the pre-existing behaviour and is right for a plan examined with no
+ * server in front of it. A declared volume is a BOX, and a box drawn round a
+ * hazard routinely swallows part of the wall beside it: the gallery's east pit
+ * declares `[21,63,20]..[23,67,24]` and a 4x4x2 structure stands in the corner
+ * cell `[21,65,20]`, which is therefore the cell nearest every approach and the
+ * one cell of the seventy-five no player can ever stand in. Picked, the walk in
+ * drives at a solid block, gives up, and the trial reports that the bot stood in
+ * the volume and did not die — a sentence about a place a body cannot be.
  */
-export function entryCellOf(box: Box, from: Vec3Tuple): Vec3Tuple {
+export function entryCellOf(
+  box: Box,
+  from: Vec3Tuple,
+  canOccupy: (cell: Vec3Tuple) => boolean = () => true,
+): Vec3Tuple | undefined {
   const key = (c: Vec3Tuple): readonly number[] => [
     (c[0] - from[0]) ** 2 + (c[1] - from[1]) ** 2 + (c[2] - from[2]) ** 2,
     c[0],
     c[1],
     c[2],
   ];
-  return boxCells(box).sort((a, b) => {
-    const ka = key(a);
-    const kb = key(b);
-    for (let i = 0; i < ka.length; i++) {
-      if (ka[i]! !== kb[i]!) return ka[i]! - kb[i]!;
-    }
-    return 0;
-  })[0]!;
+  return boxCells(box)
+    .filter(canOccupy)
+    .sort((a, b) => {
+      const ka = key(a);
+      const kb = key(b);
+      for (let i = 0; i < ka.length; i++) {
+        if (ka[i]! !== kb[i]!) return ka[i]! - kb[i]!;
+      }
+      return 0;
+    })[0];
+}
+
+/** One body the client can see, as the marker rule reads it. */
+export interface MarkerCandidate {
+  readonly name: string;
+  readonly position: { readonly x: number; readonly y: number; readonly z: number };
+}
+
+/**
+ * The recovery stake's own hardware standing at `anchor`: the `interaction` box a
+ * player right-clicks, **paired with the glowing display that says there is
+ * something here**.
+ *
+ * Three properties, and each of them is a defect this replaced.
+ *
+ * *Nearest, not first.* A client cannot read the entity tag the compiler wrote, so
+ * a stake is acquired by proximity — and proximity means the NEAREST candidate,
+ * the rule every other interaction step in the harness already uses. Taking
+ * whichever body the entity map happened to yield first makes the measured
+ * distance a fact about map iteration order: any interaction inside the search
+ * radius could be reported as "the stake", 3.6 blocks from the anchor the
+ * placement table proved, while the stake itself stood on the anchor exactly.
+ *
+ * *Paired, not merely accompanied.* The display must stand WITH the interaction,
+ * not merely somewhere in the same search radius: the two are summoned at one
+ * position by one function, so anything else is a different object vouching for
+ * this one.
+ *
+ * *A rule, not a lookup.* It is here, pure, rather than inside the executor,
+ * because what counts as the stake is a reading of the campaign's promise and is
+ * exactly the kind of claim that has to be testable without a server.
+ */
+export function markerAt<T extends MarkerCandidate>(
+  bodies: readonly T[],
+  displays: readonly MarkerCandidate[],
+  anchor: Vec3Tuple,
+  searchRadius: number,
+  pairRadius: number,
+): T | undefined {
+  const at = (c: MarkerCandidate): number =>
+    Math.hypot(
+      c.position.x - (anchor[0] + 0.5),
+      c.position.y - anchor[1],
+      c.position.z - (anchor[2] + 0.5),
+    );
+  let best: T | undefined;
+  for (const c of bodies) {
+    if (c.name !== "interaction" || at(c) > searchRadius) continue;
+    const rendered = displays.some(
+      (d) =>
+        Math.hypot(
+          d.position.x - c.position.x,
+          d.position.y - c.position.y,
+          d.position.z - c.position.z,
+        ) <= pairRadius,
+    );
+    if (!rendered) continue;
+    if (best === undefined || at(c) < at(best)) best = c;
+  }
+  return best;
 }
 
 /**
@@ -518,6 +640,16 @@ export interface LethalTrial {
   readonly stake: string | undefined;
   /** The currency objective the ledger was read from. */
   readonly objective: string | undefined;
+  /**
+   * Whether the body was ever OBSERVED with its feet inside the declared volume.
+   *
+   * Nothing recorded this before, and the surviving verdict said "the bot stood
+   * inside the declared lethal volume and did NOT die" whether or not it had.
+   * "The volume did not kill what was in it" and "nothing was ever in it" are
+   * different findings with different owners, and only one of them is about the
+   * delve.
+   */
+  enteredVolume: boolean;
   died: boolean;
   deathPos: Vec3Tuple | undefined;
   /** Whether the volume's own promised line reached this player. */
@@ -548,6 +680,7 @@ export function openLethalTrial(
     entryCell,
     stake: stake?.id,
     objective: stake?.currency.objective,
+    enteredVolume: false,
     died: false,
     deathPos: undefined,
     wordingSeen: false,
@@ -588,9 +721,14 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
   }
   if (!t.died) {
     out.push(
-      `${t.volume}: the bot stood inside the declared lethal volume at ${where} and did NOT die. ` +
-        `A lethal volume is the one thing in the engine whose entire contract is that entering ` +
-        `it kills; nothing downstream of the death edge can be true if this is false`,
+      t.enteredVolume
+        ? `${t.volume}: the bot stood inside the declared lethal volume at ${where} and did NOT die. ` +
+          `A lethal volume is the one thing in the engine whose entire contract is that entering ` +
+          `it kills; nothing downstream of the death edge can be true if this is false`
+        : `${t.volume}: the bot was never OBSERVED inside the declared lethal volume — it was ` +
+          `driving at ${where} and its feet never got there, so this volume was not exercised ` +
+          `and nothing has been established about whether it kills. A stage that could not ` +
+          `enter is not a stage that passed, and the fault is the walk in, not the volume`,
     );
     return out;
   }

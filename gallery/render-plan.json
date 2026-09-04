@@ -294,6 +294,11 @@
     },
     {
       "area": "area/hall",
+      "id": "pov/leg8/wp10",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
       "id": "pov/leg8/wp2",
       "kind": "pov"
     },

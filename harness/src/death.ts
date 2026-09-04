@@ -6,8 +6,30 @@
 // 2x60s pathfinder timeout. This module is pure (no mineflayer import) so the
 // diagnostic construction is unit-testable without a server.
 
-/** Absolute `[x, y, z]` block position, rounded to whole blocks for the message. */
+/**
+ * Absolute `[x, y, z]` world position at the moment of death — the body's own
+ * coordinates, **not** a block cell.
+ *
+ * It used to be `Math.round`ed "for the message", and that rounding was read
+ * downstream as a cell: the death-loop stage asked whether the rounded triple was
+ * inside a lethal volume's declared block box. A body killed at `z = 4.6` — cell
+ * 4, inside the box — rounds to `5`, and the stage reported that a real kill by
+ * that very volume had happened OUTSIDE it and refused to credit it. Rounding is
+ * not the cell a body is in (flooring is), and a value shaped for a sentence is
+ * the wrong thing for a predicate to read.
+ *
+ * So the position is exact and every consumer says how it reads it: a cell
+ * question floors, and the question "would this volume's selector have matched
+ * this body" is {@link bodyInVolume}, which is the server's own rule.
+ */
 export type DeathPos = readonly [number, number, number];
+
+/** A death position as a sentence reads it — two decimals, never a block cell. */
+export function formatDeathPos(pos: DeathPos | undefined): string {
+  return pos === undefined
+    ? "an unknown position"
+    : `[${pos.map((n) => n.toFixed(2)).join(", ")}]`;
+}
 
 /**
  * Raised (and surfaced through the step sequencer) when the bot dies mid-run. Carries
@@ -23,7 +45,7 @@ export class BotDeathError extends Error {
   readonly likelyCause: string | undefined;
 
   constructor(position: DeathPos | undefined, likelyCause: string | undefined) {
-    const where = position ? ` at [${position.join(", ")}]` : " at an unknown position";
+    const where = ` at ${formatDeathPos(position)}`;
     const why = likelyCause ? ` — likely cause: ${likelyCause}` : " (cause not found in recent chat)";
     super(`bot died${where}${why}`);
     this.position = position;

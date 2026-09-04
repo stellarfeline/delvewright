@@ -1,5 +1,13 @@
 {
   "code": "DW0468",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/difficulty",
+      "value": "peaceful"
+    }
+  ],
   "units": [
     "WorldDifficulty::peaceful"
   ],

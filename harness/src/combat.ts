@@ -1093,6 +1093,58 @@ export function scriptedDeathCommand(): string {
 }
 
 /**
+ * The gamemode a player must be in for a scripted death to be takeable at all.
+ *
+ * A spectator is invulnerable, so `/damage` does nothing to one — and the engine
+ * says the same thing from the other side: every `damage-players` effect the
+ * compiler emits carries `tag=!dw_cutscene`, the tag a cutscene adds to `@a` in the
+ * same breath as `gamemode spectator @a`.
+ */
+export const CONTROLLED_GAMEMODE = "adventure";
+
+/**
+ * **Why a scripted death did not land**, said from what was OBSERVED.
+ *
+ * The stage used to guess — *"was refused (is the bot opped?)"* — and that guess is
+ * wrong in the one case that actually happens. An encounter's own objective
+ * completion can start a cutscene (`cs_<beat>`), and a cutscene's first two lines
+ * are `tag @a add dw_cutscene` and `gamemode spectator @a`. A trade that finishes
+ * the wave therefore hands the next scripted death a spectator, `/damage` does
+ * nothing to it, and the stage blamed an op seed. The gamemode is right there to be
+ * read, and the server's own answer arrives on the chat stream the bot is opped to
+ * receive, so the refusal says both instead of naming a cause it never checked.
+ *
+ * Pure, because a verdict is a reading and readings are testable without a server —
+ * and because the wording is the whole deliverable of this repair.
+ */
+export function scriptedDeathRefusal(
+  command: string,
+  timeoutMs: number,
+  gameMode: string | undefined,
+  answers: readonly string[],
+): string {
+  const said =
+    answers.length === 0
+      ? "the server answered nothing on the chat stream"
+      : `the server answered ${answers.map((l) => `"${l}"`).join(", ")}`;
+  const mode = gameMode ?? "a gamemode the client could not read";
+  const because =
+    gameMode !== undefined && gameMode !== CONTROLLED_GAMEMODE
+      ? `the bot was in \`${mode}\`, not \`${CONTROLLED_GAMEMODE}\` — a spectator is ` +
+        `invulnerable and \`/damage\` does nothing to one, so this death was never ` +
+        `takeable. A cutscene is what puts a player there (\`gamemode spectator @a\`), ` +
+        `and the stage waits one out before scripting a death; a window longer than ` +
+        `the one the build declares in \`cutscene_seconds\` is the finding`
+      : `the bot was in \`${mode}\`, which is the mode a death is takeable in, so the ` +
+        `command itself did not take effect — the op seed, the command tree, or the ` +
+        `delve's own damage rules are where to look`;
+  return (
+    `the scripted death never landed within ${timeoutMs}ms — \`${command}\` did ` +
+    `nothing and ${said}. ${because}`
+  );
+}
+
+/**
  * How far from the governing checkpoint a respawn may land and still count.
  *
  * Vanilla's respawn search moves a player off an obstructed spawn point, so an
