@@ -706,6 +706,31 @@ pub fn build_with_warnings(
         message: e.message,
     })?;
 
+    // A shortcut whose sealed side the geometry does not name (DW0425) is
+    // refused BEFORE the affordance proof below, and that ordering is load-bearing
+    // rather than tidy. A `use` trigger on such a gate cannot ride the door —
+    // `pressable::body_at` only rides a shortcut whose sealed side resolved — so
+    // it falls back to summoning its own box on the gate anchor, exactly where the
+    // shortcut's `unlock` affordance may also stand. `DW0878` would then report a
+    // hitbox tie that is a CONSEQUENCE of the undecidable side, sending the author
+    // to move an anchor when what they have to fix is the door. Withhold the
+    // downstream verdict; name the cause. (It also widens `DW0425` to a campaign
+    // that assembles no world, which is a structural fault about the declaration
+    // either way.)
+    check_shortcut_sides(plan)?;
+
+    // …and no two AFFORDANCES may stand on one cell either (DW0878). The three
+    // proofs above each need one side of their pair to be something else — a
+    // standing body for `DW0359`, a compiler-owned press set for `DW0422`, a cast
+    // ledger entry for `DW0489` — so an `interact` objective and a `use` trigger
+    // on one anchor were nobody's rule, and the engine's own gallery shipped
+    // exactly that pair. Same box arithmetic, same tier, same authority
+    // (`eclipse::affordances`).
+    crate::eclipse::check_affordance_contests(plan).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
     // …and no two bodies the party CLICKS may stand close enough that the
     // crosshair cannot tell them apart (DW0489). `DW0359` above compares a body
     // against an affordance and skips every walker; this reads the v0.7 cast
@@ -944,14 +969,11 @@ pub fn build_with_warnings(
                 // genuinely shorten the crossing. The critical path above was
                 // already proven with every shortcut gate SEALED (Plan::build seals
                 // them at step 0), so the delve is finishable the long way.
-                // Refuse to place a wrong-side answer on a side the
-                // geometry does not name (DW0425) — BEFORE the route proofs. A
-                // door whose two sides are not even distinguishable is a
-                // structural problem with the declaration, and reporting it under
-                // the route proof's name (`DW0374`, "opening it must pay") would
-                // send the author looking at their level layout instead.
-                check_shortcut_sides(plan)?;
-                // …and every click trigger must land on something (DW0426). The
+                // `DW0425` (the wrong-side refusal) is raised with the hitbox
+                // proofs above, well before this block — its own call site says
+                // why it has to reach the author first.
+                //
+                // Every click trigger must land on something (DW0426). The
                 // ledger it returns is emitted below: "how many clicks did this
                 // proof resolve a body for" is the one fact that distinguishes a
                 // campaign whose presses all land from one that arms none.

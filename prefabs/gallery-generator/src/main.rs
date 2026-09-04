@@ -189,7 +189,19 @@ const ANCHORS: &[Anchor] = &[
         pos: [15, 1, 9],
         facing: Some("north"),
         trigger_block: None,
-        note: "the thing a player presses: interact objectives and click triggers",
+        note: "the thing a player presses: an `interact` objective's affordance",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/label",
+        pos: [14, 1, 9],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the second thing a player presses, one cell west of the pedestal \
+               so the click trigger has a hitbox of its own. An objective's \
+               affordance and a trigger's are two `minecraft:interaction` boxes; \
+               on one cell they are coincident, the entity-pick ray ties, and \
+               neither can be clicked (DW0878). One press, one anchor",
         role: None,
     },
     Anchor {
@@ -198,6 +210,19 @@ const ANCHORS: &[Anchor] = &[
         facing: Some("east"),
         trigger_block: None,
         note: "the respawn point — a bonfire and a plain checkpoint alike",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/hearth-stone",
+        pos: [6, 1, 9],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "the stone beside the hearth, where the `strike` trigger hangs. \
+               A bonfire arms an interaction box of its own on `anchor/hearth`, \
+               and the entity-pick ray chooses a box before the client reads \
+               which button was pressed — so a left-click trigger on that same \
+               cell would lose its swings to the rest point (DW0878). One press, \
+               one anchor",
         role: None,
     },
     Anchor {
@@ -317,6 +342,39 @@ const ANCHORS: &[Anchor] = &[
         facing: Some("north"),
         trigger_block: None,
         note: "where a camera stands to look back down the hall",
+        role: None,
+    },
+    // The three levers on the back wall. Every one of them is a
+    // compiler-summoned interaction box, so every one of them needs a cell
+    // nothing else claims (DW0878) — a row of levers is what a room with three
+    // things to unlatch actually looks like, and it is the shape the engine's
+    // one-press-one-anchor rule produces.
+    Anchor {
+        name: "anchor/side-lever",
+        pos: [14, 1, 27],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the far-side bar of the souls shortcut: beyond the gate on the \
+               axis the door is thin on, which is what lets the compiler name \
+               the sealed side (DW0425)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/plate-lever",
+        pos: [13, 1, 27],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the trap's disarm: reachable from the hall while the plate at \
+               the march is still live",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/clock-lever",
+        pos: [12, 1, 27],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the timed gate's disarm, which has to be reachable while that \
+               gate is still SHUT",
         role: None,
     },
     Anchor {

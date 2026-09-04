@@ -144,7 +144,7 @@
         "region": {
           "anchor": "anchor/east-pit",
           "extent": [
-            1,
+            2,
             2,
             2
           ]
@@ -2334,7 +2334,7 @@
     ],
     "triggers": [
       {
-        "at": "anchor/label",
+        "at": "anchor/pedestal",
         "audience": "presser",
         "effects": [
           {
