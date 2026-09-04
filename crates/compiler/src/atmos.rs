@@ -30,18 +30,18 @@ use delvewright_dsl::{
 };
 
 use crate::registry::FullSoundRegistry;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0326`: a `play-sound` / `narrate.sound` id is not a known 1.21.11 sound
 /// event (validated against the vendored `sound_event` registry).
-pub const DW_SOUND_UNKNOWN: DwCode = DwCode::every_version("DW0326");
+pub const DW_SOUND_UNKNOWN: DwCode = DwCode::every_version("DW0326", ExitTier::Build);
 /// `DW0328`: an art-styled `narrate` string (source or a sidecar translation) uses
 /// a character outside the `delve:art` font's glyph inventory.
-pub const DW_ART_GLYPH_UNCOVERED: DwCode = DwCode::every_version("DW0328");
+pub const DW_ART_GLYPH_UNCOVERED: DwCode = DwCode::every_version("DW0328", ExitTier::Build);
 /// `DW0335`: a `play-sound` targets `at: actor`. A sound is emitted either at
 /// fixed coordinates or at each listener's own feet, and the compiler resolves no
 /// position for a live actor, so such a sound would be silent.
-pub const DW_PLAYSOUND_ACTOR_UNSUPPORTED: DwCode = DwCode::every_version("DW0335");
+pub const DW_PLAYSOUND_ACTOR_UNSUPPORTED: DwCode = DwCode::every_version("DW0335", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // Sound-event validation (DW0326) + unsupported actor gate (DW0335)

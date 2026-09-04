@@ -81,10 +81,11 @@
 //! ordering is the emitter's to guarantee, and the check would only guess. Both
 //! limits are directional: they admit, they never accuse.
 
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::integrity::{IntegrityError, Tier};
+use crate::failure::Failure;
+use crate::integrity::Tier;
 
 /// `DW0495`: an emitted score comparison reads an entry the emitted pack never
 /// creates, so its answer is decided by the absence rather than by play.
@@ -100,7 +101,7 @@ use crate::integrity::{IntegrityError, Tier};
 /// obligation here for a `dsl_version` to grandfather. Fencing it would mean
 /// deciding that campaigns below some version keep shipping a first death that
 /// does nothing, which is the opposite of what a fence is for.
-pub const DW_UNSEEDED_SCORE_READ: DwCode = DwCode::every_version("DW0495");
+pub const DW_UNSEEDED_SCORE_READ: DwCode = DwCode::every_version("DW0495", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // ranges
@@ -817,12 +818,12 @@ fn apply_line(l: &Line, summary: &BTreeMap<String, BTreeSet<Key>>, est: &mut BTr
 
 /// Prove the emitted tree never compares against an entry it does not create
 /// (`DW0495`).
-pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<(), IntegrityError> {
+pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<(), Failure> {
     let c = census(ns, out);
     if c.findings.is_empty() {
         return Ok(());
     }
-    Err(IntegrityError {
+    Err(Failure {
         code: DW_UNSEEDED_SCORE_READ,
         message: format!(
             "the emitted datapack makes {n} comparison(s) against a scoreboard entry it \

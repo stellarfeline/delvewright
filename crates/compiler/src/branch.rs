@@ -66,7 +66,7 @@ use delvewright_dsl::{
 };
 
 use crate::flow::{Flow, JournalStep, PathStep};
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 // spec-0025's six proofs are **obligations**, not wellformedness rules: each one
 // requires the campaign to HAVE something (a declared branch point, a
@@ -77,17 +77,17 @@ use delvewright_dsl::DwCode;
 // rule whose two fences can disagree.
 
 /// A flag forks casts / staging / structure but belongs to no declared branch point.
-pub const DW_FORK_UNDECLARED: DwCode = DwCode::since("DW0480", 8);
+pub const DW_FORK_UNDECLARED: DwCode = DwCode::since("DW0480", 8, ExitTier::Build);
 /// A story node carries no `happening` declaration (DSL v0.8+).
-pub const DW_HAPPENING_MISSING: DwCode = DwCode::since("DW0481", 8);
+pub const DW_HAPPENING_MISSING: DwCode = DwCode::since("DW0481", 8, ExitTier::Build);
 /// A declared branch reaches no ending — or not the one it declares.
-pub const DW_BRANCH_TERMINAL: DwCode = DwCode::since("DW0482", 8);
+pub const DW_BRANCH_TERMINAL: DwCode = DwCode::since("DW0482", 8, ExitTier::Build);
 /// A quest's cast selector does not resolve to exactly one placement on a branch.
-pub const DW_BRANCH_CAST: DwCode = DwCode::since("DW0483", 8);
+pub const DW_BRANCH_CAST: DwCode = DwCode::since("DW0483", 8, ExitTier::Build);
 /// Branch-exclusive content is reachable under a sibling branch's assignment.
-pub const DW_BRANCH_LEAKAGE: DwCode = DwCode::since("DW0484", 8);
+pub const DW_BRANCH_LEAKAGE: DwCode = DwCode::since("DW0484", 8, ExitTier::Build);
 /// Two chronicle lines on one branch contradict each other.
-pub const DW_BRANCH_CONTRADICTION: DwCode = DwCode::since("DW0485", 8);
+pub const DW_BRANCH_CONTRADICTION: DwCode = DwCode::since("DW0485", 8, ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // enumeration

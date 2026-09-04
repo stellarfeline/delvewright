@@ -106,16 +106,40 @@ fn a_way_out_the_neighbour_does_not_answer_is_refused_naming_both_pieces() {
         placed("area/second", [1, 0, 15], Rotation::None),
     ];
     let err = faces::check(&areas, &registry).expect_err("a door into a wall must be refused");
-    assert_eq!(err.code.id(), "DW0780");
+    assert_eq!(err.failure.code.id(), "DW0780");
     // Both pieces, by the name a reviewer would look them up under.
-    assert!(err.message.contains("area/first"), "{}", err.message);
-    assert!(err.message.contains("area/second"), "{}", err.message);
-    assert!(err.message.contains("prefab/twin-room"), "{}", err.message);
+    assert!(
+        err.failure.message.contains("area/first"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("area/second"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("prefab/twin-room"),
+        "{}",
+        err.failure.message
+    );
     // Both faces, with where they are.
-    assert!(err.message.contains("south walk"), "{}", err.message);
-    assert!(err.message.contains("north walk"), "{}", err.message);
+    assert!(
+        err.failure.message.contains("south walk"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure.message.contains("north walk"),
+        "{}",
+        err.failure.message
+    );
     // And the incompatibility itself, said as a thing to do something about.
-    assert!(err.message.contains("does not answer"), "{}", err.message);
+    assert!(
+        err.failure.message.contains("does not answer"),
+        "{}",
+        err.failure.message
+    );
 }
 
 /// **A rotated piece turns its face contract with it.** Reading the declared
@@ -208,5 +232,5 @@ fn pieces_in_the_site_area_are_allocated_rather_than_mated() {
     ];
     let err = faces::check(&areas, &registry)
         .expect_err("the same pair outside a site plan is still a door into a wall");
-    assert_eq!(err.code.id(), "DW0780");
+    assert_eq!(err.failure.code.id(), "DW0780");
 }

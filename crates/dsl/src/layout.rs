@@ -59,7 +59,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::diagnostic::{Diagnostic, DwCode};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 use crate::envelope::Campaign;
 use crate::ids::{AnchorId, EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId};
 use crate::metrics::{MetricKind, Metrics, Reads};
@@ -71,26 +71,26 @@ use crate::stages::Objective;
 /// endpoint naming no place, a self-loop, an `entry` that is not a node. Its
 /// verdict is a function of the campaign alone, and there is no field below
 /// `dsl_version` 0.13.0 in which to write any of it.
-pub const DW_GRAPH_MALFORMED: DwCode = DwCode::every_version("DW0814");
+pub const DW_GRAPH_MALFORMED: DwCode = DwCode::every_version("DW0814", ExitTier::Build);
 
 /// `DW0816`: a node the closure never reaches.
-pub const DW_NODE_UNREACHED: DwCode = DwCode::every_version("DW0816");
+pub const DW_NODE_UNREACHED: DwCode = DwCode::every_version("DW0816", ExitTier::Build);
 
 /// `DW0817`: the authored critical path does not hold.
-pub const DW_CRITICAL_PATH: DwCode = DwCode::every_version("DW0817");
+pub const DW_CRITICAL_PATH: DwCode = DwCode::every_version("DW0817", ExitTier::Build);
 
 /// `DW0818`: the graph names quest-side state that does not exist, or a
 /// place-bound beat has no place.
-pub const DW_GRAPH_MISSION: DwCode = DwCode::every_version("DW0818");
+pub const DW_GRAPH_MISSION: DwCode = DwCode::every_version("DW0818", ExitTier::Build);
 
 /// `DW0819`: a one-way edge strands.
-pub const DW_ONE_WAY_STRANDS: DwCode = DwCode::every_version("DW0819");
+pub const DW_ONE_WAY_STRANDS: DwCode = DwCode::every_version("DW0819", ExitTier::Build);
 
 /// `DW0820`: a shortcut closes no loop.
-pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::every_version("DW0820");
+pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::every_version("DW0820", ExitTier::Build);
 
 /// `DW0822`: the pacing measurement — a projection, printed with no threshold.
-pub const DW_PACING: DwCode = DwCode::every_version("DW0822");
+pub const DW_PACING: DwCode = DwCode::every_version("DW0822", ExitTier::Build);
 
 /// `DW0869`: a station takes a name in the engine's own namespace (spec-0052 §7.1).
 ///
@@ -98,17 +98,17 @@ pub const DW_PACING: DwCode = DwCode::every_version("DW0822");
 /// document SAYS, and a graph below [`crate::STATIONS_SINCE`] has no `stations[]`
 /// to judge — the per-stage fence (`DW0141`) has already refused it — so there is
 /// no earlier campaign this rule could reach.
-pub const DW_STATION_RESERVED: DwCode = DwCode::every_version("DW0869");
+pub const DW_STATION_RESERVED: DwCode = DwCode::every_version("DW0869", ExitTier::Build);
 
 /// `DW0870`: two stations claim one name (spec-0052 §7.2).
-pub const DW_STATION_DUPLICATE: DwCode = DwCode::every_version("DW0870");
+pub const DW_STATION_DUPLICATE: DwCode = DwCode::every_version("DW0870", ExitTier::Build);
 
 /// `DW0871`: a reference demands a shape the station is not (spec-0052 §7.3).
 ///
 /// Judged at the reference site from the DECLARATION, with zero pieces bound.
 /// `every_version` for its siblings' reason: below [`crate::STATIONS_SINCE`] a
 /// graph carries no station whose kind could disagree with anything.
-pub const DW_STATION_KIND: DwCode = DwCode::every_version("DW0871");
+pub const DW_STATION_KIND: DwCode = DwCode::every_version("DW0871", ExitTier::Build);
 
 /// `DW0875`: a place is classified twice, or not at all (spec-0053 §6).
 ///
@@ -124,7 +124,7 @@ pub const DW_STATION_KIND: DwCode = DwCode::every_version("DW0871");
 /// this can reach in an older campaign is a node that classifies itself in no
 /// way at all, which no campaign that compiled has ever been (the field was
 /// required, so its absence was `DW0100`).
-pub const DW_PLACE_CLASS: DwCode = DwCode::every_version("DW0875");
+pub const DW_PLACE_CLASS: DwCode = DwCode::every_version("DW0875", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // Stage 2 — the geometry brief's machine-readable facts (spec-0049 §4.2)
