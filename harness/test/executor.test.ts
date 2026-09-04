@@ -860,9 +860,11 @@ test("a genuinely unwalkable gate leg still fails, naming the gate and its cycle
   );
 });
 
-test("an UNMARKED leg gets no gate retries — a real navigation regression still fails fast", async () => {
-  // The licence to retry comes from the compiler's crossing mark, never from the
-  // harness. A leg with no gate gets no gate handling at all.
+test("a walk with no gates bound gets no gate retries — a real regression still fails fast", async () => {
+  // Patience is licensed by a DECLARED gate, never by the harness: a campaign that
+  // declares none (or a leg the compiler proved crosses none) binds no gate, gets no
+  // assist, and a stall is a stall. `gatesBindingWalk` decides that set; here it has
+  // already answered "nothing", which is what an absent assist means.
   let attempts = 0;
   const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
     if (label.includes("waypoint 2/3") && !label.includes("recovery")) {
@@ -1383,7 +1385,8 @@ test("interact leaves the hand alone when the step requires no item", async () =
 // --- executor tier: reach + timed gate + completion transport -----------------
 
 import type { ReachStep } from "../src/critical-path.ts";
-import { parseWaypoints } from "../src/waypoints.ts";
+import { nextLegWaypoints, parseWaypoints } from "../src/waypoints.ts";
+import { gatesBindingWalk } from "../src/timed-gate.ts";
 
 /**
  * A bot whose every pathfind ends the tide-mill way: the objective's distance
@@ -3388,4 +3391,209 @@ test("a death beyond the volume's reach is still refused, and the refusal says r
   assert.equal(t.died, false);
   assert.match(t.abandoned ?? "", /OUTSIDE the reach of the declared volume/);
   assert.match(t.abandoned ?? "", /\[3\.50, 65\.00, 5\.40\]/);
+});
+
+// --- a walk with no proven leg crosses a timed gate by the same rule -----------
+
+/**
+ * A fake world whose only route to the near lip runs through a declared timed door.
+ *
+ * The door's clock is driven by the world, not by a wall-clock timer: it fills the
+ * region until the harness has actually LOOKED at it once, then clears — so the
+ * closed→open edge the crossing rule waits for really happens, exactly once, with no
+ * race for a test to lose. While it is filled every pathfind answers `No path to the
+ * goal!` (vanilla A* over a filled region, the ladder's own message) and its cells
+ * read as a solid block; once cleared a pathfind walks the bot to its goal.
+ */
+class GatedApproachBot extends DrivableFakeBot {
+  registry = registryFor("1.21.11");
+  health = 20;
+  food = 20;
+  entities: Record<number, unknown> = {};
+  inventory = { items: (): Array<{ name: string; type: number }> => [] };
+  /** The door's state at each pathfind, in order. */
+  gotoStates: string[] = [];
+  /** The gallery's mid door: a 1×3×1 plug at [5, 65..67, 9]. */
+  private readonly door = { x: 5, y0: 65, y1: 67, z: 9 };
+  private looks = 0;
+  private get shut(): boolean {
+    return this.looks === 0;
+  }
+  override blockAt(pos?: { x: number; y: number; z: number }): {
+    name: string;
+    boundingBox: string;
+  } | null {
+    if (!this.chunkLoaded) return null;
+    if (
+      pos !== undefined &&
+      pos.x === this.door.x &&
+      pos.z === this.door.z &&
+      pos.y >= this.door.y0 &&
+      pos.y <= this.door.y1
+    ) {
+      if (this.shut) {
+        this.looks++;
+        return { name: "polished_deepslate", boundingBox: "block" };
+      }
+    }
+    return { name: "air", boundingBox: "empty" };
+  }
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (goal: { x: number; y: number; z: number }): Promise<void> => {
+      this.gotoStates.push(this.shut ? "shut" : "open");
+      if (this.shut) throw new Error("No path to the goal!");
+      this.entity.position = new FakeVec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+    },
+  };
+  /** The step INTO the volume is raw controls, so the drive lands the body there
+   * and the pit does what a pit does. Only reached once the approach succeeded. */
+  private stepped = false;
+  override setControlState(): void {
+    if (this.stepped) return;
+    this.stepped = true;
+    setTimeout(() => {
+      this.entity.position = new FakeVec3(2.5, 65, 3.5); // inside the west pit
+      this.emit("death");
+      setTimeout(() => this.emit("spawn"), 50);
+    }, 0);
+  }
+}
+
+/** The west pit with a placement row, so the stage actually walks to a near lip. */
+function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
+  return parseDeathPlan({
+    format_version: 1,
+    version: "0.19.0",
+    campaign_id: "gallery",
+    lethal_volumes: [
+      {
+        id: "lethal/west-pit",
+        region: { lo: [1, 63, 2], hi: [3, 67, 4] },
+        message: "The floor in the west corner is not a floor.",
+        message_key: "lethal.west-pit.message",
+        damage_type: "minecraft:fall",
+      },
+    ],
+    on_death: { effects: 1, drops_stake: [] },
+    stakes: [],
+    placement: {
+      seats: [{ cp: 0, label: "spawn", cell: [0, 65, 0] }],
+      regions: [
+        { label: "west-pit", lethal: true, volume: "lethal/west-pit", region: { lo: [1, 63, 2], hi: [3, 67, 4] } },
+      ],
+      rows: [{ seat: 0, region: 0, anchor: [1, 65, 5] }],
+    },
+    binding: {
+      lethal_volumes: 1,
+      on_death_effects: 1,
+      stakes: 0,
+      respawn_seats: 1,
+      placement_rows: 1,
+      unbound: false,
+      reason: null,
+    },
+  });
+}
+
+/** The gallery's three doors, as `delvec` exports them, on a leg that goes elsewhere. */
+const GALLERY_DOORS = {
+  version: "0.19.0",
+  campaign_id: "gallery",
+  timed_gates: [
+    {
+      id: "timed-gate/side-door",
+      region: { min: [9, 65, 9], max: [9, 67, 9] },
+      block: "minecraft:polished_deepslate",
+      open_ticks: 40,
+      closed_ticks: 60,
+      phase: 10,
+    },
+    {
+      id: "timed-gate/mid-door",
+      region: { min: [5, 65, 9], max: [5, 67, 9] },
+      block: "minecraft:polished_deepslate",
+      open_ticks: 40,
+      closed_ticks: 60,
+      phase: 20,
+    },
+    {
+      id: "timed-gate/inner-door",
+      region: { min: [7, 65, 9], max: [7, 67, 9] },
+      block: "minecraft:polished_deepslate",
+      open_ticks: 40,
+      closed_ticks: 60,
+      phase: 30,
+      crush: true,
+    },
+  ],
+  legs: [
+    {
+      from: [0, 65, 0],
+      to: [40, 65, 40],
+      waypoints: [[20, 65, 20]],
+      timed_gates: ["timed-gate/side-door"],
+    },
+  ],
+};
+
+test("a walk with NO proven leg waits out a shut declared gate instead of failing", async () => {
+  // The ladder's line, from the death-loop stage on the gallery: `lethal/west-pit:
+  // … the near lip [1, 65, 5] could not be reached: failed death-loop approach …
+  // No path to the goal!` — the bot standing at the mouth of `anchor/timed-door-mid`
+  // while all three doors were shut. The approach to a placement-table lip is no
+  // critical-path leg, so the compiler marks no gate on it; before this the walk got
+  // no gate assist at all and read a shut clock as broken geometry.
+  const bot = new GatedApproachBot();
+  bot.entity.position = new FakeVec3(9.5, 65.0, 17.5);
+  const executor = attach(bot);
+  executor.useDeathPlan(westPitPlanWithLip());
+  executor.useWaypoints(parseWaypoints(GALLERY_DOORS));
+
+  await executor.runDeathLoop();
+
+  const t = executor.deathLoopTrials()[0]!;
+  assert.ok(
+    !(t.abandoned ?? "").includes("could not be reached"),
+    `the approach crossed the door: ${t.abandoned ?? "(no fault)"}`,
+  );
+  assert.equal(t.enteredVolume, true, "and the trial got to make its measurement");
+  // The proof it was the GATE rule that carried it: the walk failed while the door
+  // was filled and was retried only after the region read clear.
+  assert.ok(bot.gotoStates.includes("shut"), bot.gotoStates.join(","));
+  assert.ok(bot.gotoStates.includes("open"), bot.gotoStates.join(","));
+});
+
+test("a matched leg still binds only the gates the compiler proved it crosses", async () => {
+  // The narrowing survives: the declared table is the authority only where there is
+  // no proven route. A leg the compiler marked keeps its own subset, so a walk is
+  // never charged patience for a door on the other side of the map.
+  const wp = parseWaypoints(GALLERY_DOORS);
+  const hit = nextLegWaypoints(wp.legs, 0, [40, 65, 40]);
+  assert.equal(hit.matched, true);
+  assert.deepEqual(
+    gatesBindingWalk(hit.matched, hit.timedGates, wp.timedGates).gates.map((g) => g.id),
+    ["timed-gate/side-door"],
+  );
+  // …and the same walk with no leg behind it takes the declared table, less the
+  // crush door, which has no compiler-pinned mouth to stage from.
+  const miss = nextLegWaypoints(wp.legs, 0, [1, 65, 5]);
+  assert.equal(miss.matched, false);
+  const binding = gatesBindingWalk(miss.matched, miss.timedGates, wp.timedGates);
+  assert.deepEqual(
+    binding.gates.map((g) => g.id),
+    ["timed-gate/side-door", "timed-gate/mid-door"],
+  );
+  assert.deepEqual(
+    binding.withheld.map((g) => g.id),
+    ["timed-gate/inner-door"],
+  );
 });
