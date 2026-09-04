@@ -701,7 +701,7 @@ mod tests {
         let mut o = occ(solid);
         // A slab sitting in the feet cell's own floor cell: collision top 8/16.
         o.partial.insert([3, 68, 3], 8);
-        let world = World::from_occupancy(o);
+        let world = World::from_occupancy(o, crate::nav::Premises::geometry_only());
         let v = giant_at([3, 69, 3]);
         let (w, h) = entity_dims(&v.entity);
         assert!(verdict(&world, &v, w, h).is_none());
@@ -800,7 +800,7 @@ mod tests {
         }
         let mut o = occ(solid);
         o.tall.insert([3, 69, 3]);
-        let world = World::from_occupancy(o);
+        let world = World::from_occupancy(o, crate::nav::Premises::geometry_only());
         let v = giant_at([3, 69, 3]);
         let (w, h) = entity_dims(&v.entity);
         let (cell, hit) = verdict(&world, &v, w, h).expect("a fence in the body must be measured");

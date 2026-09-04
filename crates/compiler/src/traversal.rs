@@ -956,13 +956,16 @@ mod tests {
         tall: BTreeSet<[i32; 3]>,
         gates: BTreeSet<[i32; 3]>,
     ) -> World {
-        World::from_occupancy(crate::assembled::Occupancy {
-            solid,
-            tall,
-            use_gates: gates,
-            flooded: BTreeSet::new(),
-            partial: BTreeMap::new(),
-        })
+        World::from_occupancy(
+            crate::assembled::Occupancy {
+                solid,
+                tall,
+                use_gates: gates,
+                flooded: BTreeSet::new(),
+                partial: BTreeMap::new(),
+            },
+            crate::nav::Premises::geometry_only(),
+        )
     }
 
     /// A floor at `y-1` over an 8×8 patch.
@@ -1161,7 +1164,7 @@ mod tests {
             partial: BTreeMap::new(),
         };
         occ.partial.insert([4, 63, 3], 8);
-        let w = World::from_occupancy(occ);
+        let w = World::from_occupancy(occ, crate::nav::Premises::geometry_only());
         assert_eq!(barrier_course(&w, [4, 63, 3]), None);
     }
 }
