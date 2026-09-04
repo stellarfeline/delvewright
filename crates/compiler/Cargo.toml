@@ -49,7 +49,7 @@ delvewright-dsl = { path = "../dsl", version = "=0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
-sha2 = "0.10"
+sha2 = "0.11"
 
 # `walk-record.json` is the one document a campaign author writes by hand that
 # is not a stage document, so it has no `Stage` and cannot reach
@@ -88,14 +88,14 @@ crc32fast = "1"
 # script reds both of them with no cross-compiler in the release recipe. Default
 # features carry every decoder the crate has; the render surface reads and writes
 # PNG only, so the rest is turned off rather than shipped. MIT/Apache-2.0.
-image = { version = "0.24", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 # The client jar is a zip, and `view::assets` reads block textures straight out
 # of it — the jar is a creator prerequisite, never redistributed (ADR-0010), so
 # the reader has to live in the binary the creator installs. `deflate` only: the
 # jar uses no other method, and the default feature set drags bzip2/zstd C
 # libraries that would red the static-musl shelf targets. MIT.
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 # Integration tests synthesize structure `.nbt` bytes (gzip-framed NBT) to drive

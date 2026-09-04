@@ -54,7 +54,7 @@ delvewright-schem = { path = "../schem" }
 # The provenance row identifies a grammar program by a hash of its canonical
 # JSON bytes (spec-0027 §2). Same crate the compiler already uses for datapack
 # hashing. MIT/Apache-2.0.
-sha2 = "0.10"
+sha2 = "0.11"
 
 [dev-dependencies]
 # The export tests read the emitted `.nbt` back with the same reader the asset
