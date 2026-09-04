@@ -80,7 +80,6 @@ fn build(quests: &str, dialogue: Option<&str>) -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates")

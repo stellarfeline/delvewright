@@ -5,9 +5,12 @@ against". It was not: it was being run unoptimized. Recorded here so the numbers
 survive the conclusion, and so the next person who suspects a slow compiler
 starts from data.
 
-**~25s is acceptable, optimisation is shelved; we are not optimising
-prematurely.** The engine work below is therefore *not* scheduled. It is written down only so that a future
-round that does need it starts from the profile rather than from a guess.
+**~25s was judged acceptable and the engine work below was shelved.** That
+verdict has since been overtaken — the subject reopened when derived maps put
+places two orders of magnitude larger than the island's rooms through the same
+pass, and the work is done. **Read the closing section first**; everything
+between here and it is the profile as it stood, kept because it is what the
+fix was aimed with.
 
 ## Method
 
@@ -217,3 +220,70 @@ Ranked by win-per-risk, if a future round needs it:
 The first row is the one to do if the subject reopens: it is a local change to
 one function, it is byte-identical by construction, and it is nearly half the
 build.
+
+## The subject reopened, and the pass was rebuilt (2026-09-03)
+
+What reopened it was not the island. It was the derived map: a site-plan
+campaign masses places at whatever size the size-class ladder names, and the
+same relight pass that cost the island 25 s costs a twenty-four-place chain of
+`arena` boxes a hundred seconds and the metrics gym — eighteen places, one of
+them a 128 × 128 × 16 `expanse` — nearly ten minutes. ADR-0022 §3 says
+"regeneration is seconds; a finding edits the graph or the site plan and
+regenerates", and at ten minutes a walk loop is not a loop.
+
+Same machine as above (M2 Pro, 10 cores, 16 GB), release binaries, `delvec
+build` wall clock, two repetitions **alternated within each campaign** so
+machine load could not be attributed to one binary. Two sibling `delvec build`
+processes belonging to other work held one core each throughout the first
+repetition and none of the second; both figures are given.
+
+| campaign | places | standable cells | before | after |
+|---|---:|---:|---:|---:|
+| gallery | — | — | 19.80 / 19.19 s | 0.47 / 0.50 s |
+| 24 × `room` 8×8×4 | 24 | 3 706 | 0.37 / 0.39 s | 0.09 / 0.09 s |
+| 24 × `hall` 16×16×8 | 24 | 13 506 | 6.37 / 6.39 s | 0.28 / 0.28 s |
+| 24 × `arena` 32×32×12 | 24 | 51 538 | 98.75 / 104.20 s | 1.08 / 1.05 s |
+| metrics gym (18 places, incl. `expanse` 128×128×16) | 18 | 58 981 | 586.12 s | 1.27 / 1.28 s |
+
+The gym's first-repetition base run was killed by a signal at 307 s (exit 143)
+and is not a measurement; the figure above is the second repetition, taken with
+nothing else building.
+
+Output is **byte-identical** on all five, checked two ways: `diff -r` over the
+whole emitted tree (exit 0) and a hash of the sorted per-file hashes. Every
+diagnostic, binding count and stated `sha256` matches as well; the only line
+that moves is the compiled-in `engine revision:`. The pass is not idling in any
+of them — 390 fixtures placed in the gym, 384 in the arena, 144, 54 and 29 in
+the rest.
+
+Three of the four rows in the table above were taken, together, as one change
+to `crates/compiler/src/light.rs`:
+
+- The sky sweep is one top-down pass per column, and the `sky_open` question is
+  answered from a bit rather than by walking the column.
+- The model the flood reads is a dense byte per cell — light passes / sky above
+  / emission — resolved from the block id once, indexed by arithmetic. The
+  array is padded by a permanently non-passing border, so the frontier walk has
+  no bounds test, and the frontier drains brightest-first, so each cell is
+  relaxed once.
+- The greedy loop floods once and **extends** the field per fixture. This is
+  the row the table called "needs a proof, not a test", and the proof is that
+  light is monotone under the change a fixture makes: a block written into a
+  cell whose passability it does not change, emitting at least as much as what
+  it replaced, moves no distance and closes no column, so the field afterwards
+  is the pointwise maximum of the old field and one new seed. A write failing
+  either half floods again from nothing.
+
+The fourth row — threading — was not needed and was not done.
+
+Two things worth knowing before touching it again. The darkest-cell scan is
+still linear in the reachable set per fixture placed, which at gym scale is
+about 23 million array reads over the whole build and does not show; if a map
+ever makes it show, the cells that are already satisfied can be dropped, but
+only while every placement is monotone. And the reflood arm has **no production
+binding measured**: probed by making it panic and rebuilding, it fired on
+neither the gallery, the gym nor the arena — every fixture those campaigns place
+takes the extension. It is reachable (a `shroomlight` embeds by replacing a
+nav-solid block, and glass, iron bars and fences are nav-solid while passing
+light) and it is held by three unit tests that go red when it is removed; it is
+simply not a path today's corpus walks.

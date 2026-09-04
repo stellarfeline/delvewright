@@ -612,64 +612,310 @@ impl LightModel {
     /// Public because it is the compiler's ONE light flood, and `delve-admit`'s
     /// per-piece probe asks the same question of a single prefab. A second copy
     /// of it is what shipped a probe with no sky term at all.
+    ///
+    /// The work is done by [`LightField`], which is the same field in a dense,
+    /// index-addressed form; this entry point exists for callers that want one
+    /// measurement and a map to read it out of.
     pub fn flood(&self, effective_sky: u8) -> BTreeMap<[i32; 3], u8> {
-        let mut light: BTreeMap<[i32; 3], u8> = BTreeMap::new();
-        let mut queue: VecDeque<([i32; 3], u8)> = VecDeque::new();
+        LightField::new(self, effective_sky).clone_map()
+    }
+}
 
-        // Seeds in a deterministic order: iterate the whole AABB in (y, z, x).
-        for y in self.min[1]..=self.max[1] {
-            for z in self.min[2]..=self.max[2] {
-                for x in self.min[0]..=self.max[0] {
-                    let c = [x, y, z];
-                    let mut seed = emission(self.block_at(c));
-                    if effective_sky > 0 && self.passes(c) && self.sky_open(c) {
-                        seed = seed.max(effective_sky);
-                    }
-                    if seed > 0 {
-                        let e = light.entry(c).or_insert(0);
-                        if seed > *e {
-                            *e = seed;
-                            queue.push_back((c, seed));
-                        }
-                    }
-                }
-            }
-        }
+// ---------------------------------------------------------------------------
+// The flooded field, densely
+// ---------------------------------------------------------------------------
 
-        const DIRS: [[i32; 3]; 6] = [
-            [1, 0, 0],
-            [-1, 0, 0],
-            [0, 1, 0],
-            [0, -1, 0],
-            [0, 0, 1],
-            [0, 0, -1],
+/// Bit: this cell lets light pass ([`passes_light`]).
+const P_PASSES: u8 = 0b1000_0000;
+/// Bit: this cell has open sky above it ([`LightModel::sky_open`]).
+const P_SKY: u8 = 0b0100_0000;
+/// Mask: the cell's block-light emission ([`emission`], 0..=15).
+const P_EMISSION: u8 = 0b0000_1111;
+
+/// The flooded light field of a [`LightModel`], **densely indexed** over the
+/// model's AABB.
+///
+/// # Why this exists rather than a map
+///
+/// A [`LightModel`] answers every question about a cell by looking a
+/// `BTreeMap<[i32; 3], String>` up and reading the block id out of it, and the
+/// relight pass asks those questions a great many times: once per cell of the
+/// whole AABB to seed the flood, once per column step to decide whether the sky
+/// reaches a cell, and once more per cell visited by the frontier — and then the
+/// whole flood again for every fixture it places. The comparisons are string
+/// comparisons and the lookups are tree descents, so a map of a million cells
+/// costs a hundred million of them to light once, and a build of the metrics gym
+/// spent better than 99% of its wall clock inside exactly that.
+///
+/// Nothing about the *answers* changes here. Two things about the questions do:
+///
+/// 1. Everything the flood needs to know about a cell is **three facts and a
+///    number** — does light pass through it, is the sky above it, what does it
+///    emit — so each cell is one byte, resolved from its block id once when the
+///    field is built and never looked up again. A cell's byte is found by
+///    arithmetic on its coordinates rather than by descending a tree.
+/// 2. Light only ever **increases** when a fixture is placed into a cell whose
+///    passability the fixture does not change, so the field after such a
+///    placement is the old field with one brighter source flooded into it. That
+///    is the [`Self::set`] fast path; a placement that changes passability (a
+///    `shroomlight` written over a pane of glass, say) cannot use it and floods
+///    the field again from nothing.
+///
+/// # The border
+///
+/// The array is padded by one cell on every face, and the padding is
+/// permanently non-passing. That is what the AABB test used to do — light does
+/// not flow out of the assembled bounds — expressed as data, so the frontier
+/// walk needs no bounds test at all.
+struct LightField {
+    /// The model AABB's lower corner (the cell at padded index `[1, 1, 1]`).
+    min: [i32; 3],
+    /// Padded dimensions, `dim[a] = max[a] - min[a] + 3`.
+    dim: [usize; 3],
+    /// One step along z, `dim[0]`. (One step along x is 1.)
+    stride_z: usize,
+    /// One step along y, `dim[0] * dim[2]`.
+    stride_y: usize,
+    /// Effective sky light at a sky-open cell, as [`LightModel::flood`] takes it.
+    sky: u8,
+    /// Per padded cell: [`P_PASSES`] | [`P_SKY`] | [`P_EMISSION`].
+    prop: Vec<u8>,
+    /// Per padded cell: the flooded light value.
+    light: Vec<u8>,
+}
+
+impl LightField {
+    /// Build and flood the field of `model` under `effective_sky`.
+    fn new(model: &LightModel, effective_sky: u8) -> Self {
+        let dim = [
+            (model.max[0] - model.min[0]) as usize + 3,
+            (model.max[1] - model.min[1]) as usize + 3,
+            (model.max[2] - model.min[2]) as usize + 3,
         ];
-        while let Some((c, l)) = queue.pop_front() {
-            // Skip stale entries (a brighter value was recorded since).
-            if light.get(&c).copied().unwrap_or(0) > l || l <= 1 {
-                continue;
-            }
-            for d in DIRS {
-                let n = [c[0] + d[0], c[1] + d[1], c[2] + d[2]];
-                if !self.in_aabb(n) || !self.passes(n) {
-                    continue;
-                }
-                let nl = l - 1;
-                let e = light.entry(n).or_insert(0);
-                if nl > *e {
-                    *e = nl;
-                    queue.push_back((n, nl));
-                }
-            }
+        let cells = dim[0] * dim[1] * dim[2];
+        let mut f = LightField {
+            min: model.min,
+            dim,
+            stride_z: dim[0],
+            stride_y: dim[0] * dim[2],
+            sky: effective_sky,
+            // Every interior cell starts as air — passing, emitting nothing. The
+            // padding is overwritten to 0 (non-passing) right after.
+            prop: vec![P_PASSES; cells],
+            light: vec![0; cells],
+        };
+        f.seal_border();
+
+        // Resolve each DISTINCT block id once. The assembled world is overwhelmingly
+        // repeated ids, and `emission`/`passes_light` are a pair of string matches.
+        let mut resolved: BTreeMap<&str, u8> = BTreeMap::new();
+        for (c, name) in &model.blocks {
+            let Some(i) = f.index(*c) else { continue };
+            let packed = *resolved
+                .entry(name.as_str())
+                .or_insert_with(|| Self::pack(name));
+            f.prop[i] = packed;
         }
-        light
+
+        f.compute_sky();
+        f.flood();
+        f
     }
 
-    /// The AABB membership test (light only flows within the assembled bounds).
-    fn in_aabb(&self, c: [i32; 3]) -> bool {
-        (self.min[0]..=self.max[0]).contains(&c[0])
-            && (self.min[1]..=self.max[1]).contains(&c[1])
-            && (self.min[2]..=self.max[2]).contains(&c[2])
+    /// The padding is non-passing, which is the AABB test as data.
+    fn seal_border(&mut self) {
+        let (nx, ny, nz) = (self.dim[0], self.dim[1], self.dim[2]);
+        for y in 0..ny {
+            for z in 0..nz {
+                let row = y * self.stride_y + z * self.stride_z;
+                if y == 0 || y == ny - 1 || z == 0 || z == nz - 1 {
+                    self.prop[row..row + nx].fill(0);
+                } else {
+                    self.prop[row] = 0;
+                    self.prop[row + nx - 1] = 0;
+                }
+            }
+        }
+    }
+
+    /// The padded index of a world cell, or `None` when it is outside the AABB.
+    fn index(&self, c: [i32; 3]) -> Option<usize> {
+        let mut off = [0usize; 3];
+        for a in 0..3 {
+            // `+ 1` for the border; widened so a cell far outside the AABB is a
+            // `None` rather than an overflow.
+            let d = i64::from(c[a]) - i64::from(self.min[a]) + 1;
+            if d < 1 || d >= self.dim[a] as i64 - 1 {
+                return None;
+            }
+            off[a] = d as usize;
+        }
+        Some(off[1] * self.stride_y + off[2] * self.stride_z + off[0])
+    }
+
+    /// A block id as one cell's byte: what it passes, what it emits.
+    fn pack(block: &str) -> u8 {
+        let e = emission(block);
+        debug_assert!(e <= 15, "block light is 0..=15; `{block}` measured {e}");
+        let mut p = e & P_EMISSION;
+        if passes_light(block) {
+            p |= P_PASSES;
+        }
+        p
+    }
+
+    /// [`LightModel::sky_open`] for every cell at once: walking a column
+    /// downwards, the sky reaches a cell exactly while nothing opaque has been
+    /// passed on the way down.
+    fn compute_sky(&mut self) {
+        let (nx, ny, nz) = (self.dim[0], self.dim[1], self.dim[2]);
+        for z in 1..nz - 1 {
+            for x in 1..nx - 1 {
+                let mut open = true;
+                for y in (1..ny - 1).rev() {
+                    let i = y * self.stride_y + z * self.stride_z + x;
+                    if open {
+                        self.prop[i] |= P_SKY;
+                    } else {
+                        self.prop[i] &= !P_SKY;
+                    }
+                    if self.prop[i] & P_PASSES == 0 {
+                        open = false;
+                    }
+                }
+            }
+        }
+    }
+
+    /// A cell's seed brightness: what it emits, or the sky above it, whichever is
+    /// more.
+    fn seed_at(&self, i: usize) -> u8 {
+        let p = self.prop[i];
+        let mut seed = p & P_EMISSION;
+        if self.sky > 0 && p & P_PASSES != 0 && p & P_SKY != 0 {
+            seed = seed.max(self.sky);
+        }
+        seed
+    }
+
+    /// Flood the whole field from every seed.
+    fn flood(&mut self) {
+        self.light.fill(0);
+        let mut buckets: [Vec<u32>; 16] = Default::default();
+        let (nx, ny, nz) = (self.dim[0], self.dim[1], self.dim[2]);
+        for y in 1..ny - 1 {
+            for z in 1..nz - 1 {
+                let row = y * self.stride_y + z * self.stride_z;
+                for i in row + 1..row + nx - 1 {
+                    let seed = self.seed_at(i);
+                    if seed > 0 {
+                        self.light[i] = seed;
+                        buckets[seed as usize].push(i as u32);
+                    }
+                }
+            }
+        }
+        self.drain(buckets);
+    }
+
+    /// Drain a frontier held in per-brightness buckets, brightest first.
+    ///
+    /// Bucket order is not a tie-break: the flooded field is the pointwise
+    /// maximum over every seed of `seed − distance`, which is one value per cell
+    /// however the frontier is walked. Draining brightest-first only means each
+    /// cell is relaxed once — a cell reached at its final value can never be
+    /// improved later, because every later step is dimmer.
+    fn drain(&mut self, mut buckets: [Vec<u32>; 16]) {
+        let steps = [
+            1isize,
+            -1,
+            self.stride_y as isize,
+            -(self.stride_y as isize),
+            self.stride_z as isize,
+            -(self.stride_z as isize),
+        ];
+        // A value of 1 lights nothing (its neighbours would be 0, which they
+        // already are), so the walk stops at 2.
+        for l in (2..=15usize).rev() {
+            let cur = std::mem::take(&mut buckets[l]);
+            let nl = (l - 1) as u8;
+            for &i in &cur {
+                let i = i as usize;
+                if self.light[i] as usize != l {
+                    continue;
+                }
+                for s in steps {
+                    let j = i.wrapping_add_signed(s);
+                    if self.prop[j] & P_PASSES == 0 || self.light[j] >= nl {
+                        continue;
+                    }
+                    self.light[j] = nl;
+                    buckets[nl as usize].push(j as u32);
+                }
+            }
+        }
+    }
+
+    /// The flooded light at a world cell (0 outside the AABB, as the map form's
+    /// `unwrap_or(0)` readers already treat it).
+    fn light_at(&self, c: [i32; 3]) -> u8 {
+        self.index(c).map(|i| self.light[i]).unwrap_or(0)
+    }
+
+    /// Record that `block` was written at `c`, and re-establish the field.
+    ///
+    /// Placing a block that passes light exactly as the one it replaced did, and
+    /// emits at least as much, can only make the field brighter: no distance
+    /// changes, no column's sky changes, one seed rises. The new field is then
+    /// the old one with that seed flooded into it, and every cell it does not
+    /// reach keeps the value it had.
+    ///
+    /// A placement that fails either half of that — a `shroomlight` written over
+    /// a pane of glass darkens the room behind it — is not an increase anywhere,
+    /// so the field is built again from nothing.
+    fn set(&mut self, c: [i32; 3], block: &str) {
+        let Some(i) = self.index(c) else { return };
+        let old = self.prop[i];
+        let packed = Self::pack(block);
+        self.prop[i] = packed | (old & P_SKY);
+        if old & P_PASSES == packed & P_PASSES && packed & P_EMISSION >= old & P_EMISSION {
+            let seed = self.seed_at(i);
+            if seed > self.light[i] {
+                self.light[i] = seed;
+                let mut buckets: [Vec<u32>; 16] = Default::default();
+                buckets[seed as usize].push(i as u32);
+                self.drain(buckets);
+            }
+        } else {
+            self.compute_sky();
+            self.flood();
+        }
+    }
+
+    /// The field as the map [`LightModel::flood`] hands out: one entry per lit
+    /// cell, none for a cell the flood never reached.
+    fn clone_map(&self) -> BTreeMap<[i32; 3], u8> {
+        let mut out = BTreeMap::new();
+        let (nx, ny, nz) = (self.dim[0], self.dim[1], self.dim[2]);
+        for y in 1..ny - 1 {
+            for z in 1..nz - 1 {
+                let row = y * self.stride_y + z * self.stride_z;
+                for x in 1..nx - 1 {
+                    let l = self.light[row + x];
+                    if l > 0 {
+                        out.insert(
+                            [
+                                self.min[0] + x as i32 - 1,
+                                self.min[1] + y as i32 - 1,
+                                self.min[2] + z as i32 - 1,
+                            ],
+                            l,
+                        );
+                    }
+                }
+            }
+        }
+        out
     }
 }
 
@@ -894,11 +1140,14 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
 
     let mut model = LightModel::from_blocks(assembled.blocks.clone());
     let mut out = Relight::default();
-    // The dark set of the whole build, kept per area and reported once at the end
+    // The dark set of the whole build, kept per SITE and reported once at the end
     // (`dark_diagnostic`). Accumulated rather than raised per area because the
     // build fails on its first diagnostic: raising one per area meant every area
     // but the alphabetically-first was measured and thrown away.
-    let mut dark: BTreeMap<String, DarkSurvey> = BTreeMap::new();
+    //
+    // A site is an area *and whose cells they are*, because those are two
+    // different refusals with two different remedies — see [`DarkOwner`].
+    let mut dark: BTreeMap<DarkSite, DarkSurvey> = BTreeMap::new();
 
     for area in &plan.areas {
         let (amin, amax) = area.bounds();
@@ -961,27 +1210,42 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
         //
         // Empty for every campaign with no detail plan, so nothing moves for
         // anybody who has not opted in.
-        let frames: Vec<([i32; 3], [i32; 3])> = if area.area_id == delvewright_dsl::SITE_AREA {
+        //
+        // The frame is kept WITH the row that bound it, not as a bare box. What
+        // the author has to be told is not "some cells are dark" but *which
+        // place is dark and which piece stands in it*, because that is the only
+        // document the remedy is taken in — see [`DarkOwner`].
+        let frames: Vec<BoundFrame> = if area.area_id == delvewright_dsl::SITE_AREA {
             let mut reads = delvewright_dsl::metrics::Reads::new();
             delvewright_dsl::placed_boxes(c, &mut reads)
                 .iter()
-                .filter(|b| delvewright_dsl::is_bound(c, &b.node))
-                .map(|b| {
+                .filter_map(|b| {
+                    let row = c
+                        .detail_plan
+                        .as_ref()
+                        .and_then(|e| e.content.detail_of(&b.node))?;
                     let f = delvewright_dsl::Frame::of(b);
-                    (
-                        [f.lo[0] as i32, f.lo[1] as i32, f.lo[2] as i32],
-                        [f.hi[0] as i32, f.hi[1] as i32, f.hi[2] as i32],
-                    )
+                    Some(BoundFrame {
+                        place: b.node.0.clone(),
+                        piece: row.piece.0.clone(),
+                        lo: [f.lo[0] as i32, f.lo[1] as i32, f.lo[2] as i32],
+                        hi: [f.hi[0] as i32, f.hi[1] as i32, f.hi[2] as i32],
+                    })
                 })
                 .collect()
         } else {
             Vec::new()
         };
-        let detailed: BTreeSet<[i32; 3]> = reachable
-            .iter()
-            .copied()
-            .filter(|c| frames.iter().any(|(lo, hi)| in_bounds(*c, *lo, *hi)))
-            .collect();
+        // Per bound place, so the report can name it. A cell lies in at most one
+        // frame — boxes do not overlap (`DW0828`) — so the first match is the
+        // only one, and the union below is exactly the old `detailed` set.
+        let mut detailed_by_place: BTreeMap<&BoundFrame, BTreeSet<[i32; 3]>> = BTreeMap::new();
+        for cell in &reachable {
+            if let Some(f) = frames.iter().find(|f| in_bounds(*cell, f.lo, f.hi)) {
+                detailed_by_place.entry(f).or_default().insert(*cell);
+            }
+        }
+        let detailed: BTreeSet<[i32; 3]> = detailed_by_place.values().flatten().copied().collect();
         let reachable: BTreeSet<[i32; 3]> = reachable.difference(&detailed).copied().collect();
 
         if !reachable.is_empty() {
@@ -1005,7 +1269,12 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
                     // Measured-darkness gate over the assembled reachable walkable cells.
                     let night_vision = dsl_area.is_some_and(area_night_vision);
                     let s = survey_undeclared(&model, &reachable, sky, night_vision);
-                    dark.entry(area.area_id.clone()).or_default().absorb(&s);
+                    dark.entry(DarkSite {
+                        area: area.area_id.clone(),
+                        owner: DarkOwner::Whole,
+                    })
+                    .or_default()
+                    .absorb(&s);
                 }
             }
         }
@@ -1016,9 +1285,22 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
         // measuring before that would report it dark for want of a fixture this
         // same pass was about to place three cells away. Ordering is the whole of
         // the difference — the set and the gate are the same either way.
-        if !detailed.is_empty() {
-            let s = survey_undeclared(&model, &detailed, sky, false);
-            dark.entry(area.area_id.clone()).or_default().absorb(&s);
+        //
+        // Kept per place rather than folded into the area, because the remedy is
+        // per place: it is taken inside one piece, and an author handed the union
+        // is told a room is dark without being told which one to open.
+        for (frame, cells) in &detailed_by_place {
+            let s = survey_undeclared(&model, cells, sky, false);
+            dark.entry(DarkSite {
+                area: area.area_id.clone(),
+                owner: DarkOwner::Bound {
+                    place: frame.place.clone(),
+                    piece: frame.piece.clone(),
+                    lo: frame.lo,
+                },
+            })
+            .or_default()
+            .absorb(&s);
         }
     }
 
@@ -1050,21 +1332,30 @@ pub(crate) fn relight_area(
     out: &mut Relight,
 ) {
     let min_light = spec.min_light;
+    // The field is flooded ONCE and carried through the loop: every fixture this
+    // pass writes is a brighter source in a world whose geometry it does not
+    // change, so [`LightField::set`] extends the measurement instead of taking it
+    // again. The verdict is the same field either way — see its own doc comment
+    // for the one case that cannot be extended and floods again.
+    let mut field = LightField::new(model, sky);
+    // The reachable cells in the order the darkest-cell rule breaks its ties:
+    // ascending (y, z, x). Sorted once, so the scan below can keep the first cell
+    // that attains the minimum rather than comparing coordinates every time.
+    let mut order: Vec<[i32; 3]> = reachable.iter().copied().collect();
+    order.sort_unstable_by_key(|c| [c[1], c[2], c[0]]);
     // A bounded loop: every iteration writes one fixture cell that was previously
     // unoccupied, so it terminates (cells are finite) — but cap for safety.
     let cap = (reachable.len() + 8) * 4;
     for _ in 0..cap {
-        let light = model.flood(sky);
         // Darkest deficient reachable cell, ties by ascending (y, z, x).
         let mut worst: Option<([i32; 3], u8)> = None;
-        for &cell in reachable {
-            let l = light.get(&cell).copied().unwrap_or(0);
+        for &cell in &order {
+            let l = field.light_at(cell);
             if l >= min_light {
                 continue;
             }
             match worst {
-                Some((wc, wl))
-                    if (wl, [wc[1], wc[2], wc[0]]) <= (l, [cell[1], cell[2], cell[0]]) => {}
+                Some((_, wl)) if wl <= l => {}
                 _ => worst = Some((cell, l)),
             }
         }
@@ -1083,6 +1374,7 @@ pub(crate) fn relight_area(
         ) {
             Some(site) => {
                 model.set(site.pos, &site.block);
+                field.set(site.pos, &site.block);
                 if site.colliding {
                     out.extra_solid.insert(site.pos);
                 }
@@ -1292,73 +1584,83 @@ const DARK_AREAS_LISTED: usize = 8;
 /// See [`DARK_AREAS_LISTED`].
 const DARK_REGIONS_LISTED: usize = 4;
 
-/// Build the one `DW0210` diagnostic for a whole build from the per-area surveys,
-/// or `None` when nothing measured dark.
+/// A bound place's frame, carried with the row that bound it.
 ///
-/// **One diagnostic, not one per area.** A build fails on its *first* diagnostic
-/// (`emit::BuildFailure` carries one code and one message, as every other check in
-/// this compiler does), so a per-area diagnostic per dark area meant the sort
-/// picked the alphabetically-first area's message and the rest were never printed
-/// at all. The object this gate measures is the campaign's dark set; the report
-/// now says so, and nothing about the fail-fast build channel had to move.
+/// The box alone is enough to *subtract* the frame from the fixture pass, which
+/// is all the derivation ever needed; it is not enough to *report* one, because
+/// the remedy for a dark bound place is taken in the piece and the author has to
+/// be told which piece. Ordered so the report's grouping is total and
+/// deterministic (ADR-0006).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct BoundFrame {
+    /// The layout-graph node the `details[]` row binds.
+    place: String,
+    /// The prefab standing in it.
+    piece: String,
+    /// Lower corner of the frame, in world cells — the piece's own origin, so a
+    /// world cell can be stated in the coordinates the author edits in.
+    lo: [i32; 3],
+    /// Upper corner of the frame, in world cells.
+    hi: [i32; 3],
+}
+
+/// **Whose cells a dark measurement is over** — which is what decides the remedy,
+/// and therefore what the refusal may prescribe.
 ///
-/// **The remedy it prescribes is the one this author can reach.** `placement` is
-/// the campaign's single placement authority, asked once in [`relight_over`] —
-/// one campaign, one authority, so it belongs to the whole-build report exactly
-/// as the report itself does, rather than being asked again per area.
-fn dark_diagnostic(
-    areas: &BTreeMap<String, DarkSurvey>,
-    nav: &World,
-    sky: u8,
-    placement: delvewright_dsl::Placement,
-) -> Option<LightDiag> {
-    let mut dark: Vec<(&String, &DarkSurvey)> =
-        areas.iter().filter(|(_, s)| !s.dark.is_empty()).collect();
-    if dark.is_empty() {
-        return None;
-    }
-    // Worst first: the area with the most dark cells is the one whose remedy is a
-    // different act. Ties by area id, which is unique, so the order is total.
-    dark.sort_by_key(|(id, s)| (std::cmp::Reverse(s.dark.len()), (*id).clone()));
+/// The two halves of `DW0210` are not one rule with two wordings. They are two
+/// different facts about the same world:
+///
+/// * [`Self::Whole`] — cells the derivation wrote and no `lighting` declaration
+///   covers. The remedy is to declare one, or to brighten the scene.
+/// * [`Self::Bound`] — cells inside a frame a `detail-plan` row bound. The
+///   fixture pass does not enter a bound frame by design (spec-0050 §3: *a bound
+///   place lights itself*), so declaring `lighting` — or raising one already
+///   declared — changes nothing here. **The remedy is in the piece.**
+///
+/// Folding both into one per-area survey is how the refusal came to prescribe an
+/// act its own reader had already taken: a plan carrying `lighting` and one dark
+/// bound place was told to declare `lighting`. `CLAUDE.md`: *a gate that names a
+/// remedy owes a check that the remedy is reachable.*
+///
+/// `Whole` sorts before `Bound` so the report reads outward-in, and so a campaign
+/// with no detail plan produces exactly the message it produced before.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum DarkOwner {
+    /// The whole's own derived interior.
+    Whole,
+    /// A place bound by a `detail-plan` row.
+    Bound {
+        /// The layout-graph node.
+        place: String,
+        /// The prefab standing in it.
+        piece: String,
+        /// The frame's lower corner, for stating a world cell in piece-local
+        /// coordinates.
+        lo: [i32; 3],
+    },
+}
 
-    let total: usize = dark.iter().map(|(_, s)| s.dark.len()).sum();
-    let examined: usize = dark.iter().map(|(_, s)| s.examined).sum();
-    let (wcell, wl) = dark
-        .iter()
-        .filter_map(|(_, s)| s.darkest())
-        .min_by_key(|&(cell, l)| (l, cell))
-        .expect("a non-empty dark set has a darkest cell");
+/// One place a dark measurement was taken over: the area, and whose cells they
+/// were.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct DarkSite {
+    /// The area id the cells lie in.
+    area: String,
+    /// Whose cells they are.
+    owner: DarkOwner,
+}
 
-    // **A refusal offers only the surfaces this campaign HAS.** `mitigation`
-    // lives on an `areas[]` entry, which a site-plan campaign is required to
-    // leave empty (`DW0839`), so on a derived map the third way does not exist
-    // and naming it sends the author at a document another gate refuses. The
-    // count moves with the list rather than being written down beside it, so a
-    // surface added or removed later cannot leave the sentence claiming a way
-    // that is not offered.
-    let (declared, ways, mitigation) = if placement.has_area_mitigation() {
-        (
-            " and no `mitigation`",
-            "three ways",
-            ", or declare `world.areas[].mitigation: \"night-vision\"` on it (the compiler then \
-             emits a clocked `effect give … night_vision` over its bounds)",
-        )
-    } else {
-        ("", "two ways", "")
-    };
-
-    let n = dark.len();
-    let mut m = format!(
-        "{n} area(s) measure dark: {total} of the {examined} reachable walkable cell(s) measured \
-         in them are below light {DARK_THRESHOLD} under the darkest reachable (time, weather) sky \
-         (effective {sky}), with no `lighting`{declared} declaration. The darkest \
-         reachable walkable cell is at {wcell:?}, measured at light {wl} \
-         (< {DARK_THRESHOLD}).\n"
-    );
-    for (id, s) in dark.iter().take(DARK_AREAS_LISTED) {
+/// Render one section's dark places — the per-place lines and their regions,
+/// with both caps stated whenever they bite.
+///
+/// One renderer for both sections rather than two: the listing is the same
+/// object either way (a place, its counts, its contiguous regions), and only the
+/// label above it and the remedy below it differ.
+fn list_dark_places(rows: &[(String, &DarkSurvey)], nav: &World, kind: &str, m: &mut String) {
+    for (label, s) in rows.iter().take(DARK_AREAS_LISTED) {
         let regions = s.regions(nav);
         m.push_str(&format!(
-            "  area `{id}`: {d} of {e} measured cell(s) dark, in {r} contiguous region(s):\n",
+            "  {label}: {d} of {e} measured cell(s) dark, in {r} contiguous region(s):\n",
             d = s.dark.len(),
             e = s.examined,
             r = regions.len(),
@@ -1385,26 +1687,169 @@ fn dark_diagnostic(
             ));
         }
     }
-    if n > DARK_AREAS_LISTED {
-        let rest: usize = dark
+    if rows.len() > DARK_AREAS_LISTED {
+        let rest: usize = rows
             .iter()
             .skip(DARK_AREAS_LISTED)
             .map(|(_, s)| s.dark.len())
             .sum();
         m.push_str(&format!(
-            "  … and {k} further dark area(s) covering {rest} cell(s), not listed\n",
-            k = n - DARK_AREAS_LISTED,
+            "  … and {k} further dark {kind} covering {rest} cell(s), not listed\n",
+            k = rows.len() - DARK_AREAS_LISTED,
         ));
     }
-    m.push_str(&format!(
-        "Mitigate each area one of {ways}: declare {} (a relight \
-         `fixture` + `min_light`) for it, brighten the scene (`world.time`/`weather`)\
-         {mitigation} — or re-arrange the room, or raise the \
-         density of what is already lit in it, and measure again. A renamed potion in a class kit \
-         is NOT a mitigation — it grants nothing. Do NOT lower `DARK_THRESHOLD` or trim the \
-         reachable set — the darkness is real (spec-0010 DW0210)",
-        placement.lighting_field()
-    ));
+}
+
+/// Totals for one section: dark cells, cells examined, and the darkest cell.
+fn dark_totals(rows: &[(String, &DarkSurvey)]) -> (usize, usize, [i32; 3], u8) {
+    let total: usize = rows.iter().map(|(_, s)| s.dark.len()).sum();
+    let examined: usize = rows.iter().map(|(_, s)| s.examined).sum();
+    let (cell, l) = rows
+        .iter()
+        .filter_map(|(_, s)| s.darkest())
+        .min_by_key(|&(cell, l)| (l, cell))
+        .expect("a non-empty dark section has a darkest cell");
+    (total, examined, cell, l)
+}
+
+/// Build the one `DW0210` diagnostic for a whole build from the per-site surveys,
+/// or `None` when nothing measured dark.
+///
+/// **One diagnostic, not one per area.** A build fails on its *first* diagnostic
+/// (`emit::BuildFailure` carries one code and one message, as every other check in
+/// this compiler does), so a per-area diagnostic per dark area meant the sort
+/// picked the alphabetically-first area's message and the rest were never printed
+/// at all. The object this gate measures is the campaign's dark set; the report
+/// now says so, and nothing about the fail-fast build channel had to move.
+///
+/// **The remedy it prescribes is the one this author can reach.** `placement` is
+/// the campaign's single placement authority, asked once in [`relight_over`] —
+/// one campaign, one authority, so it belongs to the whole-build report exactly
+/// as the report itself does, rather than being asked again per area. The second
+/// half of the same rule is [`DarkOwner`]: a dark bound place is a different fact
+/// with a different remedy, and it gets its own paragraph rather than being
+/// folded into a sentence that would then be false about it.
+///
+/// A build whose dark set holds no bound place produces byte-for-byte the message
+/// it produced before that split existed — which is every campaign with no detail
+/// plan.
+fn dark_diagnostic(
+    sites: &BTreeMap<DarkSite, DarkSurvey>,
+    nav: &World,
+    sky: u8,
+    placement: delvewright_dsl::Placement,
+) -> Option<LightDiag> {
+    // Worst first: the place with the most dark cells is the one whose remedy is
+    // a different act. Ties by the label, which is unique, so the order is total.
+    fn sorted(mut v: Vec<(String, &DarkSurvey)>) -> Vec<(String, &DarkSurvey)> {
+        v.sort_by_key(|(label, s)| (std::cmp::Reverse(s.dark.len()), label.clone()));
+        v
+    }
+    let whole: Vec<(String, &DarkSurvey)> = sorted(
+        sites
+            .iter()
+            .filter(|(k, s)| !s.dark.is_empty() && k.owner == DarkOwner::Whole)
+            .map(|(k, s)| (format!("area `{}`", k.area), s))
+            .collect(),
+    );
+    let bound: Vec<(String, &DarkSurvey)> = sorted(
+        sites
+            .iter()
+            .filter_map(|(k, s)| {
+                if s.dark.is_empty() {
+                    return None;
+                }
+                let DarkOwner::Bound { place, piece, lo } = &k.owner else {
+                    return None;
+                };
+                // The darkest cell twice: once in world coordinates, which is
+                // where the build measured it, and once in the piece's own, which
+                // is where the author has to go and put a light.
+                let (dc, _) = s.darkest()?;
+                let local = [dc[0] - lo[0], dc[1] - lo[1], dc[2] - lo[2]];
+                Some((
+                    format!(
+                        "place `{place}` in area `{}`, bound to `{piece}` (frame at {lo:?}, so its \
+                         darkest cell {dc:?} is {local:?} in the piece's own coordinates)",
+                        k.area
+                    ),
+                    s,
+                ))
+            })
+            .collect(),
+    );
+    if whole.is_empty() && bound.is_empty() {
+        return None;
+    }
+
+    let mut m = String::new();
+
+    if !whole.is_empty() {
+        // **A refusal offers only the surfaces this campaign HAS.** `mitigation`
+        // lives on an `areas[]` entry, which a site-plan campaign is required to
+        // leave empty (`DW0839`), so on a derived map the third way does not exist
+        // and naming it sends the author at a document another gate refuses. The
+        // count moves with the list rather than being written down beside it, so a
+        // surface added or removed later cannot leave the sentence claiming a way
+        // that is not offered.
+        let (declared, ways, mitigation) = if placement.has_area_mitigation() {
+            (
+                " and no `mitigation`",
+                "three ways",
+                ", or declare `world.areas[].mitigation: \"night-vision\"` on it (the compiler \
+                 then emits a clocked `effect give … night_vision` over its bounds)",
+            )
+        } else {
+            ("", "two ways", "")
+        };
+        let n = whole.len();
+        let (total, examined, wcell, wl) = dark_totals(&whole);
+        m.push_str(&format!(
+            "{n} area(s) measure dark: {total} of the {examined} reachable walkable cell(s) \
+             measured in them are below light {DARK_THRESHOLD} under the darkest reachable (time, \
+             weather) sky (effective {sky}), with no `lighting`{declared} declaration. The darkest \
+             reachable walkable cell is at {wcell:?}, measured at light {wl} \
+             (< {DARK_THRESHOLD}).\n"
+        ));
+        list_dark_places(&whole, nav, "area(s)", &mut m);
+        m.push_str(&format!(
+            "Mitigate each area one of {ways}: declare {} (a relight \
+             `fixture` + `min_light`) for it, brighten the scene (`world.time`/`weather`)\
+             {mitigation} — or re-arrange the room, or raise the \
+             density of what is already lit in it, and measure again. A renamed potion in a class \
+             kit is NOT a mitigation — it grants nothing. Do NOT lower `DARK_THRESHOLD` or trim \
+             the reachable set — the darkness is real (spec-0010 DW0210)",
+            placement.lighting_field()
+        ));
+    }
+
+    if !bound.is_empty() {
+        if !m.is_empty() {
+            m.push('\n');
+        }
+        let n = bound.len();
+        let (total, examined, wcell, wl) = dark_totals(&bound);
+        m.push_str(&format!(
+            "{n} bound place(s) measure dark: {total} of the {examined} reachable walkable cell(s) \
+             measured in them are below light {DARK_THRESHOLD} under the darkest reachable (time, \
+             weather) sky (effective {sky}). The darkest reachable walkable cell in them is at \
+             {wcell:?}, measured at light {wl} (< {DARK_THRESHOLD}).\n"
+        ));
+        list_dark_places(&bound, nav, "bound place(s)", &mut m);
+        m.push_str(&format!(
+            "Light each of these places INSIDE THE PIECE BOUND TO IT. A bound place lights itself \
+             (spec-0050 §3): the fixture pass writes into the derived interiors only and never \
+             inside a bound frame, so declaring {} — or raising a `min_light` already declared \
+             there — moves nothing in the cells listed above. Put emitters in the piece at the \
+             cells named (the piece-local coordinates are the ones its program and its `.nbt` are \
+             written in), re-export it and build again; or bind a different piece to the place, or \
+             leave the place undetailed so the whole lights it. Light does cross a frame boundary, \
+             so brightening what stands OUTSIDE the frame is a real remedy too. Do NOT lower \
+             `DARK_THRESHOLD` or trim the reachable set — the darkness is real (spec-0050 §3, \
+             spec-0010 DW0210)",
+            placement.lighting_field()
+        ));
+    }
     Some(LightDiag {
         code: DW_DARK_UNMITIGATED,
         message: m,
@@ -1663,12 +2108,17 @@ mod tests {
         placement: delvewright_dsl::Placement,
     ) -> Option<LightDiag> {
         let s = survey_undeclared(model, reachable, sky, night_vision);
-        dark_diagnostic(
-            &BTreeMap::from([(area_id.to_string(), s)]),
-            nav,
-            sky,
-            placement,
-        )
+        dark_diagnostic(&BTreeMap::from([(whole(area_id), s)]), nav, sky, placement)
+    }
+
+    /// A **whole-owned** dark site. Every fixture in this module is a plain
+    /// area with no detail plan behind it, which is the case the report must
+    /// still produce byte for byte.
+    fn whole(area: &str) -> DarkSite {
+        DarkSite {
+            area: area.to_string(),
+            owner: DarkOwner::Whole,
+        }
     }
 
     fn min_reachable_light(model: &LightModel, reachable: &BTreeSet<[i32; 3]>, sky: u8) -> u8 {
@@ -1807,6 +2257,198 @@ mod tests {
         assert_eq!(light.get(&[2, 1, 2]).copied().unwrap_or(0), 15);
         // One step away through air = 14.
         assert_eq!(light.get(&[2, 2, 2]).copied().unwrap_or(0), 14);
+    }
+
+    /// The light flood written the way it reads in the spec: one map, one queue,
+    /// every seed pushed and every neighbour relaxed until nothing moves.
+    ///
+    /// It exists so the dense field has something to be WRONG against. The field
+    /// packs a cell's opacity, sky exposure and emission into a byte, indexes by
+    /// arithmetic and drains its frontier brightest-first; none of that is
+    /// visible here, so the two share no premise beyond the rule the spec states.
+    fn reference_flood(model: &LightModel, effective_sky: u8) -> BTreeMap<[i32; 3], u8> {
+        let in_aabb = |c: [i32; 3]| in_bounds(c, model.min, model.max);
+        let mut light: BTreeMap<[i32; 3], u8> = BTreeMap::new();
+        let mut queue: VecDeque<([i32; 3], u8)> = VecDeque::new();
+        for y in model.min[1]..=model.max[1] {
+            for z in model.min[2]..=model.max[2] {
+                for x in model.min[0]..=model.max[0] {
+                    let c = [x, y, z];
+                    let mut seed = emission(model.block_at(c));
+                    if effective_sky > 0 && model.passes(c) && model.sky_open(c) {
+                        seed = seed.max(effective_sky);
+                    }
+                    if seed > 0 {
+                        let e = light.entry(c).or_insert(0);
+                        if seed > *e {
+                            *e = seed;
+                            queue.push_back((c, seed));
+                        }
+                    }
+                }
+            }
+        }
+        const DIRS: [[i32; 3]; 6] = [
+            [1, 0, 0],
+            [-1, 0, 0],
+            [0, 1, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+            [0, 0, -1],
+        ];
+        while let Some((c, l)) = queue.pop_front() {
+            if light.get(&c).copied().unwrap_or(0) > l || l <= 1 {
+                continue;
+            }
+            for d in DIRS {
+                let n = [c[0] + d[0], c[1] + d[1], c[2] + d[2]];
+                if !in_aabb(n) || !model.passes(n) {
+                    continue;
+                }
+                let nl = l - 1;
+                let e = light.entry(n).or_insert(0);
+                if nl > *e {
+                    *e = nl;
+                    queue.push_back((n, nl));
+                }
+            }
+        }
+        light
+    }
+
+    /// A room with a glass roof, a glowstone in one corner, a lantern hung in
+    /// another and a chimney of glass reaching the sky — enough shapes that
+    /// opacity, emission and sky exposure all have something to say.
+    fn mixed_room() -> BTreeMap<[i32; 3], String> {
+        let mut m = room(9, 6, 9, false);
+        for x in 3..=5 {
+            for z in 3..=5 {
+                m.insert([x, 5, z], "minecraft:glass".to_string());
+            }
+        }
+        m.insert([1, 1, 1], "minecraft:glowstone".to_string());
+        m.insert([7, 4, 7], "minecraft:lantern[hanging=true]".to_string());
+        m.insert([2, 2, 6], "minecraft:oak_fence".to_string());
+        m.insert([6, 3, 2], "minecraft:iron_bars".to_string());
+        m
+    }
+
+    /// A sealed corridor twenty cells long with one emitter at the end of it, so
+    /// the answer holds the WHOLE falloff: every value from the source down to 1,
+    /// and then the dark beyond where it runs out.
+    ///
+    /// `mixed_room` alone cannot see the last step. Everything in it is within
+    /// reach of a source, so a flood that stopped one level early — never letting
+    /// a cell at 2 light its neighbour to 1 — measured the room exactly right and
+    /// the comparison below stayed green. A test that cannot fail on the dimmest
+    /// step is not testing the falloff.
+    fn falloff_corridor() -> BTreeMap<[i32; 3], String> {
+        let mut m = room(22, 4, 3, false);
+        m.insert([1, 1, 1], "minecraft:glowstone".to_string());
+        m
+    }
+
+    #[test]
+    fn the_dense_field_measures_what_the_spec_flood_measures() {
+        for (what, blocks) in [
+            ("mixed room", mixed_room()),
+            ("falloff", falloff_corridor()),
+        ] {
+            let model = LightModel::from_blocks(blocks);
+            for sky in [0u8, 4, 7, 12, 15] {
+                assert_eq!(
+                    model.flood(sky),
+                    reference_flood(&model, sky),
+                    "the dense field and the spec flood disagree over the {what} at sky {sky}"
+                );
+            }
+        }
+        // The falloff really does reach the dimmest step, or the comparison above
+        // is green about a shape it never met.
+        let dim = LightModel::from_blocks(falloff_corridor()).flood(0);
+        let mut seen = [false; 16];
+        for &l in dim.values() {
+            seen[l as usize] = true;
+        }
+        for (l, reached) in seen.iter().enumerate().skip(1) {
+            assert!(reached, "no cell of the falloff corridor measures {l}");
+        }
+    }
+
+    #[test]
+    fn a_placed_fixture_extends_the_field_to_what_a_reflood_would_say() {
+        // Every block the fixture registry writes, at cells the pass really uses:
+        // air cells whose passability the fixture does not change.
+        let writes: [([i32; 3], &str); 4] = [
+            ([2, 1, 2], "minecraft:torch"),
+            ([4, 2, 6], "minecraft:wall_torch[facing=east]"),
+            ([6, 4, 4], "minecraft:lantern[hanging=true]"),
+            ([3, 1, 7], "minecraft:campfire[lit=true]"),
+        ];
+        for sky in [0u8, 4, 15] {
+            let mut model = LightModel::from_blocks(mixed_room());
+            let mut field = LightField::new(&model, sky);
+            for (c, block) in writes {
+                model.set(c, block);
+                field.set(c, block);
+                let fresh = LightField::new(&model, sky);
+                assert_eq!(
+                    field.light, fresh.light,
+                    "extending the field after writing {block} at {c:?} (sky {sky}) \
+                     is not what a reflood measures"
+                );
+            }
+            // …and the whole run agrees with the independent flood as well.
+            assert_eq!(field.clone_map(), reference_flood(&model, sky));
+        }
+    }
+
+    #[test]
+    fn a_write_that_darkens_the_room_floods_the_field_again() {
+        // The extension is only sound while the write cannot make anything
+        // dimmer. Blocking a glass roof with stone can: the registry's own
+        // fixtures cannot (each emits 14 or 15, which is at least what any cell
+        // could have been conducting), so this case is constructed rather than
+        // reached from `relight_area` — what it proves is that the field does not
+        // simply keep the brighter answer it already had.
+        let sky = 15;
+        let mut model = LightModel::from_blocks(mixed_room());
+        let mut field = LightField::new(&model, sky);
+        let under_roof = [4, 4, 4];
+        let before = field.light_at(under_roof);
+        assert!(before > 0, "the glass roof lights the cell under it");
+        for x in 3..=5 {
+            for z in 3..=5 {
+                let c = [x, 5, z];
+                model.set(c, "minecraft:stone");
+                field.set(c, "minecraft:stone");
+            }
+        }
+        assert!(
+            field.light_at(under_roof) < before,
+            "roofing the room over left the cell under it as bright as before"
+        );
+        assert_eq!(field.clone_map(), reference_flood(&model, sky));
+    }
+
+    #[test]
+    fn a_shroomlight_written_over_glass_agrees_with_a_reflood() {
+        // The one production write that changes a cell's opacity: `shroomlight`
+        // embeds by replacing a nav-solid block, and a nav-solid block is not
+        // necessarily an opaque one.
+        for sky in [0u8, 4, 15] {
+            let mut model = LightModel::from_blocks(mixed_room());
+            let mut field = LightField::new(&model, sky);
+            for c in [[4, 5, 4], [2, 2, 6], [6, 3, 2]] {
+                model.set(c, "minecraft:shroomlight");
+                field.set(c, "minecraft:shroomlight");
+            }
+            assert_eq!(
+                field.clone_map(),
+                reference_flood(&model, sky),
+                "a shroomlight over a light-passing solid (sky {sky})"
+            );
+        }
     }
 
     #[test]
@@ -2580,10 +3222,7 @@ mod tests {
             "and so is the small one"
         );
 
-        let areas = BTreeMap::from([
-            ("area/annex".to_string(), small),
-            ("area/hall".to_string(), big),
-        ]);
+        let areas = BTreeMap::from([(whole("area/annex"), small), (whole("area/hall"), big)]);
         let diag = dark_diagnostic(&areas, &nav, 0, delvewright_dsl::Placement::Prefabs)
             .expect("two dark rooms must fail the gate");
         assert_eq!(diag.code, DW_DARK_UNMITIGATED);
@@ -2652,7 +3291,7 @@ mod tests {
         }
 
         let diag = dark_diagnostic(
-            &BTreeMap::from([("area/gallery".to_string(), s.clone())]),
+            &BTreeMap::from([(whole("area/gallery"), s.clone())]),
             &nav,
             0,
             delvewright_dsl::Placement::Prefabs,
@@ -2696,7 +3335,7 @@ mod tests {
         let (cell, level) = s.darkest().expect("one dark cell has a darkest");
 
         let diag = dark_diagnostic(
-            &BTreeMap::from([("area/hall".to_string(), s)]),
+            &BTreeMap::from([(whole("area/hall"), s)]),
             &nav,
             0,
             delvewright_dsl::Placement::Prefabs,
@@ -2739,7 +3378,7 @@ mod tests {
         assert!(s.dark.is_empty(), "fixture: the room is lit");
         assert!(
             dark_diagnostic(
-                &BTreeMap::from([("area/hall".to_string(), s)]),
+                &BTreeMap::from([(whole("area/hall"), s)]),
                 &nav,
                 0,
                 delvewright_dsl::Placement::Prefabs
@@ -2770,7 +3409,7 @@ mod tests {
         );
 
         let diag = dark_diagnostic(
-            &BTreeMap::from([("area/undercroft".to_string(), s)]),
+            &BTreeMap::from([(whole("area/undercroft"), s)]),
             &nav,
             0,
             delvewright_dsl::Placement::Prefabs,
@@ -2811,7 +3450,7 @@ mod tests {
             let cells = nav.reachable_walkable(&[[20 * i as i32 + 2, 1, 2]]);
             assert!(!cells.is_empty(), "fixture: room {i} must be walkable");
             areas.insert(
-                format!("area/cell-{i:02}"),
+                whole(&format!("area/cell-{i:02}")),
                 survey_undeclared(&model, &cells, 0, false),
             );
         }
@@ -2831,7 +3470,7 @@ mod tests {
         // The report's own ordering, re-derived here rather than read off it.
         let mut order: Vec<(usize, String)> = areas
             .iter()
-            .map(|(id, s)| (s.dark.len(), id.clone()))
+            .map(|(id, s)| (s.dark.len(), id.area.clone()))
             .collect();
         order.sort_by_key(|(c, id)| (std::cmp::Reverse(*c), id.clone()));
         let dropped: usize = order.iter().skip(DARK_AREAS_LISTED).map(|(c, _)| c).sum();
@@ -2857,7 +3496,7 @@ mod tests {
             (
                 s.regions(&nav),
                 dark_diagnostic(
-                    &BTreeMap::from([("area/gallery".to_string(), s)]),
+                    &BTreeMap::from([(whole("area/gallery"), s)]),
                     &nav,
                     0,
                     delvewright_dsl::Placement::Prefabs,

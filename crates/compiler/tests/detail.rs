@@ -683,8 +683,13 @@ fn dw0841_refuses_a_record_whose_verdict_is_findings() {
 }
 
 /// **Both entry points, demonstrated.** The handing refuses on the same rule and
-/// the same code — and it refuses a campaign that has no `detail-plan` yet,
-/// which is exactly the campaign asking for its first allocation.
+/// the same code, and it asks the question of a campaign that has no
+/// `detail-plan` yet — which is exactly the campaign asking for its first
+/// allocation, and the one `check_walk` lets through.
+///
+/// The absent detail plan is the STATE the record is demanded in, never itself a
+/// refusal: the third assertion is the one that says so, and it is the half a
+/// reader of the prose has twice taken the other way round.
 #[test]
 fn dw0841_guards_the_handing_too() {
     let c = campaign_at(&blockout_dir());
@@ -695,6 +700,12 @@ fn dw0841_guards_the_handing_too() {
         "and the campaign it refused has no detail plan at all — the gate fires \
          BEFORE the work it guards, not after"
     );
+    assert!(
+        detail::check_walk(&c, None).0.is_empty(),
+        "which is exactly what the OTHER door does not do: with no detail plan \
+         there is nothing for validation to gate, so the two doors are not one \
+         function called twice"
+    );
 
     let tmp = tempdir("dw0841-handing");
     let dd = detailed(&tmp, &["node/exit"]);
@@ -703,6 +714,37 @@ fn dw0841_guards_the_handing_too() {
     assert!(
         detail::allocation_walk_gate(&c, rec.as_deref()).is_none(),
         "and a fresh passed record opens it"
+    );
+}
+
+/// **A campaign with a passed, fresh record and NO detail plan is handed its
+/// allocation** — the state `tools.md` described as a refusal until it was
+/// measured, and the state the whole verb exists for: an author asks for a frame
+/// so they can build the piece that a `details[]` row will later bind.
+///
+/// Over the real binary, because the claim the record made was about the command
+/// a creator types, and `allocation_walk_gate` returning `None` is not the same
+/// fact as `delvec allocation` exiting zero with a frame on stdout.
+#[test]
+fn the_first_allocation_is_handed_out_before_any_detail_plan_exists() {
+    let tmp = tempdir("first-allocation");
+    let campaign = tmp.join("campaign");
+    common::copy_dir_all(&blockout_dir(), &campaign);
+    rerecord_walk(&campaign);
+    assert!(
+        !campaign.join("detail-plan.json").exists(),
+        "the state under test is a campaign with no detail plan"
+    );
+
+    let out = delvec(&["allocation", campaign.to_str().unwrap(), "node/exit"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{err}");
+    let a: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .expect("stdout carries the allocation and nothing else");
+    assert_eq!(a["place"], "node/exit");
+    assert!(
+        a["extent"].is_array() && a["world_min"].is_array(),
+        "and it is the frame that was handed: {a}"
     );
 }
 
@@ -786,6 +828,84 @@ fn dw0842_refuses_an_anchor_key_the_place_does_not_owe() {
     });
     let e = check_and_expect(&d, "DW0842");
     assert!(e.contains("is not a name"), "{e}");
+}
+
+/// **One cause, one line — the primary-absent side.** With a map to be wrong
+/// about, one bad `place` is one row's mistake: it is refused on its own, at its
+/// own path, and the rows either side of it are not.
+#[test]
+fn dw0842_refuses_one_bad_row_per_row_while_the_map_exists() {
+    let tmp = tempdir("dw0842-one-row");
+    let places = every_place();
+    let refs: Vec<&str> = places.iter().map(String::as_str).collect();
+    let d = detailed(&tmp, &refs);
+    patch_detail_plan(&d, |v| {
+        v["content"]["details"][1]["place"] = serde_json::json!("node/nowhere");
+    });
+    let (diags, binding) = check_at(&d);
+    let hit: Vec<_> = diags
+        .iter()
+        .filter(|x| x.code == "DW0842" && x.severity == Severity::Error)
+        .collect();
+    assert_eq!(
+        hit.len(),
+        1,
+        "one wrong row is one refusal: {:?}",
+        codes(&diags)
+    );
+    assert_eq!(hit[0].path, "/content/details[1]/place");
+    assert!(
+        hit[0].message.contains("node/nowhere"),
+        "{}",
+        hit[0].message
+    );
+    assert_eq!(
+        binding.bound,
+        places.len() - 1,
+        "and every other row still bound"
+    );
+}
+
+/// **One cause, one line — the primary-present side.** A site plan that resolves
+/// ZERO boxes makes every `details[]` row miss by construction, so the per-row
+/// refusal says one sentence once per row and none of the copies is the finding.
+/// Measured on a 24-place campaign before this fold: `DW0824` (correct, one
+/// line) followed by 24 copies of `DW0842`. The count, every row and the primary
+/// it is downstream of are stated once — and the run still stops.
+#[test]
+fn dw0842_states_a_zero_box_plan_once_and_names_every_row() {
+    let tmp = tempdir("dw0842-zero-boxes");
+    let places = every_place();
+    let refs: Vec<&str> = places.iter().map(String::as_str).collect();
+    let d = detailed(&tmp, &refs);
+    std::fs::remove_file(d.campaign.join("layout-graph.json")).unwrap();
+    let (diags, binding) = check_at(&d);
+    let hit: Vec<_> = diags
+        .iter()
+        .filter(|x| x.code == "DW0842" && x.severity == Severity::Error)
+        .collect();
+    assert_eq!(
+        hit.len(),
+        1,
+        "one line for one map, not one per row: {:?}",
+        codes(&diags)
+    );
+    assert_eq!(hit[0].path, "/content/details");
+    for p in &places {
+        assert!(
+            hit[0].message.contains(p.as_str()),
+            "a fold names every row it stands for; `{p}` is missing from: {}",
+            hit[0].message
+        );
+    }
+    assert!(
+        hit[0].message.contains("DW0824"),
+        "and it names the primary it defers to: {}",
+        hit[0].message
+    );
+    assert_eq!(binding.rows, places.len(), "the row count is still stated");
+    assert_eq!(binding.boxes, 0, "against a zero denominator");
+    assert_eq!(binding.bound, 0);
 }
 
 /// The limiting case, named rather than inferred.
@@ -937,6 +1057,65 @@ fn dw0844_refuses_a_face_answering_no_seam() {
     });
     let e = check_and_expect(&d, "DW0844");
     assert!(e.contains("DISCOVERED rather than designed"), "{e}");
+}
+
+/// **One cause, one line — the DEFER shape** (`dsl::diagnostic`).
+///
+/// A `details[]` row is judged against a FRAME and a SEAM SET the site plan
+/// computed, so a plan whose own checks have already refused them makes a
+/// stage-6 line a true measurement against a number the map does not keep — and
+/// the primary is in ANOTHER document, where the reader cannot see the relation.
+/// Measured on a 24-place campaign: widening one box by one block printed
+/// `DW0825` and `DW0828` in the site plan and then `DW0843` and `DW0844` in the
+/// detail plan, five codes over three documents, with nothing saying which was
+/// the edit.
+///
+/// The stage-6 lines keep their own refusals — each names a real mismatch, and
+/// suppressing them is how fixing one thing produces a fresh crop nobody was
+/// shown — and gain a clause naming what they stand downstream of.
+#[test]
+fn a_stage_six_verdict_names_the_site_plan_refusal_it_stands_downstream_of() {
+    let tmp = tempdir("upstream-refused");
+    let d = detailed(&tmp, &["node/exit"]);
+    // One block wider on x: off the kit grid (`DW0825`), and the frame the piece
+    // is measured against moves with it.
+    common::patch_file(&d.campaign.join("site-plan.json"), |v| {
+        let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+        let b = boxes
+            .iter_mut()
+            .find(|b| b["node"] == "node/exit")
+            .expect("the fixture places `node/exit`");
+        let x = b["extent"][0].as_i64().unwrap();
+        b["extent"][0] = serde_json::json!(x + 1);
+    });
+    let e = check_and_expect(&d, "DW0843");
+    assert!(
+        e.contains("is not the shape of the box"),
+        "the verdict still refuses on its own terms: {e}"
+    );
+    assert!(
+        e.contains("downstream of a site-plan refusal") && e.contains("DW0825"),
+        "and says what it is downstream of: {e}"
+    );
+}
+
+/// The other side of the same rule: with a plan the plan's own checks accept,
+/// the clause is ABSENT. A deferral that fired on a settled plan would be
+/// telling every author their measurement is provisional.
+#[test]
+fn a_stage_six_verdict_carries_no_deferral_when_the_plan_is_settled() {
+    let tmp = tempdir("upstream-settled");
+    let d = detailed(&tmp, &["node/exit"]);
+    patch_piece(&d, "exit", |v| {
+        let n = v["structure"]["size"][0].as_i64().unwrap();
+        v["structure"]["size"][0] = serde_json::json!(n + 1);
+    });
+    let e = check_and_expect(&d, "DW0843");
+    assert!(e.contains("1 too many"), "the ordinary refusal: {e}");
+    assert!(
+        !e.contains("downstream of a site-plan refusal"),
+        "and nothing upstream to defer to: {e}"
+    );
 }
 
 #[test]
@@ -1753,7 +1932,103 @@ fn the_key_is_each_document_and_the_key_is_closed() {
 #[test]
 fn the_whole_does_not_light_a_bound_place_and_a_dark_one_is_a_finding() {
     let tmp = tempdir("relight");
-    let d = detailed(&tmp, &["node/exit"]);
+    let (out, s) = unlit_bound_place(&tmp, "node/exit");
+    assert_ne!(out.status.code(), Some(0), "a dark place is a finding: {s}");
+    assert!(
+        s.contains("DW0210"),
+        "and it is the darkness gate that says so, not a silence: {s}"
+    );
+    assert!(
+        s.contains("area/site"),
+        "over the site area the piece stands in: {s}"
+    );
+}
+
+/// **The refusal names a remedy this author can take** — the second half of the
+/// rule `delvewright_dsl::placement` opened, one layer in.
+///
+/// `CLAUDE.md`: *a gate that names a remedy owes a check that the remedy is
+/// reachable*. The blockout fixture's plan **declares** `lighting`, and a bound
+/// frame is exactly where that declaration does not reach (spec-0050 §3), so the
+/// old message told an author who had already declared it to declare it — and
+/// said the campaign had no `lighting` declaration while the document on disk
+/// carried one. Both halves are asserted here: what the refusal must now say,
+/// and the sentence it must no longer print.
+///
+/// The negative is the load-bearing half. A message can name the piece and still
+/// carry the unreachable prescription three lines further down, and a test that
+/// only greps for the new words would pass over exactly that.
+#[test]
+fn a_dark_bound_place_is_told_what_it_owes_and_not_to_declare_the_plans_lighting() {
+    let tmp = tempdir("relight-remedy");
+    // The precondition the whole finding rests on: the plan the fixture ships
+    // ALREADY declares the lighting the old message prescribed.
+    let base = campaign_at(&blockout_dir());
+    assert!(
+        base.site_plan
+            .as_ref()
+            .expect("the blockout fixture carries a site plan")
+            .content
+            .lighting
+            .is_some(),
+        "fixture: the plan must declare `lighting` for the old remedy to be unreachable"
+    );
+
+    let (out, s) = unlit_bound_place(&tmp, "node/exit");
+    assert_ne!(
+        out.status.code(),
+        Some(0),
+        "a dark bound place refuses: {s}"
+    );
+    assert!(s.contains("DW0210"), "under the darkness gate: {s}");
+
+    assert!(
+        s.contains("bound place(s) measure dark"),
+        "the refusal must say the dark cells are in a BOUND place, which is the fact \
+         that decides the remedy: {s}"
+    );
+    let line = s
+        .lines()
+        .find(|l| l.trim_start().starts_with("place `"))
+        .unwrap_or_else(|| panic!("the report names no bound place:\n{s}"));
+    assert!(
+        line.contains("place `node/exit`") && line.contains("bound to `prefab/exit`"),
+        "and it names the place AND the piece, because the remedy is taken in the \
+         piece and nothing else says which one: {line}"
+    );
+    assert!(
+        line.contains("in the piece's own coordinates"),
+        "and it states the darkest cell where the author edits it — a world coordinate \
+         is unusable inside a `.nbt` whose origin is its own corner: {line}"
+    );
+    assert!(
+        s.contains("INSIDE THE PIECE BOUND TO IT"),
+        "and the remedy it prescribes is the one that exists: {s}"
+    );
+
+    // The negative.
+    assert!(
+        !s.contains("Mitigate each area one of"),
+        "the plan-level remedy must NOT be prescribed over a bound place: the fixture's \
+         plan declares `lighting` already and the fixture pass never enters a bound \
+         frame, so that sentence asks for an act that changes nothing: {s}"
+    );
+    assert!(
+        !s.contains("with no `lighting` declaration"),
+        "nor may the refusal claim the campaign declared no lighting while its plan \
+         carries one: {s}"
+    );
+}
+
+/// Build the blockout fixture with `node` bound to a piece cut from the massing
+/// and its own torches removed — the one state that puts a dark place inside a
+/// bound frame. Returns the run and its combined output.
+///
+/// Shared by the two tests above rather than written twice: they assert
+/// different things about the same world, and two copies of the perturbation is
+/// two places for the state under test to drift.
+fn unlit_bound_place(tmp: &Path, node: &str) -> (std::process::Output, String) {
+    let d = detailed(tmp, &[node]);
     // Green first, so what follows is measured against a piece that was lit.
     let out = delvec(&[
         "--prefabs",
@@ -1772,7 +2047,7 @@ fn the_whole_does_not_light_a_bound_place_and_a_dark_one_is_a_finding() {
 
     // Now put the piece's own lights out, changing nothing else.
     let c = campaign_at(&d.campaign);
-    let a = detail::allocation(&c, &NodeId("node/exit".into())).unwrap();
+    let a = detail::allocation(&c, &NodeId(node.into())).unwrap();
     let mass = massing(&c);
     let cells: Vec<([i32; 3], String)> = piece_cells(&c, &a, &mass)
         .into_iter()
@@ -1788,7 +2063,7 @@ fn the_whole_does_not_light_a_bound_place_and_a_dark_one_is_a_finding() {
         cells.iter().all(|(_, b)| b != "minecraft:torch"),
         "the perturbation actually removed something"
     );
-    write_piece(&d.prefabs, "exit", &a, &cells);
+    write_piece(&d.prefabs, node.split('/').nth(1).unwrap(), &a, &cells);
 
     let out = delvec(&[
         "--prefabs",
@@ -1798,16 +2073,9 @@ fn the_whole_does_not_light_a_bound_place_and_a_dark_one_is_a_finding() {
         "--out",
         tmp.join("out-dark").to_str().unwrap(),
     ]);
-    let s = String::from_utf8_lossy(&out.stdout) + String::from_utf8_lossy(&out.stderr);
-    assert_ne!(out.status.code(), Some(0), "a dark place is a finding: {s}");
-    assert!(
-        s.contains("DW0210"),
-        "and it is the darkness gate that says so, not a silence: {s}"
-    );
-    assert!(
-        s.contains("area/site"),
-        "over the site area the piece stands in: {s}"
-    );
+    let s =
+        String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+    (out, s)
 }
 
 /// **The UNFENCED vacuity mode, closed at the type level.**
@@ -2076,7 +2344,6 @@ fn build_into(d: &Detailed, out: &Path) -> BTreeMap<String, Vec<u8>> {
         &tree,
         &reg,
         None,
-        "test",
         &BTreeMap::new(),
     )
     .expect("the detailed campaign builds");

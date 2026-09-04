@@ -57,12 +57,27 @@ One lantern covers a 25-block-diameter sphere. **Paving a floor with a glowing b
 misreading of this gate**, not an implementation of it — the bar is cleared by sparse fixtures
 placed where a person would have hung them.
 
-**`DW0210` names one cell of one area per build.** `measure_undeclared` returns the single
-*darkest* reachable cell of an area; diagnostics sort by `(code, message)` and `emit` returns on
-`diagnostics.first()`. Since every message begins ``area `area/<name>` has …``, the build reports
-the alphabetically-first dark area and one cell of it. **A cell count read off the diagnostic is
-an undercount**, and an area count read off it hides every other dark area. Measuring the
-distribution needs a harness over the assembled world; the diagnostic does not carry it.
+**`DW0210` reports the whole build's dark set, and the distribution rather than one cell.** It is
+one diagnostic for the build, listing every dark place worst first — each with its dark-cell count
+out of the cells measured in it, and its dark cells grouped into contiguous regions (adjacency is
+`nav::World::neighbors`, symmetrised, so a region is a run a body can walk without leaving the
+dark), each region with its extent and its own darkest cell. Both lists are capped and say how
+many entries and cells they dropped, so a count read off the message is either the whole figure or
+states that it is not.
+
+**The list is split by whose cells are dark**, because the remedy is. Cells the derivation wrote
+are one paragraph, prescribing the campaign's own `lighting` surface. Cells inside a frame a
+`detail-plan` row bound are another: the fixture pass never enters a bound frame (a bound place
+lights itself), so no plan-level `lighting` reaches them, and that paragraph names the place, the
+piece bound to it, and the darkest cell in the piece's own coordinates — where the author has to go
+and hang something.
+
+The same rule reaches the piece one stage earlier: `delve-admit lighting` measures a piece whose
+spatial contract declares every space `enclosed` under **no sky**, because such a piece will stand
+inside a plan's box under the whole's roof and meets none. A piece declaring an `open` or
+`open_top` space, or no contract at all, is measured standing in open air as before. Without that,
+an emitterless detail piece was written `lit` on the strength of the night sky floor and then red
+`DW0210` the moment it was built.
 
 ## 2. Where a lamp may physically go
 

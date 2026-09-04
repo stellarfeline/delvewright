@@ -65,7 +65,6 @@ fn build_dir(dir: &Path) -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("emission succeeds")

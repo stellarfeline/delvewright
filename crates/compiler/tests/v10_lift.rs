@@ -158,7 +158,6 @@ fn try_build(
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .map_err(|e| match e {

@@ -33,7 +33,9 @@ import { insideCompletion, reachGoal } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
 import { hasSettled } from "./entity-settle.ts";
+import { NavigationOwner } from "./navigation.ts";
 import type { NamedEntityDeath } from "./teardown.ts";
+import type { StageName } from "./report.ts";
 import {
   AssistLedger,
   actorExercise,
@@ -1222,6 +1224,20 @@ export class MineflayerExecutor implements StepExecutor {
    */
   private death: BotDeathError | undefined;
   /**
+   * The one owner of the pathfinder's goal. Every trip is issued and collected
+   * through it, so a hop this executor walks away from (a death, a timeout, a
+   * stalker winning the race) still has its rejection read — see navigation.ts.
+   */
+  private readonly nav = new NavigationOwner(() => this.bot?.pathfinder);
+  /**
+   * Which labelled stage the executor is inside RIGHT NOW. Read by the crash
+   * reporter, which has no other way to know: the ladder's stages are assembled
+   * from the outside once the run is over, and a process that dies mid-run never
+   * gets there. Only the boundaries that a crash could plausibly sit inside are
+   * marked — a crash anywhere else is on the critical path by construction.
+   */
+  private stageNow: StageName = "critical-path";
+  /**
    * How many deaths this run has observed. The die-retry stage waits for a FRESH
    * death rather than for `this.death` to be set, so a leftover latch (the bot
    * died on the way back from the last one) can never be mistaken for the next
@@ -1580,33 +1596,16 @@ export class MineflayerExecutor implements StepExecutor {
 
   /**
    * Abandon whatever the pathfinder is doing, leaving it in a state the NEXT `goto`
-   * can actually use.
+   * can actually use — the synchronous half of {@link NavigationOwner}, which is
+   * what the death handler and the forced-move handler need.
    *
-   * mineflayer-pathfinder's `stop()` only raises an internal `stopPathing` flag; the
-   * flag is cleared when the walking bot next reaches a path node, or by a
-   * `setGoal`/`setMovements` reset — so calling `stop()` on a bot that is NOT mid-path
-   * leaves it raised. The next `goto` then sets its goal, the reset sees the raised
-   * flag, fires `path_stop` synchronously, and the brand-new goto rejects instantly
-   * with "Path was stopped before it could be completed!" — while `runGoto`'s own
-   * failure handler stops the pathfinder again, re-arming the flag. The result is a
-   * self-sustaining loop where every later hop fails without the bot ever attempting to
-   * walk (observed on the-drowned-bell: after the bot stopped to fight an ambusher,
-   * every subsequent hop and every recovery re-path failed that way, and the run died
-   * on a leg it had walked fine the run before).
-   *
-   * `setGoal(null)` immediately after performs that reset ourselves: the flag is
-   * consumed here, once, instead of poisoning the next caller. Used everywhere the
-   * executor stops the pathfinder.
+   * The stop/`setGoal(null)` pairing, and why it is a pairing, live on
+   * {@link NavigationOwner.stopNow}. What matters here: the cancelled trip stays
+   * registered with the owner, so its `GoalChanged`/`PathStopped` rejection is still
+   * observed when it arrives, and the next hop waits for it before setting a goal.
    */
   private stopPathfinding(): void {
-    const bot = this.bot;
-    if (!bot) return;
-    try {
-      bot.pathfinder.stop();
-      bot.pathfinder.setGoal(null);
-    } catch {
-      // best effort — clearing the pathfinder must never mask the reason we stopped
-    }
+    this.nav.stopNow();
   }
 
   /**
@@ -1847,7 +1846,13 @@ export class MineflayerExecutor implements StepExecutor {
           }
         }
       };
-      void poll();
+      // Observed, not fired and forgotten: `currentStalker` reads live bot state,
+      // and a throw from a detached poll is an unhandled rejection — fatal under
+      // Node's default, for a watch whose whole job is advisory.
+      poll().catch(() => {
+        // A watch that cannot read the world simply never fires; the walk it is
+        // racing still finishes or fails on its own terms.
+      });
     });
     return {
       promise,
@@ -2181,13 +2186,24 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Race `op` against the bot dying: resolves/rejects with `op`, but rejects with the
-   * {@link BotDeathError} the instant a death is observed (the underlying op keeps
-   * running but the pathfinder is already stopped in {@link onDeath}). Used to abort
-   * the ~60s `pathfinder.goto` wait the moment the bot dies.
+   * Race the bot dying against the operation `start` returns: resolves/rejects with
+   * that operation, but rejects with the {@link BotDeathError} the instant a death is
+   * observed (the underlying op keeps running but the pathfinder is already stopped
+   * in {@link onDeath}). Used to abort the ~60s `pathfinder.goto` wait the moment the
+   * bot dies.
+   *
+   * `start` is a THUNK, not a promise, and that is the whole of it: when a death is
+   * already latched this returns without ever calling it, so there is no operation
+   * to leave unobserved. Taking a promise instead meant the caller had already
+   * built one by the time the early return fired — and a `pathfinder.goto` built and
+   * then dropped rejects with `GoalChanged` the next time ANY goal is set, with no
+   * handler attached, which is a fatal unhandled rejection under Node's default. A
+   * boss that killed the bot mid-trade killed the whole run that way, three seconds
+   * after the die-retry stage set its re-approach goal.
    */
-  private raceDeath<T>(op: Promise<T>): Promise<T> {
+  private raceDeath<T>(start: () => Promise<T>): Promise<T> {
     if (this.death) return Promise.reject(this.death);
+    const op = start();
     return new Promise<T>((resolve, reject) => {
       let settled = false;
       const onDeath = (err: BotDeathError): void => {
@@ -2217,6 +2233,15 @@ export class MineflayerExecutor implements StepExecutor {
    * The death recorded so far, if any. Diagnostic accessor (also lets tests assert the
    * captured position/cause after a simulated death).
    */
+  /**
+   * The labelled stage the executor is inside right now — what a crash report has
+   * to say to stop a harness fault reading as a content verdict on whichever stage
+   * happened to be next.
+   */
+  currentStage(): StageName {
+    return this.stageNow;
+  }
+
   deathDiagnostic(): BotDeathError | undefined {
     return this.death;
   }
@@ -2407,6 +2432,7 @@ export class MineflayerExecutor implements StepExecutor {
    * ledger rather than from a zero the previous death left.
    */
   async runDeathLoop(): Promise<void> {
+    this.stageNow = "death-loop";
     const plan = this.deathPlan;
     if (plan === undefined) {
       this.deathLoopSkip = "this build ships no validation/death-plan.json";
@@ -2951,10 +2977,10 @@ export class MineflayerExecutor implements StepExecutor {
               // machinery on from the wrong end of the map. Death is terminal for
               // the run — surface it, never walk it off.
               waitForWindow: (gates, hold, press) =>
-                this.raceDeath(this.waitForGateWindow(gates, hold, press)),
+                this.raceDeath(() => this.waitForGateWindow(gates, hold, press)),
               feetCell: () => this.feetCell(),
               dash: (through, from, to, budgetMs) =>
-                this.raceDeath(this.dashThroughGate(through, from, to, budgetMs)),
+                this.raceDeath(() => this.dashThroughGate(through, from, to, budgetMs)),
             }
           : undefined,
         completion ? () => this.stepSettled(completion) : undefined,
@@ -3322,9 +3348,12 @@ export class MineflayerExecutor implements StepExecutor {
         await delay(1_500);
       }
       try {
-        await this.raceDeath(
+        // Through the navigation owner, never `bot.pathfinder.goto` directly: this
+        // wait is abandoned on a death and on the timeout, and an abandoned trip's
+        // later rejection has to land on a handler that already exists.
+        await this.raceDeath(() =>
           withTimeout(
-            bot.pathfinder.goto(new goals.GoalNear(x, y, z, range)),
+            this.nav.goto(new goals.GoalNear(x, y, z, range)),
             REACH_TIMEOUT_MS,
             `reaching ${label}`,
           ),
@@ -3683,7 +3712,12 @@ export class MineflayerExecutor implements StepExecutor {
     }
     if (this.dieRetry) {
       this.encounterPhases.set(enc.wave, "die-retry");
-      await this.dieRetryAt(step, enc);
+      this.stageNow = "die-retry";
+      try {
+        await this.dieRetryAt(step, enc);
+      } finally {
+        this.stageNow = "critical-path";
+      }
     }
     if (assistPolicy(enc) === "unassisted-first") {
       this.encounterPhases.set(enc.wave, "unassisted");

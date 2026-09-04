@@ -39,137 +39,6 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   also refuses a number a branch adds without a hand-written name — `is_v13` is
   computed from `0.13.0` and so cannot disagree with a second branch's claim on
   it, while `LAYOUT_GRAPH_SINCE` can.
-- v0.6 amends spec-0010's mitigation hierarchy: the night-vision mitigation is now
-  the stage-1 `areas[].mitigation` **declaration** (emitting a real clocked
-  `effect give`), not a class-kit display-name heuristic.
-- spec-0010 has **landed** at `dsl_version 0.5.0`: stage-1
-  `lighting`/`time`/`weather`, effect verbs `set-time`/`set-weather`, the
-  assembled-world light model + deterministic relight pass (`crate::light`), the
-  measured redefinition of `DW0210`, and diagnostics `DW0211`/`DW0196`.
-- spec-0012 checkpoints + the spec-0014 stealth verbs have **landed** at
-  `dsl_version 0.6.0`: stage-5/dialogue `set-checkpoint{anchor, on_respawn?}`
-  (party-wide `spawnpoint @a` + the `storage dw:cp pos` mirror), the stage-5
-  `begin-stealth{zones, on_caught?, grace_ticks?}` / `end-stealth` verbs, the
-  no-stranding / placement proofs `DW0315`/`DW0316`, and the stealth-zone proof
-  `DW0327`. The `dw:cp` mirror is the shared "last checkpoint" contract spec-0013's
-  boundary return reads.
-- spec-0013 has **landed** at `dsl_version 0.6.0`: stage-1 `horizon`
-  (`ocean` superflat sea backdrop) and `boundary` (derived playable region +
-  per-second return-to-checkpoint clock), diagnostics `DW0320`/`DW0321`, and the
-  `dw:region`/`dw:cp` storage mirrors. Absent `horizon`/`boundary` keeps v0.5
-  output byte-identical.
-- spec-0014 sound + art-title have **landed** at `dsl_version 0.6.0`: the
-  `play-sound` effect (`DW0326` unknown sound, `DW0335` deferred `at: actor`) and
-  the `narrate` `style: art` `delve:art` pixel-banner font (`DW0328` glyph
-  coverage). The remaining v0.6 surface (scripted actors) lands in a sibling PR
-  under the same version gate.
-- `dsl_version 0.6.0` also carries per-effect `requires_flags` (a
-  per-player `execute if score @s dw.f_<flag> matches 1` guard on any quest /
-  trigger effect except `campaign-complete`) and a verbatim blockstate suffix
-  `id[key=value,…]` on `set-block`/`interact.prop` blocks. Both default to
-  absent, so a campaign that uses neither is byte-identical.
-- spec-0011 (traps) has **landed** at `dsl_version 0.6.0`: the stage-5 `traps[]`
-  surface (redstone-native hazards bound to `anchor/trap` markers — trigger
-  `pressure-plate`/`tripwire`/`trapped-chest`, a compiler-filled `dispense`
-  payload, `lethality`, `disarm`, `reset`), the completability proof `DW0342` (a
-  forced lethal trap must be avoidable, `once`-survivable, or disarmable), the
-  declaration/payload validation `DW0340`/`DW0341`, and the defense-in-depth
-  `gamerule tnt_explodes false` seal (v0.6-gated). Absent `traps` keeps pre-0.6
-  output byte-identical. **Superseded in its signal half by spec-0022**: redstone now keeps only the trigger, and a trap's consequence is a command `payload` (`volley` / `collapse` / any quest effect) — the trigger-hardware layer, the disarm affordance and the `DW0342` completability proof carry over unchanged. The trap `effect` was `dispense` only in the spec-0011 landing;
-  `release-wave`/`set-hazard` (spec-0011's other effect variants) and the
-  `anchor/trap` prefab-hardware admission audit are deferred to follow-ups. The
-  spec's reserved diagnostic numbers were stale (all taken since) and were
-  renumbered off them (0197/0198/0314) to `DW0340`/`DW0341`/`DW0342`.
-- The flask's **contents** have **landed** at `dsl_version 0.8.0` (spec-0016 §1):
-  a class-kit item may declare `contents` — vanilla's
-  `minecraft:potion_contents` component (a named `potion`, an `effects[]` list, a
-  `color`) — and the bonfire replenish re-gives the poured-identical item through
-  the same helpers the class kit uses, clearing by the components rather than by
-  the bare item id. `DW0487` refuses the placeholder (a potion-bearing kit item
-  with no contents is the Uncraftable Potion), `DW0486` refuses contents 1.21.11
-  cannot pour. Absent `contents` keeps pre-0.8 output byte-identical.
-- At `dsl_version 0.8.0` a `collect` objective may ADOPT the chest/barrel the
-  prefab already placed (`container`), name the item it hands the player
-  (`item_name`, l10n key `obj.<q>.<o>.item_name`), and pad that container so it reads full (`fill_count`).
-  New build-tier proof `DW0438` (the adopted container is really there, sibling of
-  `DW0431`); `DW0432` / `DW0435` generalize from "`loot`" to "any positional
-  container fill". An adopted container is a required anchor for the layout solver
-  and becomes the `critical_path` step position (the bot opens that block).
-  Generated PackTest `collect_container`. All three fields absent → byte-identical.
-- `dsl_version 0.9.0` carries declared `drops[]` on an elite/boss wave mob and on
-  an actor — either a worn `{slot}` or a `{item, name?}` quest token — plus the
-  `collect` objective's
-  `dropped_by`, which gates provisioning on the fight instead of a placed chest
-  and makes "kill the boss → take its key → open the door" a chain the compiler
-  proves (`DW0492`/`DW0493`) rather than an authoring intention. Only `elite`/
-  `boss` may declare drops (`DW0491`); a slot must be one the same mob's
-  `equipment` really fills and may appear once (`DW0490`). Absent `drops` /
-  `dropped_by` keeps v0.8 output byte-identical; declaring either below 0.9.0 is
-  `DW0141`.
-- spec-0031 has **landed** at `dsl_version 0.10.0`: the campaign-wide `on_death`
-  bundle — **effect root R7**, the effects that run at the moment a player dies —
-  and, alongside it, `shortcuts[].on_unlock` finally entering the enumeration as
-  **root R6**, which it should have been since spec-0016 §2. `on_death` rides the
-  existing `dw.deaths` death edge and adds no second detector; the *position* a
-  player died at is deliberately not captured yet (`emit::death_position_capture`,
-  an empty named seam — the vanilla mechanism is being measured live). A campaign
-  declaring no death beat is byte-identical, proven by rebuilding
-  `nobodys-cave-island` on both engines in both declared languages: 610 files, 608
-  identical, the two deltas being the engine-version string stamped into the
-  creator-loop `layout.json` and that file's `manifest.json` hash. Declaring
-  `on_death` below 0.10.0 is `DW0141`.
-- spec-0031's **region fill / clear** has landed at the same `dsl_version 0.10.0`
-  (no bump): `fill-region` / `clear-region` make "a declared region, filled or
-  cleared at runtime" expressible without naming a gate. The capability was already
-  in the engine twice, privately, inside two verbs — so it MOVED to the object class
-  it acts on rather than being added beside them: `open-gate` / `close-gate` keep
-  their names and their authoring surface and are now configured uses of it, sharing
-  one emission (`emit::fill_region_command`) and one completability rule
-  (`plan::RegionEvent` → `nav::region_state_at`). Byte identity is the hard
-  requirement and is measured, not asserted: **2626 output files across 23 builds —
-  `nobodys-cave-island` and `hollow-vigil` in both declared languages plus all 19
-  fixture campaigns — are identical to the merge-base engine**, with identical exit
-  codes and diagnostics. Declaring either verb below 0.10.0 is `DW0141`.
-- spec-0031 §"Status effect" and §"Teleport players" have **landed** at the same
-  `dsl_version 0.10.0` (no bump — an additive fence on the existing version):
-  `give-effect` / `clear-effect` expose the status effects the engine has emitted
-  internally since v0.6, and `teleport` exposes the region move. Two design
-  choices are the whole of it. A grant has **no infinite form** and its removal is
-  its own duration (`DW0540` refuses the pattern that reintroduces the hazard),
-  and a teleport's selection is **total** — no machinery-type exemption of the
-  kind `lethal_volumes[]` carries, because an NPC is a body plus a co-located
-  interaction hitbox and exempting that type would separate them; the cases the
-  exemption would have hidden are a compile error instead (`DW0542`). A campaign
-  declaring neither verb is byte-identical.
-- spec-0031 acceptance criterion 9 — **the lift, authored entirely in campaign
-  JSON** — is **partly discharged, and the remainder is a finding**. `delvec`
-  gains nothing here: `crates/compiler/tests/fixtures/lift` authors the owner's
-  timing table as the steps of one `sequence` over the five existing primitives,
-  and `crates/compiler/tests/v10_lift.rs` reads it back off the emission. What is
-  proven: the seven-step table emits step for step at ticks 0/1/2/3/4; the
-  create-before-clear invariant holds; both planner rulings need no surface of
-  their own (the no-op at the occupied floor is the gate's `not-equals` term on
-  the tick line, and "a pull during a ride is ignored, not queued" is the
-  `data remove entity @s interaction` that runs whether or not the gate opened);
-  and no name in any of the seven stage schemas contains the word. What is NOT,
-  each recorded as an executing test that reds the day it becomes authorable:
-  **(1)** the owner's lever *inside* the car is `DW0542` and correctly so — a
-  `teleport` moves entities and not blocks and its `to` is a **point**, so an
-  affordance riding a car is torn off its lever and stacked on the destination
-  anchor — which means a car cannot be commanded from inside it, and the fixture
-  carries only the call half; **(2)** a runtime region is `StealthZone { anchor,
-  extent }`, a box *centred* on a prefab anchor, so the car's deck (one below the
-  riders), its arrival cell (one above the deck) and the shaft-bottom lethal
-  volume (one below the ground-floor deck) are un-nameable — the general region
-  language already exists one stage away in stage 7's `select` (`box {min,max}`
-  in a `piece-local` / `anchor-relative` frame, plus `union`/`intersect`/
-  `subtract`) and stage 5 cannot see it; **(3)** "the car always exists
-  somewhere" is authored, not enforced — a sequence that clears its only car
-  before filling the next compiles green. The runtime half of the criterion is
-  **debt**: the two `teleport_<key>` templates the fixture emits prove step 5 of
-  each ride on the pinned toolserver, and no template exercises the sequence's
-  own timeline, because the engine generates templates per verb and has none for
-  a `sequence`.
 
 ---
 
@@ -208,6 +77,19 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   placed geometry) but is analysis-tier: `main` maps a `DW02xx` build diagnostic to
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
   re-verification in pass 9.
+- The light field itself (`compiler::light`) is **dense**: over the assembled
+  AABB, each cell is one byte holding whether light passes it, whether the sky is
+  above it and what it emits, resolved from its block id once. Sky exposure is one
+  top-down sweep per column; the frontier drains brightest-first, so each cell is
+  relaxed once. The greedy relight loop floods once and **extends** the field per
+  fixture — a fixture written into a cell whose passability it does not change,
+  emitting at least as much as what it replaced, can only make the field
+  brighter, so the new field is the old one with that seed flooded into it; a
+  write failing either half floods again from nothing. Determinism does not rest
+  on the walk order: the field is the pointwise maximum over every seed of
+  `seed − distance`, one value per cell however the frontier drains. The one
+  order that IS a decision — the darkest deficient cell, ties by ascending
+  `(y, z, x)` — is an explicit sort.
 - Every emitted `.mcfunction` line is checked against the vendored 1.21.11
   Brigadier tree (`compiler::commands`, `data/commands-1.21.11.json`;
   structure-only — arity/paths, not arg values). mecha re-validates in CI
@@ -336,7 +218,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | Field | Behavior | Since |
 |-------|----------|-------|
 | `id`,`name`,`area`,`anchor`,`base_entity` | NPC body placed at resolved anchor; `name` → l10n `npc.<n>.name`. | 0.1 |
-| `role` | Enum `quest-giver|flavor`; `vendor`/`boss` reserved → `DW0141`. | 0.2 |
+| `role` | Enum `quest-giver|flavor` — what the speaking part does. How hard a fight is billed is `tier` on the body that fights (a `waves[]` entry or a stage-5 actor), never a role here. | 0.2 |
 | `persona{archetype,speech_style,motivation,…,relationships[]}` | Structured; **excluded** from l10n; relationship refs validated in-stage (`DW0112`). | 0.2 |
 | `skin{texture_id,model}` (opt) | Switches body to `minecraft:mannequin`; PNG baked to resourcepack. Missing PNG → `DW0309`; bad/dup id → `DW0190`. The bake walks **bodies**, not one stage's list (`dsl::body_skin_sites`), so a stage-5 actor's `skin` is served and refused by exactly this rule. Every summon whose entity id comes from **content** rather than this switch (`npc.base_entity`, `actor.entity`, and the `unleash` twin, which has no skin branch at all) is spliced with `pose:"standing"` when that id names a mannequin (`emit::mannequin_pose_nbt`): a mannequin summoned without an explicit pose serializes it as `DYING`, which the server then fails to encode at save (`Failed to encode value 'DYING'` in a PackTest world's teardown). A non-mannequin entity gains nothing, so existing campaigns stay byte-identical. | 0.4 |
 | `deferred` (opt, bool) | **Not** summoned at world init; the NPC's body + hitbox appear only when a `spawn-npc` effect fires, at this same `anchor` (the dual of `despawn-npc`). Default `false` = pre-0.6 behavior, byte-identical. Never spawned → `DW0197`; a `talk-to` provably ahead of every spawn → `DW0198`. | 0.6 |
@@ -482,7 +364,7 @@ flag only optional content produces is `DW0868`. The closure is
 | Effect `cutscene{shots[]}` / `cutscene{path[],seconds,look_at?}` | Two-camera spectator dolly; clip → `DW0308` (checked **per shot**, over both the authored polyline and the client-rendered keyframe chords); a shot panning over the 6°/tick angular budget → `DW0347`. Two mutually exclusive spellings, normalized to one shot list: multi-shot `shots: [{path[],seconds,look_at?}, …]` (v0.6) or the single-shot `path`+`seconds` fields (v0.4) — mixing/omitting both, or a shot with an empty `path`, is `DW0199`. Shots play back-to-back inside ONE save/restore bracket (hard cut). `look_at {anchor,offset?}` aims every dolly camera at that world point; absent = face along the direction of travel. **`shot_style` (v0.6, spec-0015)**: a shot may instead declare a style preset + `subject {anchor|npc|actor, offset?}` (+ optional `dist`, `bearing`, `degrees` (orbit only), `subject_b` (two-shot only)); the compiler expands the style deterministically into the dolly + aim + duration (see "Shot styles" below). Explicit `path`/`look_at`/`seconds` always override the corresponding expanded part. Style-shape violations are `DW0348`; a `side-track`/`low-follow` whose subject has no sibling `move-npc`/`move-actor` (same effect group or sequence) is `DW0349`; an unknown subject npc/actor is `DW0112`. | 0.4 / `look_at`+`shots`+`shot_style` 0.6 |
 | Effect `set-time{time}` | Instantaneous dimension-global cut (`time set <kw>`, or `time set <ticks>` for `dusk`/`dawn` — see the stage-1 `time` row); persists (cycle frozen). | 0.5 |
 | Effect `set-weather{weather}` | Instantaneous dimension-global cut (`weather <kw>`); persists (cycle frozen). | 0.5 |
-| Effect `play-sound{sound,at?,volume?,pitch?}` | Plays a sound event; `sound` validated (`DW0326`); `at` = `{anchor}`\|`players` (default)\|`{actor}` (deferred → `DW0335`); positional or per-player. | 0.6 |
+| Effect `play-sound{sound,at?,volume?,pitch?}` | Plays a sound event; `sound` validated (`DW0326`); `at` = `{anchor}`\|`players` (default); `{actor}` parses and is refused (`DW0335` — no live-actor position resolves); positional or per-player. | 0.6 |
 | Effect `damage-players{amount,in?,damage_type?}` | Deals `amount` half-hearts of damage over vanilla `/damage` — a real `on_caught`/souls consequence. **Audience (spec-0018)**: on a quest beat / trigger the hazard is a fact about the delve, so it hits the whole party (`execute as @a[…] run damage @s …` — `/damage` takes ONE entity, see §1); inside a solo `on_caught`/`on_respawn` bundle it hits exactly that player (`execute if entity @s[…] run damage @s …`). `amount ≥ 40` is lethal through golden apples. `in {anchor,extent}` narrows to acting players inside the anchor-centred box (same box model as a stealth zone; anchor `DW0142`). `damage_type` is a **curated enum** of vanilla types that respect `keepInventory` and do NOT bypass totems (no `out_of_world`/`generic_kill`), default `generic`; an unknown value is `DW0100` (needs no registry). Named `damage_type`, not `type`, since the effect enum is internally tagged on `type`. Per-effect `requires_flags` allowed (per-`@s` verb). Every form is guarded by `tag=!dw_cutscene` — a player watching a cutscene is never harmed (§4). | 0.6 |
 | Effect `set-checkpoint{anchor,on_respawn?}` | Party-wide respawn point: `spawnpoint @a` at the anchor + `storage dw:cp pos` mirror + the active-checkpoint marker. Monotonic by quest order. `on_respawn[]` = per-player effects re-run on respawn while active (vanilla `deathCount` detection). A death at the active checkpoint **re-seats** the respawned player on its cell rather than trusting vanilla's respawn lookup, which silently falls back to the world spawn on a cell it dislikes (§emission). Proofs `DW0315`/`DW0316`. Also a dialogue effect. | 0.6 |
 | Effect `bonfire{anchor,on_rest?,prompt?,rest_label?,save_label?}` | The souls sibling of `set-checkpoint` (spec-0016 §1). The effect only **arms** a rest affordance at the anchor (a `minecraft:interaction` the party right-clicks; the campfire is prefab dressing) — the respawn point moves when the party actually **rests**. Right-clicking opens a dialog with **exactly two options** (a campfire must be a real interaction, never a lazy "arrive" objective): *rest and save* runs the full loop (the resting player is restored, their flask refilled, the checkpoint moved, every `respawns_on_rest` wave re-seated, `on_rest[]` fired); *save only* moves the checkpoint and does nothing else. Every respawn at this bonfire runs the same `on_rest[]` scene reset and re-seat. Arming is idempotent (guarded summon), resting is deliberately repeatable (unlike the one-shot trap disarm). `prompt` / `rest_label` / `save_label` (v0.8) author the three dialog strings; absent, the compiler bakes its canonical English (`Bonfire` / `Rest and save` / `Save only`) exactly as `world.boundary.message` does — an authored string is inventoried (`fx.….rest_prompt` / `.rest_label` / `.save_label`), translates like any other player-visible line, and the two labels carry the `DW0331` button budget because they are drawn on the same button a dialogue option is. A campaign with a bonfire whose class kits declare no `flask` is `DW0476`. Proofs are inherited: a bonfire is collected as a checkpoint, so `DW0316` (standable) and `DW0315` (no stranding — rooted at the ARMING beat, the earliest rest) apply unchanged. Quest/trigger effect only (not a dialogue effect). | 0.6 / the two-option dialog + authored labels 0.8 |
@@ -594,7 +476,10 @@ frame is written exactly as before.
 **The fixture pass applies to derived interiors only.** A bound place lights
 itself; its cells leave the relight pass's deficiency set and go to the
 undeclared-darkness measurement instead, so a dark detailed place is a finding
-rather than a silence.
+rather than a silence. The measurement is kept **per place**, not folded into the
+area's, because the two have different remedies and `DW0210` says which: a dark
+bound place is named with its piece and told to light itself, and is never sent at
+the plan's `lighting`, which does not reach it.
 
 **Detail is per-place and partial by construction**: every unbound box is massed
 exactly as at stage 5, so a campaign with one detailed place builds, walks and
@@ -1698,6 +1583,15 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
 - All map/set iteration `BTreeMap`/explicit sort; JSON is `serde_json` pretty
   (sorted keys) + trailing newline.
 - **No** wall-clock, hostname, locale, or absolute build path in any output byte.
+- **No ambient state**: every emitted byte is a function of the campaign
+  directory, the prefab directory and the flags named on the command line. The
+  compiler reads nothing from above those paths and nothing from the working
+  directory, so the same build from the engine checkout, from a content checkout
+  and from a scratch directory produces the same tree. Gated by
+  `tests/cli.rs::the_working_directory_cannot_reach_the_build`, which is the
+  perturbation the double-build test cannot make — both of its builds share one
+  working directory, so a value read out of the filesystem above the inputs is
+  invisible to it.
 - Only randomness = stage-1 `seed` → named splitmix64 per-area streams. Solver
   retry (≤32 attempts) is seed-deterministic; attempt 0 reproduces pre-M2 growth.
 
@@ -1952,10 +1846,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   than 64, but is missing mandatory fields min_format and max_format") and every
   baked skin silently never loads, while no server — and therefore no rung of the
   validation ladder — parses a resource pack at all.
-- `<out>/`: `manifest.json` (SHA-256 of the 6 inputs + every output; non-`en`
-  build adds `language` + hashes the sidecar), `datapack/`, `packtest-datapack/`,
-  `server/`, `critical-path.json`, plus `resourcepack.zip`+`SKINS.md`
+- `<out>/`: `manifest.json`, `datapack/`, `packtest-datapack/`, `server/`,
+  `critical-path.json`, plus `resourcepack.zip`+`SKINS.md`
   (`resource_pack_sha1` in manifest) for a skinned campaign.
+- `<out>/manifest.json` carries exactly `campaign_id`, `delvec_version`,
+  `dsl_version`, `mc_version`, `inputs` (SHA-256 per authored document the build
+  read, l10n sidecars included) and `outputs` (SHA-256 per emitted path), plus
+  `language` on a non-`en` bake and `resource_pack_sha1` on a skinned campaign.
+  It names no repository, revision or checkout: a revision is a property of a
+  checkout rather than of the bytes the compiler was handed, so which content
+  commit a shipped delve was built from is stated by the party that knows it —
+  the release image's `org.opencontainers.image.revision` and
+  `ca.stellarfeline.delvewright.campaign-commit` labels.
 - `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
   version**; `format_version` is the **contract's own** version, currently `3`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
@@ -3658,6 +3560,35 @@ message names it with an explicit "do NOT". The rows below summarize each code's
 *meaning*; the emitted message additionally carries the prescription. Gold
 standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 
+**A run's lines are grouped, author-actionable first.** Every diagnostic
+declares whose state its verdict is about (`dsl::diagnostic::Subject`): the
+CAMPAIGN — every refusal, and every advisory that is a fact about the documents
+in front of the author — or the ENGINE, meaning a table that is still seeded or a
+standard nobody has calibrated, which reads the same on every campaign this
+engine compiles. `delvec` sorts on that before printing, into three labelled
+groups in this order: refusals, advisories about this campaign, notices about
+this engine. The sort is stable, so within a group each pass's own order
+survives, and it applies to `--json` as well, because a consumer reading the
+first line should get the actionable one for the same reason a person should.
+The run's binding counts follow all of it on stderr, under `-- what this run
+examined`; every one is still stated, zeroes included. Nothing is suppressed by
+the grouping — it decides order, never whether a line prints.
+
+**A message states its finding; this catalog holds the reasoning.** Where an
+advisory's message would otherwise be several paragraphs explaining why it
+refuses nothing, the message is one line with its numbers and the essay is the
+row here. `DW0813`, `DW0822` and `DW0781` are written that way.
+
+**A secondary whose premise is an already-reported primary does not print N
+times.** Either the findings are one diagnostic naming all of them (`DW0842` at a
+zero box count, `DW0826` where more than one thing leaves the region,
+`DW0150` where stage 5 is empty), or the line stands and gains a clause naming
+what it is downstream of (`DW0818` where stage 5 declares no quests, `DW0843`
+and `DW0844` where the site plan has already refused the frame or the seam set).
+The rule and its two shapes are in `dsl::diagnostic`. No code loses its ability
+to refuse alone: every fold arm is reachable only in the state that made the
+copies identical.
+
 **A prescription is chosen by the campaign's placement authority, not by the
 rule that raised it.** A campaign hands its space either to stage-1 `areas[]`,
 which seats prefab pieces, or to a `site-plan.json`, which owns a derived
@@ -3719,7 +3650,7 @@ to a list of codes.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | **`mandatory: false` below dsl_version 0.17.0**, where the surface is reserved (spec-0051 §9). `every_version` deliberately, and it is the first case the `Binds` doctrine names: the rule judges what the document SAYS against the version that document itself declares, so its verdict is a function of the campaign alone. Fencing it as `Since(17)` would *stop rejecting* `mandatory: false` in a 0.12 campaign — the exact inversion the doctrine warns about. Below the fence the partition is forced empty, so an off-closure quest raises `DW0132` alongside this, exactly as it did before the surface existed. Prescription: raise the **quest-plan** stage's `dsl_version` to 0.17.0, or set `mandatory: true`. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface: the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending` (spec-0025); the class-kit `flask`, a kit item's potion `contents` and the `bonfire` rest-dialog labels (spec-0016 §1); actor `tier` (spec-0023); the stage-6 dialogue-option `tooltip`; the `close-gate` `sealed_hint`; and the `collect` container-adoption trio `container` / `item_name` / `fill_count` (each field is reserved independently, and an explicit `fill_count: 0` declares nothing since it is the default); under pre-0.10 the v0.10 surface (spec-0031): the stage-5 `state[]`, `lethal_volumes[]` and `on_death` sections, `requires_state` at every gate site, and the effects `set-state` / `add-state` / `clear-state` / `fill-region` / `clear-region`; under pre-0.11 **both** v0.11 surfaces — the press-answer lift (the `narrate` `style: actionbar` and a trigger's `audience: presser`, fenced on the quests stage) and the per-body `traversal` declaration (spec-0034, fenced on the stage that declares it: the stage-2 npc on `npcs`, the stage-5 actor on `quests`, so one stage may adopt it while the other has not)). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface: the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending` (spec-0025); the class-kit `flask`, a kit item's potion `contents` and the `bonfire` rest-dialog labels (spec-0016 §1); actor `tier` (spec-0023); the stage-6 dialogue-option `tooltip`; the `close-gate` `sealed_hint`; and the `collect` container-adoption trio `container` / `item_name` / `fill_count` (each field is reserved independently, and an explicit `fill_count: 0` declares nothing since it is the default); under pre-0.10 the v0.10 surface (spec-0031): the stage-5 `state[]`, `lethal_volumes[]` and `on_death` sections, `requires_state` at every gate site, and the effects `set-state` / `add-state` / `clear-state` / `fill-region` / `clear-region`; under pre-0.11 **both** v0.11 surfaces — the press-answer lift (the `narrate` `style: actionbar` and a trigger's `audience: presser`, fenced on the quests stage) and the per-body `traversal` declaration (spec-0034, fenced on the stage that declares it: the stage-2 npc on `npcs`, the stage-5 actor on `quests`, so one stage may adopt it while the other has not)). |
 | `DW0142` | Anchor not provided by the area's bound prefab — or, on a site-plan campaign, not among the names the derivation places. The predicate is `AnchorProviders`, unchanged; the prescription is the placement authority's (see the remediation contract above), so a derived map is given the synthesized vocabulary instead of being sent to prefab metadata it does not have and told not to invent a name it is required to invent. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. **Two readings, one code, and the discriminator is whether stage 5 declares any quests at all.** Where it declares some and this id is not among them, the refusal is per plan entry and names its two ordinary remedies — write the expansion, or drop the entry — plus how many quests stage 5 does declare, which is what says *mismatch* rather than *unwritten*. Where it declares **none**, the campaign is between the stage-4 plan and the stage-5 quests, every planned quest is unexpanded by construction, and the two remedies are both wrong: writing the expansions IS the next authoring step, and the plan is not a mistake to delete. That case is **one** diagnostic on `/content/quests`, on the model `DW0874` sets — it names every planned quest, says the state is an authoring state rather than a fault, says why the refusal still stands (a plan entry with no expansion has no trigger, no objective and no completion, so nothing of it is emitted), and says there is **no cheaper way out**: the schema-minimal stage-5 quest is refused again by `DW0481` once per quest and `DW0460` once per NPC live in it, so writing empty expansions raises the count instead of lowering it. That last sentence is a measurement and `crates/compiler/tests/plan_awaiting_expansion.rs` takes it; the wording is `crates/dsl/tests/dw0150_plan_awaiting_expansion.rs`. Severity, code and exit are identical in both readings — a plan awaiting expansion cannot build, and a warning would let an unbuildable campaign read as buildable at the step where the difference decides whether anyone writes stage 5. |
@@ -3806,7 +3737,7 @@ identically.
 |------|---------|
 | `DW0326` | A `play-sound.sound` (v0.6) or `narrate.sound` (v0.4) id is not a known 1.21.11 sound event (validated against the vendored `sound_event` registry, `crates/compiler/data/sounds-1.21.11.json`; `minecraft:` prefix optional). |
 | `DW0328` | An `art`-styled `narrate` string — the English source **or** any declared-language sidecar translation — uses a character outside the `delve:art` font's glyph inventory (A–Z, 0–9, space, `! " ' ( ) , - . / : ; ?`; lowercase folds to uppercase). Forces per-language art titles to stay ASCII/Latin — a `zh-cn` art translation must be an ASCII rendition. |
-| `DW0335` | A `play-sound` targets `at: {actor: …}`, accepted by the schema but not yet wired — the actors surface (spec-0014 `actors[]`) has not landed. Use `at: {anchor}` or `at: players`. (Graduates when the actors PR wires actor-position resolution.) |
+| `DW0335` | A `play-sound` targets `at: {actor: …}`. A sound plays at fixed coordinates or at each listener's own position, and the compiler resolves no position for a live actor, so the sound would be silent. Use `at: {anchor}` or `at: players`. |
 
 #### The `delve:art` font
 
@@ -4091,7 +4022,7 @@ fails there rather than in a campaign.
 | `DW0358` | A declared `min_players: n` (n ≥ 2) has **no n-agent division of labour** (v0.6, spec-0018). Completability is proven with `min_players` agents: n = 1 is the unchanged single-agent proof, and n ≥ 2 additionally requires the proven playthrough to contain an AND-join with n arms that are *independently reachable at the join's frontier* — the replay state just before its earliest arm — with no arm waiting on a sibling, a flag a sibling sets, or a quest that is not active yet (`flow::Flow::divide`). Names the widest join and how many arms it actually offers, or says the campaign has no AND-join at all. Reported on `world`/`/content/min_players`, exit 2. Prescription: split one beat into n `after`-arms completable from the same frontier, or lower `min_players`. |
 | `DW0204` | The exported critical path is not a playthrough any player can walk: some step is not activatable/completable at its position, or `campaign-complete` fires before the final step (the signature of two mutually exclusive endings sharing one path). Names the first incoherent step. |
 | `DW0205` | **Optional participation gates the mainline**: the dialogue button that completes a mainline objective is already on screen at an earlier point of the participation-minimal walk, before that objective's own activation chain has happened — so a player can take it and walk past a load-bearing beat. Names the objective, the beat, the dependency edge (`after`, or the flag the beat is what sets), and what the skip costs the mainline (the wave the beat spawns, the flag it sets, the quest that then never opens). Reported per branch too (`branch::check_branches`), naming the branch, for skips the campaign's own critical path does not already admit. Prescription: put the beat's flag on the option (`requires_flags`), or move the option into a `cast` scene that opens only after the beat. |
-| `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. Keys on the stage-1 `areas[].mitigation` declaration, so a renamed water bottle in a class kit does not pass the gate. **One diagnostic for the whole build**, because its remedy is re-arranging a room and a designer cannot re-arrange a room they were not told about: it names every dark area (worst first), each with its dark-cell count out of the cells measured in it and its dark cells grouped into contiguous regions — adjacency is `nav::World::neighbors`, symmetrised, so a region is a run a body can walk without leaving the dark — each region with its extent and its own darkest cell, plus the campaign's single darkest cell. Both lists are capped and state how many entries and cells they dropped. The prescription that closes the report names the document THIS campaign declares lighting in — `world.areas[].lighting` where prefabs place the world, the site plan's own `lighting` where the blockout is derived — and it offers `mitigation` only where that surface exists. It does not on a site-plan campaign: `mitigation` lives on an `areas[]` entry and `DW0839` requires that list to be empty, so a derived map is offered two ways rather than three, and the count in the message is computed from the list of ways rather than written beside it. **A derived map therefore has no night-vision mitigation at all** — a capability gap, recorded here rather than papered over: such a campaign lights its blockout or brightens the scene. |
+| `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. Keys on the stage-1 `areas[].mitigation` declaration, so a renamed water bottle in a class kit does not pass the gate. **One diagnostic for the whole build**, because its remedy is re-arranging a room and a designer cannot re-arrange a room they were not told about: it names every dark area (worst first), each with its dark-cell count out of the cells measured in it and its dark cells grouped into contiguous regions — adjacency is `nav::World::neighbors`, symmetrised, so a region is a run a body can walk without leaving the dark — each region with its extent and its own darkest cell, plus the campaign's single darkest cell. Both lists are capped and state how many entries and cells they dropped. The prescription that closes the report names the document THIS campaign declares lighting in — `world.areas[].lighting` where prefabs place the world, the site plan's own `lighting` where the blockout is derived — and it offers `mitigation` only where that surface exists. It does not on a site-plan campaign: `mitigation` lives on an `areas[]` entry and `DW0839` requires that list to be empty, so a derived map is offered two ways rather than three, and the count in the message is computed from the list of ways rather than written beside it. **A derived map therefore has no night-vision mitigation at all** — a capability gap, recorded here rather than papered over: such a campaign lights its blockout or brightens the scene. **The report is split by WHOSE cells are dark**, because that is what decides the remedy. Cells the derivation wrote get the paragraph above, unchanged. Cells inside a frame a `detail-plan` row bound get their own: the fixture pass never enters a bound frame (spec-0050 §3, a bound place lights itself), so a plan-level `lighting` reaches none of them and prescribing it would prescribe an act that changes nothing. That paragraph names each dark place with the piece bound to it, and states the darkest cell twice — in world coordinates, where the build measured it, and in the piece's own, where the author edits it — and the remedy it offers is emitters in the piece, a different piece, leaving the place undetailed, or brightening what stands OUTSIDE the frame, since light does cross a frame boundary. One code and one diagnostic still: the fact is the same measured darkness and the same refusal, and what moved is which document the author is sent to. A build whose dark set holds no bound place prints what it printed before, byte for byte. |
 | `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). "Fix in" names the same placement-authority field `DW0210` does. |
 
 **The branch-coherent flow model (`compiler::flow`).** Reachability is not one
@@ -4110,7 +4041,7 @@ A flag producer is conditional on its gating context:
 |----------|----------------|
 | `set-flag` in `on_objective_complete[o]` | `o` is completable **and** every `requires_flags` gate on the enclosing effect chain is satisfied |
 | `set-flag` in a quest's `on_complete` | that quest completes, same gate rule |
-| `set-flag` on a dialogue option | the option is reachable from its tree `root` through options whose own gates are satisfied, and is the world's selected alternative of its group |
+| `set-flag` on a dialogue option | the option is reachable from **one of the roots the campaign can put a body in front of** (below) through options whose own gates are satisfied, and is the world's selected alternative of its group |
 | `set-flag` in an environment trigger's `effects` | the trigger's `requires_flags` are satisfied — **ambient** (a `strike`/`use`/`approach` trigger is player-initiated and has no DAG position) |
 | `set-flag` in a `traps[].payload` | the trap's `requires_flags` are satisfied (ambient, same reasoning — the party can always walk over and spring it) |
 | a trap's `disarm.sets_flag` | the trap's `requires_flags` are satisfied (ambient, same reasoning) |
@@ -4121,6 +4052,29 @@ Consequences worth stating plainly: a `set-flag` gated on the very flag it sets
 `flag/flee` branch cannot satisfy a gate on the `flag/wait` branch; and flags set
 from dialogue, triggers, trap payloads and trap disarms are first-class
 producers, so those legitimate shapes no longer die as spurious `DW0203`.
+
+**A dialogue tree has more than one door, and the model walks from all of them.**
+The roots a reachability walk is seeded from — `Flow::entry_roots` — are the
+tree's declared stage-6 `root` **plus every node a quest's `cast` ledger names as
+that NPC's scene**, and a ledger root counts once its quest is active and its
+placement's `requires_flags` hold. A ledger root is not a shortcut into the tree:
+right-click opens it directly for that quest's duration, which is what the ledger
+is for (spec-0020) — an NPC's right-click being a different scene per quest. So a
+node no `next` link reaches is reachable when the ledger opens it, its options'
+flags are producible, and a branch that forks there is not `DW0482`. The
+quantifier is **per world**: a per-branch cast clause carries the branch's flag,
+so its root opens the node in the worlds holding that flag and nowhere else.
+`forbids_flags` is ignored here for the same reason the option walk ignores it —
+the model is monotone, and a negative gate that closes later cannot un-reach a
+node the party has already stood in. `"unchanged"` needs no resolution: it
+carries forward a root some earlier quest already declared, which is already in
+the union. `Flow::scene_root` asks a narrower question — which ONE root a
+right-click opens at a given instant, where later declaration wins — because it
+models the emitted `dw.cast` dispatch; reachability is the union over the whole
+playthrough. The DSL half has always asked the wider question:
+`NpcDialogue::reachable_from` is the one authority for "what can this tree show,
+entered here", and `DW0120`'s orphan walk and `DW0858` both seed it from a root
+SET.
 
 **Which effect lists those rows range over is not `flow`'s to decide.** Both
 halves of the model — the producer scan in `Flow::new` and the
@@ -5402,6 +5356,17 @@ therefore not optional for a branching campaign.
 - **`validation/branch-chronicle-<branch>.md`** — the 流水账: every reachable
   node's `happening` line in the order the compiled graph plays them, readable
   start to ending, followed by the undated ambient beats and the endings reached.
+  The dated account carries four kinds of line — `quest`, `objective`, `choice`
+  and `effect`. A **`choice` line is the dialogue option this branch takes to
+  complete a `talk-to` beat**, and it is where a fork's divergence lives: a
+  `DialogueEffect` carries no `happening` of its own, so the option is the only
+  thing on that side of the campaign that says what the choice did to the story.
+  The line names the option's own NPC, the node it stands in and its 1-based
+  ordinal — `npc/marshal dlg/marshal-read#2` — so a citation table can point at
+  it. The ordinal is resolved against **that NPC's tree**, the scope
+  `flow::flatten_trees` assigns it in and `plan::plan_npc` emits it in; the same
+  ordinal in another tree is a different option of a different speaker. An option
+  carrying no `happening` contributes no line, and the compiler never invents one.
   The SKELETON (ordering, reachability, which nodes appear) is derived machine
   truth — it is exactly the order `Flow::journal` replays, which is exactly the
   order `Flow::replay` proves; only the flesh (each line's text) is authored,
@@ -5447,9 +5412,9 @@ false.
 | Code | Rule |
 |---|---|
 | `DW0841` | **Detail without a passed walk of this whole.** A campaign carrying a `detail-plan` is refused unless `walk-record.json` exists, parses, carries `verdict: "passed"`, and names both this plan's `site_plan_sha256` and this graph's `layout_graph_sha256`. Missing, unparseable, stale-in-the-plan, stale-in-the-graph and `"findings"` are each named separately — the plan and the graph are different edits with different repairs — and a stale record's refusal prints both sides of the hash that moved. Each hash is over its document's **canonical** bytes, so a reformat is not a re-walk. Both documents are in the key because the derived whole is a function of both: a seam is cut to air or filled with the bar by its edge's `class`, the side an `anchor/unlock-…` stands on is its `opens_from`, and a sky-open box's headroom is its node's `size_class` — so a graph-only edit can move the walked bytes, and can move the walked *connectivity* while moving no byte at all. Stated plainly: the machine half of this gate is freshness and an explicit verdict — that a human really walked is the record author's assertion, held by operating practice, and no engine check can prove otherwise. A `blockout_sha256` mismatch under an unchanged plan **and** an unchanged graph is instead a **warning** naming both hashes and both engine revisions. Validation tier (exit 1), `every_version`. **Binding: walk records read, freshness hashes compared out of the two keyed documents, and `details[]` rows stood in front of.** |
-| `DW0842` | **The binding does not bind.** A `detail-plan` in a campaign with no site plan (the limiting case, naming the missing document); a `place` naming no layout-graph node; two rows for one place; a `piece` the prefab library does not hold; an `anchors` key that is not a name this place owes; an `anchors` value naming no anchor of the piece. Validation tier (exit 1), `every_version`. **Binding: rows resolved, against the plan's box count.** |
-| `DW0843` | **The piece is not the shape of its allocation.** The piece's structure size differs from the handed frame on any axis — the refusal prints both extents, the axis and the direction. **Undersize refuses exactly as oversize does**: the box is the footprint, so a smaller building means a smaller box, which is a site-plan edit and a re-walk, taken visibly. Also under this code: a bound piece declaring no spatial contract, because the equivalence instrument would have nothing to read and a place detailed with such a piece would be a hole in the proof rather than a finding in it. Validation tier (exit 1), metadata only, `every_version`. **Binding: pieces measured.** |
-| `DW0844` | **The piece's openings are not the plan's seams.** Both directions, from metadata, before any byte assembles: a seam this box must answer with no aligned face opening of a compatible class, and a face of the piece answering no seam — the *discovered* seam, at the earliest tier there is. Alignment means the face's opening cells answer the seam's allocated cells across the party plane, or **at** them for a seam lying in the piece's own floor course. Deliberately redundant with `DW0836`/`DW0838` and **not** their replacement: this reads declarations and names the piece and the seam at validation, they read bytes at build and remain the independent observers, and a piece that lies in its metadata passes here and reds there. Validation tier (exit 1), `every_version`. **Binding: seams required, and declared faces examined.** |
+| `DW0842` | **The binding does not bind.** A `detail-plan` in a campaign with no site plan (the limiting case, naming the missing document); a `place` naming no layout-graph node; two rows for one place; a `piece` the prefab library does not hold; an `anchors` key that is not a name this place owes; an `anchors` value naming no anchor of the piece. Validation tier (exit 1), `every_version`. **Binding: rows resolved, against the plan's box count.** **Folded at a zero box count**: when the site plan resolves no box every row misses by construction, so one line states the count, names every row and defers to the primary that already said it — `DW0824` when the campaign carries no `layout-graph.json`, and the plan's own emptiness otherwise. With a map to be wrong about it refuses per row exactly as it always has. |
+| `DW0843` | **The piece is not the shape of its allocation.** The piece's structure size differs from the handed frame on any axis — the refusal prints both extents, the axis and the direction. **Undersize refuses exactly as oversize does**: the box is the footprint, so a smaller building means a smaller box, which is a site-plan edit and a re-walk, taken visibly. Also under this code: a bound piece declaring no spatial contract, because the equivalence instrument would have nothing to read and a place detailed with such a piece would be a hole in the proof rather than a finding in it. Validation tier (exit 1), metadata only, `every_version`. **Binding: pieces measured.** **Deferral**: a `details[]` row is judged against a frame and a seam set the SITE PLAN computed, so where the plan has already refused one of them — the place's box off the kit grid (`DW0825`), or a seam the plan writes on this place and does not resolve (`DW0828`/`DW0829`) — the line still refuses on its own terms and says what it stands downstream of. The primary is in another document, where the reader cannot otherwise see the relation. |
+| `DW0844` | **The piece's openings are not the plan's seams.** Both directions, from metadata, before any byte assembles: a seam this box must answer with no aligned face opening of a compatible class, and a face of the piece answering no seam — the *discovered* seam, at the earliest tier there is. Alignment means the face's opening cells answer the seam's allocated cells across the party plane, or **at** them for a seam lying in the piece's own floor course. Deliberately redundant with `DW0836`/`DW0838` and **not** their replacement: this reads declarations and names the piece and the seam at validation, they read bytes at build and remain the independent observers, and a piece that lies in its metadata passes here and reds there. Validation tier (exit 1), `every_version`. **Binding: seams required, and declared faces examined.** **Deferral**: a `details[]` row is judged against a frame and a seam set the SITE PLAN computed, so where the plan has already refused one of them — the place's box off the kit grid (`DW0825`), or a seam the plan writes on this place and does not resolve (`DW0828`/`DW0829`) — the line still refuses on its own terms and says what it stands downstream of. The primary is in another document, where the reader cannot otherwise see the relation. |
 | `DW0845` | **An owed anchor has no standing.** An owed name left unbound; one bound to a piece anchor that declares no cell (a region answers a gate, and a gate region is never owed by a place); or one bound to an anchor the piece's own contract resolves into something a body cannot be at — a `no_body` region, a bar, a transit volume. Validation tier (exit 1), `every_version`. **Binding: owed names checked over every bound place.** |
 | `DW0848` | **A piece's declared footprint class disagrees with its bytes.** Prefab metadata gains an optional `footprint_class` naming a metrics `size-class.*` rung (`DW0812` refuses a name the table does not define, as for any document naming a table entry). A piece declaring one is refused when its own structure size could serve no box of that class: horizontal extents off the class's range, off the kit grid's quantum, or a height under the class's clearance plus the one floor course a piece owns. The field stays optional for the library at large — every piece predates it — and a piece bound by a `details[]` row is held to exact frame equality by `DW0843` whether or not it declares. Validation tier (exit 1) in the compiler, admission-failing in `delve-admit`, `every_version`. **Binding: pieces declaring a class, against declaration documents read.** |
 
@@ -5520,7 +5485,7 @@ the rule's domain is the more useful thing for the number to say.
 | `DW0780` | `compiler::faces` | **Two placed pieces whose declared exterior faces do not mate.** One piece declares a way in or out on the face it shares with its neighbour, and the neighbour declares nothing there, declares an opening elsewhere along the same wall, or declares a different class (a sightline where the first declares a walk). Build-tier (exit 3), `compiler::plan`, checked after placement. Both pieces pass every prefab gate individually — the pair is what is wrong, which is why no single-piece check can see it. The message names both areas, both prefabs, both faces with their world extents, and what the neighbour offers instead. Compared over the **declared** face contract (`spatial_contract.faces` in prefab metadata), never re-derived from the assembled voxels. A face that opens onto no placed piece is not a finding: a box garden has an outside. |
 | `DW0782` | `delve-admit audit` | **A piece's declared spatial contract disagrees with its own blocks** (spec-0036 §2) — the second of the contract checker's two doors; the first is `delve-grammar expand`, which writes no `.nbt` when a gate is red. Each failed obligation is reported as one error line naming the gate, **its binding count** and what it found; each opt-out instance (an open envelope, a sightline, an out-of-walk region with its computed kind, a declared way with its sign and cell count, a way or bar the walk had to open, an exterior face) is reported as one advisory line, always, because a list is what a reviewer reads and a count is what a blind script satisfies. One enumeration, both doors: this is the same list `delve-grammar expand` prints, because it is the same checker. Raised for a piece that declares a contract, whichever way it is packaged: a single structure template, and a **tile-set manifest**, whose contract and anchors are zone-relative and are therefore judged against the assembled zone rather than against any tile — including a **contingent edge whose cells straddle a tiling seam**, which is judged over the reassembled zone and over no tile alone. A piece that declares no contract is not judged here and says so as `DW0783`. Exit 1. |
 | `DW0783` | `delve-admit audit` | **The second door did not judge this piece**, with the count of what it therefore did not examine. One rule at two severities. A **warning** where the door was entitled to stay shut: the declaration document carries no `spatial_contract`, or there is no document beside the bytes yet (an ingested piece is audited before its metadata exists). An **error** (exit 1) where the door COULD NOT judge: the document does not parse — a piece whose contract nobody can read is not a piece without one — or it declares no contract while its own anchors carry the `resolves_to` an exporter writes only out of a contract, which means the declaration was dropped from the document rather than never made. That last is what keeps the "declares none" case from being an opt-out the defect can supply: a step that loses a top-level key on write leaves behind the anchors it modelled, and the corroboration states its own binding count, so a document with no anchors is visibly one that nothing here could have contradicted. Split from `DW0782` because "the contract and the blocks disagree" is a fact about a piece that HAS a contract, and a piece nothing was asked about is a different rule — sharing one code leaves the silence reading as the pass. Every outcome, including the two warnings, is also recorded in the machine-readable report as `contract.state` plus the door's binding counts (files, cells, declared spaces/regions/edges/anchors, obligations run, objects examined, anchors carrying a resolved element), so a report whose door never opened is not the same artifact as a report whose door opened and found nothing wrong. |
-| `DW0781` | `compiler::faces` | Advisory: the piece-mating check examined **zero** abutting faces, so `DW0780` proved nothing about this world. Raised when no declared face of any placed piece touches another placed piece. The verdict states two counts, because they are two findings with two repairs: pieces carrying a `spatial_contract` at all (none means the library predates it and owes an adoption round), and how many of those declare a **face** (a contract whose every edge joins two of the piece's own spaces has made its claim and offers a neighbour no side to disagree with). Advisory rather than a red because old documents keep compiling (version-adoption discipline); the adoption round that gives the library contracts is what turns this binding into a number. |
+| `DW0781` | `compiler::faces` | Advisory: the piece-mating check examined **zero** abutting faces, so `DW0780` proved nothing about this world. Raised when no declared face of any placed piece touches another placed piece. The verdict states two counts, because they are two findings with two repairs: pieces carrying a `spatial_contract` at all (none means the library predates it and owes an adoption round), and how many of those declare a **face** (a contract whose every edge joins two of the piece's own spaces has made its claim and offers a neighbour no side to disagree with). Advisory rather than a red because old documents keep compiling (version-adoption discipline); the adoption round that gives the library contracts is what turns this binding into a number. **The message is one line — the counts and the object class — and the reading is here.** A site-plan world allocates its ways at stage 4, on faces two boxes already share, and proves them over the built bytes by `DW0836`, so a zero there is the honest count of a question that world does not ask rather than a proof that went missing. In a prefab world a zero means nothing here proves the pieces fit together: a piece without a contract makes no claim about its own sides at all, and a contract declaring only interior edges has made its claim and offers a neighbour nothing to disagree with. Subject: the campaign, so it prints among the campaign advisories. |
 | `DW0790` | `delve-render` | **A blockstate has no definition in the pinned asset source** (`viewer` / `palette`): the id does not exist at this version, or its model or one of its textures is absent. A **warning**, with the cell count and the offending resource — the reviewer still needs the rest of the building, and the block is listed on the page rather than silently drawn as if it had resolved. It says what the page cannot draw and nothing about what a server would load: whether an id the client jar lacks is also a defect in the world is decided by the template's own `DataVersion`, which is `DW0734`'s question and not this one. `minecraft:chain` is the live instance — the pinned game holds `minecraft:iron_chain` instead, the prefab naming the old id declares `DataVersion` 2975, and load-time datafixing places `iron_chain` correctly, so the finding here is that the review page draws a placeholder where the game draws a chain. Also carries the block-entity texture case when the asset source is an ordinary resource pack rather than the pinned game (see `DW0792`). |
 | `DW0791` | `delve-render` | **A palette entry leaves properties unwritten that its blockstate definition selects a model with** (warning), naming the properties, the values the pinned version's default state supplies, and the cell count. The state is legal — vanilla completes it from the default state on load — but the file then means something only a running server can work out, and what the reviewer is looking at is not what the file says. Worst on a `multipart` definition, where an unwritten property matches no case at all: a `minecraft:cobblestone_wall` with nothing written drew a **solid cube** where a wall post stands, and every tool in the repo reported it resolved. Measured over the library at the pinned content SHA: **15 palette entries across 7 of the 36 prefabs**, which is 7 distinct blockstates — a barrel's `open`, a grass block's and a podzol's `snowy`, a button's `powered`, a fence gate's `in_wall`. No connection class is among them: an omitted connection is `DW0735`, and the generators write those states from the piece's own neighbours, so the library carries none. Counting *every* unwritten property instead of only the selecting ones gives 84 entries across 20 prefabs; the difference is `waterlogged` and the non-selecting residue beside it (a trapdoor's `powered`, `signal_fire`, `cracked`, `facing`, `distance`), real and invisible. This is what stops the review page reporting a clean resolution over a building whose walls are the wrong shape. The predicate is the block's own definition — a property the variant keys or the `multipart` `when` clauses test — so it is a superset of `DW0735`'s shape-carrying class and a subset of "every unwritten property": `distance` on a leaf block changes no picture and is not reported. Fix by writing the property at the value the message names; completion never overrides a written value, so the BlockState is unchanged. |
 | `DW0792` | `delve-render` | **The review page's resources do not hold together** (exit 10, no page written) — a finding about this toolchain rather than about the prefab, and one that is silent by construction in both of its forms. Either the vendored renderer has lost its local texture-id patch (deepslate asks for `entity/banner/banner_base` and `entity/shield/shield_base_nopattern`, paths no Minecraft version ships; 1.21.11 has both at the jar's top level, and unpatched every banner and shield renders as the missing-texture checker), or a **block-entity texture id** the emitter asks for is absent from an asset source that declares itself to be the pinned game. Those ids are named by the renderer's code and by no model file, so the emitter must keep a second copy of the table and a wrong entry in it is invisible — a texture that does not exist and a texture nobody asked for look identical in a finished picture. What an absence MEANS is decided by the source rather than chosen: a jar carrying `version.json` with the pinned id is complete by definition, so a texture it lacks is the table and the version disagreeing; any other source is a resource pack, entitled to be partial, and gets `DW0790`. Rebuild the bundle with `tools/build-deepslate-bundle.sh`, or fix the table in `crates/render/src/viewer/resources.rs`. |
@@ -5562,7 +5527,7 @@ Deterministic throughout (`BTreeMap`-sorted override keys, sorted file walk).
 | Code | Meaning |
 |------|---------|
 | `DW0812` | **A document names a metrics entry the table does not define.** A size class, a seam opening, a stair pitch or a storey height that resolves to nothing. Validation tier (exit 1), `every_version`. Raised at `Metrics::resolve`, which is the **only** path from a name to an entry — the map behind it is private — so a name the table does not define cannot be resolved, cannot compile, and no check downstream ever has to cope with one. That is what makes the table the single authority for this vocabulary rather than a suggestion, and it is the reason a second lookup written beside it would be a defect rather than a convenience. The refusal names the bad name **and the whole defined set of that kind**, because the author's next action is choosing a real one and a refusal that only says *no* sends them to read the compiler. **Binding: references resolved.** At the current version that count is **zero documents**, stated here rather than implied: no authored surface names a metrics entry until the layout-graph and site-plan stages exist, so the code lands with its resolver and its tests and no document call site. It is not the UNRUN shape for the reason that shape is about — nothing has to *remember* to call this; the round that adds those stages has no other way to read a name. |
-| `DW0813` | **A verdict rests on a standard the metrics gym has not walked.** One warning per run (exit 0), `every_version`, naming every uncalibrated building metric some check above actually read. It asks the campaign for nothing — it reports a property of the ENGINE's own table — which is why no fence grandfathers it and no campaign can adopt its way out. The checks still ran and still refuse: a provisional number is a number, and what the line adds is that the green rests on a seed. **Bound to the READ, not to a call site.** `BuildingEntry::value` is the only way to reach a building metric's number and it takes the run's `Reads` ledger, so a check that consumes a seed has recorded that it did; `Metrics::notice` turns the ledger into the line. The residual is stated rather than implied: a caller that constructs its own ledger, reads through it and drops it has bypassed the notice — a deliberate act, not the omission the rule exists to catch. On the campaign path it is closed rather than merely narrow: `validate_campaign_with` constructs ONE ledger and threads it through the stage-3 and stage-4 checks together, so every building metric either of them rests a verdict on lands in the ledger the notice reads, and there is no second ledger for a read to disappear into. **Binding: building metrics read, and how many of them are provisional, stated every run whether or not the line prints.** Zero provisional reads means the line does not print, which is the calibrated end state and not a vacuity; zero reads at all is a different fact and is the one the binding count exposes. Its live binding today is `delvec metrics`'s own self-check — the table's consistency verdict is a real verdict on real seeds. |
+| `DW0813` | **A verdict rests on a standard the metrics gym has not walked.** One warning per run (exit 0), `every_version`, naming every uncalibrated building metric some check above actually read. It asks the campaign for nothing — it reports a property of the ENGINE's own table — which is why no fence grandfathers it and no campaign can adopt its way out. The checks still ran and still refuse: a provisional number is a number, and what the line adds is that the green rests on a seed. **Bound to the READ, not to a call site.** `BuildingEntry::value` is the only way to reach a building metric's number and it takes the run's `Reads` ledger, so a check that consumes a seed has recorded that it did; `Metrics::notice` turns the ledger into the line. The residual is stated rather than implied: a caller that constructs its own ledger, reads through it and drops it has bypassed the notice — a deliberate act, not the omission the rule exists to catch. On the campaign path it is closed rather than merely narrow: `validate_campaign_with` constructs ONE ledger and threads it through the stage-3 and stage-4 checks together, so every building metric either of them rests a verdict on lands in the ledger the notice reads, and there is no second ledger for a read to disappear into. **Binding: building metrics read, and how many of them are provisional, stated every run whether or not the line prints.** Zero provisional reads means the line does not print, which is the calibrated end state and not a vacuity; zero reads at all is a different fact and is the one the binding count exposes. Its live binding today is `delvec metrics`'s own self-check — the table's consistency verdict is a real verdict on real seeds. Walking the gym is what retires it, one entry at a time. **Subject: the ENGINE** (`Subject::Engine`, the only code that declares it today), so it prints once per run as one line, after every diagnostic that is the author's — nothing they write moves it, and it reads identically on every campaign this engine compiles. The message carries the count and the names; this row is the reasoning's home. |
 
 The table itself, its two halves and its export are §10.
 
@@ -5596,26 +5561,52 @@ own, **cheaply, before geometry exists to make it expensive**. Every code is
 `dsl_version` 0.13.0 in which to write any of it, so no campaign can go red on a
 document it did not change.
 
-Two tiers, and which one a rule is in is decided by what it asks. Referential
-wellformedness and agreement with the mission are **validation** (exit 1) and run
-before anything semantic; reachability is **analysis** (exit 2), the same tier
-`DW0202`–`DW0204` answer the quest graph's reachability at, and for the same
-reason. `dsl::layout::check` is called from `validate_campaign_with` whenever
-either document is present and `dsl::layout::analyze` from
-`compiler::analyze::analyze_campaign`, which is the one pass `delvec analyze` and
-`delvec build` both go through — so there is no path to a built world that skips
-either, and no step anyone has to remember.
+**One tier, and it is validation (exit 1)** — referential wellformedness,
+agreement with the mission, and reachability alike. `dsl::layout::check` is
+called from `validate_campaign_with` whenever either document is present, and it
+is the only caller of `dsl::layout::reachability`, so there is one battery in one
+place, no second copy of any rule, and no step anyone has to remember. `delvec
+analyze` and `delvec build` both validate first, so a graph fault still cannot
+reach a built world.
+
+**What decides a tier here is when a check can fire, not what kind of question it
+asks.** The reachability trio was sorted by kind — `DW0816`/`DW0817`/`DW0819` are
+reachability questions like `DW0202`–`DW0204`, so they were raised from
+`compiler::analyze::analyze_campaign` — and that put them somewhere no verb could
+reach them at the step they exist for. The analysis pass runs only on a campaign
+that already validates, and a campaign at the graph step carries `DW0150` by
+construction (the plan is written and stage 5 is not), so `delvec analyze`
+returned at the validation gate and the graph went unchecked until stage 5 was
+written. That is past the design gate, and this section's own first sentence says
+the graph is checked *cheaply, before geometry exists to make it expensive*. The
+battery is a function of the campaign documents — it reads no plan, no prefab and
+no block — which is what let it move.
+
+**The proofs read the mission, so they say so while the mission is unwritten.**
+`Grants::of` derives a flag grant from stage-5 quest effects and stage-6 dialogue,
+so a campaign between the plan and the quests has no `set-flag` anywhere and every
+flag-gated way in its graph is shut to the closure. A **quest**-gated way is not
+affected: a quest is credited once every one of its beats sits at a reached place,
+and beats are the graph's own document. So a reachability refusal computed while
+stage 5 declares no quests carries a caveat naming that state and pointing at
+`DW0150` — attached only where the mission's absence could be the cause, which is
+a graph that gates on a flag at all, and worded as a caveat rather than a
+dismissal, because a place can be unreached for reasons the mission has nothing to
+do with and those are findings now. `DW0818`'s clause is the same predicate and a
+different consequence: there the absent mission is the whole of the fault, so it
+says the refusal clears; here it says which of two readings the author must
+choose between.
 
 | Code | Meaning |
 |------|---------|
 | `DW0814` | **The graph is not a graph.** A duplicate node or edge id, an end naming no declared place, an edge with both ends in one place (at every class — a self-loop states nothing a place does not already state, and would later be a seam with no face to sit on), a `critical_path` step or a `beats[]` entry naming no place, an `entry` or `goal` that is not a node, a place with an empty `intent`. Referential wellformedness, refused before any semantic check runs, because every check below reads node ids and a dangling one would make each of them answer about a place that is not there. Malformed ids are the ordinary `DW0110` and duplicates in the brief the ordinary `DW0111`: an id is an id. Validation tier (exit 1). |
-| `DW0816` | **A node the closure never reaches.** Under the monotone closure (§2), a place unreachable from `entry` respecting gating and one-way direction. The message names the place, **the nearest place a body can stand** — so the missing link is visible rather than searched for — and how many of the graph's places are reachable at all. Analysis tier (exit 2). **Binding: places examined, stated.** |
-| `DW0817` | **The critical path does not hold.** Four faults under one code, because they are one claim: it does not run `entry` → `goal`; a step names two places no connection joins, or joins them the other way; a step crosses a connection **not open yet at that point in the walk**, judged stepwise against what the beats bound to places already visited have granted (quest-legal order, not merely eventual satisfiability); or it never visits a place where a beat of the **mandatory quest spine** happens, so a body walking it would reach the goal without doing the mission. The spine is the finale and everything its `depends_on` chain demands. Analysis tier (exit 2). **Binding: path steps checked and spine beats required, both stated in the binding line**, and a zero on the second is reported there as a finding — a critical path over an unbound graph is a route through nothing. The count is stated rather than raised as a diagnostic on purpose: at analysis tier every reported diagnostic is exit 2, warning or not, so a line saying *this bound to nothing* would turn a green analysis red, and a count is not a fault. |
+| `DW0816` | **A node the closure never reaches.** Under the monotone closure (§2), a place unreachable from `entry` respecting gating and one-way direction. The message names the place, **the nearest place a body can stand** — so the missing link is visible rather than searched for — and how many of the graph's places are reachable at all. Validation tier (exit 1). While stage 5 declares no quests and the graph gates on a flag, the message carries the unwritten-mission caveat described above. **Binding: places examined, stated.** |
+| `DW0817` | **The critical path does not hold.** Four faults under one code, because they are one claim: it does not run `entry` → `goal`; a step names two places no connection joins, or joins them the other way; a step crosses a connection **not open yet at that point in the walk**, judged stepwise against what the beats bound to places already visited have granted (quest-legal order, not merely eventual satisfiability); or it never visits a place where a beat of the **mandatory quest spine** happens, so a body walking it would reach the goal without doing the mission. The spine is the finale and everything its `depends_on` chain demands. Validation tier (exit 1). The unwritten-mission caveat rides the **not-open-yet** fault alone, and only when that connection waits on a flag: the other three are judgements about the graph by itself, which an absent mission has nothing to say about. **Binding: path steps checked and spine beats required, both stated in the binding line**, and a zero on the second is reported there as a finding — a critical path over an unbound graph is a route through nothing. The count is stated rather than raised as a diagnostic on purpose: a line saying *this bound to nothing* is not a fault, and the binding line is where a count belongs. |
 | `DW0818` | **The graph names quest-side state that does not exist, or a beat has no place.** Four shapes of one referential rule between the graph and the quest documents: a `beats[]` entry naming a quest or objective the mission does not declare; a `gating` naming a flag no producer sets or a quest that does not exist; a `barred` connection whose `gating` is **empty**, which is passable from world load and therefore not barred; and the reverse direction — an objective in the quest documents bound to no node, or to two. The flag half reads `dsl::validate::produced_flags`, the one producer inventory, so the answer here is the same answer `DW0172` gives. **The reverse direction is the ordering tooth between the mission and the space** (spec-0049 §7): a graph may be authored at any point without touching the quests, and it may not coexist with a mission it ignores. Validation tier (exit 1). **Where stage 5 declares no quests at all**, every name this rule borrows from the mission is absent at once — every beat and every quest-gated way — so each refusal carries a clause saying so and pointing at `DW0150`, which is the one diagnostic that names that state. The clause is attached to both borrowing sites rather than to the beat alone: they are the same borrowing, and a clause on one of them would be a binding narrower than the rule. |
-| `DW0819` | **A one-way edge strands.** For every one-way traversal edge `u → v`, some path from `v` back to the critical path must exist over edges passable under the obtained set with which `u` was **first** reached. A body can only be at `v` having been at `u` holding at most that much; if it cannot rejoin the spine, the drop is a softlock. **Marked judgement**: the set at `u` is the maximal one available at that round, and a player may arrive holding less — the residual is covered over bytes by the branch-aware battery, and a walked blockout demonstrating a strand this called green is the evidence that moves it to a gate-state lattice. Analysis tier (exit 2). **Binding: one-way edges examined, stated.** |
+| `DW0819` | **A one-way edge strands.** For every one-way traversal edge `u → v`, some path from `v` back to the critical path must exist over edges passable under the obtained set with which `u` was **first** reached. A body can only be at `v` having been at `u` holding at most that much; if it cannot rejoin the spine, the drop is a softlock. **Marked judgement**: the set at `u` is the maximal one available at that round, and a player may arrive holding less — the residual is covered over bytes by the branch-aware battery, and a walked blockout demonstrating a strand this called green is the evidence that moves it to a gate-state lattice. Validation tier (exit 1). Carries the unwritten-mission caveat on the same terms `DW0816` does. **Binding: one-way edges examined, stated.** |
 | `DW0820` | **A shortcut closes no loop.** An edge marked `shortcut` must lie on a cycle: its ends stay connected with it removed. **Direction-blind and gating-blind** — the loop a shortcut closes is spatial, and a long way round that is gated or one-way is still the long way round. A shortcut that closes nothing is a corridor wearing a shortcut's name, and the graph is where that claim is cheap to refuse. Validation tier (exit 1). **Binding: shortcut edges examined, stated.** |
 | `DW0875` | **A place is classified twice, or not at all** (spec-0053). A node declares **exactly one of** `size_class` and `way_class`. Both is two answers to one question with nothing to choose between them — every geometric rule below would have to pick, and there is no rule to pick by. Neither is a place with no standard at all: `DW0832` has nothing to hold its extents to and the pacing projection has nothing to cross it in. The refusal names the offending place and, on the second shape, **both defined vocabularies**, because the author's next action is choosing from one of them. Validation tier (exit 1), `every_version` — the rule judges what the document SAYS, and below `0.19.0` there is no `way_class` to write. |
-| `DW0822` | **The pacing measurement.** Per critical-path leg, the nominal traverse length from the metrics table's size-class ladder, summed and multiplied by the pacing coefficient into a projected route-minutes figure. **Warning, exit 0, with no threshold anywhere**: the coefficient is uncalibrated until the first walked blockout and the first full playtest, and a threshold on a number that uncertain would be defending nothing. It is printed so the projection and the measurement taken over the built world can be set side by side, which is how the coefficient gets calibrated at all. **Binding: places crossed and steps measured, both in the message.** A **way** leg is measured, never looked up: a way class bounds a cross-section and leaves the run free, so what crossing one costs is its box's LONG horizontal extent, read off the site plan — there is no `nominal_traverse_blocks` on a way class and there is not going to be one, because a route's length is per-campaign geometry and never a standard. Where the campaign carries no site plan yet, a way leg has no geometry and the line says so: the leg is stated **unprojected** in its own binding rather than given an invented number, which is the ordinary state of a graph authored before its embedding and not a fault. |
+| `DW0822` | **The pacing measurement.** Per critical-path leg, the nominal traverse length from the metrics table's size-class ladder, summed and multiplied by the pacing coefficient into a projected route-minutes figure. **Warning, exit 0, with no threshold anywhere**: the coefficient is uncalibrated until the first walked blockout and the first full playtest, and a threshold on a number that uncertain would be defending nothing. It is printed so the projection and the measurement taken over the built world can be set side by side, which is how the coefficient gets calibrated at all. **Binding: places crossed and steps measured, both in the message.** A **way** leg is measured, never looked up: a way class bounds a cross-section and leaves the run free, so what crossing one costs is its box's LONG horizontal extent, read off the site plan — there is no `nominal_traverse_blocks` on a way class and there is not going to be one, because a route's length is per-campaign geometry and never a standard. Where the campaign carries no site plan yet, a way leg has no geometry and the line says so: the leg is stated **unprojected** in its own binding rather than given an invented number, which is the ordinary state of a graph authored before its embedding and not a fault. **The message is one line**: the figure and the world's own `target_minutes` beside it, so the reader has something to read it against, with the reasoning above left here rather than reprinted every run. Subject: the campaign — it measures THIS graph. |
 
 ### DW0824–DW0835 — the site plan (`dsl::siteplan`; error + one advisory)
 
@@ -5630,12 +5621,9 @@ Every code is `every_version`, for the reason `DW0812` is: there is no field
 below `dsl_version` 0.14.0 in which to write any of it, so no campaign can go red
 on a document it did not change.
 
-**One tier, and it is validation (exit 1).** Round 3 of the pipeline puts nothing
-at analysis tier, and the reason is worth stating because its sibling does the
-opposite: the layout graph's `DW0816`/`DW0817`/`DW0819` are *reachability*
-questions about a whole graph, which is the tier `DW0202`–`DW0204` answer at.
-Nothing here is that. Every rule below is a property of the document in front of
-it, so a plan that is wrong is wrong before anything is analyzed.
+**One tier, and it is validation (exit 1)**, as it is for the layout graph beside
+it. Every rule below is a property of the document in front of it, so a plan that
+is wrong is wrong before anything is analyzed.
 
 **What invokes them**: `dsl::siteplan::check`, from
 `dsl::validate::validate_campaign_with`, whenever the campaign directory holds a
@@ -5664,7 +5652,7 @@ half they will be checked against.
 |------|---------|
 | `DW0824` | **The graph and the plan do not agree exactly.** Six correspondences and three references under one claim: everything the graph declares is embedded exactly once, and everything the plan embeds is something the graph declared. A place with no box or with two; a box naming no place; a traversal connection with no seam or with two; a seam naming no connection, or naming a `vision` one (which carries a sightline — a vista's two ends are routinely not adjacent, so the seam construct cannot state what it asserts); a `vision` connection with no sightline; a sightline naming a traversal connection, or whose end does not lie in the place its connection names (the stage-5 proof walks exactly that segment, so ends elsewhere prove a different claim); `stair_in` on a non-stair or naming a third place; an identity naming a fact the brief does not state or a place the plan does not embed. **And the ordering tooth**: a site plan present with no layout graph, or with no geometry brief, is refused naming the missing document — one refusal, not one per dangling name inside the plan. The type carries the other half, which no check could: a box's `node` is required, so a plan that describes a space without naming the place it is the space of does not parse. This is also the **two-artifact question's instrument** (spec-0049 §10): how often it fires *alone* — a graph edit with no plan edit, or the reverse — is the CI-visible number that decides whether graph and plan stay two documents. |
 | `DW0825` | **A box leaves the kit grid.** A horizontal extent that is not a multiple of the metrics table's quantum `q`, named per box with the extent, the quantum and the two nearest multiples — the numbers a plan edit needs. A zero extent is not a case here: extents are `NonZeroU32`, so the schema refuses one as `DW0100`. |
-| `DW0826` | **Something the plan places leaves the region.** A box cell or a whole-owned volume cell outside `region`, named with the offending span against the region's on each axis. The prescription is deliberate and is in the message: **the region is the brief's number flowing down, and a box is never grounds to grow it** — move the box, shrink it, or change the brief's fact and re-derive so the change is visible in the document that owns it. Volumes answer to it too, because a `massif` outside the region is the whole owning mass beyond its own declared extent, which is extent-flows-up arriving through the back door. |
+| `DW0826` | **Something the plan places leaves the region.** A box cell or a whole-owned volume cell outside `region`, named with the offending span against the region's on each axis. The prescription is deliberate and is in the message: **the region is the brief's number flowing down, and a box is never grounds to grow it** — move the box, shrink it, or change the brief's fact and re-derive so the change is visible in the document that owns it. Volumes answer to it too, because a `massif` outside the region is the whole owning mass beyond its own declared extent, which is extent-flows-up arriving through the back door. **One region is one finding**: where more than one box leaves it, the boxes are one line at `/content/boxes` stating the count, the region and every offender with its own overrun, and the volumes are one line at `/content/volumes`; a single offender still gets its own line at its own index. |
 | `DW0827` | **Two boxes overlap.** Boxes are disjoint; shared **faces** are the only permitted contact, because a seam needs one — and a shared face is a one-cell gap rather than a touch. Named with both places and the intersection on all three axes. Overlapping boxes are two owners for one block and the derivation would have to pick between them with no rule to pick by. |
 | `DW0828` | **A seam is not on a shared face.** The declared face is not shared by the edge's two boxes — they are not one cell apart across it (the message states the gap it measured, and an overlap is stated as one), their spans miss each other on an in-plane axis, or a horizontal seam names a sky-open place with no ceiling or floor plane to sit in — or the seam's `at` corner lies off the shared area. **Seams are allocated on faces both boxes already have**: the two-places-cannot-mate failure class is resolved here, where both boxes are still free to move, and never later between two finished buildings. The refusal prints both boxes' cell ranges and floors. |
 | `DW0829` | **A seam's opening does not fit, or its sill cannot be reached.** Two halves of one claim that the opening is usable. Geometric: the named standard's `width × height` anchored at `at` runs past the shared face, named with both rectangles — the standard set is the vocabulary, so an opening is never quietly cropped to fit. Physical: on a vertical face, a `walk` or `barred` seam's sill is more blocks over the floor of a side the connection is entered from than a body reaches by jumping, so the connection the graph declares is not one; the prescription is to drop the sill or declare a `stair` and let the treads carry the climb. (An opening name the table does not define is `DW0812` — that is the table being the single authority for the vocabulary, and this code is the geometric half.) |

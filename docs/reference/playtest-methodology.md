@@ -69,6 +69,15 @@ a clean coverage set look identical to a reader who is not counting. When a
 campaign has hostile bodies but no tiered actor or wave, the floor gate is
 unbound; say so in the round summary rather than reporting a pass.
 
+**The mirror image, read the same way.** A run can go RED for a reason that is not a
+verdict on the delve either. When the harness itself dies, the run report carries
+`harness_crash: {stage, reason}` and the bot exits 4 — distinct from a failed step
+(1) and a bot death (3). `harness_crash` is stated as `null` on every run that
+reached a verdict, so a non-null value says in one field that no stage beside it
+decides anything about the content. A round reporting a red stage says which of
+the two it was; a crashed harness is a finding about the harness, and the delve is
+unmeasured rather than failed.
+
 ## Rule 2 — a finding is not closed until its general form is a diagnostic
 
 An instance fix leaves every other instance of the same defect in the build,
@@ -210,18 +219,34 @@ determined by the object, never declared by the operator:
   is not a blockout (fail closed);
 - the row's class **measures zero twice**: the binding probe counted zero, and
   the precondition counted zero — via `applies_when` where declared, or by the
-  probe's own shape where its predicate selects the object class by identity
-  (`eq`/`in`/`prefix` only — such a zero *is* the class measuring zero). A
-  `has`/`has_any`, `artifact` or `out` probe can be narrower than its carriers
-  (the floor gate counted `tier`, not actors), so its zero without a declared
-  `applies_when` stays `UNBOUND`, blockout or not.
+  probe's own shape where the probe COUNTS THE OBJECT CLASS ITSELF, which is
+  true in exactly two cases. A `dsl` predicate selecting by identity
+  (`eq`/`in`/`prefix` only) counts the class across the declared design. And a
+  `campaign` glob with no `contains` counts files in the campaign SOURCE, where
+  the file IS the object: the storybook is `campaigns/<id>/README.md`, no stage
+  document declares that a campaign has one, so nothing stands behind it for a
+  precondition probe to count — a row asked for one could only name its own
+  binding, which the ledger loader refuses outright. Any non-file path matching
+  the glob withdraws that claim and reds, because `is_file()` answers an honest
+  `False` for a directory standing where the file belongs.
+  Everything else stays ambiguous and stays `UNBOUND`, blockout or not: a
+  `has`/`has_any` predicate, an `artifact` or `out` probe (derived output, one
+  step from a declaration), and a `contains` glob — which counts a declaration
+  inside carriers that exist, and is the floor gate's zero wearing a file's
+  clothes (the carriers were there; `tier` was not).
 
 What the opt-out demands, the defect cannot supply: *a build whose combat went
 missing* fails at least one measurement — declared objects make the binding
 non-zero, a declared precondition surface (a flask nothing refills) reds
 `UNBOUND`, a declared-but-unemitted validation ledger reds `MISSING-CHECK`,
 and an assembled or detailed campaign cannot present the blockout record at
-all. `OUT-OF-STAGE` rows are counted in the headline, listed in their own
+all. The storybook clause is the same shape: *release notes that advertise a
+delve the campaign does not have* need a storybook to be rendered from, and a
+campaign that has one measures non-zero. Zero storybooks is what a blockout
+looks like because the storybook is written at
+`skill-workflow.md` step 14 and the blockout is walked at step 9 — so the
+walk that is a site-plan campaign's first gate is exactly the staging at which
+no campaign can carry one. `OUT-OF-STAGE` rows are counted in the headline, listed in their own
 section, named by id in the admission token, and announced by the boot banner
 — the owner is told, per class, what her walk is not protected from, which is
 rule 4's obligation kept rather than folded away. The moment the campaign

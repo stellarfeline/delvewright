@@ -590,6 +590,21 @@ pub struct Anchor {
     /// contract for a sealed gate. Absent for every non-trap anchor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trigger_block: Option<String>,
+    /// **One line of prose about this place, for a person reading the piece.**
+    ///
+    /// The engine never reads it: nothing routes, places, lights or refuses
+    /// anything because of what it says. It is modelled all the same, because
+    /// a document whose only reader is a machine is a document a person cannot
+    /// review, and a producer that writes the key unmodelled makes every build
+    /// report `DW0543` — "this library is newer than this engine" — about a
+    /// sentence. A tripwire that fires on the normal state of the tree is not a
+    /// tripwire.
+    ///
+    /// It is prose, so it is deliberately unconstrained and deliberately not
+    /// inventoried for translation: it is addressed to whoever opens the `.json`,
+    /// never to a player.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     /// Every anchor key this version does not model, kept verbatim. The anchor
     /// block is where this document has grown most often — `resolves_to`,
     /// `dispenser` and `trigger_block` were each a new key on a shipped
@@ -1518,6 +1533,43 @@ mod tests {
                 "the refusal lists `{role}`: {msg}"
             );
         }
+    }
+
+    /// An anchor's `note` is a modelled key, so a piece that explains its own
+    /// places is not a piece reporting `DW0543` six times a build.
+    ///
+    /// Both halves matter and only one is obvious. It must PARSE into the field
+    /// (or `unknown_keys` reports it, which is the defect), and it must survive
+    /// a round trip unchanged — a modelled key that serialises back differently
+    /// would move every prefab document the first time anything rewrote one.
+    #[test]
+    fn an_anchor_note_is_modelled_and_is_not_an_unknown_key() {
+        let text = r#"{
+  "prefab_id": "prefab/x",
+  "structure": { "file": "x.nbt", "id": "x", "size": [3, 3, 3], "data_version": 4671 },
+  "anchors": { "anchor/a": { "pos": [1, 1, 1], "note": "where a wave forms up" } },
+  "connectors": [],
+  "lighting": { "profile": "unmeasured" }
+}
+"#;
+        let meta = PrefabMeta::from_json(text).unwrap();
+        assert_eq!(
+            meta.anchors["anchor/a"].note.as_deref(),
+            Some("where a wave forms up")
+        );
+        assert_eq!(
+            meta.unknown_keys(),
+            Vec::<(&str, &str)>::new(),
+            "`note` is modelled, so nothing is left for `DW0543` to report"
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&meta.to_json()).unwrap(),
+            serde_json::from_str::<serde_json::Value>(text).unwrap()
+        );
+        // An anchor that says nothing writes no key: every piece admitted before
+        // the field stays byte-for-byte what it was.
+        let plain = serde_json::to_string(&Anchor::point([1, 2, 3], "north")).unwrap();
+        assert!(!plain.contains("note"), "{plain}");
     }
 
     /// An anchor that declares no role writes no key, which is what keeps every

@@ -61,7 +61,6 @@ fn build_dir(dir: &Path) -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates")
@@ -212,6 +211,36 @@ fn absent_difficulty_keeps_the_derivation_and_emits_nothing() {
         "a wave campaign still derives `easy`"
     );
     assert!(!setup(&waves).contains("difficulty "));
+}
+
+/// The build's own `server/README.md` describes `server.properties` in prose, so
+/// its difficulty is the properties file's difficulty. It was the literal
+/// `peaceful` for every campaign ever built, including the ones whose properties
+/// said `easy`, `normal` or `hard` — a page that reads as a description and is a
+/// stale constant. Checked across the derivation and every declared value, so it
+/// cannot be satisfied by a second constant that happens to match one of them.
+#[test]
+fn the_server_readme_states_the_difficulty_the_properties_state() {
+    let cases = [
+        (None, None, "peaceful"),
+        (None, Some(WAVE_QUESTS), "easy"),
+        (Some("easy"), None, "easy"),
+        (Some("normal"), None, "normal"),
+        (Some("hard"), Some(WAVE_QUESTS), "hard"),
+    ];
+    for (declared, quests, expected) in cases {
+        let out = build_hw(declared, quests);
+        assert!(
+            properties(&out).contains(&format!("difficulty={expected}")),
+            "server.properties must carry `{expected}`"
+        );
+        assert!(
+            text(&out, "server/README.md").contains(&format!("`difficulty={expected}`")),
+            "server/README.md must state the difficulty its properties file states \
+             (`{expected}`):\n{}",
+            text(&out, "server/README.md")
+        );
+    }
 }
 
 // --- the declaration wins, in both places ------------------------------------

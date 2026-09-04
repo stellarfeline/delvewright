@@ -118,14 +118,16 @@ fn validate(graph: Option<String>) -> Vec<String> {
     codes_of(&campaign(graph, Some(BRIEF.to_string())))
 }
 
-/// The analysis tier, over the same documents. Reached through
-/// [`delvewright_dsl::layout::analyze`], which is what
-/// `compiler::analyze::analyze_campaign` calls — the compiler side of that
-/// binding is `crates/compiler/tests/layout_graph.rs`.
-fn analyze(graph: Option<String>) -> Vec<String> {
+/// The reachability battery alone, over the same documents. Reached through
+/// [`delvewright_dsl::layout::reachability`], so that a test can isolate the
+/// closure's own verdict from the rest of the validation battery `validate`
+/// above runs. Both are the same tier now: `layout::check` is the only caller
+/// of `reachability`, and the compiler side of that binding is
+/// `crates/compiler/tests/layout_graph.rs`.
+fn reachability(graph: Option<String>) -> Vec<String> {
     let raw = campaign(graph, Some(BRIEF.to_string()));
     let c = delvewright_dsl::parse_campaign(&raw).expect("the fixture parses");
-    delvewright_dsl::layout::analyze(&c)
+    delvewright_dsl::layout::reachability(&c)
         .into_iter()
         .map(|d| d.code)
         .collect()
@@ -154,7 +156,7 @@ fn the_hand_drawn_map_is_accepted() {
         vec!["DW0822".to_string(), "DW0813".to_string()],
         "the green map should raise nothing but the two advisories"
     );
-    assert!(analyze(Some(GREEN.to_string())).is_empty());
+    assert!(reachability(Some(GREEN.to_string())).is_empty());
 }
 
 /// A campaign that carries neither document is untouched — no check runs, and
@@ -166,7 +168,7 @@ fn a_campaign_with_no_map_documents_binds_nothing() {
     let c = delvewright_dsl::parse_campaign(&raw).expect("parses");
     let b = delvewright_dsl::LayoutBinding::of(&c);
     assert_eq!(b, delvewright_dsl::LayoutBinding::default());
-    assert!(delvewright_dsl::layout::analyze(&c).is_empty());
+    assert!(delvewright_dsl::layout::reachability(&c).is_empty());
 }
 
 /// The binding count, stated by hand from the document above and compared
@@ -536,7 +538,16 @@ fn dw0822_projects_the_route_and_refuses_nothing() {
     assert!(d.message.contains("2 step(s)"));
     assert!(d.message.contains("24 blocks"), "{}", d.message);
     assert!(d.message.contains("about 1 minute(s)"), "{}", d.message);
-    assert!(d.message.contains("NO threshold"));
+    assert!(
+        d.message
+            .contains("carries no threshold and refuses nothing"),
+        "{}",
+        d.message
+    );
+    // One line, with something to read the figure AGAINST: the reasoning for why
+    // there is no threshold lives in `compiler.md`'s `DW0822` row, not in every
+    // run's output.
+    assert!(d.message.contains("`target_minutes`"), "{}", d.message);
     // It refuses nothing: the green document is green.
     assert!(
         !check_campaign(&raw)
@@ -571,7 +582,7 @@ fn dw0816_a_place_the_closure_never_reaches() {
         edges(v).remove(3); // the drop
         edges(v).remove(2); // the stair
     });
-    let got = analyze(Some(g));
+    let got = reachability(Some(g));
     assert_eq!(
         got,
         vec!["DW0816".to_string()],
@@ -585,14 +596,14 @@ fn dw0816_a_place_the_closure_never_reaches() {
 #[test]
 fn dw0816_a_place_behind_state_nothing_reachable_grants() {
     let g = graph_with(|v| v["content"]["beats"][1]["node"] = json!("node/vault"));
-    let got = analyze(Some(g));
+    let got = reachability(Some(g));
     assert!(got.contains(&"DW0816".to_string()), "{got:?}");
 }
 
 #[test]
 fn dw0817_a_path_that_does_not_start_where_a_body_starts() {
     let g = graph_with(|v| v["content"]["critical_path"] = json!(["node/hall", "node/vault"]));
-    assert!(analyze(Some(g)).contains(&"DW0817".to_string()));
+    assert!(reachability(Some(g)).contains(&"DW0817".to_string()));
 }
 
 #[test]
@@ -606,8 +617,8 @@ fn dw0817_a_step_no_connection_makes() {
     let g2 = graph_with(|v| {
         v["content"]["critical_path"] = json!(["node/porch", "node/vault"]);
     });
-    assert!(!analyze(Some(g)).contains(&"DW0817".to_string()));
-    assert!(analyze(Some(g2)).contains(&"DW0817".to_string()));
+    assert!(!reachability(Some(g)).contains(&"DW0817".to_string()));
+    assert!(reachability(Some(g2)).contains(&"DW0817".to_string()));
 }
 
 /// Quest-legal order, checked stepwise: the door opens on a quest whose second
@@ -620,7 +631,7 @@ fn dw0817_a_step_through_a_gate_that_is_not_open_yet() {
         edges(v)[4]["one_way"] = json!("b-to-a");
         v["content"]["critical_path"] = json!(["node/porch", "node/vault"]);
     });
-    let got = analyze(Some(g));
+    let got = reachability(Some(g));
     assert!(got.contains(&"DW0817".to_string()), "{got:?}");
 }
 
@@ -629,7 +640,7 @@ fn dw0817_a_step_through_a_gate_that_is_not_open_yet() {
 #[test]
 fn dw0817_a_mandatory_beat_the_path_never_visits() {
     let g = graph_with(|v| v["content"]["beats"][1]["node"] = json!("node/cellar"));
-    let got = analyze(Some(g));
+    let got = reachability(Some(g));
     assert!(got.contains(&"DW0817".to_string()), "{got:?}");
 }
 
@@ -640,7 +651,7 @@ fn dw0819_a_one_way_drop_into_a_place_with_no_way_out() {
     let g = graph_with(|v| {
         edges(v).remove(2); // the stair back up
     });
-    let got = analyze(Some(g));
+    let got = reachability(Some(g));
     assert!(got.contains(&"DW0819".to_string()), "{got:?}");
     // …and `DW0816` does NOT fire, because the drop still reaches it. The two
     // rules are about different things and this is where that is visible.
@@ -656,6 +667,6 @@ fn dw0819_reads_what_the_body_can_be_holding() {
     let g = graph_with(|v| {
         edges(v)[2]["gating"] = json!({ "quest": "quest/open-the-door" });
     });
-    let got = analyze(Some(g));
+    let got = reachability(Some(g));
     assert!(got.contains(&"DW0819".to_string()), "{got:?}");
 }

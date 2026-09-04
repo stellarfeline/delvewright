@@ -98,6 +98,31 @@ export interface BranchOutcome {
 export const STAGES = ["branch-run", "critical-path", "die-retry", "death-loop"] as const;
 export type StageName = (typeof STAGES)[number];
 
+/**
+ * Where a run was when the HARNESS itself died — a labelled stage, or one of the
+ * two phases that precede every stage.
+ */
+export type CrashStage = StageName | "startup" | "connect";
+
+/**
+ * The harness crashed: an exception or a promise rejection nobody was listening
+ * for took the process down, rather than a step failing.
+ *
+ * This is a distinct OUTCOME, not a red stage, and the difference is the whole
+ * point of recording it. A red stage is a verdict on the delve — a step the bot
+ * could not complete, a fight that killed it, a retry loop that did not hold. A
+ * crash is a verdict on the harness: the run never reached a verdict at all, and
+ * nothing in it may be read as one. Before this existed the process simply exited
+ * with no report, and `bot-1 exited with code 1` was indistinguishable from a
+ * content failure to everyone downstream.
+ */
+export interface HarnessCrash {
+  /** What the run was doing when it died. */
+  readonly stage: CrashStage;
+  /** The error's message (and name, when it has an informative one). */
+  readonly reason: string;
+}
+
 /** One stage's outcome. `findings` are advisory; `failures` are why it went red. */
 export interface StageResult {
   readonly stage: StageName;
@@ -129,6 +154,8 @@ export class RunReport {
   private deathLoopBinding: DeathLoopBinding | undefined;
   /** What the die-retry stage examined — recorded on EVERY run, zero included. */
   private dieRetryBinding: DieRetryBinding | undefined;
+  /** Set only when the harness itself died; `null` in the artifact otherwise. */
+  private harnessCrash: HarnessCrash | undefined;
   /** spec-0029: the name-preference binding, zero until the run records one. */
   private namePreference: NamePreference = {
     decisions: 0,
@@ -144,6 +171,20 @@ export class RunReport {
 
   stage(result: StageResult): void {
     this.stages.set(result.stage, result);
+  }
+
+  /**
+   * Record that the harness died. First writer wins: the reason that took the
+   * process down is the one worth reading, and a cascade of follow-on rejections
+   * must not overwrite it.
+   */
+  recordHarnessCrash(crash: HarnessCrash): void {
+    this.harnessCrash ??= crash;
+  }
+
+  /** The crash this run recorded, if any. */
+  crash(): HarnessCrash | undefined {
+    return this.harnessCrash;
   }
 
   recordAssists(windows: readonly AssistWindow[]): void {
@@ -296,6 +337,14 @@ export class RunReport {
       // end-to-end at the SHIPPED difficulty, so the number it ran under belongs
       // in the artifact next to the assists that made it survivable.
       difficulty: this.difficulty,
+      // The harness's own failure, named as such. `null` on every run that
+      // reached a verdict — which is what makes a non-null value legible: the
+      // stages below it are whatever the run had established when the process
+      // died, and NONE of them is a verdict on the delve.
+      harness_crash:
+        this.harnessCrash === undefined
+          ? null
+          : { stage: this.harnessCrash.stage, reason: this.harnessCrash.reason },
       stages: STAGES.filter((s) => this.stages.has(s)).map((s) => {
         const r = this.stages.get(s)!;
         return {

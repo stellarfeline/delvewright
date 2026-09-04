@@ -169,6 +169,27 @@ struct TreeModel {
     options: Vec<OptModel>,
 }
 
+/// A dialogue node some quest's `cast` ledger opens for an NPC — the second
+/// kind of entry point a body offers, beside the tree's own stage-6 `root`.
+///
+/// A ledger root is not a shortcut into the tree: right-click opens it
+/// *directly* for that quest's duration, so a node whose only entry is one of
+/// these is reachable, and the flags its options set are producible. That is
+/// the whole point of the ledger (spec-0020) — an NPC's right-click being a
+/// different scene per quest.
+#[derive(Clone, Debug)]
+struct CastRoot {
+    /// The quest whose ledger declares it: the root is live only once this
+    /// quest has begun.
+    quest: String,
+    /// The node id the right-click opens.
+    root: String,
+    /// The placement's own `requires_flags`. A per-branch cast clause is gated
+    /// on the branch's flag, which is what makes a ledger root open a node in
+    /// **some worlds and not others**.
+    requires: Vec<String>,
+}
+
 /// One XOR alternative of a [`ChoiceGroup`]: a flag-setting option.
 #[derive(Clone, Debug)]
 struct Alt {
@@ -437,6 +458,9 @@ pub struct Flow<'a> {
     /// `(npc, flat option index)` → choice group index.
     opt_group: BTreeMap<(String, usize), usize>,
     trees: Vec<TreeModel>,
+    /// Every `cast` ledger dialogue root, by NPC — the entry points the tree's
+    /// own `root` does not name.
+    cast_roots: BTreeMap<String, Vec<CastRoot>>,
     /// Producers with no DAG position: environment triggers and trap disarms.
     ambient: Vec<GatedFlag>,
     obj_flags: BTreeMap<String, Vec<GatedFlag>>,
@@ -548,6 +572,7 @@ impl<'a> Flow<'a> {
             groups,
             opt_group,
             trees,
+            cast_roots: cast_roots(c),
             ambient,
             obj_flags,
             quest_flags,
@@ -766,7 +791,7 @@ impl<'a> Flow<'a> {
                         npc.as_str()
                     ));
                 };
-                if !self.option_takeable_now(npc.as_str(), n, &st8.flags) {
+                if !self.option_takeable_now(npc.as_str(), n, &st8) {
                     return fail(format!(
                         "the completing dialogue option of `{}` is not reachable at this point — \
                          a node or option on the way to it is still flag-gated",
@@ -1121,7 +1146,7 @@ impl<'a> Flow<'a> {
                 .iter()
                 .map(|w| self.solve(w))
                 .filter_map(|s| s.talk_option.get(arm).copied())
-                .any(|k| self.option_takeable_now(npc.as_str(), k, &st.flags));
+                .any(|k| self.option_takeable_now(npc.as_str(), k, st));
             if !takeable {
                 return false;
             }
@@ -1361,6 +1386,64 @@ impl<'a> Flow<'a> {
             .find(|q| q.id.as_str() == id)
     }
 
+    /// **Every root a body of this tree's NPC can be put in front of**, given
+    /// the quests that have begun and the flags that hold: the tree's declared
+    /// stage-6 `root`, plus every `cast` ledger root whose quest is active and
+    /// whose branch gate holds.
+    ///
+    /// The single authority for seeding a reachability walk over a tree, and the
+    /// reason the model can see a scene only the ledger opens. `scene_root` asks
+    /// a narrower question — which ONE root a right-click opens *at this instant*
+    /// — because it models the emitted `dw.cast` dispatch, where later
+    /// declaration wins. Reachability is the union over the whole playthrough:
+    /// a node the ledger opens at any point is a node the party can stand in
+    /// front of, whether or not some later clause replaces it.
+    ///
+    /// The quantifier is per world. A cast clause carrying `requires_flags` is a
+    /// per-branch clause, so its root opens the node **in the worlds that hold
+    /// those flags and no others** — which is exactly the granularity `DW0482`
+    /// asks its question at. `forbids_flags` is ignored for the same reason the
+    /// option walk ignores it: this model is monotone, and a negative gate that
+    /// closes later cannot un-reach a node the party already stood in.
+    ///
+    /// `"unchanged"` needs no resolution here: it carries forward a root some
+    /// earlier quest already declared, which is already in this union.
+    fn entry_roots(
+        &self,
+        t: &TreeModel,
+        active: &BTreeSet<String>,
+        flags: &BTreeSet<String>,
+    ) -> Vec<String> {
+        let mut roots = vec![t.root.clone()];
+        for cr in self.cast_roots.get(&t.npc).into_iter().flatten() {
+            if !active.contains(&cr.quest) {
+                continue;
+            }
+            if !cr.requires.iter().all(|f| flags.contains(f)) {
+                continue;
+            }
+            if !roots.contains(&cr.root) {
+                roots.push(cr.root.clone());
+            }
+        }
+        roots
+    }
+
+    /// [`reachable_from`] over every entry point [`Self::entry_roots`] names.
+    fn reachable_entered(
+        &self,
+        t: &TreeModel,
+        active: &BTreeSet<String>,
+        flags: &BTreeSet<String>,
+        takeable: &dyn Fn(&OptModel) -> bool,
+    ) -> BTreeSet<usize> {
+        let mut seen = BTreeSet::new();
+        for root in self.entry_roots(t, active, flags) {
+            seen.extend(reachable_from(t, &root, takeable));
+        }
+        seen
+    }
+
     /// Flags a dialogue option sets, looked up by the objective it completes.
     fn option_sets(&self, objective: &str, n: usize) -> Vec<String> {
         for t in &self.trees {
@@ -1373,14 +1456,16 @@ impl<'a> Flow<'a> {
         Vec::new()
     }
 
-    /// Is option `n` of `npc` reachable from the tree root through options whose
-    /// own gates `flags` satisfies? (Branch selection is not applied here: the
-    /// replay already committed to one option per `talk-to`.)
-    fn option_takeable_now(&self, npc: &str, n: usize, flags: &BTreeSet<String>) -> bool {
+    /// Is option `n` of `npc` reachable from one of the roots the campaign can
+    /// open at this point, through options whose own gates `flags` satisfies?
+    /// (Branch selection is not applied here: the replay already committed to
+    /// one option per `talk-to`.)
+    fn option_takeable_now(&self, npc: &str, n: usize, st: &ReplayState) -> bool {
         let Some(t) = self.trees.iter().find(|t| t.npc == npc) else {
             return false;
         };
-        let reach = reachable_nodes(t, &|o: &OptModel| {
+        let flags = &st.flags;
+        let reach = self.reachable_entered(t, &st.active, flags, &|o: &OptModel| {
             o.requires.iter().all(|f| flags.contains(f))
                 && !o.forbids.iter().any(|f| flags.contains(f))
         });
@@ -1455,16 +1540,19 @@ impl<'a> Flow<'a> {
             let mut changed = false;
             self.saturate_ambient_tracked(&mut s.flags, &mut changed);
 
-            // Dialogue: options reachable from the root through takeable options,
-            // restricted to this world's selected alternatives.
+            // Dialogue: options reachable from any root this world can put a body
+            // in front of — the tree's own and every live `cast` ledger scene —
+            // through takeable options, restricted to this world's selected
+            // alternatives.
             let mut dlg_completes: BTreeMap<String, usize> = BTreeMap::new();
             let snapshot = s.flags.clone();
+            let active = s.active.clone();
             for t in &self.trees {
                 let takeable = |o: &OptModel| {
                     o.requires.iter().all(|f| snapshot.contains(f))
                         && self.selectable(&t.npc, o.n, world)
                 };
-                let reach = reachable_nodes(t, &takeable);
+                let reach = self.reachable_entered(t, &active, &snapshot, &takeable);
                 for o in &t.options {
                     if !reach.contains(&o.node) || !takeable(o) {
                         continue;
@@ -1668,10 +1756,32 @@ fn flatten_trees(c: &Campaign) -> Vec<TreeModel> {
     out
 }
 
-/// Node indices reachable from the tree root, traversing only options `takeable`
-/// admits.
-fn reachable_nodes(t: &TreeModel, takeable: &dyn Fn(&OptModel) -> bool) -> BTreeSet<usize> {
-    reachable_from(t, &t.root, takeable)
+/// Every `cast` ledger dialogue root the campaign declares, by NPC.
+///
+/// The ledger is the second entry point into a dialogue tree, and the DSL has
+/// held that since spec-0020: `validate` seeds `DW0120`'s orphan walk from the
+/// same set (`NpcDialogue::reachable_from`, "always relative to a root SET").
+/// This is that set, in the flow model's own shape, so the two halves of the
+/// engine agree about what a body can be shown.
+fn cast_roots(c: &Campaign) -> BTreeMap<String, Vec<CastRoot>> {
+    let mut out: BTreeMap<String, Vec<CastRoot>> = BTreeMap::new();
+    for q in &c.quests.content.quests {
+        for (npc, entry) in &q.cast {
+            for p in entry.placements() {
+                let Some(delvewright_dsl::CastDialogue::Root(r)) = &p.dialogue else {
+                    continue;
+                };
+                out.entry(npc.as_str().to_string())
+                    .or_default()
+                    .push(CastRoot {
+                        quest: q.id.as_str().to_string(),
+                        root: r.as_str().to_string(),
+                        requires: p.requires_flags.iter().map(|f| f.as_str().into()).collect(),
+                    });
+            }
+        }
+    }
+    out
 }
 
 /// Node indices reachable from `root` (a node id of `t`), traversing only

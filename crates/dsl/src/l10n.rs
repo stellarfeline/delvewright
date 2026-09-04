@@ -1160,10 +1160,10 @@ pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
     out
 }
 
-/// Every `play-sound` effect using the deferred `at: actor` target, in a fixed
+/// Every `play-sound` effect using the unsupported `at: actor` target, in a fixed
 /// order, as `(path, actor-id)` pairs. The actor variant is accepted by the
-/// schema but rejected (`DW0335`) until the actors surface (spec-0014 `actors[]`)
-/// lands; the compiler applies that check. `SoundRef::sound` carries the actor id.
+/// schema and rejected (`DW0335`) by the compiler, which resolves no position for
+/// a live actor. `SoundRef::sound` carries the actor id.
 pub fn play_sound_actor_refs(c: &Campaign) -> Vec<SoundRef> {
     let mut out = Vec::new();
     each_effect_ref(c, &mut |stage, path, _key, eff| {

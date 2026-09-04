@@ -412,11 +412,16 @@ pub fn check_walk(c: &Campaign, record: Option<&str>) -> (Vec<Diagnostic>, WalkB
 
 /// **`DW0841`** — at the *obtaining an allocation* event.
 ///
-/// The same rule and the same code as [`check_walk`], asked of a campaign that
-/// has no `detail-plan` yet — which is exactly the campaign asking for its first
-/// allocation, and exactly the moment the ordering has to hold. A gate that only
-/// fired once a detail plan existed would fire after the work it guards had
-/// begun.
+/// The same rule and the same code as [`check_walk`], with one difference that is
+/// the whole reason this door exists: [`check_walk`] returns nothing when there is
+/// no `detail-plan`, and this one asks anyway. A campaign with no detail plan is
+/// exactly the campaign asking for its first allocation, and exactly the moment
+/// the ordering has to hold; a gate that only fired once a detail plan existed
+/// would fire after the work it guards had begun.
+///
+/// The absent detail plan is therefore not itself a refusal — it is the state the
+/// walk record is demanded IN. A campaign with a passed, fresh record and no
+/// detail plan is handed its allocation and exits zero.
 #[must_use]
 pub fn allocation_walk_gate(c: &Campaign, record: Option<&str>) -> Option<Diagnostic> {
     walk_gate(
@@ -1211,6 +1216,49 @@ pub fn check(
         boxes.iter().map(|b| (b.node.0.as_str(), b)).collect();
     binding.boxes = boxes.len();
 
+    // **A plan that resolves NO box is one finding, not one per row**
+    // (`Diagnostic`'s "one cause, one line"). With zero boxes every `details[]`
+    // row misses `by_node` by construction, so the per-row refusal below says
+    // the same sentence once for each row and none of those copies is the
+    // finding: the finding is that the embedding this plan is detailing does
+    // not exist. Measured on a 24-place campaign with `layout-graph.json`
+    // deleted: 24 copies of "is not a place this map has", ahead of nothing and
+    // behind a `DW0824` that had already said it.
+    //
+    // The code still refuses, and still refuses per row the moment there is a
+    // map to be wrong about — this arm is reachable only at a zero box count.
+    if boxes.is_empty() && !doc.details.is_empty() {
+        binding.rows = doc.details.len();
+        let places: Vec<String> = doc
+            .details
+            .iter()
+            .map(|row| format!("`{}`", row.place))
+            .collect();
+        let cause = if c.layout_graph.is_none() {
+            " This campaign carries no `layout-graph.json`, which `DW0824` has already refused: \
+             the plan embeds a graph, so with no graph there are no places for it to place, and \
+             that one line is the finding these rows are downstream of."
+        } else {
+            " The site plan places no box at all, so there is no place for any row to name; the \
+             plan is what has to gain them."
+        };
+        d.push(Diagnostic::error(
+            DW_BINDING,
+            STAGE,
+            "/content/details",
+            format!(
+                "the site plan resolves ZERO boxes, so none of the {n} `details[]` row(s) names a \
+                 place this map has: {places}. A row fills the box the site plan gave a \
+                 layout-graph node, and there is no such box to fill.{cause} This is stated once \
+                 rather than once per row, because one map is the cause of all {n} and repairing \
+                 the rows would repair nothing.",
+                n = doc.details.len(),
+                places = places.join(", "),
+            ),
+        ));
+        return (d, binding);
+    }
+
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for (i, row) in doc.details.iter().enumerate() {
         binding.rows += 1;
@@ -1311,9 +1359,10 @@ pub fn check(
                      smaller building means a smaller box. That is a site-plan edit and a \
                      re-walk, taken visibly, and it is the only way a part changes what the whole \
                      gave it. Run `delvec allocation {place}` for the frame, the datum and every \
-                     seam this box must answer.",
+                     seam this box must answer.{upstream}",
                     piece = row.piece,
                     place = row.place,
+                    upstream = delvewright_dsl::refused_upstream(c, &row.place, &seams, &mut reads),
                     gx = got64[0],
                     gy = got64[1],
                     gz = got64[2],
@@ -1461,7 +1510,9 @@ pub fn check(
                      the exact failure the allocation exists to end — and a body that takes it \
                      leaves the map's own graph. `{place}` is allocated {n} seam(s): {list}. \
                      Either seal this face in the piece, or allocate the connection in the layout \
-                     graph and the site plan — which is a plan edit, and re-runs the whole's walk.",
+                     graph and the site plan — which is a plan edit, and re-runs the whole's \
+                     walk.{upstream}",
+                    upstream = delvewright_dsl::refused_upstream(c, &row.place, &seams, &mut reads),
                     piece = row.piece,
                     class = f.class,
                     place = row.place,

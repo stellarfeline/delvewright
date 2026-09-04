@@ -119,7 +119,6 @@ fn build(dir: &Path) -> Result<Vec<Diagnostic>, BuildFailure> {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .map(|(_, warnings)| warnings)

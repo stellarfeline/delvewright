@@ -635,6 +635,87 @@ fn a_volume_outside_the_region_is_refused() {
     assert!(has(&got, "DW0826"), "{got:?}");
 }
 
+/// **One cause, one line — the primary-absent side.** One box outside the region
+/// is one box's mistake, so it keeps its own line at its own path and names the
+/// region beside its own span. The fold below must never reach this case.
+#[test]
+fn a_single_box_outside_the_region_still_gets_its_own_line() {
+    let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["min"] = json!([60, 4]));
+    let leaving: Vec<&delvewright_dsl::Diagnostic> =
+        d.iter().filter(|x| x.code == "DW0826").collect();
+    assert_eq!(leaving.len(), 1, "one offender is one line: {leaving:?}");
+    assert_eq!(
+        leaving[0].path,
+        format!("/content/boxes/{}", box_of("node/vault")),
+        "and it is addressed at the box that is wrong"
+    );
+    assert!(
+        leaving[0].message.contains("`node/vault`")
+            && leaving[0].message.contains("against the region's"),
+        "{}",
+        leaving[0].message
+    );
+}
+
+/// **One cause, one line — the primary-present side.** The region is one number
+/// handed down by the brief, so shrinking it puts many boxes over the same edge
+/// at once and each per-box refusal would print the same two numbers with a
+/// different name in front. `DW0826` states the count, names every offender with
+/// its own overrun, and prescribes once — one line for the boxes and one for the
+/// whole-owned volumes, never one per object.
+#[test]
+fn one_region_number_is_one_finding_however_many_things_leave_it() {
+    let d = plan_diags(|v| v["content"]["region"]["extent"] = json!([20, 48, 64]));
+    let leaving: Vec<&delvewright_dsl::Diagnostic> =
+        d.iter().filter(|x| x.code == "DW0826").collect();
+    assert_eq!(
+        leaving.len(),
+        2,
+        "one folded line for the boxes and one for the volumes: {leaving:?}"
+    );
+
+    let boxes_line = leaving
+        .iter()
+        .find(|x| x.path == "/content/boxes")
+        .expect("the boxes are one finding addressed at the array");
+    // Every box east of x 19 leaves, and every one of them is named in the line
+    // that stands for it — a fold that dropped names would be a suppression.
+    for node in ["node/vault", "node/yard", "node/pit"] {
+        assert!(
+            boxes_line.message.contains(node),
+            "{node} is not named: {}",
+            boxes_line.message
+        );
+    }
+    assert!(
+        boxes_line.message.contains("of the 6 box(es)")
+            && boxes_line.message.contains("x 0..19")
+            && boxes_line.message.contains("never grounds to grow"),
+        "the count, the region and the prescription: {}",
+        boxes_line.message
+    );
+
+    let volumes_line = leaving
+        .iter()
+        .find(|x| x.path == "/content/volumes")
+        .expect("the volumes are one finding addressed at the array");
+    assert!(
+        volumes_line.message.contains("volume/undercroft-rock")
+            && volumes_line.message.contains("volume/sky-over-the-yard"),
+        "{}",
+        volumes_line.message
+    );
+
+    // The fold is about how many LINES say it, never about whether the run
+    // stops: both are still errors.
+    assert!(
+        leaving
+            .iter()
+            .all(|x| x.severity == delvewright_dsl::Severity::Error),
+        "{leaving:?}"
+    );
+}
+
 /// Two places may share a face; they may never share a cell.
 #[test]
 fn overlapping_boxes_are_refused_with_the_intersection() {

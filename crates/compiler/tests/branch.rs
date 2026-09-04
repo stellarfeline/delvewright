@@ -34,15 +34,23 @@ fn doc(name: &str) -> Value {
 
 /// The green fixture, with `patch` applied to the named stage documents.
 fn campaign_with(patch: impl Fn(&mut Value, &mut Value, &mut Value)) -> Campaign {
-    let (mut plan, mut quests, mut dialogue) = (
+    campaign_with_cast(|plan, quests, dialogue, _| patch(plan, quests, dialogue))
+}
+
+/// [`campaign_with`], reaching `npcs.json` as well — what a test needs when the
+/// question is about which SPEAKER something resolves to, since that is only
+/// answerable with more than one speaker in the campaign.
+fn campaign_with_cast(patch: impl Fn(&mut Value, &mut Value, &mut Value, &mut Value)) -> Campaign {
+    let (mut plan, mut quests, mut dialogue, mut npcs) = (
         doc("quest-plan.json"),
         doc("quests.json"),
         doc("dialogue.json"),
+        doc("npcs.json"),
     );
-    patch(&mut plan, &mut quests, &mut dialogue);
+    patch(&mut plan, &mut quests, &mut dialogue, &mut npcs);
     parse_campaign(&RawCampaign {
         world: std::fs::read_to_string(fixture_dir().join("world.json")).unwrap(),
-        npcs: std::fs::read_to_string(fixture_dir().join("npcs.json")).unwrap(),
+        npcs: npcs.to_string(),
         classes: std::fs::read_to_string(fixture_dir().join("classes.json")).unwrap(),
         quest_plan: plan.to_string(),
         quests: quests.to_string(),
@@ -146,6 +154,75 @@ fn a_branch_chronicle_carries_only_its_own_beats() {
     assert!(
         !nodes.contains(&"quest/hold"),
         "the bolt chronicle must not carry the hold branch's quest: {nodes:?}"
+    );
+}
+
+/// A dialogue option's ordinal is 1-based **within its own NPC's tree**, so the
+/// chronicle must resolve it there. With a second speaker declared FIRST, the
+/// campaign-wide enumeration answers about that speaker's option instead — an
+/// honest answer about the wrong object — and the fork's own line disappears
+/// from both accounts, leaving two chronicles that differ only in their
+/// headers. Which is the whole thing step 11 reads.
+#[test]
+fn a_forks_own_line_is_read_out_of_the_forking_npcs_tree() {
+    let c = campaign_with_cast(|_, _, dlg, npcs| {
+        // A second speaker, ahead of the Keeper in both stage documents, with
+        // enough options to swallow the Keeper's ordinals 2 and 3 and not one
+        // `happening` between them.
+        let keeper = npcs["content"]["npcs"][0].clone();
+        let mut sexton = keeper.clone();
+        sexton["id"] = Value::from("npc/sexton");
+        sexton["name"] = Value::from("The Sexton");
+        sexton["role"] = Value::from("flavor");
+        npcs["content"]["npcs"] = serde_json::json!([sexton, keeper]);
+        let tree = serde_json::json!({
+            "npc": "npc/sexton",
+            "root": "dlg/sexton-root",
+            "nodes": [{
+                "id": "dlg/sexton-root",
+                "text": "The Sexton is counting the drowned road's markers and does not look up.",
+                "options": [
+                    { "label": "How many are there?" },
+                    { "label": "Who set them?" },
+                    { "label": "Nothing." },
+                    { "label": "We will leave you to it." },
+                ],
+            }],
+        });
+        let trees = dlg["content"]["dialogues"].as_array_mut().unwrap();
+        trees.insert(0, tree);
+    });
+    assert_eq!(c.dialogue.content.dialogues[0].npc.as_str(), "npc/sexton");
+    let rs = branch::realize(&c);
+    for (id, want) in [
+        ("branch/hold", "stand the watch"),
+        ("branch/bolt", "refuses the watch"),
+    ] {
+        let r = rs.iter().find(|r| r.branch.id == id).unwrap();
+        let choice = r
+            .chronicle
+            .iter()
+            .find(|l| l.kind == "choice")
+            .unwrap_or_else(|| panic!("{id} has no choice line: {:#?}", r.chronicle));
+        assert!(
+            choice.node.starts_with("npc/keeper dlg/greeting#"),
+            "the line must name the Keeper's own node and ordinal: {}",
+            choice.node
+        );
+        assert!(choice.text.contains(want), "{id}: {}", choice.text);
+    }
+    // …and that is the divergence, so the two accounts are not the same text.
+    let hold = rs.iter().find(|r| r.branch.id == "branch/hold").unwrap();
+    let bolt = rs.iter().find(|r| r.branch.id == "branch/bolt").unwrap();
+    assert_ne!(
+        hold.chronicle
+            .iter()
+            .filter(|l| l.kind == "choice")
+            .collect::<Vec<_>>(),
+        bolt.chronicle
+            .iter()
+            .filter(|l| l.kind == "choice")
+            .collect::<Vec<_>>(),
     );
 }
 
@@ -274,6 +351,58 @@ fn unreachable_branch_is_dw0482() {
     let d = find(branch::check_branches(&c), "DW0482");
     assert!(d.message.contains("NOT REACHABLE"), "{}", d.message);
     assert!(d.message.contains("branch/bolt"), "{}", d.message);
+}
+
+/// Cut the ONE `next` link into `dlg/watch`, leaving the `quest/hold` cast
+/// ledger as its only way in — the shape the ledger exists for, an NPC's
+/// right-click being a different scene once a quest has begun.
+///
+/// The node is reachable, so the `obj/watch` its option completes is
+/// completable, so the hold branch runs to its ending and nothing is raised.
+/// The flow model used to walk from the stage-6 `root` alone and reported the
+/// branch `NOT REACHABLE`.
+#[test]
+fn a_node_only_the_cast_ledger_opens_is_reachable() {
+    let c = campaign_with(|_, _, dlg| {
+        let opts = dlg["content"]["dialogues"][0]["nodes"][0]["options"]
+            .as_array_mut()
+            .unwrap();
+        let before = opts.len();
+        opts.retain(|o| o["next"] != "dlg/watch");
+        assert_eq!(before - opts.len(), 1, "exactly one `next` link is cut");
+    });
+    assert!(
+        !c.quests.content.quests.is_empty(),
+        "the fixture still parses"
+    );
+    let diags = branch::check_branches(&c);
+    assert!(
+        diags.is_empty(),
+        "a node the cast ledger opens is reachable: {diags:#?}"
+    );
+}
+
+/// The same cut, with the ledger root taken away too: now NOTHING opens
+/// `dlg/watch`, `obj/watch` completes on no playthrough, and the hold branch
+/// reaches no ending. Broadening the walk must not cost this refusal — it is
+/// the reason `DW0482` exists.
+#[test]
+fn a_node_nothing_opens_is_still_dw0482() {
+    let c = campaign_with(|_, quests, dlg| {
+        let opts = dlg["content"]["dialogues"][0]["nodes"][0]["options"]
+            .as_array_mut()
+            .unwrap();
+        let before = opts.len();
+        opts.retain(|o| o["next"] != "dlg/watch");
+        assert_eq!(before - opts.len(), 1, "exactly one `next` link is cut");
+        // The ledger's root swap becomes a bark pool: a body with lines and no
+        // options, which opens no node at all.
+        let placement = &mut quest(quests, "quest/hold")["cast"]["npc/keeper"][0];
+        assert_eq!(placement["dialogue"], "dlg/watch");
+        placement["dialogue"] = serde_json::json!({ "barks": ["Still here."] });
+    });
+    let d = find(branch::check_branches(&c), "DW0482");
+    assert!(d.message.contains("branch/hold"), "{}", d.message);
 }
 
 /// A branch that declares an ending it never reaches fails, naming the ending

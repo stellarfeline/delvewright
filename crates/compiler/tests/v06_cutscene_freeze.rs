@@ -51,7 +51,6 @@ fn build_fixture() -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
     .expect("every emitted command validates")

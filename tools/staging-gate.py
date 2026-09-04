@@ -91,6 +91,13 @@ document exists), every one of these rows is adjudicated as red again: the
 verdict is a statement about one stage, re-derived at every staging, never a
 standing exemption.
 
+The precondition may be a declared `applies_when`, or the binding probe's own
+shape where that probe COUNTS THE OBJECT CLASS ITSELF: an identity-shaped
+`dsl` predicate, or a campaign-source file glob with no `contains`, where the
+file is the object and no stage document declares that a campaign has one. See
+`probe_is_self_measuring` — the second clause is a bounded loosening and states
+its bound there.
+
 What the mechanism demands, and why the defect it exists to catch cannot
 supply it: "this build has no combat" is proven by two measured zeros over
 the campaign's own declared design plus the compiler-written record that the
@@ -505,6 +512,21 @@ def _absent_stage_docs(files: list, pred: dict, subj: Subject) -> tuple[int | No
     )
 
 
+def glob_paths(root: pathlib.Path, pattern: str):
+    """Every path under `root` whose root-relative posix name matches `pattern`.
+
+    ONE matcher, shared by the counting probe and by the self-measuring test
+    below, so the two can never disagree about which paths a glob picks out —
+    a second private copy of the rule is how "zero files" and "zero objects of
+    the class" quietly become answers to different questions.
+    """
+    if not root.is_dir():
+        return
+    for p in sorted(root.rglob("*")):
+        if fnmatch.fnmatch(p.relative_to(root).as_posix(), pattern):
+            yield p
+
+
 def probe(binding: dict, subj: Subject) -> tuple[int | None, str]:
     """Return (count, detail). `None` means the probe could not run at all —
     reported as MISSING-CHECK, never silently as zero: "I could not look" and
@@ -552,11 +574,8 @@ def probe(binding: dict, subj: Subject) -> tuple[int | None, str]:
         rx = re.compile(contains) if contains else None
         hits = 0
         matched = 0
-        for p in sorted(root.rglob("*")):
+        for p in glob_paths(root, pattern):
             if not p.is_file():
-                continue
-            rel = p.relative_to(root).as_posix()
-            if not fnmatch.fnmatch(rel, pattern):
                 continue
             matched += 1
             if rx is None:
@@ -575,26 +594,59 @@ def probe(binding: dict, subj: Subject) -> tuple[int | None, str]:
     return None, f"unknown binding kind `{kind}`"
 
 
-def probe_is_self_measuring(binding: dict) -> bool:
+def probe_is_self_measuring(binding: dict, subj: Subject) -> bool:
     """Does a zero from this probe answer the precondition question by itself?
 
-    The two kinds of zero (see `adjudicate`) differ in whether objects could
-    exist that the probe does not see. A `dsl` probe whose predicate selects
-    objects purely by IDENTITY — `eq`/`in`/`prefix`, nothing else — counts the
-    object class itself, so its zero means zero objects of the class anywhere
-    in the declared design: there is nothing left for a precondition probe to
-    find. A predicate carrying `has`/`has_any` keys on a DECLARATION that can
-    be narrower than its carriers (the island's floor gate counted `tier`,
-    not actors), and `artifact`/`out` probes count derived output one step
-    from any declaration — for those, which kind of zero it is must be
-    measured by `applies_when`, never inferred.
+    The question is about **what the probe counts**, never about which kind of
+    probe it is. The two kinds of zero (see `adjudicate`) differ in one thing:
+    whether an object exists ONE STEP BEHIND the probe's population that a
+    precondition probe could still have found.
+
+    - A `dsl` predicate selecting objects purely by IDENTITY — `eq`/`in`/
+      `prefix`, nothing else — counts the object class itself, so its zero is
+      the class measuring zero across the declared design. Nothing is left
+      behind it to find.
+    - A `campaign` glob with no `contains` counts files in the campaign
+      SOURCE — the tree the author writes — and for such a class the file IS
+      the object. No stage document declares that a campaign has a storybook,
+      so there is no declaration standing behind `README*.md` for an
+      `applies_when` to count; a row asked for one could only name its own
+      binding, which `load_ledger` refuses outright as an exemption a row
+      grants itself. This branch is that refusal's other half: the probe was
+      already self-measuring and the recogniser was keyed to `dsl`.
+    - A `contains` glob is the opposite shape and stays ambiguous: it counts a
+      DECLARATION inside carriers that exist, so zero hits over N candidates is
+      exactly the island's floor gate (the carriers were there; `tier` was
+      not). Same for `has`/`has_any` predicates, and for `artifact`/`out`
+      probes, which count derived output one step from a declaration. For
+      those, which kind of zero it is must be measured by `applies_when`,
+      never inferred.
+
+    **The `campaign` branch is a LOOSENING and this is its bound.** Its only
+    caller is inside the pre-detail blockout branch of `adjudicate`, so nothing
+    outside a twice-measured blockout changes: the same zero on an assembled
+    campaign is still `UNBOUND`. What it stops catching is a future row bound
+    to a campaign-source file class that ought to exist BEFORE the walk — a
+    design-approval image set, say — which would go quiet on a blockout instead
+    of redding. What it still refuses is in `tools/tests/test_staging_gate.py`,
+    driven in both directions per clause.
+
+    Fail closed on the `is_file()` trap: a directory, or a broken symlink,
+    standing where the file class belongs answers an honest `False` to
+    `is_file()`, and the probe would then report a zero that is a wrong
+    measurement rather than a measured zero. Any non-file path matching the
+    glob withdraws the self-measuring claim, and the row goes back to
+    `UNBOUND`.
     """
-    if binding.get("kind") != "dsl":
-        return False
-    m = binding.get("match") or {}
-    if not m:
-        return False
-    return not (m.get("has") or m.get("has_any"))
+    kind = binding.get("kind")
+    if kind == "dsl":
+        m = binding.get("match") or {}
+        if not m:
+            return False
+        return not (m.get("has") or m.get("has_any"))
+    if kind == "campaign" and not binding.get("contains"):
+        return all(p.is_file() for p in glob_paths(subj.campaign, binding["glob"]))
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -803,21 +855,27 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
     # is not protected on — that is a fact for the round summary, not a pass.
     aw = row.get("applies_when")
     if aw is None:
-        # No declared precondition probe. For an identity-shaped binding the
-        # probe measures its own precondition — its zero counts the object
-        # class itself (`probe_is_self_measuring`) — and on a pre-detail
-        # blockout that measured double zero is OUT-OF-STAGE. Everywhere
-        # else, and for every declaration- or derivation-shaped probe, the
-        # gate keeps refusing to guess.
-        if subj.pre_detail and probe_is_self_measuring(row["binding"]):
+        # No declared precondition probe. Where the probe COUNTS THE OBJECT
+        # CLASS ITSELF — an identity-shaped predicate over the declared
+        # design, or a campaign-source file class where the file is the
+        # object — it measures its own precondition, and on a pre-detail
+        # blockout that measured double zero is OUT-OF-STAGE. Everywhere else,
+        # and for every declaration- or derivation-shaped probe, the gate keeps
+        # refusing to guess.
+        if subj.pre_detail and probe_is_self_measuring(row["binding"], subj):
+            why = (
+                "the probe counts a campaign-source file class, where the file "
+                "IS the object and no declaration stands behind it"
+                if row["binding"].get("kind") == "campaign"
+                else "the probe selects the object class by identity"
+            )
             out["precondition"] = 0
             out["verdict"] = "OUT-OF-STAGE"
             out["detail"] = (
-                f"{detail}; the probe selects the object class by identity, so "
-                "its zero is the class measuring zero across the declared "
-                "design of a pre-detail blockout — this walk cannot exercise "
-                "the class, and this build does not claim to be the build "
-                "that could"
+                f"{detail}; {why}, so its zero is the class measuring zero "
+                "across the declared design of a pre-detail blockout — this "
+                "walk cannot exercise the class, and this build does not claim "
+                "to be the build that could"
             )
             return out
         out["verdict"] = "UNBOUND"

@@ -57,7 +57,6 @@ fn build_dir(dir: &Path) -> Result<BuildOutput, BuildFailure> {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

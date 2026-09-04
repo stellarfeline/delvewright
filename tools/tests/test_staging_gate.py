@@ -425,6 +425,108 @@ def test_a_declaration_shaped_zero_without_a_probe_stays_red_on_a_blockout(gate,
     assert "never measured" in r["detail"]
 
 
+# ---------------------------------------------------------------------------
+# A campaign-source FILE class is self-measuring too
+#
+# The storybook is `campaigns/<id>/README.md` — a file, not a declaration. No
+# stage document says a campaign has one, so the only probe that could answer
+# "does this campaign publish release notes" is the binding itself, which
+# `load_ledger` refuses outright. The property `probe_is_self_measuring` tests
+# is about WHAT A PROBE COUNTS, and it was keyed to `kind == "dsl"`; a
+# `campaign` glob with no `contains` counts the object class itself.
+#
+# That clause is a LOOSENING, so every test below drives one edge of its bound.
+# ---------------------------------------------------------------------------
+
+
+STORYBOOK_ROW = {
+    "id": "book",
+    "finding": "f",
+    "carrier": {"kind": "tool", "script": "check-storybook-version.py"},
+    "binding": {"kind": "campaign", "glob": "README*.md"},
+}
+
+
+def test_an_absent_campaign_file_class_on_a_blockout_is_out_of_stage(gate, tmp_path):
+    """The blocker this clause exists for: the storybook is written at
+    skill-workflow step 14 and the blockout is walked at step 9, so EVERY
+    campaign at blockout carries zero of them."""
+    camp = make_blockout_campaign(tmp_path)
+    r = adjudicate_on(gate, camp, make_blockout_build(tmp_path), STORYBOOK_ROW)
+    assert r["verdict"] == "OUT-OF-STAGE"
+    assert (r["binding"], r["precondition"]) == (0, 0)
+
+
+def test_the_same_missing_storybook_on_an_assembled_campaign_stays_red(gate, tmp_path):
+    """A finished campaign owes its storybook; absence there is the news."""
+    camp = make_campaign(tmp_path, objectives=[{"type": "talk-to"}])
+    build = make_build(tmp_path)
+    assert adjudicate_on(gate, camp, build, STORYBOOK_ROW)["verdict"] == "UNBOUND"
+
+
+def test_the_storybook_reverts_to_red_once_the_campaign_details(gate, tmp_path):
+    camp = make_blockout_campaign(tmp_path, detail_plan=True)
+    r = adjudicate_on(gate, camp, make_blockout_build(tmp_path), STORYBOOK_ROW)
+    assert r["verdict"] == "UNBOUND"
+
+
+def test_a_contains_glob_with_candidates_present_stays_red_on_a_blockout(gate, tmp_path):
+    """The opposite shape, and the one that must NOT be widened: a `contains`
+    glob counts a declaration INSIDE carriers that exist. Two storybooks, no
+    marker in either, is the floor gate's zero wearing a file's clothes."""
+    camp = make_blockout_campaign(tmp_path)
+    (camp / "README.md").write_text("# a delve\n")
+    (camp / "README.zh-CN.md").write_text("# a delve\n")
+    row = dict(
+        STORYBOOK_ROW,
+        id="marker",
+        binding={
+            "kind": "campaign",
+            "glob": "README*.md",
+            "contains": "Requires delve engine",
+        },
+    )
+    r = adjudicate_on(gate, camp, make_blockout_build(tmp_path), row)
+    assert r["verdict"] == "UNBOUND"
+    assert "of 2 candidates" in r["detail"]
+
+
+def test_a_directory_standing_where_the_file_belongs_fails_closed(gate, tmp_path):
+    """`is_file()` answers an honest False for a directory, so the count would
+    be a wrong measurement rather than a measured zero. Any non-file match
+    withdraws the self-measuring claim."""
+    camp = make_blockout_campaign(tmp_path)
+    (camp / "README.md").mkdir()
+    r = adjudicate_on(gate, camp, make_blockout_build(tmp_path), STORYBOOK_ROW)
+    assert r["verdict"] == "UNBOUND"
+
+
+def test_a_storybook_that_is_there_binds(gate, tmp_path):
+    camp = make_blockout_campaign(tmp_path)
+    (camp / "README.md").write_text("# a delve\n")
+    r = adjudicate_on(gate, camp, make_blockout_build(tmp_path), STORYBOOK_ROW)
+    assert r["verdict"] == "BOUND"
+    assert r["binding"] == 1
+
+
+def test_an_out_glob_zero_is_not_self_measuring_on_a_blockout(gate, tmp_path):
+    """The clause is about the campaign SOURCE. An `out` glob counts derived
+    output one step from a declaration, and stays ambiguous — which is why
+    tm-03 needed a real precondition rather than this."""
+    row = dict(
+        STORYBOOK_ROW,
+        id="derived",
+        binding={
+            "kind": "out",
+            "glob": "packtest-datapack/**/declared_difficulty.mcfunction",
+        },
+    )
+    camp = make_blockout_campaign(tmp_path)
+    r = adjudicate_on(gate, camp, make_blockout_build(tmp_path), row)
+    assert r["verdict"] == "UNBOUND"
+    assert "never measured" in r["detail"]
+
+
 def test_an_unemitted_artifact_with_declared_objects_is_missing_check(gate, tmp_path):
     """combat-plan.json absent while the campaign stages fights: the build
     lost its ledger. Red on every subject, blockout included."""
@@ -791,6 +893,38 @@ def test_the_live_flask_precondition_binds_on_a_potion_bearing_kit_item(gate, tm
         for w, d in (("bare", bare), ("full", full), ("none", none))
     }
     assert counts == {"bare": 1, "full": 1, "none": 0}, counts
+
+
+def test_the_live_difficulty_precondition_binds_on_a_declaring_world(gate, tmp_path):
+    """`emit.rs` emits the `declared_difficulty` PackTest only
+    `if let Some(diff) = declared_difficulty(c)`, so the class that check
+    quantifies over is campaigns declaring `world.difficulty` — absent, the
+    compiler's historical derivation ships and there is no declaration for a
+    server configuration to be emitted from. `WorldContent.difficulty` is the
+    only `difficulty` field in the DSL, so the `has` predicate is unambiguous.
+    Driven both ways, and then through the row's verdict."""
+    row = live_rows(gate, {"tm-03"})["tm-03"]
+    aw = row["applies_when"]
+
+    def world(where, content):
+        d = tmp_path / where
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "world.json").write_text(
+            json.dumps({"dsl_version": "0.14.0", "stage": 1, "content": content})
+        )
+        return d
+
+    declaring = world("yes", {"title": "t", "difficulty": "hard"})
+    deriving = world("no", {"title": "t"})
+    build = make_build(tmp_path)
+    n_yes = gate.probe(aw, gate.Subject(declaring, build))[0]
+    n_no = gate.probe(aw, gate.Subject(deriving, build))[0]
+    assert (n_yes, n_no) == (1, 0)
+
+    # And the verdict follows: a campaign that DECLARES a difficulty whose
+    # build emitted no PackTest for it is the check going quiet over an object
+    # it should have something to say about.
+    assert adjudicate_on(gate, declaring, build, row)["verdict"] == "UNBOUND"
 
 
 def test_every_live_precondition_can_measure_non_zero(gate):
