@@ -27,9 +27,10 @@ Surfaces do fail when something first reaches them, which is the whole reason
 this campaign exists: an ambush and a named mob drop could not compile at all, a
 generated flag-gate test could not pass, and a one-waypoint lane emitted a march
 test asserting an index it had no way to reach — each found here, by binding it.
-Two are still open: the build's render plan and the one `delvec snapshot`
-derives disagree whenever a world-edit blocks the route, and nothing refuses a
-wave seated inside a killing volume.
+Three are still open: the build's render plan and the one `delvec snapshot`
+derives disagree whenever a world-edit blocks the route, nothing refuses a wave
+seated inside a killing volume, and nothing refuses an objective gated on a
+state an earlier forced beat clears.
 
 ## Reading it
 
@@ -430,7 +431,7 @@ gallery-hall: muster clearance bound — 2 killing volume(s), both across the wa
 gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at [15, 1, 29], 10.00 block(s) away (floor 10.0)
 ```
 
-## Two findings still open
+## Three findings still open
 
 **The build's render plan and `snapshot`'s disagree when an edit blocks the
 route.** One is computed after world-edits and the other before them, so solid
@@ -439,6 +440,18 @@ geometry on the critical path makes the build's legs longer than the ones
 twice: first with four shards stamped across the far hall, then with a
 full-width barrier line. Both times the instance fix was to move the geometry off
 the route; the divergence itself is untouched.
+
+**An objective can be gated on a state an earlier forced beat clears, and
+nothing says so.** `obj/reach-the-end` requires `state/labels-read` `at-least`
+1; `obj/clear-the-muster`, four objectives ahead of it on the mandatory spine,
+clears that state to zero. Every static proof passes — the reachability model
+walks objectives and flags, not the arithmetic of the states their `requires_state`
+compares — and the delve is simply unfinishable, which is what the bot found by
+standing inside the finale's own completion box while no marker arrived.
+`DW0527` sees the same write and says nothing about this, because it is a rule
+about one bundle and these are two. The gallery lives with it by setting the
+count again on the bone's beat, LAST in its bundle so no reader follows the
+write; the general form has no diagnostic.
 
 **Nothing refuses a wave seated inside a killing volume.** `DW0511` is the
 rule that a body put somewhere by DECLARATION rather than by walking must not

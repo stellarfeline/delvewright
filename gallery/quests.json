@@ -1922,6 +1922,17 @@
               ],
               "type": "open-way",
               "way": "broken-flight"
+            },
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/muster-cleared"
+              ],
+              "state": "state/labels-read",
+              "type": "set-state",
+              "value": 2
             }
           ]
         },
