@@ -27,9 +27,9 @@ Surfaces do fail when something first reaches them, which is the whole reason
 this campaign exists: an ambush and a named mob drop could not compile at all, a
 generated flag-gate test could not pass, and a one-waypoint lane emitted a march
 test asserting an index it had no way to reach — each found here, by binding it.
-Still open: the build's render plan and the one `delvec snapshot` derives
-disagree whenever a world-edit blocks the route, because one is computed after
-the edits and the other before them.
+Two are still open: the build's render plan and the one `delvec snapshot`
+derives disagree whenever a world-edit blocks the route, and nothing refuses a
+wave seated inside a killing volume.
 
 ## Reading it
 
@@ -179,7 +179,7 @@ what it reaches.
 
 ## What writing it turned up
 
-Three engine defects, each invisible for the same reason: the surface had never
+Four engine defects, each invisible for the same reason: the surface had never
 been written by anything, so nothing had ever compiled it. Each is attributed by
 a differential, because that is the only honest way to say "this one thing is
 responsible".
@@ -217,7 +217,19 @@ climb, a wall to fly over) rather than a declaration. The hall's one vertical
 route is the mezzanine's broken flight, and no body walks it — the climb is a
 player's, so it settles nothing about a declared locomotion.
 
-None of the three was found by reading code. Each was found by trying to write the
+**A wave nothing fires still gets its kill advancement.** All of a wave's
+machinery — `spawn_<wave>`, the census probe, the brand, the kill reward — is
+gated on the wave resolving a spawn AREA, which it does only through an effect
+that fires it. `advancement/k_<wave>.json` is not: it is emitted for every
+declared wave, and its `rewards.function` names the `k_reward_<wave>` a wave
+nothing fires never gets. *Attribution:* the gallery's `wave/edge` was declared
+and fired by nothing, and the build shipped `k_edge.json` pointing at a
+function that was not in the pack; arming the wave produced the function and
+five more beside it. *State:* not fixed. The gallery no longer holds the shape,
+which is why arming `wave/edge` rather than deleting it was the fix — the
+element now exercises `WaveSummon::aggro-edge` instead of merely naming it.
+
+None of the four was found by reading code. Each was found by trying to write the
 surface down.
 
 ## The annex, and what a socket is worth looking at
@@ -365,7 +377,42 @@ The pocket sits off the critical path on purpose. Blocking geometry on the route
 makes the build's render plan and the one `delvec snapshot` derives disagree —
 see below.
 
-## A finding still open
+## The fight, and the floor it needs
+
+The far hall carries the one encounter the inverted floor gate measures — the
+muster, billed `elite` — and it also carries every hazard the DSL declares. A
+gate can only grade a fight the fight's own room did not interfere with, so
+three facts about the far hall are load-bearing rather than decorative.
+
+**A killing volume selects on hitbox intersection, not on cells.** A lethal
+volume emits `@e[x=…,dx=…,…]`, and a selector takes any entity whose bounding
+box touches the region — a spider is 1.4 blocks wide, so it is inside a box
+while its feet are still 0.7 blocks outside it. The muster therefore forms up
+on the strip between the dividing wall and the bay line, the far hall's only
+floor that belongs to no bay, equidistant from both pits and as far from both
+as the room has to give. The nearest of its three seated bodies clears the
+nearer box by 4.72 blocks.
+
+**Each pit is three cells deep, not five.** A five-deep west box reaches z=25,
+and `anchor/exit` — the finale, the last thing a player reaches — stands at
+z=25 with a body 0.6 wide. The delve's last anchor was a fifth of a block from
+a fatal one; it clears by 1.2 now.
+
+**The patrol lane walks the back wall.** A lane squad's `follow_range` is its
+lane's `aggro_radius` verbatim, and `DW0477` records in writing that nothing
+measures `wave/lane` — so a lane drawn across the hall's middle puts an
+unbilled fight inside the billed one, and the gate's verdict covers damage it
+cannot account for. The lane's ends were always far from the muster; the LINE
+between them was not, which is the shape an endpoint check misses.
+
+The generator holds all three, on every run, and prints what it examined:
+
+```
+gallery-hall: muster clearance bound — anchor/west-pit 9.22, anchor/east-pit 8.49 (floor 8.0 block(s))
+gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at [16, 1, 28], 12.00 block(s) away (floor 10.0)
+```
+
+## Two findings still open
 
 **The build's render plan and `snapshot`'s disagree when an edit blocks the
 route.** One is computed after world-edits and the other before them, so solid
@@ -374,6 +421,18 @@ geometry on the critical path makes the build's legs longer than the ones
 twice: first with four shards stamped across the far hall, then with a
 full-width barrier line. Both times the instance fix was to move the geometry off
 the route; the divergence itself is untouched.
+
+**Nothing refuses a wave seated inside a killing volume.** `DW0511` is the
+rule that a body put somewhere by DECLARATION rather than by walking must not
+be put inside a lethal volume — no route proof can see it — and
+`lethal::posted_places` enumerates the entry cell, every checkpoint, every
+NPC, every per-quest `cast` placement and every actor. A wave's seated cells
+are not in that list, so a muster standing between two pits compiles green and
+loses bodies to the world at runtime. The clearances above are the strongest
+form a piece generator can carry, and they are weaker than the diagnostic
+would be twice over: the generator cannot see the campaign's own `extent`
+values, so its constants state that half as a premise, and it compares anchor
+to anchor where the real question is hitbox to box.
 
 ## Why the job gates
 
