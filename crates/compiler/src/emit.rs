@@ -5862,8 +5862,8 @@ fn emit_despawn_actor(
 /// listener-relative and, when a volume/pitch is declared (which forces an
 /// explicit position), is emitted through `execute as <who> at @s run … ~ ~ ~` so
 /// `~ ~ ~` resolves at each listener rather than at the command's own position.
-/// `at: actor` never reaches emission — it is rejected at validate-time
-/// (`DW0335`) until the actors surface lands.
+/// `at: actor` never reaches emission — no position resolves for a live actor,
+/// so it is rejected at validate-time (`DW0335`).
 fn emit_play_sound(
     plan: &Plan,
     sound: &str,
@@ -5886,7 +5886,7 @@ fn emit_play_sound(
             Some(p) => Some(format!("{} {} {}", p[0], p[1], p[2])),
             None => return, // unresolved anchor (referential validation reports it)
         },
-        Some(SoundAt::Actor { .. }) => return, // deferred: DW0335 at validate-time
+        Some(SoundAt::Actor { .. }) => return, // unsupported: DW0335 at validate-time
         _ => None,                             // `players` (default): player-relative
     };
     let listener_relative = pos.is_none() && (volume.is_some() || pitch.is_some());

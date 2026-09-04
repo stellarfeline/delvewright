@@ -5848,10 +5848,10 @@ pub struct StealthZone {
     pub extent: [u32; 3],
 }
 
-/// Where a [`QuestEffect::PlaySound`] originates (DSL v0.6, spec-0014). The
-/// `actor` variant is accepted by the schema but not yet wired — it is rejected
-/// with `DW0335` until the actors surface (spec-0014 `actors[]`) lands, at which
-/// point it resolves to the actor's position like `move-actor` does.
+/// Where a [`QuestEffect::PlaySound`] originates (DSL v0.6, spec-0014). A sound
+/// plays at fixed coordinates or at each listener's own position; the compiler
+/// resolves no position for a live actor, so the `actor` variant is accepted by
+/// the schema and rejected with `DW0335`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "at", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum SoundAt {
@@ -5862,10 +5862,10 @@ pub enum SoundAt {
     },
     /// Play the sound at each player's own position (the default).
     Players,
-    /// Play the sound at a scripted actor's position (deferred — `DW0335` until
-    /// the actors surface lands).
+    /// Play the sound at a scripted actor's position (rejected — `DW0335`; no
+    /// actor position resolves at emission).
     Actor {
-        /// The actor id (stage-5 `actors[]`; not yet resolvable).
+        /// The actor id (stage-5 `actors[]`).
         actor: String,
     },
 }
@@ -7433,8 +7433,8 @@ impl QuestEffect {
         }
     }
 
-    /// The deferred `play-sound` `at: actor` id, if this effect is a `play-sound`
-    /// targeting an actor (rejected `DW0335` until the actors surface lands).
+    /// The `play-sound` `at: actor` id, if this effect is a `play-sound`
+    /// targeting an actor (rejected `DW0335`).
     pub fn play_sound_actor(&self) -> Option<&str> {
         match self {
             QuestEffect::PlaySound {

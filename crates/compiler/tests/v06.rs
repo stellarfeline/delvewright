@@ -1,5 +1,5 @@
 //! DSL v0.6 (spec-0014) compiler-side surface: sound-event validation (`DW0326`),
-//! the deferred `play-sound at: actor` gate (`DW0335`), art-title glyph coverage
+//! the unsupported `play-sound at: actor` gate (`DW0335`), art-title glyph coverage
 //! over source + l10n translations (`DW0328`), and the `delve:art` resource-pack
 //! font — baked deterministically into the pack, byte-identical across builds.
 
@@ -122,7 +122,7 @@ fn unknown_narrate_sound_is_dw0326() {
     );
 }
 
-// --- DW0335: deferred play-sound at: actor -------------------------------
+// --- DW0335: unsupported play-sound at: actor ----------------------------
 
 #[test]
 fn play_sound_at_actor_is_dw0335() {
@@ -137,8 +137,8 @@ fn play_sound_at_actor_is_dw0335() {
     let d = atmos::check_sounds(&c);
     assert!(
         d.iter()
-            .any(|x| x.code == atmos::DW_PLAYSOUND_ACTOR_DEFERRED),
-        "play-sound at: actor must be DW0335 until actors land: {d:#?}"
+            .any(|x| x.code == atmos::DW_PLAYSOUND_ACTOR_UNSUPPORTED),
+        "play-sound at: actor must be DW0335: {d:#?}"
     );
 }
 
