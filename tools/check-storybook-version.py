@@ -10,7 +10,7 @@ campaign, not a hand-typed number that drifted three DSL versions ago.
 
 One line, near the top of the README, in exactly this form:
 
-    > **Requires delve engine 0.9.0 or newer** — last verified with delvec 0.1.0.
+    > **Requires delve engine 0.9.0 or newer** — last verified with delvec 0.1.0 on Minecraft Java 1.21.11.
 
 - **`Requires delve engine <X>`** is the campaign's own `dsl_version`: the MAX
   over its per-stage documents. That is the level of the DSL the campaign is
@@ -22,6 +22,19 @@ One line, near the top of the README, in exactly this form:
   at compile time, so this script reads the identical number straight from
   `crates/compiler/Cargo.toml`'s `[package] version` — one source, never a
   second hand-typed copy.
+- **`on Minecraft Java <Z>`** is the game the delve runs on: `versions.toml`
+  `[minecraft] version`, read through `lib/versions.py`. It carries equality,
+  like `<X>` and unlike `<Y>`, because it is a PIN rather than a claim — the
+  engine states it and the storybook may only restate it.
+
+  It is here because the rule below made it homeless. A player has to install a
+  client, the version is the one thing they cannot guess, and the prescription
+  *"leave the fact where it is GENERATED"* pointed at a release page that does
+  not hold it — so the only compliant storybook was one that did not tell its
+  reader which Minecraft to buy a copy of. A rule that forbids the one number a
+  reader needs is answered by binding that number, never by leaving the reader
+  without it; the prose rule is unchanged, and `1.21.11` anywhere but the marker
+  is still refused, because the marker now says it.
 
 The marker is the ONE piece of internal machinery allowed in a player-facing
 README — hence the host-facing phrasing. It is byte-identical in every
@@ -56,7 +69,9 @@ authority of documentation. So the rule is not "check the other numbers too"
 (that would need a binding per number, invented per campaign); it is that a
 storybook may carry **no version literal other than the marker**. The facts
 those numbers wanted to state already live where they are GENERATED: the
-release page (machine-written per tag) and `versions.toml`.
+release page (machine-written per tag) and `versions.toml` — and where a
+storybook genuinely owes its reader one of them, it is bound INTO the marker
+rather than left to prose, which is how the Minecraft version got there.
 
 Two recognisers, one rule, so the message can say what to do:
 
@@ -84,6 +99,8 @@ this gate a binding for it, never to write the number.
 - The engine version in the marker equals the campaign's max declared per-stage
   `dsl_version`  -> otherwise RED (the drift this gate exists for).
 - The delvec version in the marker is <= this repo's `DELVEC_VERSION`.
+- The Minecraft version in the marker equals `versions.toml` `[minecraft]
+  version`  -> otherwise RED.
 - No other line carries a version literal or a pinned image tag.
 
 Per-stage `dsl_version` DISAGREEMENT inside one campaign is not this gate's
@@ -107,8 +124,9 @@ they resolve through the local `campaigns` symlink and through CI's
 `.github/actions/checkout-content`. The content repo's own campaign CI can run
 this same script against a pinned engine checkout, exactly as
 `.github/workflows/prefab-audit.yml` there already builds `delve-admit` from
-one; nothing here reads engine state other than `crates/compiler/Cargo.toml`'s
-`[package] version` (== `DELVEC_VERSION`).
+one; the only engine state read here is `crates/compiler/Cargo.toml`'s
+`[package] version` (== `DELVEC_VERSION`) and `versions.toml` `[minecraft]
+version`, both of them from the engine checkout the script is run out of.
 
 Exit 0 = every storybook marker present and true and no other version literal
 anywhere, 1 = missing/mismatched marker or an unbound literal (see stderr),
@@ -120,6 +138,10 @@ import json
 import pathlib
 import re
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
+
+from versions import minecraft_version  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_CAMPAIGNS_ROOT = REPO_ROOT / "campaigns" / "campaigns"
@@ -153,7 +175,8 @@ ALLOWLIST: dict[str, str] = {
 }
 
 _MARKER_TEMPLATE = (
-    "> **Requires delve engine {dsl} or newer** — last verified with delvec {delvec}."
+    "> **Requires delve engine {dsl} or newer** — last verified with delvec "
+    "{delvec} on Minecraft Java {mc}."
 )
 
 # Any line that *attempts* the marker, so a malformed one is reported as a
@@ -165,7 +188,8 @@ MARKER_ATTEMPT_RE = re.compile(r"Requires delve engine", re.IGNORECASE)
 # guess.
 MARKER_RE = re.compile(
     r"^> \*\*Requires delve engine (?P<dsl>\d+\.\d+\.\d+) or newer\*\* "
-    r"— last verified with delvec (?P<delvec>\d+\.\d+\.\d+)\.$"
+    r"— last verified with delvec (?P<delvec>\d+\.\d+\.\d+) "
+    r"on Minecraft Java (?P<mc>\d+\.\d+\.\d+)\.$"
 )
 
 CARGO_VERSION_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"')
@@ -190,12 +214,21 @@ UNPINNED_IMAGE_TAG = "latest"
 # A bare version literal: three dotted numeric components, optionally `v`-
 # prefixed. Deliberately NOT two components — `CC BY-SA 4.0` and `GPL-3.0` are
 # licences, not versions, and a storybook names them legitimately.
-VERSION_LITERAL_RE = re.compile(r"(?<![\w.])v?\d+\.\d+\.\d+(?![\w.])")
+#
+# The trailing guard is `(?!\w|\.\d)` and not `(?![\w.])`, and the difference is
+# a whole class the gate could not see: a version at the END OF A SENTENCE. With
+# a plain dot in the guard, `Runs on Minecraft Java 1.21.11.` matched nothing —
+# the full stop failed the lookahead and no backtrack could satisfy it — so the
+# one prose shape a storybook is most likely to write the number in was the one
+# shape that passed. What the guard is actually for is a LONGER dotted number
+# (`1.21.11.2`), which `\.\d` says and `\.` over-says.
+VERSION_LITERAL_RE = re.compile(r"(?<![\w.])v?\d+\.\d+\.\d+(?!\w|\.\d)")
 
 
-def marker_line(dsl: str, delvec: str) -> str:
-    """The canonical marker line for a campaign at `dsl`, built by `delvec`."""
-    return _MARKER_TEMPLATE.format(dsl=dsl, delvec=delvec)
+def marker_line(dsl: str, delvec: str, mc: str) -> str:
+    """The canonical marker line for a campaign at `dsl`, built by `delvec`, for
+    the pinned Minecraft."""
+    return _MARKER_TEMPLATE.format(dsl=dsl, delvec=delvec, mc=mc)
 
 
 def version_key(version: str) -> tuple[int, ...]:
@@ -306,10 +339,12 @@ def unbound_version_literals(
     return errors
 
 
-def check_readme(path: pathlib.Path, max_dsl: str, engine_delvec: str) -> list[str]:
+def check_readme(
+    path: pathlib.Path, max_dsl: str, engine_delvec: str, engine_mc: str
+) -> list[str]:
     """Errors for one storybook file, given the campaign's real versions."""
     rel = path.name
-    example = marker_line(max_dsl, engine_delvec)
+    example = marker_line(max_dsl, engine_delvec, engine_mc)
     if not path.is_file():
         return [
             f"{rel} is MISSING — every campaign ships a storybook (spec-0007) and "
@@ -374,10 +409,21 @@ def check_readme(path: pathlib.Path, max_dsl: str, engine_delvec: str) -> list[s
             "exists, so no ladder run can have used it"
         )
 
+    got_mc = match.group("mc")
+    if got_mc != engine_mc:
+        errors.append(
+            f"{rel}:{line_no} says Minecraft Java {got_mc}, but the engine pins "
+            f"{engine_mc} (`versions.toml` `[minecraft] version`). This is the one "
+            "number a reader cannot guess and cannot play without — it is bound to "
+            f"the pin exactly so it cannot drift. Restamp it: {example}"
+        )
+
     return errors
 
 
-def check_campaign(campaign: pathlib.Path, engine_delvec: str) -> list[str]:
+def check_campaign(
+    campaign: pathlib.Path, engine_delvec: str, engine_mc: str
+) -> list[str]:
     versions = declared_dsl_versions(campaign)
     if not versions:
         return [
@@ -387,7 +433,7 @@ def check_campaign(campaign: pathlib.Path, engine_delvec: str) -> list[str]:
     max_dsl = max(versions.values(), key=version_key)
     errors: list[str] = []
     for readme in expected_readmes(campaign):
-        errors.extend(check_readme(readme, max_dsl, engine_delvec))
+        errors.extend(check_readme(readme, max_dsl, engine_delvec, engine_mc))
     return errors
 
 
@@ -412,6 +458,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     engine_delvec = delvec_version()
+    engine_mc = minecraft_version()
     campaigns = campaign_dirs(root)
     if not campaigns:
         print(
@@ -430,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
     scanned = 0
 
     for campaign in campaigns:
-        errors = check_campaign(campaign, engine_delvec)
+        errors = check_campaign(campaign, engine_delvec, engine_mc)
         if campaign.name in ALLOWLIST:
             skipped.append(campaign.name)
             if not errors:
@@ -471,8 +518,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"storybook version markers OK: {len(checked)} campaign(s) checked against "
-        f"delvec {engine_delvec}, {len(skipped)} allowlisted; {scanned} storybook "
-        "file(s) scanned for unbound version literals."
+        f"delvec {engine_delvec} and Minecraft Java {engine_mc}, {len(skipped)} "
+        f"allowlisted; {scanned} storybook file(s) scanned for unbound version "
+        "literals."
     )
     return 0
 
