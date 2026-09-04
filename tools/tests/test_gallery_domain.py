@@ -187,12 +187,12 @@ def test_the_delta_reads_the_whole_manifest_not_just_outputs():
     once in `gallery-baseline.py`'s warning ledger.
     """
     base = {
-        "content_sha": "aaa",
+        "campaign_id": "aaa",
         "inputs": {"world.json": "1", "quests.json": "2"},
         "outputs": {"data/x.mcfunction": "h1", "data/gone.json": "h2"},
     }
     got = {
-        "content_sha": "bbb",
+        "campaign_id": "bbb",
         "inputs": {"world.json": "9", "quests.json": "2"},
         "outputs": {"data/x.mcfunction": "h1", "data/new.json": "h3"},
     }
@@ -201,7 +201,7 @@ def test_the_delta_reads_the_whole_manifest_not_just_outputs():
     assert "inputs: world.json — same path, different content" in joined
     assert "outputs: data/gone.json — in the baseline, absent here" in joined
     assert "outputs: data/new.json — emitted here, absent from the baseline" in joined
-    assert "content_sha: baseline `aaa` vs this build `bbb`" in joined
+    assert "campaign_id: baseline `aaa` vs this build `bbb`" in joined
     assert "quests.json" not in joined, "an unchanged entry was reported as differing"
     assert "data/x.mcfunction" not in joined, "an unchanged output was reported as differing"
 

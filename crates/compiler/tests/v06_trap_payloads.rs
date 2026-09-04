@@ -130,7 +130,6 @@ fn build_payload(
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

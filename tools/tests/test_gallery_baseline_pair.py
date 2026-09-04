@@ -8,12 +8,13 @@ either verify passes or `--write` lands.**
 
 It did not hold. Both halves ENUMERATED what to compare — the write arm asked
 whether emission, the header and (one fix later) the warning ledger had moved —
-and a manifest records more than those three. `content_sha` is a SIBLING of
-`outputs`, so a change moving only `versions.toml [content].sha` moved something
-the baseline records while all three qualifiers held: verify refused the tree and
-said regenerate, `--write` refused the regeneration as a noise commit, and the
-verify message named the one thing it was not, a determinism finding, over a list
-of zero differing paths.
+and a manifest records more than those three. Every recorded manifest value is a
+SIBLING of `outputs`, so a change moving only one of them — a campaign that
+gains a skinned NPC moves `resource_pack_sha1` — moved something the baseline
+records while all three qualifiers held: verify refused the tree and said
+regenerate, `--write` refused the regeneration as a noise commit, and the verify
+message named the one thing it was not, a determinism finding, over a list of
+zero differing paths.
 
 These tests bind the repaired shape rather than the instance, because the
 instance is the second of its kind in this file and the first fix was a fourth
@@ -68,7 +69,6 @@ def _measured() -> dict:
         "manifests": {
             "primary.en": {
                 "campaign_id": "gallery",
-                "content_sha": "1" * 40,  # a fixture value, never the real pin (check-pins)
                 "delvec_version": "1.1.0",
                 "dsl_version": "0.12.0",
                 "inputs": {"world.json": "c" * 64},
@@ -82,12 +82,12 @@ def _measured() -> dict:
 
 
 # Each perturbation is a real thing a change can do, and every one of them must
-# be BOTH a verify red and a permitted `--write`. The re-pin is the live defect;
-# the other four are its siblings, listed so the property is tested as a property
-# and not as one bug.
+# be BOTH a verify red and a permitted `--write`. The recorded-value move is the
+# one the enumerated guard could not see; the other four are its siblings, listed
+# so the property is tested as a property and not as one bug.
 PERTURBATIONS = {
-    "content re-pin (the live defect: a manifest field, in no header, no warning row, no output)":
-        lambda t: t["manifests"]["primary.en"].__setitem__("content_sha", "0" * 40),
+    "a recorded manifest value (in no header, no warning row, no output)":
+        lambda t: t["manifests"]["primary.en"].__setitem__("resource_pack_sha1", "0" * 40),
     "an input index entry (identical emission, different source)":
         lambda t: t["manifests"]["primary.en"]["inputs"].__setitem__("world.json", "9" * 64),
     "an emitted path (a real emission drift)":
@@ -141,7 +141,7 @@ def test_the_enumerating_guard_is_the_defect_and_cannot_come_back():
     """
     committed = _measured()
     measured = copy.deepcopy(committed)
-    measured["manifests"]["primary.en"]["content_sha"] = "0" * 40
+    measured["manifests"]["primary.en"]["resource_pack_sha1"] = "0" * 40
 
     delta = GB.compute_delta(committed["manifests"], measured["manifests"])
     emission_moved = bool(delta["added"] + delta["removed"] + delta["changed"])
@@ -164,33 +164,33 @@ def test_a_missing_baseline_is_not_a_match():
     assert GB.baseline_matches(None, _measured()) is False
 
 
-def test_the_re_pin_is_not_reported_as_a_determinism_finding():
+def test_a_moved_recorded_value_is_not_reported_as_a_determinism_finding():
     """The message, not only the exit code.
 
-    A determinism finding says *emission moved for no reason*; a re-pin says *a
-    declared input moved*. Conflating them printed the gravest verdict this file
-    has over a list of zero differing paths, and the reader had no way to tell
-    what had happened.
+    A determinism finding says *emission moved for no reason*; this says *a
+    declared input moved*. Conflating them prints the gravest verdict this file
+    has over a list of zero differing paths, and the reader has no way to tell
+    what happened.
     """
     committed = _measured()
     measured = copy.deepcopy(committed)
-    measured["manifests"]["primary.en"]["content_sha"] = "0" * 40
+    measured["manifests"]["primary.en"]["resource_pack_sha1"] = "0" * 40
 
     with pytest.raises(SystemExit):
         GB.report_mismatch(committed, measured)
 
 
-def test_the_re_pin_message_names_content_sha_and_never_determinism(capsys):
+def test_that_message_names_the_field_that_moved_and_never_determinism(capsys):
     committed = _measured()
     measured = copy.deepcopy(committed)
-    measured["manifests"]["primary.en"]["content_sha"] = "0" * 40
+    measured["manifests"]["primary.en"]["resource_pack_sha1"] = "0" * 40
     with pytest.raises(SystemExit):
         GB.report_mismatch(committed, measured)
     err = capsys.readouterr().err
     assert "DECLARED INPUT MOVED" in err
     assert "DETERMINISM FINDING" not in err
     assert "EMISSION CHANGE" not in err
-    assert "content_sha" in err, "a finding nobody can act on is half a finding"
+    assert "resource_pack_sha1" in err, "a finding nobody can act on is half a finding"
 
 
 def test_the_emitted_path_delta_is_blind_to_the_siblings_by_design():
@@ -202,13 +202,13 @@ def test_the_emitted_path_delta_is_blind_to_the_siblings_by_design():
     """
     committed = _measured()["manifests"]
     measured = copy.deepcopy(committed)
-    measured["primary.en"]["content_sha"] = "0" * 40
+    measured["primary.en"]["resource_pack_sha1"] = "0" * 40
 
     delta = GB.compute_delta(committed, measured)
     assert not (delta["added"] + delta["removed"] + delta["changed"])
 
     fields = GB.manifest_field_delta(committed, measured)
-    assert len(fields) == 1 and "content_sha" in fields[0]
+    assert len(fields) == 1 and "resource_pack_sha1" in fields[0]
 
 
 def test_the_field_delta_descends_inputs_and_names_the_file():
@@ -232,21 +232,24 @@ def test_the_field_delta_names_a_build_that_appeared_or_vanished():
 def test_the_binding_count_counts_every_recorded_value_at_the_leaf():
     """Zero is a red elsewhere; here the number just has to be the truth."""
     manifests = _measured()["manifests"]
-    # 6 scalars + 1 `inputs` entry, and `outputs` is not one of them.
-    assert GB.field_count(manifests) == 7
+    # 5 scalars + 1 `inputs` entry, and `outputs` is not one of them.
+    assert GB.field_count(manifests) == 6
 
 
-def test_versions_toml_is_an_emission_input_and_a_lookalike_is_not():
+def test_versions_toml_is_not_an_emission_input_and_a_lookalike_is_not_under():
     """The classifier decides what the reader is TOLD, never whether it refuses.
 
-    `versions.toml` is read by the compiler at build time and recorded into every
-    manifest, so a manifest mismatch beside a change to it is an ordinary
-    consequence rather than an ADR-0006 violation. A file that merely starts with
-    the same text is a different file.
+    The compiler reads nothing from `versions.toml`: a build is a function of the
+    campaign directory, the prefab directory and the flags beside them. So a
+    gallery mismatch beside a re-pin is exactly as unexplained as one beside no
+    change at all, and calling it an emission change would excuse it. Membership
+    here is decided by "can this reach a byte the compiler emits or records",
+    which is also why a file that merely starts with a member's text is a
+    different file.
     """
-    assert "versions.toml" in GB.EMISSION_INPUTS
-    assert GB.under("versions.toml", "versions.toml")
-    assert not GB.under("versions.toml.bak", "versions.toml")
+    assert "versions.toml" not in GB.EMISSION_INPUTS
+    assert GB.under("crates/compiler/src/emit.rs", "crates/")
+    assert not GB.under("crates.bak/x.rs", "crates/")
     assert GB.under("gallery/world.json", "gallery/")
     assert not GB.under("gallery-prefabs/x.nbt", "gallery/")
 

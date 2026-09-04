@@ -98,7 +98,6 @@ fn try_build(c: &Campaign) -> Result<BuildOutput, emit::BuildFailure> {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }
@@ -983,7 +982,6 @@ fn the_ci_fixture_validates_and_emits_the_chain() {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("the economy fixture builds");

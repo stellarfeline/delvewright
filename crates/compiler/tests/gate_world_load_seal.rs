@@ -156,7 +156,6 @@ fn build(campaign: &Campaign, prefabs: &PrefabRegistry) -> Result<BuildOutput, S
         &tree,
         prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .map_err(|e| format!("{e:?}"))

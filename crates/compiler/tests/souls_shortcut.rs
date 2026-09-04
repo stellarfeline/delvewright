@@ -50,7 +50,6 @@ fn build_fixture() -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates (DW0373/DW0374 hold on the fixture)")
@@ -314,7 +313,6 @@ fn a_shortcut_with_no_long_route_is_rejected_by_the_critical_path_proof() {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect_err("with the bypass carved away the gate is the ONLY route — must fail");

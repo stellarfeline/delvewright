@@ -131,7 +131,6 @@ fn build_with(moat: &str) -> Result<BuildOutput, BuildFailure> {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

@@ -37,7 +37,6 @@ fn build(dir: &std::path::Path) -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("emission succeeds")

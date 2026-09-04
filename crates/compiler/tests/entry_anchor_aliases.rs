@@ -88,7 +88,6 @@ fn build_with(prefabs_dir: &Path) -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("emission succeeds")

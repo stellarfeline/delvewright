@@ -98,7 +98,6 @@ fn try_build_doc(doc: &str) -> Result<emit::BuildOutput, emit::BuildFailure> {
         &tree,
         prefabs_ref(&prefabs),
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

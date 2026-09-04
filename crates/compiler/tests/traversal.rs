@@ -244,7 +244,6 @@ fn build_all(
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

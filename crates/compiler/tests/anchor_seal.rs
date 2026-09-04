@@ -103,7 +103,6 @@ fn build_campaign(quests: &str, dialogue: Option<&str>) -> Result<BuildOutput, B
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }
@@ -483,7 +482,6 @@ fn build_worldless(volley_anchor: &str) -> Result<BuildOutput, BuildFailure> {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

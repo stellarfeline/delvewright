@@ -177,7 +177,6 @@ fn build_with(quests: &str) -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates")
@@ -409,7 +408,6 @@ fn two_origins_on_one_branch_is_dw0488() {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect_err("a shared driver with two origins must not build");

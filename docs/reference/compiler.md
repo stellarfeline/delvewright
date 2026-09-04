@@ -1580,6 +1580,15 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
 - All map/set iteration `BTreeMap`/explicit sort; JSON is `serde_json` pretty
   (sorted keys) + trailing newline.
 - **No** wall-clock, hostname, locale, or absolute build path in any output byte.
+- **No ambient state**: every emitted byte is a function of the campaign
+  directory, the prefab directory and the flags named on the command line. The
+  compiler reads nothing from above those paths and nothing from the working
+  directory, so the same build from the engine checkout, from a content checkout
+  and from a scratch directory produces the same tree. Gated by
+  `tests/cli.rs::the_working_directory_cannot_reach_the_build`, which is the
+  perturbation the double-build test cannot make — both of its builds share one
+  working directory, so a value read out of the filesystem above the inputs is
+  invisible to it.
 - Only randomness = stage-1 `seed` → named splitmix64 per-area streams. Solver
   retry (≤32 attempts) is seed-deterministic; attempt 0 reproduces pre-M2 growth.
 
@@ -1834,10 +1843,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   than 64, but is missing mandatory fields min_format and max_format") and every
   baked skin silently never loads, while no server — and therefore no rung of the
   validation ladder — parses a resource pack at all.
-- `<out>/`: `manifest.json` (SHA-256 of the 6 inputs + every output; non-`en`
-  build adds `language` + hashes the sidecar), `datapack/`, `packtest-datapack/`,
-  `server/`, `critical-path.json`, plus `resourcepack.zip`+`SKINS.md`
+- `<out>/`: `manifest.json`, `datapack/`, `packtest-datapack/`, `server/`,
+  `critical-path.json`, plus `resourcepack.zip`+`SKINS.md`
   (`resource_pack_sha1` in manifest) for a skinned campaign.
+- `<out>/manifest.json` carries exactly `campaign_id`, `delvec_version`,
+  `dsl_version`, `mc_version`, `inputs` (SHA-256 per authored document the build
+  read, l10n sidecars included) and `outputs` (SHA-256 per emitted path), plus
+  `language` on a non-`en` bake and `resource_pack_sha1` on a skinned campaign.
+  It names no repository, revision or checkout: a revision is a property of a
+  checkout rather than of the bytes the compiler was handed, so which content
+  commit a shipped delve was built from is stated by the party that knows it —
+  the release image's `org.opencontainers.image.revision` and
+  `ca.stellarfeline.delvewright.campaign-commit` labels.
 - `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
   version**; `format_version` is the **contract's own** version, currently `3`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told

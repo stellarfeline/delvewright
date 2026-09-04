@@ -124,8 +124,8 @@ def manifest_delta(expected: dict, got: dict) -> list[str]:
     Not over `outputs` alone, and that is a repair rather than a preference. A
     manifest carries the compiler's index over its INPUTS as well as its outputs,
     so the first perturbation this refusal was tested against — one number in a
-    stage document, emitting identical bytes — moved `inputs` and `content_sha`
-    and nothing else. An outputs-only delta printed a refusal with an empty
+    stage document, emitting identical bytes — moved `inputs` and nothing else.
+    An outputs-only delta printed a refusal with an empty
     evidence list under it, which is the shape that sends the next reader to
     rebuild the gallery to find out what the red was about.
     """
