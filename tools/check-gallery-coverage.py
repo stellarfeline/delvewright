@@ -51,11 +51,27 @@ binds and back, and the refusal probes are rendered with the *reason* the engine
 refuses them, because a probe is the clearest demonstration the gallery can make
 of what the engine checks — each one is a thing the engine correctly says no to.
 
+## A probe is the primary plus a declared edit
+
+A probe used to ship whole stage documents, and nothing compared the copy to what
+it was a copy of: eight of the fifteen had drifted, one of them by 515 JSON
+paths, and each was being refused with several diagnostics before its own code
+was ever reached. So the perturbation is DECLARED — `probe.json` carries a
+`patch` of JSON-pointer edits, applied by `gallery_domain` while it makes the
+point — and this tool refuses one whose pointer the primary no longer has, naming
+the probe and the pointer. A probe may still ship a document the primary does not
+hold; it may not ship a second copy of one it does.
+
 ## Binding count
 
-Every run prints units enumerated, bound, refusal-proven, and the number of
-authored documents walked. **Enumerating zero units is a red** and so is walking
+Every run prints units enumerated, bound, refusal-proven, the number of authored
+documents walked, and — for the probes — how many were examined, how many carry a
+declared edit, how many JSON paths those edits touch, and how many documents of
+their own the probes ship. **Enumerating zero units is a red** and so is walking
 zero documents: a gate that matched nothing is vacuous, not a pass (CLAUDE.md).
+So is a probe that perturbs nothing — it materialises the primary unchanged and
+is then refused, or not, by whatever the primary does, which is a refusal about
+some other document wearing this probe's name.
 """
 
 from __future__ import annotations
@@ -117,6 +133,21 @@ def materialise(base: Path, overlay: Path, dest: Path) -> None:
     """
     assert base == GALLERY, f"the domain has one source and it is `{GALLERY}`, not `{base}`"
     gallery_domain.materialise(dest, overlay)
+
+
+def materialise_point(kind: str, point: Path, dest: Path) -> None:
+    """`materialise`, with the point NAMED in whatever it refuses with.
+
+    `gallery_domain` is a library: it raises rather than printing, because the
+    tree it is handed is the caller's subject and only the caller knows what to
+    call it. Every refusal it can raise is about one probe's declared edit, and a
+    refusal that does not say WHICH probe sends the reader through fifteen
+    directories to find out.
+    """
+    try:
+        materialise(GALLERY, point, dest)
+    except gallery_domain.PatchError as e:
+        die(f"{kind} `{point.name}` {e}")
 
 
 def bind(enumerator: Enumerator, export: dict, docs: dict[str, dict], label: str):
@@ -224,6 +255,49 @@ def probe_kind(name: str, manifest: dict) -> tuple[str, str, list[str], str]:
         )
     claimed = manifest.get("units") or []
     return (EXEMPTION if claimed else DEMONSTRATION), code, claimed, why
+
+
+def probe_patch(name: str, manifest: dict) -> list[dict]:
+    """The edits a probe DECLARES over the primary, checked for shape before they run.
+
+    A probe is the primary plus one declared edit, so this is where a reader
+    learns what the probe perturbs and this is what the machine applies — the
+    same object, which is the point. `gallery_domain.apply_patch` refuses an edit
+    that does not APPLY; what is refused here is an edit nobody could read: a
+    verb that is not one of the three, an edit that names no document, a pointer
+    that is not one.
+
+    Shape and application are separated because they fail at different moments
+    and a reader needs to be told which happened. A malformed `op` is an author
+    typing; a pointer the primary no longer holds is the gallery having moved
+    under a probe that was correct when it was written, and that second one is
+    the drift this whole mechanism exists to make loud.
+    """
+    ops = manifest.get("patch") or []
+    if not isinstance(ops, list):
+        die(f"probe `{name}` has a `patch` that is not a list of edits")
+    for i, op in enumerate(ops):
+        if not isinstance(op, dict):
+            die(f"probe `{name}` patch[{i}] is not an edit object")
+        verb, doc, path = op.get("op"), op.get("doc"), op.get("path")
+        if verb not in gallery_domain.PATCH_OPS:
+            die(
+                f"probe `{name}` patch[{i}] declares `{verb!r}`, which is not one of "
+                f"{', '.join(gallery_domain.PATCH_OPS)}"
+            )
+        if not doc or not isinstance(doc, str):
+            die(
+                f"probe `{name}` patch[{i}] names no `doc`. An edit belongs to one "
+                "document of the primary, and which one is not inferable from a pointer"
+            )
+        if not isinstance(path, str) or not path.startswith("/"):
+            die(
+                f"probe `{name}` patch[{i}] has `path` {path!r}, which is not a JSON "
+                "pointer (RFC 6901 pointers start with `/`)"
+            )
+        if verb in ("add", "replace") and "value" not in op:
+            die(f"probe `{name}` patch[{i}] is an `{verb}` at `{path}` with no `value`")
+    return ops
 
 
 def assert_refused(
@@ -366,7 +440,7 @@ def main() -> int:
                     "claims nothing is the redundant overlay the rule forbids."
                 )
             dest = tmp / od.name
-            materialise(GALLERY, od, dest)
+            materialise_point("overlay", od, dest)
             ov = bind(enumerator, export, load_stage_docs(dest, export), f"overlay:{od.name}")
             for unit in declared:
                 if unit not in units:
@@ -396,6 +470,10 @@ def main() -> int:
     # Probes that name no unit: refused, re-run, and discharging nothing.
     demonstrations: dict[str, dict] = {}
     probes_dir = GALLERY / "probes"
+    probes_examined = 0
+    probes_patched = 0
+    paths_touched = 0
+    own_documents = 0
     tmp = Path(tempfile.mkdtemp(prefix="gallery-probes-"))
     try:
         for pd in sorted(p for p in probes_dir.iterdir() if p.is_dir()) if probes_dir.is_dir() else []:
@@ -404,8 +482,23 @@ def main() -> int:
                 die(f"probe `{pd.name}` has no `probe.json`")
             manifest = json.loads(manifest_path.read_text())
             kind, code, claimed, why = probe_kind(pd.name, manifest)
+            ops = probe_patch(pd.name, manifest)
+            own = sum(
+                1 for f in pd.rglob("*") if f.is_file() and f.name not in gallery_domain.POINT_MANIFESTS
+            )
+            if not ops and not own:
+                die(
+                    f"probe `{pd.name}` declares no edit and ships no document of its own, so "
+                    "it materialises the primary UNCHANGED. It is then refused — or not — by "
+                    "whatever the primary does, and it demonstrates nothing about "
+                    f"`{code}`. A probe is the primary plus a declared edit."
+                )
+            probes_examined += 1
+            probes_patched += 1 if ops else 0
+            paths_touched += len(ops)
+            own_documents += own
             dest = tmp / pd.name
-            materialise(GALLERY, pd, dest)
+            materialise_point("probe", pd, dest)
             rc, codes, phase = run_probe(delvec, dest, prefabs)
             assert_refused(pd.name, kind, code, rc, codes, phase)
             if kind == DEMONSTRATION:
@@ -435,6 +528,11 @@ def main() -> int:
         f"{len(overlay_rows)} overlay(s), {len(refusal)} unit(s) behind "
         f"{len({r['probe'] for r in refusal.values()})} probe(s)."
     )
+    print(
+        f"probe patches: {probes_examined} probe(s) examined, {probes_patched} carrying a "
+        f"declared edit over the primary, {paths_touched} JSON path(s) touched, "
+        f"{own_documents} document(s) of their own the primary does not hold."
+    )
 
     # ------------------------------------------- compiler-stated bindings (§8.6)
     ledgers, zero_bindings = read_build_ledgers(Path(args.build_out)) if args.build_out else ({}, [])
@@ -455,6 +553,10 @@ def main() -> int:
         "overlays": overlay_rows,
         "refusal_proven": {k: refusal[k] for k in sorted(refusal)},
         "primary_documents": docs_walked,
+        "probes_examined": probes_examined,
+        "probes_with_a_patch": probes_patched,
+        "probe_patch_paths": paths_touched,
+        "probe_own_documents": own_documents,
     }
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

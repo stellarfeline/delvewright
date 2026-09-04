@@ -1,5 +1,17 @@
 {
   "code": "DW0862",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/0/objectives/3/title"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/obj.near-hall.reach-the-counter.title"
+    }
+  ],
   "units": [],
   "why": "A reach objective that keeps its hint and loses its title. The hint is still authored, still in the string inventory, still translated in every language sidecar - and no player will ever see it, because the activation announcement is emitted only for a titled objective and the hint's line is nested inside that guard. That is the whole defect: a prompt that exists everywhere except on a screen, with the l10n coverage check green over it because the key is genuinely there. A non-kill objective is used deliberately, so DW0863 stays silent and this document demonstrates exactly one refusal. It declares no unit: what must not compile is the combination of a written hint and no title to carry it."
 }

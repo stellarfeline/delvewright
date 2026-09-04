@@ -1,5 +1,16 @@
 {
   "code": "DW0335",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_objective_complete/obj~1press-the-case/2/at",
+      "value": {
+        "actor": "actor/sergeant",
+        "at": "actor"
+      }
+    }
+  ],
   "units": [
     "SoundAt::actor",
     "SoundAt::actor.actor"
