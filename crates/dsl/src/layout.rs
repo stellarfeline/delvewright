@@ -1741,14 +1741,12 @@ fn pacing(
         format!(
             "the critical path crosses {legs} place(s) over {steps} step(s), a nominal \
              {blocks} blocks of route, which at {rate} blocks of route per minute of play \
-             projects to about {minutes} minute(s){un}. This figure carries NO threshold and \
-             refuses nothing: the coefficient it rests on is uncalibrated until the first \
-             walked blockout and the first full playtest, and a threshold on a number that \
-             uncertain would be defending nothing. It is printed so that the projection and \
-             the measurement taken over the built world can be set side by side, which is \
-             how the coefficient gets calibrated at all.",
+             projects to about {minutes} minute(s) against this world's `target_minutes` of \
+             {target}{un}. It carries no threshold and refuses nothing — see `DW0822` in \
+             `docs/reference/compiler.md` for what the number is worth.",
             steps = graph.critical_path.len().saturating_sub(1),
             minutes = blocks.div_ceil(rate),
+            target = c.world.content.target_minutes,
             un = if unprojected.is_empty() {
                 String::new()
             } else {

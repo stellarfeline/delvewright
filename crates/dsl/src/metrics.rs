@@ -92,7 +92,8 @@ pub const DW_METRIC_UNKNOWN: DwCode = DwCode::every_version("DW0812", ExitTier::
 /// warning (exit 0) for the same reason: a provisional number is still a number,
 /// the check still refuses, and what the line adds is that the green rests on
 /// something nobody has walked.
-pub const DW_METRIC_PROVISIONAL: DwCode = DwCode::every_version("DW0813", ExitTier::Build);
+pub const DW_METRIC_PROVISIONAL: DwCode =
+    DwCode::every_version("DW0813", ExitTier::Build).about_the_engine();
 
 // ---------------------------------------------------------------------------
 // The player half — the one definition of each constant in this workspace.
@@ -1331,12 +1332,9 @@ impl Metrics {
             stage,
             "",
             format!(
-                "{n} of the {read} building metric(s) this run read are provisional — \
-                 the metrics gym has not walked them, so every verdict above that used \
-                 one is resting on a seed rather than on a standard: {names}. The \
-                 checks still ran and still refuse; what is unproven is the number they \
-                 refused against. Walking the gym is what retires this line, one entry \
-                 at a time.",
+                "{n} of the {read} building metric(s) this run read are provisional — the \
+                 metrics gym has not walked them: {names}. The checks still ran and still \
+                 refuse; what is unproven is the number they refused against.",
                 n = binding.provisional,
                 read = binding.read,
                 names = provisional.join(", "),

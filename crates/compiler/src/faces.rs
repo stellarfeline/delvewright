@@ -205,15 +205,10 @@ impl FaceBinding {
             return None;
         }
         let tail = if allocated {
-            "This world's placement authority is a SITE PLAN, so no piece was ever asked to mate \
-             with another: its ways are allocated at stage 4, on faces two boxes already share, \
-             and proved over the built bytes by `DW0836`. The zero above is the honest count of a \
-             question this world does not ask, not a proof that went missing."
+            "This world allocates its ways in a SITE PLAN and proves them by `DW0836`, so that \
+             zero is a question it does not ask."
         } else {
-            "Nothing here proves that the pieces of this world fit together. A piece without a \
-             contract makes no claim about its own sides at all; a piece whose contract declares \
-             only interior edges has made its claim and offers a neighbour nothing to disagree \
-             with."
+            "Nothing here proves that the pieces of this world fit together."
         };
         Some(Diagnostic::warning(
             DW_FACE_UNBOUND,

@@ -629,6 +629,15 @@ fn validate_loaded(
     match parse_campaign(&loaded.raw) {
         Ok(campaign) => {
             let mut diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+            // **What this run examined, held back until the author's lines are
+            // out.** These counts are not optional — a check that reports no
+            // binding is one nobody can tell apart from a check that never ran,
+            // and `CLAUDE.md`'s vacuity rule is why every one of them is stated
+            // whether or not it is zero. What they are not is the first thing an
+            // author needs, and printed as they were computed they arrived ahead
+            // of the refusal. So they are collected here and emitted after
+            // `print_diags`, under a heading, unchanged.
+            let mut examined: Vec<String> = Vec::new();
             // Prefab-library load failures (DW0346): a metadata file that did
             // not parse (e.g. newer schema than this delvec) is a first-class
             // validation diagnostic, never a silent skip that resurfaces later
@@ -721,7 +730,7 @@ fn validate_loaded(
             // binding line states what it examined, including the zeroes.
             {
                 let (pd, pbind) = delvewright_compiler::promise::check(&campaign);
-                eprintln!("{}", pbind.line());
+                examined.push(pbind.line());
                 diags.extend(pd);
             }
             // spec-0050 (DSL v0.15): the detail plan. `DW0841` (the whole was
@@ -741,7 +750,7 @@ fn validate_loaded(
                     loaded.walk_record.as_deref(),
                 );
                 if campaign.detail_plan.is_some() || campaign.site_plan.is_some() {
-                    eprintln!("{}", dbind.line());
+                    examined.push(dbind.line());
                 }
                 diags.extend(dd);
                 diags.extend(delvewright_compiler::detail::blockout_drift(
@@ -761,9 +770,9 @@ fn validate_loaded(
             // downstream can un-fence it: `print_diags` and `Validated::diags`
             // both hold `Fenced`, which has no constructor from a bare list.
             let diags = Fenced::apply(&campaign, diags);
-            report_grandfathered(&diags);
-            report_layout_binding(&campaign);
             print_diags(&diags, json);
+            report_grandfathered(&diags);
+            report_binding_notes(&campaign, &examined);
             Ok(Validated {
                 campaign,
                 prefabs,
@@ -2524,7 +2533,30 @@ fn print_build_error(code: DwCode, message: &str, json: bool) {
 ///
 /// stderr, not stdout: `--json` reserves stdout for one diagnostic object per
 /// line, and this is not a diagnostic — nothing here is wrong.
-fn report_layout_binding(campaign: &delvewright_dsl::Campaign) {
+/// **The run's binding counts, under one heading, after the author's lines.**
+///
+/// Every count a check owes its reader is still stated, zeroes included — that
+/// is the vacuity rule and nothing here relaxes it. What changed is where they
+/// sit: computed as each pass ran, they printed before the first refusal, so a
+/// run that refused one thing opened with four to six paragraphs about what it
+/// had examined. They are the last thing a run says now, and they say it under a
+/// heading so a reader can see where the answers to their own question ended.
+fn report_binding_notes(campaign: &delvewright_dsl::Campaign, collected: &[String]) {
+    let mut buf: Vec<String> = collected.to_vec();
+    layout_binding_lines(campaign, &mut buf);
+    if buf.is_empty() {
+        return;
+    }
+    eprintln!("-- what this run examined ({} line(s))", buf.len());
+    for line in &buf {
+        eprintln!("{line}");
+    }
+}
+
+/// The layout, plan and brief binding counts, appended rather than printed —
+/// [`report_binding_notes`] is the one site that emits them, so there is one
+/// place that decides when a reader sees them.
+fn layout_binding_lines(campaign: &delvewright_dsl::Campaign, out: &mut Vec<String>) {
     if campaign.layout_graph.is_none()
         && campaign.geometry_brief.is_none()
         && campaign.site_plan.is_none()
@@ -2532,44 +2564,49 @@ fn report_layout_binding(campaign: &delvewright_dsl::Campaign) {
         return;
     }
     let b = delvewright_dsl::LayoutBinding::of(campaign);
-    eprintln!("{}", b.line());
+    out.push(b.line());
     if campaign.site_plan.is_some() {
-        eprintln!("{}", b.plan_line());
+        out.push(b.plan_line());
         if b.plan.views == 0 {
-            eprintln!(
+            out.push(
                 "site-plan binding 0: this plan names no view, so the walk has no declared \
                  vantage to judge the silhouette from and the render beside the reference sheet \
                  has nothing to frame. The plan still builds; what is missing is the picture the \
                  whole was supposed to be looked at in."
+                    .to_string(),
             );
         }
         if b.plan.volumes == 0 {
-            eprintln!(
+            out.push(
                 "site-plan binding 0: this plan declares no whole-owned volume, so the check \
                  that keeps the whole's mass out of the places examined nothing. A map made \
                  only of rooms is a legitimate map; a map with a mountain in it that forgot to \
                  say so is not, and nothing else would notice."
+                    .to_string(),
             );
         }
     }
     if campaign.layout_graph.is_some() && b.traversal_edges == 0 {
-        eprintln!(
+        out.push(
             "layout-graph binding 0: this graph declares no traversal connection at all, so \
              every check over edges above examined nothing. A set of places with no space \
              between them is a finding, not a graph that happens to be simple."
+                .to_string(),
         );
     }
     if campaign.layout_graph.is_some() && b.spine_beats == 0 {
-        eprintln!(
+        out.push(
             "layout-graph binding 0: no beat of this graph belongs to a quest the finale depends \
              on, so `DW0817`'s obligation to visit the mission on the way to the goal examined \
              nothing. A critical path over an unbound graph is a route through nothing."
+                .to_string(),
         );
     }
     if campaign.geometry_brief.is_some() && b.brief_facts == 0 {
-        eprintln!(
+        out.push(
             "geometry-brief binding 0: this brief states no fact, so there is nothing for a \
              site plan's identities to bind the map to."
+                .to_string(),
         );
     }
 }
@@ -2611,26 +2648,55 @@ fn report_grandfathered(diags: &Fenced) {
 /// obligation fence is not a step somebody has to remember to run before
 /// reporting, it is the only way to obtain a value this function accepts
 /// (`delvewright_dsl::fence`).
+/// **Author-actionable first.**
+///
+/// A run's diagnostics reached the terminal in the order the passes happened to
+/// produce them, which put four to six paragraphs of advisory ahead of the one
+/// line the author was there to act on: on every site-plan run, `DW0813` (the
+/// engine's own metric table is provisional), `DW0822` (a pacing figure that
+/// "carries NO threshold and refuses nothing") and the per-run binding lines all
+/// printed before the first refusal.
+///
+/// So the list is grouped before it is printed — refusals, then advisories about
+/// this campaign, then notices about this engine — by
+/// [`delvewright_dsl::Diagnostic::group`], the one authority on that order. The
+/// sort is STABLE, so within a group nothing moves and every pass's own ordering
+/// survives; nothing is dropped, and the grouping applies to `--json` too,
+/// because a consumer reading the first line should get the actionable one for
+/// the same reason a person should.
+///
+/// Headings are human-output only: `--json` is one JSON object per line and
+/// stays that way (spec-0002).
 fn print_diags(diags: &Fenced, json: bool) {
-    for d in diags.reported() {
+    let mut ordered: Vec<&delvewright_dsl::Diagnostic> = diags.reported().iter().collect();
+    ordered.sort_by_key(|d| d.group());
+
+    let mut heading: Option<delvewright_dsl::Group> = None;
+    for d in &ordered {
         if json {
             println!("{}", serde_json::to_string(d).unwrap());
-        } else {
-            let sev = match d.severity {
-                delvewright_dsl::Severity::Error => "error",
-                delvewright_dsl::Severity::Warning => "warning",
-            };
-            println!(
-                "{} [{sev}] {}{}: {}",
-                d.code,
-                d.stage,
-                if d.path.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {}", d.path)
-                },
-                d.message
-            );
+            continue;
         }
+        let g = d.group();
+        if heading != Some(g) {
+            let n = ordered.iter().filter(|x| x.group() == g).count();
+            println!("{}", g.heading(n));
+            heading = Some(g);
+        }
+        let sev = match d.severity {
+            delvewright_dsl::Severity::Error => "error",
+            delvewright_dsl::Severity::Warning => "warning",
+        };
+        println!(
+            "{} [{sev}] {}{}: {}",
+            d.code,
+            d.stage,
+            if d.path.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", d.path)
+            },
+            d.message
+        );
     }
 }

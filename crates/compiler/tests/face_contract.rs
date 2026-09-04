@@ -218,8 +218,9 @@ fn pieces_in_the_site_area_are_allocated_rather_than_mated() {
         .expect("a zero binding is stated whether or not it is a fault");
     assert_eq!(finding.code, "DW0781");
     assert!(
-        finding.message.contains("allocated at stage 4"),
-        "and the reader is told where the question went: {}",
+        finding.message.contains("SITE PLAN") && finding.message.contains("DW0836"),
+        "and the reader is told where the question went — one line, with the essay in \
+         `compiler.md`'s `DW0781` row: {}",
         finding.message
     );
 
