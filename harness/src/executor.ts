@@ -31,13 +31,14 @@ import type {
 } from "./critical-path.ts";
 import { insideCompletion, reachGoal } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
-import { BotDeathError, likelyDeathCause } from "./death.ts";
+import { BotDeathError, formatDeathPos, likelyDeathCause } from "./death.ts";
 import { hasSettled } from "./entity-settle.ts";
 import { NavigationOwner } from "./navigation.ts";
 import type { NamedEntityDeath } from "./teardown.ts";
 import type { StageName } from "./report.ts";
 import {
   AssistLedger,
+  CONTROLLED_GAMEMODE,
   actorExercise,
   actorFloorFinding,
   assistClearCommand,
@@ -54,6 +55,7 @@ import {
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
+  scriptedDeathRefusal,
   type ActorEncounter,
   type ActorOutcome,
   type ActorTrial,
@@ -69,6 +71,7 @@ import {
   type WaveCensus,
 } from "./combat.ts";
 import {
+  bodyInVolume,
   entryCellOf,
   markerAt,
   expectedForfeit,
@@ -2160,7 +2163,13 @@ export class MineflayerExecutor implements StepExecutor {
     let position: readonly [number, number, number] | undefined;
     const p = bot?.entity?.position;
     if (p) {
-      position = [Math.round(p.x), Math.round(p.y), Math.round(p.z)];
+      // EXACT, never rounded. `Math.round` here produced a triple that is neither
+      // a position nor the cell the body was in, and the death-loop stage read it
+      // as a cell: a kill at `z = 4.6` (cell 4, inside the volume) rounded to 5
+      // and was reported as a death outside the box that killed it. Whoever wants
+      // a cell floors; whoever wants "the volume's selector matched this body"
+      // asks `bodyInVolume`.
+      position = [p.x, p.y, p.z];
     }
     const cause = likelyDeathCause(this.recentChat, bot?.username ?? "");
     const err = new BotDeathError(position, cause);
@@ -2556,7 +2565,7 @@ export class MineflayerExecutor implements StepExecutor {
         }
       }
     }
-    if (this.feetInside(volume.region)) trial.enteredVolume = true;
+    if (this.bodyInside(volume.region)) trial.enteredVolume = true;
     // The one leg of the whole run that is ALLOWED into the hazard — skipped when
     // the approach already delivered the death.
     if (navFault === undefined && this.deathSeq === deathsBefore) {
@@ -2592,7 +2601,8 @@ export class MineflayerExecutor implements StepExecutor {
     // Credited only when the player died INSIDE the declared box. A death on the
     // way there is a run fault, not this volume's kill, and crediting it would let
     // any lethal accident anywhere pass as a proof that this box works.
-    const inside = trial.deathPos !== undefined && inBox(trial.deathPos, volume.region);
+    const inside =
+      trial.deathPos !== undefined && bodyInVolume(trial.deathPos, volume.region);
     // A death inside the box is itself an observation that the body was inside it.
     if (observed && inside) trial.enteredVolume = true;
     trial.died = observed && inside;
@@ -2602,11 +2612,10 @@ export class MineflayerExecutor implements StepExecutor {
     }
     if (observed && !inside) {
       trial.abandoned =
-        `the bot died at ` +
-        `${trial.deathPos ? `[${trial.deathPos.join(", ")}]` : "an unknown position"}, which is ` +
-        `OUTSIDE the declared volume [${volume.region.lo.join(", ")}]..` +
-        `[${volume.region.hi.join(", ")}] — that death is not this volume's kill and is not ` +
-        `credited as one`;
+        `the bot died at ${formatDeathPos(trial.deathPos)}, which is OUTSIDE the reach of ` +
+        `the declared volume [${volume.region.lo.join(", ")}]..[${volume.region.hi.join(", ")}] ` +
+        `— a body there is not one this volume's own selector can match, so that death is ` +
+        `not this volume's kill and is not credited as one`;
       return;
     }
     if (!trial.died) {
@@ -2621,8 +2630,7 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     process.stderr.write(
-      `[death-loop] ${volume.id}: died at ` +
-        `${trial.deathPos ? `[${trial.deathPos.join(", ")}]` : "an unknown position"}` +
+      `[death-loop] ${volume.id}: died at ${formatDeathPos(trial.deathPos)}` +
         `; the volume's own line ${trial.wordingSeen ? "reached" : "did NOT reach"} the player\n`,
     );
 
@@ -2741,7 +2749,7 @@ export class MineflayerExecutor implements StepExecutor {
   private async stepInto(box: Box, cell: Vec3Tuple, trial: LethalTrial): Promise<void> {
     const bot = this.requireBot();
     const inside = (): boolean => {
-      if (!this.feetInside(box)) return false;
+      if (!this.bodyInside(box)) return false;
       trial.enteredVolume = true;
       return true;
     };
@@ -2764,10 +2772,21 @@ export class MineflayerExecutor implements StepExecutor {
     }
   }
 
-  /** Whether the bot's feet are in `box` right now. */
-  private feetInside(box: Box): boolean {
-    const feet = this.feetCell();
-    return feet !== undefined && inBox(feet, box);
+  /**
+   * Whether the volume `box` would match this body right now — the SERVER's rule
+   * ({@link bodyInVolume}), asked of the bot's exact position.
+   *
+   * It asked whether the floored feet CELL was in the box, which is a different
+   * question and a narrower one: the emitted selector intersects a 0.6-wide
+   * hitbox against the region `[lo, hi + 1]`, so a body 0.2 blocks outside the
+   * face is one the volume kills and one this used to call outside. Saying
+   * "entered" of exactly the bodies the volume can act on is what makes
+   * `enteredVolume` mean anything, and it also ends {@link stepInto}'s drive at
+   * the moment the hazard can reach the bot rather than a third of a block late.
+   */
+  private bodyInside(box: Box): boolean {
+    const p = this.bot?.entity?.position;
+    return p !== undefined && bodyInVolume([p.x, p.y, p.z], box);
   }
 
   /**
@@ -4241,18 +4260,29 @@ export class MineflayerExecutor implements StepExecutor {
       const trial = openTrial(enc, attempt, phase);
       this.trials.push(trial);
       try {
+        // A cutscene cannot be allowed to eat this death. The encounter's own
+        // objective completion may start one, and a cutscene's first act is
+        // `gamemode spectator @a` — so a trade that finished the wave hands the
+        // next scripted death an invulnerable body, `/damage` does nothing, and
+        // the stage used to report that as a missing op.
+        await this.awaitControlForScriptedDeath(step, enc);
         const seq = this.deathSeq;
         // What the bot carries INTO the death — the baseline `keep_inventory` is
         // judged against on the way out.
         this.itemsBeforeDeath = bot.inventory.items().length;
+        const chatFrom = this.recentChat.length;
         bot.chat(scriptedDeathCommand());
         if (!(await this.awaitDeathAfter(seq, RESPAWN_TIMEOUT_MS))) {
-          // The bot is opped for exactly this command; if no death followed, the
-          // command was refused (or the op seed drifted) and the stage proves
-          // nothing. Fail the trial rather than walk a loop nobody opened.
-          trial.abortedWith =
-            `the scripted death never landed within ${RESPAWN_TIMEOUT_MS}ms — ` +
-            `\`${scriptedDeathCommand()}\` was refused (is the bot opped?)`;
+          // No death followed, so the stage proves nothing and the trial fails —
+          // but it fails saying what it SAW. The bot is opped and receives the
+          // server's own answer on the chat stream, and its gamemode decides
+          // whether the command could ever have worked.
+          trial.abortedWith = scriptedDeathRefusal(
+            scriptedDeathCommand(),
+            RESPAWN_TIMEOUT_MS,
+            this.gameModeNow(),
+            this.recentChat.slice(chatFrom),
+          );
           throw new Error(`die-retry: ${trial.abortedWith}`);
         }
         trial.cause = this.death?.likelyCause;
@@ -4333,6 +4363,63 @@ export class MineflayerExecutor implements StepExecutor {
         this.unbrandWave(enc);
       }
     }
+  }
+
+  /**
+   * The gamemode the client currently believes it is in, as a plain string.
+   *
+   * Widened deliberately: mineflayer's own type for `bot.game.gameMode` lists
+   * `survival | creative | spectator` and omits `adventure`, which is the mode every
+   * delve actually runs in. Comparing against the mode a delve uses is not an
+   * unintentional comparison; the library's enumeration is short.
+   */
+  private gameModeNow(): string | undefined {
+    return this.bot?.game?.gameMode;
+  }
+
+  /**
+   * Hold until the bot is a body a scripted death can reach — out of the spectator
+   * a cutscene put it in.
+   *
+   * The bound is the campaign's own number, never one invented here: a step whose
+   * completion fires a `Cutscene` carries `cutscene_seconds` in
+   * `critical-path.json`, and a `kill` step carries it exactly as a walking step
+   * does. The sequencer already waits it out AFTER a step; nothing waited it out
+   * inside one, which is where the die-retry stage lives — the general mechanism
+   * was there and its binding did not reach this caller. The grace on top is the
+   * same {@link awaitCutscene} uses.
+   *
+   * Bounded, and it never fails: a window that outlasts what the build declared is
+   * a finding, and the finding is the refusal {@link scriptedDeathRefusal} writes
+   * when the death then does not land — which says the gamemode it saw.
+   */
+  private async awaitControlForScriptedDeath(step: KillStep, enc: Encounter): Promise<void> {
+    this.requireBot();
+    if (this.gameModeNow() === CONTROLLED_GAMEMODE) return;
+    const declaredMs = (step.cutsceneSeconds ?? 0) * 1000;
+    const budget = declaredMs + this.cutsceneGraceMs;
+    const started = Date.now();
+    const deadline = started + budget;
+    process.stderr.write(
+      `[die-retry] ${enc.wave}: the bot is in \`${this.gameModeNow() ?? "?"}\`, not ` +
+        `\`${CONTROLLED_GAMEMODE}\` — waiting out the cutscene before scripting a death ` +
+        `(${step.cutsceneSeconds ?? 0}s declared + ${this.cutsceneGraceMs}ms grace)\n`,
+    );
+    while (Date.now() < deadline) {
+      if (this.death) throw this.death;
+      if (this.gameModeNow() === CONTROLLED_GAMEMODE) {
+        process.stderr.write(
+          `[die-retry] ${enc.wave}: control returned after ${Date.now() - started}ms\n`,
+        );
+        return;
+      }
+      await delay(CUTSCENE_POLL_MS);
+    }
+    process.stderr.write(
+      `[die-retry] ${enc.wave}: still \`${this.gameModeNow() ?? "?"}\` after ${budget}ms — ` +
+        `scripting the death anyway, so the refusal below says what was seen rather than ` +
+        `this wait swallowing it\n`,
+    );
   }
 
   /**

@@ -29,11 +29,13 @@ test("likelyDeathCause returns undefined for an empty username", () => {
 });
 
 test("BotDeathError formats position and cause into the message", () => {
-  const err = new BotDeathError([12, 65, -4], "delve-bot was slain by Zombie");
+  // The position is the body's own, never a block cell: it is carried EXACTLY
+  // and only the sentence rounds it, to two decimals.
+  const err = new BotDeathError([12.4, 65, -3.6], "delve-bot was slain by Zombie");
   assert.equal(err.name, "BotDeathError");
-  assert.deepEqual(err.position, [12, 65, -4]);
+  assert.deepEqual(err.position, [12.4, 65, -3.6]);
   assert.equal(err.likelyCause, "delve-bot was slain by Zombie");
-  assert.match(err.message, /\[12, 65, -4\]/);
+  assert.match(err.message, /\[12\.40, 65\.00, -3\.60\]/);
   assert.match(err.message, /delve-bot was slain by Zombie/);
 });
 

@@ -432,6 +432,51 @@ export function inBox(cell: Vec3Tuple, box: Box): boolean {
   return [0, 1, 2].every((i) => box.lo[i]! <= cell[i]! && cell[i]! <= box.hi[i]!);
 }
 
+/**
+ * A player's collision box in blocks: `0.6` wide and deep, `1.8` tall, centred on
+ * the body's own `x`/`z` and standing on its `y`. Vanilla's `minecraft:player`
+ * dimensions — the numbers the server intersects a volume selector against.
+ */
+export const PLAYER_WIDTH = 0.6;
+export const PLAYER_HEIGHT = 1.8;
+
+/**
+ * **Would this volume's selector have matched a body standing at `pos`?**
+ *
+ * This is the server's own rule, and it is not {@link inBox}. A lethal volume is
+ * emitted as `@a[x=<lo.x>,dx=<hi.x - lo.x>,…]`; `dx` is a SPAN, so a one-cell
+ * region is `dx=0` and still selects the whole block — the region in continuous
+ * coordinates is `[lo, hi + 1]` on each axis. And vanilla tests **hitbox
+ * intersection**, not cell containment (`compiler::reach::reach_completion` says
+ * the same thing about the completion cube, from the other side of the same
+ * fact). A player is 0.6 wide, so a body whose feet cell is one outside the box
+ * is matched — and killed — whenever it stands within 0.3 of the face.
+ *
+ * The gallery's west pit measured it: the volume `[1, 63, 2]..[3, 67, 4]` killed
+ * the bot and its own promised line reached that player, while the position read
+ * back sat one cell past the `+z` face. Asked with `inBox` the stage answered
+ * that a real kill by that volume had happened outside it, refused to credit it,
+ * and reported the west pit as unexercised. A checker reads a document the way
+ * its CONSUMER reads it: the consumer here is a vanilla selector.
+ *
+ * Membership is the certain case in both directions — the same intersection the
+ * server computes — so this neither invents a kill nor disowns one.
+ */
+export function bodyInVolume(
+  pos: Vec3Tuple,
+  box: Box,
+  width = PLAYER_WIDTH,
+  height = PLAYER_HEIGHT,
+): boolean {
+  const half = width / 2;
+  const spans: readonly (readonly [number, number])[] = [
+    [pos[0] - half, pos[0] + half],
+    [pos[1], pos[1] + height],
+    [pos[2] - half, pos[2] + half],
+  ];
+  return spans.every(([min, max], i) => min <= box.hi[i]! + 1 && max >= box.lo[i]!);
+}
+
 /** Every cell of an inclusive box, in a fixed order. */
 export function boxCells(box: Box): Vec3Tuple[] {
   const out: Vec3Tuple[] = [];
