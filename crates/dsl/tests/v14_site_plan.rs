@@ -823,13 +823,26 @@ fn a_sill_a_body_cannot_reach_is_refused() {
 // DW0830 / DW0831 — the climb and the fall
 // ---------------------------------------------------------------------------
 
-/// `pit` hosts a stair that climbs 5 to the yard, and the gentlest standard
-/// pitch needs 5 blocks of run. Shrink the pit to a 4-block footprint and no
-/// standard pitch fits — the refusal names the rise, the run needed and the run
-/// available, which are the three numbers a plan edit needs.
+/// **A stair is measured against the climb its opening asks for, and against
+/// the run the host really has** — the arithmetic the derivation lays treads
+/// by, because it is the same function.
+///
+/// The green plan's `hall|cellar` stair has its sill at the hall's own floor,
+/// so its climb and its rise are both 5 and nothing distinguishes the two
+/// readings. Lift the sill to y 68 — one field, and a sill a plan is entitled
+/// to put where it likes — and the courses have to carry 9, which no standard
+/// pitch fits in the eight blocks of run the cellar affords. The refusal names
+/// the rise, the climb, the run needed and the run available, which are the
+/// numbers a plan edit needs.
+///
+/// This is the pair that says the check reads the derivation's own arithmetic.
+/// Measured against the RISE it is a run of 5 in a host affording 8, which is
+/// green — and the derivation then lays no treads at all, because it measures
+/// the climb. A place whose only way in is that stair comes back as an unreached
+/// `DW0837` five stages later, with nothing pointing at the seam.
 #[test]
 fn a_stair_that_no_standard_pitch_fits_is_refused_with_its_numbers() {
-    let d = plan_diags(|v| boxes(v)[box_of("node/pit")]["extent"] = json!([4, 4]));
+    let d = plan_diags(|v| seams(v)[seam_of("edge/hall-cellar")]["at"] = json!([14, 68]));
     let msg = d
         .iter()
         .find(|x| x.code == "DW0830")
@@ -837,7 +850,29 @@ fn a_stair_that_no_standard_pitch_fits_is_refused_with_its_numbers() {
         .unwrap_or_default();
     assert!(!msg.is_empty(), "{d:?}");
     assert!(msg.contains("climbs 5 block(s)"), "{msg}");
-    assert!(msg.contains("affords 4"), "{msg}");
+    assert!(msg.contains("for a climb of 9"), "{msg}");
+    assert!(msg.contains("affords 8"), "{msg}");
+    assert!(msg.contains("The treads carry 9, not 5"), "{msg}");
+}
+
+/// **A run exactly as long as the courses it must carry is buildable**, and is
+/// not refused.
+///
+/// The pit is 8 by 8 and hosts the stair up to the yard through a hole in its
+/// own ceiling. Shrink it to a 4-block footprint and the treads have exactly the
+/// four cells the four courses need: the top course stands under the hole and
+/// the run walks back to the far wall, which is what the derivation lays. A body
+/// reaches the bottom course from the cells beside it — the treads are the
+/// width of the doorway, not of the room.
+///
+/// Half of the same pair as the test above, in the other direction: measured
+/// against the RISE (5) rather than the climb (4) this plan was refused, and the
+/// refusal was false — the derivation builds it. Equality is not the defect; two
+/// arithmetics were.
+#[test]
+fn a_run_exactly_as_long_as_its_courses_is_not_refused() {
+    let got = plan_with(|v| boxes(v)[box_of("node/pit")]["extent"] = json!([4, 4]));
+    assert!(!has(&got, "DW0830"), "{got:?}");
 }
 
 /// A stair that climbs nothing is a walk that has been called a stair, and the
