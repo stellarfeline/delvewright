@@ -20,6 +20,7 @@ skipping it would be the same defect one class along.
 """
 
 import pathlib
+import re
 import subprocess
 
 import pytest
@@ -27,6 +28,37 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "playtest-server.sh"
 NAME = "dw-test-session"
+
+# The size on a named line, e.g. `staged world reclaimed: /x/y (116.4 MiB)`.
+# Anchored on the line, not merely on the parentheses: `down` prints two figures
+# when a build directory is recorded, and an unanchored search silently reads
+# whichever came first.
+SIZE = r"\((?P<value>\d+(?:\.(?P<decimals>\d+))?) (?P<unit>KiB|MiB|GiB)\)"
+UNIT_KIB = {"KiB": 1, "MiB": 1024, "GiB": 1024 * 1024}
+
+
+def printed_size(stdout: str, prefix: str = "staged world reclaimed") -> str:
+    """The figure the named line printed, e.g. `116.4 MiB`."""
+    match = re.search(rf"^{prefix}: \S+ {SIZE}$", stdout, re.MULTILINE)
+    assert match, f"no `{prefix}` size printed at all:\n{stdout}"
+    return f"{match['value']} {match['unit']}"
+
+
+def printed_kib_range(stdout: str, prefix: str = "staged world reclaimed"):
+    """The KiB interval that printed figure could have been rounded from.
+
+    Only the unit table is used, never the script's formatting rule: a private
+    copy of `%.1f`-versus-`%d` here would be a second authority for the same
+    thing, and the point of the assertion is the NUMBER. The tolerance comes out
+    of the figure's own printed precision — a value shown to d decimals stands
+    for anything within half of the last digit.
+    """
+    match = re.search(rf"^{prefix}: \S+ {SIZE}$", stdout, re.MULTILINE)
+    assert match, f"no `{prefix}` size printed at all:\n{stdout}"
+    factor = UNIT_KIB[match["unit"]]
+    half = 0.5 * 10 ** -len(match["decimals"] or "")
+    value = float(match["value"])
+    return (value - half) * factor, (value + half) * factor
 
 
 @pytest.fixture
@@ -59,21 +91,84 @@ def session(tmp_path):
         (d / "world" / "region" / "r.0.0.mca").write_bytes(b"\0" * kib * 1024)
         return d
 
-    run.record, run.staged, run.tmpdir = record, staged, tmpdir
+    def du_kib(path):
+        """The script's own measurement — `du -sk`, first field, same environment.
+
+        `du` counts ALLOCATED BLOCKS, so what a filesystem reports for a file of
+        N KiB is not N: the same directory measures differently on apfs and on
+        ext4. Asking `du` is the only way to know what the script will print.
+        """
+        out = subprocess.run(["du", "-sk", str(path)], env=env,
+                             capture_output=True, text=True, check=True).stdout
+        return int(out.split()[0])
+
+    run.record, run.staged, run.tmpdir, run.du_kib = record, staged, tmpdir, du_kib
     return run
 
 
-@pytest.mark.parametrize("kib,expected", [(512, "512 KiB"), (4096, "4.0 MiB")])
-def test_down_reclaims_the_staged_world_and_says_how_much(session, kib, expected):
+@pytest.mark.parametrize("kib", [512, 4096])
+def test_down_reclaims_the_staged_world_and_says_how_much(session, kib):
+    """The printed figure is this directory's own size, measured the script's way.
+
+    Not a literal: `512` bytes-times-1024 written into a file is not `512` to
+    `du`, which counts allocated blocks — so a figure computed here by any other
+    method is a claim about the filesystem rather than about the script. This ran
+    green on apfs and red on the ubuntu runner for exactly that reason. The
+    expected number therefore comes from the SAME `du -sk` the script runs, taken
+    before `down` removes the directory.
+    """
     world = session.staged(kib)
+    measured = session.du_kib(world)
     session.record(stage_dir=str(world))
     result = session("down")
     assert result.returncode == 0, result.stderr
     assert not world.exists(), "the staged world survived `down`"
-    assert "staged world reclaimed" in result.stdout
-    # The figure MOVES with the directory: a constant would read identically here
-    # on one case and say nothing about whether anything was measured.
-    assert f"({expected})" in result.stdout, result.stdout
+    low, high = printed_kib_range(result.stdout)
+    assert low <= measured <= high, (
+        f"du -sk says {measured} KiB; the script printed a figure covering "
+        f"[{low}, {high}]\n{result.stdout}"
+    )
+
+
+def test_the_figure_is_right_where_allocation_overhead_dominates(session):
+    """The case that reds a byte-count expectation on any filesystem.
+
+    A world is thousands of small files, and `du` charges each one a whole block:
+    the allocated total runs far above the bytes written, by a factor that is a
+    property of the filesystem and of nothing else. An expectation computed from
+    the bytes is a claim about ext4 or about apfs, never about this script — which
+    is how the first version of this test passed on one runner and failed on the
+    other. Here the two are deliberately far apart, and the assertion still holds
+    because both sides come from `du`.
+    """
+    world = session.tmpdir.parent / "many-small-files"
+    (world / "world" / "region").mkdir(parents=True)
+    for i in range(2000):
+        (world / "world" / "region" / f"c.{i}.dat").write_bytes(b"\0" * 11)
+    written_kib = (2000 * 11) / 1024
+    measured = session.du_kib(world)
+    assert measured > written_kib * 4, (
+        f"this case is meant to be dominated by allocation overhead, but du says "
+        f"{measured} KiB against {written_kib:.1f} KiB written — it proves nothing"
+    )
+    session.record(stage_dir=str(world))
+    low, high = printed_kib_range(session("down").stdout)
+    assert low <= measured <= high
+
+
+def test_the_reported_size_moves_with_the_directory(session):
+    """The anti-constant property, asserted without knowing the format at all.
+
+    A hardcoded figure satisfies the test above on any single case. This one is
+    the check that the script measured anything: two directories an order of
+    magnitude apart must not print the same string.
+    """
+    figures = []
+    for kib in (64, 8192):
+        world = session.staged(kib)
+        session.record(stage_dir=str(world))
+        figures.append(printed_size(session("down").stdout))
+    assert figures[0] != figures[1], f"both printed {figures[0]}"
 
 
 def test_the_session_record_does_not_outlive_the_session(session):
