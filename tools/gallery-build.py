@@ -71,6 +71,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gallery_domain import GALLERY, build_id, materialise, overlays  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -177,7 +179,7 @@ def main() -> int:
         "several campaigns you were handed.",
     )
     ap.add_argument("--lang", default="en")
-    ap.add_argument("--delvec", default=str(REPO / "target/release/delvec"))
+    ap.add_argument("--delvec", help="the `delvec` this tool runs. Default: `target/release/delvec` then `target/debug/delvec` in this tree — resolved, NAMED on stderr, and refused when it is older than the compiler sources it was built from (`tools/lib/delvec_bin.py`).")
     ap.add_argument("--prefabs", required=True)
     ap.add_argument(
         "--src",
@@ -191,9 +193,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    delvec = Path(args.delvec)
-    if not delvec.is_file():
-        die(f"no delvec at `{delvec}` — build one with `cargo build -p delvec --bin delvec`")
+    delvec = resolve_delvec(args.delvec, repo=REPO, caller="gallery-build")
     prefabs = Path(args.prefabs)
     if not prefabs.is_dir():
         die(

@@ -86,7 +86,9 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import gallery_domain  # noqa: E402
+from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gallery_units import Binder, Enumerator, stage_files  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -96,25 +98,6 @@ GALLERY = REPO / "gallery"
 def die(msg: str) -> "None":
     print(f"error: {msg}", file=sys.stderr)
     raise SystemExit(1)
-
-
-def find_delvec(explicit: str | None) -> Path:
-    if explicit:
-        p = Path(explicit)
-        if not p.is_file():
-            die(f"--delvec `{p}` is not a file")
-        return p
-    for rel in ("target/release/delvec", "target/debug/delvec"):
-        p = REPO / rel
-        if p.is_file():
-            return p
-    die(
-        "no delvec binary found. The unit set is derived from the compiler in "
-        "THIS tree and from nothing else, so there is no fallback: build one "
-        "with `cargo build -p delvec --bin delvec` (add `--release` for speed) "
-        "or pass --delvec."
-    )
-    raise AssertionError("unreachable")
 
 
 def schema_export(delvec: Path) -> dict:
@@ -174,12 +157,7 @@ def bind(enumerator: Enumerator, export: dict, docs: dict[str, dict], label: str
     return b
 
 
-def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[str]]:
-    r = subprocess.run(
-        [str(delvec), "validate", str(campaign), "--prefabs", str(prefabs), "--json"],
-        capture_output=True,
-        text=True,
-    )
+def _codes(r: subprocess.CompletedProcess) -> list[str]:
     codes = []
     for line in (r.stdout + r.stderr).splitlines():
         line = line.strip()
@@ -189,7 +167,52 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
             codes.append(json.loads(line).get("code"))
         except json.JSONDecodeError:
             continue
-    return r.returncode, [c for c in codes if c]
+    return [c for c in codes if c]
+
+
+def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[str], str]:
+    """Put a probe through the engine and report how it was refused.
+
+    **`validate` first, then `build`** — and the second half is not an
+    optimisation, it is what makes the probe mechanism able to express a whole
+    class of rule at all. A probe naming a code the DOCUMENT-level phase cannot
+    reach — every geometry and emission refusal, which needs resolved anchor
+    cells and therefore a plan — is accepted by `validate` and was then failed
+    here as *"the engine no longer refuses what this code says it refuses"*: a
+    false red, in the one direction that reads as a finding about the engine.
+    So the refusal hatch was silently unavailable to `DW0359`, `DW0422`,
+    `DW0878` and their whole family, and nothing said so.
+
+    A campaign `validate` already refuses never reaches the build, so the
+    fifteen probes that predate this pay nothing. The phase that produced the
+    refusal is returned with it, so the index says which one looked.
+    """
+    v = subprocess.run(
+        [str(delvec), "validate", str(campaign), "--prefabs", str(prefabs), "--json"],
+        capture_output=True,
+        text=True,
+    )
+    if v.returncode != 0:
+        return v.returncode, _codes(v), "validate"
+    out = Path(tempfile.mkdtemp(prefix="gallery-probe-build-"))
+    try:
+        b = subprocess.run(
+            [
+                str(delvec),
+                "build",
+                str(campaign),
+                "-o",
+                str(out / "delve"),
+                "--prefabs",
+                str(prefabs),
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        return b.returncode, _codes(b), "build"
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
 
 
 # The probe contract has exactly two kinds and no third (§3). They are named
@@ -277,17 +300,24 @@ def probe_patch(name: str, manifest: dict) -> list[dict]:
     return ops
 
 
-def assert_refused(name: str, kind: str, code: str, rc: int, codes: list[str]) -> None:
+def assert_refused(
+    name: str, kind: str, code: str, rc: int, codes: list[str], phase: str
+) -> None:
     """The obligation BOTH kinds carry: refused, and refused with the code named.
 
     This is the vacuity-mode-6 hardening and it is where it lives for every
     probe. The defect the coverage gate exists to catch is a unit nothing has
     ever written; an unwritten unit produces silence, never a refusal, so it
     cannot supply what either kind of probe is asked for here.
+
+    `phase` is the phase that produced the verdict — see [`run_probe`]. It is
+    named in the refusal so an accepted probe says which phases looked, rather
+    than naming one and leaving the reader to assume it was the only one.
     """
     if rc == 0:
         die(
-            f"probe `{name}` was ACCEPTED by `delvec validate`. A probe is a "
+            f"probe `{name}` was ACCEPTED by `delvec validate` AND by "
+            f"`delvec build`. A probe is a "
             "refusal's whole proof: it must be refused. "
             + (
                 "An accepted exemption probe proves its units are writable — "
@@ -299,7 +329,7 @@ def assert_refused(name: str, kind: str, code: str, rc: int, codes: list[str]) -
         )
     if code not in codes:
         die(
-            f"probe `{name}` was refused, but not with `{code}` "
+            f"probe `{name}` was refused by `delvec {phase}`, but not with `{code}` "
             f"(got {sorted(set(codes)) or 'no machine-readable code'}). A probe "
             "refused for an unrelated reason proves nothing about the rule it "
             "names."
@@ -359,7 +389,7 @@ def main() -> int:
     ap.add_argument("--index", help="write the reader-facing element index here (Markdown)")
     args = ap.parse_args()
 
-    delvec = find_delvec(args.delvec)
+    delvec = resolve_delvec(args.delvec, repo=REPO, caller="check-gallery-coverage")
     prefabs = Path(args.prefabs)
     if not prefabs.is_dir():
         die(
@@ -469,10 +499,10 @@ def main() -> int:
             own_documents += own
             dest = tmp / pd.name
             materialise_point("probe", pd, dest)
-            rc, codes = run_probe(delvec, dest, prefabs)
-            assert_refused(pd.name, kind, code, rc, codes)
+            rc, codes, phase = run_probe(delvec, dest, prefabs)
+            assert_refused(pd.name, kind, code, rc, codes, phase)
             if kind == DEMONSTRATION:
-                demonstrations[pd.name] = {"code": code, "why": why}
+                demonstrations[pd.name] = {"code": code, "why": why, "phase": phase}
             refusal.update(
                 probe_discharges(pd.name, kind, code, claimed, why, units, bound)
             )
@@ -674,12 +704,13 @@ def write_index(
             "a probe discharges no unit; it exists so the refusal is re-run rather",
             "than remembered.",
             "",
-            "| Probe | Code | Why |",
-            "| --- | --- | --- |",
+            "| Probe | Code | Refused by | Why |",
+            "| --- | --- | --- | --- |",
         ]
         for name in sorted(demonstrations):
             d = demonstrations[name]
-            lines.append(f"| `{name}` | `{d['code']}` | {d['why']} |")
+            phase = d.get("phase", "validate")
+            lines.append(f"| `{name}` | `{d['code']}` | `delvec {phase}` | {d['why']} |")
         lines.append("")
     if overlays:
         lines += [

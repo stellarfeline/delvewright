@@ -140,6 +140,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 import gallery_domain  # noqa: E402
 from gallery_domain import build_id, overlays  # noqa: E402
+from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gitbase import BaseUnresolved, resolve_base  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -493,7 +494,7 @@ def base_of(delta: dict | None) -> str | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--delvec", default=str(REPO / "target/release/delvec"))
+    ap.add_argument("--delvec", help="the `delvec` this tool runs. Default: `target/release/delvec` then `target/debug/delvec` in this tree — resolved, NAMED on stderr, and refused when it is older than the compiler sources it was built from (`tools/lib/delvec_bin.py`).")
     ap.add_argument("--prefabs", required=True)
     ap.add_argument("--write", action="store_true", help="regenerate the baseline")
     ap.add_argument(
@@ -507,9 +508,8 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    delvec, prefabs = Path(args.delvec), Path(args.prefabs)
-    if not delvec.is_file():
-        die(f"no delvec at `{delvec}` — build one with `cargo build --release -p delvec`")
+    delvec = resolve_delvec(args.delvec, repo=REPO, caller="gallery-baseline")
+    prefabs = Path(args.prefabs)
 
     builds = [(None, "en")] + [(None, l) for l in declared_languages()]
     builds += [(o, "en") for o in overlays()]

@@ -116,9 +116,9 @@
 //! ## Known boundary
 //!
 //! Only NPC-vs-NPC, only over the cast ledger. Body-vs-affordance at rest
-//! belongs to `DW0359` and is not re-litigated here (one code, one rule); actors
-//! carry no ledger entry, so a puppet parked in front of a speaker is still
-//! nobody's rule.
+//! belongs to `DW0359` and affordance-vs-affordance to `DW0878`; neither is
+//! re-litigated here (one code, one rule). Actors carry no ledger entry, so a
+//! puppet parked in front of a speaker is still nobody's rule.
 
 use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};

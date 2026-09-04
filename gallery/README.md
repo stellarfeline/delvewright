@@ -84,27 +84,31 @@ name only.
 
 `probes/` is the half worth reading if you want to know what this engine checks.
 Each probe is a committed document that a creator might reasonably write and that
-`delvec validate` says no to, with the diagnostic it says no with. The last of
-them names no surface at all, and that is the point of it: both halves of what it
-writes are perfectly legal, and what the engine refuses is holding them at once.
+the engine says no to, with the diagnostic it says no with. Most are refused by
+`delvec validate`, which reads the documents; a rule about GEOMETRY has no verdict
+until the anchors resolve, so those are refused by `delvec build` instead and the
+table says which. Some name no surface at all, and that is the point of them: both
+halves of what they write are perfectly legal, and what the engine refuses is
+holding them at once.
 
-| Probe | Code | What it tries |
-| --- | --- | --- |
-| `two-placement-authorities` | `DW0839` | carrying `areas[]` and a site plan at once |
-| `aquatic-locomotion` | `DW0455` | declaring a body that swims |
-| `peaceful-difficulty` | `DW0468` | setting the world to peaceful |
-| `sound-at-actor` | `DW0335` | playing a sound from an actor's position |
-| `a-piece-the-library-does-not-hold` | `DW0856` | binding the hall to a piece whose name is one letter wrong |
-| `a-gate-two-areas-provide` | `DW0857` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
-| `a-question-nobody-answers` | `DW0858` | asking the party to talk to somebody the same quest declares silent |
-| `a-walk-of-a-different-whole` | `DW0841` | detailing against a walk record of some other map |
-| `detail-without-a-walk` | `DW0841` | detailing a place before the whole has been walked |
-| `a-piece-that-is-not-its-frame` | `DW0843` | seating a piece that does not fill the box the map gave it |
-| `a-horizon-with-no-map` | `DW0855` | declaring a horizon with nothing for it to ring |
-| `a-clock-nobody-explained` | `DW0860` | arming a stealth clock that bites before its own instruction can be read |
-| `a-barrel-in-a-row-of-barrels` | `DW0861` | adopting a container the piece placed without naming what is in it |
-| `a-prompt-nobody-sees` | `DW0862` | writing a hint on an objective with no title to carry it |
-| `a-fight-nobody-points-at` | `DW0863` | requiring a fight and saying nothing about where it happens |
+| Probe | Code | Refused by | What it tries |
+| --- | --- | --- | --- |
+| `two-placement-authorities` | `DW0839` | `validate` | carrying `areas[]` and a site plan at once |
+| `aquatic-locomotion` | `DW0455` | `validate` | declaring a body that swims |
+| `peaceful-difficulty` | `DW0468` | `validate` | setting the world to peaceful |
+| `sound-at-actor` | `DW0335` | `validate` | playing a sound from an actor's position |
+| `a-piece-the-library-does-not-hold` | `DW0856` | `validate` | binding the hall to a piece whose name is one letter wrong |
+| `a-gate-two-areas-provide` | `DW0857` | `validate` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
+| `a-question-nobody-answers` | `DW0858` | `validate` | asking the party to talk to somebody the same quest declares silent |
+| `a-walk-of-a-different-whole` | `DW0841` | `validate` | detailing against a walk record of some other map |
+| `detail-without-a-walk` | `DW0841` | `validate` | detailing a place before the whole has been walked |
+| `a-piece-that-is-not-its-frame` | `DW0843` | `validate` | seating a piece that does not fill the box the map gave it |
+| `a-horizon-with-no-map` | `DW0855` | `validate` | declaring a horizon with nothing for it to ring |
+| `a-clock-nobody-explained` | `DW0860` | `validate` | arming a stealth clock that bites before its own instruction can be read |
+| `a-barrel-in-a-row-of-barrels` | `DW0861` | `validate` | adopting a container the piece placed without naming what is in it |
+| `a-prompt-nobody-sees` | `DW0862` | `validate` | writing a hint on an objective with no title to carry it |
+| `a-fight-nobody-points-at` | `DW0863` | `validate` | requiring a fight and saying nothing about where it happens |
+| `two-presses-on-one-cell` | `DW0878` | `build` | hanging an `interact` objective and a click trigger on one anchor |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own
@@ -143,7 +147,9 @@ target/release/delvec validate probe-src --prefabs gallery-prefabs
 ```
 
 It exits 1, and the diagnostic it exits with is the one the probe's `probe.json`
-names.
+names. For a probe the table marks `build`, run `delvec build probe-src -o out`
+instead: `validate` accepts it, because what it declares is only wrong once the
+anchors are resolved to cells.
 
 They are not documentation of the refusals. They **are** the refusals: the
 coverage gate runs each one and fails if the compiler ever starts accepting it,

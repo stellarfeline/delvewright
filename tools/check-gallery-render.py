@@ -50,6 +50,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from delvec_bin import resolve as resolve_delvec  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 GALLERY = REPO / "gallery"
 PLAN = GALLERY / "render-plan.json"
@@ -66,17 +69,16 @@ def safe(shot_id: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--delvec", default=str(REPO / "target/release/delvec"))
+    ap.add_argument("--delvec", help="the `delvec` this tool runs. Default: `target/release/delvec` then `target/debug/delvec` in this tree — resolved, NAMED on stderr, and refused when it is older than the compiler sources it was built from (`tools/lib/delvec_bin.py`).")
     ap.add_argument("--prefabs", required=True)
     ap.add_argument("--build-out", required=True, help="a `delvec build` output tree")
     ap.add_argument("--frames", required=True, help="where to write the frames (never committed)")
     ap.add_argument("--write", action="store_true", help="regenerate the committed view set")
     args = ap.parse_args()
 
-    delvec, out = Path(args.delvec), Path(args.build_out)
+    delvec = resolve_delvec(args.delvec, repo=REPO, caller="check-gallery-render")
+    out = Path(args.build_out)
     frames = Path(args.frames)
-    if not delvec.is_file():
-        die(f"no delvec at `{delvec}`")
 
     emitted_path = out / "render-plan.json"
     if not emitted_path.is_file():
