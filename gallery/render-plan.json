@@ -209,6 +209,16 @@
     },
     {
       "area": "area/hall",
+      "id": "pov/leg4/wp6",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg4/wp7",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
       "id": "pov/leg5/wp0",
       "kind": "pov"
     },
@@ -230,11 +240,6 @@
     {
       "area": "area/hall",
       "id": "pov/leg7/wp10",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg7/wp11",
       "kind": "pov"
     },
     {

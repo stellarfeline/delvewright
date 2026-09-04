@@ -400,6 +400,17 @@ and of every cell the piece's own bodies are teleported through on their way to
 the pocket, and neither touches a gate mouth. The east one is a single cell
 deep on `z`, against the north wall.
 
+**The muster keeps two cells of air on every side.** A wave takes the standable
+cells NEAREST its anchor, and standable is judged for a body one cell wide, so
+an anchor with a wall two cells off seats the 1.4-wide member of the stack
+against that wall: the census then reads a mob below full health before the
+fight has started, and re-seat fidelity reds on a wave nothing has touched.
+Staged one cell from the mezzanine's corner, this wave came back `1 of 3` below
+full on both scripted deaths; in the open middle of the hall it comes back
+whole. The same two cells keep the fight out of the loft's own completion box,
+which stands three courses up and one cell wide along the dais's west face —
+a jump inside it finishes a later objective during this one.
+
 **The patrol comes down the hall as the party leaves it.** A lane squad's
 `follow_range` is its lane's `aggro_radius` verbatim — eight — and `DW0477`
 records in writing that nothing measures `wave/lane`. Eight blocks of
@@ -412,11 +423,11 @@ opens it, and the back wall is where it walks when it arrives. Both halves are
 held: the arming is a beat, and the generator holds the geometry, because an
 ordering is the half a later edit can undo without moving a coordinate.
 
-The generator holds all three, on every run, and prints what it examined:
+The generator holds the geometry of all of it, on every run, and prints what it examined:
 
 ```
-gallery-hall: muster clearance bound — 2 killing volume(s), both across the wall at z=15 from the muster: anchor/west-pit 19.10, anchor/east-pit 15.52 (floor 8.0 block(s))
-gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at [16, 1, 28], 12.00 block(s) away (floor 10.0)
+gallery-hall: muster clearance bound — 2 killing volume(s), both across the wall at z=15 from the muster: anchor/west-pit 20.62, anchor/east-pit 18.68 (floor 8.0 block(s))
+gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at [15, 1, 29], 10.00 block(s) away (floor 10.0)
 ```
 
 ## Two findings still open

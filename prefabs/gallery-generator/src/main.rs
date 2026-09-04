@@ -246,17 +246,17 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/muster",
-        pos: [16, 1, 16],
+        pos: [15, 1, 19],
         facing: Some("south"),
         trigger_block: None,
-        note: "where a wave is seated: the strip between the dividing wall and \
-               the bay line, equidistant from the two killing volumes and as far \
-               from both as the far hall has room for. A wave seats on the \
-               standable cells nearest its anchor, and a killing volume selects \
-               on HITBOX INTERSECTION — a 1.4-wide spider two cells outside a box \
-               is inside it — so a muster on the bay line loses bodies to the \
-               pits it stands between, and the floor gate then grades a fight the \
-               world helped win. Held off both boxes by MUSTER_PIT_CLEARANCE",
+        note: "where a wave is seated, in the open middle of the far hall. A \
+               wave takes the standable cells NEAREST its anchor, and standable \
+               is judged for a body one cell wide — so an anchor with a wall two \
+               cells off seats the 1.4-wide member of the stack against it and \
+               the census reads a mob below full health before the fight starts. \
+               Two cells of air on every side, and clear of the mezzanine and of \
+               the loft's own completion box. Held off both killing volumes by \
+               MUSTER_PIT_CLEARANCE and off the patrol by LANE_MUSTER_CLEARANCE",
         role: None,
     },
     Anchor {
@@ -307,7 +307,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/lane-west",
-        pos: [5, 1, 28],
+        pos: [5, 1, 29],
         facing: Some("east"),
         trigger_block: None,
         note: "one end of the patrol lane — 20 blocks from its partner, because a \
@@ -320,7 +320,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/lane-east",
-        pos: [25, 1, 28],
+        pos: [25, 1, 29],
         facing: Some("west"),
         trigger_block: None,
         note: "the other end of the patrol lane",
