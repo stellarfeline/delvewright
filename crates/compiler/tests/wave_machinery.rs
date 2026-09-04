@@ -219,3 +219,66 @@ fn sequence_fired_wave_census_walks_its_own_tag() {
         "the census must walk the wave's own tag:\n{census}"
     );
 }
+
+/// **Attribution.** The countdown is a measurement of what still stands, so it
+/// clears whether a body was cut down or fell into a lethal volume. That is the
+/// point of it, and it is also why nothing downstream could tell those two apart:
+/// on the gallery's own bot ladder, two of `wave/muster`'s three bodies died to
+/// the world — one withered in `lethal/east-pit`, one fell — and the inverted
+/// floor gate reported that the unassisted bot had beaten an `elite` encounter on
+/// its first attempt.
+///
+/// `minecraft:player_killed_entity` is the only credit vanilla issues, and
+/// `k_reward_<wave>` is where it lands, so the ledger is the advancement's own
+/// count. Four sites carry it and all four are asserted here, because three of
+/// them are silent when they are wrong: a missing `setup` seed renders the census
+/// line with an empty field (a line no parser matches, which reads as "no
+/// answer"), a missing `spawn_<wave>` zero carries the previous cohort's credits
+/// into the new one, and a census that does not state the number is a measurement
+/// nobody can read.
+#[test]
+fn credited_kills_are_ledgered_per_seating_and_stated_on_the_census() {
+    let out = build_ok(&parse_hw_with(&[("quests.json", top_level_quests())]));
+    let holder = "#wcred_ambush";
+
+    let setup = fn_body(&out, "setup");
+    assert!(
+        setup.contains(&format!("scoreboard players set {holder} dw.sys 0")),
+        "world init must seed the credited-kill ledger — the census renders it as a \
+         `score` component, and a holder with no score renders as the empty \
+         string:\n{setup}"
+    );
+
+    let spawn = fn_body(&out, "spawn_ambush");
+    assert!(
+        spawn.contains(&format!("scoreboard players set {holder} dw.sys 0")),
+        "a fresh seating must start a fresh attribution, or a re-seat's own \
+         uncredited `kill @e[tag=…]` sweep is counted against the next cohort:\n{spawn}"
+    );
+
+    let reward = fn_body(&out, "k_reward_ambush");
+    assert!(
+        reward.contains(&format!("scoreboard players add {holder} dw.sys 1")),
+        "the credit is recorded where vanilla issues it — the \
+         `player_killed_entity` advancement's reward:\n{reward}"
+    );
+
+    let census = fn_body(&out, "wave_census_ambush");
+    assert!(
+        census.contains(&format!("\"name\":\"{holder}\"")),
+        "the census summary line must state the credited count, or the floor gate \
+         has no way to tell a cohort the party felled from one the world \
+         killed:\n{census}"
+    );
+    // Field order is the wire format the harness parses whole: the credited count
+    // is LAST, after `damaged`.
+    let seq = census.find("\"#wcen_seq\"").expect("seq field");
+    let dam = census.find("\"#wcen_d\"").expect("damaged field");
+    let cred = census
+        .find(&format!("\"{holder}\""))
+        .expect("credited field");
+    assert!(
+        seq < dam && dam < cred,
+        "the census line's fields are positional; credited comes last:\n{census}"
+    );
+}
