@@ -1,5 +1,15 @@
 {
   "code": "DW0455",
+  "patch": [
+    {
+      "doc": "npcs.json",
+      "op": "add",
+      "path": "/content/npcs/0/traversal",
+      "value": {
+        "locomotion": "aquatic"
+      }
+    }
+  ],
   "units": [
     "Locomotion::aquatic"
   ],

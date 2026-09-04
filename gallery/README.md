@@ -112,10 +112,35 @@ holding them at once.
 | `two-presses-on-one-cell` | `DW0878` | `build` | hanging an `interact` objective and a click trigger on one anchor |
 | `a-gate-the-path-already-cleared` | `DW0879` | `validate` | clearing a counter between the beat that fills it and the gate that reads it |
 
-A probe is an OVERLAY, not a campaign — it ships only the stage files it
-changes, so `delvec validate` pointed at a probe directory refuses the
-directory (`DW0874`) rather than the document. Materialise it over the primary
-first, exactly as the coverage gate does, and then run any of them yourself:
+**A probe is the primary plus one declared edit.** It carries no copy of any
+document the primary already holds; what it perturbs is written out in its own
+`probe.json`, as a `patch` of JSON-pointer edits over the primary's canonical
+form — so `peaceful-difficulty` is three lines:
+
+```json
+"patch": [
+  { "doc": "world.json", "op": "replace", "path": "/content/difficulty", "value": "peaceful" }
+]
+```
+
+The edits are `add`, `remove` and `replace`, applied in order by
+`tools/gallery_domain.py` while it materialises the point. Everything the probe
+does not name comes from the primary on every run, which is what makes a probe
+unable to drift from the campaign it perturbs. An edit whose pointer the primary
+no longer has is a red naming the probe and the pointer, rather than a probe
+quietly changing what it is about; `add` and `replace` are separate verbs so
+that a key the primary GAINS is that same red rather than a silent overwrite.
+
+A probe may ship a whole document, and four of them do: `site-plan.json`,
+`detail-plan.json` and `walk-record.json` are documents the primary cannot carry
+at all — `DW0839` refuses a campaign holding both `areas[]` and a site plan — so
+there is nothing for them to be a copy of. A file that shadows a primary
+document is refused.
+
+A probe is an OVERLAY, not a campaign, so `delvec validate` pointed at a probe
+directory refuses the directory (`DW0874`) rather than the document. Materialise
+it over the primary first, exactly as the coverage gate does, and then run any of
+them yourself:
 
 ```
 python3 -c "import sys, pathlib; sys.path.insert(0, 'tools'); import gallery_domain; \

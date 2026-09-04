@@ -1,5 +1,13 @@
 {
   "code": "DW0878",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/0/at",
+      "value": "anchor/pedestal"
+    }
+  ],
   "units": [],
   "why": "The gallery's `interact` objective and its `use` trigger both hang on `anchor/pedestal`, which is how the gallery itself shipped. Two `minecraft:interaction` boxes on one cell are coincident, the entity-pick ray enters both at the same distance, and the client resolves the tie by iteration order — so neither is clickable and which one is not decidable from the campaign at all. It declares no unit: an `interact` objective and a click trigger are each perfectly writable and the domain binds both; what the engine refuses is holding them at one anchor. What makes it worth committing is what the engine did with it before this refusal existed. It exited 0, with `DW0359`, `DW0422` and `DW0489` all green about it — each of those needs one side of its pair to be something else (a standing body, a compiler-owned press set, a cast-ledger NPC), so affordance-against-affordance was nobody's rule. The bot found it instead: `validation/bot-run.sh` over the gallery failed at step 2, before any combat, saying the crosshair could acquire neither box."
 }

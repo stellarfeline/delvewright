@@ -1,5 +1,12 @@
 {
   "code": "DW0879",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/on_objective_complete/obj~1take-the-bone/1"
+    }
+  ],
   "units": [],
-  "why": "This is the gallery's own document with one `set-state` removed, and it is how the gallery shipped. `obj/reach-the-end` is gated on `state/labels-read at-least 1`; three objectives earlier `obj/clear-the-muster`'s completion bundle performs a `clear-state` on that same datum, returning it to 0. The delve cannot be finished, and the engine exited 0 about it. It declares no unit: `clear-state`, `add-state` and a numeric `requires_state` are all written by the domain, and what the engine refuses is the ARRANGEMENT of them along the path. What makes it worth committing is which checks were green over it. `DW0501` asks whether a datum is written anywhere and it is written three times; `DW0502` asks whether it is read and it is; `DW0527` asks whether a gate reads a datum an earlier effect of the same bundle wrote, and the write and the read are four beats apart; and the reachability fixpoint walks objectives and flags, so it never evaluated the arithmetic the comparison performs. Four checks that look like they cover this, all green, on a delve whose last beat can never activate."
+  "why": "One edit: delete the write that puts `state/labels-read` back on the beat that picks the bone up. What is left is how the gallery shipped. `obj/reach-the-end` is gated on `state/labels-read at-least 1`; three objectives earlier `obj/clear-the-muster`'s completion bundle performs a `clear-state` on that same datum, returning it to 0, and the campaign's own `after` chain forces that clear to happen first. The delve cannot be finished, and the engine exited 0 about it. It declares no unit: `clear-state`, `set-state` and a numeric `requires_state` are all written by the domain, and what the engine refuses is the ARRANGEMENT of them along the path. What makes it worth committing is which checks were green over it. `DW0501` asks whether a datum is written anywhere and it is written three times; `DW0502` asks whether it is read and it is; `DW0527` asks whether a gate reads a datum an earlier effect of the same bundle wrote, and the write and the read are four beats apart; and the reachability fixpoint walks objectives and flags, so it never evaluated the arithmetic the comparison performs. Four checks that look like they cover this, all green, on a delve whose last beat can never activate. The edit is positional, and drift in it fails LOUDLY rather than quietly: removing the wrong effect leaves the repairing write standing, the gate then holds, and a probe the engine accepts is what this gate refuses by name."
 }
