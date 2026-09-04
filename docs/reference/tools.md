@@ -74,7 +74,7 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 |---|---|---|
 | `validate <dir>` | stage schema + referential validation | — |
 | `analyze <dir>` | quest-graph reachability (implies `validate`) | — |
-| `build <dir> -o <out>` | full deterministic build (implies `analyze`) | `-o/--out` (required) |
+| `build <dir> -o <out>` | full deterministic build (implies `analyze`) | `-o/--out` (required, except with `--perturb`); `--perturb <knob>` + `--perturb-place <place>` |
 | `fmt <path>…` | canonical form for authored JSON — object keys sorted, **arrays never** | `--check` (report only; exit 1 if anything is off) |
 | `schema --stage <n\|name\|all>` | export a campaign document's JSON Schema | `--stage` (required): `1`..`7` for the numbered campaign stages; **any stage's own name** — the string `DW0100` prints when that document will not parse, so the refusal's prescription is a command that works, enumerated from `Stage::ALL` rather than a second list; `walk-record` for the hand-written walk record, which is a campaign artifact rather than a stage document (no `dsl_version`, no `campaign_id`, no `stage`) but is authored by hand and refused when wrong, so it has a schema like everything else a person writes; `all` for every stage document at once. The map-pipeline documents are named and never numbered into the 1..7 sequence — a number would assert an ordering between two pipelines that have none. **The exported schema is the authority on a document's form**; where a spec disagrees with it, the spec is the stale one |
 | `metrics` | export the metrics standard — the numbers a level is built to (compiler.md §10) | — (`--json` puts the `DW0813` notice in the diagnostic shape) |
