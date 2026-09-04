@@ -1,5 +1,62 @@
 {
   "code": "DW0839",
+  "patch": [
+    {
+      "doc": "geometry-brief.json",
+      "op": "replace",
+      "path": "/content/facts",
+      "value": [
+        {
+          "id": "fact/site-span",
+          "note": "The site is sixty-four blocks east to west, which is what the whole map is allowed to grow into and no more.",
+          "unit": "blocks",
+          "value": 64.0
+        },
+        {
+          "id": "fact/site-height",
+          "note": "Forty-eight blocks from the bedrock shelf to the sky the silhouette is read against.",
+          "unit": "blocks",
+          "value": 48.0
+        },
+        {
+          "id": "fact/site-depth",
+          "note": "Sixty-four blocks north to south, so the exit stands clear of the far hall rather than hard against it.",
+          "unit": "blocks",
+          "value": 64.0
+        },
+        {
+          "id": "fact/far-hall-span",
+          "note": "The far hall is at most thirty-two blocks across, because past that a crowd stops reading as a crowd.",
+          "unit": "blocks",
+          "value": 32.0
+        },
+        {
+          "id": "fact/far-hall-depth",
+          "note": "At least sixteen blocks deep, so the muster has ground to form up on before it reaches the wall.",
+          "unit": "blocks",
+          "value": 16.0
+        },
+        {
+          "id": "fact/hall-headroom",
+          "note": "Eight blocks floor to vault in the near hall, so the loft can sit above head height and still be looked up at.",
+          "unit": "blocks",
+          "value": 8.0
+        },
+        {
+          "id": "fact/annex-standoff",
+          "note": "The annex stands under twenty blocks off the near hall, so the side gallery reads as part of the building rather than a second one.",
+          "unit": "blocks",
+          "value": 20.0
+        },
+        {
+          "id": "fact/loft-datum",
+          "note": "The loft floor is above sixty-eight, which is the height a body in the near hall has to look up to see it.",
+          "unit": "blocks",
+          "value": 68.0
+        }
+      ]
+    }
+  ],
   "units": [],
   "why": "The gallery's own six places, embedded as a site plan, WITHOUT giving up the `areas[]` that seats its prefab pieces. Both surfaces are legal and both are bound elsewhere in this gallery — what the engine refuses is one campaign holding both, because `areas[]` seats pieces on the compiler's fixed stride and a site plan seats the derived blockout in its own declared region, so every question about where something is would have two answers and nothing would say which. It declares no unit deliberately: there is no unwritable surface here to exempt, only a combination that must not compile."
 }
