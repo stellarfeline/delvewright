@@ -1,51 +1,74 @@
 //! Delvewright compiler (`delvec`): staged DSL in, deterministic datapack +
 //! server assets out (spec-0002, ADR-0001/0006/0011).
 //!
-//! Modules:
-//! - [`registry`]: the full pinned-MC item registry and prefab/anchor metadata.
-//! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
+//! Modules — **all of them**, one line each. A partial list is worse than
+//! none: it reads as an index, so a module missing from it reads as a module
+//! that does not exist, and the twenty-four names this list used to carry
+//! were the ones a reader happened to add. `the_module_list_names_every_module`
+//! (`tests/module_list.rs`) is what keeps it whole.
+//!
+//! - [`affordance`]: affordance hardware — the visible half of every right-click target the compiler owns (`DW0420`/`DW0421`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
-//! - [`flow`]: the branch-coherent flag/quest flow model — XOR dialogue branches,
-//!   gate-conditional flag producers, the single-branch critical-path extraction
-//!   and its step-by-step replay proof (`DW0204`).
-//! - [`plan`]: resolve the campaign into a placement/naming model.
-//! - [`nav`]: compile-time pathfinding over the solved voxel grid — collision-safe
-//!   `move-npc` walked paths (`DW0307`) + cutscene air-corridor checks (`DW0308`).
-//! - [`light`]: assembled-world lighting model + deterministic relight pass
-//!   (`DW0210`/`DW0211`, exit 2) + declared time/weather sky attenuation (spec-0010).
-//! - [`eclipse`]: the body-vs-affordance occlusion proof (`DW0359`) — an NPC or
-//!   actor body may not stand on, or immediately in front of, an interaction
-//!   affordance the party has to click.
-//! - [`clearance`]: the body-vs-block proof (`DW0450`/`DW0451`) — no NPC or actor
-//!   body may occupy the same space as block geometry, at its spawn anchor or at
-//!   any tick of any walked leg.
-//! - [`traversal`]: the route-vs-capability proof (`DW0452`/`DW0453`) — a walked
-//!   leg may only contain moves the BODY walking it can make, derived from its
-//!   entity (a spider climbs, a ghast flies, nothing opens a fence gate).
+//! - [`assembled`]: the shared assembled-world block model every geometric proof reads.
+//! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
+//! - [`batchstate`]: a generated PackTest that drives an outcome owns every `#party` term the gates on it read (`DW0807`).
+//! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
+//! - [`blockout`]: the derived blockout — the map pipeline's stage nobody authors.
+//! - [`branch`]: branch-complete narrative verification (`DW0480`–`DW0485`).
+//! - [`calibrate`]: `delvec calibrate` — a harvested rehearsal report turned back into anchor + offset patches.
+//! - [`camera`]: cutscene camera geometry: the eased dolly and the `shot_style` expansion, shared by emission and validation.
+//! - [`cast`]: the NPC scene ledger (`DW0460`–`DW0467`).
+//! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
+//! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
+//! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
+//! - [`continuity`]: the NPC location-continuity lint (`DW0351`).
+//! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`).
+//! - [`crosshair`]: two things the party must click may not stand where the crosshair cannot tell them apart (`DW0489`).
+//! - [`daylight`]: a body the sun kills may not be staged where the sun reaches it (`DW0496`).
+//! - [`deathplan`]: `validation/death-plan.json` — the bot tier's contract for dying.
+//! - [`detail`]: a place is detailed inside the box the whole gave it.
+//! - [`eclipse`]: no body stands in front of an affordance the party clicks (`DW0359`), and no affordance shares a cell with a sealed gate's hitboxes (`DW0422`).
+//! - [`edit`]: the map editor's stage-7 edit-script replay.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
-//! - [`integrity`]: the emitted call graph is closed (`DW0497`) — a
-//!   `function <ns>:<name>` the compiler writes must point at a function the
-//!   compiler wrote, whatever feature emitted either half.
-//! - [`seeding`]: the emitted score reads are closed (`DW0495`) — no comparison
-//!   may read a scoreboard entry the pack never creates, because on the pinned
-//!   server a missing entry is not zero, it is false to every question.
-//! - [`waypoints`]: export the DW0311-proven critical-path routes as validation
-//!   metadata (`validation/critical-path-waypoints.json`) for leg-by-leg bot nav.
-//! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
-//! - [`png`]: the deterministic hand-rolled PNG writer shared by the `delve:art`
-//!   font atlas and the visual-authoring-loop renders.
-//! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans
-//!   (spec-0015 pillar 3).
-//! - [`raster`]: the shared RGBA canvas + bitmap-text primitives both
-//!   visual-authoring-loop renderers draw on.
-//! - [`snapshot`]: `delvec snapshot` — the voxel raycaster + scene manifest that
-//!   let an authoring agent look at its own build (spec-0015).
-//! - [`edit`]: the map editor's stage-7 edit-script replay (spec-0017) — seeded
-//!   L3 verbs over the assembled world, per-batch invariant re-proofs, runtime
-//!   `fill`/`setblock` materialization.
-//! - [`timeline`]: per-effect-timeline gate state — which gates an earlier effect
-//!   in the *same* bundle / `sequence` provably sealed, feeding the `DW0410`
-//!   staged-walk proof in [`nav`].
+//! - [`faces`]: does the piece next to this one answer the way out it declares?
+//! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
+//! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
+//! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
+//! - [`horizon`]: the one place a resolved `horizon` becomes the physical facts the rest of the compiler reads.
+//! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
+//! - [`lethal`]: lethal volumes — the proofs a box that kills owes the completability model.
+//! - [`light`]: the assembled-world lighting model and the deterministic relight pass (`DW0210`/`DW0211`).
+//! - [`load`]: read a campaign directory into the DSL's `RawCampaign`, keeping the raw bytes for input hashing.
+//! - [`loot`]: container-fill proofs over the assembled world (`DW0431`/`DW0438`).
+//! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
+//! - [`nav`]: compile-time navigation over the solved voxel grid.
+//! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
+//! - [`png`]: the deterministic hand-rolled PNG writer.
+//! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
+//! - [`pressable`]: what a player's click reaches at an anchor — the one authority every `strike`/`use` trigger dispatches from.
+//! - [`promise`]: an objective keeps the promise its prompt makes (`DW0860`–`DW0863`).
+//! - [`raster`]: the shared RGBA canvas and bitmap-text primitives both renderers draw on.
+//! - [`reach`]: what completes a `reach` — the one authority for the volume a body has to be in.
+//! - [`registry`]: the full pinned-MC item registry and the prefab/anchor metadata.
+//! - [`rehearsal`]: the compile-time inventory of every rehearsable cutscene beat and every shot inside it.
+//! - [`render_plan`]: `render-plan.json` emission.
+//! - [`resourcepack`]: the per-delve skin resource pack.
+//! - [`respawn`]: what separates a retry from a soft-lock — the evidence `DW0478` accepts.
+//! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
+//! - [`snapshot`]: `delvec snapshot` — the voxel raycaster and scene manifest an authoring agent looks at its own build through.
+//! - [`solver`]: the jigsaw layout solver.
+//! - [`stairs`]: the stair-orientation proof over the assembled world (`DW0430`).
+//! - [`stake`]: the recovery stake's compile-time placement table and the proofs it owes.
+//! - [`surround`]: horizon surround generation — the tiles that dress the world outside the placed pieces.
+//! - [`teleport`]: the `teleport` verb's one compile-time obligation, and the ledger saying what it looked at.
+//! - [`textfit`]: on-screen text that does not fit what draws it (`DW0330`/`DW0331`).
+//! - [`timeline`]: per-effect-timeline gate state — the static half of the `close-gate` model (`DW0410`).
+//! - [`traversal`]: a walked leg may only contain moves the body walking it can make (`DW0452`/`DW0453`).
+//! - [`view`]: the CPU render surface — the visual channel that ships in the one binary a creator installs.
+//! - [`watch`]: runtime-watch coverage of per-object bodies, in two tiers.
+//! - [`waypoints`]: the compiler-proven critical-path waypoint polyline, as validation metadata.
+//! - [`ways`]: what a campaign does with a piece's contingent ways.
+//! - [`wrongside`]: which side of a sealed shortcut door a player is standing on.
 
 pub mod affordance;
 pub mod analyze;
