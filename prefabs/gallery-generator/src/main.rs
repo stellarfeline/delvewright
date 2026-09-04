@@ -69,9 +69,11 @@ const GATES: [(i32, i32); 5] = [(14, 15), (24, 25), (4, 5), (9, 10), (19, 20)];
 /// Two of its keys read as the same question and are not. **`note` is prose for
 /// a person** — one line saying what the gallery does with this place, printed
 /// so a creator reading the piece can tell the anchors apart without the
-/// campaign in hand, and read by nothing. **`role` is a term in the engine's
-/// own closed vocabulary** (`AnchorRole`), which the compiler resolves when it
-/// has to find a place without being told its name.
+/// campaign in hand; the prefab document models the key
+/// (`delvewright_dsl::prefab::Anchor::note`) and no reader acts on what it
+/// says. **`role` is a term in the engine's own closed vocabulary**
+/// (`AnchorRole`), which the compiler resolves when it has to find a place
+/// without being told its name.
 ///
 /// They are separate keys because they answer to separate readers, and the one
 /// time they shared a name it cost this: the prose sat under `role` while the

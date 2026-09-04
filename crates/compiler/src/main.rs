@@ -668,7 +668,7 @@ fn validate_loaded(
                 diags.push(d);
             }
             // v0.6 sound + art-title surface (spec-0014): sound-event ids
-            // (DW0326), the deferred `play-sound at: actor` gate (DW0335), and
+            // (DW0326), the unsupported `play-sound at: actor` gate (DW0335), and
             // art-title glyph coverage against the `delve:art` font over the source
             // text and every declared-language sidecar (DW0328). Validation-tier
             // (exit 1) — no-op for a campaign that uses neither surface.
