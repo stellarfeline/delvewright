@@ -249,7 +249,14 @@ const ANCHORS: &[Anchor] = &[
         pos: [15, 1, 19],
         facing: Some("south"),
         trigger_block: None,
-        note: "where a wave is seated and a lane begins",
+        note: "where a wave is seated, in the open middle of the far hall. A \
+               wave takes the standable cells NEAREST its anchor, and standable \
+               is judged for a body one cell wide — so an anchor with a wall two \
+               cells off seats the 1.4-wide member of the stack against it and \
+               the census reads a mob below full health before the fight starts. \
+               Two cells of air on every side, and clear of the mezzanine and of \
+               the loft's own completion box. Held off both killing volumes by \
+               MUSTER_PIT_CLEARANCE and off the patrol by LANE_MUSTER_CLEARANCE",
         role: None,
     },
     Anchor {
@@ -300,16 +307,20 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/lane-west",
-        pos: [5, 1, 26],
+        pos: [5, 1, 29],
         facing: Some("east"),
         trigger_block: None,
         note: "one end of the patrol lane — 20 blocks from its partner, because a \
-               leg under 12 is one vanilla re-rolls off the lane (DW0386)",
+               leg under 12 is one vanilla re-rolls off the lane (DW0386). On the \
+               hall's back wall, not across its middle: the squad's perception is \
+               its lane's `aggro_radius`, so a lane drawn through the muster room \
+               puts a second, unmeasured fight inside the one the floor gate is \
+               measuring. Held off the muster by LANE_MUSTER_CLEARANCE",
         role: None,
     },
     Anchor {
         name: "anchor/lane-east",
-        pos: [25, 1, 26],
+        pos: [25, 1, 29],
         facing: Some("west"),
         trigger_block: None,
         note: "the other end of the patrol lane",
@@ -317,23 +328,26 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/west-pit",
-        pos: [9, 1, 22],
+        pos: [2, 1, 3],
         facing: None,
         trigger_block: None,
-        note: "a killing volume with nothing posted in it (DW0511)",
+        note: "a killing volume with nothing posted in it (DW0511), in the near \
+               hall's west corner — the deadest floor in the piece, four blocks \
+               clear of anything that stands or walks there. It is in the near \
+               hall and not in a bay because a killing volume may not share a \
+               room with a fight: see MUSTER_PIT_CLEARANCE",
         role: None,
     },
     Anchor {
         name: "anchor/east-pit",
-        pos: [22, 1, 22],
+        pos: [20, 1, 2],
         facing: None,
         trigger_block: None,
-        note: "the second killing volume, so the two never share a box. One cell \
-               east of the bay's middle, and its `extent` is 1 on x rather than \
-               2, because a 5-wide box centred here reaches x=19 — which is the \
-               broken flight, the ONLY way onto the mezzanine. A volume that \
-               covers the single route to a `reach-anchor` objective is a hall \
-               nobody can finish (DW0510)",
+        note: "the second killing volume, so the two never share a box: a strip \
+               against the near hall's north wall, east of the arrival, off every \
+               route the piece's own bodies are teleported along. Its `extent` is \
+               0 on z, so it is one cell deep and the wall behind it is not part \
+               of it",
         role: None,
     },
     Anchor {
@@ -803,6 +817,150 @@ fn assert_anchors_are_standable(s: &Structure) {
     );
 }
 
+/// The floor, in blocks, on how far a wave anchor stands from a killing
+/// volume's own anchor — the weaker half of the rule below.
+///
+/// **Distance is not the rule, and this number is not where the safety comes
+/// from.** A wave staged 4.72 blocks clear of the nearer box still lost a body
+/// to it, and the bot fighting that wave died in it twice, because a fight does
+/// not stay where it is staged: the census found a re-seated cohort spread
+/// 14.4 blocks from its own anchor, and the unassisted attempt ended with the
+/// bot dead at `[12, 65, 21]` — the cell OUTSIDE the volume whose 0.6-wide
+/// occupant reaches the boundary. Any distance short of the room's own diameter
+/// is a number a roaming fight walks through.
+///
+/// So the rule is the one [`assert_the_muster_clears_the_pits`] states first: a
+/// killing volume does not share a ROOM with the fight a gate measures. The
+/// hall is two rooms and the generator knows where the wall is, which is why
+/// that half can be checked rather than assumed. This number stays as a second,
+/// weaker guard for a volume that clears the wall by a cell and nothing else.
+const MUSTER_PIT_CLEARANCE: f64 = 8.0;
+
+/// How far the patrol lane must keep from the wave anchor the floor gate
+/// measures, in blocks — measured to the lane's own SEGMENT, not to its ends.
+///
+/// A lane squad's `follow_range` is emitted verbatim from its lane's
+/// `aggro_radius` (the compiler refuses a contradicting override, `DW0381`), so
+/// the radius at which the patrol acquires a player is the campaign's own
+/// number: eight. Ten leaves two blocks for a fight that moves. The ends can be
+/// twenty blocks away and the LINE between them still cut through the muster,
+/// which is exactly the shape this measures and an endpoint check would miss.
+///
+/// **Geometry is the belt, not the braces.** A perception radius of eight in a
+/// hall fourteen deep covers the hall, so no line the patrol can walk keeps
+/// eight blocks from the party's whole route — measured: with the lane on the
+/// back wall the bot cleared the muster and then died to the same two crossbows
+/// on its way to the finale, twice. What separates the two fights is that the
+/// campaign arms the lane on the hall's CLOSING beat, which this program cannot
+/// see. This constant still holds, because a staging that seats the two within
+/// perception of each other is wrong however the beats are ordered, and an
+/// ordering is the half a later edit can undo without touching a coordinate.
+const LANE_MUSTER_CLEARANCE: f64 = 10.0;
+
+/// Find one anchor by name, or panic: a clearance proof that silently examined
+/// nothing is the vacuity this file exists to refuse.
+fn anchor_at(name: &str) -> [i32; 3] {
+    ANCHORS
+        .iter()
+        .find(|a| a.name == name)
+        .unwrap_or_else(|| panic!("{ID}: no anchor named `{name}` to measure"))
+        .pos
+}
+
+/// Squared distance in the floor plane, where every one of these clearances is
+/// judged: a hall one storey tall gives `y` nothing to say.
+fn plan_dist(a: [i32; 3], b: [i32; 3]) -> f64 {
+    let (dx, dz) = ((a[0] - b[0]) as f64, (a[2] - b[2]) as f64);
+    (dx * dx + dz * dz).sqrt()
+}
+
+/// **A killing volume does not share a room with a fight a gate measures.**
+///
+/// Measured on the bot ladder, twice, in that order. A muster staged on the bay
+/// line lost its spider to `lethal/west-pit` mid-fight — a lethal volume
+/// selects on HITBOX intersection, so a 1.4-wide body two cells outside the box
+/// is inside it — and the floor gate then graded a wave the world had helped
+/// kill. Moving the muster to the far end of the same room bought 4.72 blocks
+/// of clearance and did not help: the bot chased the cohort across the hall and
+/// died in the same volume, at the cell whose occupant merely reaches its edge.
+///
+/// A fight roams; a room is what bounds it. The hall is two rooms with one wall
+/// between them, so this is checkable rather than assumed: the fight is beyond
+/// the wall, and both volumes are in front of it.
+fn assert_the_muster_clears_the_pits() {
+    let muster = anchor_at("anchor/muster");
+    let mut pits = Vec::new();
+    for pit in ["anchor/west-pit", "anchor/east-pit"] {
+        let at = anchor_at(pit);
+        assert!(
+            (muster[2] > DIVIDER_Z) != (at[2] > DIVIDER_Z),
+            "{ID}: `{pit}` stands at z={} and `anchor/muster` at z={}, both on the \
+             same side of the dividing wall (z={DIVIDER_Z}) — a fight roams the room \
+             it is staged in, so a killing volume sharing that room takes bodies out \
+             of the fight the floor gate is grading, and takes the party's own body \
+             out of it too",
+            at[2],
+            muster[2]
+        );
+        let d = plan_dist(muster, at);
+        assert!(
+            d >= MUSTER_PIT_CLEARANCE,
+            "{ID}: `anchor/muster` stands {d:.2} blocks from `{pit}`, under the \
+             {MUSTER_PIT_CLEARANCE:.1} that keeps a volume off the wall the two \
+             rooms share"
+        );
+        pits.push(format!("{pit} {d:.2}"));
+    }
+    assert_eq!(
+        pits.len(),
+        2,
+        "{ID}: the pit clearance examined {} volume(s), not 2",
+        pits.len()
+    );
+    println!(
+        "{ID}: muster clearance bound — 2 killing volume(s), both across the wall at \
+         z={DIVIDER_Z} from the muster: {} (floor {MUSTER_PIT_CLEARANCE:.1} block(s))",
+        pits.join(", ")
+    );
+}
+
+/// **A measured fight does not share its floor with a second fight.**
+///
+/// A patrol lane drawn across the hall's middle put two crossbows inside the
+/// muster, unbilled and unmeasured — `DW0477` says in writing that nothing
+/// measures `wave/lane`, so every bolt it fires into the muster is damage the
+/// floor gate cannot account for.
+///
+/// Measured to the lane's SEGMENT: its two ends can be twenty blocks from the
+/// muster while the line between them runs straight through it, which is what
+/// an endpoint check would miss and what the staging that produced that run
+/// actually did.
+fn assert_the_lane_keeps_off_the_muster() {
+    let muster = anchor_at("anchor/muster");
+    let (w, e) = (anchor_at("anchor/lane-west"), anchor_at("anchor/lane-east"));
+    let (ax, az) = ((w[0] - e[0]) as f64, (w[2] - e[2]) as f64);
+    let len2 = ax * ax + az * az;
+    assert!(len2 > 0.0, "{ID}: the patrol lane's two ends are one cell");
+    let t = ((((muster[0] - e[0]) as f64) * ax + ((muster[2] - e[2]) as f64) * az) / len2)
+        .clamp(0.0, 1.0);
+    let near = [
+        (e[0] as f64 + t * ax).round() as i32,
+        muster[1],
+        (e[2] as f64 + t * az).round() as i32,
+    ];
+    let d = plan_dist(muster, near);
+    assert!(
+        d >= LANE_MUSTER_CLEARANCE,
+        "{ID}: the patrol lane passes {d:.2} blocks from `anchor/muster` at {near:?}, \
+         under the {LANE_MUSTER_CLEARANCE:.1} that keeps the squad's own perception \
+         radius out of the fight the floor gate measures"
+    );
+    println!(
+        "{ID}: lane clearance bound — the patrol line passes `anchor/muster` at \
+         {near:?}, {d:.2} block(s) away (floor {LANE_MUSTER_CLEARANCE:.1})"
+    );
+}
+
 /// Every cell the broken flight is missing, as local coordinates — the way
 /// region, in the order the metadata exports it.
 fn tread_cells() -> Vec<[i32; 3]> {
@@ -1191,6 +1349,8 @@ fn write_piece(out: &Path) {
     let mut s = build();
     resolve_connections(ID, &mut s);
     assert_anchors_are_standable(&s);
+    assert_the_muster_clears_the_pits();
+    assert_the_lane_keeps_off_the_muster();
     assert_the_flight_is_broken(&s);
     let cells = invariant_cells(&s);
     invariants::assert_distress_never_stacks(ID, &cells);

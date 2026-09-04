@@ -1899,7 +1899,6 @@
               "way": "broken-flight"
             },
             {
-              "amount": 1,
               "forbids_flags": [
                 "flag/hall-sealed"
               ],
@@ -1907,7 +1906,8 @@
                 "flag/muster-cleared"
               ],
               "state": "state/labels-read",
-              "type": "add-state"
+              "type": "set-state",
+              "value": 2
             }
           ]
         },

@@ -127,26 +127,26 @@
       {
         "damage_type": "fall",
         "id": "lethal/west-pit",
-        "message": "The floor of the west bay is not a floor.",
+        "message": "The floor in the west corner is not a floor.",
         "region": {
           "anchor": "anchor/west-pit",
           "extent": [
+            1,
             2,
-            2,
-            2
+            1
           ]
         }
       },
       {
         "damage_type": "wither",
         "id": "lethal/east-pit",
-        "message": "The air in the east bay does not agree with you.",
+        "message": "The air along the north wall does not agree with you.",
         "region": {
           "anchor": "anchor/east-pit",
           "extent": [
             1,
             2,
-            2
+            1
           ]
         }
       }
@@ -467,28 +467,6 @@
             ],
             "type": "spawn-wave",
             "wave": "wave/muster"
-          },
-          {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "happening": {
-              "subject": "anchor/march",
-              "text": "A lane opens down the far hall.",
-              "verb": "arrives"
-            },
-            "requires_flags": [
-              "flag/hall-open"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
-            "type": "spawn-wave",
-            "wave": "wave/lane"
           },
           {
             "happening": {
@@ -1043,6 +1021,25 @@
               "verb": "survives"
             },
             "type": "campaign-complete"
+          },
+          {
+            "happening": {
+              "subject": "anchor/march",
+              "text": "A lane opens down the far hall behind them.",
+              "verb": "arrives"
+            },
+            "requires_flags": [
+              "flag/hall-open"
+            ],
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
+            "type": "spawn-wave",
+            "wave": "wave/lane"
           }
         ],
         "on_objective_complete": {
@@ -2000,6 +1997,22 @@
             "type": "set-flag"
           }
         ],
+        "on_objective_complete": {
+          "obj/look-in-the-east-bay": [
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "happening": {
+                "subject": "anchor/east-bay",
+                "text": "Something that was watching the east bay closes on it.",
+                "verb": "arrives"
+              },
+              "type": "spawn-wave",
+              "wave": "wave/edge"
+            }
+          ]
+        },
         "trigger": {
           "quest": "quest/near-hall",
           "type": "quest-complete"
