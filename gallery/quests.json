@@ -2502,6 +2502,11 @@
               }
             },
             "name": "Muster Hand"
+          },
+          {
+            "count": 1,
+            "entity": "minecraft:spider",
+            "name": "Muster Stray"
           }
         ],
         "respawns_on_rest": true,

@@ -17,6 +17,7 @@ const ENC: Encounter = {
     brand: "the-drowned-bell:wave_brand_bellkeeper",
     unbrand: "the-drowned-bell:wave_unbrand_bellkeeper",
   },
+  bodies: [{ kind: "drowned", count: 1, giveUpSwings: 24 }],
 };
 
 const TRIAL: DeathTrial = {

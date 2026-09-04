@@ -109,6 +109,7 @@
     "wave.lane.mob.0.name": "行进掠夺者",
     "wave.muster.mob.0.drop.0.name": "点兵之骨",
     "wave.muster.mob.0.name": "点兵兵卒",
+    "wave.muster.mob.1.name": "点兵散兵",
     "world.boundary.message": "厅到此为止。",
     "world.outro": "厅中每一只展柜都已读过。",
     "world.title": "陈列厅"
