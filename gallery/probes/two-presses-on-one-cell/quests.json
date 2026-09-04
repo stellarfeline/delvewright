@@ -2316,7 +2316,7 @@
     ],
     "triggers": [
       {
-        "at": "anchor/label",
+        "at": "anchor/pedestal",
         "audience": "presser",
         "effects": [
           {

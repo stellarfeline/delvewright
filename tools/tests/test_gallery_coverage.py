@@ -314,10 +314,10 @@ def test_the_probe_contract_refuses_every_way_of_breaking_it():
     # …and both kinds owe the refusal itself, with the code they name.
     for kind in (mod.EXEMPTION, mod.DEMONSTRATION):
         with pytest.raises(SystemExit):
-            mod.assert_refused("p", kind, "DW0001", 0, [])
+            mod.assert_refused("p", kind, "DW0001", 0, [], "build")
         with pytest.raises(SystemExit):
-            mod.assert_refused("p", kind, "DW0001", 1, ["DW0002"])
-        mod.assert_refused("p", kind, "DW0001", 1, ["DW0002", "DW0001"])  # green
+            mod.assert_refused("p", kind, "DW0001", 1, ["DW0002"], "validate")
+        mod.assert_refused("p", kind, "DW0001", 1, ["DW0002", "DW0001"], "validate")  # green
 
     # The green case discharges exactly what it claims.
     assert mod.probe_discharges(
@@ -370,7 +370,7 @@ def test_a_demonstration_discharges_nothing_and_the_verdict_says_so(tmp_path, mo
         monkeypatch.setattr(mod, "GALLERY", gallery)
         monkeypatch.setattr(mod, "schema_export", lambda _d: export)
         monkeypatch.setattr(mod, "find_delvec", lambda _e: pathlib.Path("/nonexistent/delvec"))
-        monkeypatch.setattr(mod, "run_probe", lambda *_a: (1, ["DW9999"]))
+        monkeypatch.setattr(mod, "run_probe", lambda *_a: (1, ["DW9999"], "validate"))
         monkeypatch.setattr(
             sys, "argv", ["check", "--prefabs", str(prefabs), "--report", str(report)]
         )
