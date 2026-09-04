@@ -16,6 +16,7 @@ import {
   floorFinding,
   giveUpBudgetFor,
   openTrial,
+  unboundedEncounterNote,
   unkillableFinding,
   checkpointPrecondition,
   observationOf,
@@ -676,4 +677,12 @@ test("the unkillable finding names the body, the swings and the arithmetic", () 
   assert.match(line, /husk/);
   assert.match(line, /24 swing/);
   assert.match(line, /max_health/);
+});
+
+test("a timeout says which kinds the encounter could not budget, and stays silent otherwise", () => {
+  assert.equal(unboundedEncounterNote([]), "", "a fully budgeted encounter adds nothing");
+  const note = unboundedEncounterNote(["skeleton", "husk"]);
+  assert.match(note, /husk, skeleton/, "named in a stable order");
+  assert.match(note, /max_health/);
+  assert.match(note, /DW0475/);
 });

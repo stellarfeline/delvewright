@@ -49,6 +49,7 @@ import {
   giveUpBudgetFor,
   observationOf,
   openTrial,
+  unboundedEncounterNote,
   unkillableFinding,
   respawnedAtCheckpoint,
   retryOutcome,
@@ -3656,11 +3657,7 @@ export class MineflayerExecutor implements StepExecutor {
       `kill timed out after ${KILL_TIMEOUT_MS}ms: wave ${step.wave} ` +
         `(${engagement.killed}/${step.count} confirmed dead; ` +
         `${engagement.engaged.size} mob(s) engaged) not cleared` +
-        (unbounded.size > 0
-          ? ` — and this encounter states no melee budget for ${[...unbounded].sort().join(", ")}, ` +
-            `so the bot could not tell a tanky body from an unkillable one here; declare ` +
-            `\`attributes.max_health\` on those stacks (the same declaration DW0475 asks for)`
-          : ""),
+        unboundedEncounterNote(unbounded),
     );
   }
 

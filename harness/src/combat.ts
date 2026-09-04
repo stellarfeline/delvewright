@@ -603,6 +603,25 @@ export function unkillableFinding(u: UnkillableBody): string {
   );
 }
 
+/**
+ * The tail a `kill` step's timeout adds when the encounter budgeted none of the
+ * bodies it swung at.
+ *
+ * Empty when every kind it met carried a budget — a timeout there is about the
+ * fight, not about what the plan could say. Otherwise it names the kinds, because
+ * "the bot gave up on nothing" and "there was nothing to give up on" are
+ * different facts and only one of them is the author's to fix.
+ */
+export function unboundedEncounterNote(kinds: Iterable<string>): string {
+  const named = [...kinds].sort();
+  if (named.length === 0) return "";
+  return (
+    ` — and this encounter states no melee budget for ${named.join(", ")}, so the bot could ` +
+    `not tell a tanky body from an unkillable one here; declare \`attributes.max_health\` on ` +
+    `those stacks (the same declaration DW0475 asks for)`
+  );
+}
+
 /** Read the combat plan beside `criticalPathPath`; `undefined` when absent (a
  * campaign with no mandatory combat emits none, and that is not an error). */
 export async function loadCombatPlanForCriticalPath(
