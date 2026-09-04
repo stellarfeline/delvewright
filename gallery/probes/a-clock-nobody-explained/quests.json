@@ -1897,6 +1897,17 @@
               ],
               "type": "open-way",
               "way": "broken-flight"
+            },
+            {
+              "amount": 1,
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/muster-cleared"
+              ],
+              "state": "state/labels-read",
+              "type": "add-state"
             }
           ]
         },

@@ -144,7 +144,7 @@
         "region": {
           "anchor": "anchor/east-pit",
           "extent": [
-            2,
+            1,
             2,
             2
           ]
@@ -223,8 +223,8 @@
         "cast": {
           "npc/curator": {
             "at": "anchor/lectern",
-            "dialogue": "none",
-            "doing": "standing at the lectern with the catalogue shut"
+            "dialogue": "dlg/curator-root",
+            "doing": "standing at the lectern with the catalogue open"
           },
           "npc/factor": {
             "at": "anchor/stall",
@@ -309,7 +309,7 @@
             },
             "hint": "The case stands in the middle of the near hall.",
             "id": "obj/press-the-case",
-            "missing_item_hint": "The case wants a key, and the key is in the case. Ask the Factor.",
+            "missing_item_hint": "The Curator gave you the case key. It only opens the case from your hand.",
             "prop": {
               "block": "minecraft:stone_button"
             },
@@ -532,6 +532,24 @@
               ],
               "item": "minecraft:torch",
               "name": "Hall Torch",
+              "requires_flags": [],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "type": "give-item"
+            },
+            {
+              "carrier": "all",
+              "count": 1,
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "item": "minecraft:iron_pickaxe",
+              "name": "Case Key",
               "requires_flags": [],
               "requires_state": [
                 {
@@ -827,11 +845,7 @@
           "npc/marshal": [
             {
               "at": "anchor/muster",
-              "dialogue": {
-                "barks": [
-                  "Form up."
-                ]
-              },
+              "dialogue": "dlg/marshal-read",
               "doing": "calling the muster to a party that read the label",
               "forbids_flags": [
                 "flag/hall-sealed"
@@ -849,11 +863,7 @@
             },
             {
               "at": "anchor/muster",
-              "dialogue": {
-                "barks": [
-                  "You did not read it. Form up anyway."
-                ]
-              },
+              "dialogue": "dlg/marshal-skipped",
               "doing": "calling the muster to a party that walked straight past",
               "requires_flags": [
                 "flag/skipped-the-label"
@@ -871,6 +881,24 @@
         },
         "id": "quest/far-hall",
         "objectives": [
+          {
+            "after": [],
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "subject": "npc/marshal",
+              "text": "The Marshal stops the party at the muster line and asks after the lectern.",
+              "verb": "arrives"
+            },
+            "hint": "She is at the muster line, and she wants the lectern accounted for.",
+            "id": "obj/answer-the-marshal",
+            "npc": "npc/marshal",
+            "requires_flags": [],
+            "stealth": false,
+            "title": "Answer the Marshal",
+            "type": "talk-to"
+          },
           {
             "after": [],
             "forbids_flags": [
@@ -1897,20 +1925,81 @@
               ],
               "type": "open-way",
               "way": "broken-flight"
-            },
-            {
-              "amount": 1,
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/muster-cleared"
-              ],
-              "state": "state/labels-read",
-              "type": "add-state"
             }
           ]
         },
+        "trigger": {
+          "quest": "quest/near-hall",
+          "type": "quest-complete"
+        }
+      },
+      {
+        "cast": {
+          "npc/curator": {
+            "at": "anchor/pedestal",
+            "dialogue": "unchanged",
+            "doing": "still at the case, not watching the shaft"
+          },
+          "npc/marshal": [
+            {
+              "at": "anchor/muster",
+              "dialogue": "dlg/marshal-root",
+              "doing": "forming up beyond the wall, indifferent to the cellar",
+              "requires_flags": [
+                "flag/read-the-label"
+              ]
+            },
+            {
+              "at": "anchor/muster",
+              "dialogue": "dlg/marshal-root",
+              "doing": "forming up beyond the wall, having walked straight past the label",
+              "requires_flags": [
+                "flag/skipped-the-label"
+              ]
+            }
+          ]
+        },
+        "happening": {
+          "subject": "anchor/east-bay",
+          "text": "Some of them stop at the side bays to look at what is not on the way out.",
+          "verb": "learns"
+        },
+        "id": "quest/the-reliquary",
+        "objectives": [
+          {
+            "anchor": "anchor/east-bay",
+            "happening": {
+              "subject": "anchor/east-bay",
+              "text": "The east bay keeps what the hall has stopped showing.",
+              "verb": "arrives"
+            },
+            "id": "obj/look-in-the-east-bay",
+            "radius": 3,
+            "title": "Look into the east bay",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/look-in-the-east-bay"
+            ],
+            "anchor": "anchor/west-bay",
+            "happening": {
+              "subject": "anchor/west-bay",
+              "text": "The west bay keeps the rest of it, and nothing on the way out needs any of it.",
+              "verb": "learns"
+            },
+            "id": "obj/look-in-the-west-bay",
+            "radius": 3,
+            "title": "Look into the west bay",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "flag": "flag/saw-the-reliquary",
+            "type": "set-flag"
+          }
+        ],
         "trigger": {
           "quest": "quest/near-hall",
           "type": "quest-complete"
@@ -2025,7 +2114,7 @@
             "type": "narrate"
           }
         ],
-        "unlock": "anchor/vantage"
+        "unlock": "anchor/side-lever"
       }
     ],
     "stakes": [
@@ -2131,7 +2220,7 @@
         "crush": true,
         "disarm": {
           "sets_flag": "flag/gate-jammed",
-          "via": "anchor/vantage"
+          "via": "anchor/clock-lever"
         },
         "gate": "anchor/timed-door-inner",
         "id": "timed-gate/inner-door",
@@ -2144,7 +2233,7 @@
         "at": "anchor/march",
         "disarm": {
           "sets_flag": "flag/plate-disarmed",
-          "via": "anchor/vantage"
+          "via": "anchor/plate-lever"
         },
         "effect": {
           "dispense": {
@@ -2245,7 +2334,7 @@
     ],
     "triggers": [
       {
-        "at": "anchor/pedestal",
+        "at": "anchor/label",
         "audience": "presser",
         "effects": [
           {
@@ -2274,7 +2363,7 @@
         "once": false
       },
       {
-        "at": "anchor/hearth",
+        "at": "anchor/hearth-stone",
         "audience": "party",
         "effects": [
           {
@@ -2431,6 +2520,11 @@
               }
             },
             "name": "Muster Hand"
+          },
+          {
+            "count": 1,
+            "entity": "minecraft:spider",
+            "name": "Muster Stray"
           }
         ],
         "respawns_on_rest": true,
