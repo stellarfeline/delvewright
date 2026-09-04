@@ -1443,10 +1443,16 @@ pub fn safe_local(id: &str) -> String {
 ///   both directions, which is what makes this a format change rather than an
 ///   addition: a format-2 artifact cannot tell a current bot where the objective
 ///   completes, and a format-2 bot would refuse the new key outright.
+/// * `4` — the path carries `non_combatants`, the delve's own statement of which
+///   entity kinds are never a combat target ([`crate::combat::non_combatants`]).
+///   A format change rather than an addition for the same reason as `3`: a bot
+///   handed a path without it would have to fall back to a literal set of entity
+///   names, which is the compiler's knowledge written down where it cannot be
+///   right.
 ///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 3;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 4;
 
 /// The machine completion-marker token for campaign completion. An objective's
 /// token is simply its own id (`obj/<kebab>`).

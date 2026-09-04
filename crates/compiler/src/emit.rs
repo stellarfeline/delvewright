@@ -20255,6 +20255,13 @@ fn critical_path_json(
         // proved by the anchored marker channel. The harness refuses anything else.
         "format_version": plan::CRITICAL_PATH_FORMAT_VERSION,
         "campaign_id": plan.namespace,
+        // Format 4: the delve's cast statement — which entity kinds are never a
+        // combat target. It rides on the path rather than on `combat-plan.json`
+        // because it is a fact about the WORLD the bot walks, not about a fight:
+        // a delve with NPCs and no combat ships no combat plan at all, and its
+        // bot must still know not to swing back at a quest-giver when a fall
+        // takes its health. See `combat::non_combatants`.
+        "non_combatants": crate::combat::non_combatants_json(plan.campaign),
         "steps": steps
     })
 }
