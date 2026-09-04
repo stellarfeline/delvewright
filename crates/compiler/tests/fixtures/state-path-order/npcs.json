@@ -1,0 +1,35 @@
+{
+  "campaign_id": "state-path-order",
+  "content": {
+    "npcs": [
+      {
+        "anchor": "anchor/keeper-stand",
+        "area": "area/keep",
+        "base_entity": "minecraft:villager",
+        "id": "npc/keeper",
+        "name": "The Keeper",
+        "persona": {
+          "archetype": "stoic gatekeeper",
+          "motivation": "Keep the gate shut until someone asks well.",
+          "speech_style": "Terse, formal, archaic."
+        },
+        "role": "quest-giver"
+      },
+      {
+        "anchor": "anchor/exit",
+        "area": "area/keep",
+        "base_entity": "minecraft:villager",
+        "id": "npc/sleeper",
+        "name": "The Sleeper",
+        "persona": {
+          "archetype": "wine-drowned watchman",
+          "motivation": "Sleep through his whole watch.",
+          "speech_style": "Slurred, half-dreaming."
+        },
+        "role": "flavor"
+      }
+    ]
+  },
+  "dsl_version": "0.7.0",
+  "stage": "npcs"
+}

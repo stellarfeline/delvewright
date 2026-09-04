@@ -180,6 +180,7 @@ lockstep, in both directions:
 | `DW0312` | the wave's size, or the room it spawns in |
 | `DW0313` | the prefab — a gravity floor over the void needs a substrate |
 | `DW0342` | the trap's placement or `rearm`, or a disarm the party can reach first |
+| `DW0879` | where the write sits relative to the gate that reads it — the path clears the datum before the beat that needs it |
 
 Every other code is build tier.
 
@@ -4277,6 +4278,62 @@ exported path. The other static guarantees that hold: every `forbids_flags`
 reference resolves to a produced flag (`DW0172`), and a completing dialogue
 option gated only by `forbids_flags` still counts as gated for `DW0191`.
 
+### DW0879 — a numeric gate the path has already cleared (`compiler::statepath` over `compiler::flow`; error; exit 2)
+
+| Code | Meaning |
+|------|---------|
+| `DW0879` | **A forced-path numeric gate the path itself has made unsatisfiable.** An objective's `requires_state` term evaluated at that objective's own position on a walked path, against the value every state write the path performed has left the datum holding. Analysis tier (exit 2), `every_version` — it judges what the document says, and a campaign that declares no `state[]` reads no gate this rule can see. Names the objective, the datum, the comparison, the value held, the beat whose write left it there, and the two remedies: move the write past the beat that reads the datum, or move the gate. |
+
+**The quantifier is the whole rule.** `DW0501` asks whether a datum is written
+anywhere, `DW0502` whether it is read anywhere, `DW0847` whether the gate's own
+terms are jointly satisfiable, and `DW0527` whether a comparison sits after a
+write **in the same bundle's effect list**. None of them asks what the datum
+holds at the moment a *later* beat reads it, and that question needs an order —
+which the monotone fixpoint does not have and the path replay does. So this is
+the replay's binding widened from flags to the whole gate, not a mechanism
+beside it: `ReplayState` carries every declared datum's value, `Flow::fire`
+honours a write's own `requires_state` where it stands (which is where vanilla
+evaluates it) and applies the write, and `Flow::state_gates` reads each
+objective's gate at its position.
+
+**What is walked**: the exported critical path (`Flow::playthrough` — the
+participation-minimal order `DW0204` already proves is a playthrough), and every
+enumerated branch world's own whole path (`Flow::playthrough_in`, a `dag_order`
+over everything that completes in that world), which reaches optional strands
+the finale-rooted path never visits and branches it is not on. A finding already
+named on the critical path is not named again; a branch finding names the branch
+by the flags that distinguish it.
+
+**Two refusals to over-claim, both counted rather than silent.** A term is
+refused only where the failure is one **no play order avoids**: the emitter's
+`pending_guard` lets a player complete any activatable objective at any moment,
+so two beats with no `after` between them can be played either way round, and a
+gate that fails under one of those orders and holds under the other is a path
+this walk picked rather than a defect. The writes the walk applied must
+therefore be chained into one order by the campaign's own `after` and
+`quest-complete` relations, ending before the gate. And a **datum no ordered
+walk can date** is never refused at all: an ambient producer (an environment
+trigger, a trap payload, a shortcut's `on_unlock`, a shop offer) may be fired any
+number of times at any moment, a reaction bundle (`on_death`, `on_respawn`,
+`on_rest`, `on_caught`) fires at a moment nothing names, a `stakes[]` forfeit
+moves the purse on a death, and a `player`-scoped datum under `min_players >= 2`
+depends on which agent acts. A flag is monotone and so is credited
+unconditionally in all four cases; a number is not. Undatable **absorbs**,
+`set-state` and `clear-state` included — a write pins a value only until the next
+undated write, which can land the beat after.
+
+**Ordering.** It withholds itself entirely where `DW0201` (no branch completes
+the finale) or `DW0204` (the exported path is not walkable) already names a
+cause, and says which, rather than adding a second refusal about one break.
+
+**Binding**: paths walked, steps, numeric gate terms read — split into the ones
+read against an undatable datum and the ones withheld for an unforced order —
+state writes replayed, and declared data with how many of them are undatable.
+Stated on every validate, analyze and build of a campaign, including the zeroes.
+The split is the load-bearing half: a run that read twenty terms and decided all
+twenty and a run that read twenty and could decide none print the same
+`gate term(s) read`, and only the second is a green that means nothing.
+
 ### DW03xx — build / solver / nav (`compiler`; error; exit 3, `stage:"build"`)
 
 Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
@@ -4777,13 +4834,14 @@ from decaying:
   make "which verbs are gatable" two different answers. All three fields lift
   together, in one `dsl_version`, or none do.
 
-**Not yet modelled.** A `requires_state` comparison is excluded from the static
-producibility model exactly as `forbids_flags` is: the flow/reachability proofs
-do not reason about integers, so a numeric gate cannot make a beat *unreachable*
-in their eyes. `DW0501` is what keeps that from being a hole a campaign can fall
-into silently — a comparison whose datum nothing drives is rejected outright —
-but a datum that is written and still never reaches the required range is not
-caught today. Stated here rather than left to be discovered.
+**Where a comparison IS evaluated, and where it is not.** A `requires_state`
+comparison stays out of the monotone producibility fixpoint, exactly as
+`forbids_flags` does: that fixpoint has no notion of *when*, and a comparison is
+entirely about when. The compensating stronger check is the **path replay**,
+which does have a concrete order — so a numeric gate is evaluated there, against
+the value the path itself has produced by the time the gate is read, and
+`DW0879` refuses one the path has already made unsatisfiable. `DW0501` is the
+other half and asks a different question: whether the datum is driven at all.
 
 ### DW0847 — a gate that can never open (`dsl::validate`; every gate consumer)
 
@@ -5358,7 +5416,7 @@ absence.
 | `DW0523` | **A shop button that cannot answer.** A `shops[].offers[]` entry with no `effects` — drawn, pressable, inert — or a `shops[]` entry with no offers at all, which is worse than an empty shop: vanilla's 1.21.11 dialog codec rejects an empty action list at pack load. Validation-tier (exit 1), `dsl::validate`. A **refusal counts as an answer**, so an offer whose only effect is a `narrate` gated on `at-most <price − 1>` satisfies it — which is exactly the shape spec-0032 asks for. Prescription: give the offer effects, or delete it. |
 | `DW0524` | **A forfeit above the whole purse.** A `forfeit` of kind `proportion` whose `percent` exceeds 100. Validation-tier (exit 1), `dsl::validate`. Prescription: 0–100, or `{"kind": "all"}`. |
 | `DW0525` | **No walkable route back.** From some respawn seat, under every quest state that can hold while it is in force, there is no reachable cell a stake could stand on for deaths in some region — or there are cells a player can walk to and die on that the seat cannot reach at all (the one-way drop). Build-tier (exit 3), `compiler::stake`. The message names the death region, the seat and how many quest states were examined. Prescription: give the drop a way back (a shortcut, a ladder), or declare the place a `lethal_volume` so the stake is projected to its near lip instead — never delete the stake to silence it. |
-| `DW0527` | **A comparison read after the bundle changed what it compares.** An effect's `requires_state` names a datum that an earlier effect in the same bundle writes **behind a gate on that same datum** — so the comparison is made on the far side of the boundary the bundle just tested. Warning-tier (exit 0), `dsl::validate`. Found in the emitted output of this feature's own first shop: written "purchase, then apology", buying your LAST coin debits it and the `at-most` apology — evaluated after the debit — then holds too, so the player is charged AND told they cannot afford it. The fix is always local: put every reading effect ahead of the write. An **unconditional** write followed by a comparison is deliberately NOT diagnosed — `set-state toll 0` and then a door gated on `toll at-most 0` is the ordinary sequenced idiom and plainly means the value the bundle just produced. Prescription: reorder, or gate on something this bundle does not change. |
+| `DW0527` | **A comparison read after the bundle changed what it compares.** An effect's `requires_state` names a datum that an earlier effect in the same bundle writes **behind a gate on that same datum** — so the comparison is made on the far side of the boundary the bundle just tested. Warning-tier (exit 0), `dsl::validate`. Found in the emitted output of this feature's own first shop: written "purchase, then apology", buying your LAST coin debits it and the `at-most` apology — evaluated after the debit — then holds too, so the player is charged AND told they cannot afford it. The fix is always local: put every reading effect ahead of the write. An **unconditional** write followed by a comparison is deliberately NOT diagnosed — `set-state toll 0` and then a door gated on `toll at-most 0` is the ordinary sequenced idiom and plainly means the value the bundle just produced. **Its scope is ONE bundle's own effect list, and that is what it does not cover**: a write and a read four beats apart are two bundles, so a `clear-state` that empties a datum a later objective's gate depends on is invisible here. `DW0879` is that question, asked over the path rather than over a list. Prescription: reorder, or gate on something this bundle does not change. |
 | `DW0526` | **No safe footing.** Every cell reachable from the seat that a stake could be projected onto for some death region stands on a block the runtime removes — a lift car, a sealed gate region, a collapsed floor — so a marker left there would be destroyed by the next ride. Build-tier (exit 3), `compiler::stake`. Distinguished from `DW0525` because the prescription is the opposite: there IS a route back, and the ground it ends on is the problem. |
 
 ### DW0495 — emitted score-read integrity (`compiler::seeding`; error; exit 3)
