@@ -430,8 +430,22 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
         (input.with_extension("json"), size, vec![(part, structure)])
     };
 
+    // **Which sky this piece stands under is the piece's own claim, read before
+    // anything is measured** (`light::SkyClaim`). A detail piece is walked under
+    // the whole's roof and never meets the sky; measured as if it stood in open
+    // air it reports the night floor at every cell and is written `lit`, a
+    // profile true in no world it will be placed in.
+    //
+    // Read here rather than inside the probe because the claim lives in the
+    // metadata document and the probe is handed blocks. A document that is
+    // absent or unreadable is not a claim of enclosure — the probe falls back to
+    // open air, exactly as it does for the contractless kit pieces — and
+    // `--write` refuses on its own terms further down, where it can say why.
+    let meta = PrefabMeta::read(&meta_path).ok().flatten();
+    let sky = light::SkyClaim::of(meta.as_ref().and_then(|m| m.spatial_contract.as_ref()));
+
     let zone = Zone::from_tiles(size, &tiles);
-    let probe = light::probe(&zone, dark_threshold);
+    let probe = light::probe(&zone, dark_threshold, sky);
 
     // The machine-readable line states the BINDING and the SKY, not only the
     // verdict: a minimum with no count beside it cannot be read afterwards, and
@@ -449,6 +463,8 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
         "assumed_sky": {
             "profile_taken_at": probe.sky_light,
             "daylight": probe.daylight_sky_light,
+            "admits_sky": probe.sky.admits_sky(),
+            "why": probe.sky.why(),
         },
         "binding": {
             "standable_cells": probe.standable_cells,
@@ -477,21 +493,35 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
             .darkest_cell
             .map(|c| format!(" (darkest at {},{},{})", c[0], c[1], c[2]))
             .unwrap_or_default();
-        let by_day = match probe.min_light_daylight {
-            Some(d) if d >= dark_threshold => format!(
-                "; by day it is {} — this is a piece the sky reaches, and it needs a light only \
-                 where the delve reaches night",
-                d
-            ),
-            Some(d) => format!("; still {d} under full daylight"),
-            None => String::new(),
+        // "Lit by day" is a sentence about a piece the sky reaches. An enclosed
+        // piece meets no sky at either end of the table, so the second figure is
+        // the first one again and offering it as a consolation would be false.
+        let by_day = if !probe.sky.admits_sky() {
+            String::new()
+        } else {
+            match probe.min_light_daylight {
+                Some(d) if d >= dark_threshold => format!(
+                    "; by day it is {} — this is a piece the sky reaches, and it needs a light \
+                     only where the delve reaches night",
+                    d
+                ),
+                Some(d) => format!("; still {d} under full daylight"),
+                None => String::new(),
+            }
+        };
+        let under = if probe.sky.admits_sky() {
+            format!(
+                "at sky light {} (a clear night, the darkest the engine models)",
+                probe.sky_light
+            )
+        } else {
+            format!("with no sky ({})", probe.sky.why())
         };
         Diagnostic::warning(
             DW_DARK,
             format!(
-                "dark interior at sky light {} (a clear night, the darkest the engine models): \
+                "dark interior {under}: \
                  min light {} < {} over {} floor cell(s) a player can walk to{cell}{by_day}",
-                probe.sky_light,
                 probe.measured_min_light.unwrap_or(0),
                 dark_threshold,
                 probe.measured_cells
