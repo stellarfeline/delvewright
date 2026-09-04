@@ -66,6 +66,7 @@ const CONFIG: BotConfig = {
 
 function attach(bot: FakeBot, env: Record<string, string | undefined> = {}): MineflayerExecutor {
   const executor = new MineflayerExecutor(CONFIG, env);
+  executor.useNonCombatants(new Set(["mannequin", "villager"]));
   executor.attachBot(bot as unknown as Bot);
   return executor;
 }
@@ -529,23 +530,42 @@ const SELF = { name: "delve-bot", height: 1.8, position: { x: 0, y: 64, z: 0 } }
 function ent(name: string | undefined, height = 1.8): unknown {
   return { name, height, position: { x: 1, y: 64, z: 0 } };
 }
+/** What the delve says is not a fight. In a real run this comes off
+ * `critical-path.json`; here it is written out so each case says which half of
+ * the rule it is exercising. */
+const CAST = new Set(["mannequin", "villager"]);
+const NO_CAST: ReadonlySet<string> = new Set<string>();
 
 test("isWaveMob classifies a living hostile as a wave mob", () => {
-  assert.equal(isWaveMob(ent("drowned", 1.95), SELF), true);
-  assert.equal(isWaveMob(ent("zombie"), SELF), true);
+  assert.equal(isWaveMob(ent("drowned", 1.95), SELF, CAST), true);
+  assert.equal(isWaveMob(ent("zombie"), SELF, CAST), true);
 });
 
-test("isWaveMob never targets an Invulnerable mannequin NPC (regression)", () => {
-  assert.equal(isWaveMob(ent("mannequin", 1.8), SELF), false);
+test("isWaveMob never targets a body the delve says is not a fight", () => {
+  // Both of these used to be literals in the harness. They are the compiler's
+  // knowledge, and they arrive as data now — so the same names are targets when
+  // the delve does not claim them.
+  assert.equal(isWaveMob(ent("mannequin", 1.8), SELF, CAST), false);
+  assert.equal(isWaveMob(ent("villager"), SELF, CAST), false);
+  assert.equal(
+    isWaveMob(ent("mannequin", 1.8), SELF, NO_CAST),
+    true,
+    "a delve that does not stage mannequins as NPCs has no reason to spare one",
+  );
 });
 
-test("isWaveMob excludes NPCs, displays, drops, and the bot itself", () => {
-  for (const name of ["villager", "armor_stand", "interaction", "item", "text_display"]) {
-    assert.equal(isWaveMob(ent(name), SELF), false, `${name} must not be a wave mob`);
+test("isWaveMob excludes vanilla non-bodies and the bot itself, cast or no cast", () => {
+  // These need no campaign to say so: no delve can make a dropped item a fight.
+  for (const name of ["player", "armor_stand", "interaction", "item", "text_display"]) {
+    assert.equal(isWaveMob(ent(name), SELF, NO_CAST), false, `${name} must not be a wave mob`);
   }
-  assert.equal(isWaveMob(SELF, SELF), false, "the bot is not its own target");
-  assert.equal(isWaveMob(ent(undefined), SELF), false, "an unnamed entity is not a target");
-  assert.equal(isWaveMob(ent("item", 0.25), SELF), false, "a short dropped entity is excluded");
+  assert.equal(isWaveMob(SELF, SELF, CAST), false, "the bot is not its own target");
+  assert.equal(isWaveMob(ent(undefined), SELF, CAST), false, "an unnamed entity is not a target");
+  assert.equal(
+    isWaveMob(ent("item", 0.25), SELF, CAST),
+    false,
+    "a short dropped entity is excluded",
+  );
 });
 
 // --- completion oracle (AUDIT-P0) ---------------------------------------------
@@ -1461,6 +1481,7 @@ import {
   dieRetryFindings,
   trialVerdict,
   type CombatPlan,
+  type EncounterBody,
 } from "../src/combat.ts";
 
 /** How a test asks the fake server to re-seat the wave. */
@@ -1474,6 +1495,13 @@ interface ReseatSpec {
   survivorHealth?: number;
   /** Blocks from the encounter anchor. */
   distance?: number;
+  /** Whether the seated bodies wear the wave's tag (default `true`). `false`
+   * stands in for a hostile that belongs to no wave — an ambusher the census
+   * cannot see and the objective does not require dead. */
+  waveTagged?: boolean;
+  /** Swings these bodies take, whatever their tagging. Without it a tagged body
+   * takes `waveHitsToKill` and an untagged bystander takes one. */
+  hitsToKill?: number;
 }
 
 /** One wave mob as the fake server publishes it to a client. */
@@ -1487,7 +1515,9 @@ interface FakeMob {
   /** Stands in for the compiler's `dw_wave_<id>` tag: only a mob the wave itself
    * summoned carries it, so the census can never count a bonfire affordance, an
    * ambush actor or a neighbouring wave. */
-  waveTagged: true;
+  waveTagged: boolean;
+  /** Swings this particular body takes, overriding the bot-wide rule. */
+  hitsToKill?: number;
 }
 
 /** Where the pinned registry puts `health` in a zombie's metadata. Resolved by
@@ -1588,7 +1618,8 @@ class CombatFakeBot extends InteractFakeBot {
       id,
       name: "zombie",
       height: 2,
-      waveTagged: true,
+      waveTagged: opts.waveTagged ?? true,
+      ...(opts.hitsToKill !== undefined ? { hitsToKill: opts.hitsToKill } : {}),
       metadata: { [ZOMBIE_HEALTH_IDX]: health },
       get attributes(): Record<string, { value: number }> {
         return { "minecraft:max_health": { value: FULL_HEALTH } };
@@ -1722,8 +1753,10 @@ class CombatFakeBot extends InteractFakeBot {
       this.killBot();
       return;
     }
-    const tagged = (this.entities[mob.id] as { waveTagged?: boolean } | undefined)?.waveTagged;
-    const need = tagged ? this.waveHitsToKill : 1;
+    const body = this.entities[mob.id] as
+      | { waveTagged?: boolean; hitsToKill?: number }
+      | undefined;
+    const need = body?.hitsToKill ?? (body?.waveTagged ? this.waveHitsToKill : 1);
     const taken = (this.hitsTaken.get(mob.id) ?? 0) + 1;
     this.hitsTaken.set(mob.id, taken);
     if (taken < need) return;
@@ -1774,7 +1807,11 @@ const ENCOUNTER = {
   },
 };
 
-function combatPlan(count = 1, respawnsOnRest = true): CombatPlan {
+function combatPlan(
+  count = 1,
+  respawnsOnRest = true,
+  bodies: readonly EncounterBody[] = [{ kind: "drowned", count, giveUpSwings: 24 }],
+): CombatPlan {
   return {
     version: "0.6.0",
     campaignId: "the-drowned-bell",
@@ -1789,6 +1826,7 @@ function combatPlan(count = 1, respawnsOnRest = true): CombatPlan {
         count,
         respawnsOnRest,
         census: ENCOUNTER.census,
+        bodies,
         checkpoint: ENCOUNTER.checkpoint,
       },
     ],
@@ -3046,4 +3084,60 @@ test("a wave that kills the bot mid-walk does not crash the harness on the re-ap
     "and both loops reached a verdict rather than dying with the process",
   );
   assert.deepEqual(dieRetryFindings(trials), []);
+});
+
+// --- when to stop swinging at one body (the census round) ----------------------
+
+test("a body that outlives its encounter's melee budget is a FINDING, not a silent drop", async () => {
+  // What replaced `WAVE_UNKILLABLE_MS`. The old rule meleed anything for a flat
+  // six seconds and then blacklisted it in silence — too long for a rat, too
+  // short for an elite, and it reported nothing either way. The budget is now
+  // the encounter's own arithmetic, and crossing it is a content defect the run
+  // report names: either nothing in the party's kit can damage this body, or the
+  // encounter's numbers are wrong.
+  const bot = new CombatFakeBot();
+  // A hostile the wave census cannot see — an ambusher belonging to no wave, so
+  // the fight can still end and this test is about the finding rather than about
+  // the 90s timeout an unkillable TAGGED body correctly earns.
+  bot.seat(1, { waveTagged: false, hitsToKill: 10_000 }); // nothing the bot does fells it
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(
+    combatPlan(1, true, [{ kind: "zombie", count: 1, giveUpSwings: 3 }]),
+    false,
+  );
+
+  await executor.kill(KILL_STEP);
+
+  const findings = executor.unkillableFindings();
+  assert.equal(findings.length, 1, findings.join(" | "));
+  assert.match(findings[0]!, /wave\/gate-assault/);
+  assert.match(findings[0]!, /`zombie`/);
+  assert.match(findings[0]!, /3 swing/);
+  // And it did stop: the budget is 3, so the bot cannot have gone on swinging.
+  const swings = bot.calls.filter((c) => c === "attack").length;
+  assert.equal(swings, 3, `stopped at the budget, not at a timer: ${swings} swing(s)`);
+});
+
+test("an encounter that states no budget for a kind gives up on nothing", async () => {
+  // `give_up_swings: null` — an undeclared `max_health`, which Mojang publishes
+  // no default for. There is then no basis for calling a body unkillable, so the
+  // bot keeps swinging: this one takes six hits, twice what any budget in the
+  // sibling case allowed, and still falls. No finding, and no constant of the
+  // harness's own deciding it was scenery at swing four.
+  const bot = new CombatFakeBot();
+  bot.seat(1, { waveTagged: false, hitsToKill: 6 });
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(
+    combatPlan(1, true, [
+      { kind: "zombie", count: 1, giveUpSwings: undefined, reason: "declares no max_health" },
+    ]),
+    false,
+  );
+
+  await executor.kill(KILL_STEP);
+
+  assert.deepEqual(executor.unkillableFindings(), []);
+  assert.equal(bot.calls.filter((c) => c === "attack").length, 6);
 });

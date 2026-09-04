@@ -81,6 +81,10 @@ const CONFIG: BotConfig = {
 
 function attach(bot: FakeBot): MineflayerExecutor {
   const executor = new MineflayerExecutor(CONFIG, {});
+  // What `run.ts` does before anything can fight, off the path's `non_combatants`.
+  // The executor refuses to classify a body without it — see the refusal case at
+  // the bottom of this file.
+  executor.useNonCombatants(new Set(["mannequin", "villager"]));
   executor.attachBot(bot as unknown as Bot);
   return executor;
 }
@@ -179,4 +183,36 @@ test("a healthy bot never stops to eat", async () => {
   await executor.maybeEat("test leg");
   assert.equal(bot.consumed, 0);
   assert.deepEqual(bot.equips, []);
+});
+
+// --- the delve's cast is required, never assumed --------------------------------
+
+test("an executor never told the delve's cast refuses to classify a body", () => {
+  // The refusal IS the repair. Before this, the harness carried its own list of
+  // entity names, so a run against a campaign whose author bodied an NPC
+  // differently classified a quest-giver as a fight and nothing said so.
+  const bot = new FakeBot();
+  bot.entities[42] = mob(42, "husk", 2);
+  const executor = new MineflayerExecutor(CONFIG, {});
+  executor.attachBot(bot as unknown as Bot);
+  assert.throws(
+    () => bot.emit("entityHurt", bot.entity, bot.entities[42]),
+    /never told which entity kinds are never a combat target/,
+  );
+});
+
+test("a delve that stages no NPC states an EMPTY cast, which is not the same as none", () => {
+  // An empty set is a legitimate answer and the executor takes it: nothing here
+  // is exempt by cast, and the vanilla exclusions still apply.
+  const bot = new FakeBot();
+  const husk = mob(42, "husk", 2);
+  bot.entities[husk.id] = husk;
+  const executor = new MineflayerExecutor(CONFIG, {});
+  executor.useNonCombatants(new Set<string>());
+  executor.attachBot(bot as unknown as Bot);
+  bot.emit("entityHurt", bot.entity, husk);
+  assert.deepEqual(
+    executor.recentAttackers().map((a) => a.id),
+    [42],
+  );
 });

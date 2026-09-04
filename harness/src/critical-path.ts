@@ -124,10 +124,18 @@ export const SUPPORTED_DSL_VERSIONS = [
  *   where the objective completes, and this bot refuses the field's absence rather
  *   than falling back to a completion model of its own — that fallback is the
  *   defect.
+ * * `4` — the path carries `non_combatants`, the delve's own statement of which
+ *   entity kinds are never a combat target. The bot classifies a body by the name
+ *   its client reports, because mineflayer on 1.21.11 cannot read entity tags —
+ *   and "a mannequin is an NPC" is not a fact about Minecraft, it is a fact about
+ *   what the compiler summons an NPC as. Required in both directions for the same
+ *   reason as `3`: the fallback — a literal set of entity names living in the
+ *   harness — IS the defect, because it is right only for the campaigns whose
+ *   author happened to pick those bodies.
  *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 3;
+export const CRITICAL_PATH_FORMAT_VERSION = 4;
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
@@ -328,11 +336,47 @@ export type Step =
   | RestStep
   | AssertCompleteStep;
 
+/**
+ * One entity kind the campaign stages as an NPC *and* as something the party
+ * fights, with the compiler's account of why it could not be excluded.
+ *
+ * The bot may swing at these. That is the compiler's ruling, not the harness's:
+ * excluding the kind would make the fight it belongs to unwinnable, and a delve
+ * that cannot be finished is a worse outcome than a quest-giver taking a hit.
+ * The run prints them, so nobody discovers it from a corpse.
+ */
+export interface AmbiguousBody {
+  readonly kind: string;
+  readonly why: string;
+}
+
+/**
+ * The delve's cast statement: which entity kinds are never a combat target.
+ *
+ * Stated in the client's vocabulary (`mannequin`, `villager`) because that is the
+ * only identity a mineflayer bot can read off a body. Compiler-derived from the
+ * emitter's own NPC rule; see `combat::non_combatants`.
+ */
+export interface NonCombatants {
+  /** Kinds no body of which is ever a fight. */
+  readonly kinds: ReadonlySet<string>;
+  /** Kinds that are an NPC body AND a fightable body — excluded, and named. */
+  readonly ambiguous: readonly AmbiguousBody[];
+  /** How many NPC bodies the compiler examined — the binding count. */
+  readonly examined: number;
+  /** `examined === 0`. */
+  readonly unbound: boolean;
+  /** Present exactly when `unbound` — the compiler's own words for the zero. */
+  readonly reason?: string;
+}
+
 export interface CriticalPath {
   readonly version: string;
   /** Contract version; see {@link CRITICAL_PATH_FORMAT_VERSION}. */
   readonly formatVersion: number;
   readonly campaignId: string;
+  /** Who the bot may never swing at. Required — see the format-4 note. */
+  readonly nonCombatants: NonCombatants;
   readonly steps: readonly Step[];
 }
 
@@ -822,7 +866,11 @@ function parseStep(value: unknown, pointer: string): Step {
  */
 export function parseCriticalPath(raw: unknown): CriticalPath {
   const root = requireObject(raw, "");
-  rejectUnknownKeys(root, ["version", "format_version", "campaign_id", "steps"], "");
+  rejectUnknownKeys(
+    root,
+    ["version", "format_version", "campaign_id", "non_combatants", "steps"],
+    "",
+  );
 
   // The contract version gates everything below: a path the harness cannot verify
   // is refused outright rather than run with weaker checks.
@@ -856,7 +904,78 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
   }
   const steps = stepsValue.map((entry, i) => parseStep(entry, `/steps/${i}`));
 
-  return { version, formatVersion: CRITICAL_PATH_FORMAT_VERSION, campaignId, steps };
+  const nonCombatants = parseNonCombatants(root["non_combatants"], "/non_combatants");
+
+  return {
+    version,
+    formatVersion: CRITICAL_PATH_FORMAT_VERSION,
+    campaignId,
+    nonCombatants,
+    steps,
+  };
+}
+
+/**
+ * The cast statement, or a refusal.
+ *
+ * There is deliberately no default. A path that does not say who is off-limits
+ * cannot be walked safely, and the only fallback available — a set of entity
+ * names written into this file — is the thing this field exists to delete.
+ */
+function parseNonCombatants(value: unknown, pointer: string): NonCombatants {
+  const obj = requireObject(value, pointer);
+  rejectUnknownKeys(obj, ["kinds", "ambiguous", "examined", "unbound", "reason"], pointer);
+  const rawKinds = obj["kinds"];
+  if (!Array.isArray(rawKinds)) {
+    fail(`${pointer}/kinds`, `must be an array, got ${describe(rawKinds)}`);
+  }
+  const kinds = new Set<string>();
+  rawKinds.forEach((k, i) => {
+    if (typeof k !== "string" || k.length === 0) {
+      fail(`${pointer}/kinds/${i}`, `must be a non-empty string, got ${describe(k)}`);
+    }
+    if (k.includes(":")) {
+      // The compiler states the client's vocabulary, namespace stripped. A
+      // namespaced id here would never match a body and the exclusion would
+      // silently bind to nothing.
+      fail(`${pointer}/kinds/${i}`, `must be a client entity name, not a namespaced id: ${k}`);
+    }
+    kinds.add(k);
+  });
+  const rawAmbiguous = obj["ambiguous"];
+  if (!Array.isArray(rawAmbiguous)) {
+    fail(`${pointer}/ambiguous`, `must be an array, got ${describe(rawAmbiguous)}`);
+  }
+  const ambiguous = rawAmbiguous.map((a, i) => {
+    const entry = requireObject(a, `${pointer}/ambiguous/${i}`);
+    return {
+      kind: requireString(entry, "kind", `${pointer}/ambiguous/${i}`),
+      why: requireString(entry, "why", `${pointer}/ambiguous/${i}`),
+    };
+  });
+  const examined = requireInteger(obj, "examined", pointer);
+  if (examined < 0) fail(`${pointer}/examined`, "must be a non-negative integer");
+  const unbound = obj["unbound"];
+  if (typeof unbound !== "boolean") {
+    fail(`${pointer}/unbound`, `must be a boolean, got ${describe(unbound)}`);
+  }
+  if (unbound !== (examined === 0)) {
+    fail(pointer, "`unbound` must be exactly `examined === 0`");
+  }
+  const reason = obj["reason"];
+  if (unbound && (typeof reason !== "string" || reason.length === 0)) {
+    fail(`${pointer}/reason`, "a census that examined nothing must state why");
+  }
+  if (!unbound && reason !== undefined) {
+    fail(`${pointer}/reason`, "a bound census carries no reason to explain");
+  }
+  return {
+    kinds,
+    ambiguous,
+    examined,
+    unbound,
+    ...(typeof reason === "string" ? { reason } : {}),
+  };
 }
 
 /** Parse `critical-path.json` text: JSON.parse then structural validation. */
