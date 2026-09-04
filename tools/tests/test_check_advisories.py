@@ -153,6 +153,34 @@ def npm_report(**counts: int) -> str:
     )
 
 
+# What npm ACTUALLY emits when the advisory endpoint does not answer, measured:
+# valid JSON, top-level keys `message` and `error`, no `metadata` anywhere. This
+# is the value that gets "did the tool answer" backwards for any reader that
+# tests parseability, and it is why these tests carry it verbatim.
+NPM_TRANSPORT_FAILURE = json.dumps(
+    {
+        "message": (
+            "request to https://registry.npmjs.org/-/npm/v1/security/advisories/"
+            "bulk failed, reason: network timeout"
+        ),
+        "error": {"summary": "", "detail": ""},
+    }
+)
+
+
+def fake_npm(tmp_path: Path, audit_stdout: str, code: int = 0, version: str = "11.19.0") -> Path:
+    """An `npm` on PATH that answers `--version` and `audit`, and tolerates the
+    extra flags the reader passes (`--json`, `--fetch-timeout N`)."""
+    p = tmp_path / "npm"
+    p.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo "' + version + '"; exit 0; fi\n'
+        "cat <<'JSONEOF'\n" + audit_stdout + "\nJSONEOF\nexit " + str(code) + "\n"
+    )
+    p.chmod(0o755)
+    return p
+
+
 def npm_project(tmp_path: Path) -> Path:
     d = tmp_path / "proj"
     d.mkdir()
@@ -162,7 +190,7 @@ def npm_project(tmp_path: Path) -> Path:
 
 def test_npm_fails_at_or_above_the_floor(tmp_path):
     proj = npm_project(tmp_path)
-    fake_binary(tmp_path, "npm", npm_report(high=2), code=1)
+    fake_npm(tmp_path, npm_report(high=2), code=1)
     r = run("--npm", "--dir", str(proj), env_path=tmp_path)
     assert r.returncode == 1
     assert "2 high" in r.stderr
@@ -172,7 +200,7 @@ def test_what_sits_below_the_floor_is_printed_rather_than_forgiven(tmp_path):
     """A stated threshold that does not say what is under it is an ignore list
     with better manners."""
     proj = npm_project(tmp_path)
-    fake_binary(tmp_path, "npm", npm_report(moderate=6), code=1)
+    fake_npm(tmp_path, npm_report(moderate=6), code=1)
     r = run("--npm", "--dir", str(proj), env_path=tmp_path)
     assert r.returncode == 0, r.stderr
     assert "moderate=6" in r.stdout
@@ -180,12 +208,52 @@ def test_what_sits_below_the_floor_is_printed_rather_than_forgiven(tmp_path):
     assert "not a thing this gate has forgiven" in r.stdout
 
 
-def test_an_npm_report_this_reader_cannot_read_is_refused(tmp_path):
+def test_npms_valid_json_error_object_is_a_transport_failure_not_a_report(tmp_path):
+    """THE red this file was rewritten for. `npm audit --json` emits valid JSON
+    when the endpoint does not answer, so a reader that tests parseability
+    accepts an outage as a report and then refuses with `None` — five minutes of
+    runner time spent producing a sentence that reads like an npm shape change.
+    """
     proj = npm_project(tmp_path)
-    fake_binary(tmp_path, "npm", '{"metadata": {}}')
+    fake_npm(tmp_path, NPM_TRANSPORT_FAILURE, code=1)
     r = run("--npm", "--dir", str(proj), env_path=tmp_path)
     assert r.returncode == 1
-    assert "no per-severity counts" in r.stderr
+    # Retried as a transport failure rather than read as a verdict...
+    assert "attempt 1 of 3 did not answer" in r.stderr
+    # ...and the refusal SHOWS what came back instead of printing None.
+    assert "'error', 'message'" in r.stderr
+    assert "network timeout" in r.stderr
+    assert "None" not in r.stderr
+
+
+def test_a_refusal_names_what_actually_came_back(tmp_path):
+    """A shape this reader does not know must say what it was, or the next
+    person reads `None` and suspects the wrong thing."""
+    proj = npm_project(tmp_path)
+    fake_npm(tmp_path, '{"metadata": {}, "auditReportVersion": 3}')
+    r = run("--npm", "--dir", str(proj), env_path=tmp_path)
+    assert r.returncode == 1
+    assert "did not answer" in r.stderr
+    assert "auditReportVersion" in r.stderr
+    assert "npm has changed its shape" in r.stderr
+
+
+def test_an_npm_major_this_reader_does_not_know_is_refused(tmp_path):
+    """`metadata.vulnerabilities` is a npm 7+ shape. Reading npm 6's output with
+    it would be answering confidently about numbers nobody checked."""
+    proj = npm_project(tmp_path)
+    fake_npm(tmp_path, npm_report(), version="6.14.18")
+    r = run("--npm", "--dir", str(proj), env_path=tmp_path)
+    assert r.returncode == 1
+    assert "outside the majors this reader was written against" in r.stderr
+
+
+def test_the_npm_instrument_is_named_on_every_run(tmp_path):
+    proj = npm_project(tmp_path)
+    fake_npm(tmp_path, npm_report())
+    r = run("--npm", "--dir", str(proj), env_path=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "instrument — npm 11.19.0" in r.stdout
 
 
 def test_both_arms_are_invoked_by_ci():

@@ -438,11 +438,19 @@ jobs:
       # NOT `npm audit --audit-level=high`. That was measured three times in
       # sequence on one machine with one lockfile: exit 1, exit 1, exit 0 — the
       # failing runs printed `undefined` and `audit endpoint returned an error`,
-      # a registry timeout, which the exit code presents as a finding. The tool
-      # reads the JSON report instead, so an audit that did not answer is a
-      # refusal that SAYS so rather than a red that looks like a vulnerability.
-      # It states every severity count on every run, including the ones below the
-      # failing floor, so nothing sits behind a green tick unseen.
+      # a registry timeout, which the exit code presents as a finding.
+      #
+      # And NOT "any JSON is a report" either, which is how this step red a
+      # second time: with `--json`, npm's transport failure is itself valid JSON
+      # (`{"message": "…bulk failed…", "error": {…}}`), so the first reader
+      # accepted a five-minute timeout as an answer and refused with
+      # `no per-severity counts (None)` — a sentence that reads like an npm shape
+      # change and was the endpoint being down. The tool now asks whether the
+      # report carries what an ANSWER carries, names npm's version, bounds npm's
+      # own per-request timeout so three attempts cannot cost fifteen minutes,
+      # and prints the raw top-level keys when it refuses. It states every
+      # severity count on every run, including the ones below the failing floor,
+      # so nothing sits behind a green tick unseen.
       #
       # Run from `harness/` (this job's default working directory) with the
       # script named relatively rather than by overriding that default: the tool
