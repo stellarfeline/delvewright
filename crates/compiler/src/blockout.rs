@@ -63,9 +63,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::StationKind;
-use delvewright_dsl::metrics::{
-    MetricKind, MetricValue, Metrics, Pitch, Reads, passable_width_cells,
-};
+use delvewright_dsl::metrics::{MetricKind, MetricValue, Metrics, Reads, passable_width_cells};
 use delvewright_dsl::siteplan::{
     Crossing, ENTRY_ANCHOR, PlacedBox, PlacedSeam, SITE_AREA, VolumeRole, node_anchor, seam_anchor,
     seam_unlock_anchor,
@@ -1044,10 +1042,13 @@ fn station_cell(mass: &Mass, b: &PlacedBox, taken: &BTreeSet<[i64; 3]>) -> [i64;
 ///
 /// # The pitch, and a departure recorded where it is made
 ///
-/// The pitch is the **gentlest standard the host affords**, chosen by the same
-/// walk over the same table `DW0830` refuses with — so a plan that reached green
-/// is a plan this can build, and one that could not would have been refused
-/// before any block existed.
+/// The pitch is the **gentlest standard the host affords**, chosen by
+/// [`delvewright_dsl::siteplan::gentlest_pitch`] over the run
+/// [`delvewright_dsl::siteplan::stair_run`] reports — the same two calls
+/// `DW0830` makes, so a plan that reached green is a plan this can build, and
+/// one that could not was refused before any block existed. That is one
+/// function rather than a matching pair: the pair disagreed, and the plan it
+/// disagreed about built no stair at all.
 ///
 /// What is NOT taken from the table is [`Pitch::realization`]. The table names
 /// `minecraft:*_stairs` for `pitch.stair`, and the assembled world's occupancy
@@ -1073,82 +1074,30 @@ fn tread(
     let (lo, hi) = host.space();
     let (olo, ohi) = s.opening;
 
-    // **How high the treads must carry a body**, and it is read off the opening
-    // rather than off the rise, because the opening is what the body has to
-    // reach:
-    //
-    // * across a **vertical** face the body must stand with its feet at the
-    //   seam's own sill and step through, so the top course's face is the sill;
-    // * through a **floor or ceiling** the body must stand INSIDE the hole and
-    //   step out onto the other place's floor beside it, so the top course's
-    //   face is the plane the hole is cut in.
-    //
-    // Both come out as the floor difference on an ordinary plan; they differ
-    // exactly where the plan puts a stair's sill somewhere other than the far
-    // floor, and the opening is the half a body actually uses.
-    let target = if s.normal_axis == 1 { s.plane } else { olo[1] };
-    let climb = target - host.floor;
-    if climb <= 0 {
-        // The host is at or above what the stair has to reach. `DW0830` refuses
-        // that plan by name — treads rise off a walk plane and the only one this
-        // stair has is the lower place's — so there is nothing to build here and
-        // nothing to say about it that has not been said.
+    // **What the run costs this host** — the climb the courses must carry, the
+    // axis they walk, where course 0 stands and how much walk there really is.
+    // All four come from [`delvewright_dsl::siteplan::stair_run`], which is the
+    // same call `DW0830` makes: a plan that reached green is a plan this can
+    // build, by construction rather than by two arithmetics agreeing. `None` is
+    // a plan `DW0830` has already refused — a host at or above what the stair
+    // reaches, or a hole that is not over this host (`DW0828`).
+    let Some(run) = delvewright_dsl::siteplan::stair_run(
+        host.floor,
+        host.foot,
+        s.normal_axis,
+        s.plane,
+        (olo, ohi),
+    ) else {
         return false;
-    }
-
-    // The run is horizontal. Across a vertical face it is spent along that
-    // face's normal; through a floor or a ceiling it may run either way, so the
-    // host's longer horizontal axis is what it has. Same axis rule `DW0830`
-    // measures the plan against.
-    let run_axis = if s.normal_axis == 1 {
-        let ex = host.foot[1] - host.foot[0] + 1;
-        let ez = host.foot[3] - host.foot[2] + 1;
-        if ex >= ez { 0usize } else { 2 }
-    } else {
-        s.normal_axis
     };
+    let (climb, run_axis, start, step, available) =
+        (run.climb, run.run_axis, run.start, run.step, run.available);
 
-    // **Where the run starts, how it walks, and how much of it there really
-    // is** — one decision, because the third answer depends on the first two.
-    //
-    // **The stair arrives AT its seam**, so the top course is the one the body
-    // steps off from and the run walks back into the room. Across a vertical
-    // face that is the course against the wall, and the run walks the whole
-    // footprint, so the host's extent on this axis IS what it affords.
-    //
-    // Through a FLOOR or a CEILING it is the course under the hole, and the run
-    // leaves along whichever side of the hole the host has more of — so what
-    // the treads have is the room on THAT side plus the hole's own width, never
-    // the host's whole extent. Measuring the extent here measures the room on
-    // both sides of a stair that only ever runs down one, which is a run the
-    // host does not have; a pitch chosen against it does not fit, and the
-    // courses that fall off the far wall are a stair with its bottom missing.
-    let (start, step, available) = if s.normal_axis == 1 {
-        let (olo_r, ohi_r) = (
-            olo[run_axis].max(lo[run_axis]),
-            ohi[run_axis].min(hi[run_axis]),
-        );
-        if olo_r > ohi_r {
-            return false; // the hole is not over this host — `DW0828`'s finding.
-        }
-        let width = ohi_r - olo_r + 1;
-        let room_lo = olo_r - lo[run_axis];
-        let room_hi = hi[run_axis] - ohi_r;
-        if room_lo >= room_hi {
-            (ohi_r, -1, room_lo + width)
-        } else {
-            (olo_r, 1, room_hi + width)
-        }
-    } else if s.plane > host.foot[if run_axis == 0 { 1 } else { 3 }] {
-        (hi[run_axis], -1, hi[run_axis] - lo[run_axis] + 1)
-    } else {
-        (lo[run_axis], 1, hi[run_axis] - lo[run_axis] + 1)
-    };
-
-    let Some(pitch) = gentlest_pitch(table, reads, climb, available) else {
+    let Some(pitch) = delvewright_dsl::siteplan::gentlest_pitch(table, reads, climb, available)
+    else {
         return false; // `DW0830` refused this plan; there is no standard to build.
     };
-    let courses = ceil_div(climb * i64::from(pitch.run), i64::from(pitch.rise)).max(1);
+    let courses = delvewright_dsl::siteplan::run_of(&pitch, climb).max(1);
 
     // **A run is laid whole or not at all.** `gentlest_pitch` was asked for a
     // standard that fits exactly this span and `courses` is that standard's own
@@ -1212,45 +1161,6 @@ fn tread(
         }
     }
     laid
-}
-
-/// Ceiling division over non-negative operands.
-///
-/// Spelled out rather than `i64::div_ceil`, which is unstable on this
-/// toolchain — the same arithmetic `crate::plan`'s stair check uses, written the
-/// same way, so the plan-time verdict and the built run agree by construction.
-fn ceil_div(n: i64, d: i64) -> i64 {
-    if d == 0 {
-        n
-    } else {
-        n / d + i64::from(n % d != 0)
-    }
-}
-
-/// The gentlest standard pitch whose run fits `available`, or `None` when the
-/// table defines none that does.
-///
-/// The walk is over [`Metrics::names_of`] in table order and returns the first
-/// that fits — the identical rule `DW0830` refuses with, read from the identical
-/// table, so the plan-time verdict and the built geometry cannot be about
-/// different standards.
-fn gentlest_pitch(table: &Metrics, reads: &mut Reads, rise: i64, available: i64) -> Option<Pitch> {
-    for name in table.names_of(MetricKind::Pitch) {
-        let Ok(entry) = table.resolve(MetricKind::Pitch, name) else {
-            continue;
-        };
-        let MetricValue::Pitch(p) = entry.value(reads) else {
-            continue;
-        };
-        if p.rise == 0 {
-            continue;
-        }
-        let needed = ceil_div(rise * i64::from(p.run), i64::from(p.rise));
-        if needed <= available {
-            return Some(*p);
-        }
-    }
-    None
 }
 
 /// Every cell a set of region writes covers, for a caller that needs the whole
