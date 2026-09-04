@@ -208,6 +208,19 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   placed geometry) but is analysis-tier: `main` maps a `DW02xx` build diagnostic to
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
   re-verification in pass 9.
+- The light field itself (`compiler::light`) is **dense**: over the assembled
+  AABB, each cell is one byte holding whether light passes it, whether the sky is
+  above it and what it emits, resolved from its block id once. Sky exposure is one
+  top-down sweep per column; the frontier drains brightest-first, so each cell is
+  relaxed once. The greedy relight loop floods once and **extends** the field per
+  fixture — a fixture written into a cell whose passability it does not change,
+  emitting at least as much as what it replaced, can only make the field
+  brighter, so the new field is the old one with that seed flooded into it; a
+  write failing either half floods again from nothing. Determinism does not rest
+  on the walk order: the field is the pointwise maximum over every seed of
+  `seed − distance`, one value per cell however the frontier drains. The one
+  order that IS a decision — the darkest deficient cell, ties by ascending
+  `(y, z, x)` — is an explicit sort.
 - Every emitted `.mcfunction` line is checked against the vendored 1.21.11
   Brigadier tree (`compiler::commands`, `data/commands-1.21.11.json`;
   structure-only — arity/paths, not arg values). mecha re-validates in CI
@@ -5613,23 +5626,49 @@ own, **cheaply, before geometry exists to make it expensive**. Every code is
 `dsl_version` 0.13.0 in which to write any of it, so no campaign can go red on a
 document it did not change.
 
-Two tiers, and which one a rule is in is decided by what it asks. Referential
-wellformedness and agreement with the mission are **validation** (exit 1) and run
-before anything semantic; reachability is **analysis** (exit 2), the same tier
-`DW0202`–`DW0204` answer the quest graph's reachability at, and for the same
-reason. `dsl::layout::check` is called from `validate_campaign_with` whenever
-either document is present and `dsl::layout::analyze` from
-`compiler::analyze::analyze_campaign`, which is the one pass `delvec analyze` and
-`delvec build` both go through — so there is no path to a built world that skips
-either, and no step anyone has to remember.
+**One tier, and it is validation (exit 1)** — referential wellformedness,
+agreement with the mission, and reachability alike. `dsl::layout::check` is
+called from `validate_campaign_with` whenever either document is present, and it
+is the only caller of `dsl::layout::reachability`, so there is one battery in one
+place, no second copy of any rule, and no step anyone has to remember. `delvec
+analyze` and `delvec build` both validate first, so a graph fault still cannot
+reach a built world.
+
+**What decides a tier here is when a check can fire, not what kind of question it
+asks.** The reachability trio was sorted by kind — `DW0816`/`DW0817`/`DW0819` are
+reachability questions like `DW0202`–`DW0204`, so they were raised from
+`compiler::analyze::analyze_campaign` — and that put them somewhere no verb could
+reach them at the step they exist for. The analysis pass runs only on a campaign
+that already validates, and a campaign at the graph step carries `DW0150` by
+construction (the plan is written and stage 5 is not), so `delvec analyze`
+returned at the validation gate and the graph went unchecked until stage 5 was
+written. That is past the design gate, and this section's own first sentence says
+the graph is checked *cheaply, before geometry exists to make it expensive*. The
+battery is a function of the campaign documents — it reads no plan, no prefab and
+no block — which is what let it move.
+
+**The proofs read the mission, so they say so while the mission is unwritten.**
+`Grants::of` derives a flag grant from stage-5 quest effects and stage-6 dialogue,
+so a campaign between the plan and the quests has no `set-flag` anywhere and every
+flag-gated way in its graph is shut to the closure. A **quest**-gated way is not
+affected: a quest is credited once every one of its beats sits at a reached place,
+and beats are the graph's own document. So a reachability refusal computed while
+stage 5 declares no quests carries a caveat naming that state and pointing at
+`DW0150` — attached only where the mission's absence could be the cause, which is
+a graph that gates on a flag at all, and worded as a caveat rather than a
+dismissal, because a place can be unreached for reasons the mission has nothing to
+do with and those are findings now. `DW0818`'s clause is the same predicate and a
+different consequence: there the absent mission is the whole of the fault, so it
+says the refusal clears; here it says which of two readings the author must
+choose between.
 
 | Code | Meaning |
 |------|---------|
 | `DW0814` | **The graph is not a graph.** A duplicate node or edge id, an end naming no declared place, an edge with both ends in one place (at every class — a self-loop states nothing a place does not already state, and would later be a seam with no face to sit on), a `critical_path` step or a `beats[]` entry naming no place, an `entry` or `goal` that is not a node, a place with an empty `intent`. Referential wellformedness, refused before any semantic check runs, because every check below reads node ids and a dangling one would make each of them answer about a place that is not there. Malformed ids are the ordinary `DW0110` and duplicates in the brief the ordinary `DW0111`: an id is an id. Validation tier (exit 1). |
-| `DW0816` | **A node the closure never reaches.** Under the monotone closure (§2), a place unreachable from `entry` respecting gating and one-way direction. The message names the place, **the nearest place a body can stand** — so the missing link is visible rather than searched for — and how many of the graph's places are reachable at all. Analysis tier (exit 2). **Binding: places examined, stated.** |
-| `DW0817` | **The critical path does not hold.** Four faults under one code, because they are one claim: it does not run `entry` → `goal`; a step names two places no connection joins, or joins them the other way; a step crosses a connection **not open yet at that point in the walk**, judged stepwise against what the beats bound to places already visited have granted (quest-legal order, not merely eventual satisfiability); or it never visits a place where a beat of the **mandatory quest spine** happens, so a body walking it would reach the goal without doing the mission. The spine is the finale and everything its `depends_on` chain demands. Analysis tier (exit 2). **Binding: path steps checked and spine beats required, both stated in the binding line**, and a zero on the second is reported there as a finding — a critical path over an unbound graph is a route through nothing. The count is stated rather than raised as a diagnostic on purpose: at analysis tier every reported diagnostic is exit 2, warning or not, so a line saying *this bound to nothing* would turn a green analysis red, and a count is not a fault. |
+| `DW0816` | **A node the closure never reaches.** Under the monotone closure (§2), a place unreachable from `entry` respecting gating and one-way direction. The message names the place, **the nearest place a body can stand** — so the missing link is visible rather than searched for — and how many of the graph's places are reachable at all. Validation tier (exit 1). While stage 5 declares no quests and the graph gates on a flag, the message carries the unwritten-mission caveat described above. **Binding: places examined, stated.** |
+| `DW0817` | **The critical path does not hold.** Four faults under one code, because they are one claim: it does not run `entry` → `goal`; a step names two places no connection joins, or joins them the other way; a step crosses a connection **not open yet at that point in the walk**, judged stepwise against what the beats bound to places already visited have granted (quest-legal order, not merely eventual satisfiability); or it never visits a place where a beat of the **mandatory quest spine** happens, so a body walking it would reach the goal without doing the mission. The spine is the finale and everything its `depends_on` chain demands. Validation tier (exit 1). The unwritten-mission caveat rides the **not-open-yet** fault alone, and only when that connection waits on a flag: the other three are judgements about the graph by itself, which an absent mission has nothing to say about. **Binding: path steps checked and spine beats required, both stated in the binding line**, and a zero on the second is reported there as a finding — a critical path over an unbound graph is a route through nothing. The count is stated rather than raised as a diagnostic on purpose: a line saying *this bound to nothing* is not a fault, and the binding line is where a count belongs. |
 | `DW0818` | **The graph names quest-side state that does not exist, or a beat has no place.** Four shapes of one referential rule between the graph and the quest documents: a `beats[]` entry naming a quest or objective the mission does not declare; a `gating` naming a flag no producer sets or a quest that does not exist; a `barred` connection whose `gating` is **empty**, which is passable from world load and therefore not barred; and the reverse direction — an objective in the quest documents bound to no node, or to two. The flag half reads `dsl::validate::produced_flags`, the one producer inventory, so the answer here is the same answer `DW0172` gives. **The reverse direction is the ordering tooth between the mission and the space** (spec-0049 §7): a graph may be authored at any point without touching the quests, and it may not coexist with a mission it ignores. Validation tier (exit 1). **Where stage 5 declares no quests at all**, every name this rule borrows from the mission is absent at once — every beat and every quest-gated way — so each refusal carries a clause saying so and pointing at `DW0150`, which is the one diagnostic that names that state. The clause is attached to both borrowing sites rather than to the beat alone: they are the same borrowing, and a clause on one of them would be a binding narrower than the rule. |
-| `DW0819` | **A one-way edge strands.** For every one-way traversal edge `u → v`, some path from `v` back to the critical path must exist over edges passable under the obtained set with which `u` was **first** reached. A body can only be at `v` having been at `u` holding at most that much; if it cannot rejoin the spine, the drop is a softlock. **Marked judgement**: the set at `u` is the maximal one available at that round, and a player may arrive holding less — the residual is covered over bytes by the branch-aware battery, and a walked blockout demonstrating a strand this called green is the evidence that moves it to a gate-state lattice. Analysis tier (exit 2). **Binding: one-way edges examined, stated.** |
+| `DW0819` | **A one-way edge strands.** For every one-way traversal edge `u → v`, some path from `v` back to the critical path must exist over edges passable under the obtained set with which `u` was **first** reached. A body can only be at `v` having been at `u` holding at most that much; if it cannot rejoin the spine, the drop is a softlock. **Marked judgement**: the set at `u` is the maximal one available at that round, and a player may arrive holding less — the residual is covered over bytes by the branch-aware battery, and a walked blockout demonstrating a strand this called green is the evidence that moves it to a gate-state lattice. Validation tier (exit 1). Carries the unwritten-mission caveat on the same terms `DW0816` does. **Binding: one-way edges examined, stated.** |
 | `DW0820` | **A shortcut closes no loop.** An edge marked `shortcut` must lie on a cycle: its ends stay connected with it removed. **Direction-blind and gating-blind** — the loop a shortcut closes is spatial, and a long way round that is gated or one-way is still the long way round. A shortcut that closes nothing is a corridor wearing a shortcut's name, and the graph is where that claim is cheap to refuse. Validation tier (exit 1). **Binding: shortcut edges examined, stated.** |
 | `DW0875` | **A place is classified twice, or not at all** (spec-0053). A node declares **exactly one of** `size_class` and `way_class`. Both is two answers to one question with nothing to choose between them — every geometric rule below would have to pick, and there is no rule to pick by. Neither is a place with no standard at all: `DW0832` has nothing to hold its extents to and the pacing projection has nothing to cross it in. The refusal names the offending place and, on the second shape, **both defined vocabularies**, because the author's next action is choosing from one of them. Validation tier (exit 1), `every_version` — the rule judges what the document SAYS, and below `0.19.0` there is no `way_class` to write. |
 | `DW0822` | **The pacing measurement.** Per critical-path leg, the nominal traverse length from the metrics table's size-class ladder, summed and multiplied by the pacing coefficient into a projected route-minutes figure. **Warning, exit 0, with no threshold anywhere**: the coefficient is uncalibrated until the first walked blockout and the first full playtest, and a threshold on a number that uncertain would be defending nothing. It is printed so the projection and the measurement taken over the built world can be set side by side, which is how the coefficient gets calibrated at all. **Binding: places crossed and steps measured, both in the message.** A **way** leg is measured, never looked up: a way class bounds a cross-section and leaves the run free, so what crossing one costs is its box's LONG horizontal extent, read off the site plan — there is no `nominal_traverse_blocks` on a way class and there is not going to be one, because a route's length is per-campaign geometry and never a standard. Where the campaign carries no site plan yet, a way leg has no geometry and the line says so: the leg is stated **unprojected** in its own binding rather than given an invented number, which is the ordinary state of a graph authored before its embedding and not a fault. |
@@ -5647,12 +5686,9 @@ Every code is `every_version`, for the reason `DW0812` is: there is no field
 below `dsl_version` 0.14.0 in which to write any of it, so no campaign can go red
 on a document it did not change.
 
-**One tier, and it is validation (exit 1).** Round 3 of the pipeline puts nothing
-at analysis tier, and the reason is worth stating because its sibling does the
-opposite: the layout graph's `DW0816`/`DW0817`/`DW0819` are *reachability*
-questions about a whole graph, which is the tier `DW0202`–`DW0204` answer at.
-Nothing here is that. Every rule below is a property of the document in front of
-it, so a plan that is wrong is wrong before anything is analyzed.
+**One tier, and it is validation (exit 1)**, as it is for the layout graph beside
+it. Every rule below is a property of the document in front of it, so a plan that
+is wrong is wrong before anything is analyzed.
 
 **What invokes them**: `dsl::siteplan::check`, from
 `dsl::validate::validate_campaign_with`, whenever the campaign directory holds a
