@@ -43,7 +43,7 @@ pub mod validate;
 pub use canonical::to_canonical_string;
 pub use chrome::{Chrome, ChromeString, validate_chrome_namespace};
 pub use detailplan::{Detail, DetailPlanContent, FLOOR_COURSE, Frame, bound_places, is_bound};
-pub use diagnostic::{Binds, Diagnostic, DwCode, Severity, codes};
+pub use diagnostic::{Binds, Diagnostic, DwCode, Group, Severity, Subject, codes};
 pub use effects::{
     EffectRootKind, EffectRootOwner, EffectRootSite, RootBinding, for_each_effect_root,
     for_each_effect_root_mut,

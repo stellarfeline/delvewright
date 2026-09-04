@@ -112,6 +112,7 @@ pub enum Binds {
 pub struct DwCode {
     id: &'static str,
     binds: Binds,
+    subject: Subject,
 }
 
 impl DwCode {
@@ -121,6 +122,7 @@ impl DwCode {
         DwCode {
             id,
             binds: Binds::EveryVersion,
+            subject: Subject::Campaign,
         }
     }
 
@@ -130,6 +132,20 @@ impl DwCode {
         DwCode {
             id,
             binds: Binds::Since(minor),
+            subject: Subject::Campaign,
+        }
+    }
+
+    /// Mark this code an **engine-property notice** — see [`Subject::Engine`]
+    /// for the test to apply before choosing it. Chained onto whichever
+    /// constructor states when the rule binds, because the two questions are
+    /// independent: *when does this start applying to a campaign* and *whose
+    /// state is it about*.
+    pub const fn about_the_engine(self) -> DwCode {
+        DwCode {
+            id: self.id,
+            binds: self.binds,
+            subject: Subject::Engine,
         }
     }
 
@@ -141,6 +157,11 @@ impl DwCode {
     /// When this rule starts binding a campaign.
     pub const fn binds(self) -> Binds {
         self.binds
+    }
+
+    /// Whose state this code's verdict is about.
+    pub const fn subject(self) -> Subject {
+        self.subject
     }
 }
 
@@ -233,6 +254,14 @@ pub struct Diagnostic {
     /// off one that was reported.
     #[serde(skip)]
     pub binds: Binds,
+    /// Whose state this verdict is about, carried over from the [`DwCode`] that
+    /// raised it — the key `delvec` groups its output by.
+    ///
+    /// Not part of the `--json` wire shape either, for the same reason `binds`
+    /// is not: it decides how the run PRESENTS a diagnostic, never something a
+    /// consumer reads off one.
+    #[serde(skip)]
+    pub subject: Subject,
 }
 
 impl Diagnostic {
@@ -250,6 +279,7 @@ impl Diagnostic {
             path: path.into(),
             message: message.into(),
             binds: code.binds(),
+            subject: code.subject(),
         }
     }
 
@@ -267,6 +297,79 @@ impl Diagnostic {
             path: path.into(),
             message: message.into(),
             binds: code.binds(),
+            subject: code.subject(),
+        }
+    }
+
+    /// **Which of a run's three groups this line belongs in**, lowest first.
+    ///
+    /// The one authority on the order `delvec` prints in. See [`Subject`] for
+    /// what the split is and why.
+    #[must_use]
+    pub fn group(&self) -> Group {
+        match (self.severity, self.subject) {
+            (Severity::Error, _) => Group::Refusal,
+            (Severity::Warning, Subject::Campaign) => Group::AboutTheCampaign,
+            (Severity::Warning, Subject::Engine) => Group::AboutTheEngine,
+        }
+    }
+}
+
+/// **Whose state a code's verdict is about.**
+///
+/// The question this answers, and the only question it answers: *if the author
+/// changed nothing about their campaign and the engine's own tables were
+/// finished, would this line go away?*
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum Subject {
+    /// The campaign. Every refusal, and every advisory whose verdict is a fact
+    /// about the documents in front of the author — the default, because a
+    /// diagnostic is addressed to an author unless it says otherwise.
+    #[default]
+    Campaign,
+    /// **The ENGINE**, regardless of the campaign: an engine table that is still
+    /// seeded, a standard that has not been calibrated. Nothing the author can
+    /// write moves it, and it is identical on every campaign the engine
+    /// compiles, so it prints after the lines that ARE theirs — see [`Group`].
+    ///
+    /// This is not a licence to make a campaign's problem quiet. The test is
+    /// whether the line would read the same on a different campaign; where it
+    /// names something the author wrote, it is a [`Subject::Campaign`] verdict
+    /// however advisory its tier.
+    Engine,
+}
+
+/// **The order a run's diagnostics are printed in**, and the labels they are
+/// printed under.
+///
+/// Author-actionable first, then advisories about the campaign, then notices
+/// about the engine. Measured on every site-plan run before this existed: four
+/// to six paragraphs saying "this is fine" or "the engine's own table is
+/// provisional", ahead of the one line the author was there to act on.
+///
+/// Ordering only — nothing is dropped, and every code that reported before
+/// reports now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Group {
+    /// A hard rejection. Yours to act on.
+    Refusal,
+    /// An advisory about the campaign: a measurement, or a verdict that depends
+    /// on something outside the documents.
+    AboutTheCampaign,
+    /// A notice about this engine, true regardless of the campaign.
+    AboutTheEngine,
+}
+
+impl Group {
+    /// The heading this group is printed under, with `n` lines in it.
+    #[must_use]
+    pub fn heading(self, n: usize) -> String {
+        match self {
+            Group::Refusal => format!("-- {n} refusal(s): these are yours to act on"),
+            Group::AboutTheCampaign => format!("-- {n} advisory(ies) about this campaign"),
+            Group::AboutTheEngine => {
+                format!("-- {n} notice(s) about this engine, true of any campaign")
+            }
         }
     }
 }
