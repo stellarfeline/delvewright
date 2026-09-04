@@ -19896,7 +19896,7 @@ The server jar is NOT shipped (ADR-0010); it is fetched by version at run time.\
 Level config for campaign `{}`. The world is generated on first server boot\n\
 from `server.properties` (no region files shipped, spec-0002):\n\n\
 {}- `level-seed={}` pins world generation (ADR-0006); v0 uses no other randomness.\n\
-- `gamemode=adventure`, `difficulty=peaceful`, no structures/monsters.\n\
+- `gamemode=adventure`, `difficulty={}`, no structures/monsters.\n\
 - `view-distance={}` / `simulation-distance={}` (chunks) are pinned here rather\n\
   than left to the host: the delve renders and ticks the same everywhere.\n\n\
 The compiler-emitted `#minecraft:load` bootstrap (`datapack/`) places each area's\n\
@@ -19905,6 +19905,7 @@ bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
             plan.namespace,
             horizon_bullet,
             plan.seed,
+            difficulty,
             DELVE_VIEW_DISTANCE,
             DELVE_SIMULATION_DISTANCE
         )
