@@ -5859,8 +5859,8 @@ fn emit_despawn_actor(
 /// listener-relative and, when a volume/pitch is declared (which forces an
 /// explicit position), is emitted through `execute as <who> at @s run … ~ ~ ~` so
 /// `~ ~ ~` resolves at each listener rather than at the command's own position.
-/// `at: actor` never reaches emission — it is rejected at validate-time
-/// (`DW0335`) until the actors surface lands.
+/// `at: actor` never reaches emission — no position resolves for a live actor,
+/// so it is rejected at validate-time (`DW0335`).
 fn emit_play_sound(
     plan: &Plan,
     sound: &str,
@@ -5883,7 +5883,7 @@ fn emit_play_sound(
             Some(p) => Some(format!("{} {} {}", p[0], p[1], p[2])),
             None => return, // unresolved anchor (referential validation reports it)
         },
-        Some(SoundAt::Actor { .. }) => return, // deferred: DW0335 at validate-time
+        Some(SoundAt::Actor { .. }) => return, // unsupported: DW0335 at validate-time
         _ => None,                             // `players` (default): player-relative
     };
     let listener_relative = pos.is_none() && (volume.is_some() || pitch.is_some());
@@ -19893,7 +19893,7 @@ The server jar is NOT shipped (ADR-0010); it is fetched by version at run time.\
 Level config for campaign `{}`. The world is generated on first server boot\n\
 from `server.properties` (no region files shipped, spec-0002):\n\n\
 {}- `level-seed={}` pins world generation (ADR-0006); v0 uses no other randomness.\n\
-- `gamemode=adventure`, `difficulty=peaceful`, no structures/monsters.\n\
+- `gamemode=adventure`, `difficulty={}`, no structures/monsters.\n\
 - `view-distance={}` / `simulation-distance={}` (chunks) are pinned here rather\n\
   than left to the host: the delve renders and ticks the same everywhere.\n\n\
 The compiler-emitted `#minecraft:load` bootstrap (`datapack/`) places each area's\n\
@@ -19902,6 +19902,7 @@ bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
             plan.namespace,
             horizon_bullet,
             plan.seed,
+            difficulty,
             DELVE_VIEW_DISTANCE,
             DELVE_SIMULATION_DISTANCE
         )

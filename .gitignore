@@ -99,3 +99,9 @@ gallery-prefabs/
 # `git add -A` from a committed second copy of the gallery. Not hypothetical:
 # .pyc files and 13 generated .nbt files have reached a branch exactly that way.
 gallery-out-en/
+# The coverage gate's own report, written by the same documented command
+# (`--report gallery-coverage.json --index gallery-coverage.md`). CI uploads
+# them as artifacts; on a creator machine they are two more untracked files a
+# `git add -A` sweeps into a branch.
+gallery-coverage.json
+gallery-coverage.md
