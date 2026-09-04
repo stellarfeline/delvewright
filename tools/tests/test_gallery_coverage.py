@@ -361,13 +361,30 @@ def test_a_demonstration_discharges_nothing_and_the_verdict_says_so(tmp_path, mo
         gallery = root / "gallery"
         (gallery / "probes" / "p").mkdir(parents=True)
         (gallery / "world.json").write_text(json.dumps(_doc({"id": "x"})))
+        # A probe is the primary plus a declared edit, so this one declares one.
+        # Perturbing `id` reaches no unit either way, which keeps `unaccounted`
+        # measuring the claim and nothing else.
         (gallery / "probes" / "p" / "probe.json").write_text(
-            json.dumps({"code": "DW9999", "units": claimed, "why": "w"})
+            json.dumps(
+                {
+                    "code": "DW9999",
+                    "units": claimed,
+                    "why": "w",
+                    "patch": [
+                        {"doc": "world.json", "op": "replace", "path": "/content/id", "value": "y"}
+                    ],
+                }
+            )
         )
         prefabs = root / "prefabs"
         prefabs.mkdir()
         report = root / "report.json"
         monkeypatch.setattr(mod, "GALLERY", gallery)
+        # …and the DOMAIN's source too, or the miniature materialises the real
+        # gallery: `gallery_domain` reads its own `GALLERY`, and a fixture that
+        # silently depends on the repository's own documents is a test about
+        # something other than what it says.
+        monkeypatch.setattr(mod.gallery_domain, "GALLERY", gallery)
         monkeypatch.setattr(mod, "schema_export", lambda _d: export)
         monkeypatch.setattr(mod, "find_delvec", lambda _e: pathlib.Path("/nonexistent/delvec"))
         monkeypatch.setattr(mod, "run_probe", lambda *_a: (1, ["DW9999"]))
@@ -422,3 +439,96 @@ def test_a_zero_compiler_binding_reds_rather_than_being_printed(tmp_path):
     assert "if zero_bindings:" in src, "the list must gate, not merely print"
     body = src.split("if zero_bindings:", 1)[1].split("\n    return 0", 1)[0]
     assert "return 1" in body, "a zero binding must fail the run"
+
+
+def test_the_patch_declaration_is_refused_every_way_of_being_unreadable():
+    """Shape, driven directly. Whether an edit APPLIES is `gallery_domain`'s half.
+
+    The two are separate on purpose and the reader is told which happened: a
+    malformed `op` is somebody typing, a pointer the primary no longer holds is
+    the gallery having moved under a probe that was right when it was written —
+    and only the second one is the drift this mechanism exists to make loud.
+    """
+    mod = _load_checker()
+    ok = {"code": "DW0001", "units": [], "why": "because"}
+    good = {"doc": "world.json", "op": "replace", "path": "/content/difficulty", "value": "peaceful"}
+    assert mod.probe_patch("p", {**ok, "patch": [good]}) == [good]
+    assert mod.probe_patch("p", ok) == [], "a probe with no patch declares none"
+
+    for broken, what in (
+        ({**good, "op": "set"}, "a verb that is not one of the three"),
+        ({**good, "op": None}, "no verb at all"),
+        ({k: v for k, v in good.items() if k != "doc"}, "no document"),
+        ({**good, "doc": ""}, "an empty document name"),
+        ({**good, "path": "content/difficulty"}, "a path that is not a JSON pointer"),
+        ({**good, "path": None}, "no path"),
+        ({k: v for k, v in good.items() if k != "value"}, "a replace with no value"),
+    ):
+        try:
+            mod.probe_patch("p", {**ok, "patch": [broken]})
+        except SystemExit:
+            continue
+        raise AssertionError(f"a patch edit with {what} must be refused")
+
+    for shape in ("not a list", {"doc": "x"}):
+        with pytest.raises(SystemExit):
+            mod.probe_patch("p", {**ok, "patch": shape if isinstance(shape, str) else [shape, 3]})
+
+
+def test_a_probe_that_perturbs_nothing_is_refused_by_name(tmp_path, monkeypatch):
+    """A probe that is the primary demonstrates nothing, and says so before delvec runs.
+
+    Reachable by an ordinary migration going one step too far — drop the copies,
+    forget the patch — and NOT caught by `assert_refused`, which asks only
+    whether the document was refused with the named code. A no-op probe IS the
+    primary, so the day the primary itself is refused every one of them passes
+    that check for a reason none of them names, which is the vacuity in its
+    purest form. The refusal fires ahead of the compiler for the same reason it
+    is worth having: *this probe perturbs nothing* is a different sentence from
+    *this probe was accepted*, and only the first says what to do.
+    """
+    mod = _load_checker()
+    gallery = tmp_path / "gallery"
+    (gallery / "probes" / "p").mkdir(parents=True)
+    (gallery / "world.json").write_text(json.dumps(_doc({"id": "x"})))
+    (gallery / "probes" / "p" / "probe.json").write_text(
+        json.dumps({"code": "DW9999", "units": [], "why": "w"})
+    )
+    prefabs = tmp_path / "prefabs"
+    prefabs.mkdir()
+    monkeypatch.setattr(mod, "GALLERY", gallery)
+    monkeypatch.setattr(mod.gallery_domain, "GALLERY", gallery)
+    monkeypatch.setattr(mod, "schema_export", lambda _d: _schema())
+    monkeypatch.setattr(mod, "find_delvec", lambda _e: pathlib.Path("/nonexistent/delvec"))
+    monkeypatch.setattr(mod, "run_probe", lambda *_a: (1, ["DW9999"]))
+    monkeypatch.setattr(sys, "argv", ["check", "--prefabs", str(prefabs)])
+    with pytest.raises(SystemExit):
+        mod.main()
+
+    # …and the SAME probe with one declared edit gets past this refusal, so what
+    # was measured is the perturbation and not some other objection.
+    (gallery / "probes" / "p" / "probe.json").write_text(
+        json.dumps(
+            {
+                "code": "DW9999",
+                "units": [],
+                "why": "w",
+                "patch": [{"doc": "world.json", "op": "replace", "path": "/content/id", "value": "y"}],
+            }
+        )
+    )
+    mod.main()
+
+
+def test_the_gate_names_the_probe_in_a_materialisation_refusal():
+    """`gallery_domain` raises; a refusal that does not say WHICH probe is a search."""
+    mod = _load_checker()
+    with pytest.raises(SystemExit):
+        mod.materialise_point("probe", REPO / "gallery" / "probes" / "peaceful-difficulty", REPO)
+
+
+def test_the_binding_line_states_the_patch_figures():
+    """A count nobody prints is a count nobody can contradict (CLAUDE.md)."""
+    src = (REPO / "tools" / "check-gallery-coverage.py").read_text()
+    for phrase in ("probe patches:", "probe(s) examined", "JSON path(s) touched"):
+        assert phrase in src, f"the binding line no longer states `{phrase}`"
