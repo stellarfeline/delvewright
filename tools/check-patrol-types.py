@@ -47,8 +47,10 @@ import sys
 import tempfile
 import urllib.request
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
+from versions import PinError, pin as versions_pin  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-VERSIONS_TOML = ROOT / "versions.toml"
 JAVA_SRC = ROOT / "tools" / "patroltypes" / "PatrolTypeDump.java"
 TAGS_JSON = ROOT / "crates" / "dsl" / "data" / "entity-tags-1.21.11.json"
 MANIFEST = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
@@ -81,18 +83,16 @@ def fail(msg: str) -> None:
 
 
 def read_pin() -> dict[str, str]:
-    """The `[minecraft]` block of versions.toml — the single source of the pin."""
-    text = VERSIONS_TOML.read_text(encoding="utf8")
-    section = text.split("[minecraft]", 1)
-    if len(section) != 2:
-        fail(f"{VERSIONS_TOML} has no [minecraft] section")
-    body = section[1].split("\n[", 1)[0]
+    """The `[minecraft]` block of versions.toml, read the way `tools/lib/versions.py`
+    reads it everywhere else — through `tomllib`, not a private regex over the
+    text. This tool keeps its own url/sha verification (`fetch`, below); only the
+    parse moves."""
     out = {}
     for key in ("version", "server_jar_url", "server_jar_sha256"):
-        m = re.search(rf'^{key}\s*=\s*"([^"]+)"', body, re.M)
-        if not m:
-            fail(f"versions.toml [minecraft] has no {key}")
-        out[key] = m.group(1)
+        try:
+            out[key] = versions_pin("minecraft", key)
+        except PinError as e:
+            fail(str(e))
     return out
 
 
