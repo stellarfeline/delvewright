@@ -164,7 +164,20 @@ if [ "$cmd" = "status" ]; then
 fi
 
 if [ "$cmd" = "down" ]; then
-  docker rm -f "$NAME" >/dev/null 2>&1 && echo "$NAME removed" || echo "$NAME was not running"
+  # `docker rm -f` on a name that never existed still exits 0 on modern docker —
+  # that is not "I removed something", so the old one-liner printed "removed" for
+  # a container that was never running. Ask first: existence is a different
+  # question from removal, and `docker container inspect` is the one that
+  # answers it. Where docker itself is not on PATH — this script's own test
+  # fixtures run with none, and so does a host that never installed it — the
+  # inspect call fails not-found (127) exactly the way `rm -f` already had to
+  # tolerate, and is read the same as "no such container": the disk half below
+  # must still run either way.
+  if docker container inspect "$NAME" >/dev/null 2>&1; then
+    docker rm -f "$NAME" >/dev/null 2>&1 && echo "$NAME removed" || echo "$NAME existed but could not be removed"
+  else
+    echo "$NAME was not running"
+  fi
   # The staged world. This is `up`'s own copy — a server.properties, the campaign
   # datapack and whatever the server then generated on top — so nothing outside
   # the session refers to it and `down` is the moment it stops being wanted.
