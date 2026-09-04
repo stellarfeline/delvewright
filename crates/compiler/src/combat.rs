@@ -2044,7 +2044,7 @@ mod tests {
         // Carve the pocket itself (the mob stands on [0,-1,0]).
         solid.remove(&[0, 0, 0]);
         solid.remove(&[0, 1, 0]);
-        let world = World::from_occupancy(occ(solid));
+        let world = World::from_occupancy(occ(solid), crate::nav::Premises::geometry_only());
         let seated = vec![(
             "wave/pit".to_string(),
             "minecraft:zombie".to_string(),
@@ -2061,7 +2061,7 @@ mod tests {
                 solid2.insert([dx, -1, dz]);
             }
         }
-        let open = World::from_occupancy(occ(solid2));
+        let open = World::from_occupancy(occ(solid2), crate::nav::Premises::geometry_only());
         assert!(unreachable_hostiles(&open, &seated).is_empty());
     }
 

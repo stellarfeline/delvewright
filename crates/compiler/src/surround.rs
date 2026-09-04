@@ -2268,7 +2268,7 @@ mod tests {
             }
         }
         let occ = crate::assembled::occupancy_of(blocks, &BTreeSet::new());
-        crate::nav::World::from_occupancy(occ)
+        crate::nav::World::from_occupancy(occ, crate::nav::Premises::geometry_only())
     }
 
     /// `DW0854` (spec-0026 §5): carving a 1-block staircase up the inner slope

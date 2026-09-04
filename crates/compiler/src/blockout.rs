@@ -1376,21 +1376,36 @@ pub fn check(plan: &crate::plan::Plan, blocks: &BTreeMap<[i32; 3], String>) -> O
     let mut findings: Vec<(DwCode, Diagnostic)> = Vec::new();
     let mut binding = BatteryBinding::default();
 
+    // **Both worlds here are geometry alone** (`nav::Premises::geometry_only`),
+    // and the decline is this battery's own subject matter rather than an
+    // oversight. The blockout battery judges a MASSING against the site plan
+    // that produced it — is the hole the hole the plan cut, is there a second
+    // one, does a body fit through the seam — and its two worlds carry their own
+    // sealing authority (`seal_unopened`, from the quest graph's monotone
+    // closure). Handing them the campaign's world-load gate seals as well would
+    // put two answers to "what is shut" in one world.
+    //
+    // The one premise that would sharpen rather than duplicate is the declared
+    // lethal volumes: a blockout node reachable only through a kill box is not
+    // reached. That is a real gap and it is a finding, not a repair made here —
+    // it changes what `DW0837` refuses, which is spec-0049's stage-5 contract
+    // and belongs to a round that can judge the campaigns it would newly red.
+    //
     // The world as a body meets it once every declared way is open. `DW0836` and
     // `DW0838` are questions about GEOMETRY — is the hole the hole the plan cut,
     // and is there a second one — so they are asked with nothing shut.
-    let open = crate::nav::World::from_occupancy(crate::assembled::occupancy_of(
-        blocks.clone(),
-        &BTreeSet::new(),
-    ));
+    let open = crate::nav::World::from_occupancy(
+        crate::assembled::occupancy_of(blocks.clone(), &BTreeSet::new()),
+        crate::nav::Premises::geometry_only(),
+    );
     // The world with every way the graph's own gating closure never opens sealed
     // as the plan sealed it. The base assembled model deliberately holds gate
     // regions open (`crate::assembled`), so a reachability proof taken over it
     // would walk through a door nothing in the campaign ever unlocks.
-    let sealed = crate::nav::World::from_occupancy(crate::assembled::occupancy_of(
-        seal_unopened(c, b, blocks),
-        &BTreeSet::new(),
-    ));
+    let sealed = crate::nav::World::from_occupancy(
+        crate::assembled::occupancy_of(seal_unopened(c, b, blocks), &BTreeSet::new()),
+        crate::nav::Premises::geometry_only(),
+    );
 
     seams_built(b, &open, &mut binding, &mut findings);
     nodes_reached(c, b, &sealed, &mut binding, &mut findings);
