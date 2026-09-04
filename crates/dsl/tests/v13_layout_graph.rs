@@ -538,7 +538,16 @@ fn dw0822_projects_the_route_and_refuses_nothing() {
     assert!(d.message.contains("2 step(s)"));
     assert!(d.message.contains("24 blocks"), "{}", d.message);
     assert!(d.message.contains("about 1 minute(s)"), "{}", d.message);
-    assert!(d.message.contains("NO threshold"));
+    assert!(
+        d.message
+            .contains("carries no threshold and refuses nothing"),
+        "{}",
+        d.message
+    );
+    // One line, with something to read the figure AGAINST: the reasoning for why
+    // there is no threshold lives in `compiler.md`'s `DW0822` row, not in every
+    // run's output.
+    assert!(d.message.contains("`target_minutes`"), "{}", d.message);
     // It refuses nothing: the green document is green.
     assert!(
         !check_campaign(&raw)

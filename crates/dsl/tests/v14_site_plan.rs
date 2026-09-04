@@ -635,6 +635,87 @@ fn a_volume_outside_the_region_is_refused() {
     assert!(has(&got, "DW0826"), "{got:?}");
 }
 
+/// **One cause, one line — the primary-absent side.** One box outside the region
+/// is one box's mistake, so it keeps its own line at its own path and names the
+/// region beside its own span. The fold below must never reach this case.
+#[test]
+fn a_single_box_outside_the_region_still_gets_its_own_line() {
+    let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["min"] = json!([60, 4]));
+    let leaving: Vec<&delvewright_dsl::Diagnostic> =
+        d.iter().filter(|x| x.code == "DW0826").collect();
+    assert_eq!(leaving.len(), 1, "one offender is one line: {leaving:?}");
+    assert_eq!(
+        leaving[0].path,
+        format!("/content/boxes/{}", box_of("node/vault")),
+        "and it is addressed at the box that is wrong"
+    );
+    assert!(
+        leaving[0].message.contains("`node/vault`")
+            && leaving[0].message.contains("against the region's"),
+        "{}",
+        leaving[0].message
+    );
+}
+
+/// **One cause, one line — the primary-present side.** The region is one number
+/// handed down by the brief, so shrinking it puts many boxes over the same edge
+/// at once and each per-box refusal would print the same two numbers with a
+/// different name in front. `DW0826` states the count, names every offender with
+/// its own overrun, and prescribes once — one line for the boxes and one for the
+/// whole-owned volumes, never one per object.
+#[test]
+fn one_region_number_is_one_finding_however_many_things_leave_it() {
+    let d = plan_diags(|v| v["content"]["region"]["extent"] = json!([20, 48, 64]));
+    let leaving: Vec<&delvewright_dsl::Diagnostic> =
+        d.iter().filter(|x| x.code == "DW0826").collect();
+    assert_eq!(
+        leaving.len(),
+        2,
+        "one folded line for the boxes and one for the volumes: {leaving:?}"
+    );
+
+    let boxes_line = leaving
+        .iter()
+        .find(|x| x.path == "/content/boxes")
+        .expect("the boxes are one finding addressed at the array");
+    // Every box east of x 19 leaves, and every one of them is named in the line
+    // that stands for it — a fold that dropped names would be a suppression.
+    for node in ["node/vault", "node/yard", "node/pit"] {
+        assert!(
+            boxes_line.message.contains(node),
+            "{node} is not named: {}",
+            boxes_line.message
+        );
+    }
+    assert!(
+        boxes_line.message.contains("of the 6 box(es)")
+            && boxes_line.message.contains("x 0..19")
+            && boxes_line.message.contains("never grounds to grow"),
+        "the count, the region and the prescription: {}",
+        boxes_line.message
+    );
+
+    let volumes_line = leaving
+        .iter()
+        .find(|x| x.path == "/content/volumes")
+        .expect("the volumes are one finding addressed at the array");
+    assert!(
+        volumes_line.message.contains("volume/undercroft-rock")
+            && volumes_line.message.contains("volume/sky-over-the-yard"),
+        "{}",
+        volumes_line.message
+    );
+
+    // The fold is about how many LINES say it, never about whether the run
+    // stops: both are still errors.
+    assert!(
+        leaving
+            .iter()
+            .all(|x| x.severity == delvewright_dsl::Severity::Error),
+        "{leaving:?}"
+    );
+}
+
 /// Two places may share a face; they may never share a cell.
 #[test]
 fn overlapping_boxes_are_refused_with_the_intersection() {
@@ -742,13 +823,26 @@ fn a_sill_a_body_cannot_reach_is_refused() {
 // DW0830 / DW0831 — the climb and the fall
 // ---------------------------------------------------------------------------
 
-/// `pit` hosts a stair that climbs 5 to the yard, and the gentlest standard
-/// pitch needs 5 blocks of run. Shrink the pit to a 4-block footprint and no
-/// standard pitch fits — the refusal names the rise, the run needed and the run
-/// available, which are the three numbers a plan edit needs.
+/// **A stair is measured against the climb its opening asks for, and against
+/// the run the host really has** — the arithmetic the derivation lays treads
+/// by, because it is the same function.
+///
+/// The green plan's `hall|cellar` stair has its sill at the hall's own floor,
+/// so its climb and its rise are both 5 and nothing distinguishes the two
+/// readings. Lift the sill to y 68 — one field, and a sill a plan is entitled
+/// to put where it likes — and the courses have to carry 9, which no standard
+/// pitch fits in the eight blocks of run the cellar affords. The refusal names
+/// the rise, the climb, the run needed and the run available, which are the
+/// numbers a plan edit needs.
+///
+/// This is the pair that says the check reads the derivation's own arithmetic.
+/// Measured against the RISE it is a run of 5 in a host affording 8, which is
+/// green — and the derivation then lays no treads at all, because it measures
+/// the climb. A place whose only way in is that stair comes back as an unreached
+/// `DW0837` five stages later, with nothing pointing at the seam.
 #[test]
 fn a_stair_that_no_standard_pitch_fits_is_refused_with_its_numbers() {
-    let d = plan_diags(|v| boxes(v)[box_of("node/pit")]["extent"] = json!([4, 4]));
+    let d = plan_diags(|v| seams(v)[seam_of("edge/hall-cellar")]["at"] = json!([14, 68]));
     let msg = d
         .iter()
         .find(|x| x.code == "DW0830")
@@ -756,7 +850,29 @@ fn a_stair_that_no_standard_pitch_fits_is_refused_with_its_numbers() {
         .unwrap_or_default();
     assert!(!msg.is_empty(), "{d:?}");
     assert!(msg.contains("climbs 5 block(s)"), "{msg}");
-    assert!(msg.contains("affords 4"), "{msg}");
+    assert!(msg.contains("for a climb of 9"), "{msg}");
+    assert!(msg.contains("affords 8"), "{msg}");
+    assert!(msg.contains("The treads carry 9, not 5"), "{msg}");
+}
+
+/// **A run exactly as long as the courses it must carry is buildable**, and is
+/// not refused.
+///
+/// The pit is 8 by 8 and hosts the stair up to the yard through a hole in its
+/// own ceiling. Shrink it to a 4-block footprint and the treads have exactly the
+/// four cells the four courses need: the top course stands under the hole and
+/// the run walks back to the far wall, which is what the derivation lays. A body
+/// reaches the bottom course from the cells beside it — the treads are the
+/// width of the doorway, not of the room.
+///
+/// Half of the same pair as the test above, in the other direction: measured
+/// against the RISE (5) rather than the climb (4) this plan was refused, and the
+/// refusal was false — the derivation builds it. Equality is not the defect; two
+/// arithmetics were.
+#[test]
+fn a_run_exactly_as_long_as_its_courses_is_not_refused() {
+    let got = plan_with(|v| boxes(v)[box_of("node/pit")]["extent"] = json!([4, 4]));
+    assert!(!has(&got, "DW0830"), "{got:?}");
 }
 
 /// A stair that climbs nothing is a walk that has been called a stair, and the
