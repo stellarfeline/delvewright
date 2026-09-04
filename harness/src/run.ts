@@ -327,6 +327,27 @@ async function main(): Promise<number> {
     criticalPath.steps.flatMap((s) => ("objective" in s ? [s.objective] : [])),
   );
   executor.usePathObjectives(pathObjectives);
+  // Who the bot may never swing at, from the path itself. Handed over before
+  // anything can fight: the executor refuses to classify a body without it,
+  // because the only alternative is a list of entity names in the harness.
+  executor.useNonCombatants(criticalPath.nonCombatants.kinds);
+  {
+    const nc = criticalPath.nonCombatants;
+    process.stderr.write(
+      `cast: ${nc.examined} NPC body(ies) examined; never a target: ` +
+        `${[...nc.kinds].sort().join(', ') || 'none'}\n`,
+    );
+    if (nc.unbound) {
+      // playtest-methodology rule 1: a census that matched nothing says so,
+      // rather than leaving an empty list to read as a pass.
+      process.stderr.write(`cast: UNBOUND — ${nc.reason ?? 'no reason given'}\n`);
+    }
+    for (const a of nc.ambiguous) {
+      // The compiler could not exclude this kind without making a fight
+      // unwinnable. Nobody may discover that from a corpse.
+      process.stderr.write(`cast: AMBIGUOUS \`${a.kind}\` — ${a.why}\n`);
+    }
+  }
   if (combatPlan) {
     executor.useCombatPlan(combatPlan, dieRetry, actorFloor);
     process.stderr.write(
@@ -492,6 +513,7 @@ async function main(): Promise<number> {
     // from — see teardown.ts for the fallback heuristic.
     report.recordNamedEntityDeaths(classifyNamedEntityDeaths(executor.namedEntityDeaths()));
     for (const f of executor.floorGateFindings()) report.recordFloorFinding(f);
+    for (const f of executor.unkillableFindings()) report.recordUnkillableFinding(f);
     // spec-0025 §3: every enumerated branch appears here — the one this session
     // walked with its result, and each of the others with the reason it did not.
     // A skipped branch is named, never silent.
