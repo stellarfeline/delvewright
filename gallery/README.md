@@ -6,17 +6,30 @@ played, released or staged.
 
 It exists so that a new authoring surface meets something built to receive it. A
 surface no campaign exercises is a surface nothing has ever compiled end to end,
-and that is not a hypothetical: of the DSL's **941 declared surface units**, the
-whole authored corpus — four campaigns and twenty-eight fixtures — writes 527.
-The gallery binds **every one of them**: 935 written, 6 proven refused by a
-probe the engine really rejects, and none left over.
+and that is not a hypothetical: the rest of the authored corpus — the campaigns
+and the fixtures together — writes only a part of what the DSL declares. The
+gallery binds **all of it**: every unit written, or proven refused by a probe
+the engine really rejects, and none left over.
 
-Four of those turned out not to work the first time anything reached them: an
-ambush and a named mob drop could not compile at all, a generated flag-gate test
-could not pass, and a one-waypoint lane emitted a march test asserting an index
-it had no way to reach. A fifth is open: the build's render plan and the one
-`delvec snapshot` derives disagree whenever a world-edit blocks the route, because
-one is computed after the edits and the other before them.
+**The coverage numbers are not written on this page.** The unit set is enumerated from the
+compiler's own `schema --stage all` export, which moves whenever the DSL does,
+so a count typed here would be a measurement with nothing behind it. The gate
+states it, on every run, and that line is the count:
+
+```
+gallery coverage: <N> unit(s) enumerated, <N> bound, <N> refusal-proven, 0 in NEITHER state.
+```
+
+The last figure is the one that matters: anything in neither state is a
+declared surface nothing has ever compiled, and the gate fails on it.
+
+Surfaces do fail when something first reaches them, which is the whole reason
+this campaign exists: an ambush and a named mob drop could not compile at all, a
+generated flag-gate test could not pass, and a one-waypoint lane emitted a march
+test asserting an index it had no way to reach — each found here, by binding it.
+Still open: the build's render plan and the one `delvec snapshot` derives
+disagree whenever a world-edit blocks the route, because one is computed after
+the edits and the other before them.
 
 ## Reading it
 
@@ -77,7 +90,6 @@ writes are perfectly legal, and what the engine refuses is holding them at once.
 
 | Probe | Code | What it tries |
 | --- | --- | --- |
-| `reserved-npc-roles` | `DW0141` | giving an NPC the `vendor` or `boss` role |
 | `two-placement-authorities` | `DW0839` | carrying `areas[]` and a site plan at once |
 | `aquatic-locomotion` | `DW0455` | declaring a body that swims |
 | `peaceful-difficulty` | `DW0468` | setting the world to peaceful |
@@ -94,11 +106,19 @@ writes are perfectly legal, and what the engine refuses is holding them at once.
 | `a-prompt-nobody-sees` | `DW0862` | writing a hint on an objective with no title to carry it |
 | `a-fight-nobody-points-at` | `DW0863` | requiring a fight and saying nothing about where it happens |
 
-Run any of them yourself:
+A probe is an OVERLAY, not a campaign — it ships only the stage files it
+changes, so `delvec validate` pointed at a probe directory refuses the
+directory (`DW0874`) rather than the document. Materialise it over the primary
+first, exactly as the coverage gate does, and then run any of them yourself:
 
 ```
-delvec validate gallery/probes/peaceful-difficulty --prefabs <generated-prefabs>
+python3 -c "import sys, pathlib; sys.path.insert(0, 'tools'); import gallery_domain; \
+  gallery_domain.materialise(pathlib.Path('probe-src'), pathlib.Path('gallery/probes/peaceful-difficulty'))"
+target/release/delvec validate probe-src --prefabs gallery-prefabs
 ```
+
+It exits 1, and the diagnostic it exits with is the one the probe's `probe.json`
+names.
 
 They are not documentation of the refusals. They **are** the refusals: the
 coverage gate runs each one and fails if the compiler ever starts accepting it,

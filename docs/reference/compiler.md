@@ -39,137 +39,6 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   also refuses a number a branch adds without a hand-written name — `is_v13` is
   computed from `0.13.0` and so cannot disagree with a second branch's claim on
   it, while `LAYOUT_GRAPH_SINCE` can.
-- v0.6 amends spec-0010's mitigation hierarchy: the night-vision mitigation is now
-  the stage-1 `areas[].mitigation` **declaration** (emitting a real clocked
-  `effect give`), not a class-kit display-name heuristic.
-- spec-0010 has **landed** at `dsl_version 0.5.0`: stage-1
-  `lighting`/`time`/`weather`, effect verbs `set-time`/`set-weather`, the
-  assembled-world light model + deterministic relight pass (`crate::light`), the
-  measured redefinition of `DW0210`, and diagnostics `DW0211`/`DW0196`.
-- spec-0012 checkpoints + the spec-0014 stealth verbs have **landed** at
-  `dsl_version 0.6.0`: stage-5/dialogue `set-checkpoint{anchor, on_respawn?}`
-  (party-wide `spawnpoint @a` + the `storage dw:cp pos` mirror), the stage-5
-  `begin-stealth{zones, on_caught?, grace_ticks?}` / `end-stealth` verbs, the
-  no-stranding / placement proofs `DW0315`/`DW0316`, and the stealth-zone proof
-  `DW0327`. The `dw:cp` mirror is the shared "last checkpoint" contract spec-0013's
-  boundary return reads.
-- spec-0013 has **landed** at `dsl_version 0.6.0`: stage-1 `horizon`
-  (`ocean` superflat sea backdrop) and `boundary` (derived playable region +
-  per-second return-to-checkpoint clock), diagnostics `DW0320`/`DW0321`, and the
-  `dw:region`/`dw:cp` storage mirrors. Absent `horizon`/`boundary` keeps v0.5
-  output byte-identical.
-- spec-0014 sound + art-title have **landed** at `dsl_version 0.6.0`: the
-  `play-sound` effect (`DW0326` unknown sound, `DW0335` deferred `at: actor`) and
-  the `narrate` `style: art` `delve:art` pixel-banner font (`DW0328` glyph
-  coverage). The remaining v0.6 surface (scripted actors) lands in a sibling PR
-  under the same version gate.
-- `dsl_version 0.6.0` also carries per-effect `requires_flags` (a
-  per-player `execute if score @s dw.f_<flag> matches 1` guard on any quest /
-  trigger effect except `campaign-complete`) and a verbatim blockstate suffix
-  `id[key=value,…]` on `set-block`/`interact.prop` blocks. Both default to
-  absent, so a campaign that uses neither is byte-identical.
-- spec-0011 (traps) has **landed** at `dsl_version 0.6.0`: the stage-5 `traps[]`
-  surface (redstone-native hazards bound to `anchor/trap` markers — trigger
-  `pressure-plate`/`tripwire`/`trapped-chest`, a compiler-filled `dispense`
-  payload, `lethality`, `disarm`, `reset`), the completability proof `DW0342` (a
-  forced lethal trap must be avoidable, `once`-survivable, or disarmable), the
-  declaration/payload validation `DW0340`/`DW0341`, and the defense-in-depth
-  `gamerule tnt_explodes false` seal (v0.6-gated). Absent `traps` keeps pre-0.6
-  output byte-identical. **Superseded in its signal half by spec-0022**: redstone now keeps only the trigger, and a trap's consequence is a command `payload` (`volley` / `collapse` / any quest effect) — the trigger-hardware layer, the disarm affordance and the `DW0342` completability proof carry over unchanged. The trap `effect` was `dispense` only in the spec-0011 landing;
-  `release-wave`/`set-hazard` (spec-0011's other effect variants) and the
-  `anchor/trap` prefab-hardware admission audit are deferred to follow-ups. The
-  spec's reserved diagnostic numbers were stale (all taken since) and were
-  renumbered off them (0197/0198/0314) to `DW0340`/`DW0341`/`DW0342`.
-- The flask's **contents** have **landed** at `dsl_version 0.8.0` (spec-0016 §1):
-  a class-kit item may declare `contents` — vanilla's
-  `minecraft:potion_contents` component (a named `potion`, an `effects[]` list, a
-  `color`) — and the bonfire replenish re-gives the poured-identical item through
-  the same helpers the class kit uses, clearing by the components rather than by
-  the bare item id. `DW0487` refuses the placeholder (a potion-bearing kit item
-  with no contents is the Uncraftable Potion), `DW0486` refuses contents 1.21.11
-  cannot pour. Absent `contents` keeps pre-0.8 output byte-identical.
-- At `dsl_version 0.8.0` a `collect` objective may ADOPT the chest/barrel the
-  prefab already placed (`container`), name the item it hands the player
-  (`item_name`, l10n key `obj.<q>.<o>.item_name`), and pad that container so it reads full (`fill_count`).
-  New build-tier proof `DW0438` (the adopted container is really there, sibling of
-  `DW0431`); `DW0432` / `DW0435` generalize from "`loot`" to "any positional
-  container fill". An adopted container is a required anchor for the layout solver
-  and becomes the `critical_path` step position (the bot opens that block).
-  Generated PackTest `collect_container`. All three fields absent → byte-identical.
-- `dsl_version 0.9.0` carries declared `drops[]` on an elite/boss wave mob and on
-  an actor — either a worn `{slot}` or a `{item, name?}` quest token — plus the
-  `collect` objective's
-  `dropped_by`, which gates provisioning on the fight instead of a placed chest
-  and makes "kill the boss → take its key → open the door" a chain the compiler
-  proves (`DW0492`/`DW0493`) rather than an authoring intention. Only `elite`/
-  `boss` may declare drops (`DW0491`); a slot must be one the same mob's
-  `equipment` really fills and may appear once (`DW0490`). Absent `drops` /
-  `dropped_by` keeps v0.8 output byte-identical; declaring either below 0.9.0 is
-  `DW0141`.
-- spec-0031 has **landed** at `dsl_version 0.10.0`: the campaign-wide `on_death`
-  bundle — **effect root R7**, the effects that run at the moment a player dies —
-  and, alongside it, `shortcuts[].on_unlock` finally entering the enumeration as
-  **root R6**, which it should have been since spec-0016 §2. `on_death` rides the
-  existing `dw.deaths` death edge and adds no second detector; the *position* a
-  player died at is deliberately not captured yet (`emit::death_position_capture`,
-  an empty named seam — the vanilla mechanism is being measured live). A campaign
-  declaring no death beat is byte-identical, proven by rebuilding
-  `nobodys-cave-island` on both engines in both declared languages: 610 files, 608
-  identical, the two deltas being the engine-version string stamped into the
-  creator-loop `layout.json` and that file's `manifest.json` hash. Declaring
-  `on_death` below 0.10.0 is `DW0141`.
-- spec-0031's **region fill / clear** has landed at the same `dsl_version 0.10.0`
-  (no bump): `fill-region` / `clear-region` make "a declared region, filled or
-  cleared at runtime" expressible without naming a gate. The capability was already
-  in the engine twice, privately, inside two verbs — so it MOVED to the object class
-  it acts on rather than being added beside them: `open-gate` / `close-gate` keep
-  their names and their authoring surface and are now configured uses of it, sharing
-  one emission (`emit::fill_region_command`) and one completability rule
-  (`plan::RegionEvent` → `nav::region_state_at`). Byte identity is the hard
-  requirement and is measured, not asserted: **2626 output files across 23 builds —
-  `nobodys-cave-island` and `hollow-vigil` in both declared languages plus all 19
-  fixture campaigns — are identical to the merge-base engine**, with identical exit
-  codes and diagnostics. Declaring either verb below 0.10.0 is `DW0141`.
-- spec-0031 §"Status effect" and §"Teleport players" have **landed** at the same
-  `dsl_version 0.10.0` (no bump — an additive fence on the existing version):
-  `give-effect` / `clear-effect` expose the status effects the engine has emitted
-  internally since v0.6, and `teleport` exposes the region move. Two design
-  choices are the whole of it. A grant has **no infinite form** and its removal is
-  its own duration (`DW0540` refuses the pattern that reintroduces the hazard),
-  and a teleport's selection is **total** — no machinery-type exemption of the
-  kind `lethal_volumes[]` carries, because an NPC is a body plus a co-located
-  interaction hitbox and exempting that type would separate them; the cases the
-  exemption would have hidden are a compile error instead (`DW0542`). A campaign
-  declaring neither verb is byte-identical.
-- spec-0031 acceptance criterion 9 — **the lift, authored entirely in campaign
-  JSON** — is **partly discharged, and the remainder is a finding**. `delvec`
-  gains nothing here: `crates/compiler/tests/fixtures/lift` authors the owner's
-  timing table as the steps of one `sequence` over the five existing primitives,
-  and `crates/compiler/tests/v10_lift.rs` reads it back off the emission. What is
-  proven: the seven-step table emits step for step at ticks 0/1/2/3/4; the
-  create-before-clear invariant holds; both planner rulings need no surface of
-  their own (the no-op at the occupied floor is the gate's `not-equals` term on
-  the tick line, and "a pull during a ride is ignored, not queued" is the
-  `data remove entity @s interaction` that runs whether or not the gate opened);
-  and no name in any of the seven stage schemas contains the word. What is NOT,
-  each recorded as an executing test that reds the day it becomes authorable:
-  **(1)** the owner's lever *inside* the car is `DW0542` and correctly so — a
-  `teleport` moves entities and not blocks and its `to` is a **point**, so an
-  affordance riding a car is torn off its lever and stacked on the destination
-  anchor — which means a car cannot be commanded from inside it, and the fixture
-  carries only the call half; **(2)** a runtime region is `StealthZone { anchor,
-  extent }`, a box *centred* on a prefab anchor, so the car's deck (one below the
-  riders), its arrival cell (one above the deck) and the shaft-bottom lethal
-  volume (one below the ground-floor deck) are un-nameable — the general region
-  language already exists one stage away in stage 7's `select` (`box {min,max}`
-  in a `piece-local` / `anchor-relative` frame, plus `union`/`intersect`/
-  `subtract`) and stage 5 cannot see it; **(3)** "the car always exists
-  somewhere" is authored, not enforced — a sequence that clears its only car
-  before filling the next compiles green. The runtime half of the criterion is
-  **debt**: the two `teleport_<key>` templates the fixture emits prove step 5 of
-  each ride on the pinned toolserver, and no template exercises the sequence's
-  own timeline, because the engine generates templates per verb and has none for
-  a `sequence`.
 
 ---
 
@@ -349,7 +218,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | Field | Behavior | Since |
 |-------|----------|-------|
 | `id`,`name`,`area`,`anchor`,`base_entity` | NPC body placed at resolved anchor; `name` → l10n `npc.<n>.name`. | 0.1 |
-| `role` | Enum `quest-giver|flavor`; `vendor`/`boss` reserved → `DW0141`. | 0.2 |
+| `role` | Enum `quest-giver|flavor` — what the speaking part does. How hard a fight is billed is `tier` on the body that fights (a `waves[]` entry or a stage-5 actor), never a role here. | 0.2 |
 | `persona{archetype,speech_style,motivation,…,relationships[]}` | Structured; **excluded** from l10n; relationship refs validated in-stage (`DW0112`). | 0.2 |
 | `skin{texture_id,model}` (opt) | Switches body to `minecraft:mannequin`; PNG baked to resourcepack. Missing PNG → `DW0309`; bad/dup id → `DW0190`. The bake walks **bodies**, not one stage's list (`dsl::body_skin_sites`), so a stage-5 actor's `skin` is served and refused by exactly this rule. Every summon whose entity id comes from **content** rather than this switch (`npc.base_entity`, `actor.entity`, and the `unleash` twin, which has no skin branch at all) is spliced with `pose:"standing"` when that id names a mannequin (`emit::mannequin_pose_nbt`): a mannequin summoned without an explicit pose serializes it as `DYING`, which the server then fails to encode at save (`Failed to encode value 'DYING'` in a PackTest world's teardown). A non-mannequin entity gains nothing, so existing campaigns stay byte-identical. | 0.4 |
 | `deferred` (opt, bool) | **Not** summoned at world init; the NPC's body + hitbox appear only when a `spawn-npc` effect fires, at this same `anchor` (the dual of `despawn-npc`). Default `false` = pre-0.6 behavior, byte-identical. Never spawned → `DW0197`; a `talk-to` provably ahead of every spawn → `DW0198`. | 0.6 |
@@ -495,7 +364,7 @@ flag only optional content produces is `DW0868`. The closure is
 | Effect `cutscene{shots[]}` / `cutscene{path[],seconds,look_at?}` | Two-camera spectator dolly; clip → `DW0308` (checked **per shot**, over both the authored polyline and the client-rendered keyframe chords); a shot panning over the 6°/tick angular budget → `DW0347`. Two mutually exclusive spellings, normalized to one shot list: multi-shot `shots: [{path[],seconds,look_at?}, …]` (v0.6) or the single-shot `path`+`seconds` fields (v0.4) — mixing/omitting both, or a shot with an empty `path`, is `DW0199`. Shots play back-to-back inside ONE save/restore bracket (hard cut). `look_at {anchor,offset?}` aims every dolly camera at that world point; absent = face along the direction of travel. **`shot_style` (v0.6, spec-0015)**: a shot may instead declare a style preset + `subject {anchor|npc|actor, offset?}` (+ optional `dist`, `bearing`, `degrees` (orbit only), `subject_b` (two-shot only)); the compiler expands the style deterministically into the dolly + aim + duration (see "Shot styles" below). Explicit `path`/`look_at`/`seconds` always override the corresponding expanded part. Style-shape violations are `DW0348`; a `side-track`/`low-follow` whose subject has no sibling `move-npc`/`move-actor` (same effect group or sequence) is `DW0349`; an unknown subject npc/actor is `DW0112`. | 0.4 / `look_at`+`shots`+`shot_style` 0.6 |
 | Effect `set-time{time}` | Instantaneous dimension-global cut (`time set <kw>`, or `time set <ticks>` for `dusk`/`dawn` — see the stage-1 `time` row); persists (cycle frozen). | 0.5 |
 | Effect `set-weather{weather}` | Instantaneous dimension-global cut (`weather <kw>`); persists (cycle frozen). | 0.5 |
-| Effect `play-sound{sound,at?,volume?,pitch?}` | Plays a sound event; `sound` validated (`DW0326`); `at` = `{anchor}`\|`players` (default)\|`{actor}` (deferred → `DW0335`); positional or per-player. | 0.6 |
+| Effect `play-sound{sound,at?,volume?,pitch?}` | Plays a sound event; `sound` validated (`DW0326`); `at` = `{anchor}`\|`players` (default); `{actor}` parses and is refused (`DW0335` — no live-actor position resolves); positional or per-player. | 0.6 |
 | Effect `damage-players{amount,in?,damage_type?}` | Deals `amount` half-hearts of damage over vanilla `/damage` — a real `on_caught`/souls consequence. **Audience (spec-0018)**: on a quest beat / trigger the hazard is a fact about the delve, so it hits the whole party (`execute as @a[…] run damage @s …` — `/damage` takes ONE entity, see §1); inside a solo `on_caught`/`on_respawn` bundle it hits exactly that player (`execute if entity @s[…] run damage @s …`). `amount ≥ 40` is lethal through golden apples. `in {anchor,extent}` narrows to acting players inside the anchor-centred box (same box model as a stealth zone; anchor `DW0142`). `damage_type` is a **curated enum** of vanilla types that respect `keepInventory` and do NOT bypass totems (no `out_of_world`/`generic_kill`), default `generic`; an unknown value is `DW0100` (needs no registry). Named `damage_type`, not `type`, since the effect enum is internally tagged on `type`. Per-effect `requires_flags` allowed (per-`@s` verb). Every form is guarded by `tag=!dw_cutscene` — a player watching a cutscene is never harmed (§4). | 0.6 |
 | Effect `set-checkpoint{anchor,on_respawn?}` | Party-wide respawn point: `spawnpoint @a` at the anchor + `storage dw:cp pos` mirror + the active-checkpoint marker. Monotonic by quest order. `on_respawn[]` = per-player effects re-run on respawn while active (vanilla `deathCount` detection). A death at the active checkpoint **re-seats** the respawned player on its cell rather than trusting vanilla's respawn lookup, which silently falls back to the world spawn on a cell it dislikes (§emission). Proofs `DW0315`/`DW0316`. Also a dialogue effect. | 0.6 |
 | Effect `bonfire{anchor,on_rest?,prompt?,rest_label?,save_label?}` | The souls sibling of `set-checkpoint` (spec-0016 §1). The effect only **arms** a rest affordance at the anchor (a `minecraft:interaction` the party right-clicks; the campfire is prefab dressing) — the respawn point moves when the party actually **rests**. Right-clicking opens a dialog with **exactly two options** (a campfire must be a real interaction, never a lazy "arrive" objective): *rest and save* runs the full loop (the resting player is restored, their flask refilled, the checkpoint moved, every `respawns_on_rest` wave re-seated, `on_rest[]` fired); *save only* moves the checkpoint and does nothing else. Every respawn at this bonfire runs the same `on_rest[]` scene reset and re-seat. Arming is idempotent (guarded summon), resting is deliberately repeatable (unlike the one-shot trap disarm). `prompt` / `rest_label` / `save_label` (v0.8) author the three dialog strings; absent, the compiler bakes its canonical English (`Bonfire` / `Rest and save` / `Save only`) exactly as `world.boundary.message` does — an authored string is inventoried (`fx.….rest_prompt` / `.rest_label` / `.save_label`), translates like any other player-visible line, and the two labels carry the `DW0331` button budget because they are drawn on the same button a dialogue option is. A campaign with a bonfire whose class kits declare no `flask` is `DW0476`. Proofs are inherited: a bonfire is collected as a checkpoint, so `DW0316` (standable) and `DW0315` (no stranding — rooted at the ARMING beat, the earliest rest) apply unchanged. Quest/trigger effect only (not a dialogue effect). | 0.6 / the two-option dialog + authored labels 0.8 |
@@ -3752,7 +3621,7 @@ to a list of codes.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | **`mandatory: false` below dsl_version 0.17.0**, where the surface is reserved (spec-0051 §9). `every_version` deliberately, and it is the first case the `Binds` doctrine names: the rule judges what the document SAYS against the version that document itself declares, so its verdict is a function of the campaign alone. Fencing it as `Since(17)` would *stop rejecting* `mandatory: false` in a 0.12 campaign — the exact inversion the doctrine warns about. Below the fence the partition is forced empty, so an off-closure quest raises `DW0132` alongside this, exactly as it did before the surface existed. Prescription: raise the **quest-plan** stage's `dsl_version` to 0.17.0, or set `mandatory: true`. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface: the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending` (spec-0025); the class-kit `flask`, a kit item's potion `contents` and the `bonfire` rest-dialog labels (spec-0016 §1); actor `tier` (spec-0023); the stage-6 dialogue-option `tooltip`; the `close-gate` `sealed_hint`; and the `collect` container-adoption trio `container` / `item_name` / `fill_count` (each field is reserved independently, and an explicit `fill_count: 0` declares nothing since it is the default); under pre-0.10 the v0.10 surface (spec-0031): the stage-5 `state[]`, `lethal_volumes[]` and `on_death` sections, `requires_state` at every gate site, and the effects `set-state` / `add-state` / `clear-state` / `fill-region` / `clear-region`; under pre-0.11 **both** v0.11 surfaces — the press-answer lift (the `narrate` `style: actionbar` and a trigger's `audience: presser`, fenced on the quests stage) and the per-body `traversal` declaration (spec-0034, fenced on the stage that declares it: the stage-2 npc on `npcs`, the stage-5 actor on `quests`, so one stage may adopt it while the other has not)). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface: the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending` (spec-0025); the class-kit `flask`, a kit item's potion `contents` and the `bonfire` rest-dialog labels (spec-0016 §1); actor `tier` (spec-0023); the stage-6 dialogue-option `tooltip`; the `close-gate` `sealed_hint`; and the `collect` container-adoption trio `container` / `item_name` / `fill_count` (each field is reserved independently, and an explicit `fill_count: 0` declares nothing since it is the default); under pre-0.10 the v0.10 surface (spec-0031): the stage-5 `state[]`, `lethal_volumes[]` and `on_death` sections, `requires_state` at every gate site, and the effects `set-state` / `add-state` / `clear-state` / `fill-region` / `clear-region`; under pre-0.11 **both** v0.11 surfaces — the press-answer lift (the `narrate` `style: actionbar` and a trigger's `audience: presser`, fenced on the quests stage) and the per-body `traversal` declaration (spec-0034, fenced on the stage that declares it: the stage-2 npc on `npcs`, the stage-5 actor on `quests`, so one stage may adopt it while the other has not)). |
 | `DW0142` | Anchor not provided by the area's bound prefab — or, on a site-plan campaign, not among the names the derivation places. The predicate is `AnchorProviders`, unchanged; the prescription is the placement authority's (see the remediation contract above), so a derived map is given the synthesized vocabulary instead of being sent to prefab metadata it does not have and told not to invent a name it is required to invent. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. **Two readings, one code, and the discriminator is whether stage 5 declares any quests at all.** Where it declares some and this id is not among them, the refusal is per plan entry and names its two ordinary remedies — write the expansion, or drop the entry — plus how many quests stage 5 does declare, which is what says *mismatch* rather than *unwritten*. Where it declares **none**, the campaign is between the stage-4 plan and the stage-5 quests, every planned quest is unexpanded by construction, and the two remedies are both wrong: writing the expansions IS the next authoring step, and the plan is not a mistake to delete. That case is **one** diagnostic on `/content/quests`, on the model `DW0874` sets — it names every planned quest, says the state is an authoring state rather than a fault, says why the refusal still stands (a plan entry with no expansion has no trigger, no objective and no completion, so nothing of it is emitted), and says there is **no cheaper way out**: the schema-minimal stage-5 quest is refused again by `DW0481` once per quest and `DW0460` once per NPC live in it, so writing empty expansions raises the count instead of lowering it. That last sentence is a measurement and `crates/compiler/tests/plan_awaiting_expansion.rs` takes it; the wording is `crates/dsl/tests/dw0150_plan_awaiting_expansion.rs`. Severity, code and exit are identical in both readings — a plan awaiting expansion cannot build, and a warning would let an unbuildable campaign read as buildable at the step where the difference decides whether anyone writes stage 5. |
@@ -3839,7 +3708,7 @@ identically.
 |------|---------|
 | `DW0326` | A `play-sound.sound` (v0.6) or `narrate.sound` (v0.4) id is not a known 1.21.11 sound event (validated against the vendored `sound_event` registry, `crates/compiler/data/sounds-1.21.11.json`; `minecraft:` prefix optional). |
 | `DW0328` | An `art`-styled `narrate` string — the English source **or** any declared-language sidecar translation — uses a character outside the `delve:art` font's glyph inventory (A–Z, 0–9, space, `! " ' ( ) , - . / : ; ?`; lowercase folds to uppercase). Forces per-language art titles to stay ASCII/Latin — a `zh-cn` art translation must be an ASCII rendition. |
-| `DW0335` | A `play-sound` targets `at: {actor: …}`, accepted by the schema but not yet wired — the actors surface (spec-0014 `actors[]`) has not landed. Use `at: {anchor}` or `at: players`. (Graduates when the actors PR wires actor-position resolution.) |
+| `DW0335` | A `play-sound` targets `at: {actor: …}`. A sound plays at fixed coordinates or at each listener's own position, and the compiler resolves no position for a live actor, so the sound would be silent. Use `at: {anchor}` or `at: players`. |
 
 #### The `delve:art` font
 
