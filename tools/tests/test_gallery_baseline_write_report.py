@@ -110,7 +110,7 @@ def test_the_rebase_report_refuses_the_drift_reading_and_names_both_ends(capsys)
     produced = _produced(NEW_BASE, PATHS)
     effect = GB.write_effect(on_disk, produced, NEW_BASE)
     out = "\n".join(
-        GB.write_report(effect, _delta_of(produced), [], ["  ~ primary.en.content_sha: …"])
+        GB.write_report(effect, _delta_of(produced), [], ["  ~ primary.en.resource_pack_sha1: …"])
     )
 
     first, rest = out.split("\n", 1)
@@ -288,9 +288,9 @@ def test_the_field_delta_left_label_names_what_old_actually_is():
     Calling it "baseline" in the write arm asserted that the file on disk had
     moved — the same misreading one line further down the page.
     """
-    old = {"primary.en": {"content_sha": "1" * 40, "outputs": {}}}
+    old = {"primary.en": {"resource_pack_sha1": "1" * 40, "outputs": {}}}
     new = copy.deepcopy(old)
-    new["primary.en"]["content_sha"] = "0" * 40
+    new["primary.en"]["resource_pack_sha1"] = "0" * 40
 
     assert "baseline `" in GB.manifest_field_delta(old, new)[0]
     labelled = GB.manifest_field_delta(old, new, left="`abcdef123456`")[0]

@@ -145,7 +145,6 @@ fn build_with_trap_hw(
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

@@ -128,7 +128,6 @@ fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }
@@ -164,7 +163,6 @@ fn build_localized(
         &tree,
         &prefabs,
         Some(lang),
-        "unpinned",
         &BTreeMap::new(),
     )
 }
@@ -198,7 +196,6 @@ fn build(campaign: &Campaign) -> Result<BuildOutput, BuildFailure> {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }
@@ -762,7 +759,6 @@ fn dw0210_on_a_built_site_plan_names_the_rooms_and_a_reachable_remedy() {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect_err("an unlit derived blockout at midnight must fail the light gate");

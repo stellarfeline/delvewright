@@ -199,7 +199,6 @@ fn try_build(who: &str, teleport_extent: &str) -> Result<BuildOutput, (String, S
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .map_err(|e| match e {
@@ -369,7 +368,6 @@ fn a_campaign_without_a_teleport_emits_no_ledger() {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .unwrap();

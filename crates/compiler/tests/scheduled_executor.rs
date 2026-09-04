@@ -197,7 +197,6 @@ fn build_campaign(campaign: &Campaign, inputs: &BTreeMap<String, Vec<u8>>) -> Bu
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates")

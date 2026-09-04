@@ -292,7 +292,6 @@ fn build(who: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates");

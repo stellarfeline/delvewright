@@ -160,7 +160,6 @@ fn try_build(c: &Campaign, prefab_dir: &Path) -> Result<BuildOutput, emit::Build
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }
