@@ -65,7 +65,7 @@ use delvewright_dsl::layout::{Direction, Edge};
 use delvewright_dsl::metrics::Reads;
 use delvewright_dsl::prefab::ContractFace;
 use delvewright_dsl::siteplan::{PlacedBox, PlacedSeam};
-use delvewright_dsl::{Campaign, Diagnostic, DwCode, NodeId};
+use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, NodeId};
 
 use crate::plan::PiecePlacement;
 use crate::registry::PrefabRegistry;
@@ -75,19 +75,19 @@ use crate::solver::Rotation;
 const STAGE: &str = "detail-plan";
 
 /// `DW0841`: detail without a passed, fresh walk of this plan.
-pub const DW_UNWALKED: DwCode = DwCode::every_version("DW0841");
+pub const DW_UNWALKED: DwCode = DwCode::every_version("DW0841", ExitTier::Build);
 
 /// `DW0842`: the binding does not bind.
-pub const DW_BINDING: DwCode = DwCode::every_version("DW0842");
+pub const DW_BINDING: DwCode = DwCode::every_version("DW0842", ExitTier::Build);
 
 /// `DW0843`: the piece is not the shape of its allocation.
-pub const DW_NOT_THE_FRAME: DwCode = DwCode::every_version("DW0843");
+pub const DW_NOT_THE_FRAME: DwCode = DwCode::every_version("DW0843", ExitTier::Build);
 
 /// `DW0844`: the piece's openings are not the plan's seams.
-pub const DW_FACES: DwCode = DwCode::every_version("DW0844");
+pub const DW_FACES: DwCode = DwCode::every_version("DW0844", ExitTier::Build);
 
 /// `DW0845`: an owed anchor has no standing.
-pub const DW_ANCHOR_STANDING: DwCode = DwCode::every_version("DW0845");
+pub const DW_ANCHOR_STANDING: DwCode = DwCode::every_version("DW0845", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // The instrument (spec-0050 §2)

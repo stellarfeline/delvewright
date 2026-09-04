@@ -259,3 +259,87 @@ def test_a_block_comment_hides_a_code_but_not_the_code_after_it(gate):
     covered = gate.tested_codes()
     assert "DW0304" not in covered
     assert "DW0305" in covered
+
+
+# ------------------------------------------------------------- exit tier --
+#
+# The tier decides the process exit status, and it is stated twice — once as
+# `ExitTier::…` on the constant, once as a row of the reference's §1 table. Two
+# statements of one fact with nothing comparing them is how the reader's copy
+# goes stale, so the gate compares them; these drive its two readers.
+
+CATALOG = "| Code | Meaning |\n| --- | --- |\n"
+TIER_TABLE = "| Code | What the author changes |\n| --- | --- |\n"
+
+
+def test_a_declared_tier_is_read_off_the_constant(gate):
+    _rs(
+        gate,
+        "compiler",
+        "emit.rs",
+        'pub const DW_WAVE_NO_ROOM: DwCode = DwCode::every_version("DW0312", ExitTier::Analysis);\n'
+        'pub const DW_BUILD: DwCode = DwCode::every_version("DW0300", ExitTier::Build);\n'
+        'pub const DW_FENCED: DwCode = DwCode::since("DW0481", 8, ExitTier::Build);\n',
+    )
+    tiers, unreadable = gate.declared_tiers()
+    assert tiers == {"DW0312": "Analysis", "DW0300": "Build", "DW0481": "Build"}
+    assert unreadable == []
+
+
+def test_a_constant_written_through_a_path_is_still_read(gate):
+    """Two live constants spell the type or the constructor through a path, and a
+    reader demanding the bare name would drop exactly those from the comparison —
+    a shrinking denominator, which is this gate passing by looking at less."""
+    _rs(
+        gate,
+        "dsl",
+        "prefab.rs",
+        'pub const DW_FOOTPRINT_CLASS: crate::DwCode = '
+        'crate::DwCode::every_version("DW0848", crate::ExitTier::Build);\n',
+    )
+    tiers, unreadable = gate.declared_tiers()
+    assert tiers == {"DW0848": "Build"}
+    assert unreadable == []
+
+
+def test_a_tierless_dwcode_constant_is_reported_not_skipped(gate):
+    """A declaration the reader cannot parse is a code it cannot judge. Reporting
+    it is the difference between a gate and a gate that got smaller."""
+    _rs(
+        gate,
+        "compiler",
+        "nav.rs",
+        'pub const DW_ODD: DwCode = DwCode::every_version("DW0399");\n',
+    )
+    tiers, unreadable = gate.declared_tiers()
+    assert tiers == {}
+    assert len(unreadable) == 1 and "DW0399" in unreadable[0]
+
+
+def test_the_tier_table_is_read_and_the_catalog_is_not(gate):
+    gate.DOC_PATH.write_text(
+        TIER_TABLE
+        + "| `DW0210` | the area's lighting declaration |\n"
+        + "| `DW0312` | the wave's size |\n"
+        + "\n"
+        + CATALOG
+        + "| `DW0300` | generic build failure |\n"
+        + "| `DW0210` | too dark to read |\n",
+        encoding="utf-8",
+    )
+    codes, rows = gate.documented_analysis_codes()
+    assert codes == {"DW0210", "DW0312"}
+    assert rows == 2
+    # …and the catalog reader must not count the tier table's rows, or every code
+    # in it reads as a duplicated catalog entry.
+    assert gate.catalog_row_counts() == {"DW0300": 1, "DW0210": 1}
+
+
+def test_an_empty_tier_table_is_a_finding_not_an_empty_agreement(gate):
+    """A comparison against nothing agrees with a source declaring nothing. The
+    row count is returned so the caller can refuse that answer instead of
+    printing it."""
+    gate.DOC_PATH.write_text(CATALOG + "| `DW0300` | generic build failure |\n", encoding="utf-8")
+    codes, rows = gate.documented_analysis_codes()
+    assert codes == set()
+    assert rows == 0

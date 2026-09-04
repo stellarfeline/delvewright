@@ -47,11 +47,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_dsl::DwCode;
 use delvewright_dsl::{Campaign, Diagnostic, Objective, QuestEffect};
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// Stable code for the NPC location-continuity warning.
-pub const DW_NPC_CONTINUITY: DwCode = DwCode::every_version("DW0351");
+pub const DW_NPC_CONTINUITY: DwCode = DwCode::every_version("DW0351", ExitTier::Build);
 
 /// A tracked NPC's staged-location state while replaying the timeline.
 struct NpcState {
