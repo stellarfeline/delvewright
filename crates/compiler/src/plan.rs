@@ -19,6 +19,7 @@
 //! `dw.o_<obj>`, `dw.q_<quest>`, `dw.qa_<quest>` (quest active), `dw.dlg_<npc>`,
 //! tag `dw_npc_<npc>`, function `class_apply_<class>`, dialog `<npc>_<node>`.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{
@@ -34,8 +35,8 @@ use crate::reach::{ReachCompletion, reach_completion};
 pub use crate::registry::AnchorRole;
 use crate::registry::{AnchorMeta, PrefabRegistry};
 use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
-use delvewright_dsl::DwCode;
 use delvewright_dsl::prefab::{GateAnchor, PrefabMeta};
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// World-space distance between successive area origins.
 pub const AREA_SPACING: i32 = 256;
@@ -1668,10 +1669,10 @@ pub fn wave_area<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a str> {
 /// `docs/reference/compiler.md` §5).
 #[derive(Debug)]
 pub struct PlanError {
-    /// The stable `DW03xx` code.
-    pub code: DwCode,
-    /// Human-readable explanation.
-    pub message: String,
+    /// The rule that refused and what the author does about it — the same
+    /// [`Failure`] every other pass raises, so the code and the message are
+    /// declared in one place and this type adds only what is its own.
+    pub failure: Failure,
     /// Advisory findings that were raised before this error stopped planning,
     /// and that explain it. Printed alongside the failure — a `DW0305` ambiguous
     /// anchor is usually the use-site symptom of a pool `DW0498` already
@@ -1684,8 +1685,7 @@ impl PlanError {
     /// Build a plan error with an explicit code.
     pub fn new(code: DwCode, message: impl Into<String>) -> Self {
         PlanError {
-            code,
-            message: message.into(),
+            failure: Failure::new(code, message),
             warnings: Vec::new(),
         }
     }
@@ -1699,7 +1699,7 @@ impl PlanError {
 
 /// `DW0300`: generic build/resolution failure (missing prefab metadata, unknown
 /// anchor, dependency cycle in the critical path).
-pub const DW_BUILD: DwCode = DwCode::every_version("DW0300");
+pub const DW_BUILD: DwCode = DwCode::every_version("DW0300", ExitTier::Build);
 
 /// `DW0306`: gate-aware reachability deadlock (M2 fix 7). After the solver produces
 /// a layout, sealed gates are modelled as cut edges in the piece-connectivity
@@ -1707,7 +1707,7 @@ pub const DW_BUILD: DwCode = DwCode::every_version("DW0300");
 /// earlier objective (in the quest/objective DAG order) has opened is a deadlock —
 /// the delve is unwinnable even though every anchor resolves. The canonical case:
 /// a key chest sealed behind the very gate its key opens.
-pub const DW_GATE_DEADLOCK: DwCode = DwCode::every_version("DW0306");
+pub const DW_GATE_DEADLOCK: DwCode = DwCode::every_version("DW0306", ExitTier::Build);
 
 /// `DW0344`: an ocean-horizon world places a piece whose declared waterline does not
 /// land at sea level — the piece floats above the sea or is drowned by it.
@@ -1716,7 +1716,7 @@ pub const DW_GATE_DEADLOCK: DwCode = DwCode::every_version("DW0306");
 /// that examined nothing has proved nothing, and the gate that examined nothing
 /// is this one, so it answers under its own name rather than under a second
 /// code. See [`WaterlineBinding::seal`].
-pub const DW_OCEAN_WATERLINE: DwCode = DwCode::every_version("DW0344");
+pub const DW_OCEAN_WATERLINE: DwCode = DwCode::every_version("DW0344", ExitTier::Build);
 
 /// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
 /// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
@@ -1724,7 +1724,7 @@ pub const DW_OCEAN_WATERLINE: DwCode = DwCode::every_version("DW0344");
 /// world then falls back to the vanilla spawn search, which a dedicated server
 /// resolves to the surface but the integrated (singleplayer) server resolves to
 /// the build floor — inside solid stone. Silent before; a hard build error now.
-pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345");
+pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345", ExitTier::Build);
 
 /// `DW0804`: two anchors in one area declare [`AnchorRole::Entry`].
 ///
@@ -1738,7 +1738,7 @@ pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345");
 /// `entry` in one area are the pre-role compatibility case and stay ordered by
 /// [`ENTRY_ANCHOR_NAMES`], because that ordering is what every shipped piece was
 /// admitted under and refusing it now would red a library nobody has touched.
-pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::every_version("DW0804");
+pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::every_version("DW0804", ExitTier::Build);
 
 /// `DW0872`: **a crossing into an area with nowhere to arrive.** A leg of the
 /// party's forced route changes area, and the destination declares no entry
@@ -1757,7 +1757,7 @@ pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::every_version("DW0804");
 /// all declares one*); this is the same rule over the one area a body must be
 /// put down in. The quantifiers differ and so do the remedies, which is why
 /// they are two codes.
-pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::every_version("DW0872");
+pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::every_version("DW0872", ExitTier::Build);
 
 /// **Where the party begins the delve**: the area it starts in, and the cell it
 /// stands on — the first area in declaration order that resolves an entry point
@@ -1796,7 +1796,7 @@ pub fn resolve_campaign_start(
 /// no pair: such a campaign built clean, passed every game test, and stranded
 /// the party at the spawn with the harness reporting `No path to the goal!` and
 /// no diagnostic code at all.
-pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::every_version("DW0873");
+pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::every_version("DW0873", ExitTier::Build);
 
 /// The prefab-metadata anchor names that mark a campaign's **entry point**, in
 /// resolution order — the **fallback**, not the mechanism (spec-0046).
@@ -2562,7 +2562,7 @@ impl<'a> Plan<'a> {
                         },
                         e.placed.iter().map(String::as_str),
                     ));
-                    PlanError::new(e.code, e.message).with_warnings(w)
+                    PlanError::new(e.failure.code, e.failure.message).with_warnings(w)
                 })?;
                 // Stage-7 L2 massing (spec-0017): apply the edit script's
                 // massing batches for this area over the solved layout, so
@@ -2747,7 +2747,7 @@ impl<'a> Plan<'a> {
         let binding = crate::faces::check(&areas, prefabs).map_err(|e| {
             let mut w = warnings.clone();
             w.extend(e.warnings.clone());
-            PlanError::new(e.code, e.message).with_warnings(w)
+            PlanError::new(e.failure.code, e.failure.message).with_warnings(w)
         })?;
         if let Some(finding) = binding.finding(
             crate::faces::placed_pieces(&areas),

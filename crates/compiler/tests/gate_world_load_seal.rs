@@ -226,7 +226,7 @@ fn a_gate_opened_after_the_leg_is_dw0306_the_older_proofs_case() {
     let err = Plan::build(&c, &p)
         .err()
         .expect("a gate opened after the leg does not open it");
-    assert_eq!(err.code.id(), "DW0306", "{err:?}");
+    assert_eq!(err.failure.code.id(), "DW0306", "{err:?}");
 }
 
 /// **An optional opener is not an opener.** The campaign's only `open-gate` hangs

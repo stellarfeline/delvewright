@@ -56,7 +56,7 @@ use std::path::Path;
 use delvewright_dsl::metrics::{
     Grid, MetricKind, MetricValue, Metrics, Opening, Pitch, Reads, SizeClass,
 };
-use delvewright_dsl::{Diagnostic, DwCode};
+use delvewright_dsl::{Diagnostic, DwCode, ExitTier};
 use serde_json::{Value, json};
 
 /// `DW0840`: the gym leaves a building metric unwalked.
@@ -66,7 +66,7 @@ use serde_json::{Value, json};
 /// the walk cannot settle however carefully it is walked. Zero unreached entries
 /// is the end state and the line does not print — which is a real end state and
 /// not a vacuity, because the count is taken against every entry in the table.
-pub const DW_GYM_UNWALKED: DwCode = DwCode::every_version("DW0840");
+pub const DW_GYM_UNWALKED: DwCode = DwCode::every_version("DW0840", ExitTier::Build);
 
 /// The plane the gym opens on.
 const GRADE_Y: i64 = 64;
