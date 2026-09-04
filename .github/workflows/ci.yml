@@ -225,6 +225,82 @@ jobs:
       - name: no internal reference reaches a crates.io front page
         run: python3 tools/check-crates-io-readmes.py
 
+      # ADR-0006's LINUX HALF. The determinism promise is "same DSL + same seed
+      # -> byte-identical datapack and world", and until this step every gate
+      # holding it ran on one machine: the double-build gate inside `cargo test`
+      # above builds twice on THIS runner, and the prefab-generator job runs each
+      # generator twice on THIS runner. Both catch an unseeded RNG or a
+      # hash-ordered iteration; neither can catch a libm difference, a
+      # float-formatting difference, or a directory-ordering difference between
+      # platforms, because there is only ever one platform in the comparison.
+      #
+      # A STEP here, not a job: every job name is a required status context, and
+      # the digest is cheap next to what this job already did. The comparison is
+      # the `cross-OS determinism (macOS vs Linux bytes)` job, which builds the
+      # same subject on macOS and reads this artifact.
+      #
+      # The subject is `tools/determinism-subject.sh`, invoked identically on
+      # both runners so the two sides cannot drift into building different
+      # things.
+      - name: ADR-0006 cross-OS — the Linux side's digest
+        run: |
+          cargo build --locked -p delvec --bin delvec
+          bash tools/determinism-subject.sh \
+            --delvec target/debug/delvec --out determinism-linux.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-digest-linux
+          path: determinism-linux.txt
+          if-no-files-found: error
+
+  # ADR-0006's other half, and the only place in CI that builds on a second
+  # operating system. It was measured by hand once — macOS/Apple-libm against
+  # Linux/glibc, byte-identical over the gallery, the island and hollow-vigil —
+  # and a measurement taken by hand once is a claim about a day, not a gate.
+  #
+  # `needs: rust` because the Linux digest is that job's artifact. When `rust`
+  # reds this job is skipped, which is not a hole: the pull request is already
+  # red on `rust`, and there is no state in which this is the only thing between
+  # a divergence and `main`.
+  #
+  # macOS is the expensive runner, so it does exactly one thing: build `delvec`
+  # and nothing else in the workspace, then build one small campaign that needs
+  # no prefab library, no content checkout and no git-lfs.
+  determinism-cross-os:
+    # Name must stay exactly "cross-OS determinism (macOS vs Linux bytes)" — it
+    # is a required status context in branch protection; renaming it deadlocks
+    # every PR (see .github/required-status-checks.txt).
+    name: cross-OS determinism (macOS vs Linux bytes)
+    needs: rust
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with: { key: determinism-macos }
+      - name: build the engine under test
+        run: cargo build --locked -p delvec --bin delvec
+      - name: the macOS side's digest
+        run: |
+          bash tools/determinism-subject.sh \
+            --delvec target/debug/delvec --out determinism-macos.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: determinism-digest-linux
+      # The gate. Prints every differing path, so a divergence names the file
+      # rather than a hash nobody can act on.
+      - name: the two hosts wrote the same bytes
+        run: |
+          python3 tools/tree-digest.py \
+            --compare determinism-linux.txt determinism-macos.txt
+      # Both sides, kept, so a red can be read after the runners are gone.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: determinism-digests
+          path: |
+            determinism-linux.txt
+            determinism-macos.txt
+
   # ADR-0017: the release shelf must stay buildable as the repo grows, and the
   # way it silently stops is a new dependency that does not compile for musl,
   # msvc or darwin. Without this, that breaks at RELEASE time — after the tag is
