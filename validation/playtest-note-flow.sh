@@ -27,6 +27,14 @@ unset CREATOR_NAME
 # DW_COMPOSE_PROJECT when you want a stable one to inspect afterwards.
 PROJECT="${DW_COMPOSE_PROJECT:-dw-noteflow-$$}"
 COMPOSE="docker compose -p $PROJECT -f validation/compose.yaml -f validation/ephemeral-port.yaml --profile playtest"
+# …and the image tag, which is the one Docker-global name the paragraph above did
+# not cover. This flow builds hello-world and `rehearsal-flow.sh` builds
+# cutscene-shots; with the tag left at the compose default both wrote
+# `delvewright/delve:local`, so running them side by side — the very thing the
+# unique project is for — boots one campaign's server on the other's image.
+# shellcheck source=validation/lib/delve-image.sh
+. validation/lib/delve-image.sh
+dw_export_delve_image "$PROJECT"
 CAMPAIGN="crates/dsl/fixtures/valid/hello-world"
 OUT="validation/delve-output"
 LOG="validation/playtest.log"

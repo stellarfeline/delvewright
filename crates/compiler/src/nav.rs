@@ -26,6 +26,7 @@
 //! ties on `(f, g, cell)` in a fixed order, and neighbour expansion order is
 //! fixed — same DSL + seed → identical waypoints.
 
+use crate::failure::Failure;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
@@ -33,26 +34,26 @@ use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
 
 use crate::plan::{Plan, RegionEvent, RegionWrite, ResolvedAnchor, Step, TrapPlan};
 use delvewright_dsl::Diagnostic;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
 /// NPC's position over the assembled geometry.
-pub const DW_MOVE_UNROUTABLE: DwCode = DwCode::every_version("DW0307");
+pub const DW_MOVE_UNROUTABLE: DwCode = DwCode::every_version("DW0307", ExitTier::Build);
 /// `DW0308`: a `cutscene` camera dolly path that passes through a solid block.
-pub const DW_CUTSCENE_CLIP: DwCode = DwCode::every_version("DW0308");
+pub const DW_CUTSCENE_CLIP: DwCode = DwCode::every_version("DW0308", ExitTier::Build);
 /// `DW0347`: a `cutscene` shot whose aim sweeps faster than the angular budget
 /// ([`crate::camera::MAX_AIM_DEG_PER_TICK`], 6 °/tick = 120 °/s) — a pan that
 /// fast at 20 Hz is nausea-tier and provably bad *before* it ships. Typical
 /// cause: a `look_at` subject too close to a fast dolly. See the camera dossier
 /// (`docs/notes/camera-dossier.md` §1) for the budget's derivation.
-pub const DW_CAMERA_SPIN: DwCode = DwCode::every_version("DW0347");
+pub const DW_CAMERA_SPIN: DwCode = DwCode::every_version("DW0347", ExitTier::Build);
 /// `DW0311`: a consecutive pair of player-visited critical-path anchors that no
 /// walkable path connects over the assembled geometry (with no inter-area
 /// transport between them) — the player would be stranded. Turns the whole
 /// "assembled seams aren't walkable" bug class — a prefab regen that wedges a
 /// doorway shut or opens a void gap, which otherwise only a runtime bot catches
 /// — into a compile error.
-pub const DW_CRITICAL_UNROUTABLE: DwCode = DwCode::every_version("DW0311");
+pub const DW_CRITICAL_UNROUTABLE: DwCode = DwCode::every_version("DW0311", ExitTier::Build);
 /// `DW0510`: the party's only route to a critical-path objective runs through a
 /// declared **lethal volume** (DSL v0.10, spec-0031).
 ///
@@ -65,7 +66,7 @@ pub const DW_CRITICAL_UNROUTABLE: DwCode = DwCode::every_version("DW0311");
 /// shrink or route around — not sent to look for a wedged doorway that does not
 /// exist. Derived from a counterfactual: the leg is re-routed over the identical
 /// world with lethality removed, and the volumes covering that route are named.
-pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0510");
+pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0510", ExitTier::Build);
 /// `DW0317`: a gate the placed world authors **shut at world-load** blocks a
 /// forced critical-path leg, and nothing the party is guaranteed to do opens it
 /// before that leg.
@@ -94,7 +95,7 @@ pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0510");
 /// the current version would also make it **vacuous on every live campaign** —
 /// `hollow-vigil` declares 0.3.0 and `nobodys-cave-island` 0.8.0 — which is the
 /// unfenced-vacuity failure in the opposite direction.
-pub const DW_GATE_NEVER_OPENED: DwCode = DwCode::every_version("DW0317");
+pub const DW_GATE_NEVER_OPENED: DwCode = DwCode::every_version("DW0317", ExitTier::Build);
 /// `DW0544`: a forced critical-path leg depends on standing where a runtime region
 /// write leaves **fluid** — water or lava.
 ///
@@ -109,7 +110,7 @@ pub const DW_GATE_NEVER_OPENED: DwCode = DwCode::every_version("DW0317");
 /// reason `DW0510` is: the prefab is innocent. The author is looking at a box they
 /// filled on purpose and needs to be told that filling it with water is what took
 /// the footing away — not sent hunting for a wedged doorway that is not there.
-pub const DW_FLUID_FILL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0544");
+pub const DW_FLUID_FILL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0544", ExitTier::Build);
 /// `DW0546`: a forced critical-path leg stands on footing laid by a beat the party
 /// is **not forced to play** — a plank dropped by a sprung trap, a stair repaired by
 /// a bought offer, a bridge lowered from a shortcut's far side.
@@ -143,16 +144,16 @@ pub const DW_FLUID_FILL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0544
 /// since the root was added) and detects that what a campaign already says is
 /// unsound. Fencing it at the current version would leave it vacuous on every live
 /// campaign, all of which declare below it.
-pub const DW_UNFORCED_FOOTING: DwCode = DwCode::every_version("DW0546");
+pub const DW_UNFORCED_FOOTING: DwCode = DwCode::every_version("DW0546", ExitTier::Build);
 /// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
 /// checkpoint cell, a remaining required critical-path anchor is no longer
 /// walkable (a checkpoint behind a one-way drop). Re-roots the DW0311 reachability
 /// at the checkpoint.
-pub const DW_CHECKPOINT_STRANDED: DwCode = DwCode::every_version("DW0315");
+pub const DW_CHECKPOINT_STRANDED: DwCode = DwCode::every_version("DW0315", ExitTier::Build);
 /// `DW0316`: a `set-checkpoint` anchor with no standable footing on the final
 /// assembled model (a trap-trigger / hazard / mid-air cell), so the party would
 /// respawn into the void or a wall.
-pub const DW_CHECKPOINT_UNSTANDABLE: DwCode = DwCode::every_version("DW0316");
+pub const DW_CHECKPOINT_UNSTANDABLE: DwCode = DwCode::every_version("DW0316", ExitTier::Build);
 /// `DW0378`: a `timed-gate` (spec-0016 §4) that is a coin flip rather than a
 /// timing read — the set of entry phases from which a walking player clears the
 /// span before the gate shuts covers **less than 20% of the cycle**.
@@ -160,7 +161,7 @@ pub const DW_CHECKPOINT_UNSTANDABLE: DwCode = DwCode::every_version("DW0316");
 /// that punishes bad timing is the point. A gate that punishes *every* timing is
 /// not a skill check, it is a slot machine, and no amount of learning the level
 /// makes it fair.
-pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::every_version("DW0378");
+pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::every_version("DW0378", ExitTier::Build);
 /// `DW0388`: a **timed hazard** (spec-0016 §4 addendum) the player cannot
 /// observe before committing to it — no standable cell exists that is clear of
 /// the hazard's lethal span, reachable without entering it, and has line of
@@ -173,7 +174,7 @@ pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::every_version("DW0378");
 /// you cannot see inside the Capra room. [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`)
 /// measures the ratio — the dossier's own verdict is that if only one of the two
 /// proofs can be afforded it should be this one, not the 20%.
-pub const DW_HAZARD_UNOBSERVABLE: DwCode = DwCode::every_version("DW0388");
+pub const DW_HAZARD_UNOBSERVABLE: DwCode = DwCode::every_version("DW0388", ExitTier::Build);
 /// `DW0393`: a `timed-gate`'s `disarm` affordance is not usable
 /// **before** the gate is committed to — its cell has no standable footing, or is
 /// walkable from the campaign entry only through the gate span itself.
@@ -185,7 +186,8 @@ pub const DW_HAZARD_UNOBSERVABLE: DwCode = DwCode::every_version("DW0388");
 /// clause `DW0373` puts on a shortcut's unlock and `DW0342` puts on a trap's
 /// disarm, stated once for the gate: the affordance must be reachable while the
 /// hazard is still ahead of you.
-pub const DW_TIMED_GATE_DISARM_UNREACHABLE: DwCode = DwCode::every_version("DW0393");
+pub const DW_TIMED_GATE_DISARM_UNREACHABLE: DwCode =
+    DwCode::every_version("DW0393", ExitTier::Build);
 /// `DW0376`: an `ambush` (spec-0016 §3) with no counterplay — with every
 /// ambusher standing where it will stand, no rest point (a checkpoint, a bonfire,
 /// or the campaign entry) is walkable from the trigger cell any more. The player
@@ -197,13 +199,13 @@ pub const DW_TIMED_GATE_DISARM_UNREACHABLE: DwCode = DwCode::every_version("DW03
 /// ambushers in the same cells. What the engine owes the informed player is a
 /// *play* — a retreat, luring ground, a positioning line — and that is what this
 /// proves exists.
-pub const DW_AMBUSH_NO_COUNTERPLAY: DwCode = DwCode::every_version("DW0376");
+pub const DW_AMBUSH_NO_COUNTERPLAY: DwCode = DwCode::every_version("DW0376", ExitTier::Build);
 /// `DW0373`: a `shortcut` (spec-0016 §2) whose far-side `unlock` affordance is
 /// not reachable while the gate is still sealed — the LONG route does not exist,
 /// so the mechanism that opens the shortcut can never be pulled and the gate is
 /// dead scenery. The whole pattern is "earn the far side the hard way, then open
 /// the door forever"; without a hard way there is nothing to earn.
-pub const DW_SHORTCUT_NO_LONG_ROUTE: DwCode = DwCode::every_version("DW0373");
+pub const DW_SHORTCUT_NO_LONG_ROUTE: DwCode = DwCode::every_version("DW0373", ExitTier::Build);
 /// `DW0374`: a `shortcut` (spec-0016 §2) that **leaks** — opening its gate does not
 /// shorten the walk from the campaign entry to its own `unlock` affordance, so the
 /// unlock is not on the far side of anything. The pattern is "earn the far side
@@ -211,7 +213,7 @@ pub const DW_SHORTCUT_NO_LONG_ROUTE: DwCode = DwCode::every_version("DW0373");
 /// reaching the mechanism that opens it, the loop-back moment — which IS the
 /// design — never happens. The classic form is an `unlock` placed on the NEAR
 /// side of its own gate.
-pub const DW_SHORTCUT_NO_GAIN: DwCode = DwCode::every_version("DW0374");
+pub const DW_SHORTCUT_NO_GAIN: DwCode = DwCode::every_version("DW0374", ExitTier::Build);
 /// `DW0379`: **retry cost** (spec-0016 §7, warning tier) — the proven walk from a
 /// rest point to a beat it can respawn the party into is longer than
 /// [`RETRY_BUDGET_TICKS`]. Dying must be an investment, not a commute: past the
@@ -219,7 +221,7 @@ pub const DW_SHORTCUT_NO_GAIN: DwCode = DwCode::every_version("DW0374");
 /// a long walk can be the authored point (a pilgrimage, a set-piece approach),
 /// and the compiler will not overrule that — it names the distance and leaves the
 /// judgement to the owner's QA hour.
-pub const DW_RETRY_COST: DwCode = DwCode::every_version("DW0379");
+pub const DW_RETRY_COST: DwCode = DwCode::every_version("DW0379", ExitTier::Build);
 /// `DW0380`: **optional-elite bypass** (spec-0016 §7, warning tier) — an enemy the
 /// critical path never requires the party to kill has no route around it: every
 /// proven forward leg passes inside its aggro radius, so "optional" is a lie and
@@ -228,7 +230,7 @@ pub const DW_RETRY_COST: DwCode = DwCode::every_version("DW0379");
 /// The Tree Sentinel pattern — a powerful optional enemy near the start, fight it
 /// or walk around it — is explicitly legitimate, and
 /// this is the one obligation it carries: the walk-around has to exist.
-pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: DwCode = DwCode::every_version("DW0380");
+pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: DwCode = DwCode::every_version("DW0380", ExitTier::Build);
 /// `DW0386`: a TD `lane` (spec-0016 §6) whose polyline does not survive contact
 /// with the assembled world — a waypoint anchor that resolves nowhere, a
 /// waypoint with no standable footing, a leg the squad cannot walk, or a leg
@@ -236,7 +238,7 @@ pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: DwCode = DwCode::every_version("DW0380"
 /// patrol target to a random point once the patroller is within 10 blocks of it,
 /// so a tighter lane is a lane the engine quietly stops following — the squad
 /// wanders, and it reads as working-but-drunk rather than as a bug.
-pub const DW_LANE_GEOMETRY: DwCode = DwCode::every_version("DW0386");
+pub const DW_LANE_GEOMETRY: DwCode = DwCode::every_version("DW0386", ExitTier::Build);
 /// `DW0478`: **the respawn-point safe zone** (spec-0016 §1) — a cell the party
 /// comes back to life on sits inside some hostile force's aggro range.
 ///
@@ -269,10 +271,10 @@ pub const DW_LANE_GEOMETRY: DwCode = DwCode::every_version("DW0386");
 /// document, so fencing it would grandfather the soft-lock rather than the
 /// paperwork — and the six live violations it found on the shipped island are
 /// what that would have preserved.
-pub const DW_RESPAWN_IN_AGGRO: DwCode = DwCode::every_version("DW0478");
+pub const DW_RESPAWN_IN_AGGRO: DwCode = DwCode::every_version("DW0478", ExitTier::Build);
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.
-pub const DW_STEALTH_ZONE: DwCode = DwCode::every_version("DW0327");
+pub const DW_STEALTH_ZONE: DwCode = DwCode::every_version("DW0327", ExitTier::Build);
 /// `DW0355`: a **punishing** `begin-stealth` whose grace window cannot be beaten —
 /// from a position a player legally occupies the instant the beat arms (the
 /// activating objective's anchor, or any checkpoint that can respawn them into the
@@ -283,7 +285,7 @@ pub const DW_STEALTH_ZONE: DwCode = DwCode::every_version("DW0327");
 /// or human — a fixed couple of seconds later, and if the checkpoint it respawns
 /// them at is also outside cover, the retry loop never terminates. A structurally
 /// unavoidable death is not 初见杀 (spec-0016), it is a broken beat.
-pub const DW_STEALTH_ONSET: DwCode = DwCode::every_version("DW0355");
+pub const DW_STEALTH_ONSET: DwCode = DwCode::every_version("DW0355", ExitTier::Build);
 /// `DW0342`: a **lethal** trap (spec-0011) whose trigger cell lies on the forced
 /// critical path with no discharge — not avoidable (the trigger cell is a required
 /// path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it →
@@ -291,7 +293,7 @@ pub const DW_STEALTH_ONSET: DwCode = DwCode::every_version("DW0355");
 /// player is provably killed or soft-looped. Analysis-tier (exit 2) like `DW0312`:
 /// a content-design mistake, not a geometry defect. (Renumbered from the spec's
 /// stale `DW0314`.)
-pub const DW_TRAP_LETHAL_UNAVOIDABLE: DwCode = DwCode::every_version("DW0342");
+pub const DW_TRAP_LETHAL_UNAVOIDABLE: DwCode = DwCode::every_version("DW0342", ExitTier::Analysis);
 
 /// A resolved stealth zone `(anchor name, centre cell, half-extents)`.
 type ZoneCell = (String, [i32; 3], [u32; 3]);
@@ -302,7 +304,7 @@ type StealthProbe = (Vec<ZoneCell>, usize);
 /// the assembled geometry, or an actor spawn/destination anchor that does not
 /// resolve to a placeable cell (spec-0014). Names the actor, the leg, and the
 /// first blocked cell.
-pub const DW_ACTOR_UNROUTABLE: DwCode = DwCode::every_version("DW0325");
+pub const DW_ACTOR_UNROUTABLE: DwCode = DwCode::every_version("DW0325", ExitTier::Build);
 
 /// `DW0410`: a staged walk (`move-actor` / `move-npc`) whose path is blocked by a
 /// gate that an **earlier effect in its own timeline** sealed with `close-gate`
@@ -314,7 +316,7 @@ pub const DW_ACTOR_UNROUTABLE: DwCode = DwCode::every_version("DW0325");
 /// The planner routes over the timeline-adjusted world first, so a legal
 /// alternative route around the seal is simply taken and no diagnostic is raised
 /// — this fires only when the sealed world admits no route.
-pub const DW_GATE_TIMELINE: DwCode = DwCode::every_version("DW0410");
+pub const DW_GATE_TIMELINE: DwCode = DwCode::every_version("DW0410", ExitTier::Build);
 
 /// `DW0488`: one content-keyed walk driver is shared by occurrences that do not
 /// stand in the same place when they fire, so the shared driver's first waypoint
@@ -333,7 +335,7 @@ pub const DW_GATE_TIMELINE: DwCode = DwCode::every_version("DW0410");
 /// Distinct from [`DW_MOVE_UNROUTABLE`]/[`DW_ACTOR_UNROUTABLE`], which fire when
 /// a leg has no route at all: here every leg is perfectly routable and the defect
 /// is that they cannot share one route.
-pub const DW_MOVE_ORIGIN_SHARED: DwCode = DwCode::every_version("DW0488");
+pub const DW_MOVE_ORIGIN_SHARED: DwCode = DwCode::every_version("DW0488", ExitTier::Build);
 
 /// The branch condition a staging effect fires under: the per-effect
 /// `requires_flags` / `forbids_flags` gate (DSL v0.6).
@@ -497,7 +499,7 @@ fn shared_origin_error(
     planned_gate: &BranchGate,
     actual_from: [i32; 3],
     this_gate: &BranchGate,
-) -> NavError {
+) -> Failure {
     let describe = |g: &BranchGate| {
         if g.is_unconditional() {
             "unconditionally".to_string()
@@ -518,7 +520,7 @@ fn shared_origin_error(
             format!("when it {}", parts.join(" and "))
         }
     };
-    NavError {
+    Failure {
         code: DW_MOVE_ORIGIN_SHARED,
         message: format!(
             "{verb}: `{body}` walks to `{to_anchor}` from two different places, but both beats \
@@ -687,15 +689,6 @@ pub struct AnchorRoot {
     pub at: [i32; 3],
     /// World AABB `(min, max)` of the piece that declares it.
     pub within: ([i32; 3], [i32; 3]),
-}
-
-/// A build diagnostic raised by navigation planning (mapped to exit 3, `DW03xx`).
-#[derive(Debug)]
-pub struct NavError {
-    /// The stable diagnostic code (`DW0307` / `DW0308`).
-    pub code: DwCode,
-    /// Human-readable explanation, naming the offending NPC / endpoints / segment.
-    pub message: String,
 }
 
 /// A planned `move-npc`: the resolved endpoints plus the per-tick waypoint
@@ -2484,7 +2477,7 @@ fn move_target(plan: &Plan, npc_id: &str, to_anchor: &str) -> Option<[i32; 3]> {
 /// diagnostic than an unroutable [`DW_MOVE_UNROUTABLE`] — but
 /// [`crate::traversal`] now fails the build on it (`DW0452`) unless the gate is
 /// genuinely open in the world the delve ships.
-pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError> {
+pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> {
     let mut out = Vec::new();
     let mut seen: BTreeSet<(String, String, String)> = BTreeSet::new();
     // Chained origins (round-6): each NPC's next walk starts from its LAST staged
@@ -2529,7 +2522,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
             None => world,
         };
         let anchor_pos =
-            move_target(plan, npc.as_str(), to_anchor.as_str()).ok_or_else(|| NavError {
+            move_target(plan, npc.as_str(), to_anchor.as_str()).ok_or_else(|| Failure {
                 code: DW_MOVE_UNROUTABLE,
                 message: format!(
                     "move-npc: destination anchor `{}` for NPC `{}` did not resolve to a world \
@@ -2540,7 +2533,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
             })?;
         let target = leg_world
             .snap_standable(anchor_pos, SNAP_RADIUS)
-            .ok_or_else(|| NavError {
+            .ok_or_else(|| Failure {
                 code: DW_MOVE_UNROUTABLE,
                 message: format!(
                     "move-npc: no standable floor cell near destination anchor `{}` {anchor_pos:?} \
@@ -2610,7 +2603,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
         let start = match prior.map(|s| s.pos) {
             Some(pos) => pos,
             None => {
-                let home = npc_start(plan, npc.as_str()).ok_or_else(|| NavError {
+                let home = npc_start(plan, npc.as_str()).ok_or_else(|| Failure {
                     code: DW_MOVE_UNROUTABLE,
                     message: format!(
                         "move-npc: NPC `{}` has no resolved home anchor to walk from — give the \
@@ -2640,7 +2633,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                 ));
             }
             None => {
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_MOVE_UNROUTABLE,
                     message: format!(
                         "move-npc: NPC `{}` cannot walk from its last staged location {start:?} \
@@ -2886,9 +2879,9 @@ fn gate_timeline_error(
     start: [i32; 3],
     target: [i32; 3],
     seal: &crate::timeline::GateState,
-) -> NavError {
+) -> Failure {
     let gates: Vec<&str> = seal.values().map(|s| s.as_str()).collect();
-    NavError {
+    Failure {
         code: DW_GATE_TIMELINE,
         message: format!(
             "{verb}: `{mover}` cannot walk the leg {start:?} → `{to_anchor}` {target:?} — the \
@@ -2926,7 +2919,7 @@ fn gate_timeline_error(
 /// only when none does. A deduped repeat occurrence re-verifies the *already
 /// planned* path against its own timeline's seals — that is the path the shared
 /// driver will actually walk.
-pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>, NavError> {
+pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>, Failure> {
     let mut out = Vec::new();
     let mut seen: BTreeSet<(String, String, String)> = BTreeSet::new();
     // Chained origins (round-6, live-server proven): a SECOND consecutive
@@ -2969,7 +2962,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             Some(i) => &cache.worlds[i],
             None => world,
         };
-        let a = actor_of(plan, actor.as_str()).ok_or_else(|| NavError {
+        let a = actor_of(plan, actor.as_str()).ok_or_else(|| Failure {
             code: DW_ACTOR_UNROUTABLE,
             message: format!(
                 "move-actor: unknown actor `{}` — declare it in the stage-5 `actors` list",
@@ -2977,7 +2970,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             ),
         })?;
         let fp = entity_footprint(&a.entity);
-        let dest = actor_anchor_pos(plan, to_anchor.as_str()).ok_or_else(|| NavError {
+        let dest = actor_anchor_pos(plan, to_anchor.as_str()).ok_or_else(|| Failure {
             code: DW_ACTOR_UNROUTABLE,
             message: format!(
                 "move-actor: destination anchor `{}` for actor `{}` did not resolve to a world \
@@ -2988,7 +2981,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         })?;
         let target = leg_world
             .snap_standable_fp(dest, SNAP_RADIUS, &fp)
-            .ok_or_else(|| NavError {
+            .ok_or_else(|| Failure {
                 code: DW_ACTOR_UNROUTABLE,
                 message: format!(
                     "move-actor: no cell the `{}` footprint can stand on near destination anchor \
@@ -3060,7 +3053,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             Some(pos) => pos,
             None => {
                 let start_anchor =
-                    actor_anchor_pos(plan, a.anchor.as_str()).ok_or_else(|| NavError {
+                    actor_anchor_pos(plan, a.anchor.as_str()).ok_or_else(|| Failure {
                         code: DW_ACTOR_UNROUTABLE,
                         message: format!(
                             "move-actor: actor `{}` spawn anchor `{}` did not resolve to a world \
@@ -3092,7 +3085,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             }
             None => {
                 let blocked = first_blocked_fp(leg_world, start, target, &fp);
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_ACTOR_UNROUTABLE,
                     message: format!(
                         "move-actor: actor `{}` ({}) cannot walk the leg {start:?} (last staged \
@@ -3141,10 +3134,10 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
 /// Verify every declared actor's spawn anchor resolves to a world position (the
 /// puppet has somewhere to spawn). `DW0325` when it does not. Needs no `World` (a
 /// spawn is a summon, not a walk), so it runs even for spawn-only campaigns.
-pub fn check_actor_placement(plan: &Plan) -> Result<(), NavError> {
+pub fn check_actor_placement(plan: &Plan) -> Result<(), Failure> {
     for a in &plan.campaign.quests.content.actors {
         if actor_anchor_pos(plan, a.anchor.as_str()).is_none() {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_ACTOR_UNROUTABLE,
                 message: format!(
                     "actor `{}` spawn anchor `{}` did not resolve to a world position — use an \
@@ -3228,7 +3221,7 @@ pub fn check_cutscenes(
     world: &World,
     moves: &[MovePlan],
     actor_moves: &[ActorMovePlan],
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     for (eff, ctx) in crate::camera::cutscene_units(plan.campaign) {
         let Some(shots) = eff.cutscene_shots() else {
             continue;
@@ -3239,7 +3232,7 @@ pub fn check_cutscenes(
             offset += ex.ticks + 1;
             let pts = ex.clip_polyline();
             if let Some((seg, cell)) = first_clip(world, pts) {
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_CUTSCENE_CLIP,
                     message: format!(
                         "cutscene: shot {si} camera dolly segment {seg} (from {:?} to {:?}) clips \
@@ -3254,7 +3247,7 @@ pub fn check_cutscenes(
             let frames = ex.frames();
             let chord: Vec<[f64; 3]> = frames.frames.iter().map(|f| f.pos).collect();
             if let Some((seg, cell)) = first_clip(world, &chord) {
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_CUTSCENE_CLIP,
                     message: format!(
                         "cutscene: shot {si} client-rendered dolly chord {seg} (keyframe {:?} to \
@@ -3269,7 +3262,7 @@ pub fn check_cutscenes(
             }
             let rate = ex.max_aim_deg_per_tick();
             if rate > crate::camera::MAX_AIM_DEG_PER_TICK {
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_CAMERA_SPIN,
                     message: format!(
                         "cutscene: shot {si} pans at {rate} deg/tick, over the {} deg/tick \
@@ -3551,7 +3544,7 @@ fn has_walkable_critical_leg(plan: &Plan) -> bool {
 /// Endpoints are snapped to the nearest standable floor cell (an anchor often marks
 /// a solid affordance — an altar, a wave marker, an NPC stand — the player walks up
 /// to, not into), exactly as `move-npc` planning does.
-pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), NavError> {
+pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), Failure> {
     route_visited(
         world,
         &critical_positions(plan),
@@ -4153,7 +4146,7 @@ fn route_visited(
     positions: &[VisitedPos],
     region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     for pair in positions.windows(2) {
         let from = pair[0].pos;
         let to = pair[1].pos;
@@ -4225,11 +4218,11 @@ fn route_visited(
                 };
                 Some(&ungated_owned)
             };
-        let lethal_snap_err = |at: [i32; 3], talk_to: bool| -> Option<NavError> {
+        let lethal_snap_err = |at: [i32; 3], talk_to: bool| -> Option<Failure> {
             let open = open?;
             let cell = open.snap_endpoint(at, talk_to)?;
             let names = names_of(&leg_world.lethal_volumes_over(&[cell]));
-            Some(NavError {
+            Some(Failure {
                 code: DW_LETHAL_ON_CRITICAL_PATH,
                 message: format!(
                     "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
@@ -4244,7 +4237,7 @@ fn route_visited(
         // lethal one: an anchor whose only footing is inside a gate region the world
         // authors shut needs to be told WHICH door, not sent to look for a wedged
         // prefab that is fine.
-        let gate_snap_err = |at: [i32; 3], talk_to: bool| -> Option<NavError> {
+        let gate_snap_err = |at: [i32; 3], talk_to: bool| -> Option<Failure> {
             let ungated = ungated?;
             let cell = ungated.snap_endpoint(at, talk_to)?;
             let blamed = gate_blame(
@@ -4253,7 +4246,7 @@ fn route_visited(
                 ancestor,
                 pair[1].src_step,
             );
-            Some(NavError {
+            Some(Failure {
                 code: DW_GATE_NEVER_OPENED,
                 message: format!(
                     "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
@@ -4278,11 +4271,11 @@ fn route_visited(
         } else {
             None
         };
-        let fluid_snap_err = |at: [i32; 3], talk_to: bool| -> Option<NavError> {
+        let fluid_snap_err = |at: [i32; 3], talk_to: bool| -> Option<Failure> {
             let dry = dry?;
             let cell = dry.snap_endpoint(at, talk_to)?;
             let boxes = boxes_of(&leg_world.flood_regions_over(&[cell]));
-            Some(NavError {
+            Some(Failure {
                 code: DW_FLUID_FILL_ON_CRITICAL_PATH,
                 message: format!(
                     "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
@@ -4296,11 +4289,11 @@ fn route_visited(
         };
         // And the same blame move for the premise this family was missing: a solid
         // laid by a beat nobody has to play.
-        let unforced_snap_err = |at: [i32; 3], talk_to: bool| -> Option<NavError> {
+        let unforced_snap_err = |at: [i32; 3], talk_to: bool| -> Option<Failure> {
             let credited = credited?;
             let cell = credited.snap_endpoint(at, talk_to)?;
             let boxes = unforced_blame_over(&unforced_regions, &[cell]).join("; ");
-            Some(NavError {
+            Some(Failure {
                 code: DW_UNFORCED_FOOTING,
                 message: format!(
                     "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
@@ -4327,7 +4320,7 @@ fn route_visited(
                 if let Some(e) = gate_snap_err(from, false) {
                     return Err(e);
                 }
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_CRITICAL_UNROUTABLE,
                     message: format!(
                         "critical path: no standable floor within {SNAP_RADIUS} blocks of visited \
@@ -4354,7 +4347,7 @@ fn route_visited(
                 if let Some(e) = gate_snap_err(to, pair[1].talk_to) {
                     return Err(e);
                 }
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_CRITICAL_UNROUTABLE,
                     message: format!(
                         "critical path: no standable floor within {SNAP_RADIUS} blocks of visited \
@@ -4378,7 +4371,7 @@ fn route_visited(
                 && let Some(cells) = open.find_path(s2, g2)
             {
                 let names = names_of(&leg_world.lethal_volumes_over(&cells));
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_LETHAL_ON_CRITICAL_PATH,
                     message: format!(
                         "critical path: the only route from {from:?} (floor {start:?}) to \
@@ -4403,7 +4396,7 @@ fn route_visited(
                 && let Some(cells) = dry.find_path(s2, g2)
             {
                 let boxes = boxes_of(&leg_world.flood_regions_over(&cells));
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_FLUID_FILL_ON_CRITICAL_PATH,
                     message: format!(
                         "critical path: the only route from {from:?} (floor {start:?}) to \
@@ -4432,7 +4425,7 @@ fn route_visited(
                 && let Some(cells) = credited.find_path(s2, g2)
             {
                 let boxes = unforced_blame_over(&unforced_regions, &cells).join("; ");
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_UNFORCED_FOOTING,
                     message: format!(
                         "critical path: the only route from {from:?} (floor {start:?}) to \
@@ -4466,7 +4459,7 @@ fn route_visited(
                     ancestor,
                     pair[1].src_step,
                 );
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_GATE_NEVER_OPENED,
                     message: format!(
                         "critical path: the only route from {from:?} (floor {start:?}) to \
@@ -4517,7 +4510,7 @@ fn route_visited(
                  before this leg, route the forced path so it does not re-cross the sealed gate, \
                  or fire the `close-gate` later — do NOT delete the proof."
             };
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_CRITICAL_UNROUTABLE,
                 message: format!(
                     "critical path: the player cannot walk from {from:?} (floor {start:?}) to \
@@ -4547,7 +4540,7 @@ fn route_visited(
 ///    path. The message names the checkpoint and that first unreachable anchor,
 ///    and prescribes moving the checkpoint or adding a return route (never
 ///    deleting the checkpoint to silence the proof).
-pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), NavError> {
+pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
     let cps: Vec<(String, [i32; 3], usize)> = plan
         .checkpoints
         .iter()
@@ -4571,10 +4564,10 @@ fn verify_checkpoints(
     positions: &[VisitedPos],
     region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     for (anchor, pos, fire_step) in checkpoints {
         let Some(cell) = world.snap_standable(*pos, SNAP_RADIUS) else {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_CHECKPOINT_UNSTANDABLE,
                 message: format!(
                     "checkpoint anchor `{anchor}` at {pos:?} has no standable floor within \
@@ -4608,7 +4601,7 @@ fn verify_checkpoints(
             continue; // the target itself is unsnappable → a DW0311 concern, not ours
         };
         if leg_world.find_path(cell, goal).is_none() {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_CHECKPOINT_STRANDED,
                 message: format!(
                     "checkpoint `{anchor}` (cell {cell:?}) strands the party: the next required \
@@ -4648,7 +4641,7 @@ const TIMED_GATE_MIN_ADMIT_PERCENT: u32 = 20;
 /// A gate whose two sides have no walkable footing, or that no route connects even
 /// while open, is left to the geometry proofs that own it (`DW0311`) rather than
 /// double-reported here.
-pub fn check_timed_gates(plan: &Plan, world: &World) -> Result<(), NavError> {
+pub fn check_timed_gates(plan: &Plan, world: &World) -> Result<(), Failure> {
     verify_timed_gates(world, &plan.timed_gates)
 }
 
@@ -4667,7 +4660,7 @@ pub fn check_timed_gate_disarms(
     plan: &Plan,
     world: &World,
     entry: Option<[i32; 3]>,
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     verify_timed_gate_disarms(world, &plan.timed_gates, entry)
 }
 
@@ -4677,7 +4670,7 @@ fn verify_timed_gate_disarms(
     world: &World,
     gates: &[crate::plan::TimedGatePlan],
     entry: Option<[i32; 3]>,
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     let Some(entry) = entry else {
         return Ok(());
     };
@@ -4696,7 +4689,7 @@ fn verify_timed_gate_disarms(
         if sealed.find_path(start, goal).is_some() {
             continue;
         }
-        return Err(NavError {
+        return Err(Failure {
             code: DW_TIMED_GATE_DISARM_UNREACHABLE,
             message: format!(
                 "timed gate `{}`: its disarm affordance at `{}` ({:?}) is not walkable from the \
@@ -4716,7 +4709,7 @@ fn verify_timed_gate_disarms(
 
 /// The pure core of [`check_timed_gates`] (unit-testable against a synthetic
 /// [`World`]).
-fn verify_timed_gates(world: &World, gates: &[crate::plan::TimedGatePlan]) -> Result<(), NavError> {
+fn verify_timed_gates(world: &World, gates: &[crate::plan::TimedGatePlan]) -> Result<(), Failure> {
     for g in gates {
         let cells: BTreeSet<[i32; 3]> =
             crate::assembled::region_cells(g.gate_region.0, g.gate_region.1).collect();
@@ -4735,7 +4728,7 @@ fn verify_timed_gates(world: &World, gates: &[crate::plan::TimedGatePlan]) -> Re
         // a share it does not have.
         let percent = admits.saturating_mul(100) / cycle.max(1);
         if percent < TIMED_GATE_MIN_ADMIT_PERCENT {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_TIMED_GATE_COIN_FLIP,
                 message: format!(
                     "timed gate `{}` is a coin flip, not a timing read: crossing its span takes \
@@ -4906,7 +4899,7 @@ pub fn check_hazard_observability(
     plan: &Plan,
     world: &World,
     entry: Option<[i32; 3]>,
-) -> Result<Vec<Diagnostic>, NavError> {
+) -> Result<Vec<Diagnostic>, Failure> {
     let hazards = timed_hazards(plan);
     let findings = verify_hazard_observability(world, &hazards, entry);
     // A campaign that places a bonfire IS a souls campaign — the same test the
@@ -4919,12 +4912,12 @@ pub fn check_hazard_observability(
 /// campaign fails the build on the first one, anything else carries all of them as
 /// advisory warnings. Split out from [`check_hazard_observability`] so the tier
 /// rule itself is unit-testable without standing up a whole [`Plan`].
-fn hazard_tier(souls: bool, findings: Vec<Diagnostic>) -> Result<Vec<Diagnostic>, NavError> {
+fn hazard_tier(souls: bool, findings: Vec<Diagnostic>) -> Result<Vec<Diagnostic>, Failure> {
     if !souls {
         return Ok(findings);
     }
     match findings.into_iter().next() {
-        Some(d) => Err(NavError {
+        Some(d) => Err(Failure {
             code: DW_HAZARD_UNOBSERVABLE,
             message: d.message,
         }),
@@ -5053,7 +5046,7 @@ fn sees_hazard_cell(world: &World, watch: [i32; 3], hazard: [i32; 3]) -> bool {
 /// If it does, a retreat exists: luring ground, a positioning line, an exit. If it
 /// does not, the player is sealed in a pocket with the ambush and the beat has no
 /// second attempt to reward — that is a broken beat, not a hard one.
-pub fn check_ambushes(plan: &Plan, world: &World, entry: Option<[i32; 3]>) -> Result<(), NavError> {
+pub fn check_ambushes(plan: &Plan, world: &World, entry: Option<[i32; 3]>) -> Result<(), Failure> {
     let mut rests: Vec<[i32; 3]> = plan.checkpoints.iter().map(|c| c.pos).collect();
     rests.extend(entry);
     verify_ambushes(world, &plan.ambushes, &rests)
@@ -5066,7 +5059,7 @@ fn verify_ambushes(
     world: &World,
     ambushes: &[crate::plan::AmbushPlan],
     rests: &[[i32; 3]],
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     if ambushes.is_empty() || rests.is_empty() {
         return Ok(());
     }
@@ -5090,7 +5083,7 @@ fn verify_ambushes(
                 .is_some_and(|goal| occupied.find_path(from, goal).is_some())
         });
         if !escapes {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_AMBUSH_NO_COUNTERPLAY,
                 message: format!(
                     "ambush `{}` at {:?} leaves no counterplay: with its ambushers standing on \
@@ -5129,11 +5122,7 @@ fn verify_ambushes(
 ///
 /// Distances are A* step counts over the nav model — the same routing every other
 /// completability proof uses, so the two numbers are directly comparable.
-pub fn check_shortcuts(
-    plan: &Plan,
-    world: &World,
-    entry: Option<[i32; 3]>,
-) -> Result<(), NavError> {
+pub fn check_shortcuts(plan: &Plan, world: &World, entry: Option<[i32; 3]>) -> Result<(), Failure> {
     verify_shortcuts(world, &plan.shortcuts, entry)
 }
 
@@ -5162,7 +5151,7 @@ const LANE_MIN_LEG: f64 = 10.0;
 /// Routed over the **no-gate-use** view, exactly like wave seating: lane mobs
 /// cannot right-click a fence gate open, so a lane that "works" only by walking
 /// through one does not work.
-pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, NavError> {
+pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, Failure> {
     let entity_world_owned;
     let world: &World = if world.has_use_gates() {
         entity_world_owned = world.without_gate_use();
@@ -5181,7 +5170,7 @@ pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, NavError> {
             // `spawn-wave`); do not double-report it here.
             continue;
         };
-        let fail = |message: String| NavError {
+        let fail = |message: String| Failure {
             code: DW_LANE_GEOMETRY,
             message,
         };
@@ -5331,7 +5320,7 @@ pub fn check_respawn_safe_zone(
     world: &World,
     placements: &BTreeMap<String, Vec<[i32; 3]>>,
     lanes: &LaneRoutes,
-) -> Result<RespawnSafetyLedger, NavError> {
+) -> Result<RespawnSafetyLedger, Failure> {
     let reign_ends = plan.respawn_reign_ends();
     let rest_points: Vec<RestPoint> = plan
         .checkpoints
@@ -5936,7 +5925,7 @@ fn respawn_violations(
 /// campaign declares separates this respawn from a soft-lock**. So the message
 /// prescribes the three evidence routes before it prescribes moving anything, and
 /// still never offers shrinking `follow_range`.
-fn respawn_error(violations: &[RespawnViolation]) -> Option<NavError> {
+fn respawn_error(violations: &[RespawnViolation]) -> Option<Failure> {
     let first = violations.first()?;
     let others: Vec<String> = violations
         .iter()
@@ -5957,7 +5946,7 @@ fn respawn_error(violations: &[RespawnViolation]) -> Option<NavError> {
             others.join("; ")
         )
     };
-    Some(NavError {
+    Some(Failure {
         code: DW_RESPAWN_IN_AGGRO,
         message: format!(
             "respawn point `{anchor}` ({pos:?}) sits INSIDE the aggro range of `{id}`: its \
@@ -6000,7 +5989,7 @@ fn verify_respawn_safe_zone(
     rest_points: &[RestPoint],
     sources: &[AggroSource],
     onsets: &BTreeMap<String, usize>,
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     let none = RespawnEvidenceTable::default();
     match respawn_error(&respawn_violations(rest_points, sources, onsets, &none)) {
         Some(err) => Err(err),
@@ -6024,7 +6013,7 @@ fn verify_shortcuts(
     world: &World,
     shortcuts: &[crate::plan::ShortcutPlan],
     entry: Option<[i32; 3]>,
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     let Some(entry) = entry else {
         return Ok(());
     };
@@ -6046,7 +6035,7 @@ fn verify_shortcuts(
 
         // (1) the long route exists while the gate is sealed.
         let Some(long) = sealed.find_path(start, goal).map(|p| p.len()) else {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_SHORTCUT_NO_LONG_ROUTE,
                 message: format!(
                     "shortcut `{}`: no long route — its unlock affordance at `{}` ({:?}) is not \
@@ -6066,7 +6055,7 @@ fn verify_shortcuts(
             .map(|p| p.len())
             .unwrap_or(long);
         if short >= long {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_SHORTCUT_NO_GAIN,
                 message: format!(
                     "shortcut `{}` leaks: opening gate `{}` does not shorten the walk from the \
@@ -6302,7 +6291,7 @@ fn verify_optional_elites(
 /// activates it (DSL v0.6, spec-0014) — [`DW_STEALTH_ZONE`] (`DW0327`). A zone the
 /// player can never legally occupy (walled/void) or can never walk to from the
 /// activating position is a guaranteed unwinnable stealth beat.
-pub fn check_stealth_zones(plan: &Plan, world: &World) -> Result<(), NavError> {
+pub fn check_stealth_zones(plan: &Plan, world: &World) -> Result<(), Failure> {
     let beats: Vec<StealthProbe> = plan
         .stealth_beats
         .iter()
@@ -6318,7 +6307,7 @@ fn verify_stealth(
     world: &World,
     beats: &[StealthProbe],
     positions: &[VisitedPos],
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     for (zones, fire_step) in beats {
         // The player's position at the activating beat: the visited position at the
         // firing step, else the nearest earlier one, else the first position.
@@ -6348,7 +6337,7 @@ fn verify_stealth(
                 .filter(|c| world.is_standable(*c))
                 .collect();
             if stands.is_empty() {
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_STEALTH_ZONE,
                     message: format!(
                         "stealth zone `{name}` (box {lo:?}..{hi:?}) has no standable cell — a \
@@ -6367,7 +6356,7 @@ fn verify_stealth(
                     !stands.iter().any(|s| reachable.contains(s))
                 }
             {
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_STEALTH_ZONE,
                     message: format!(
                         "stealth zone `{name}` (box {lo:?}..{hi:?}, {n} standable cell(s)) is not \
@@ -6433,7 +6422,7 @@ type OnsetStart = (String, [i32; 3]);
 /// Scope: beats whose `on_caught` actually punishes ([`StealthBeat::is_punishing`]
 /// — `damage-players` or `spawn-wave`, at any nesting depth). A beat that only
 /// narrates when spotted has nothing to escape, so no timing obligation exists.
-pub fn check_stealth_onset(plan: &Plan, world: &World) -> Result<(), NavError> {
+pub fn check_stealth_onset(plan: &Plan, world: &World) -> Result<(), Failure> {
     let positions = critical_positions(plan);
     for beat in &plan.stealth_beats {
         if !beat.is_punishing() {
@@ -6512,7 +6501,7 @@ fn verify_stealth_onset(
     grace_ticks: u32,
     starts: &[OnsetStart],
     beat_index: usize,
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     // The budget the flee route itself gets, after the standing-start allowance.
     let budget = grace_ticks.saturating_sub(ONSET_REACTION_TICKS);
     for (label, raw) in starts {
@@ -6528,7 +6517,7 @@ fn verify_stealth_onset(
         }
         let need = cost + ONSET_REACTION_TICKS;
         let deficit = need - grace_ticks;
-        return Err(NavError {
+        return Err(Failure {
             code: DW_STEALTH_ONSET,
             message: format!(
                 "stealth beat #{beat_index}: a player cannot beat the grace window from {label}. \
@@ -6635,7 +6624,7 @@ fn nearest_zone_by_flee_time(
 /// party → `DW0342`. Non-critical-path (branch/optional) lethal traps carry no
 /// obligation here (existing `DW0306` gate-reachability covers not sealing off a
 /// mandatory anchor).
-pub fn check_traps(plan: &Plan, world: &World, moves: &[MovePlan]) -> Result<(), NavError> {
+pub fn check_traps(plan: &Plan, world: &World, moves: &[MovePlan]) -> Result<(), Failure> {
     if plan.traps.is_empty() {
         return Ok(());
     }
@@ -6658,7 +6647,7 @@ fn verify_traps(
     required: &BTreeSet<[i32; 3]>,
     spawn_starts: &[[i32; 3]],
     legs: &[(LegRoute, BTreeSet<[i32; 3]>)],
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     for t in traps {
         if !matches!(t.lethality, Lethality::Lethal) {
             continue; // only lethal traps carry the obligation
@@ -6698,7 +6687,7 @@ fn verify_traps(
         {
             continue;
         }
-        return Err(NavError {
+        return Err(Failure {
             code: DW_TRAP_LETHAL_UNAVOIDABLE,
             message: format!(
                 "lethal trap `{}` sits on the forced critical path at {tc:?} with no discharge — \
@@ -6837,7 +6826,7 @@ pub fn check_branch_path(
     transports: &[Option<[i32; 3]>],
     region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     route_visited(
         world,
         &positions_of(start, steps, transports),
@@ -6891,7 +6880,7 @@ pub fn branch_path_routes(
 /// edit batch that buries a room the content needs walkable is still caught,
 /// because a terrain edit is not a runtime region write and no leg state restores
 /// it.
-pub const DW_WAYPOINT_NOT_STANDABLE: DwCode = DwCode::every_version("DW0314");
+pub const DW_WAYPOINT_NOT_STANDABLE: DwCode = DwCode::every_version("DW0314", ExitTier::Build);
 
 /// Assert every exported waypoint cell is standable in `world` — the final model the
 /// routes were computed over (settled + flooded + fixtures). Returns
@@ -6899,7 +6888,7 @@ pub const DW_WAYPOINT_NOT_STANDABLE: DwCode = DwCode::every_version("DW0314");
 /// violation. This is the structural guard the water-flood model exists to make
 /// enforceable: a waypoint in a flooded (or newly-walled) cell fails the build
 /// loudly instead of stranding the bot at runtime.
-pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), NavError> {
+pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), Failure> {
     for leg in routes {
         // The world this leg was PROVEN over, obtained from the leg rather than
         // decided here. `world` is the final assembled model (settled + flooded +
@@ -6912,7 +6901,7 @@ pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), 
         let leg_world: &World = leg_world_owned.as_ref().unwrap_or(world);
         for &cell in &leg.cells {
             if !leg_world.is_standable(cell) {
-                return Err(NavError {
+                return Err(Failure {
                     code: DW_WAYPOINT_NOT_STANDABLE,
                     message: format!(
                         "critical-path waypoint export: cell {cell:?} on the leg to {to:?} is not \
@@ -6952,7 +6941,7 @@ pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), 
 /// fix the derivation, never the waypoint. Every other kind takes a fixed offset
 /// from authored geometry, so a violation is that geometry standing where the
 /// review camera has to be, and the repair is the piece.
-pub const DW_CAMERA_EYE_OCCLUDED: DwCode = DwCode::every_version("DW0724");
+pub const DW_CAMERA_EYE_OCCLUDED: DwCode = DwCode::every_version("DW0724", ExitTier::Build);
 
 /// One derived camera's eye, as [`verify_camera_eyes`] needs it.
 ///
@@ -6974,7 +6963,7 @@ pub struct CameraEye {
 /// [`DW_CAMERA_EYE_OCCLUDED`] (`DW0724`) naming the first offending shot on
 /// violation. The structural guard behind the visual tier: it is impossible to
 /// ship a render plan holding a camera that looks out from inside geometry.
-pub fn verify_camera_eyes(world: &World, cameras: &[CameraEye]) -> Result<(), NavError> {
+pub fn verify_camera_eyes(world: &World, cameras: &[CameraEye]) -> Result<(), Failure> {
     for cam in cameras {
         if world.is_clear(cam.cell) {
             continue;
@@ -6996,7 +6985,7 @@ pub fn verify_camera_eyes(world: &World, cameras: &[CameraEye]) -> Result<(), Na
              the recorded case), or move the anchor/seal the camera is derived from. Never nudge \
              the camera to make the picture come out."
         };
-        return Err(NavError {
+        return Err(Failure {
             code: DW_CAMERA_EYE_OCCLUDED,
             message: format!(
                 "{kind} shot `{shot_id}`: the camera eye cell {cell:?} is occupied (a solid block \
@@ -7024,7 +7013,7 @@ pub fn verify_camera_eyes(world: &World, cameras: &[CameraEye]) -> Result<(), Na
 ///   *stranding* — a player who ends up in the sea with no shoreline to climb
 ///   back onto is out of the delve just as permanently as one who fell out of a
 ///   void world. See [`verify_boundary_safety`] for the exact model.
-pub const DW_EDIT_BORDERS_VOID: DwCode = DwCode::every_version("DW0322");
+pub const DW_EDIT_BORDERS_VOID: DwCode = DwCode::every_version("DW0322", ExitTier::Build);
 
 /// How many individual violations a `DW0322` report names before summarising the
 /// remainder as a count. A boundary failure is systemic by nature — one stripped
@@ -7128,7 +7117,7 @@ const OPEN_SEA_MARGIN: i32 = 2;
 /// which is why no black-box test can tell the two orders apart, and why this is
 /// structural instead of a test. [`boundary_only`] is the unsequenced proof,
 /// kept so the masking can still be DEMONSTRATED rather than asserted.
-pub fn verify_boundary_safety(world: &World, starts: &[AnchorRoot]) -> Result<(), NavError> {
+pub fn verify_boundary_safety(world: &World, starts: &[AnchorRoot]) -> Result<(), Failure> {
     if let Some(e) = measure_fluid_escape(world).finding() {
         return Err(e);
     }
@@ -7154,13 +7143,13 @@ pub fn verify_boundary_safety(world: &World, starts: &[AnchorRoot]) -> Result<()
 /// this proof go quiet on a flooded world calls this; nothing else should — and
 /// `#[cfg(test)]` is what makes "nothing else" a fact rather than a request.
 #[cfg(test)]
-fn boundary_only(world: &World, starts: &[AnchorRoot]) -> Result<(), NavError> {
+fn boundary_only(world: &World, starts: &[AnchorRoot]) -> Result<(), Failure> {
     let reachable = world.reachable_walkable_rooted(starts);
     boundary_from(world, &reachable)
 }
 
 /// Boundary safety over an already-computed walk region.
-fn boundary_from(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), NavError> {
+fn boundary_from(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), Failure> {
     match &world.ambient {
         Ambient::Void => boundary_void(world, reachable),
         Ambient::Ocean(sea) => boundary_ocean(world, reachable, sea),
@@ -7170,7 +7159,7 @@ fn boundary_from(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), Na
 /// Boundary safety under [`Ambient::Void`]: no reachable walkable cell may
 /// border a bottomless column. Every violation is collected (see
 /// [`BOUNDARY_LIST_LIMIT`]) so one report shows the scale of the breach.
-fn boundary_void(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), NavError> {
+fn boundary_void(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), Failure> {
     // Per-column lowest fall-arresting cell: solid, tall barrier, use-gate, or
     // flooded — anything vanilla stops a falling player on (or in).
     let mut col_min: BTreeMap<(i32, i32), i32> = BTreeMap::new();
@@ -7221,7 +7210,7 @@ fn boundary_void(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), Na
         ));
     }
     let first = hits[0].1;
-    Err(NavError {
+    Err(Failure {
         code: DW_EDIT_BORDERS_VOID,
         message: format!(
             "boundary safety (spec-0017): {} reachable walkable cell(s) border a void drop over \
@@ -7257,11 +7246,7 @@ struct SeaBody {
 
 /// Boundary safety under [`Ambient::Ocean`]: the stranding invariant. See
 /// [`verify_boundary_safety`] for the model this implements.
-fn boundary_ocean(
-    world: &World,
-    reachable: &BTreeSet<[i32; 3]>,
-    sea: &Sea,
-) -> Result<(), NavError> {
+fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> Result<(), Failure> {
     let level = sea.level;
     let Some(([min_x, min_z], [max_x, max_z])) = ocean_window(world) else {
         return Ok(()); // nothing placed: open sea everywhere, nothing to strand
@@ -7384,7 +7369,7 @@ fn boundary_ocean(
         .next()
         .copied()
         .unwrap_or_default();
-    Err(NavError {
+    Err(Failure {
         code: DW_EDIT_BORDERS_VOID,
         message: format!(
             "boundary safety (spec-0017, `horizon: ocean`): {shores} reachable walkable cell(s) \
@@ -7473,7 +7458,7 @@ fn ocean_window(world: &World) -> Option<([i32; 2], [i32; 2])> {
 /// Both branches **aggregate**, like `DW0322`: one report per run naming up to
 /// [`BOUNDARY_LIST_LIMIT`] cells plus the totals, so a one-cell dribble and a
 /// whole coastline pouring into nothing are distinguishable without re-probing.
-pub const DW_FLUID_LEAVES_WORLD: DwCode = DwCode::every_version("DW0318");
+pub const DW_FLUID_LEAVES_WORLD: DwCode = DwCode::every_version("DW0318", ExitTier::Build);
 
 /// **What the fluid-escape proof looked at**, so the verdict is readable as a
 /// measurement rather than as a silence (CLAUDE.md: every validation artifact
@@ -7550,7 +7535,7 @@ impl FluidEscape {
     /// The `DW0318` violation, or `None`. A finding **only** under
     /// [`Ambient::Void`]: under `ocean` the water met the sea, which is what a
     /// shoreline piece's water is for.
-    pub fn finding(&self) -> Option<NavError> {
+    pub fn finding(&self) -> Option<Failure> {
         if self.horizon != "void" || self.outside.is_empty() {
             return None;
         }
@@ -7568,7 +7553,7 @@ impl FluidEscape {
         } else {
             format!("from placed piece(s) {}", self.from_pieces.join(", "))
         };
-        Some(NavError {
+        Some(Failure {
             code: DW_FLUID_LEAVES_WORLD,
             message: format!(
                 "fluid leaves the built world: {n} fluid cell(s) in {cols} column(s) lie outside \
@@ -7700,7 +7685,7 @@ impl FluidEscape {
 /// cells are `flooded`, therefore not standable, therefore never reachable, and
 /// this proof has nothing to say about them. Wading into the sea off a beach is a
 /// body leaving the walk region, which is `DW0322`'s question.
-pub const DW_SEA_ENTERS_WALK: DwCode = DwCode::every_version("DW0851");
+pub const DW_SEA_ENTERS_WALK: DwCode = DwCode::every_version("DW0851", ExitTier::Build);
 
 /// **What the sea-seepage proof looked at**, so its verdict reads as a
 /// measurement rather than a silence (CLAUDE.md: every validation artifact states
@@ -7871,7 +7856,7 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
 
 impl SeaSeepage {
     /// The `DW0851` violation, or `None`.
-    pub fn finding(&self) -> Option<NavError> {
+    pub fn finding(&self) -> Option<Failure> {
         if self.submerged.is_empty() {
             return None;
         }
@@ -7889,7 +7874,7 @@ impl SeaSeepage {
         } else {
             format!("in placed piece(s) {}", self.in_pieces.join(", "))
         };
-        Some(NavError {
+        Some(Failure {
             code: DW_SEA_ENTERS_WALK,
             message: format!(
                 "the ambient sea covers the walk region: {n} reachable standable cell(s) across \
@@ -7954,16 +7939,16 @@ impl SeaSeepage {
 /// the slot cannot reach is a hole a player could stand in and be safe by
 /// accident. Escaping a volley must be a decision (leave the zone), never a
 /// lucky step.
-pub const DW_VOLLEY_ZONE_UNCOVERED: DwCode = DwCode::every_version("DW0442");
+pub const DW_VOLLEY_ZONE_UNCOVERED: DwCode = DwCode::every_version("DW0442", ExitTier::Build);
 /// `DW0444`: a trap-payload region is unusable — a `volley` kill zone with no
 /// standable cell, or a `collapse` region with nothing to drop / nothing to
 /// land on.
-pub const DW_TRAP_REGION_EMPTY: DwCode = DwCode::every_version("DW0444");
+pub const DW_TRAP_REGION_EMPTY: DwCode = DwCode::every_version("DW0444", ExitTier::Build);
 /// `DW0445`: the critical path is not completable once a `collapse` has fired.
-pub const DW_COLLAPSE_BURIES_PATH: DwCode = DwCode::every_version("DW0445");
+pub const DW_COLLAPSE_BURIES_PATH: DwCode = DwCode::every_version("DW0445", ExitTier::Build);
 /// `DW0446`: a `volley`'s `from_anchor` cell is not clear, so the projectile
 /// would be summoned inside solid geometry and never leave it.
-pub const DW_VOLLEY_SLOT_OCCLUDED: DwCode = DwCode::every_version("DW0446");
+pub const DW_VOLLEY_SLOT_OCCLUDED: DwCode = DwCode::every_version("DW0446", ExitTier::Build);
 
 /// Height above a kill-zone cell's floor a volley aims at: centre mass of a
 /// standing player (a 1.8-tall hitbox with feet on the floor). Aiming at the
@@ -8059,9 +8044,9 @@ pub fn plan_volley(
     from: [i32; 3],
     region: ([i32; 3], [i32; 3]),
     label: &str,
-) -> Result<VolleyGeometry, NavError> {
+) -> Result<VolleyGeometry, Failure> {
     if !world.is_volley_slot_clear(from) {
-        return Err(NavError {
+        return Err(Failure {
             code: DW_VOLLEY_SLOT_OCCLUDED,
             message: format!(
                 "{label}: the `from_anchor` cell [{}, {}, {}] is solid or flooded, so a \
@@ -8080,7 +8065,7 @@ pub fn plan_volley(
         .filter(|c| world.is_standable(*c))
         .collect();
     if cells.is_empty() {
-        return Err(NavError {
+        return Err(Failure {
             code: DW_TRAP_REGION_EMPTY,
             message: format!(
                 "{label}: the `kill_zone` region [{}, {}, {}]..[{}, {}, {}] contains no \
@@ -8095,7 +8080,7 @@ pub fn plan_volley(
     for cell in cells {
         let dst = volley_target(cell);
         if let Some(block) = world.first_projectile_block(src, dst) {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_VOLLEY_ZONE_UNCOVERED,
                 message: format!(
                     "{label}: the gallery slot [{}, {}, {}] has no line of fire to \
@@ -8158,12 +8143,12 @@ pub fn plan_collapse(
     blocks: &BTreeMap<[i32; 3], String>,
     region: ([i32; 3], [i32; 3]),
     label: &str,
-) -> Result<CollapseGeometry, NavError> {
+) -> Result<CollapseGeometry, Failure> {
     let drops: Vec<[i32; 3]> = crate::assembled::region_cells(region.0, region.1)
         .filter(|c| blocks.contains_key(c))
         .collect();
     if drops.is_empty() {
-        return Err(NavError {
+        return Err(Failure {
             code: DW_TRAP_REGION_EMPTY,
             message: format!(
                 "{label}: the `collapse` region [{}, {}, {}]..[{}, {}, {}] contains no \
@@ -8202,7 +8187,7 @@ pub fn plan_collapse(
         }
     }
     if !landed_any {
-        return Err(NavError {
+        return Err(Failure {
             code: DW_TRAP_REGION_EMPTY,
             message: format!(
                 "{label}: nothing beneath the `collapse` region [{}, {}, {}]..[{}, {}, {}] \
@@ -8238,12 +8223,12 @@ pub fn check_collapses(
     plan: &Plan,
     world: &World,
     collapses: &[(String, CollapseGeometry)],
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     for (label, g) in collapses {
         let debris: BTreeSet<[i32; 3]> = g.debris.iter().copied().collect();
         let collapsed = world.with_sealed(&debris);
         if let Err(e) = check_critical_path(plan, &collapsed) {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_COLLAPSE_BURIES_PATH,
                 message: format!(
                     "{label}: the critical path is no longer completable once this collapse \

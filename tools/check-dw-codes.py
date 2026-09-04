@@ -31,6 +31,16 @@ coverage cannot see it. It has happened: `DW0352` shipped for stealth-onset
 survivability into a main that had just given `DW0352` to the map editor's
 trap-hardware integrity check.
 
+## Exit tier (bidirectional)
+
+Every `DwCode` declares which tier a hard failure carrying it exits at
+(`dsl::diagnostic::ExitTier`), and §1 of the reference carries the table of the
+analysis-tier ones. The two are held in lockstep in both directions: a code
+declared `ExitTier::Analysis` and missing from the table, or listed in the table
+and not declared `Analysis`, is a FAIL. Without this the tier would be a fact
+stated twice with nothing comparing them, and the doc half would go stale the
+first time a code changed tier — the reader's copy is the one nothing compiles.
+
 ## Test-coverage gate
 
 Every documented, landed (non-PENDING) DW code must be **asserted** by at least
@@ -287,6 +297,61 @@ def declared_constants() -> dict[str, set[tuple[str, str]]]:
 
 CATALOG_ROW_RE = re.compile(r"^\|\s*`(DW[0-9]{4})`\s*\|")
 
+# The exit-tier table in §1. Its rows are code-shaped, so the catalog reader has
+# to know it is not the catalog — identified by its header, positively, and the
+# identification is self-protecting: rename the header and these ten codes
+# immediately read as duplicate catalog rows, which is already a FAIL.
+EXIT_TIER_HEADER = ("Code", "What the author changes")
+
+# A `DwCode` constant together with the tier it declares. Deliberately separate
+# from CONST_RE, which also matches the bare `&str` codes in the tooling
+# binaries: those carry no `dsl_version` and no tier, so demanding one of them
+# would be a gate asking a question its subject cannot answer.
+TIERED_CONST_RE = re.compile(
+    r'const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:\w+::)*DwCode\s*=\s*'
+    r'(?:\w+::)*DwCode::(?:every_version|since)\(\s*"(DW[0-9]{4})"'
+    r'([^;]*?)\)\s*;'
+)
+TIER_RE = re.compile(r"ExitTier::(Analysis|Build)")
+
+
+def declared_tiers() -> tuple[dict[str, str], list[str]]:
+    """`(DW code -> declared tier, constants whose tier could not be read)`.
+
+    The second half is the anti-vacuity half: a declaration this parser cannot
+    read is reported, never treated as absent. A tier silently dropped here would
+    take its code out of the comparison below and the gate would pass by having
+    looked at less.
+    """
+    tiers: dict[str, str] = {}
+    unreadable: list[str] = []
+    for rs in sorted(CRATES_DIR.rglob("*.rs")):
+        for name, code, rest in TIERED_CONST_RE.findall(rs.read_text(encoding="utf-8")):
+            m = TIER_RE.search(rest)
+            if not m:
+                unreadable.append(f"{rs.relative_to(REPO_ROOT)}: {name} ({code})")
+                continue
+            tiers[code] = m.group(1)
+    return tiers, unreadable
+
+
+def documented_analysis_codes() -> tuple[set[str], int]:
+    """`(codes the §1 exit-tier table lists, rows that table holds)`.
+
+    The row count is returned so the caller can refuse a table that has gone
+    empty: a comparison against an empty set agrees with a source that declares
+    no analysis-tier code at all, which is the one answer this gate must never
+    give quietly.
+    """
+    text = DOC_PATH.read_text(encoding="utf-8")
+    rows = [r for r in mdtable.body_rows(text) if r.header == EXIT_TIER_HEADER]
+    codes = set()
+    for r in rows:
+        m = CATALOG_ROW_RE.match(r.line.strip())
+        if m:
+            codes.add(m.group(1))
+    return codes, len(rows)
+
 
 def catalog_rows() -> tuple[dict[str, int], list[tuple[int, str]]]:
     """`(DW code -> catalog rows introducing it, catalog rows no table holds)`.
@@ -302,6 +367,7 @@ def catalog_rows() -> tuple[dict[str, int], list[tuple[int, str]]]:
     """
     text = DOC_PATH.read_text(encoding="utf-8")
     rows, detached = mdtable.rows_matching(text, CATALOG_ROW_RE)
+    rows = [r for r in rows if r.header != EXIT_TIER_HEADER]
     counts: dict[str, int] = {}
     for row in rows:
         code = CATALOG_ROW_RE.match(row.line.strip()).group(1)
@@ -431,6 +497,39 @@ def main() -> int:
             f"(renumber or merge the duplicate row): {', '.join(dup_rows)}"
         )
 
+    # --- exit tier: source and reference in lockstep -------------------------
+    tiers, unreadable_tiers = declared_tiers()
+    for where in unreadable_tiers:
+        errors.append(
+            f"a DwCode constant declares no readable ExitTier ({where}) — the "
+            "tier is what decides the process exit status, so a declaration this "
+            "gate cannot read is a code it cannot judge"
+        )
+    documented_analysis, tier_rows = documented_analysis_codes()
+    if tier_rows == 0:
+        errors.append(
+            "the exit-tier table in docs/reference/compiler.md §1 holds no rows "
+            f"(expected a table headed {' | '.join(EXIT_TIER_HEADER)}) — this gate "
+            "would otherwise compare every declared tier against an empty set and "
+            "pass by binding to nothing"
+        )
+    else:
+        declared_analysis = {c for c, tier in tiers.items() if tier == "Analysis"}
+        undocumented_tier = sorted(declared_analysis - documented_analysis)
+        if undocumented_tier:
+            errors.append(
+                "DW codes declared ExitTier::Analysis in source but MISSING from the "
+                "exit-tier table in docs/reference/compiler.md §1 (add a row saying "
+                f"what the author changes): {', '.join(undocumented_tier)}"
+            )
+        overdocumented_tier = sorted(documented_analysis - declared_analysis)
+        if overdocumented_tier:
+            errors.append(
+                "DW codes listed as analysis tier in docs/reference/compiler.md §1 "
+                "that source does NOT declare ExitTier::Analysis (the table is stale "
+                f"— they exit 3): {', '.join(overdocumented_tier)}"
+            )
+
     # --- test-coverage gate -------------------------------------------------
     stale_allowlist = sorted(set(ALLOWLIST) - (doc - PENDING))
     if stale_allowlist:
@@ -466,7 +565,10 @@ def main() -> int:
         f"DW-code consistency OK: {len(src)} source codes documented; "
         f"{len(PENDING)} approved-landing (pending); "
         f"{len(requires_test)} require tests, all covered "
-        f"({len(ALLOWLIST)} allowlisted)."
+        f"({len(ALLOWLIST)} allowlisted); "
+        f"{len(tiers)} exit tiers declared, "
+        f"{len([c for c, x in tiers.items() if x == 'Analysis'])} of them analysis "
+        f"tier, matching {tier_rows} documented row(s)."
     )
     return 0
 

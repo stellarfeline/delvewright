@@ -52,34 +52,34 @@ use delvewright_dsl::{
 };
 
 use crate::continuity::{self, NpcWhere};
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// A live NPC is unaccounted for in a quest's `cast` ledger (proof 1).
-pub const DW_CAST_UNACCOUNTED: DwCode = DwCode::every_version("DW0460");
+pub const DW_CAST_UNACCOUNTED: DwCode = DwCode::every_version("DW0460", ExitTier::Build);
 /// A declared `at` contradicts the position the effect history produces (proof 2).
-pub const DW_CAST_PLACEMENT: DwCode = DwCode::every_version("DW0461");
+pub const DW_CAST_PLACEMENT: DwCode = DwCode::every_version("DW0461", ExitTier::Build);
 /// A branch-divergent NPC carries a single flat declaration (proof 4).
-pub const DW_CAST_BRANCH: DwCode = DwCode::every_version("DW0462");
+pub const DW_CAST_BRANCH: DwCode = DwCode::every_version("DW0462", ExitTier::Build);
 /// A cast placement omits the forcing-function fields, or declares them for a
 /// body that is not in the world.
-pub const DW_CAST_INCOMPLETE: DwCode = DwCode::every_version("DW0463");
+pub const DW_CAST_INCOMPLETE: DwCode = DwCode::every_version("DW0463", ExitTier::Build);
 /// A cast entry names something that does not exist (unknown NPC, a dialogue root
 /// that is not a node of that NPC's tree, an empty bark pool).
-pub const DW_CAST_DANGLING: DwCode = DwCode::every_version("DW0464");
+pub const DW_CAST_DANGLING: DwCode = DwCode::every_version("DW0464", ExitTier::Build);
 /// A pre-0.7 campaign declares no cast ledger — the deprecation window (warning).
-pub const DW_CAST_PRE_07: DwCode = DwCode::every_version("DW0465");
+pub const DW_CAST_PRE_07: DwCode = DwCode::every_version("DW0465", ExitTier::Build);
 /// `"unchanged"` at an NPC's first appearance: nothing to carry forward.
-pub const DW_CAST_UNCHANGED_FIRST: DwCode = DwCode::every_version("DW0466");
+pub const DW_CAST_UNCHANGED_FIRST: DwCode = DwCode::every_version("DW0466", ExitTier::Build);
 /// An NPC's dialogue never changes across the whole story (warning).
-pub const DW_CAST_STALE: DwCode = DwCode::every_version("DW0467");
+pub const DW_CAST_STALE: DwCode = DwCode::every_version("DW0467", ExitTier::Build);
 /// A `talk-to` objective whose NPC opens nothing that can complete it, at any
 /// scene the ledger can present while that objective is live (see
 /// [`check_talk_answerable`]).
-pub const DW_CAST_UNANSWERABLE: DwCode = DwCode::every_version("DW0858");
+pub const DW_CAST_UNANSWERABLE: DwCode = DwCode::every_version("DW0858", ExitTier::Build);
 /// A cast clause no runtime state can select: at every state satisfying its own
 /// gate, a later clause of the same quest also passes and overrides it, so its
 /// scene is unreachable by construction (see [`check_clause_liveness`]).
-pub const DW_CAST_DEAD_CLAUSE: DwCode = DwCode::every_version("DW0846");
+pub const DW_CAST_DEAD_CLAUSE: DwCode = DwCode::every_version("DW0846", ExitTier::Build);
 
 /// What an NPC's right-click does during one scene.
 #[derive(Clone, Debug, PartialEq, Eq)]

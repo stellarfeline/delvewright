@@ -99,7 +99,8 @@ use delvewright_dsl::{
 };
 use serde_json::{Value, json};
 
-use crate::nav::{CameraEye, LegRoute, NavError, World};
+use crate::failure::Failure;
+use crate::nav::{CameraEye, LegRoute, World};
 use crate::plan::{Plan, ResolvedAnchor, Step};
 use crate::registry::PrefabRegistry;
 
@@ -672,7 +673,7 @@ pub fn render_plan(
     prefabs: &PrefabRegistry,
     pov: &[PovShot],
     world: &World,
-) -> Result<(Value, Vec<Diagnostic>), NavError> {
+) -> Result<(Value, Vec<Diagnostic>), Failure> {
     let c = plan.campaign;
     let mut out = Shots::new(c, world);
 

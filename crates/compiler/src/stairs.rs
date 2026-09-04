@@ -60,10 +60,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::assembled::{base_id, state_value};
-use crate::nav::NavError;
+use crate::failure::Failure;
 use crate::plan::Plan;
 use crate::solver::Facing;
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// A stair whose `facing` contradicts the climb a proven route makes across it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +80,7 @@ pub struct ReversedStair {
     pub piece: Option<String>,
 }
 
-const DW_STAIR_REVERSED: DwCode = DwCode::every_version("DW0430");
+const DW_STAIR_REVERSED: DwCode = DwCode::every_version("DW0430", ExitTier::Build);
 
 /// Whether `name` is a stair block laid the normal way up. Upside-down stairs
 /// (`half=top`) present a flat full-height top face, so they carry no climb and
@@ -208,7 +208,7 @@ pub fn check_stair_orientation(
     blocks: &BTreeMap<[i32; 3], String>,
     plan: Option<&Plan>,
     routes: &[Vec<[i32; 3]>],
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     let bad = reversed_stairs(blocks, plan, routes);
     if bad.is_empty() {
         return Ok(());
@@ -248,7 +248,7 @@ pub fn check_stair_orientation(
     if bad.len() > 24 {
         lines.push(format!("    … and {} more", bad.len() - 24));
     }
-    Err(NavError {
+    Err(Failure {
         code: DW_STAIR_REVERSED,
         message: format!(
             "{} stair block(s) on a proven route face away from the climb they carry.\n{}\n\

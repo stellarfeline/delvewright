@@ -117,14 +117,14 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use delvewright_dsl::DwCode;
 use delvewright_dsl::{Campaign, DialogueEffect, Objective, QuestEffect, Trigger};
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// Objective-path incoherence (the replay check).
-pub const DW_PATH_INCOHERENT: DwCode = DwCode::every_version("DW0204");
+pub const DW_PATH_INCOHERENT: DwCode = DwCode::every_version("DW0204", ExitTier::Analysis);
 
 /// Optional participation can skip a load-bearing mainline beat.
-pub const DW_OPTIONAL_GATES_MAINLINE: DwCode = DwCode::every_version("DW0205");
+pub const DW_OPTIONAL_GATES_MAINLINE: DwCode = DwCode::every_version("DW0205", ExitTier::Analysis);
 
 /// Upper bound on enumerated branch worlds. The product of the *flag-reading*
 /// choice groups' arities; groups past the bound stay **unconstrained** (all

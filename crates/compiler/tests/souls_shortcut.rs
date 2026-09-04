@@ -233,7 +233,7 @@ fn plan_code(dir: &std::path::Path) -> Result<(), delvewright_dsl::DwCode> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     Plan::build(&campaign, &prefabs)
         .map(|_| ())
-        .map_err(|e| e.code)
+        .map_err(|e| e.failure.code)
 }
 
 /// **Green**: the fixture is a single piece with an internal gate (`anchor/door`)
