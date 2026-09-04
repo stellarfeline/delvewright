@@ -397,10 +397,17 @@ fn chronicle_of(c: &Campaign, journal: &[JournalStep]) -> (Vec<ChronicleLine>, V
         {
             push("objective", step.objective.clone(), h, &mut lines);
         }
+        // The dialogue option this branch takes to complete a `talk-to` beat —
+        // the place a fork's divergence actually lives, since a dialogue effect
+        // carries no `happening` of its own and the option is the only thing on
+        // that side of the campaign that does. Named by the node it stands in
+        // and its ordinal, so a citation table can point at it.
         if let Some(n) = step.talk_option
-            && let Some((npc, h)) = option_happening(c, n)
+            && let Some(npc) = talk_to_npc(c, &step.objective)
+            && let Some((node, opt)) = option_at(c, npc, n)
+            && let Some(h) = &opt.happening
         {
-            push("choice", format!("{npc}#{n}"), h, &mut lines);
+            push("choice", format!("{npc} {node}#{n}"), h, &mut lines);
         }
         let qi = quest_index[step.quest.as_str()];
         if let Some(effs) = q
@@ -474,16 +481,32 @@ fn record_effect(
     }
 }
 
-/// The dialogue option `n`'s NPC and `happening`, if it declares one.
-fn option_happening(c: &Campaign, n: usize) -> Option<(&str, &Happening)> {
-    for tree in &c.dialogue.content.dialogues {
-        let mut k = 0usize;
-        for node in &tree.nodes {
-            for opt in &node.options {
-                k += 1;
-                if k == n {
-                    return opt.happening.as_ref().map(|h| (tree.npc.as_str(), h));
-                }
+/// Option `n` of **`npc`'s own tree**: the node it stands in, and its
+/// `happening` if it declares one.
+///
+/// The ordinal is 1-based across one NPC's tree — that is the scope
+/// `flow::flatten_trees` assigns it in and the scope `plan::plan_npc` emits it
+/// in — so it is resolved against that NPC's tree and no other. Resolving it
+/// against a campaign-wide enumeration returns an honest answer about a
+/// different speaker's option: the same defect [`entry_choices`] avoids by
+/// taking the tree first.
+fn option_at<'a>(
+    c: &'a Campaign,
+    npc: &str,
+    n: usize,
+) -> Option<(&'a str, &'a delvewright_dsl::DialogueOption)> {
+    let tree = c
+        .dialogue
+        .content
+        .dialogues
+        .iter()
+        .find(|t| t.npc.as_str() == npc)?;
+    let mut k = 0usize;
+    for node in &tree.nodes {
+        for opt in &node.options {
+            k += 1;
+            if k == n {
+                return Some((node.id.as_str(), opt));
             }
         }
     }
