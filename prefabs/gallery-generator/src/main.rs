@@ -300,10 +300,15 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/east-pit",
-        pos: [21, 1, 22],
+        pos: [22, 1, 22],
         facing: None,
         trigger_block: None,
-        note: "the second killing volume, so the two never share a box",
+        note: "the second killing volume, so the two never share a box. One cell \
+               east of the bay's middle, and its `extent` is 1 on x rather than \
+               2, because a 5-wide box centred here reaches x=19 — which is the \
+               broken flight, the ONLY way onto the mezzanine. A volume that \
+               covers the single route to a `reach-anchor` objective is a hall \
+               nobody can finish (DW0510)",
         role: None,
     },
     Anchor {
