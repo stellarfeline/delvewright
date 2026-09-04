@@ -23,6 +23,44 @@
 //!
 //! The fence itself — the pass that drops a `Since(n)` diagnostic raised against
 //! a campaign below `n` — is [`crate::fence`].
+//!
+//! # One cause, one line
+//!
+//! **A secondary whose premise is an already-reported primary is folded into
+//! that primary or suppressed, and the line that survives says how many
+//! dependants it stands for.** A refusal is the whole product at the moment an
+//! author meets it, and N copies of one sentence is a count the reader has to
+//! discount rather than information — worse, the copies come first and bury the
+//! one line that is theirs to act on.
+//!
+//! Measured on a 24-place campaign: deleting `layout-graph.json` printed
+//! `DW0824` (correct, one line) and then **`DW0842` twenty-four times**, once
+//! per `details[]` row, each saying the plan resolves 0 boxes; shortening the
+//! region by five courses printed **`DW0826` twenty-four times**, once per box,
+//! for one number in one document.
+//!
+//! The rule has two shapes, and which one applies is decided by whether the
+//! secondary still has anything of its own to say:
+//!
+//! 1. **Fold.** Every finding shares one cause and one repair, so they are one
+//!    diagnostic naming all of them. The code is unchanged and still fires per
+//!    item the moment the items differ — the folded arm is reachable only in the
+//!    state that makes them identical. Instances: [`codes::QUEST_NOT_EXPANDED`]
+//!    when stage 5 is empty (`crate::validate`), `DW0842` at a zero box count
+//!    (`compiler::detail`), `DW0826` when more than one thing leaves the region
+//!    (`crate::siteplan`).
+//! 2. **Defer.** The secondary is a real, separate finding whose NUMBER was
+//!    measured against something already refused, so it keeps its own line and
+//!    gains a clause naming what it is downstream of. Instances: `DW0818`'s
+//!    clause when stage 5 declares no quests (`crate::layout`), and
+//!    `crate::siteplan::off_grid_note` on every verdict computed from a box
+//!    `DW0825` has refused.
+//!
+//! What the rule never does is drop a code's ability to refuse. Folding changes
+//! how many lines say a thing, never whether the run stops: every fold above is
+//! an error tier that still exits non-zero, and each has a test on both sides —
+//! primary present, one line; primary absent, the secondary fires per item as
+//! before.
 
 use serde::Serialize;
 

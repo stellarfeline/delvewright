@@ -830,6 +830,84 @@ fn dw0842_refuses_an_anchor_key_the_place_does_not_owe() {
     assert!(e.contains("is not a name"), "{e}");
 }
 
+/// **One cause, one line — the primary-absent side.** With a map to be wrong
+/// about, one bad `place` is one row's mistake: it is refused on its own, at its
+/// own path, and the rows either side of it are not.
+#[test]
+fn dw0842_refuses_one_bad_row_per_row_while_the_map_exists() {
+    let tmp = tempdir("dw0842-one-row");
+    let places = every_place();
+    let refs: Vec<&str> = places.iter().map(String::as_str).collect();
+    let d = detailed(&tmp, &refs);
+    patch_detail_plan(&d, |v| {
+        v["content"]["details"][1]["place"] = serde_json::json!("node/nowhere");
+    });
+    let (diags, binding) = check_at(&d);
+    let hit: Vec<_> = diags
+        .iter()
+        .filter(|x| x.code == "DW0842" && x.severity == Severity::Error)
+        .collect();
+    assert_eq!(
+        hit.len(),
+        1,
+        "one wrong row is one refusal: {:?}",
+        codes(&diags)
+    );
+    assert_eq!(hit[0].path, "/content/details[1]/place");
+    assert!(
+        hit[0].message.contains("node/nowhere"),
+        "{}",
+        hit[0].message
+    );
+    assert_eq!(
+        binding.bound,
+        places.len() - 1,
+        "and every other row still bound"
+    );
+}
+
+/// **One cause, one line — the primary-present side.** A site plan that resolves
+/// ZERO boxes makes every `details[]` row miss by construction, so the per-row
+/// refusal says one sentence once per row and none of the copies is the finding.
+/// Measured on a 24-place campaign before this fold: `DW0824` (correct, one
+/// line) followed by 24 copies of `DW0842`. The count, every row and the primary
+/// it is downstream of are stated once — and the run still stops.
+#[test]
+fn dw0842_states_a_zero_box_plan_once_and_names_every_row() {
+    let tmp = tempdir("dw0842-zero-boxes");
+    let places = every_place();
+    let refs: Vec<&str> = places.iter().map(String::as_str).collect();
+    let d = detailed(&tmp, &refs);
+    std::fs::remove_file(d.campaign.join("layout-graph.json")).unwrap();
+    let (diags, binding) = check_at(&d);
+    let hit: Vec<_> = diags
+        .iter()
+        .filter(|x| x.code == "DW0842" && x.severity == Severity::Error)
+        .collect();
+    assert_eq!(
+        hit.len(),
+        1,
+        "one line for one map, not one per row: {:?}",
+        codes(&diags)
+    );
+    assert_eq!(hit[0].path, "/content/details");
+    for p in &places {
+        assert!(
+            hit[0].message.contains(p.as_str()),
+            "a fold names every row it stands for; `{p}` is missing from: {}",
+            hit[0].message
+        );
+    }
+    assert!(
+        hit[0].message.contains("DW0824"),
+        "and it names the primary it defers to: {}",
+        hit[0].message
+    );
+    assert_eq!(binding.rows, places.len(), "the row count is still stated");
+    assert_eq!(binding.boxes, 0, "against a zero denominator");
+    assert_eq!(binding.bound, 0);
+}
+
 /// The limiting case, named rather than inferred.
 #[test]
 fn dw0842_refuses_a_detail_plan_with_no_site_plan() {

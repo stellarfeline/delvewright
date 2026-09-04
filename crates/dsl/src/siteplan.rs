@@ -2011,81 +2011,188 @@ fn grid(placed: &[Placed<'_>], table: &Metrics, reads: &mut Reads, d: &mut Vec<D
 /// Whole-owned volumes answer to it too. A `massif` outside the region is the
 /// whole owning mass beyond its own declared extent, which is the same
 /// extent-flows-up defect arriving through the back door.
+///
+/// **One region number is one finding, however many boxes stand outside it**
+/// (`crate::diagnostic`'s "one cause, one line"). The region is a single fact
+/// handed down by the brief, so a region a course too short puts *every* box
+/// over the same edge and each per-box refusal prints the same two numbers with
+/// a different name in front: measured on a 24-place campaign, shortening the
+/// region by five courses printed 24 identical paragraphs. When more than one
+/// thing leaves it, this states the count, names every offender with its own
+/// overrun, and prescribes once. A single offender still gets its own line
+/// exactly as before — the fold is reachable only where the copies would have
+/// been.
 fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
     let r = &plan.region;
     let spans = [region_span(r, 0), region_span(r, 1), region_span(r, 2)];
+    // How the region reads once, for the folded arms: the per-item clause
+    // repeats it, and repeating it N times is most of what made N copies
+    // unreadable.
+    let region_text = format!(
+        "x {}..{}, y {}..{}, z {}..{}",
+        spans[0].0, spans[0].1, spans[1].0, spans[1].1, spans[2].0, spans[2].1
+    );
+
+    // ---- boxes ----
+    let mut boxes_out: Vec<Overrun<'_>> = Vec::new();
     for p in placed {
-        let mut bad: Vec<String> = Vec::new();
+        let mut bad: Vec<(&'static str, i64, i64)> = Vec::new();
         if !within((p.x0(), p.x1()), spans[0]) {
-            bad.push(format!(
-                "x {}..{} against the region's {}..{}",
-                p.x0(),
-                p.x1(),
-                spans[0].0,
-                spans[0].1
-            ));
-        }
-        if !within((p.z0(), p.z1()), spans[2]) {
-            bad.push(format!(
-                "z {}..{} against the region's {}..{}",
-                p.z0(),
-                p.z1(),
-                spans[2].0,
-                spans[2].1
-            ));
+            bad.push(("x", p.x0(), p.x1()));
         }
         if let Some(y) = p.y_span()
             && !within(y, spans[1])
         {
-            bad.push(format!(
-                "y {}..{} against the region's {}..{}",
-                y.0, y.1, spans[1].0, spans[1].1
-            ));
+            bad.push(("y", y.0, y.1));
         }
-        if bad.is_empty() {
-            continue;
+        if !within((p.z0(), p.z1()), spans[2]) {
+            bad.push(("z", p.z0(), p.z1()));
         }
+        if !bad.is_empty() {
+            boxes_out.push(Overrun {
+                index: p.index,
+                name: p.plan.node.0.as_str(),
+                axes: bad,
+            });
+        }
+    }
+    if boxes_out.len() == 1 {
+        let o = &boxes_out[0];
         d.push(Diagnostic::error(
             DW_BOX_LEAVES_REGION,
             "site-plan",
-            format!("/content/boxes/{}", p.index),
+            format!("/content/boxes/{}", o.index),
             format!(
                 "box for `{node}` leaves the region: {bad}. The region is the whole map's \
                  extent, and it comes from the brief — a box is never grounds to grow it. Move \
                  the box, shrink it, or change the brief's fact and re-derive the region so the \
                  change is visible in the document that owns it.",
-                node = p.plan.node,
-                bad = bad.join("; "),
+                node = o.name,
+                bad = against_region(&o.axes, &spans),
             ),
         ));
-    }
-    for (i, v) in plan.volumes.iter().enumerate() {
-        let vmax = v.region.max();
-        let mut bad: Vec<String> = Vec::new();
-        for (axis, name) in [(0usize, "x"), (1, "y"), (2, "z")] {
-            if !within((v.region.min[axis], vmax[axis]), spans[axis]) {
-                bad.push(format!(
-                    "{name} {}..{} against the region's {}..{}",
-                    v.region.min[axis], vmax[axis], spans[axis].0, spans[axis].1
-                ));
-            }
-        }
-        if bad.is_empty() {
-            continue;
-        }
+    } else if boxes_out.len() > 1 {
         d.push(Diagnostic::error(
             DW_BOX_LEAVES_REGION,
             "site-plan",
-            format!("/content/volumes/{i}"),
+            "/content/boxes",
+            format!(
+                "{n} of the {total} box(es) this plan places leave the region, which is \
+                 {region_text}: {list}. The region is the whole map's extent, and it comes from \
+                 the brief — a box is never grounds to grow it. One region is the cause of all \
+                 {n} of these, which is why they are one line and not {n}: move or shrink the \
+                 boxes, or change the brief's fact and re-derive the region so the change is \
+                 visible in the document that owns it.",
+                n = boxes_out.len(),
+                total = placed.len(),
+                list = named_overruns(&boxes_out),
+            ),
+        ));
+    }
+
+    // ---- whole-owned volumes ----
+    let mut volumes_out: Vec<Overrun<'_>> = Vec::new();
+    for (i, v) in plan.volumes.iter().enumerate() {
+        let vmax = v.region.max();
+        let mut bad: Vec<(&'static str, i64, i64)> = Vec::new();
+        for (axis, name) in [(0usize, "x"), (1, "y"), (2, "z")] {
+            if !within((v.region.min[axis], vmax[axis]), spans[axis]) {
+                bad.push((name, v.region.min[axis], vmax[axis]));
+            }
+        }
+        if !bad.is_empty() {
+            volumes_out.push(Overrun {
+                index: i,
+                name: v.id.0.as_str(),
+                axes: bad,
+            });
+        }
+    }
+    if volumes_out.len() == 1 {
+        let o = &volumes_out[0];
+        d.push(Diagnostic::error(
+            DW_BOX_LEAVES_REGION,
+            "site-plan",
+            format!("/content/volumes/{}", o.index),
             format!(
                 "whole-owned volume `{id}` leaves the region: {bad}. The region is the whole's \
                  own extent; mass outside it is the whole growing to fit what was put in it, \
                  which is the direction this stage exists to forbid.",
-                id = v.id,
-                bad = bad.join("; "),
+                id = o.name,
+                bad = against_region(&o.axes, &spans),
+            ),
+        ));
+    } else if volumes_out.len() > 1 {
+        d.push(Diagnostic::error(
+            DW_BOX_LEAVES_REGION,
+            "site-plan",
+            "/content/volumes",
+            format!(
+                "{n} of the {total} whole-owned volume(s) leave the region, which is \
+                 {region_text}: {list}. The region is the whole's own extent; mass outside it is \
+                 the whole growing to fit what was put in it, which is the direction this stage \
+                 exists to forbid. One region is the cause of all {n} of these, which is why \
+                 they are one line and not {n}.",
+                n = volumes_out.len(),
+                total = plan.volumes.len(),
+                list = named_overruns(&volumes_out),
             ),
         ));
     }
+}
+
+/// One offender's overrun, spelled against the region on each axis it leaves —
+/// the wording a single finding carries, where the region's own numbers are
+/// stated beside the box's because there is only one line to read them in.
+fn against_region(bad: &[(&'static str, i64, i64)], spans: &[(i64, i64); 3]) -> String {
+    bad.iter()
+        .map(|(name, lo, hi)| {
+            let axis = match *name {
+                "x" => 0,
+                "y" => 1,
+                _ => 2,
+            };
+            format!(
+                "{name} {lo}..{hi} against the region's {}..{}",
+                spans[axis].0, spans[axis].1
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// One thing the plan places that stands outside the region, and where.
+///
+/// A named struct rather than a tuple because both arms read it: the single
+/// finding addresses its own `index`, the folded one prints `name` and `axes`,
+/// and boxes and volumes differ in nothing else.
+struct Overrun<'a> {
+    /// Position in its own array — the path a single finding is addressed at.
+    index: usize,
+    /// The id an author reads.
+    name: &'a str,
+    /// Each axis it leaves, with its own inclusive span on that axis.
+    axes: Vec<(&'static str, i64, i64)>,
+}
+
+/// The offender list a folded finding carries: every name with its own overrun,
+/// and no repeat of the region — the folded message states that once.
+fn named_overruns(items: &[Overrun<'_>]) -> String {
+    items
+        .iter()
+        .map(|o| {
+            format!(
+                "`{}` ({})",
+                o.name,
+                o.axes
+                    .iter()
+                    .map(|(ax, lo, hi)| format!("{ax} {lo}..{hi}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// `DW0827`: the boxes are disjoint.

@@ -1216,6 +1216,49 @@ pub fn check(
         boxes.iter().map(|b| (b.node.0.as_str(), b)).collect();
     binding.boxes = boxes.len();
 
+    // **A plan that resolves NO box is one finding, not one per row**
+    // (`Diagnostic`'s "one cause, one line"). With zero boxes every `details[]`
+    // row misses `by_node` by construction, so the per-row refusal below says
+    // the same sentence once for each row and none of those copies is the
+    // finding: the finding is that the embedding this plan is detailing does
+    // not exist. Measured on a 24-place campaign with `layout-graph.json`
+    // deleted: 24 copies of "is not a place this map has", ahead of nothing and
+    // behind a `DW0824` that had already said it.
+    //
+    // The code still refuses, and still refuses per row the moment there is a
+    // map to be wrong about — this arm is reachable only at a zero box count.
+    if boxes.is_empty() && !doc.details.is_empty() {
+        binding.rows = doc.details.len();
+        let places: Vec<String> = doc
+            .details
+            .iter()
+            .map(|row| format!("`{}`", row.place))
+            .collect();
+        let cause = if c.layout_graph.is_none() {
+            " This campaign carries no `layout-graph.json`, which `DW0824` has already refused: \
+             the plan embeds a graph, so with no graph there are no places for it to place, and \
+             that one line is the finding these rows are downstream of."
+        } else {
+            " The site plan places no box at all, so there is no place for any row to name; the \
+             plan is what has to gain them."
+        };
+        d.push(Diagnostic::error(
+            DW_BINDING,
+            STAGE,
+            "/content/details",
+            format!(
+                "the site plan resolves ZERO boxes, so none of the {n} `details[]` row(s) names a \
+                 place this map has: {places}. A row fills the box the site plan gave a \
+                 layout-graph node, and there is no such box to fill.{cause} This is stated once \
+                 rather than once per row, because one map is the cause of all {n} and repairing \
+                 the rows would repair nothing.",
+                n = doc.details.len(),
+                places = places.join(", "),
+            ),
+        ));
+        return (d, binding);
+    }
+
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for (i, row) in doc.details.iter().enumerate() {
         binding.rows += 1;
