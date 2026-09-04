@@ -41,10 +41,15 @@
 #   EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
 #       --profile play up
 #
-# The verifier reuses `delvewright/delve:local` — already built by both services
-# from the same context — so this adds no image, no pull and no new dependency;
-# only bash and coreutils are used. The worker ladders (`--profile validate`,
-# plain `compose.yaml`) never name this file and are completely unaffected.
+# The verifier reuses the delve image — already built by both services from the
+# same context — so this adds no image, no pull and no new dependency; only bash
+# and coreutils are used. It therefore names the tag by the SAME variable
+# `compose.yaml` uses (`${DELVE_IMAGE:-delvewright/delve:local}`): a hardcoded
+# `:local` here would be a second tag over one context the moment a caller scopes
+# the tag to its project, i.e. exactly the extra image this note promises not to
+# add. Nothing sets it on the owner path, so the tag she gets is unchanged. The
+# worker ladders (`--profile validate`, plain `compose.yaml`) never name this file
+# and are completely unaffected.
 services:
   staging-admission:
     profiles: ["play", "playtest"]
@@ -56,7 +61,7 @@ services:
       # says the tree was in the wrong place.
       context: ${DELVE_OUTPUT:-./delve-output}
       dockerfile: ${DELVE_DOCKERFILE:-../Dockerfile.delve}
-    image: delvewright/delve:local
+    image: ${DELVE_IMAGE:-delvewright/delve:local}
     entrypoint: ["/bin/bash", "/verify/staging-admission.sh", "/delve-output"]
     command: []
     volumes:

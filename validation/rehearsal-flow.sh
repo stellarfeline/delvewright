@@ -35,6 +35,14 @@ unset CREATOR_NAME
 # DW_COMPOSE_PROJECT when you want a stable one to inspect afterwards.
 PROJECT="${DW_COMPOSE_PROJECT:-dw-rehearsal-$$}"
 COMPOSE="docker compose -p $PROJECT -f validation/compose.yaml -f validation/ephemeral-port.yaml --profile playtest"
+# …and the image tag, the one Docker-global name the paragraph above did not
+# cover. This flow builds cutscene-shots and `playtest-note-flow.sh` builds
+# hello-world; with the tag left at the compose default both wrote
+# `delvewright/delve:local`, so running them side by side — the very thing the
+# unique project is for — boots one campaign's server on the other's image.
+# shellcheck source=validation/lib/delve-image.sh
+. validation/lib/delve-image.sh
+dw_export_delve_image "$PROJECT"
 # The cutscene fixture: hello-world's world/cast with a two-shot cutscene on its
 # exit beat, so the overlay has a real proposal to calibrate. hello-world itself
 # stays the minimal v0.2 baseline every other tier uses.
