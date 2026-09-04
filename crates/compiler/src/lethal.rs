@@ -20,6 +20,24 @@
 //!
 //! `seats` in the ledger counts every such place, not only the respawn ones.
 //!
+//! ## A body has a width
+//!
+//! "Inside a volume" is a question about a **body**, not about a cell. The volume
+//! kills with a box selector, and the server adjudicates a box selector on hitbox
+//! intersection — so a 1.4-wide spider standing on the cell beside a volume's
+//! face is inside it, and a 0.6-wide villager on the same cell is not. Every
+//! place here therefore carries the hitbox of the body that lands on it
+//! ([`PostedPlace`]) and is judged by
+//! [`delvewright_dsl::metrics::body_meets_volume`], the one answer the routing
+//! model and the emitted selector are also written against.
+//!
+//! One class of place is chosen by the compiler rather than by the campaign — a
+//! **wave's seats**, taken from whatever standable footing the anchor's room
+//! offers. That footing is proven for a player's body, so the seats that survive
+//! it are safe for a walker and not necessarily for a wider mob; and the author
+//! has no post to move. It is therefore its own diagnostic,
+//! [`DW_LETHAL_WAVE_SEAT`], with its own prescription — see [`ChosenBy`].
+//!
 //! ## Binding (`docs/reference/playtest-methodology.md` rule 1)
 //!
 //! [`LethalGate`] states what was examined: how many volumes were declared, how
@@ -53,6 +71,31 @@ use delvewright_dsl::{DwCode, ExitTier};
 ///   proof stays green. Found while writing this feature's own CI fixture, which
 ///   is exactly the shape the rule now refuses.
 pub const DW_LETHAL_RESPAWN_SEAT: DwCode = DwCode::every_version("DW0511", ExitTier::Build);
+
+/// `DW0879`: a **wave seat** — a cell the COMPILER chose to stand one of a wave's
+/// mobs on — is a cell that body's own hitbox meets a lethal volume from.
+///
+/// A separate code from [`DW_LETHAL_RESPAWN_SEAT`] because the remedy is
+/// separate, and the remedy is the whole content of a diagnostic. Every place
+/// `DW0511` names is a cell the author WROTE: an anchor, a checkpoint, a `cast`
+/// placement — so "move the post out of the volume" is an instruction they can
+/// carry out. A wave seat is chosen by `emit::plan_wave_spawns` from whatever
+/// standable footing the anchor's own room offers; there is no post to move, and
+/// an author told to move one would go looking for a declaration that does not
+/// exist. What they can move is the wave's `anchor`, the volume's `extent`, or
+/// the mob count that forces the seating to spread as far as the volume.
+///
+/// It is also the case that separates a body's WIDTH from its cell, which is the
+/// second reason it cannot share `DW0511`'s wording: the routing model already
+/// keeps a **player** out of the ring around a volume, so the seats a wave can be
+/// given are all safe for a 0.6-wide body. What is left over is exactly the
+/// bodies that are wider than the walker the footing was proven for — a 1.4-wide
+/// spider on a cell a player stands in perfectly safely.
+///
+/// `every_version` for `DW0511`'s reason: a campaign below the `dsl_version` that
+/// introduced `lethal_volumes[]` cannot declare one, so the rule reaches nothing
+/// there and there is no obligation for a fence to grandfather.
+pub const DW_LETHAL_WAVE_SEAT: DwCode = DwCode::every_version("DW0879", ExitTier::Build);
 
 /// The binding ledger for the lethal-volume proofs.
 #[derive(Clone, Debug, Default)]
@@ -97,24 +140,109 @@ impl LethalGate {
     }
 }
 
+/// One posted place: what a diagnostic calls it, the cell the campaign puts a
+/// body on, and **the body that lands there**.
+///
+/// The third field is the whole of what a cell could not say. A volume kills by a
+/// box selector and vanilla adjudicates that on hitbox intersection, so whether a
+/// post is inside a volume is a question about a body's box and not about a cell:
+/// a 1.4-wide iron golem seated on the cell beside a pit's face is standing in
+/// the pit as far as the selector is concerned, and a 0.6-wide villager on the
+/// same cell is not.
+pub struct PostedPlace {
+    /// What the diagnostic names this place.
+    pub label: String,
+    /// The cell the campaign posts a body on.
+    pub cell: [i32; 3],
+    /// The hitbox of the body that lands there.
+    pub body: delvewright_dsl::metrics::Body,
+    /// Who chose the cell — which decides the remedy, and so the code.
+    pub chosen_by: ChosenBy,
+}
+
+/// **Who chose a posted place's cell.** The two answers get different
+/// diagnostics, because the author can only act on the one they wrote.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ChosenBy {
+    /// The campaign: an entry spawn, a checkpoint anchor, an NPC's or actor's
+    /// post, a `cast` placement. [`DW_LETHAL_RESPAWN_SEAT`], whose prescription
+    /// is *move the post, or shrink the volume* — both things the author wrote.
+    Campaign,
+    /// The **compiler**, seating a wave's mobs on the standable footing its room
+    /// offers. [`DW_LETHAL_WAVE_SEAT`]: there is no post to move, so the
+    /// prescription is about the room, the anchor and the volume instead.
+    WaveSeating,
+}
+
+/// The body a stage-2 NPC actually wears, as a hitbox — through
+/// [`crate::nav::npc_body_entity`], so a skinned NPC is measured as the mannequin
+/// it ships as rather than as the `base_entity` it declares.
+fn npc_body(n: &delvewright_dsl::Npc) -> delvewright_dsl::metrics::Body {
+    let (w, h) = crate::nav::entity_dims(&crate::nav::npc_body_entity(n));
+    delvewright_dsl::metrics::Body::new(w, h)
+}
+
 /// Every place the campaign PUTS something: the party's respawn seats, then every
-/// declared body's post. Each carries the label a diagnostic names it by.
+/// declared body's post, then every cell a wave's mobs are seated on.
 ///
 /// Deterministic throughout — entry, then checkpoints in content order, then NPCs
-/// in declaration order with their cast placements, then actors (ADR-0006).
-fn posted_places(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<(String, [i32; 3])> {
-    let mut out = Vec::new();
+/// in declaration order with their cast placements, then actors, then waves in
+/// declaration order with their stacks in declaration order (ADR-0006).
+///
+/// `wave_seats` is the seating [`crate::plan::wave_seats`] pairs off
+/// `emit::plan_wave_spawns`'s answer. It is an argument rather than something
+/// derived here because a wave's cells are a **measurement of the assembled
+/// world** — the standable footing its room actually offers — and the plan alone
+/// cannot state them. A campaign whose waves have not been seated (a proof run
+/// before that pass) passes an empty map and the wave arm binds to nothing, which
+/// is why the caller's ledger counts what it examined.
+fn posted_places(
+    plan: &Plan,
+    entry: Option<[i32; 3]>,
+    wave_seats: &std::collections::BTreeMap<String, Vec<[i32; 3]>>,
+) -> Vec<PostedPlace> {
+    let player = delvewright_dsl::metrics::Body::PLAYER;
+    let mut out: Vec<PostedPlace> = Vec::new();
+    fn declared(
+        out: &mut Vec<PostedPlace>,
+        label: String,
+        cell: [i32; 3],
+        body: delvewright_dsl::metrics::Body,
+    ) {
+        out.push(PostedPlace {
+            label,
+            cell,
+            body,
+            chosen_by: ChosenBy::Campaign,
+        });
+    }
+    let push = declared;
     if let Some(pos) = entry {
-        out.push(("the campaign's entry spawn".to_string(), pos));
+        push(
+            &mut out,
+            "the campaign's entry spawn".to_string(),
+            pos,
+            player,
+        );
     }
     for cp in &plan.checkpoints {
         let kind = if cp.rest { "bonfire" } else { "checkpoint" };
-        out.push((format!("{kind} anchor `{}`", cp.anchor), cp.pos));
+        push(
+            &mut out,
+            format!("{kind} anchor `{}`", cp.anchor),
+            cp.pos,
+            player,
+        );
     }
     let c = plan.campaign;
     for npc in &c.npcs.content.npcs {
         if let Some(pos) = plan.point_any(npc.anchor.as_str()) {
-            out.push((format!("npc `{}`'s post `{}`", npc.id, npc.anchor), pos));
+            push(
+                &mut out,
+                format!("npc `{}`'s post `{}`", npc.id, npc.anchor),
+                pos,
+                npc_body(npc),
+            );
         }
     }
     // Per-quest `cast` placements move an NPC between beats, so the stage-2 anchor
@@ -127,16 +255,45 @@ fn posted_places(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<(String, [i32; 3])
                 let Some(pos) = plan.point_any(at.as_str()) else {
                     continue;
                 };
-                out.push((
+                let body = c
+                    .npcs
+                    .content
+                    .npcs
+                    .iter()
+                    .find(|n| n.id.as_str() == npc.as_str())
+                    .map_or(player, npc_body);
+                push(
+                    &mut out,
                     format!("npc `{npc}`'s `cast` placement `{at}` in quest `{}`", q.id),
                     pos,
-                ));
+                    body,
+                );
             }
         }
     }
     for a in &c.quests.content.actors {
         if let Some(pos) = plan.point_any(a.anchor.as_str()) {
-            out.push((format!("actor `{}`'s post `{}`", a.id, a.anchor), pos));
+            let (w, h) = crate::nav::entity_dims(&crate::nav::actor_body_entity(a));
+            push(
+                &mut out,
+                format!("actor `{}`'s post `{}`", a.id, a.anchor),
+                pos,
+                delvewright_dsl::metrics::Body::new(w, h),
+            );
+        }
+    }
+    for w in &c.quests.content.waves {
+        let Some(cells) = wave_seats.get(w.id.as_str()) else {
+            continue;
+        };
+        for (entity, cell) in crate::plan::wave_seats(w, cells) {
+            let (bw, bh) = crate::nav::entity_dims(entity);
+            out.push(PostedPlace {
+                label: format!("wave `{}`'s seat for `{entity}`", w.id),
+                cell,
+                body: delvewright_dsl::metrics::Body::new(bw, bh),
+                chosen_by: ChosenBy::WaveSeating,
+            });
         }
     }
     out
@@ -150,16 +307,29 @@ fn posted_places(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<(String, [i32; 3])
 ///
 /// Returns the seats examined on success, so the caller's ledger reports a real
 /// count rather than a number derived a second time.
-pub fn check_respawn_seats(plan: &Plan, entry: Option<[i32; 3]>) -> Result<usize, Failure> {
-    let seats = posted_places(plan, entry);
+pub fn check_respawn_seats(
+    plan: &Plan,
+    entry: Option<[i32; 3]>,
+    wave_seats: &std::collections::BTreeMap<String, Vec<[i32; 3]>>,
+) -> Result<usize, Failure> {
+    let seats = posted_places(plan, entry, wave_seats);
     if plan.lethal_volumes.is_empty() {
         return Ok(seats.len());
     }
-    for (label, pos) in &seats {
+    for place in &seats {
+        // The body's own box, at the coordinates a summon writes for that cell —
+        // `nav::cell_center` is the one place that says where a body seated on a
+        // cell stands, and `metrics::body_meets_volume` the one place that says
+        // whether a box meets a volume.
+        let feet = crate::nav::cell_center(place.cell);
         let blamed: Vec<&str> = plan
             .lethal_volumes
             .iter()
-            .filter(|v| v.contains(*pos))
+            .filter(|v| {
+                delvewright_dsl::metrics::body_meets_volume(
+                    feet, place.body, v.region.0, v.region.1,
+                )
+            })
             .map(|v| v.id.as_str())
             .collect();
         if blamed.is_empty() {
@@ -170,18 +340,47 @@ pub fn check_respawn_seats(plan: &Plan, entry: Option<[i32; 3]>) -> Result<usize
             .map(|i| format!("`{i}`"))
             .collect::<Vec<_>>()
             .join(", ");
-        return Err(Failure {
-            code: DW_LETHAL_RESPAWN_SEAT,
-            message: format!(
-                "{label} at {pos:?} lies INSIDE lethal volume(s) {names}. Whatever the campaign \
-                 posts here is put here by declaration, not by walking, so no route proof can \
-                 see it: a respawn seat means the party dies on arrival and is re-seated to die \
-                 again on every death, forever (`/spawnpoint` is only a hint and the engine \
-                 re-seats on the death edge, so nothing downstream can rescue it); a posted body \
-                 means the volume deletes it on the first tick and the delve loses it in \
-                 silence. Move the post out of the volume, or shrink the volume's `extent` so it \
-                 does not cover it; do NOT delete the volume to silence the proof."
-            ),
+        let label = &place.label;
+        let pos = place.cell;
+        let (w, h) = (place.body.width, place.body.height);
+        return Err(match place.chosen_by {
+            ChosenBy::Campaign => Failure {
+                code: DW_LETHAL_RESPAWN_SEAT,
+                message: format!(
+                    "{label} at {pos:?} puts a body whose hitbox is {w} x {h} blocks INSIDE \
+                     lethal volume(s) {names}. A volume kills by a box selector and the server \
+                     adjudicates that on hitbox INTERSECTION, so a body wider than nothing \
+                     reaches out of the cell it stands on: this post is inside the volume even \
+                     where its cell is not. Whatever the campaign puts here is put here by \
+                     declaration, not by walking, so no route proof can see it: a respawn seat \
+                     means the party dies on arrival and is re-seated to die again on every \
+                     death, forever (`/spawnpoint` is only a hint and the engine re-seats on the \
+                     death edge, so nothing downstream can rescue it); a posted body means the \
+                     volume deletes it on the first tick and the delve loses it in silence. Move \
+                     the post clear of the volume — clear of its FACES, not merely out of its \
+                     cells — or shrink the volume's `extent`; do NOT delete the volume to \
+                     silence the proof."
+                ),
+            },
+            ChosenBy::WaveSeating => Failure {
+                code: DW_LETHAL_WAVE_SEAT,
+                message: format!(
+                    "{label} is the cell {pos:?}, and a body whose hitbox is {w} x {h} blocks \
+                     standing there is INSIDE lethal volume(s) {names}: a volume kills by a box \
+                     selector and the server adjudicates that on hitbox INTERSECTION, so a body \
+                     this wide reaches out of its own cell and into the volume's face. The mob \
+                     is killed on the tick it is summoned, the wave's counter never comes down, \
+                     and any objective that waits for the wave to be cleared waits forever. \
+                     Nothing here was authored as a position: the compiler seats a wave on the \
+                     standable footing its anchor's room offers, and that footing is proven for \
+                     a PLAYER's body, which is narrower than this one. So the fix is not a post \
+                     to move. Move the wave's `anchor` further from the volume, shrink the \
+                     volume's `extent`, or reduce the wave's mob count so its seating does not \
+                     have to spread as far as the volume's edge. Do NOT delete the volume, and \
+                     do NOT widen the room's footing to push the seating outward — that only \
+                     moves which mob lands on the edge."
+                ),
+            },
         });
     }
     Ok(seats.len())

@@ -277,6 +277,143 @@ pub fn passable_clearance_cells() -> u32 {
 }
 
 // ---------------------------------------------------------------------------
+// A body has a width — the one answer to "does this body meet this volume"
+// ---------------------------------------------------------------------------
+
+/// A body's standing collision box: `width × height × width`, centred
+/// horizontally on the body's position and rising from its feet.
+///
+/// It lives here for the reason [`step_allowed`] does. Three consumers ask the
+/// same geometric question of the same object class — the routing model asks
+/// which cells a walker may occupy beside a killing volume, the posted-place
+/// proof asks whether a body seated at a declared cell is inside one, and the
+/// emitter formats the runtime selector that decides both at play time — and a
+/// question with three answers is a question three gates can disagree about.
+/// The disagreement was not hypothetical: every proof reasoned in whole cells
+/// while the runtime selected on hitbox intersection, so the engine routed a
+/// player along a cell whose occupant the volume kills, chose that same cell as
+/// the "safe" lip a stake stands on, and reported both green.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Body {
+    /// Collision-box width and depth, in blocks.
+    pub width: f64,
+    /// Collision-box height, in blocks.
+    pub height: f64,
+}
+
+impl Body {
+    /// The player's own body, from the constants above rather than from a
+    /// second pair of literals.
+    pub const PLAYER: Body = Body {
+        width: PLAYER_WIDTH,
+        height: PLAYER_HEIGHT,
+    };
+
+    /// A body of the given standing hitbox.
+    #[must_use]
+    pub fn new(width: f64, height: f64) -> Body {
+        Body { width, height }
+    }
+
+    /// Half the width — the reach of the box either side of the body's own
+    /// position.
+    #[must_use]
+    pub fn half_width(&self) -> f64 {
+        self.width / 2.0
+    }
+}
+
+/// The world-space AABB vanilla builds from a box selector over the inclusive
+/// cell box `lo..=hi`.
+///
+/// **This is a fact about the game, and it is what the emitter writes.** A box
+/// selector is spelled `x=lo,dx=hi-lo,…` (`emit::box_selector_args`), and
+/// vanilla's `EntitySelectorParser` turns `x`/`dx` into the half-open span
+/// `[x, x+dx+1]` — which is why `dx=0` selects the whole of one block rather
+/// than a plane. So the inclusive cell box `lo..=hi` is the world volume
+/// `[lo, hi+1]`, and an entity is selected when its **hitbox intersects** it,
+/// never when the cell it stands in is one of the box's cells.
+///
+/// Stated as a [`Provenance::VanillaRule`] would be: this repository has not
+/// measured the parser, but it has measured the consequence — bodies whose feet
+/// cell lies outside a declared volume are killed by it, at the two faces this
+/// arithmetic predicts.
+#[must_use]
+pub fn selection_aabb(lo: [i32; 3], hi: [i32; 3]) -> ([f64; 3], [f64; 3]) {
+    (
+        [lo[0] as f64, lo[1] as f64, lo[2] as f64],
+        [hi[0] as f64 + 1.0, hi[1] as f64 + 1.0, hi[2] as f64 + 1.0],
+    )
+}
+
+/// Does a body standing with its feet at `feet` meet the volume `lo..=hi`?
+///
+/// `feet` is the position vanilla keeps for an entity: the horizontal centre of
+/// its collision box, at the box's base. So the body occupies
+/// `[x ± w/2] × [y, y + h] × [z ± w/2]`, and the answer is whether that
+/// intersects [`selection_aabb`]. The comparison is strict on both sides, as
+/// vanilla's `AABB::intersects` is: a body whose face exactly touches the
+/// volume's face is not inside it.
+///
+/// This is the **exact** reading, for a body whose position is known — a summon
+/// writes literal coordinates, and `compiler::nav::cell_center` is the one place
+/// that says which coordinates a body seated on a cell gets. For a body that may
+/// stand anywhere within a cell, ask [`cell_can_meet_volume`] instead.
+#[must_use]
+pub fn body_meets_volume(feet: [f64; 3], body: Body, lo: [i32; 3], hi: [i32; 3]) -> bool {
+    let (vlo, vhi) = selection_aabb(lo, hi);
+    let half = body.half_width();
+    let blo = [feet[0] - half, feet[1], feet[2] - half];
+    let bhi = [feet[0] + half, feet[1] + body.height, feet[2] + half];
+    (0..3).all(|i| blo[i] < vhi[i] && bhi[i] > vlo[i])
+}
+
+/// **The inclusive cell box a body of these dimensions must keep out of** — the
+/// cells from which its hitbox can reach the volume `lo..=hi`.
+///
+/// A walker's cell does not fix its position: a body whose feet block is `c`
+/// stands anywhere in `[c, c+1)` horizontally, so its box spans
+/// `[c - w/2, c + 1 + w/2)`. The cells that can meet the volume are therefore
+/// the volume's own, widened by however many cells half a width reaches into —
+/// one, for every body in the engine's dims table, and the derivation rather
+/// than the constant is what is written here so a wider body widens it.
+///
+/// Vertically the body's feet sit at the cell's own floor and it rises `height`
+/// blocks, so the box reaches `ceil(height)` cells down from the volume's floor
+/// and not at all above its ceiling: standing **on top** of a volume is safe,
+/// standing under one with your head in it is not.
+///
+/// The direction is deliberate and is the opposite of
+/// `compiler::reach::ReachCompletion::certainly_completes_from`, which asks the
+/// same geometry about a volume that GRANTS something and so demands the certain
+/// case. Here the volume kills, so the refusal takes the possible case: a
+/// generous rule is safe for a reward and unsound for a hazard.
+#[must_use]
+pub fn keep_out_box(body: Body, lo: [i32; 3], hi: [i32; 3]) -> ([i32; 3], [i32; 3]) {
+    let half = body.half_width();
+    let mut out_lo = [0i32; 3];
+    let mut out_hi = [0i32; 3];
+    for i in [0usize, 2] {
+        // `c + 1 + half > lo` for some c, and `c - half < hi + 1`.
+        out_lo[i] = (lo[i] as f64 - 1.0 - half).floor() as i32 + 1;
+        out_hi[i] = (hi[i] as f64 + 1.0 + half).ceil() as i32 - 1;
+    }
+    // `c + height > lo_y` (feet at the cell floor), and `c <= hi_y` — a body
+    // whose feet are at `hi_y + 1` starts exactly where the volume ends.
+    out_lo[1] = (lo[1] as f64 - body.height).floor() as i32 + 1;
+    out_hi[1] = hi[1];
+    (out_lo, out_hi)
+}
+
+/// Can a body whose feet block is `cell` meet the volume `lo..=hi` from **some**
+/// position inside that cell? The refusing reading — see [`keep_out_box`].
+#[must_use]
+pub fn cell_can_meet_volume(cell: [i32; 3], body: Body, lo: [i32; 3], hi: [i32; 3]) -> bool {
+    let (klo, khi) = keep_out_box(body, lo, hi);
+    (0..3).all(|i| klo[i] <= cell[i] && cell[i] <= khi[i])
+}
+
+// ---------------------------------------------------------------------------
 // Entry shapes
 // ---------------------------------------------------------------------------
 

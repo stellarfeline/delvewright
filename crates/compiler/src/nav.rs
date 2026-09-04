@@ -554,6 +554,15 @@ pub struct Footprint {
     cols: Vec<[i32; 2]>,
     /// Vertical cells of clearance the body needs (`ceil(height)`, min 1).
     height: i32,
+    /// The un-quantized hitbox the columns were derived from.
+    ///
+    /// Carried rather than re-derived because the cell quantization is lossy in
+    /// the direction that matters here: a 0.6-wide player and a 1.0-wide body
+    /// both occupy one column, and only the second's box reaches a block face
+    /// from the middle of its own cell. Anything asking a **sub-block** question
+    /// of the routed body — whether its hitbox meets a lethal volume — asks this
+    /// (`delvewright_dsl::metrics::Body`), never the columns.
+    body: delvewright_dsl::metrics::Body,
 }
 
 impl Footprint {
@@ -574,7 +583,16 @@ impl Footprint {
             cols.push([0, 0]);
         }
         let h = (height.ceil() as i32).max(1);
-        Footprint { cols, height: h }
+        Footprint {
+            cols,
+            height: h,
+            body: delvewright_dsl::metrics::Body::new(width, height),
+        }
+    }
+
+    /// The un-quantized hitbox this footprint routes.
+    pub fn body(&self) -> delvewright_dsl::metrics::Body {
+        self.body
     }
 
     /// The default humanoid footprint (player / villager / mannequin: 0.6 × 1.8 →
@@ -1196,16 +1214,46 @@ impl World {
     /// The ids of the lethal volumes covering any of `cells`, in declaration
     /// order — who to blame for a route that only exists when lethality is
     /// ignored. Deterministic: declaration order, no hashing (ADR-0006).
+    ///
+    /// Asked of the **player's body**, not of the cell, for the same reason
+    /// [`World::meets_lethal_fp`] is: the cells this names are the cells the
+    /// counterfactual walk crossed, and a walker is refused one of them the
+    /// moment its hitbox can reach a volume. A cell-only reading here would
+    /// leave the refusal with no volume to blame and send the author to look at
+    /// geometry that was never wrong — the exact failure `lethal_regions` was
+    /// carried to prevent.
     fn lethal_volumes_over(&self, cells: &[[i32; 3]]) -> Vec<&str> {
+        let body = delvewright_dsl::metrics::Body::PLAYER;
         self.lethal_regions
             .iter()
             .filter(|(_, (lo, hi))| {
                 cells
                     .iter()
-                    .any(|c| (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]))
+                    .any(|c| delvewright_dsl::metrics::cell_can_meet_volume(*c, body, *lo, *hi))
             })
             .map(|(id, _)| id.as_str())
             .collect()
+    }
+
+    /// **Can a body of this footprint, standing in `c`, be caught by a declared
+    /// lethal volume?**
+    ///
+    /// The routing model's whole share of the footprint rule. A volume kills by
+    /// a box selector, vanilla selects on hitbox intersection, and a body
+    /// standing in the cell beside a volume's face reaches into it — so the
+    /// impassable set is the volume widened by the walker's half-width, and it
+    /// is the WALKER's, which is why this takes a footprint instead of adding
+    /// cells to `lethal`. `lethal` stays the declared cells, because that is
+    /// what `lethal_cells()` reports as the proof's binding count and what
+    /// `is_lethal` answers about.
+    fn meets_lethal_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+        if self.lethal_regions.is_empty() {
+            return false;
+        }
+        let body = fp.body();
+        self.lethal_regions
+            .iter()
+            .any(|(_, (lo, hi))| delvewright_dsl::metrics::cell_can_meet_volume(c, body, *lo, *hi))
     }
 
     /// Build the walkability model from a collision-classified [`Occupancy`] and
@@ -2021,7 +2069,16 @@ impl World {
     /// Footprint-aware standability (spec-0014): every occupied column has its
     /// `height` feet+body cells passable with solid floor directly below. For the
     /// player footprint (single column, 2 tall) this is exactly the pre-0.6 rule.
+    ///
+    /// …plus the one question the columns cannot state, because they are whole
+    /// cells and a hitbox is not: a body may not stand where a declared lethal
+    /// volume's selector would reach it ([`World::meets_lethal_fp`]). It is asked
+    /// here, at the one predicate every route proof, snap, flood and export in
+    /// this model funnels through, rather than at any of them.
     fn standable_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+        if self.meets_lethal_fp(c, fp) {
+            return false;
+        }
         fp.cols.iter().all(|&[dx, dz]| {
             let base = [c[0] + dx, c[1], c[2] + dz];
             self.is_solid([base[0], base[1] - 1, base[2]])

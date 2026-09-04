@@ -46,7 +46,13 @@ use crate::stake::StakeTable;
 /// when a field the harness reads changes meaning; the harness refuses a
 /// `format_version` it does not know, so an old bot can never silently
 /// under-assert a new build.
-pub const DEATH_PLAN_FORMAT_VERSION: u32 = 1;
+///
+/// Version 2 adds each volume's `keep_out` box — the cells a player's own body
+/// may not stand in — and the bot requires it. That is exactly the case the
+/// version exists for: a bot reading a v1 plan would find no `keep_out`, fall
+/// back to the volume's cells, and route itself along the ring of cells the
+/// volume kills from, reporting a navigation fault for a correct kill.
+pub const DEATH_PLAN_FORMAT_VERSION: u32 = 2;
 
 /// What the bot tier will be able to examine — counted at build time, so a reader
 /// of the artifact alone can tell an empty contract from a proven one.
@@ -211,9 +217,23 @@ pub fn build(
         .iter()
         .map(|v| {
             let (key, english) = worded(&v.message);
+            // **The box a player's own body must keep out of**, computed here and
+            // exported rather than left for the harness to work out. The bot
+            // excludes a volume from its pathfinder and credits a death to it by
+            // comparing a position against a box, and both questions are about a
+            // BODY: `region` is the volume, `keep_out` is the volume widened by
+            // the player's half-width, and a bot that re-derived the second from
+            // the first would be this engine's cell-versus-hitbox rule written a
+            // second time, in another language, where no Rust test reaches it.
+            let (klo, khi) = delvewright_dsl::metrics::keep_out_box(
+                delvewright_dsl::metrics::Body::PLAYER,
+                v.region.0,
+                v.region.1,
+            );
             json!({
                 "id": v.id,
                 "region": boxed(v.region.0, v.region.1),
+                "keep_out": boxed(klo, khi),
                 "message": english,
                 "message_key": key,
                 "damage_type": v.damage_type.id(),

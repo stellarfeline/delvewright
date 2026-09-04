@@ -73,7 +73,13 @@ function attach(bot: FakeBot, env: Record<string, string | undefined> = {}): Min
 
 test("a death event records position + likely cause and stops the pathfinder", () => {
   const bot = new FakeBot();
-  bot.entity.position = new FakeVec3(12.4, 65, -3.6);
+  // Deliberately a position where FLOOR and ROUND disagree on both horizontal
+  // axes. The block an entity is in is the floor of its position, and this is
+  // the position a live run measured: a body killed by the west pit died at
+  // x = 12.59, one cell east of a box whose face is at 12.0. Rounding put it in
+  // cell 13 — two cells out — and the death-loop credit rule compares this
+  // against a box.
+  bot.entity.position = new FakeVec3(12.59, 65, -3.4);
   const executor = attach(bot);
   // The death message arrives in chat, then the death event fires.
   bot.emit("messagestr", "delve-bot was slain by Zombie");
@@ -81,7 +87,7 @@ test("a death event records position + likely cause and stops the pathfinder", (
 
   const diag = executor.deathDiagnostic();
   assert.ok(diag instanceof BotDeathError);
-  assert.deepEqual(diag.position, [12, 65, -4]); // rounded to whole blocks
+  assert.deepEqual(diag.position, [12, 65, -4], "the block a body is in is the FLOOR of its position");
   assert.equal(diag.likelyCause, "delve-bot was slain by Zombie");
   assert.equal(bot.pathfinderStops, 1); // in-flight pathfinding aborted
   // …and the stop is ALWAYS paired with a goal reset. mineflayer-pathfinder's `stop()`

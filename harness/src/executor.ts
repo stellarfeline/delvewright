@@ -1277,6 +1277,12 @@ export class MineflayerExecutor implements StepExecutor {
    * proof; without the same fact here the bot walks its way back from a death
    * straight through the hazard it just died in, and a run intermittently dies
    * twice for reasons no content author could reproduce.
+   *
+   * These are each volume’s `keep_out` box and NOT its `region`: the volume
+   * kills on hitbox intersection, so the cell beside its face is a cell the bot
+   * dies standing in. Excluding only the region is what put the bot on
+   * `[12, 65, 21]` — one cell east of a pit — and killed it there twice, with
+   * every compile-time proof green.
    */
   private lethalBoxes: readonly Box[] = [];
   /** Suspended for exactly one walk: the deliberate step INTO a volume. */
@@ -2147,7 +2153,12 @@ export class MineflayerExecutor implements StepExecutor {
     let position: readonly [number, number, number] | undefined;
     const p = bot?.entity?.position;
     if (p) {
-      position = [Math.round(p.x), Math.round(p.y), Math.round(p.z)];
+      // FLOOR, not round: the block an entity is in is the floor of its
+      // position, which is what every box in a death plan is expressed in. A
+      // body dying at x = 12.59 is in cell 12; rounding put it in 13, one cell
+      // further from the volume that killed it, and the death-loop credit rule
+      // compares this position against a box.
+      position = [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
     }
     const cause = likelyDeathCause(this.recentChat, bot?.username ?? "");
     const err = new BotDeathError(position, cause);
@@ -2304,7 +2315,7 @@ export class MineflayerExecutor implements StepExecutor {
    */
   useDeathPlan(plan: DeathPlan): void {
     this.deathPlan = plan;
-    this.lethalBoxes = plan.volumes.map((v) => v.region);
+    this.lethalBoxes = plan.volumes.map((v) => v.keepOut);
   }
 
   /** Every walk into a lethal volume this run made, and what it observed. */
@@ -2550,10 +2561,20 @@ export class MineflayerExecutor implements StepExecutor {
     trial.deathPos = this.death?.position ? [...this.death.position] : undefined;
     trial.wordingSeen = this.wordWatch?.seen === true;
     this.wordWatch = undefined;
-    // Credited only when the player died INSIDE the declared box. A death on the
-    // way there is a run fault, not this volume's kill, and crediting it would let
-    // any lethal accident anywhere pass as a proof that this box works.
-    const inside = trial.deathPos !== undefined && inBox(trial.deathPos, volume.region);
+    // Credited when the player died somewhere this volume can kill from — its
+    // `keep_out` box, which is the declared region widened by the player's own
+    // half-width. A death outside that is a run fault, not this volume's kill,
+    // and crediting it would let any lethal accident anywhere pass as a proof
+    // that this box works.
+    //
+    // It is `keepOut` and not `region` because the volume selects on hitbox
+    // intersection: a body whose feet cell is one cell out from a face is killed
+    // by it, and the old cell-only reading reported that real, correct kill as a
+    // death OUTSIDE the volume and credited it to nothing. What the widening does
+    // NOT do is let some other cause pass as this volume's: the volume's own
+    // promised line is asserted separately (`wordingSeen`), and a trial that
+    // never saw it fails on that.
+    const inside = trial.deathPos !== undefined && inBox(trial.deathPos, volume.keepOut);
     trial.died = observed && inside;
     if (navFault !== undefined) {
       trial.abandoned = navFault;
@@ -2563,9 +2584,10 @@ export class MineflayerExecutor implements StepExecutor {
       trial.abandoned =
         `the bot died at ` +
         `${trial.deathPos ? `[${trial.deathPos.join(", ")}]` : "an unknown position"}, which is ` +
-        `OUTSIDE the declared volume [${volume.region.lo.join(", ")}]..` +
-        `[${volume.region.hi.join(", ")}] — that death is not this volume's kill and is not ` +
-        `credited as one`;
+        `OUTSIDE everywhere the declared volume [${volume.region.lo.join(", ")}]..` +
+        `[${volume.region.hi.join(", ")}] can kill from (its keep-out box ` +
+        `[${volume.keepOut.lo.join(", ")}]..[${volume.keepOut.hi.join(", ")}]) — that death ` +
+        `is not this volume's kill and is not credited as one`;
       return;
     }
     if (!trial.died) {

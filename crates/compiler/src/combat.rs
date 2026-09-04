@@ -951,14 +951,8 @@ fn seated_hostiles(
         let Some(cells) = placements.get(wave.id.as_str()) else {
             continue;
         };
-        let mut seat = 0usize;
-        for mob in &wave.mobs {
-            for _ in 0..mob.count {
-                if let Some(cell) = cells.get(seat) {
-                    out.push((wave.id.as_str().to_string(), mob.entity.clone(), *cell));
-                }
-                seat += 1;
-            }
+        for (entity, cell) in crate::plan::wave_seats(wave, cells) {
+            out.push((wave.id.as_str().to_string(), entity.to_string(), cell));
         }
     }
     out

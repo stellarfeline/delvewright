@@ -1562,6 +1562,38 @@ pub fn wave_total(wave: &delvewright_dsl::Wave) -> i32 {
     wave.mobs.iter().map(|m| m.count as i32).sum()
 }
 
+/// **Which body lands on which seated cell** — the wave's declared stacks paired
+/// with the cells `emit::plan_wave_spawns` chose, in declaration order, each
+/// stack taking `count` of them.
+///
+/// The convention is the emitter's: `spawn_<wave>` walks the stacks in order and
+/// takes `cells[idx]` once per mob. Every PROOF about a seated body asks here
+/// instead of walking it again — the winnability pass did have its own copy, and
+/// the lethal-volume seat proof was about to be the third. Three walks over one
+/// indexing convention is three chances to disagree about which mob a diagnostic
+/// is talking about, and the disagreement would be silent: the cells are right
+/// either way, only the name attached to them moves.
+///
+/// A wave with more mobs than seats yields only the seats there are: the
+/// shortfall is `DW0312`'s finding, made where the seats are chosen, and not
+/// this function's to restate.
+pub fn wave_seats<'a>(
+    wave: &'a delvewright_dsl::Wave,
+    cells: &[[i32; 3]],
+) -> Vec<(&'a str, [i32; 3])> {
+    let mut out = Vec::new();
+    let mut seat = 0usize;
+    for mob in &wave.mobs {
+        for _ in 0..mob.count {
+            if let Some(cell) = cells.get(seat) {
+                out.push((mob.entity.as_str(), *cell));
+            }
+            seat += 1;
+        }
+    }
+    out
+}
+
 /// The area a stage-4 quest belongs to (free-function form of [`Plan::quest_area`],
 /// usable before a [`Plan`] exists — e.g. from anchor collection).
 fn quest_area_of<'a>(campaign: &'a Campaign, quest_id: &str) -> Option<&'a str> {
