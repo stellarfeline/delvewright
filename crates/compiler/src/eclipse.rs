@@ -169,6 +169,11 @@ pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::every_version("DW0422", Exi
 /// and this is the same line [`DW_SEAL_HITBOX_COLLISION`] draws when it tests the
 /// cell rather than the emitted box.
 ///
+/// **The pair must be able to share a MOMENT, not only a cell** — see
+/// [`can_share_a_moment`], which is where the rule's quantifier actually lives.
+/// A box armed by a quest beat and killed on completion is not in a contest with
+/// one down another arm of the story.
+///
 /// **Boundary.** Affordance-against-affordance only. A body over an affordance is
 /// `DW0359`'s rule and an affordance in a pressable body's cells is `DW0422`'s;
 /// neither is re-litigated here (one code, one rule).
@@ -214,6 +219,37 @@ pub(crate) struct Affordance {
     pub(crate) anchor: String,
     /// The resolved cell.
     pub(crate) pos: [i32; 3],
+    /// When this box is in the world — see [`Arming`]. Read only by `DW0878`;
+    /// `DW0359` and `DW0422` judge an affordance's PLACE, which does not depend
+    /// on when it is armed.
+    pub(crate) arming: Arming,
+}
+
+/// When an affordance's `minecraft:interaction` box exists.
+///
+/// Two boxes on one cell are only a contest if they can be there at the same
+/// time, and the compiler knows this from its own emitter rather than from a
+/// model it would have to invent.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum Arming {
+    /// Placed at world setup or by a beat that never retires it — a trigger's
+    /// body, a bonfire, a shortcut's unlock hardware, a disarm lever, a shop.
+    /// Live for the rest of the run once it exists, so it shares a moment with
+    /// anything.
+    Persistent,
+    /// An `interact` objective's box, which `emit::activation_commands` summons
+    /// under `emit::pending_guard` — its quest active, its `after` set complete,
+    /// its own gate open — and `emit::completion_cleanup` kills the moment the
+    /// objective completes. Carries the declaring quest and the objective's own
+    /// flag gate.
+    Objective {
+        /// Index of the declaring quest in `quests[]`.
+        quest: usize,
+        /// The objective's `requires_flags`.
+        requires: BTreeSet<String>,
+        /// The objective's `forbids_flags`.
+        forbids: BTreeSet<String>,
+    },
 }
 
 /// An axis-aligned interval `[lo, hi)`.
@@ -400,7 +436,7 @@ pub fn affordance_cells(plan: &Plan) -> Vec<(&'static str, String, [i32; 3])> {
 pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     let c = plan.campaign;
     let mut out = Vec::new();
-    for q in &c.quests.content.quests {
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         for o in &q.objectives {
             let Objective::Interact { id, anchor, .. } = o else {
@@ -411,11 +447,17 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             let Some(pos) = plan.point(area, anchor.as_str()) else {
                 continue;
             };
+            let gate = o.gate();
             out.push(Affordance {
                 kind: "interact objective",
                 id: id.as_str().to_string(),
                 anchor: anchor.as_str().to_string(),
                 pos,
+                arming: Arming::Objective {
+                    quest: qi,
+                    requires: gate.requires_flags.iter().map(|f| f.to_string()).collect(),
+                    forbids: gate.forbids_flags.iter().map(|f| f.to_string()).collect(),
+                },
             });
         }
     }
@@ -454,6 +496,9 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             id: t.id.as_str().to_string(),
             anchor: at.to_string(),
             pos,
+            // `env_trigger_setup` summons it in `setup_finish` and nothing ever
+            // kills it: a click trigger's body is there for the whole run.
+            arming: Arming::Persistent,
         });
     }
     for bf in plan.bonfires() {
@@ -462,6 +507,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             id: format!("bonfire #{}", bf.index),
             anchor: bf.anchor.clone(),
             pos: bf.pos,
+            arming: Arming::Persistent,
         });
     }
     for sc in &plan.shortcuts {
@@ -470,6 +516,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             id: sc.id.clone(),
             anchor: sc.unlock_anchor.clone(),
             pos: sc.unlock,
+            arming: Arming::Persistent,
         });
     }
     for tr in &plan.traps {
@@ -479,6 +526,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
                 id: tr.id.clone(),
                 anchor: d.via_anchor.clone(),
                 pos: d.via_cell,
+                arming: Arming::Persistent,
             });
         }
     }
@@ -489,6 +537,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
                 id: g.id.clone(),
                 anchor: d.via_anchor.clone(),
                 pos: d.via_cell,
+                arming: Arming::Persistent,
             });
         }
     }
@@ -505,6 +554,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             id: format!("{} (#{i})", sh.id),
             anchor: sh.anchor.as_str().to_string(),
             pos,
+            arming: Arming::Persistent,
         });
     }
     // spec-0032 recovery stakes are deliberately ABSENT, and that is a decision
@@ -625,6 +675,7 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
                 id: b.id,
                 anchor: b.anchor,
                 pos: b.pos,
+                arming: Arming::Persistent,
             }),
     );
     for body in pressable_bodies(plan) {
@@ -656,12 +707,65 @@ pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
     let affordances = affordances(plan);
     for (i, a) in affordances.iter().enumerate() {
         for b in affordances.iter().skip(i + 1) {
-            if a.pos == b.pos {
+            if a.pos == b.pos && can_share_a_moment(&a.arming, &b.arming) {
                 return Err(affordance_contest_error(a, b));
             }
         }
     }
     Ok(())
+}
+
+/// Whether two affordances' boxes can be in the world at the same time.
+///
+/// **Sharing a cell is not yet a contest, and the first cut of this rule said it
+/// was.** It refused a released campaign whose two branch ENDINGS each hang an
+/// `interact` objective on the galley's deck — `obj/board-flee` in
+/// `quest/take-the-cheese` and `obj/board-nobody` in `quest/the-sail`, one cell,
+/// two quests a player reaches down different arms of the story. Those two boxes
+/// have never existed at the same moment and never will. The check was asserting
+/// co-presence it had not established, which is the defect a diagnostic's
+/// quantifier is there to prevent, and the content gate is what caught it.
+///
+/// The arming windows are read off the emitter, never modelled:
+///
+/// * an [`Arming::Persistent`] box is placed at setup or by a beat that never
+///   retires it, so it shares a moment with anything — every pair with one of
+///   these on either side is judged;
+/// * an [`Arming::Objective`] box is summoned under `emit::pending_guard` (its
+///   quest active, its `after` set complete, its own gate open) and killed by
+///   `emit::completion_cleanup` the moment the objective completes.
+///
+/// So two objective boxes are only known to coexist when they are declared in
+/// **one quest** — one quest is active as a whole, so its objectives' guards can
+/// all be open together — and then only if no flag proves them exclusive, the
+/// same test [`crate::crosshair`] applies to two NPCs the cast ledger puts in one
+/// scene. Across quests, co-presence is **unestablished**, and the compiler
+/// withholds rather than guesses.
+///
+/// That is a named blind spot, in the same family as `DW0359`'s parked-body rule
+/// and `DW0489`'s silence about actors: two objectives in different quests that a
+/// player really can hold open at once, on one cell, are not caught. Closing it
+/// needs a quest-co-activation model this compiler does not have — asserting it
+/// without one is what refused correct content, and the direction that withholds
+/// a diagnostic is the one that cannot invent a defect.
+fn can_share_a_moment(a: &Arming, b: &Arming) -> bool {
+    match (a, b) {
+        (Arming::Persistent, _) | (_, Arming::Persistent) => true,
+        (
+            Arming::Objective {
+                quest: qa,
+                requires: ra,
+                forbids: fa,
+            },
+            Arming::Objective {
+                quest: qb,
+                requires: rb,
+                forbids: fb,
+            },
+        ) => {
+            qa == qb && ra.intersection(fb).next().is_none() && rb.intersection(fa).next().is_none()
+        }
+    }
 }
 
 /// The binding ledger `DW0878` examined, as `(what declares it, its id, its
