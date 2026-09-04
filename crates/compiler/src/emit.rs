@@ -598,7 +598,46 @@ pub fn build_with_warnings(
         }
         if let Some(battery) = crate::blockout::check(plan, &blocks) {
             eprintln!("{}", battery.binding.line());
-            if let Some((code, refusal)) = battery.refusal() {
+            let refusals: Vec<&(delvewright_dsl::DwCode, delvewright_dsl::Diagnostic)> =
+                battery.refusals().collect();
+            if let Some(((code, refusal), rest)) = refusals.split_first() {
+                // **Every rule that saw this defect, not only the one that stops
+                // the build.** The failure channel carries one code and one
+                // message (`BuildFailure`), which is the compiler's contract and
+                // does not move; what used to be lost is that one derivation
+                // defect is routinely seen by two of these rules, and a report
+                // naming only the first sends a creator round the loop twice.
+                // The line states the whole refusal set, and the ones after the
+                // first print their own messages here — the failing one is
+                // printed by the caller through the ordinary diagnostic channel,
+                // so nothing is said twice.
+                let mut per_code: BTreeMap<String, usize> = BTreeMap::new();
+                for (c, _) in &refusals {
+                    *per_code.entry(c.to_string()).or_default() += 1;
+                }
+                eprintln!(
+                    "blockout battery: {} refusal(s) — {}; the build stops at the first.",
+                    refusals.len(),
+                    per_code
+                        .iter()
+                        .map(|(c, n)| format!("{c} ×{n}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                // The same cap `BuildFailure::Validation` prints under, and for
+                // the same reason: the set is what a reader needs, the whole
+                // list is what a terminal loses. The count above is never
+                // capped, so the cap cannot hide how much was found.
+                const LISTED: usize = 20;
+                for (c, d) in rest.iter().take(LISTED) {
+                    eprintln!("{c} [error] {}: {}", d.path, d.message);
+                }
+                if rest.len() > LISTED {
+                    eprintln!(
+                        "  … and {} further refusal(s), not listed",
+                        rest.len() - LISTED
+                    );
+                }
                 return Err(BuildFailure::Diagnostic {
                     code: *code,
                     message: refusal.message.clone(),

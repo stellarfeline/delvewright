@@ -210,7 +210,7 @@ fn a_slid_opening_reddens_dw0836() {
 #[test]
 fn a_sunk_place_reddens_dw0836_on_the_realized_rise() {
     let (b, _) = battery_under(Perturb {
-        sink: Some("node/loft"),
+        sink: Some("node/loft".to_string()),
         ..Perturb::none()
     });
     let m = message_for(&b, "DW0836");
@@ -238,7 +238,7 @@ fn a_bricked_up_place_reddens_dw0837() {
     let (clean, _) = battery_under(Perturb::none());
     assert!(!errors(&clean).contains(&"DW0837".to_string()));
     let (b, _) = battery_under(Perturb {
-        brick_up: Some("node/exit"),
+        brick_up: Some("node/exit".to_string()),
         ..Perturb::none()
     });
     assert!(
@@ -365,7 +365,7 @@ fn a_low_ceiling_reddens_dw0833_on_the_headroom() {
         "the unperturbed derivation keeps the brief's numbers"
     );
     let (b, _) = battery_under(Perturb {
-        low_ceiling: Some("node/landing"),
+        low_ceiling: Some("node/landing".to_string()),
         ..Perturb::none()
     });
     assert_eq!(
@@ -566,9 +566,9 @@ fn the_derivation_is_deterministic_and_seedless() {
 /// The production path is never perturbed.
 ///
 /// The one thing [`Perturb`] could cost, asserted directly: `Plan::build` — the
-/// only constructor anything outside a test reaches — asks for no defect, and a
-/// build made through it is byte-identical to one made by naming
-/// [`Perturb::none`] explicitly.
+/// constructor every build that is not a `--perturb` demonstration goes through
+/// — asks for no defect, and a build made through it is byte-identical to one
+/// made by naming [`Perturb::none`] explicitly.
 #[test]
 fn blockout_derivation_is_never_perturbed_in_production() {
     assert!(Perturb::none().is_none());
@@ -585,6 +585,184 @@ fn blockout_derivation_is_never_perturbed_in_production() {
             .collect()
     };
     assert_eq!(mass(&via_build), mass(&via_none));
+}
+
+/// **The flag is the only way in**, asserted over the sources rather than
+/// remembered.
+///
+/// `Plan::build_with` is the parameterised constructor; every other build in
+/// this engine reaches the derivation through `Plan::build`, which passes
+/// `Perturb::none()` as a literal. The test above proves the two agree; this one
+/// proves nothing else calls the parameterised one. Without it, a second caller
+/// could acquire a perturbation quietly and every assertion about the shipped
+/// derivation would still be green — a claim about a smaller world than the
+/// engine has.
+///
+/// It is a source scan because the property is about CALLERS, and a caller that
+/// exists is invisible to any amount of behavioural testing of the callee. The
+/// population is stated so a zero cannot pass for a pass.
+#[test]
+fn the_parameterised_derivation_has_exactly_one_production_caller() {
+    let root = common::repo_root();
+    let mut files = Vec::new();
+    for crate_dir in std::fs::read_dir(root.join("crates")).expect("crates/ is readable") {
+        let src = crate_dir.expect("a crate entry").path().join("src");
+        if src.is_dir() {
+            collect_rs(&src, &mut files);
+        }
+    }
+    assert!(
+        files.len() > 20,
+        "the scan found {} source file(s), which is not this workspace",
+        files.len()
+    );
+
+    // Every line that CALLS the parameterised constructor: `build_with_warnings`
+    // is a different function and is excluded by name, and a `fn` line is the
+    // definition rather than a call.
+    let mut callers: Vec<(String, String)> = Vec::new();
+    let mut named_perturb: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for path in &files {
+        let text = std::fs::read_to_string(path).expect("a source file is readable");
+        let name = path
+            .strip_prefix(&root)
+            .expect("every scanned file is under the repo root")
+            .to_string_lossy()
+            .into_owned();
+        for line in text.lines() {
+            let t = line.trim();
+            // Doc and ordinary comments describe the facility all over this
+            // crate; the property is about code.
+            if t.starts_with("//") {
+                continue;
+            }
+            if t.contains("Perturb") {
+                named_perturb.insert(name.clone());
+            }
+            if t.contains("build_with(") && !t.starts_with("pub fn") && !t.starts_with("fn") {
+                callers.push((name.clone(), t.to_string()));
+            }
+        }
+    }
+
+    // `plan.rs` calls it from `Plan::build` with the literal that asks for
+    // nothing; `main.rs` calls it from the `--perturb` arm. Nothing else may.
+    let sites: Vec<&str> = callers.iter().map(|(f, _)| f.as_str()).collect();
+    assert_eq!(
+        sites,
+        vec!["crates/compiler/src/plan.rs", "crates/compiler/src/main.rs"],
+        "the parameterised derivation acquired a caller: {callers:#?}"
+    );
+    assert!(
+        callers[0].1.contains("Perturb::none()"),
+        "`Plan::build` must pass the literal that asks for nothing: {}",
+        callers[0].1
+    );
+
+    // And the facility is not NAMED anywhere else either — a file that mentions
+    // `Perturb` in code is a file that could grow the second caller next.
+    assert_eq!(
+        named_perturb.iter().map(String::as_str).collect::<Vec<_>>(),
+        vec![
+            "crates/compiler/src/blockout.rs",
+            "crates/compiler/src/main.rs",
+            "crates/compiler/src/plan.rs",
+        ],
+        "binding: {} source file(s) scanned, {} call site(s) found",
+        files.len(),
+        callers.len()
+    );
+}
+
+/// Recursively collect `*.rs` under `dir`.
+fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    for e in std::fs::read_dir(dir).expect("a source directory is readable") {
+        let p = e.expect("a directory entry").path();
+        if p.is_dir() {
+            collect_rs(&p, out);
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            out.push(p);
+        }
+    }
+}
+
+/// **Every field of [`Perturb`] is reachable from the command line**, checked by
+/// the compiler rather than by a reader.
+///
+/// The destructuring below names all six fields with no `..` rest pattern, so a
+/// seventh defect added to `Perturb` and not given a [`Knob`] does not compile
+/// this test — which is the strongest form available for "the enumeration is
+/// complete", and the one `CLAUDE.md` asks for over a hand-written list. The
+/// assertions then say each field is actually MOVED by its knob, so an arm that
+/// exists and does nothing is a red rather than a pass.
+#[test]
+fn every_perturb_field_has_a_knob() {
+    use delvewright_compiler::blockout::Knob;
+
+    let place = "node/exit";
+    let mut seen = 0;
+    let (mut slid, mut sunk, mut short, mut bricked, mut low, mut walled) =
+        (false, false, false, false, false, false);
+    for knob in Knob::ALL {
+        let p = knob
+            .perturb(knob.takes_place().then_some(place))
+            .expect("a knob's own `takes_place` answer satisfies its own constructor");
+        assert!(
+            !p.is_none(),
+            "`{}` produced the unperturbed derivation, so it demonstrates nothing",
+            knob.name()
+        );
+        // Exhaustive: no `..`. Adding a field to `Perturb` breaks the build here.
+        let Perturb {
+            slide_openings,
+            sink,
+            short_walls,
+            brick_up,
+            low_ceiling,
+            wall_contacts,
+        } = p;
+        slid |= slide_openings != 0;
+        sunk |= sink.is_some();
+        short |= short_walls;
+        bricked |= brick_up.is_some();
+        low |= low_ceiling.is_some();
+        walled |= wall_contacts;
+        seen += 1;
+        assert!(
+            knob.perturb(knob.takes_place().then_some("")).is_some(),
+            "a knob's constructor must accept the arity its own `takes_place` states"
+        );
+        assert!(
+            knob.perturb((!knob.takes_place()).then_some(place))
+                .is_none(),
+            "`{}` must refuse the arity its own `takes_place` denies, rather than \
+             silently deriving a clean map",
+            knob.name()
+        );
+    }
+    assert_eq!(seen, Knob::ALL.len());
+    assert!(
+        slid && sunk && short && bricked && low && walled,
+        "one of the six fields is never set by any knob: slid={slid} sunk={sunk} \
+         short={short} bricked={bricked} low={low} walled={walled}"
+    );
+    // The spellings a creator types are unique and kebab-case, since the value
+    // set is resolved by name.
+    let names: std::collections::BTreeSet<&str> = Knob::ALL.iter().map(|k| k.name()).collect();
+    assert_eq!(names.len(), Knob::ALL.len(), "two knobs share a spelling");
+    for k in Knob::ALL {
+        assert!(
+            k.name().chars().all(|c| c.is_ascii_lowercase() || c == '-'),
+            "`{}` is not a kebab-case value",
+            k.name()
+        );
+        assert!(
+            k.documented_code().starts_with("DW08"),
+            "`{}` names `{}`, which is not a blockout-battery code",
+            k.name(),
+            k.documented_code()
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
