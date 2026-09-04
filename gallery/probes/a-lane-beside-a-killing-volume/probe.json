@@ -1,0 +1,5 @@
+{
+  "code": "DW0510",
+  "units": [],
+  "why": "The gallery's east pit, one cell wider on `x` and nothing else changed. That leaves the hall a single lane between the pit's face and the wall, and the engine refuses it: a lethal volume kills through a box selector, the server adjudicates a box selector on hitbox intersection, and a body standing anywhere in the lane reaches into the box. The refusal is worth committing because of what it looks like from outside. The lane is walkable geometry; every cell of it is outside every declared volume; a reading in whole cells calls it a route, and the engine used to. What is left to the party is 0.2 blocks of clearance either side and no way to hold it, which is not a route a completability proof may credit — and the bot did not hold it: it died on the cell beside the west pit twice in one run, at [12, 65, 21] and [12, 65, 24], with every compile-time board green. It declares no unit: a lethal volume, its extent and a critical path crossing a hall are each written by the gallery proper. What must not compile is a hall whose only lane is the volume's edge."
+}
