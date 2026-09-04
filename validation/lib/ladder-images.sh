@@ -53,9 +53,12 @@
 #     with `dw-m5-`, and only the exact name can tell the two projects apart.
 #   * any `<repo>:<project>` — the `DELVE_IMAGE` convention.
 #
-# Any other tag is somebody else's NAME for that image: the image is kept, the
-# reason is printed, and nothing is removed. An image with NO tag at all has no
-# other claimant by construction and is removed by id.
+# Any other tag is somebody else's NAME for that image and is never touched. The
+# judgement is per TAG, not per image: this project's own names go, the foreign
+# ones stay, and the image itself survives exactly as long as one of those stays
+# — which is what keeps the shared tag bootable while the finished project's name
+# stops occupying it. An image with NO tag at all has no other claimant by
+# construction and is removed by id.
 #
 # ## What is deliberately NOT reclaimed here
 #
@@ -318,11 +321,10 @@ dw_reclaim_project_images() {
     done
     IFS="$old_ifs"
 
-    if [ -n "$foreign" ]; then
+    for name in $foreign; do
       DW_IMG_KEPT=$((DW_IMG_KEPT + 1))
-      DW_IMG_KEPT_LINES="$DW_IMG_KEPT_LINES  ${foreign# }  not this project's name for it — shared with whoever boots that tag"$'\n'
-      continue
-    fi
+      DW_IMG_KEPT_LINES="$DW_IMG_KEPT_LINES  $name  not this project's name for it — kept, and it keeps the image"$'\n'
+    done
 
     for name in $owned; do
       if [ -n "$dry" ]; then

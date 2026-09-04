@@ -133,6 +133,10 @@ FIXTURE = {
         # The shared default tag, wearing a finished project's label.
         {"id": "sha256:ccc", "project": "dw-beta", "service": "server", "size": 800_000_000,
          "tags": ["delvewright/delve:local"]},
+        # One image, two names: this project's own and a foreign one. The
+        # project's name goes; the foreign one stays and keeps the image alive.
+        {"id": "sha256:kkk", "project": "dw-both", "service": "server", "size": 800_000_000,
+         "tags": ["delvewright/delve:dw-both", "someone-else/keepme:v1"]},
         # This project's own name, and finished — but a container of ANOTHER
         # project is holding the image, which is the rung's whole point.
         {"id": "sha256:ddd", "project": "dw-gamma", "service": "bot", "size": 900_000_000,
@@ -207,7 +211,11 @@ def test_dry_run_removes_nothing_and_says_what_it_would(sweep):
 def test_apply_removes_only_the_names_this_project_minted(sweep):
     proc, removed = sweep("--apply")
     assert proc.returncode == 0, proc.stderr
-    assert sorted(removed) == ["dw-alpha-bot:latest", "sha256:bbb"], proc.stdout
+    assert sorted(removed) == [
+        "delvewright/delve:dw-both",
+        "dw-alpha-bot:latest",
+        "sha256:bbb",
+    ], proc.stdout
 
 
 def test_the_shared_default_tag_is_kept_and_named(sweep):
@@ -215,6 +223,16 @@ def test_the_shared_default_tag_is_kept_and_named(sweep):
     assert "delvewright/delve:local" not in removed
     assert "delvewright/delve:local" in proc.stdout
     assert "not this project's name for it" in proc.stdout
+
+
+def test_a_foreign_tag_keeps_the_image_without_keeping_the_project_s_name(sweep):
+    """The judgement is per TAG. `delvewright/delve:dw-both` is this project's
+    name and goes; `someone-else/keepme:v1` is not, stays, and is what keeps the
+    image itself alive."""
+    proc, removed = sweep("--apply")
+    assert "delvewright/delve:dw-both" in removed
+    assert "someone-else/keepme:v1" not in removed
+    assert "someone-else/keepme:v1" in proc.stdout
 
 
 def test_a_prefix_of_the_project_name_is_not_the_project_name(sweep):
