@@ -31,13 +31,14 @@ import type {
 } from "./critical-path.ts";
 import { insideCompletion, reachGoal } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
-import { BotDeathError, likelyDeathCause } from "./death.ts";
+import { BotDeathError, formatDeathPos, likelyDeathCause } from "./death.ts";
 import { hasSettled } from "./entity-settle.ts";
 import { NavigationOwner } from "./navigation.ts";
 import type { NamedEntityDeath } from "./teardown.ts";
 import type { StageName } from "./report.ts";
 import {
   AssistLedger,
+  CONTROLLED_GAMEMODE,
   actorExercise,
   actorFloorFinding,
   assistClearCommand,
@@ -54,6 +55,7 @@ import {
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
+  scriptedDeathRefusal,
   type ActorEncounter,
   type ActorOutcome,
   type ActorTrial,
@@ -69,6 +71,7 @@ import {
   type WaveCensus,
 } from "./combat.ts";
 import {
+  bodyInVolume,
   entryCellOf,
   markerAt,
   expectedForfeit,
@@ -2166,12 +2169,13 @@ export class MineflayerExecutor implements StepExecutor {
     let position: readonly [number, number, number] | undefined;
     const p = bot?.entity?.position;
     if (p) {
-      // FLOOR, not round: the block an entity is in is the floor of its
-      // position, which is what every box in a death plan is expressed in. A
-      // body dying at x = 12.59 is in cell 12; rounding put it in 13, one cell
-      // further from the volume that killed it, and the death-loop credit rule
-      // compares this position against a box.
-      position = [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
+      // EXACT, never rounded. `Math.round` here produced a triple that is neither
+      // a position nor the cell the body was in, and the death-loop stage read it
+      // as a cell: a kill at `z = 4.6` (cell 4, inside the volume) rounded to 5
+      // and was reported as a death outside the box that killed it. Whoever wants
+      // a cell floors; whoever wants "the volume's selector matched this body"
+      // asks `bodyInVolume`.
+      position = [p.x, p.y, p.z];
     }
     const cause = likelyDeathCause(this.recentChat, bot?.username ?? "");
     const err = new BotDeathError(position, cause);
@@ -2567,7 +2571,7 @@ export class MineflayerExecutor implements StepExecutor {
         }
       }
     }
-    if (this.feetInside(volume.region)) trial.enteredVolume = true;
+    if (this.bodyInside(volume.region)) trial.enteredVolume = true;
     // The one leg of the whole run that is ALLOWED into the hazard — skipped when
     // the approach already delivered the death.
     if (navFault === undefined && this.deathSeq === deathsBefore) {
@@ -2600,34 +2604,28 @@ export class MineflayerExecutor implements StepExecutor {
     trial.deathPos = this.death?.position ? [...this.death.position] : undefined;
     trial.wordingSeen = this.wordWatch?.seen === true;
     this.wordWatch = undefined;
-    // Credited when the player died somewhere this volume can kill from — its
-    // `keep_out` box, which is the declared region widened by the player's own
-    // half-width. A death outside that is a run fault, not this volume's kill,
-    // and crediting it would let any lethal accident anywhere pass as a proof
-    // that this box works.
+    // Credited when the volume's own selector would have matched the body —
+    // `bodyInVolume`, the server's rule, asked of the exact position. That is
+    // the certain case in both directions, so it neither invents a kill nor
+    // disowns one, and it is a sharper answer than this branch's first one
+    // (`inBox(deathPos, keepOut)`), which asked whether SOME position in the
+    // body's cell could have met the volume.
+    const inside = trial.deathPos !== undefined && bodyInVolume(trial.deathPos, volume.region);
+    // …and whether the body was ever IN the volume is a different question,
+    // asked of the feet.
     //
-    // It is `keepOut` and not `region` because the volume selects on hitbox
-    // intersection: a body whose feet cell is one cell out from a face is killed
-    // by it, and the old cell-only reading reported that real, correct kill as a
-    // death OUTSIDE the volume and credited it to nothing. What the widening does
-    // NOT do is let some other cause pass as this volume's: the volume's own
-    // promised line is asserted separately (`wordingSeen`), and a trial that
-    // never saw it fails on that.
-    const inside = trial.deathPos !== undefined && inBox(trial.deathPos, volume.keepOut);
-    // …and a death inside the DECLARED BOX is itself an observation that the body
-    // was in it.
-    //
-    // **The two questions came apart in this merge and must stay apart.** While
-    // credit meant `region`, "this volume killed the player" and "the player was
-    // inside this volume" were one test, and inferring the second from the first
-    // was free. They are now different sets: the ring is where the volume KILLS
-    // from and the region is where a body IS, and `enteredVolume` is the second —
-    // it is what {@link LethalTrial.enteredVolume} exists to tell apart, and the
-    // walk sets it from `feetInside(volume.region)` for the same reason. Reading
-    // `inside` here would report a body that never got its feet in the hole as
-    // having stood in it.
-    if (observed && trial.deathPos !== undefined && inBox(trial.deathPos, volume.region)) {
-      trial.enteredVolume = true;
+    // **The two came apart the moment credit stopped meaning cell containment,
+    // and the inference `enteredVolume = inside` did not.** A body killed from
+    // one cell out from a face is matched by the selector and never had its feet
+    // in the hole — so reading `inside` here reports it as having stood in the
+    // volume, which is exactly the distinction
+    // {@link LethalTrial.enteredVolume} was added to make (*the volume did not
+    // kill what was in it* against *nothing was ever in it*). The walk sets it
+    // from `feetInside(volume.region)`, a cell test, and so does this: the block
+    // a body is in is the FLOOR of its position.
+    if (observed && trial.deathPos !== undefined) {
+      const feet = trial.deathPos.map(Math.floor) as unknown as Vec3Tuple;
+      if (inBox(feet, volume.region)) trial.enteredVolume = true;
     }
     trial.died = observed && inside;
     if (navFault !== undefined) {
@@ -2636,12 +2634,10 @@ export class MineflayerExecutor implements StepExecutor {
     }
     if (observed && !inside) {
       trial.abandoned =
-        `the bot died at ` +
-        `${trial.deathPos ? `[${trial.deathPos.join(", ")}]` : "an unknown position"}, which is ` +
-        `OUTSIDE everywhere the declared volume [${volume.region.lo.join(", ")}]..` +
-        `[${volume.region.hi.join(", ")}] can kill from (its keep-out box ` +
-        `[${volume.keepOut.lo.join(", ")}]..[${volume.keepOut.hi.join(", ")}]) — that death ` +
-        `is not this volume's kill and is not credited as one`;
+        `the bot died at ${formatDeathPos(trial.deathPos)}, which is OUTSIDE the reach of ` +
+        `the declared volume [${volume.region.lo.join(", ")}]..[${volume.region.hi.join(", ")}] ` +
+        `— a body there is not one this volume's own selector can match, so that death is ` +
+        `not this volume's kill and is not credited as one`;
       return;
     }
     if (!trial.died) {
@@ -2656,8 +2652,7 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     process.stderr.write(
-      `[death-loop] ${volume.id}: died at ` +
-        `${trial.deathPos ? `[${trial.deathPos.join(", ")}]` : "an unknown position"}` +
+      `[death-loop] ${volume.id}: died at ${formatDeathPos(trial.deathPos)}` +
         `; the volume's own line ${trial.wordingSeen ? "reached" : "did NOT reach"} the player\n`,
     );
 
@@ -2776,7 +2771,7 @@ export class MineflayerExecutor implements StepExecutor {
   private async stepInto(box: Box, cell: Vec3Tuple, trial: LethalTrial): Promise<void> {
     const bot = this.requireBot();
     const inside = (): boolean => {
-      if (!this.feetInside(box)) return false;
+      if (!this.bodyInside(box)) return false;
       trial.enteredVolume = true;
       return true;
     };
@@ -2799,10 +2794,21 @@ export class MineflayerExecutor implements StepExecutor {
     }
   }
 
-  /** Whether the bot's feet are in `box` right now. */
-  private feetInside(box: Box): boolean {
-    const feet = this.feetCell();
-    return feet !== undefined && inBox(feet, box);
+  /**
+   * Whether the volume `box` would match this body right now — the SERVER's rule
+   * ({@link bodyInVolume}), asked of the bot's exact position.
+   *
+   * It asked whether the floored feet CELL was in the box, which is a different
+   * question and a narrower one: the emitted selector intersects a 0.6-wide
+   * hitbox against the region `[lo, hi + 1]`, so a body 0.2 blocks outside the
+   * face is one the volume kills and one this used to call outside. Saying
+   * "entered" of exactly the bodies the volume can act on is what makes
+   * `enteredVolume` mean anything, and it also ends {@link stepInto}'s drive at
+   * the moment the hazard can reach the bot rather than a third of a block late.
+   */
+  private bodyInside(box: Box): boolean {
+    const p = this.bot?.entity?.position;
+    return p !== undefined && bodyInVolume([p.x, p.y, p.z], box);
   }
 
   /**
@@ -4276,18 +4282,29 @@ export class MineflayerExecutor implements StepExecutor {
       const trial = openTrial(enc, attempt, phase);
       this.trials.push(trial);
       try {
+        // A cutscene cannot be allowed to eat this death. The encounter's own
+        // objective completion may start one, and a cutscene's first act is
+        // `gamemode spectator @a` — so a trade that finished the wave hands the
+        // next scripted death an invulnerable body, `/damage` does nothing, and
+        // the stage used to report that as a missing op.
+        await this.awaitControlForScriptedDeath(step, enc);
         const seq = this.deathSeq;
         // What the bot carries INTO the death — the baseline `keep_inventory` is
         // judged against on the way out.
         this.itemsBeforeDeath = bot.inventory.items().length;
+        const chatFrom = this.recentChat.length;
         bot.chat(scriptedDeathCommand());
         if (!(await this.awaitDeathAfter(seq, RESPAWN_TIMEOUT_MS))) {
-          // The bot is opped for exactly this command; if no death followed, the
-          // command was refused (or the op seed drifted) and the stage proves
-          // nothing. Fail the trial rather than walk a loop nobody opened.
-          trial.abortedWith =
-            `the scripted death never landed within ${RESPAWN_TIMEOUT_MS}ms — ` +
-            `\`${scriptedDeathCommand()}\` was refused (is the bot opped?)`;
+          // No death followed, so the stage proves nothing and the trial fails —
+          // but it fails saying what it SAW. The bot is opped and receives the
+          // server's own answer on the chat stream, and its gamemode decides
+          // whether the command could ever have worked.
+          trial.abortedWith = scriptedDeathRefusal(
+            scriptedDeathCommand(),
+            RESPAWN_TIMEOUT_MS,
+            this.gameModeNow(),
+            this.recentChat.slice(chatFrom),
+          );
           throw new Error(`die-retry: ${trial.abortedWith}`);
         }
         trial.cause = this.death?.likelyCause;
@@ -4368,6 +4385,63 @@ export class MineflayerExecutor implements StepExecutor {
         this.unbrandWave(enc);
       }
     }
+  }
+
+  /**
+   * The gamemode the client currently believes it is in, as a plain string.
+   *
+   * Widened deliberately: mineflayer's own type for `bot.game.gameMode` lists
+   * `survival | creative | spectator` and omits `adventure`, which is the mode every
+   * delve actually runs in. Comparing against the mode a delve uses is not an
+   * unintentional comparison; the library's enumeration is short.
+   */
+  private gameModeNow(): string | undefined {
+    return this.bot?.game?.gameMode;
+  }
+
+  /**
+   * Hold until the bot is a body a scripted death can reach — out of the spectator
+   * a cutscene put it in.
+   *
+   * The bound is the campaign's own number, never one invented here: a step whose
+   * completion fires a `Cutscene` carries `cutscene_seconds` in
+   * `critical-path.json`, and a `kill` step carries it exactly as a walking step
+   * does. The sequencer already waits it out AFTER a step; nothing waited it out
+   * inside one, which is where the die-retry stage lives — the general mechanism
+   * was there and its binding did not reach this caller. The grace on top is the
+   * same {@link awaitCutscene} uses.
+   *
+   * Bounded, and it never fails: a window that outlasts what the build declared is
+   * a finding, and the finding is the refusal {@link scriptedDeathRefusal} writes
+   * when the death then does not land — which says the gamemode it saw.
+   */
+  private async awaitControlForScriptedDeath(step: KillStep, enc: Encounter): Promise<void> {
+    this.requireBot();
+    if (this.gameModeNow() === CONTROLLED_GAMEMODE) return;
+    const declaredMs = (step.cutsceneSeconds ?? 0) * 1000;
+    const budget = declaredMs + this.cutsceneGraceMs;
+    const started = Date.now();
+    const deadline = started + budget;
+    process.stderr.write(
+      `[die-retry] ${enc.wave}: the bot is in \`${this.gameModeNow() ?? "?"}\`, not ` +
+        `\`${CONTROLLED_GAMEMODE}\` — waiting out the cutscene before scripting a death ` +
+        `(${step.cutsceneSeconds ?? 0}s declared + ${this.cutsceneGraceMs}ms grace)\n`,
+    );
+    while (Date.now() < deadline) {
+      if (this.death) throw this.death;
+      if (this.gameModeNow() === CONTROLLED_GAMEMODE) {
+        process.stderr.write(
+          `[die-retry] ${enc.wave}: control returned after ${Date.now() - started}ms\n`,
+        );
+        return;
+      }
+      await delay(CUTSCENE_POLL_MS);
+    }
+    process.stderr.write(
+      `[die-retry] ${enc.wave}: still \`${this.gameModeNow() ?? "?"}\` after ${budget}ms — ` +
+        `scripting the death anyway, so the refusal below says what was seen rather than ` +
+        `this wait swallowing it\n`,
+    );
   }
 
   /**

@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import {
   DeathPlanParseError,
   SUPPORTED_DEATH_PLAN_FORMAT,
+  bodyInVolume,
   boxCells,
   deathLoopBinding,
   deathLoopBindingFailures,
@@ -28,6 +29,7 @@ import {
   type LethalVolume,
   type StakeRule,
 } from "../src/death-loop.ts";
+import type { Vec3Tuple } from "../src/critical-path.ts";
 
 /** The economy fixture's plan, as `delvec` really emits it. */
 function planDoc(): Record<string, unknown> {
@@ -189,6 +191,70 @@ test("a volume's keep-out box is READ, and it is not the volume", () => {
   assert.equal(inBox(besideTheFace, v.keepOut), true);
 });
 
+test("`bodyInVolume` and the compiler's exported `keep_out` are the same rule", () => {
+  // **Two implementations of one fact, in two languages, and this is what holds
+  // them together.** `bodyInVolume` is the server's rule re-derived here, over an
+  // exact position; `keep_out` is the compiler's answer to the cell question —
+  // which FEET CELLS a body can meet the volume from — computed by
+  // `dsl::metrics::keep_out_box` and carried in the plan. Neither can replace the
+  // other (one takes a position, one takes a cell), so the honest thing is to
+  // make them provably agree rather than let them coexist.
+  //
+  // The bridge: a cell belongs in `keep_out` exactly when SOME position inside it
+  // satisfies `bodyInVolume`. Sampled at the cell's own interior corners, which
+  // is where the predicate's extremes are — it is monotone in each span.
+  const v = plan().volumes[0]!;
+  const d = 1e-6;
+  const reachable = (cell: Vec3Tuple): boolean => {
+    for (const dx of [d, 1 - d]) {
+      for (const dz of [d, 1 - d]) {
+        if (bodyInVolume([cell[0] + dx, cell[1], cell[2] + dz], v.region)) return true;
+      }
+    }
+    return false;
+  };
+  let examined = 0;
+  const disagreed: string[] = [];
+  for (let x = v.region.lo[0] - 3; x <= v.region.hi[0] + 3; x++) {
+    for (let y = v.region.lo[1] - 3; y <= v.region.hi[1] + 3; y++) {
+      for (let z = v.region.lo[2] - 3; z <= v.region.hi[2] + 3; z++) {
+        const cell: Vec3Tuple = [x, y, z];
+        examined += 1;
+        if (reachable(cell) !== inBox(cell, v.keepOut)) disagreed.push(`[${cell.join(", ")}]`);
+      }
+    }
+  }
+  // Binding, computed from the objects rather than written beside them: the
+  // volume's box grown by three on every side.
+  assert.equal(examined, 7 * 7 * 7);
+  // **The one boundary they read differently, measured rather than predicted.**
+  // Every disagreement sits on a single plane — feet exactly on the volume's
+  // ceiling, `hi.y + 1` — and there are nine of them, the whole horizontal ring
+  // at that height. One cause: `bodyInVolume` compares `min <= hi + 1`
+  // NON-strictly, so a body whose feet touch the ceiling counts as intersecting,
+  // while vanilla's own `AABB::intersects` is strict and `keep_out_box` takes
+  // that reading.
+  //
+  // It is a difference of DIRECTION and each side is pointed the safe way for
+  // what it decides. `keep_out` decides FOOTING, where a generous rule would
+  // refuse ground that is fine, so it is strict. `bodyInVolume` decides CREDIT,
+  // where generous can only fail to disown a real death and can never invent one
+  // out of a body that is not there. The residue is named rather than smoothed
+  // over: on this plane the credit rule would attribute to the volume a death
+  // suffered by a body standing on top of it.
+  //
+  // Asserted as the PROPERTY and not as a list of cells, so it stays true for a
+  // volume of another shape — and with a non-zero count, so it cannot go quietly
+  // vacuous if one side stops answering.
+  const ceiling = v.region.hi[1]! + 1;
+  assert.equal(disagreed.length, 9, `disagreements: ${disagreed.join(" ")}`);
+  assert.deepEqual(
+    disagreed.filter((c) => !c.startsWith(`[`) || !c.includes(`, ${ceiling}, `)),
+    [],
+    "every cell the two readings differ on has its feet exactly on the volume's ceiling",
+  );
+});
+
 test("a plan that omits keep_out is REFUSED — the bot may not guess the ring", () => {
   const doc = planDoc();
   const volumes = doc["lethal_volumes"] as Record<string, unknown>[];
@@ -268,6 +334,46 @@ test("box membership and enumeration agree", () => {
   assert.equal(boxCells(box).length, 4);
   assert.ok(inBox([1, 0, 1], box));
   assert.ok(!inBox([2, 0, 1], box));
+});
+
+// The gallery's west pit, exactly as `delvec` emits it — the volume that measured
+// this rule live.
+const WEST_PIT = { lo: [1, 63, 2] as const, hi: [3, 67, 4] as const };
+
+test("a lethal volume reaches a body its declared CELL box does not contain", () => {
+  // `@a[x=1,dx=2,y=63,dy=4,z=2,dz=2]`: `dx` is a span, so the region is
+  // [1,4] x [63,68] x [2,5] in continuous coordinates, and vanilla intersects a
+  // 0.6-wide hitbox against it. A body at z = 5.1 stands in cell 5 — outside the
+  // declared box — with its hitbox reaching back to 4.8, so the selector matches
+  // it and the volume kills it.
+  assert.ok(!inBox([3, 65, 5], WEST_PIT), "cell 5 is outside the declared box");
+  assert.ok(bodyInVolume([3.5, 65, 5.1], WEST_PIT), "and the volume kills a body standing there");
+  // The same body a third of a block further out is beyond the reach, and saying
+  // so is what stops this crediting a death the volume had nothing to do with.
+  assert.ok(!bodyInVolume([3.5, 65, 5.4], WEST_PIT));
+});
+
+test("the reach is the hitbox, on every axis and in both directions", () => {
+  // -x/-z: the hitbox leads by half a width.
+  assert.ok(bodyInVolume([0.75, 65, 3.5], WEST_PIT));
+  assert.ok(!bodyInVolume([0.65, 65, 3.5], WEST_PIT));
+  // -y: a body standing two courses under the floor of the box still has 1.8
+  // blocks of head in it.
+  assert.ok(bodyInVolume([2.5, 61.5, 3.5], WEST_PIT), "a head inside the box is a body inside it");
+  assert.ok(!bodyInVolume([2.5, 61.0, 3.5], WEST_PIT));
+  // +y: the region's ceiling is `hi + 1`, so feet on it are still in it.
+  assert.ok(bodyInVolume([2.5, 68, 3.5], WEST_PIT));
+  assert.ok(!bodyInVolume([2.5, 68.01, 3.5], WEST_PIT));
+});
+
+test("a body at the centre of any cell of the box is one the volume kills", () => {
+  for (const c of boxCells(WEST_PIT)) {
+    assert.ok(
+      bodyInVolume([c[0] + 0.5, c[1], c[2] + 0.5], WEST_PIT),
+      `the volume reaches a body standing at the centre of [${c.join(", ")}]`,
+    );
+  }
+  assert.equal(boxCells(WEST_PIT).length, 45, "45 cells examined, not a subset of them");
 });
 
 test("the entry cell is the nearest cell of the box, ties broken lexicographically", () => {
