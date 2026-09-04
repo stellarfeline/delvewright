@@ -23,6 +23,25 @@ The rules, over `validation/*.yaml`:
   4. Only `owner-play.yaml` may pin a `container_name:` — a human needs to find
      their own session by name; a ladder never does.
 
+An IMAGE TAG is the third Docker-global name, and it was the one nothing checked:
+a tag is a key in the daemon's single image store, so two ladders that build
+different trees into one tag race and the loser BOOTS THE OTHER LADDER'S DELVE,
+silently. Two more rules, in both halves the leak actually needs — a service that
+cannot be scoped, and a caller that does not scope it:
+
+  5. A service that BUILDS (`build:`) and names an `image:` must take that name
+     from a variable, so a caller CAN scope it. A literal tag is global by
+     construction. (A built service with no `image:` at all is already safe —
+     compose names it `<project>-<service>`.)
+  6. Every `validation/*.sh` that runs a compose `up … --build` against
+     `compose.yaml` must call `dw_export_delve_image`
+     (`validation/lib/delve-image.sh`), the repo's one rule for that tag. The
+     rule was written inline in `bot-run.sh` with the race in a comment,
+     copied to `world-save.sh`, and missed by `branch-runs.sh`,
+     `playtest-note-flow.sh` and `rehearsal-flow.sh` — all three of which
+     built into the shared `delvewright/delve:local` while their own headers
+     claimed a unique compose project left them nothing to collide on.
+
 Deterministic, offline, no dependencies (Python 3 stdlib) — the compose files are
 a fixed, flat two-level shape, so this reads them with an indentation scan rather
 than pulling in PyYAML. Run from the repo root:
@@ -42,6 +61,14 @@ OWNER_NAME = "owner-play.yaml"
 #   "127.0.0.1:25565:25565" / "25565:25565"   -> FIXED host port
 #   "127.0.0.1::25565" / "::25565" / "25565"  -> ephemeral (Docker chooses)
 FIXED_PORT = re.compile(r"^(?P<ip>(?:\d{1,3}\.){3}\d{1,3}:)?(?P<host>\d+):(?P<container>\d+)(?:/\w+)?$")
+
+# The one function that names the delve image tag, and the file it lives in.
+# Relative to ROOT, which the tests re-root at a synthetic tree.
+IMAGE_LIB_REL = "lib/delve-image.sh"
+IMAGE_FN = "dw_export_delve_image"
+# A compose `up` that BUILDS. All three spellings in the tree put the flag after
+# the verb: `up --build`, `up -d --build`, `up -d --build <service>`.
+COMPOSE_BUILD = re.compile(r"\bup\b[^\n]*\s--build\b")
 
 
 def services(path: pathlib.Path) -> dict[str, dict[str, list[str]]]:
@@ -92,6 +119,72 @@ def port_entries(values: list[str]) -> list[str]:
     return entries
 
 
+def strip_comments(text: str) -> str:
+    """The script's executable text: full-line `#` comments removed.
+
+    Every leak this gate names is documented in a comment somewhere near it, so a
+    scan that reads comments finds the WORDS rather than the code — the reassuring
+    direction. Only whole-line comments are dropped: a trailing `#` inside a
+    string would need a shell parser, and no line in `validation/` puts a compose
+    invocation behind one.
+    """
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
+def builders_tag_globally(path: pathlib.Path) -> list[str]:
+    """Rule 5: a service that builds must not tag into a LITERAL image name."""
+    problems = []
+    for name, keys in sorted(services(path).items()):
+        if "build" not in keys:
+            continue  # a pulled image is not this ladder's to overwrite
+        for value in keys.get("image", []):
+            if "${" in value:
+                continue
+            problems.append(
+                f"  {path}: service `{name}` BUILDS into the literal image tag\n"
+                f"    `{value}`. An image tag is Docker-GLOBAL exactly as a container name\n"
+                f"    is — `docker compose -p <project>` does not isolate it — so two\n"
+                f"    ladders building different trees into it race and the loser BOOTS THE\n"
+                f"    OTHER LADDER'S DELVE. Write `image: ${{DELVE_IMAGE:-{value}}}` and let\n"
+                f"    each caller scope it ({ROOT / IMAGE_LIB_REL})."
+            )
+    return problems
+
+
+def builders_scope_their_tag(root: pathlib.Path) -> tuple[list[str], int]:
+    """Rule 6: a script that runs a compose `up --build` must scope the tag.
+
+    Returns the problems and the BINDING COUNT — how many scripts this rule
+    examined. Zero means it protected nothing, which is a finding about the scan,
+    not a pass, so main() prints it either way.
+    """
+    lib = root / IMAGE_LIB_REL
+    problems = []
+    builders = []
+    for path in sorted(root.glob("*.sh")):
+        text = strip_comments(path.read_text(encoding="utf-8"))
+        if COMPOSE_NAME not in text or not COMPOSE_BUILD.search(text):
+            continue
+        builders.append(path)
+        if IMAGE_FN in text:
+            continue
+        problems.append(
+            f"  {path}: runs a compose `up … --build` but never calls `{IMAGE_FN}`,\n"
+            f"    so it builds its tree into whatever tag {root / COMPOSE_NAME} defaults to\n"
+            f"    — a name global to the daemon and shared with every other ladder.\n"
+            f"    Add:  . \"$here/{IMAGE_LIB_REL}\"  then  {IMAGE_FN} \"$project\"\n"
+            f"    (the rule lives in {lib} and nowhere else)."
+        )
+    if builders and not lib.is_file():
+        problems.append(
+            f"  {lib} is missing — it is the ONE place the delve image tag is named,\n"
+            f"    and this gate binds {len(builders)} builder(s) in {root} to it."
+        )
+    return problems, len(builders)
+
+
 def main() -> int:
     if not ROOT.is_dir():
         sys.stderr.write(f"error: {ROOT} not found (run from the repo root)\n")
@@ -104,6 +197,13 @@ def main() -> int:
             return 2
 
     problems: list[str] = []
+
+    # Rules 5-6: the image tag, the third Docker-global name. Both halves —
+    # a compose service that cannot be scoped, and a caller that does not scope it.
+    for path in sorted(ROOT.glob("*.yaml")):
+        problems.extend(builders_tag_globally(path))
+    script_problems, builder_count = builders_scope_their_tag(ROOT)
+    problems.extend(script_problems)
 
     # Rule 1: the base file carries nothing global.
     for name, keys in sorted(services(compose).items()):
@@ -162,7 +262,9 @@ def main() -> int:
         return 1
     print(
         f"validation stack is isolated by construction "
-        f"({len(services(compose))} services in {compose} carry no global name)"
+        f"({len(services(compose))} services in {compose} carry no global name; "
+        f"{builder_count} script(s) that build scope the image tag through "
+        f"{ROOT / IMAGE_LIB_REL})"
     )
     return 0
 
