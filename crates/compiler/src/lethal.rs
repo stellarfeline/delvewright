@@ -288,7 +288,14 @@ fn posted_places(
     out
 }
 
-/// Prove no respawn seat sits inside a lethal volume (`DW0511`).
+/// Prove no posted place stands a body inside a lethal volume (`DW0511`).
+///
+/// "Inside" is judged of the BODY, not of the cell: each place carries the hitbox
+/// of what lands on it, seated at the coordinates a summon writes
+/// ([`crate::nav::cell_center`]), and
+/// [`delvewright_dsl::metrics::body_meets_volume`] answers. The name is the one
+/// the diagnostic has always had; what it examines is every posted place, respawn
+/// seats included.
 ///
 /// `entry` is the campaign's resolved entry-spawn cell, threaded in by the caller
 /// (the emitter already resolves it); `None` for a layout with no entry anchor,
