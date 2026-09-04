@@ -1,8 +1,8 @@
 //! serde types for the six stage `content` payloads (spec-0001 v0.2).
 //!
-//! Every struct is `deny_unknown_fields`. Reserved enum values (npc `role`,
-//! objective/effect types) parse successfully but are rejected by validation
-//! ([`crate::validate`]) with code `DW0141`.
+//! Every struct is `deny_unknown_fields`. Reserved enum values (objective and
+//! effect types a campaign's `dsl_version` is too low for) parse successfully
+//! but are rejected by validation ([`crate::validate`]) with code `DW0141`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1049,7 +1049,9 @@ pub struct Relationship {
     pub attitude: String,
 }
 
-/// NPC role. `vendor` and `boss` are reserved (rejected in v0, `DW0141`).
+/// What a speaking part does. A schema enum offers what the engine accepts,
+/// so there are two of them: how hard a fight is billed is [`EncounterTier`] on
+/// the body that fights (a `waves[]` entry or a stage-5 actor), not a role here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Role {
@@ -1057,21 +1059,6 @@ pub enum Role {
     QuestGiver,
     /// Flavor only.
     Flavor,
-    /// Reserved (M2).
-    Vendor,
-    /// Reserved (M2).
-    Boss,
-}
-
-impl Role {
-    /// The reserved value name if this role is not implemented in v0.
-    pub fn reserved(self) -> Option<&'static str> {
-        match self {
-            Role::Vendor => Some("vendor"),
-            Role::Boss => Some("boss"),
-            Role::QuestGiver | Role::Flavor => None,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

@@ -77,7 +77,6 @@ writes are perfectly legal, and what the engine refuses is holding them at once.
 
 | Probe | Code | What it tries |
 | --- | --- | --- |
-| `reserved-npc-roles` | `DW0141` | giving an NPC the `vendor` or `boss` role |
 | `two-placement-authorities` | `DW0839` | carrying `areas[]` and a site plan at once |
 | `aquatic-locomotion` | `DW0455` | declaring a body that swims |
 | `peaceful-difficulty` | `DW0468` | setting the world to peaceful |
