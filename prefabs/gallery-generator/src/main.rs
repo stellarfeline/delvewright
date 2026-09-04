@@ -845,6 +845,16 @@ const MUSTER_PIT_CLEARANCE: f64 = 8.0;
 /// number: eight. Ten leaves two blocks for a fight that moves. The ends can be
 /// twenty blocks away and the LINE between them still cut through the muster,
 /// which is exactly the shape this measures and an endpoint check would miss.
+///
+/// **Geometry is the belt, not the braces.** A perception radius of eight in a
+/// hall fourteen deep covers the hall, so no line the patrol can walk keeps
+/// eight blocks from the party's whole route — measured: with the lane on the
+/// back wall the bot cleared the muster and then died to the same two crossbows
+/// on its way to the finale, twice. What separates the two fights is that the
+/// campaign arms the lane on the hall's CLOSING beat, which this program cannot
+/// see. This constant still holds, because a staging that seats the two within
+/// perception of each other is wrong however the beats are ordered, and an
+/// ordering is the half a later edit can undo without touching a coordinate.
 const LANE_MUSTER_CLEARANCE: f64 = 10.0;
 
 /// Find one anchor by name, or panic: a clearance proof that silently examined

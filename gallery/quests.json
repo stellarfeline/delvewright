@@ -469,28 +469,6 @@
             "wave": "wave/muster"
           },
           {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "happening": {
-              "subject": "anchor/march",
-              "text": "A lane opens down the far hall.",
-              "verb": "arrives"
-            },
-            "requires_flags": [
-              "flag/hall-open"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
-            "type": "spawn-wave",
-            "wave": "wave/lane"
-          },
-          {
             "happening": {
               "subject": "npc/warden",
               "text": "The Warden steps behind the wall and does not come back.",
@@ -1043,6 +1021,25 @@
               "verb": "survives"
             },
             "type": "campaign-complete"
+          },
+          {
+            "happening": {
+              "subject": "anchor/march",
+              "text": "A lane opens down the far hall behind them.",
+              "verb": "arrives"
+            },
+            "requires_flags": [
+              "flag/hall-open"
+            ],
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
+            "type": "spawn-wave",
+            "wave": "wave/lane"
           }
         ],
         "on_objective_complete": {

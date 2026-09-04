@@ -400,12 +400,17 @@ and of every cell the piece's own bodies are teleported through on their way to
 the pocket, and neither touches a gate mouth. The east one is a single cell
 deep on `z`, against the north wall.
 
-**The patrol lane walks the back wall.** A lane squad's `follow_range` is its
-lane's `aggro_radius` verbatim, and `DW0477` records in writing that nothing
-measures `wave/lane` — so a lane drawn across the hall's middle puts an
-unbilled fight inside the billed one, and the gate's verdict covers damage it
-cannot account for. The lane's ends were always far from the muster; the LINE
-between them was not, which is the shape an endpoint check misses.
+**The patrol comes down the hall as the party leaves it.** A lane squad's
+`follow_range` is its lane's `aggro_radius` verbatim — eight — and `DW0477`
+records in writing that nothing measures `wave/lane`. Eight blocks of
+perception in a hall fourteen deep covers the hall, so there is no line the
+patrol can walk that the party's route stays clear of: moved to the back wall,
+the crossbows stopped reaching the muster and killed the bot on its way to the
+finale instead. A fight the campaign does not bill and does not require is
+therefore armed by the hall's own closing beat rather than by the beat that
+opens it, and the back wall is where it walks when it arrives. Both halves are
+held: the arming is a beat, and the generator holds the geometry, because an
+ordering is the half a later edit can undo without moving a coordinate.
 
 The generator holds all three, on every run, and prints what it examined:
 
