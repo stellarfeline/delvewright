@@ -1184,23 +1184,6 @@
               "type": "clear-effect"
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "state": "state/labels-read",
-              "type": "clear-state"
-            },
-            {
               "actor": "actor/standard-bearer",
               "happening": {
                 "subject": "actor/standard-bearer",
@@ -1875,6 +1858,25 @@
                 "flag/hall-open"
               ],
               "type": "despawn-npc"
+            }
+          ],
+          "obj/reach-the-end": [
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "state": "state/labels-read",
+              "type": "clear-state"
             }
           ],
           "obj/take-the-bone": [
