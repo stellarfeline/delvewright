@@ -35,6 +35,20 @@ Absent config falls back to nothing (the tool says what to add and exits 2);
 MALFORMED config is a hard error. A typo must never silently downgrade the
 creator to a different provider or a weaker anchor.
 
+HOW MANY PICTURES A CALL DRAWS IS NOT ALWAYS YOURS TO SAY, and a call that draws
+more than one has billed for more than one. `ideogram-v3` takes a count on the
+wire (`num_images`); `gemini-native`'s Interactions request has no image-count
+field in the SDK's generated types, so the model decides — measured over 48
+unpriced calls: 42 returned one image, one returned 2, two returned 5, and one
+returned ELEVEN. So the tool never names a file after a number it did not
+choose: the FIRST image is always `<out>.<ext>` — the name that was asked for —
+and any extra is `<out>-1.<ext>`, `<out>-2.<ext>`, with one line saying
+how many came back, what was written, and that the call may have billed for all
+of them. A call that returns NOTHING says so and leaves non-zero; a read timeout
+is retried once and then reported in one line, never as a traceback. The count
+and the names go into the sidecar too, so a later reader can tell a one-image
+call from an eleven-image one.
+
 Stdlib only (python >= 3.11 for `tomllib`).
 
 Usage:
@@ -63,6 +77,7 @@ import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import NamedTuple
 
 LOCAL_CONFIG_FILE = "delvewright.local.toml"
 SECTION = "refimg"
@@ -85,6 +100,8 @@ PROVIDERS = {
         # web UI. Reference images are the fallback anchor here.
         "anchors": ("code", "images"),
         "seed": True,
+        # `num_images` is on this wire, so --count is honoured here.
+        "count": True,
         # This wire frames a picture by naming the pixels outright; it has no
         # aspect-ratio or size vocabulary at all. Declared rather than inferred
         # from the wire shape, for the same reason `anchors` is: what a provider
@@ -113,6 +130,14 @@ PROVIDERS = {
         # rather than re-describing a look.
         "anchors": ("images", "chain"),
         "seed": True,
+        # NO count. The SDK's generated types for an Interactions request carry
+        # no image-count field anywhere — not on the request, not on
+        # `response_format`, not on `generation_config` — so there is nothing to
+        # send, and inventing a parameter is how an anchor gets silently dropped
+        # (this table's whole reason for existing). The model decides how many
+        # images it draws, which is why `save` names the first one after what was
+        # asked for and reports the rest rather than pretending one came back.
+        "count": False,
         # `response_format` carries both, and neither has a pixel spelling — a
         # `--resolution` handed to this provider would have nowhere to go.
         "frame": ("aspect_ratio", "image_size"),
@@ -315,6 +340,15 @@ def build_request(cfg: dict, args, frame: dict[str, str]) -> tuple[dict, list[tu
         raise SystemExit(
             f"--chain-from: provider {cfg['provider']!r} has no interaction chaining."
         )
+    if args.count is not None and not provider["count"]:
+        raise SystemExit(
+            f"--count: provider {cfg['provider']!r} has no image-count field on its "
+            f"request — the model decides how many it draws, and a call has been "
+            f"measured returning eleven. Refused rather than dropped: a count that "
+            f"goes nowhere reads as a bound on what you will be billed for. Drop the "
+            f"flag; the first image is still written to --out and any extra is "
+            f"reported by name."
+        )
     if args.style_note and provider["wire"] != "json":
         raise SystemExit(
             f"--style-note: provider {cfg['provider']!r} has no system-instruction channel; "
@@ -332,7 +366,10 @@ def build_request(cfg: dict, args, frame: dict[str, str]) -> tuple[dict, list[tu
         fields: dict[str, str] = {
             "prompt": args.prompt,
             "rendering_speed": args.rendering_speed or cfg["rendering_speed"],
-            "num_images": str(args.count),
+            # An unset --count asks this wire for ONE, explicitly. Leaving the
+            # field off would let the service pick its own default, which is the
+            # gemini-native failure mode ported to the provider that can avoid it.
+            "num_images": str(args.count if args.count is not None else 1),
         }
         if frame.get("resolution"):
             fields["resolution"] = frame["resolution"]
@@ -375,6 +412,38 @@ def build_request(cfg: dict, args, frame: dict[str, str]) -> tuple[dict, list[tu
     return body, files
 
 
+class CallFailed(Exception):
+    """The request could not be completed, and the tool can NAME why.
+
+    Raised instead of letting `urllib` out, because a twenty-line traceback
+    ending `TimeoutError: The read operation timed out` names neither the prompt
+    nor the output path — measured on 2 of 48 calls in one round, where the two
+    that failed were indistinguishable from each other in the terminal. `main`
+    catches this and prints one line carrying `--out`, which is the only string
+    that tells a creator WHICH picture they have to draw again.
+    """
+
+
+# One bounded retry, and no more. A read timeout is the one failure here that is
+# plausibly transient — the request was accepted and the drawing simply took
+# longer than the deadline — so a single retry converts a dead round into a slow
+# one. It is bounded because a retry is not free: a timed-out call may have been
+# billed already, which the retry line says out loud rather than hiding.
+CALL_ATTEMPTS = 2
+
+
+def _timeout_reason(exc: BaseException) -> BaseException | None:
+    """The timeout inside `exc`, if that is what it is.
+
+    A read timeout surfaces as `TimeoutError`; a connect timeout arrives wrapped
+    in `urllib.error.URLError`. Both are the same finding to a creator.
+    """
+    if isinstance(exc, TimeoutError):
+        return exc
+    reason = getattr(exc, "reason", None)
+    return reason if isinstance(reason, TimeoutError) else None
+
+
 def call(cfg: dict, payload, files: list[tuple[str, Path]]) -> dict:
     provider = PROVIDERS[cfg["provider"]]
     key = os.environ.get(cfg["api_key_env"])
@@ -397,13 +466,36 @@ def call(cfg: dict, payload, files: list[tuple[str, Path]]) -> dict:
             "User-Agent": USER_AGENT,
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=cfg.get("timeout_seconds", 180)) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:2000]
-        # The key is in the request headers, never in this message.
-        raise SystemExit(f"provider returned HTTP {exc.code}:\n{detail}")
+    seconds = cfg.get("timeout_seconds", 180)
+    for attempt in range(1, CALL_ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=seconds) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:2000]
+            # The key is in the request headers, never in this message.
+            raise SystemExit(f"provider returned HTTP {exc.code}:\n{detail}")
+        except (TimeoutError, urllib.error.URLError) as exc:
+            timeout = _timeout_reason(exc)
+            if timeout is None:
+                # Not transient and not retried, but still named: a DNS or TLS
+                # failure is as much "a case the tool can name" as a timeout is.
+                raise CallFailed(f"the provider could not be reached ({exc})") from exc
+            if attempt == CALL_ATTEMPTS:
+                raise CallFailed(
+                    f"the provider did not answer within {seconds}s, twice "
+                    f"({timeout}). Nothing was written. A timed-out call may still "
+                    f"have been billed — check the provider's console before "
+                    f"re-running, and raise [{SECTION}].timeout_seconds if this "
+                    f"repeats."
+                ) from exc
+            print(
+                f"refimg: no answer within {seconds}s; retrying once "
+                f"({attempt + 1} of {CALL_ATTEMPTS}). The timed-out attempt may "
+                f"still have been billed.",
+                file=sys.stderr,
+            )
+    raise AssertionError("unreachable: the loop returns or raises")
 
 
 # No identifier is megabytes. A style code is 8 hex chars, a seed is an int, an
@@ -449,7 +541,21 @@ def _walk_images(node) -> list[tuple[str, str]]:
     return found
 
 
-def save(result: dict, out: Path, request: dict | None = None) -> list[Path]:
+class Saved(NamedTuple):
+    """What `save` actually wrote, so the caller can SAY it.
+
+    `returned` is how many images the provider sent, which is not a number this
+    tool chose on every provider and is not always one. `images` is what landed
+    on disk, in the order the response carried them; `paths` is everything
+    written including the sidecar.
+    """
+
+    paths: list[Path]
+    images: list[Path]
+    returned: int
+
+
+def save(result: dict, out: Path, request: dict | None = None) -> Saved:
     out.parent.mkdir(parents=True, exist_ok=True)
     # The FULL response is kept beside the images on purpose. It is the only place
     # an anchor the series depends on can be read back from, and no provider here
@@ -487,8 +593,13 @@ def save(result: dict, out: Path, request: dict | None = None) -> list[Path]:
         # the one field the record exists for and left a series unreproducible
         # while looking complete.
         doc["request"] = request
+    # Written NOW, before a single image is decoded, because the response has
+    # already been paid for and an exception between here and the end of this
+    # function must not lose it. It is written a second time at the end, once
+    # `images` can say what actually landed.
     meta.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
     written = [meta]
+    images: list[Path] = []
 
     urls = [item.get("url") for item in result.get("data", []) if isinstance(item, dict) and item.get("url")]
 
@@ -507,12 +618,25 @@ def save(result: dict, out: Path, request: dict | None = None) -> list[Path]:
         inline = _walk_images(result)
     total = len(urls) + len(inline)
 
+    # The same stem the sidecar is named from, so `<stem>.json` and `<stem>.jpg`
+    # cannot disagree when the stem itself contains a dot.
+    stem = out.with_suffix("")
+
     def dest_for(i: int, mime: str = "image/png") -> Path:
         # The extension follows the bytes. Gemini returns JPEG for this model; a
         # file named .png that is actually a JPEG is the kind of small lie that
         # costs an hour when some later tool trusts the name.
+        #
+        # THE FIRST IMAGE ALWAYS TAKES THE NAME THAT WAS ASKED FOR. It used to
+        # take it only when exactly one came back, so a call the provider chose
+        # to answer with five wrote `<stem>-0.jpg` … `<stem>-4.jpg` and NO
+        # `<stem>.jpg` — and every existence check downstream, the page's own
+        # included, reported the requested picture missing. How many images a
+        # provider draws is not a fact about what the creator asked for.
         ext = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/webp": ".webp"}.get(mime, ".png")
-        return out.with_name(f"{out.name}-{i}{ext}") if total > 1 else out.with_suffix(ext)
+        if i == 0:
+            return stem.with_name(stem.name + ext)
+        return stem.with_name(f"{stem.name}-{i}{ext}")
 
     for i, url in enumerate(urls):
         # The image host rejects urllib's default `Python-urllib/x.y` agent with a
@@ -533,6 +657,7 @@ def save(result: dict, out: Path, request: dict | None = None) -> list[Path]:
             )
             continue
         written.append(dest_for(i))
+        images.append(dest_for(i))
 
     for i, (mime, b64) in enumerate(inline):
         try:
@@ -542,11 +667,19 @@ def save(result: dict, out: Path, request: dict | None = None) -> list[Path]:
                   file=sys.stderr)
             continue
         written.append(dest_for(i, mime))
+        images.append(dest_for(i, mime))
 
-    if total == 0:
-        print(f"warning: no image found in the response; it is kept at {meta} — "
-              f"inspect it and widen the extractor rather than re-paying.", file=sys.stderr)
-    return written
+    # The count and the names go INTO the sidecar, not only onto the terminal.
+    # A terminal line is gone by the next round; the sidecar travels with the
+    # image into the campaign, and it is the only place a later reader can tell
+    # a one-image call from an eleven-image one — which is a billing fact, and
+    # the whole reason the extras are kept rather than deleted.
+    # Names, not paths: the sidecar is copied into `design/` beside its image,
+    # where the working directory it was drawn in no longer exists.
+    doc["images"] = {"returned": total, "written": [p.name for p in images]}
+    meta.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+
+    return Saved(paths=written, images=images, returned=total)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -566,7 +699,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--style-note", metavar="TEXT",
                     help="system instruction carrying the style contract, held constant "
                          "across a series while the prompt varies per zone")
-    ap.add_argument("--count", type=int, default=1)
+    # No default of 1, and the difference is not cosmetic: the default has to be
+    # distinguishable from "the creator asked for one", so a provider with no
+    # count vocabulary can refuse the FLAG without refusing every ordinary call.
+    ap.add_argument("--count", type=int, default=None,
+                    help="how many images to ask for (ideogram-v3 only; unset asks "
+                         "for 1). gemini-native has no count field on its request "
+                         "and refuses this flag — that provider decides how many it "
+                         "draws, a call has been measured returning eleven, and every "
+                         "image it returns is billed")
     ap.add_argument("--rendering-speed", choices=RENDERING_SPEEDS)
     # The three frame flags. No argparse `choices=`: the capability refusal is
     # the more useful message and must come FIRST — telling someone their ratio
@@ -596,9 +737,23 @@ def main(argv: list[str] | None = None) -> int:
     frame = resolve_frame(cfg, args)
     fields, files = build_request(cfg, args, frame)
 
+    stem, meta = args.out.with_suffix(""), args.out.with_suffix(".json")
+
     if args.dry_run:
         print(f"POST {cfg.get('endpoint') or PROVIDERS[cfg['provider']]['endpoint']}")
         print(f"auth: {PROVIDERS[cfg['provider']]['auth_header']}: <${cfg['api_key_env']}>")
+        # What this call may COST, said by the costless mode, because the costless
+        # mode is where a creator looks before spending anything. Printed BEFORE
+        # the wire dump so the dump stays the last thing on stdout and remains
+        # parseable as a whole.
+        if PROVIDERS[cfg["provider"]]["count"]:
+            print(f"images: exactly {fields.get('num_images', 1)} — this provider takes "
+                  f"a count.")
+        else:
+            print(f"images: at least 1, and this provider has no count field — a call "
+                  f"has been measured returning ELEVEN, and every image returned is "
+                  f"billed. The first lands at {stem}.<ext>, any extra at "
+                  f"{stem}-1.<ext>, and the number goes into {meta}.")
         if PROVIDERS[cfg["provider"]]["wire"] == "multipart":
             print("multipart fields:")
             for k, v in fields.items():
@@ -621,7 +776,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  (attached as inline image) {rp}")
         return 0
 
-    result = call(cfg, fields, files)
+    try:
+        result = call(cfg, fields, files)
+    except CallFailed as exc:
+        # ONE line, and it names `--out`. The traceback this replaces named
+        # neither the prompt nor the output path, so a round that lost two calls
+        # out of forty-eight could not tell from the terminal which two.
+        print(f"refimg: {args.out}: {exc}", file=sys.stderr)
+        return 1
     request = {
         "provider": cfg["provider"],
         "model": cfg.get("model"),
@@ -636,8 +798,33 @@ def main(argv: list[str] | None = None) -> int:
         "chain_from": getattr(args, "chain_from", None),
         "reference_images": [str(rp) for _, rp in files],
     }
-    for path in save(result, args.out, request):
+    saved = save(result, args.out, request)
+    for path in saved.paths:
         print(path)
+
+    if saved.returned == 0:
+        # Non-zero, because the picture that was asked for does not exist. This
+        # used to be a warning beside a zero exit, so a script could not tell a
+        # drawn image from a response nobody could extract one out of.
+        print(
+            f"refimg: {args.out}: the provider returned no image. The paid response "
+            f"is kept at {meta} — inspect it and widen the "
+            f"extractor rather than re-paying.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if saved.returned > 1:
+        # Exit 0: the requested image EXISTS, at the requested name. The line is
+        # about money, not about failure.
+        names = ", ".join(p.name for p in saved.images)
+        print(
+            f"refimg: the provider returned {saved.returned} images for one call and "
+            f"may have billed for all {saved.returned}. Written: {names}. The first is "
+            f"the one you asked for; the extras are kept so the charge is visible, and "
+            f"the count is in {meta}.",
+            file=sys.stderr,
+        )
     return 0
 
 
