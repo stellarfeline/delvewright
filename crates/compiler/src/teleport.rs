@@ -100,7 +100,7 @@
 
 use delvewright_dsl::stages::for_each_campaign_effect;
 
-use crate::nav::NavError;
+use crate::failure::Failure;
 use crate::plan::Plan;
 use delvewright_dsl::DwCode;
 
@@ -211,7 +211,7 @@ fn volumes(plan: &Plan) -> (usize, Vec<Volume>) {
 ///
 /// Empty and free for every campaign that declares no `teleport` — the walk
 /// finds nothing, no affordance is enumerated, and the caller emits no ledger.
-pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, NavError> {
+pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, Failure> {
     let (declared, vols) = volumes(plan);
     let mut gate = TeleportGate {
         declared,
@@ -250,7 +250,7 @@ pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, NavError> {
             if !v.contains(*pos) {
                 continue;
             }
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_TELEPORT_BOUND_AFFORDANCE,
                 message: format!(
                     "the `teleport` at {} moves everything inside `{}` ± extent, and that volume \

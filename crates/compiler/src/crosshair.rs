@@ -120,6 +120,7 @@
 //! carry no ledger entry, so a puppet parked in front of a speaker is still
 //! nobody's rule.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{CastDialogue, CastPlacement, Diagnostic, Npc};
@@ -148,16 +149,6 @@ pub use delvewright_dsl::metrics::PLAYER_WIDTH;
 /// it is what makes that stance *usable* — a disambiguation rule that put the
 /// player 4 blocks out would have separated the bodies and lost the click.
 pub const INTERACTION_REACH: f64 = 3.0;
-
-/// A build failure raised by the crosshair proof (exit 3, like its `eclipse` and
-/// `clearance` siblings).
-#[derive(Debug)]
-pub struct CrosshairError {
-    /// The stable diagnostic code ([`DW_CROSSHAIR_CONTEST`]).
-    pub code: DwCode,
-    /// Human-readable explanation, naming both NPCs, the scene and the measure.
-    pub message: String,
-}
 
 /// The minimum horizontal centre separation at which a player can always find a
 /// stance where `w_target`'s box is the first thing the pick ray meets, with
@@ -292,7 +283,7 @@ fn scene<'a>(plan: &Plan<'a>, quest: &'a delvewright_dsl::Quest) -> Vec<Target<'
 /// Empty for every campaign whose staged NPCs keep [`threshold`] apart, and for
 /// every campaign with no cast ledger at all (pre-0.7), so output stays
 /// byte-identical.
-pub fn check_crosshair_contests(plan: &Plan) -> Result<Vec<Diagnostic>, CrosshairError> {
+pub fn check_crosshair_contests(plan: &Plan) -> Result<Vec<Diagnostic>, Failure> {
     let c = plan.campaign;
     let mut warnings = Vec::new();
     for qid in crate::cast::quest_dag_order(c) {
@@ -337,7 +328,7 @@ pub fn check_crosshair_contests(plan: &Plan) -> Result<Vec<Diagnostic>, Crosshai
                         message(&qid, a, b, sep, tau, false),
                     )),
                     _ => {
-                        return Err(CrosshairError {
+                        return Err(Failure {
                             code: DW_CROSSHAIR_CONTEST,
                             message: message(&qid, a, b, sep, tau, true),
                         });

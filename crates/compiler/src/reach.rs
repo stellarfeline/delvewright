@@ -63,7 +63,8 @@
 //! to the rule cannot leave a stale number behind in a `format!`.
 use std::collections::BTreeMap;
 
-use crate::nav::{LegRoute, NavError, World};
+use crate::failure::Failure;
+use crate::nav::{LegRoute, World};
 use crate::plan::{Plan, ResolvedAnchor, Step};
 use delvewright_dsl::stages::Objective;
 use delvewright_dsl::{DwCode, envelope::is_v03};
@@ -317,7 +318,7 @@ pub fn check_reach_completion(
     plan: &Plan,
     world: &World,
     routes: &[LegRoute],
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     // The one place a leg's ARRIVAL is read off a route: the last cell of the
     // A* polyline, which is the snapped endpoint the walk actually delivers the
     // body to. Split out so the judgement below can be driven from plain data
@@ -337,7 +338,7 @@ pub fn judge_reach_completion(
     plan: &Plan,
     world: &World,
     arrivals: &BTreeMap<usize, [i32; 3]>,
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     let v03 = is_cube_campaign(plan);
     for site in sites(plan) {
         let vol = reach_completion(site.pos, site.radius, v03);
@@ -348,7 +349,7 @@ pub fn judge_reach_completion(
             .filter(|&c| world.is_standable(c))
             .collect();
         if standable.is_empty() {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_REACH_UNCOMPLETABLE,
                 message: format!(
                     "reach objective `{}` completes only for a body inside {} at anchor `{}`, and \
@@ -389,7 +390,7 @@ pub fn judge_reach_completion(
             })
             .min()
             .unwrap_or(i32::MAX);
-        return Err(NavError {
+        return Err(Failure {
             code: DW_REACH_UNCOMPLETABLE,
             message: format!(
                 "reach objective `{}` completes only for a body inside {} at anchor `{}`, and the \

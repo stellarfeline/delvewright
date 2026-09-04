@@ -12,6 +12,7 @@
 //! documents, prefabs and flags it was handed, never of where it was launched
 //! from or what happens to sit above that directory.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
@@ -89,8 +90,8 @@ pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::every_version("DW0387");
 /// gated by that branch's own flags.
 pub const DW_BRANCH_TRANSPORT_DIVERGES: DwCode = DwCode::every_version("DW0494");
 
-impl From<crate::nav::NavError> for BuildFailure {
-    fn from(e: crate::nav::NavError) -> Self {
+impl From<Failure> for BuildFailure {
+    fn from(e: Failure) -> Self {
         BuildFailure::Diagnostic {
             code: e.code,
             message: e.message,
@@ -1067,7 +1068,7 @@ pub fn build_with_warnings(
                         let ancestor = |g: usize, s: usize| {
                             g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
                         };
-                        let label = |e: crate::nav::NavError| crate::nav::NavError {
+                        let label = |e: Failure| Failure {
                             code: e.code,
                             message: format!("branch `{}`: {}", r.branch.id, e.message),
                         };

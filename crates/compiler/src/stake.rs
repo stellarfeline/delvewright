@@ -112,7 +112,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::Campaign;
 
-use crate::nav::{NavError, World};
+use crate::failure::Failure;
+use crate::nav::World;
 use crate::plan::Plan;
 use delvewright_dsl::DwCode;
 
@@ -505,7 +506,7 @@ pub fn build(
     plan: &Plan,
     world: &World,
     entry: Option<[i32; 3]>,
-) -> Result<Option<StakeTable>, NavError> {
+) -> Result<Option<StakeTable>, Failure> {
     let declared = plan.campaign.quests.content.stakes.len();
     if declared == 0 {
         return Ok(None);
@@ -563,7 +564,7 @@ pub fn build(
             .collect();
         stranded_cells += stranded.len();
         if let Some(first) = stranded.first() {
-            return Err(NavError {
+            return Err(Failure {
                 code: DW_STAKE_NO_ROUTE_BACK,
                 message: format!(
                     "a player can reach and die at {first:?} (and {} other cell(s)), and from {} \
@@ -600,7 +601,7 @@ pub fn build(
                      car, a sealed gate region, a collapsed floor — so a marker left there would \
                      be destroyed by the next ride"
                     };
-                    return Err(NavError {
+                    return Err(Failure {
                         code,
                         message: format!(
                             "a death in {} with {} in force has nowhere to leave its recovery stake: \

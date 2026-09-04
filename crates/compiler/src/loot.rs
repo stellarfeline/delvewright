@@ -16,7 +16,7 @@
 use std::collections::BTreeMap;
 
 use crate::assembled::base_id;
-use crate::nav::NavError;
+use crate::failure::Failure;
 use crate::plan::{CollectFillPlan, LootPlan};
 use delvewright_dsl::DwCode;
 
@@ -225,7 +225,7 @@ pub fn check_loot_containers(
     blocks: &BTreeMap<[i32; 3], String>,
     loot: &[LootPlan],
     available: &[ContainerAnchor],
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     let mut bad: Vec<String> = Vec::new();
     for l in loot {
         let c = l.cell;
@@ -260,7 +260,7 @@ pub fn check_loot_containers(
     if bad.is_empty() {
         return Ok(());
     }
-    Err(NavError {
+    Err(Failure {
         code: DW_LOOT_NOT_A_CONTAINER,
         message: format!(
             "{} `loot` declaration(s) do not resolve to a fillable container.\n{}\n\
@@ -289,7 +289,7 @@ pub fn check_collect_containers(
     blocks: &BTreeMap<[i32; 3], String>,
     fills: &[CollectFillPlan],
     available: &[ContainerAnchor],
-) -> Result<(), NavError> {
+) -> Result<(), Failure> {
     let mut bad: Vec<String> = Vec::new();
     for f in fills {
         let c = f.cell;
@@ -324,7 +324,7 @@ pub fn check_collect_containers(
     if bad.is_empty() {
         return Ok(());
     }
-    Err(NavError {
+    Err(Failure {
         code: DW_COLLECT_NOT_A_CONTAINER,
         message: format!(
             "{} `collect` objective(s) adopt a container that is not there.\n{}\n\

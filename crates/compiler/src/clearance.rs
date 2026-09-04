@@ -95,6 +95,7 @@
 //! body the route was never sized for — the fix is the route or the body, never
 //! a smaller number in the dims table.
 
+use crate::failure::Failure;
 use std::fmt::Write as _;
 
 use delvewright_dsl::Diagnostic;
@@ -134,17 +135,6 @@ pub const DW_BODY_CLEARANCE_ADVISORY: DwCode = DwCode::every_version("DW0451");
 /// on the island: 0.25 flagged 38 bodies including every crew mannequin, 0.2
 /// flags only the genuinely flush ones.
 pub const MODEL_MARGIN: f64 = 0.2;
-
-/// A build failure raised by the clearance proof (mapped to exit 3, like the
-/// `nav` / `eclipse` build errors it sits beside).
-#[derive(Debug)]
-pub struct ClearanceError {
-    /// The stable diagnostic code ([`DW_BODY_CLEARANCE`]).
-    pub code: DwCode,
-    /// Human-readable explanation, naming the body, where it is, and what it is
-    /// inside — plus every further violation, so one build reports them all.
-    pub message: String,
-}
 
 /// Where a body volume comes from, for the diagnostic text.
 #[derive(Clone)]
@@ -441,7 +431,7 @@ pub fn check_body_clearance(
     world: &World,
     moves: &[MovePlan],
     actor_moves: &[ActorMovePlan],
-) -> Result<Vec<Diagnostic>, ClearanceError> {
+) -> Result<Vec<Diagnostic>, Failure> {
     let mut errors: Vec<(Volume, [i32; 3], f64, f64)> = Vec::new();
     let mut warnings: Vec<Diagnostic> = Vec::new();
     // A leg reports once: `(id, to_anchor)` of legs that already have a finding.
@@ -463,7 +453,7 @@ pub fn check_body_clearance(
         }
     }
     if let Some((first, cell, w, h)) = errors.first() {
-        return Err(ClearanceError {
+        return Err(Failure {
             code: DW_BODY_CLEARANCE,
             message: clearance_error(first, *cell, *w, *h, &errors[1..]),
         });

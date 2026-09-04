@@ -230,6 +230,7 @@
 //! model's barrier and the player's eye agree, and let the route use the
 //! opening.
 
+use crate::failure::Failure;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
@@ -511,17 +512,6 @@ impl TraversalGate {
     }
 }
 
-/// A build failure raised by the traversal proof (exit 3, like its neighbours).
-#[derive(Debug)]
-pub struct TraversalError {
-    /// The stable diagnostic code ([`DW_TRAVERSAL_IMPOSSIBLE`]).
-    pub code: DwCode,
-    /// Human-readable explanation naming the body, the leg, the cell and the
-    /// capability the route assumed — plus every further violation, so one build
-    /// reports them all.
-    pub message: String,
-}
-
 /// One walked leg, flattened out of the two plan kinds.
 struct Leg<'a> {
     /// `move-npc` or `move-actor`.
@@ -632,7 +622,7 @@ pub fn check_traversal(
     world: &World,
     moves: &[MovePlan],
     actor_moves: &[ActorMovePlan],
-) -> Result<(Vec<Diagnostic>, TraversalGate), TraversalError> {
+) -> Result<(Vec<Diagnostic>, TraversalGate), Failure> {
     let mut gate = TraversalGate::default();
     let mut errors: Vec<String> = Vec::new();
     let mut warnings: Vec<Diagnostic> = Vec::new();
@@ -709,7 +699,7 @@ pub fn check_traversal(
                 let _ = write!(message, " {e};");
             }
         }
-        return Err(TraversalError {
+        return Err(Failure {
             code: DW_TRAVERSAL_IMPOSSIBLE,
             message,
         });
@@ -733,7 +723,7 @@ pub fn check_traversal(
                 let _ = write!(message, " {e};");
             }
         }
-        return Err(TraversalError {
+        return Err(Failure {
             code: DW_TRAVERSAL_DECLARATION_INERT,
             message,
         });

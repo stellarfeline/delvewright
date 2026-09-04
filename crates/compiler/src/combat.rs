@@ -52,6 +52,7 @@
 //! never a guess in either direction — an encounter is never failed on an
 //! assumption.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{
@@ -122,17 +123,6 @@ pub const TTK_BUDGET_HITS: u32 = 400;
 /// its PackTest scaffolding, and the only way a wave mob can be spelled
 /// unkillable.
 pub const RESISTANCE_IMMUNE_AMPLIFIER: u32 = 4;
-
-/// A build failure raised by the winnability proof (exit 3, like the `nav` /
-/// `clearance` build errors it sits beside).
-#[derive(Debug)]
-pub struct CombatError {
-    /// The stable diagnostic code.
-    pub code: DwCode,
-    /// Human-readable explanation: the arithmetic, the formula it used, and how
-    /// to retune without re-deriving any of it.
-    pub message: String,
-}
 
 /// One mandatory encounter: a wave a `kill` objective on the compiled critical
 /// path requires the party to clear.
@@ -1024,7 +1014,7 @@ pub fn check_winnability(
     plan: &Plan,
     world: &World,
     placements: &BTreeMap<String, Vec<[i32; 3]>>,
-) -> Result<Vec<Diagnostic>, CombatError> {
+) -> Result<Vec<Diagnostic>, Failure> {
     let c = plan.campaign;
     let items = ItemCombatRegistry::v1_21_11();
     let types = DamageTypeRegistry::v1_21_11();
@@ -1035,7 +1025,7 @@ pub fn check_winnability(
     // ---- DW0470: every required hostile can be hurt at all -----------------
     let undamageable = undamageable_hostiles(&c.quests.content.waves, &mandatory);
     if !undamageable.is_empty() {
-        return Err(CombatError {
+        return Err(Failure {
             code: DW_UNDAMAGEABLE,
             message: format!(
                 "a hostile the party is REQUIRED to kill can never be damaged, so its `kill` \
@@ -1060,7 +1050,7 @@ pub fn check_winnability(
     let seated = seated_hostiles(&c.quests.content.waves, &mandatory, placements);
     let unreachable = unreachable_hostiles(world, &seated);
     if !unreachable.is_empty() {
-        return Err(CombatError {
+        return Err(Failure {
             code: DW_UNREACHABLE,
             message: format!(
                 "a hostile the party is REQUIRED to kill has nowhere to be fought from — its \
@@ -1104,7 +1094,7 @@ pub fn check_winnability(
                     let sps = swings_per_second(item, &items);
                     #[allow(clippy::cast_precision_loss)]
                     let seconds = hits as f64 / sps;
-                    return Err(CombatError {
+                    return Err(Failure {
                         code: DW_TTK_OVER_BUDGET,
                         message: format!(
                             "encounter {} ({}) outlasts the best kit the party can field:\n\
@@ -1205,7 +1195,7 @@ pub fn check_winnability(
         }
     }
     if !lethal.is_empty() {
-        return Err(CombatError {
+        return Err(Failure {
             code: DW_UNAVOIDABLE_LETHAL,
             message: format!(
                 "an UNAVOIDABLE scripted hit on the critical path kills a full-health player \

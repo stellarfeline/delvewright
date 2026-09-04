@@ -30,6 +30,7 @@
 //! same script + seed always re-picks the same variant, and moving the verb
 //! deliberately re-rolls it. Everything else is order-determined.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{Campaign, SocketState, WorldEdit};
@@ -48,15 +49,6 @@ use delvewright_dsl::DwCode;
 /// mated or its piece cannot attach, a removal targets the entry piece or a
 /// non-leaf, or a rewire names an out-of-range connector. Build-tier (exit 3).
 pub const DW_MASSING: DwCode = DwCode::every_version("DW0324");
-
-/// A failed massing application: [`DW_MASSING`] (or a reused code) + a
-/// batch-attributed message.
-pub struct MassingError {
-    /// Stable code.
-    pub code: DwCode,
-    /// Message naming the batch and the offending verb.
-    pub message: String,
-}
 
 /// Whether a stage-7 edit verb is an L2 massing verb (applied at plan time)
 /// as opposed to an L3 detailing verb (applied at replay time).
@@ -107,7 +99,7 @@ pub fn apply(
     layout: &mut AreaLayout,
     prefabs: &PrefabRegistry,
     seed: u64,
-) -> Result<MassingOutcome, MassingError> {
+) -> Result<MassingOutcome, Failure> {
     let mut out = MassingOutcome::default();
     if !has_massing_for(campaign, area_id) {
         return Ok(out);
@@ -123,7 +115,7 @@ pub fn apply(
         }
         let bid = batch.id.as_str();
         for (ei, edit) in batch.edits.iter().enumerate() {
-            let err = |message: String| MassingError {
+            let err = |message: String| Failure {
                 code: DW_MASSING,
                 message,
             };
@@ -163,7 +155,7 @@ pub fn apply(
                     // Removal shifts indices; pending rewires that referenced
                     // later pieces would silently retarget — reject the mix.
                     if !rewires.is_empty() {
-                        return Err(MassingError {
+                        return Err(Failure {
                             code: DW_MASSING,
                             message: format!(
                                 "world-edits batch `{bid}`: `remove-piece` after a \
@@ -184,7 +176,7 @@ pub fn apply(
                     let meta =
                         prefabs
                             .get(&layout.pieces[idx].prefab_id)
-                            .ok_or_else(|| MassingError {
+                            .ok_or_else(|| Failure {
                                 code: DW_MASSING,
                                 message: format!(
                                     "world-edits batch `{bid}`: prefab `{}` lost its metadata \
@@ -194,7 +186,7 @@ pub fn apply(
                             })?;
                     let ci = *socket as usize;
                     if ci >= meta.connectors.len() {
-                        return Err(MassingError {
+                        return Err(Failure {
                             code: DW_MASSING,
                             message: format!(
                                 "world-edits batch `{bid}`: `rewire-socket` names connector \
@@ -211,7 +203,7 @@ pub fn apply(
                         layout.pieces[idx].rotation,
                         &meta.connectors[ci],
                     )
-                    .map_err(|e| MassingError {
+                    .map_err(|e| Failure {
                         code: DW_MASSING,
                         message: format!("world-edits batch `{bid}`: {}", e.message),
                     })?;
@@ -225,7 +217,7 @@ pub fn apply(
                             // sealed spine is a compile error, not a shipped
                             // dead end.
                             if !is_mated {
-                                return Err(MassingError {
+                                return Err(Failure {
                                     code: DW_MASSING,
                                     message: format!(
                                         "world-edits batch `{bid}`: `rewire-socket` seals \
@@ -248,7 +240,7 @@ pub fn apply(
                             // an edge from a rewired-open socket (conservative
                             // — it may over-block a proof, never over-prove).
                             if is_mated {
-                                return Err(MassingError {
+                                return Err(Failure {
                                     code: DW_MASSING,
                                     message: format!(
                                         "world-edits batch `{bid}`: `rewire-socket` opens \

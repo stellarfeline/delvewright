@@ -53,6 +53,7 @@
 //! primitive family, ported here) — no wall clock, no unseeded RNG, no
 //! iteration-order dependence.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{Diagnostic, EditFrame, MorphOp, PaletteRecipe, RegionShape, WorldEdit};
@@ -203,10 +204,10 @@ fn placement_finding(
     ei: usize,
     verb: &str,
     d: Delivery,
-) -> Result<Option<Diagnostic>, EditError> {
+) -> Result<Option<Diagnostic>, Failure> {
     match d.shortfall() {
         Shortfall::None => Ok(None),
-        Shortfall::Refuse => Err(EditError {
+        Shortfall::Refuse => Err(Failure {
             code: DW_PLACEMENT_SHORTFALL,
             message: shortfall_message(bid, verb, d),
         }),
@@ -238,16 +239,6 @@ fn shortfall_message(bid: &str, verb: &str, d: Delivery) -> String {
          cannot see a region",
         d.delivered, d.domain, d.usable
     )
-}
-
-/// A failed edit replay: a stable diagnostic code plus a message that names the
-/// offending batch.
-#[derive(Debug)]
-pub struct EditError {
-    /// Stable `DW####` code (may be a reused invariant code, e.g. `DW0311`).
-    pub code: DwCode,
-    /// Human-readable message (remediation-contract style), naming the batch.
-    pub message: String,
 }
 
 /// One replayed batch's outcome, for snapshot rendering and reporting.
@@ -356,7 +347,7 @@ pub fn replay(
     plan: &Plan,
     prefabs: &crate::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
-) -> Result<Option<EditReplay>, EditError> {
+) -> Result<Option<EditReplay>, Failure> {
     replay_with(plan, prefabs, structures, true)
 }
 
@@ -369,7 +360,7 @@ pub fn replay_view(
     plan: &Plan,
     prefabs: &crate::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
-) -> Result<Option<EditReplay>, EditError> {
+) -> Result<Option<EditReplay>, Failure> {
     replay_with(plan, prefabs, structures, false)
 }
 
@@ -378,7 +369,7 @@ fn replay_with(
     prefabs: &crate::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
     enforce: bool,
-) -> Result<Option<EditReplay>, EditError> {
+) -> Result<Option<EditReplay>, Failure> {
     if !has_edits(plan.campaign) {
         return Ok(None);
     }
@@ -405,7 +396,7 @@ fn replay_with(
             .areas
             .iter()
             .find(|a| a.area_id == batch.area.as_str())
-            .ok_or_else(|| EditError {
+            .ok_or_else(|| Failure {
                 code: DW_EDIT_UNRESOLVED,
                 message: format!(
                     "world-edits batch `{bid}` targets area `{}` which the plan did not place — \
@@ -426,7 +417,7 @@ fn replay_with(
             match edit {
                 WorldEdit::Select { name, shape } => {
                     let cells = resolve_shape(plan, area, bid, &regions, &assembled, shape)
-                        .map_err(|message| EditError {
+                        .map_err(|message| Failure {
                             code: DW_EDIT_UNRESOLVED,
                             message,
                         })?;
@@ -579,7 +570,7 @@ fn replay_with(
         // rule), attributed to this batch.
         let settled = assembled::resettle(&mut assembled.blocks);
         if enforce && let Some(lost) = settled.iter().find(|s| s.to.is_none()) {
-            return Err(EditError {
+            return Err(Failure {
                 code: assembled::DW_GRAVITY_DESPAWN,
                 message: format!(
                     "world-edits batch `{bid}` places gravity-affected `{}` at {:?} with no \
@@ -644,14 +635,14 @@ fn check_batch_invariants(
     assembled: &Assembled,
     bid: &str,
     batch_writes: &BTreeMap<[i32; 3], String>,
-) -> Result<(), EditError> {
+) -> Result<(), Failure> {
     // Trap-hardware integrity first: it is a *structural* clash the geometry
     // proofs below can never see (they model walkability and light, not whether
     // a dispenser is still a dispenser).
     check_trap_hardware(plan, bid, batch_writes)?;
     let relight = crate::light::relight_over(plan, assembled);
     if let Some(diag) = relight.diagnostics.first() {
-        return Err(EditError {
+        return Err(Failure {
             code: diag.code,
             message: format!("after world-edits batch `{bid}`: {}", diag.message),
         });
@@ -675,7 +666,7 @@ fn check_batch_invariants(
         occ.solid.extend(relight.extra_solid.iter().copied());
         crate::nav::World::from_occupancy(occ).with_ambient(ambient, built)
     };
-    let ctx = |e: crate::nav::NavError| EditError {
+    let ctx = |e: Failure| Failure {
         code: e.code,
         message: format!("after world-edits batch `{bid}`: {}", e.message),
     };
@@ -741,7 +732,7 @@ fn check_trap_hardware(
     plan: &Plan,
     bid: &str,
     batch_writes: &BTreeMap<[i32; 3], String>,
-) -> Result<(), EditError> {
+) -> Result<(), Failure> {
     if plan.traps.is_empty() {
         return Ok(());
     }
@@ -750,7 +741,7 @@ fn check_trap_hardware(
         let Some((trap, role)) = hardware.get(cell) else {
             continue;
         };
-        return Err(EditError {
+        return Err(Failure {
             code: DW_EDIT_TRAP_HARDWARE,
             message: format!(
                 "world-edits batch `{bid}` writes `{block}` at [{}, {}, {}] — that cell is trap \
@@ -933,7 +924,7 @@ fn check_support(
     watch: &BTreeMap<[i32; 3], String>,
     fixture_cells: &BTreeSet<[i32; 3]>,
     warnings: &mut Vec<Diagnostic>,
-) -> Result<(), EditError> {
+) -> Result<(), Failure> {
     // (reason, block id) → (count, first offending cell)
     let mut agg: BTreeMap<(&'static str, String), (usize, [i32; 3])> = BTreeMap::new();
     for (cell, block) in watch {
@@ -964,7 +955,7 @@ fn check_support(
         // A broken relight fixture is a broken lighting guarantee: error now,
         // naming the cell precisely (there are never many).
         if fixture_cells.contains(cell) {
-            return Err(EditError {
+            return Err(Failure {
                 code: DW_EDIT_SUPPORT,
                 message: format!(
                     "after world-edits batch `{bid}`: the `relight` fixture `{block}` at \
@@ -1068,8 +1059,8 @@ fn used_region<'r>(
     bid: &str,
     regions: &'r BTreeMap<String, BTreeSet<[i32; 3]>>,
     name: &str,
-) -> Result<&'r BTreeSet<[i32; 3]>, EditError> {
-    let cells = regions.get(name).ok_or_else(|| EditError {
+) -> Result<&'r BTreeSet<[i32; 3]>, Failure> {
+    let cells = regions.get(name).ok_or_else(|| Failure {
         code: DW_EDIT_UNRESOLVED,
         message: format!(
             "world-edits batch `{bid}` uses region `{name}` before any `select` defines it \
@@ -1077,7 +1068,7 @@ fn used_region<'r>(
         ),
     })?;
     if cells.is_empty() {
-        return Err(EditError {
+        return Err(Failure {
             code: DW_EDIT_UNRESOLVED,
             message: format!(
                 "world-edits batch `{bid}`: region `{name}` resolves to zero cells, so this \
@@ -1251,7 +1242,7 @@ fn morph(
     op: &MorphOp,
     seed: u64,
     bid: &str,
-) -> Result<(), EditError> {
+) -> Result<(), Failure> {
     if let MorphOp::Raise { recipe, .. } | MorphOp::Smooth { recipe, .. } = op {
         check_recipe(bid, "morph", recipe)?;
     }
@@ -1378,10 +1369,10 @@ fn avoid_footprint(
     bid: &str,
     regions: &BTreeMap<String, BTreeSet<[i32; 3]>>,
     avoid: &[delvewright_dsl::RegionId],
-) -> Result<BTreeSet<(i32, i32)>, EditError> {
+) -> Result<BTreeSet<(i32, i32)>, Failure> {
     let mut fp = BTreeSet::new();
     for r in avoid {
-        let cells = regions.get(r.as_str()).ok_or_else(|| EditError {
+        let cells = regions.get(r.as_str()).ok_or_else(|| Failure {
             code: DW_EDIT_UNRESOLVED,
             message: format!(
                 "world-edits batch `{bid}` avoids region `{r}` before any `select` defines it \
@@ -1418,12 +1409,12 @@ fn scatter(
     limit: Option<u32>,
     seed: u64,
     bid: &str,
-) -> Result<Delivery, EditError> {
+) -> Result<Delivery, Failure> {
     // Defense in depth (map-editor audit): `dsl::validate` rejects an empty
     // `items` list, but `emit::build` is callable without it — a library caller
     // gets a structured error, never an index panic.
     let Some(last) = items.last() else {
-        return Err(EditError {
+        return Err(Failure {
             code: DW_EDIT_UNRESOLVED,
             message: format!(
                 "world-edits batch `{bid}`: a `scatter` verb declares an empty `items` list, so \
@@ -1657,8 +1648,8 @@ fn fragment(
     frame: &delvewright_dsl::EditFrame,
     at: [i32; 3],
     rotation: delvewright_dsl::FragmentRotation,
-) -> Result<(), EditError> {
-    let meta = prefabs.get(prefab.as_str()).ok_or_else(|| EditError {
+) -> Result<(), Failure> {
+    let meta = prefabs.get(prefab.as_str()).ok_or_else(|| Failure {
         code: DW_EDIT_UNRESOLVED,
         message: format!(
             "world-edits batch `{bid}`: fragment prefab `{prefab}` is not in the prefab \
@@ -1667,7 +1658,7 @@ fn fragment(
              the id"
         ),
     })?;
-    let origin = resolve_frame_point(plan, area, bid, frame, at).map_err(|message| EditError {
+    let origin = resolve_frame_point(plan, area, bid, frame, at).map_err(|message| Failure {
         code: DW_EDIT_UNRESOLVED,
         message,
     })?;
@@ -1689,7 +1680,7 @@ fn fragment(
     // and report success — the failure a tile set has no other detector for.
     let mut cells: Vec<([i32; 3], String, Option<bool>)> = Vec::new();
     for template in meta.templates() {
-        let bytes = structures.get(template.file).ok_or_else(|| EditError {
+        let bytes = structures.get(template.file).ok_or_else(|| Failure {
             code: DW_EDIT_UNRESOLVED,
             message: format!(
                 "world-edits batch `{bid}`: fragment prefab `{prefab}`'s structure file \
@@ -1710,7 +1701,7 @@ fn fragment(
         }
     }
     if cells.is_empty() {
-        return Err(EditError {
+        return Err(Failure {
             code: DW_EDIT_UNRESOLVED,
             message: format!(
                 "world-edits batch `{bid}`: fragment prefab `{prefab}` decodes to zero \
@@ -1731,7 +1722,7 @@ fn fragment(
     if rotation != delvewright_dsl::FragmentRotation::None
         && let Some((local, name, prop)) = first_yaw_dependent(&cells)
     {
-        return Err(EditError {
+        return Err(Failure {
             code: DW_EDIT_UNRESOLVED,
             message: format!(
                 "world-edits batch `{bid}`: fragment prefab `{prefab}` is stamped with \
@@ -1825,7 +1816,7 @@ fn relight_region(
     cells: &BTreeSet<[i32; 3]>,
     fixture: Option<delvewright_dsl::Fixture>,
     min_light: Option<u8>,
-) -> Result<(), EditError> {
+) -> Result<(), Failure> {
     let c = plan.campaign;
     let declared = c
         .world
@@ -1838,7 +1829,7 @@ fn relight_region(
     // `fixture`/`min_light` override when the area declares no `lighting`
     // (DW0162), but `emit::build` is callable without validation — a library
     // caller gets a structured error, never a panic.
-    let missing = |field: &str| EditError {
+    let missing = |field: &str| Failure {
         code: DW_EDIT_UNRESOLVED,
         message: format!(
             "world-edits batch `{bid}`: a `relight` verb resolves no `{field}` — area `{}` \
@@ -1874,7 +1865,7 @@ fn relight_region(
         .filter(|cell| crate::light::in_bounds(*cell, amin, amax))
         .collect();
     if reachable.is_empty() {
-        return Err(EditError {
+        return Err(Failure {
             code: DW_EDIT_UNRESOLVED,
             message: format!(
                 "world-edits batch `{bid}`: relight region contains no reachable walkable \
@@ -1899,7 +1890,7 @@ fn relight_region(
         &mut out,
     );
     if let Some(diag) = out.diagnostics.first() {
-        return Err(EditError {
+        return Err(Failure {
             code: diag.code,
             message: format!("world-edits batch `{bid}`: {}", diag.message),
         });
@@ -2149,8 +2140,8 @@ fn pick(recipe: &PaletteRecipe, n: f64) -> Option<&str> {
 /// The structured error an empty palette recipe raises. `dsl::validate` rejects
 /// one (`DW0100`), but `emit::build` is callable without validation — defense in
 /// depth against the map-editor audit's content-reachable panics.
-fn empty_recipe(bid: &str, verb: &str) -> EditError {
-    EditError {
+fn empty_recipe(bid: &str, verb: &str) -> Failure {
+    Failure {
         code: DW_EDIT_UNRESOLVED,
         message: format!(
             "world-edits batch `{bid}`: a `{verb}` verb declares an empty palette `recipe`, so \
@@ -2161,7 +2152,7 @@ fn empty_recipe(bid: &str, verb: &str) -> EditError {
 }
 
 /// Reject an empty palette recipe before any cell is written.
-fn check_recipe(bid: &str, verb: &str, recipe: &PaletteRecipe) -> Result<(), EditError> {
+fn check_recipe(bid: &str, verb: &str, recipe: &PaletteRecipe) -> Result<(), Failure> {
     if recipe.blocks.is_empty() {
         return Err(empty_recipe(bid, verb));
     }

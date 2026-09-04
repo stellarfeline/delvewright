@@ -25,6 +25,7 @@
 //! frontier drains in a fixed order, and site search breaks ties on
 //! `(distance², y, z, x)` — same DSL + seed → byte-identical placements.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{AreaLighting, AreaMitigation, Campaign, Fixture, WorldTime, WorldWeather};
@@ -59,15 +60,6 @@ pub struct Placement {
     pub block: String,
 }
 
-/// A lighting diagnostic (`DW0210`/`DW0211`), mapped to exit 2 (spec-0010).
-#[derive(Clone, Debug)]
-pub struct LightDiag {
-    /// The stable code.
-    pub code: DwCode,
-    /// Human-readable explanation naming the area / cell.
-    pub message: String,
-}
-
 /// The result of the assembled-light + relight pass over a whole campaign.
 #[derive(Clone, Debug, Default)]
 pub struct Relight {
@@ -79,7 +71,7 @@ pub struct Relight {
     pub extra_solid: BTreeSet<[i32; 3]>,
     /// Gate diagnostics (`DW0210`/`DW0211`); non-empty means the build fails
     /// (exit 2). Sorted by `(code, message)`.
-    pub diagnostics: Vec<LightDiag>,
+    pub diagnostics: Vec<Failure>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1384,7 +1376,7 @@ pub(crate) fn relight_area(
                 });
             }
             None => {
-                out.diagnostics.push(LightDiag {
+                out.diagnostics.push(Failure {
                     code: DW_RELIGHT_UNSATISFIABLE,
                     message: format!(
                         "area `{area_id}`: declared relight fixture `{}` cannot reach \
@@ -1738,7 +1730,7 @@ fn dark_diagnostic(
     nav: &World,
     sky: u8,
     placement: delvewright_dsl::Placement,
-) -> Option<LightDiag> {
+) -> Option<Failure> {
     // Worst first: the place with the most dark cells is the one whose remedy is
     // a different act. Ties by the label, which is unique, so the order is total.
     fn sorted(mut v: Vec<(String, &DarkSurvey)>) -> Vec<(String, &DarkSurvey)> {
@@ -1850,7 +1842,7 @@ fn dark_diagnostic(
             placement.lighting_field()
         ));
     }
-    Some(LightDiag {
+    Some(Failure {
         code: DW_DARK_UNMITIGATED,
         message: m,
     })
@@ -2106,7 +2098,7 @@ mod tests {
         night_vision: bool,
         area_id: &str,
         placement: delvewright_dsl::Placement,
-    ) -> Option<LightDiag> {
+    ) -> Option<Failure> {
         let s = survey_undeclared(model, reachable, sky, night_vision);
         dark_diagnostic(&BTreeMap::from([(whole(area_id), s)]), nav, sky, placement)
     }

@@ -122,6 +122,7 @@
 //! business. Flight is not modelled: a phantom is tested over walkable ground,
 //! which can only under-fire for a body that can also fly to the sky.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{Campaign, Objective, WorldTime, WorldWeather};
@@ -157,16 +158,6 @@ const FIRE_IMMUNE: [&str; 1] = ["minecraft:wither_skeleton"];
 /// (<https://minecraft.wiki/w/Zombie>), which is what makes `equipment.head` the
 /// sanctioned remedy for them and not for this one.
 const HELMET_PROOF: [&str; 1] = ["minecraft:phantom"];
-
-/// A build failure raised by the daylight proof (exit 3, like its `eclipse`,
-/// `clearance` and `crosshair` siblings).
-#[derive(Debug)]
-pub struct DaylightError {
-    /// The stable code.
-    pub code: DwCode,
-    /// Human-readable explanation naming the encounter, the species and the fix.
-    pub message: String,
-}
 
 /// Whether vanilla burns this entity type in daylight: in
 /// `#minecraft:burn_in_daylight` and not [`FIRE_IMMUNE`].
@@ -315,7 +306,7 @@ pub fn check_daylight_staging(
     world: &World,
     blocks: &BTreeMap<[i32; 3], String>,
     spawns: &BTreeMap<String, Vec<[i32; 3]>>,
-) -> Result<(), DaylightError> {
+) -> Result<(), Failure> {
     let c = plan.campaign;
     if !daylight_is_pinned(c) {
         return Ok(());
@@ -335,7 +326,7 @@ pub fn check_daylight_staging(
         let Some(sunlit) = sky_within_reach(world, &light, &body.cells, body.radius) else {
             continue;
         };
-        return Err(DaylightError {
+        return Err(Failure {
             code: DW_DAYLIGHT_BURNS_STAGING,
             message: burn_message(body, sunlit),
         });

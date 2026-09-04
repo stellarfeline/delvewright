@@ -84,7 +84,8 @@
 use delvewright_dsl::DwCode;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::integrity::{IntegrityError, Tier};
+use crate::failure::Failure;
+use crate::integrity::Tier;
 
 /// `DW0495`: an emitted score comparison reads an entry the emitted pack never
 /// creates, so its answer is decided by the absence rather than by play.
@@ -817,12 +818,12 @@ fn apply_line(l: &Line, summary: &BTreeMap<String, BTreeSet<Key>>, est: &mut BTr
 
 /// Prove the emitted tree never compares against an entry it does not create
 /// (`DW0495`).
-pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<(), IntegrityError> {
+pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<(), Failure> {
     let c = census(ns, out);
     if c.findings.is_empty() {
         return Ok(());
     }
-    Err(IntegrityError {
+    Err(Failure {
         code: DW_UNSEEDED_SCORE_READ,
         message: format!(
             "the emitted datapack makes {n} comparison(s) against a scoreboard entry it \
