@@ -31,7 +31,7 @@ import type {
 } from "./critical-path.ts";
 import { insideCompletion, reachGoal } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
-import { BotDeathError, likelyDeathCause } from "./death.ts";
+import { BotDeathError, formatDeathPos, likelyDeathCause } from "./death.ts";
 import { hasSettled } from "./entity-settle.ts";
 import { NavigationOwner } from "./navigation.ts";
 import type { NamedEntityDeath } from "./teardown.ts";
@@ -69,6 +69,7 @@ import {
   type WaveCensus,
 } from "./combat.ts";
 import {
+  bodyInVolume,
   entryCellOf,
   markerAt,
   expectedForfeit,
@@ -2160,7 +2161,13 @@ export class MineflayerExecutor implements StepExecutor {
     let position: readonly [number, number, number] | undefined;
     const p = bot?.entity?.position;
     if (p) {
-      position = [Math.round(p.x), Math.round(p.y), Math.round(p.z)];
+      // EXACT, never rounded. `Math.round` here produced a triple that is neither
+      // a position nor the cell the body was in, and the death-loop stage read it
+      // as a cell: a kill at `z = 4.6` (cell 4, inside the volume) rounded to 5
+      // and was reported as a death outside the box that killed it. Whoever wants
+      // a cell floors; whoever wants "the volume's selector matched this body"
+      // asks `bodyInVolume`.
+      position = [p.x, p.y, p.z];
     }
     const cause = likelyDeathCause(this.recentChat, bot?.username ?? "");
     const err = new BotDeathError(position, cause);
@@ -2556,7 +2563,7 @@ export class MineflayerExecutor implements StepExecutor {
         }
       }
     }
-    if (this.feetInside(volume.region)) trial.enteredVolume = true;
+    if (this.bodyInside(volume.region)) trial.enteredVolume = true;
     // The one leg of the whole run that is ALLOWED into the hazard — skipped when
     // the approach already delivered the death.
     if (navFault === undefined && this.deathSeq === deathsBefore) {
@@ -2592,7 +2599,8 @@ export class MineflayerExecutor implements StepExecutor {
     // Credited only when the player died INSIDE the declared box. A death on the
     // way there is a run fault, not this volume's kill, and crediting it would let
     // any lethal accident anywhere pass as a proof that this box works.
-    const inside = trial.deathPos !== undefined && inBox(trial.deathPos, volume.region);
+    const inside =
+      trial.deathPos !== undefined && bodyInVolume(trial.deathPos, volume.region);
     // A death inside the box is itself an observation that the body was inside it.
     if (observed && inside) trial.enteredVolume = true;
     trial.died = observed && inside;
@@ -2602,11 +2610,10 @@ export class MineflayerExecutor implements StepExecutor {
     }
     if (observed && !inside) {
       trial.abandoned =
-        `the bot died at ` +
-        `${trial.deathPos ? `[${trial.deathPos.join(", ")}]` : "an unknown position"}, which is ` +
-        `OUTSIDE the declared volume [${volume.region.lo.join(", ")}]..` +
-        `[${volume.region.hi.join(", ")}] — that death is not this volume's kill and is not ` +
-        `credited as one`;
+        `the bot died at ${formatDeathPos(trial.deathPos)}, which is OUTSIDE the reach of ` +
+        `the declared volume [${volume.region.lo.join(", ")}]..[${volume.region.hi.join(", ")}] ` +
+        `— a body there is not one this volume's own selector can match, so that death is ` +
+        `not this volume's kill and is not credited as one`;
       return;
     }
     if (!trial.died) {
@@ -2621,8 +2628,7 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     process.stderr.write(
-      `[death-loop] ${volume.id}: died at ` +
-        `${trial.deathPos ? `[${trial.deathPos.join(", ")}]` : "an unknown position"}` +
+      `[death-loop] ${volume.id}: died at ${formatDeathPos(trial.deathPos)}` +
         `; the volume's own line ${trial.wordingSeen ? "reached" : "did NOT reach"} the player\n`,
     );
 
@@ -2741,7 +2747,7 @@ export class MineflayerExecutor implements StepExecutor {
   private async stepInto(box: Box, cell: Vec3Tuple, trial: LethalTrial): Promise<void> {
     const bot = this.requireBot();
     const inside = (): boolean => {
-      if (!this.feetInside(box)) return false;
+      if (!this.bodyInside(box)) return false;
       trial.enteredVolume = true;
       return true;
     };
@@ -2764,10 +2770,21 @@ export class MineflayerExecutor implements StepExecutor {
     }
   }
 
-  /** Whether the bot's feet are in `box` right now. */
-  private feetInside(box: Box): boolean {
-    const feet = this.feetCell();
-    return feet !== undefined && inBox(feet, box);
+  /**
+   * Whether the volume `box` would match this body right now — the SERVER's rule
+   * ({@link bodyInVolume}), asked of the bot's exact position.
+   *
+   * It asked whether the floored feet CELL was in the box, which is a different
+   * question and a narrower one: the emitted selector intersects a 0.6-wide
+   * hitbox against the region `[lo, hi + 1]`, so a body 0.2 blocks outside the
+   * face is one the volume kills and one this used to call outside. Saying
+   * "entered" of exactly the bodies the volume can act on is what makes
+   * `enteredVolume` mean anything, and it also ends {@link stepInto}'s drive at
+   * the moment the hazard can reach the bot rather than a third of a block late.
+   */
+  private bodyInside(box: Box): boolean {
+    const p = this.bot?.entity?.position;
+    return p !== undefined && bodyInVolume([p.x, p.y, p.z], box);
   }
 
   /**

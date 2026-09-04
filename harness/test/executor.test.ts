@@ -5,7 +5,7 @@ import type { Bot } from "mineflayer";
 import { MineflayerExecutor, completionWindowMs, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
-import { parseDeathPlan } from "../src/death-loop.ts";
+import { lethalTrialFailures, parseDeathPlan } from "../src/death-loop.ts";
 
 // Minimal Vec3 stand-in with the methods the executor reads off bot.entity.position.
 class FakeVec3 {
@@ -82,7 +82,9 @@ test("a death event records position + likely cause and stops the pathfinder", (
 
   const diag = executor.deathDiagnostic();
   assert.ok(diag instanceof BotDeathError);
-  assert.deepEqual(diag.position, [12, 65, -4]); // rounded to whole blocks
+  // EXACT. Rounding it produced a triple that is neither the position nor the
+  // cell the body was in, and the death-loop stage read it as a cell.
+  assert.deepEqual(diag.position, [12.4, 65, -3.6]);
   assert.equal(diag.likelyCause, "delve-bot was slain by Zombie");
   assert.equal(bot.pathfinderStops, 1); // in-flight pathfinding aborted
   // …and the stop is ALWAYS paired with a goal reset. mineflayer-pathfinder's `stop()`
@@ -3186,6 +3188,36 @@ function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
   });
 }
 
+/** The gallery's west pit, as `delvec` emits it — the volume this rule was measured on. */
+function westPitPlan(): ReturnType<typeof parseDeathPlan> {
+  return parseDeathPlan({
+    format_version: 1,
+    version: "0.19.0",
+    campaign_id: "gallery",
+    lethal_volumes: [
+      {
+        id: "lethal/west-pit",
+        region: { lo: [1, 63, 2], hi: [3, 67, 4] },
+        message: "The floor in the west corner is not a floor.",
+        message_key: "lethal.west-pit.message",
+        damage_type: "minecraft:fall",
+      },
+    ],
+    on_death: { effects: 1, drops_stake: [] },
+    stakes: [],
+    placement: { seats: [], regions: [], rows: [] },
+    binding: {
+      lethal_volumes: 1,
+      on_death_effects: 1,
+      stakes: 0,
+      respawn_seats: 0,
+      placement_rows: 0,
+      unbound: false,
+      reason: null,
+    },
+  });
+}
+
 test("a lethal trial that opens over an unrecovered death is not credited to the volume", async () => {
   // The previous trial's walk back killed the bot and nothing recovered from it.
   // `stepInto` rethrows the death latch on its first line, so the bot never takes
@@ -3215,7 +3247,11 @@ test("a lethal trial that opens over an unrecovered death is not credited to the
   assert.equal(trials.length, 1);
   const t = trials[0]!;
   assert.equal(t.died, true, "the death inside the volume is this volume's kill");
-  assert.deepEqual(t.deathPos, [5, 65, 9], "and the position is THIS death's, not the last one's");
+  assert.deepEqual(
+    t.deathPos,
+    [5.4, 65, 9.4],
+    "and the position is THIS death's, not the last one's",
+  );
   assert.equal(t.enteredVolume, true);
   assert.equal(t.abandoned, undefined);
 });
@@ -3237,4 +3273,58 @@ test("a volume whose every cell is filled by a block is a finding, not a ten-sec
   assert.equal(t.enteredVolume, false);
   assert.equal(t.died, false);
   assert.match(t.abandoned ?? "", /can hold a body/);
+});
+test("a kill the volume's own selector made is credited, whatever cell the body's feet were in", async () => {
+  // The gallery's west pit, measured on the ladder: the volume killed the bot and
+  // its own promised line reached that player, and the stage reported the death as
+  // OUTSIDE the volume and refused to credit it. Two readings were wrong and this
+  // is both of them at once. `onDeath` rounded the position, so a body at z = 4.6
+  // (cell 4, inside the box) was recorded at 5; and the credit asked `inBox`, a
+  // CELL question, where the server had asked whether a 0.6-wide hitbox intersects
+  // [lo, hi + 1] — which reaches a third of a block past the face either way.
+  //
+  // Here the body dies at z = 5.1: cell 5, outside the declared box, inside the
+  // reach of the selector that killed it. The volume's kill is the volume's.
+  const bot = new DrivableFakeBot();
+  bot.entity.position = new FakeVec3(0.5, 65, 0.5);
+  const executor = attach(bot);
+  executor.useDeathPlan(westPitPlan());
+
+  setTimeout(() => {
+    bot.entity.position = new FakeVec3(3.5, 65, 5.1);
+    bot.emit("death");
+    setTimeout(() => bot.emit("spawn"), 100);
+  }, 200);
+
+  await executor.runDeathLoop();
+
+  const t = executor.deathLoopTrials()[0]!;
+  assert.equal(t.abandoned, undefined, "a kill by this volume is not an abandoned trial");
+  assert.equal(t.died, true);
+  assert.deepEqual(t.deathPos, [3.5, 65, 5.1], "recorded exactly, never rounded to a cell");
+  assert.equal(t.enteredVolume, true);
+  assert.deepEqual(lethalTrialFailures(t).filter((f) => /did NOT die|never OBSERVED/.test(f)), []);
+});
+
+test("a death beyond the volume's reach is still refused, and the refusal says reach", async () => {
+  // The other direction, and it is what keeps the widened rule from crediting any
+  // lethal accident anywhere: a third of a block further out is a body the
+  // selector cannot match.
+  const bot = new DrivableFakeBot();
+  bot.entity.position = new FakeVec3(0.5, 65, 0.5);
+  const executor = attach(bot);
+  executor.useDeathPlan(westPitPlan());
+
+  setTimeout(() => {
+    bot.entity.position = new FakeVec3(3.5, 65, 5.4);
+    bot.emit("death");
+    setTimeout(() => bot.emit("spawn"), 100);
+  }, 200);
+
+  await executor.runDeathLoop();
+
+  const t = executor.deathLoopTrials()[0]!;
+  assert.equal(t.died, false);
+  assert.match(t.abandoned ?? "", /OUTSIDE the reach of the declared volume/);
+  assert.match(t.abandoned ?? "", /\[3\.50, 65\.00, 5\.40\]/);
 });
