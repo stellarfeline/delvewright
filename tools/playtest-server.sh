@@ -85,7 +85,16 @@ if [ "$cmd" = "status" ]; then
 fi
 
 if [ "$cmd" = "down" ]; then
-  docker rm -f "$NAME" >/dev/null 2>&1 && echo "$NAME removed" || echo "$NAME was not running"
+  # `docker rm -f` on a name that never existed still exits 0 on modern docker —
+  # that is not "I removed something", so the old one-liner printed "removed" for
+  # a container that was never running. Ask first: existence is a different
+  # question from removal, and `docker container inspect` is the one that
+  # answers it.
+  if docker container inspect "$NAME" >/dev/null 2>&1; then
+    docker rm -f "$NAME" >/dev/null 2>&1 && echo "$NAME removed" || echo "$NAME existed but could not be removed"
+  else
+    echo "$NAME was not running"
+  fi
   # Give 25565 back. Cross-shell by construction (`up` ran in another shell), so
   # release BY NAME — which refuses if anything still publishes the port, and
   # refuses outright if the holder is somebody else.
