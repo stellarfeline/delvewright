@@ -43,7 +43,7 @@ order a player would:
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | two quests and the branch point the fork opens |
 | `quests.json` | the bulk: objectives, effects, waves, actors, traps, triggers, a shop, a shortcut, a stake, a timed gate, two killing volumes |
-| `dialogue.json` | one tree per NPC; the Curator's carries the fork |
+| `dialogue.json` | one tree per NPC; the Curator's carries the fork, and the Marshal's carries the two scenes it leads to — a pair of nodes no option leads to, reached only because the quest's `cast` ledger opens one of them per branch |
 | `world-edits.json` | four batches that dress the floor, lay the hearth, thin the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
 | `layout-graph.json` | the same hall stated as six places and twelve connections, before any coordinate — three barred doors through the wall because the hall really has three, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
