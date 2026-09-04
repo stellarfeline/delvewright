@@ -1859,7 +1859,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the release image's `org.opencontainers.image.revision` and
   `ca.stellarfeline.delvewright.campaign-commit` labels.
 - `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
-  version**; `format_version` is the **contract's own** version, currently `3`
+  version**; `format_version` is the **contract's own** version, currently `4`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
   about proving the path changes, independently of the DSL. At format 2 every
   objective-bearing step (`talk-to`/`reach`/`kill`/`collect`/`interact`) carries
@@ -1870,6 +1870,29 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   cannot verify. Endgame rule: campaign completion is due at the LAST objective step;
   the campaign marker arriving earlier fails the run on the spot, because every
   remaining step is then provably hollow.
+
+  **`non_combatants` — who the bot may never swing at** (format 4,
+  `combat::non_combatants`). A block of `kinds`, `ambiguous`, `examined`,
+  `unbound` and (exactly when unbound) `reason`. `kinds` names the entity kinds,
+  in the **client's** vocabulary (`mannequin`, `villager` — no namespace, because
+  that is the only identity mineflayer exposes on 1.21.11), no body of which is
+  ever a combat target. It is derived from the emitter's own NPC rule: a skinned
+  NPC is a `minecraft:mannequin`, a plain one is its `base_entity`, and both
+  branches summon `Invulnerable:1b`. It rides on the **path**, not on the combat
+  plan, because it is a fact about the world the bot walks: a delve with NPCs and
+  no combat ships no combat plan at all, and its bot must still know not to swing
+  back at a quest-giver when a fall takes its health.
+
+  A kind that is an NPC body **and** a wave mob or an actor entity cannot be
+  excluded without making that fight unwinnable, so the fightable kind wins and
+  the collision is stated in `ambiguous[]` (`kind`, `why`, naming the NPCs) — the
+  one direction that cannot soft-lock a delve, said out loud instead of decided in
+  silence. The harness prints every ambiguity at load.
+
+  The harness **requires** the block and refuses a path without it. The only
+  fallback available to it is a literal set of entity names living in the harness,
+  which is right only for the campaigns whose author happened to pick those
+  bodies — that fallback is the defect, not the safety net.
 
   **A `talk-to` step's `pos` is the CAST LEDGER's**, not the NPC's stage-2 anchor
   (island-release blocker). The stage-2 `anchor` is only where a body is first
@@ -2266,6 +2289,32 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     is the identity, which is exactly what makes the simple count valid there and
     nowhere else. There is one `combat-plan.json`, over the main path, so this
     never crosses the boundary.
+  - `bodies` is what stands at this encounter and how long each body should take
+    to fall: one entry per **entity kind** (client vocabulary), with `count` and
+    `give_up_swings`. The budget is `check_winnability`'s own three numbers —
+    declared `attributes.max_health`, the mob's resistance multiplier, and the
+    best `attack_damage` weapon any class kit carries — as
+    `max(GIVE_UP_SWING_FLOOR, GIVE_UP_SWING_MARGIN * ceil(effective_hp / hit))`.
+    It replaces a fixed six-second melee timer in the harness, which was too long
+    for a rat and too short for an elite and, when it fired, blacklisted the body
+    and reported nothing. A body that outlives its budget is now a **finding the
+    run report names** (`unkillable_findings`): either nothing in the party's kit
+    can damage it, or the encounter's numbers are wrong.
+
+    `give_up_swings` is `null` with a `reason` where the arithmetic cannot run —
+    an undeclared `max_health` (Mojang publishes no per-entity default
+    attributes, and this compiler refuses to invent a health table), or a party
+    with no `attack_damage` item at all. The harness then gives up on nothing at
+    that encounter and names the unbounded kinds if the step times out; it never
+    substitutes a number of its own.
+
+    Two stacks of one entity are **one** entry, because the bot reads a name off
+    a body and never its NBT: the budget is the worst of them, and a single
+    unproven stack makes the kind unproven. The margin and the floor are
+    **authored, not cited** — no source gives the right multiple for a bot that
+    never charges a swing — and are sanity bounds in the spirit of
+    `TTK_BUDGET_HITS`: crossed by a body that is not dying at all, not by one that
+    is merely tanky.
   - `census` is `{census, brand, unbrand}` — the fully-qualified ids
     of this wave's `wave_census_<wave>` / `wave_brand_<wave>` /
     `wave_unbrand_<wave>` functions. It exists so the harness calls what the
