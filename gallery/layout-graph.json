@@ -24,6 +24,11 @@
       },
       {
         "node": "node/far-hall",
+        "objective": "obj/answer-the-marshal",
+        "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/far-hall",
         "objective": "obj/clear-the-muster",
         "quest": "quest/far-hall"
       },

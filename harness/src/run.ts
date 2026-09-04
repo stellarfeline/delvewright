@@ -39,8 +39,10 @@ import {
   writeRunReport,
   type ActorReport,
   type BranchOutcome,
+  type CrashStage,
   type EncounterReport,
 } from "./report.ts";
+import { installCrashReporter } from "./crash.ts";
 import {
   assertEntryChoicesOnPath,
   branchTierFromEnv,
@@ -137,6 +139,28 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
   return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
 }
+
+/**
+ * What the run is doing, for the crash reporter. `startup` until the bot connects;
+ * from then on the executor is the authority, because it is the only party that
+ * knows whether the current step is inside the die-retry stage.
+ */
+let crashStage: CrashStage = "startup";
+/** The live report, once the campaign id is known. */
+let liveReport: RunReport | undefined;
+/** The live executor, once it exists — asked for the stage it is inside. */
+let liveExecutor: MineflayerExecutor | undefined;
+
+// Armed BEFORE anything can reject. A crash after this point ends the process with
+// `harness_crash` in the run report, so a harness fault is never read as a stage
+// the delve failed. See crash.ts.
+installCrashReporter({
+  stage: () => (crashStage === "startup" || crashStage === "connect"
+    ? crashStage
+    : (liveExecutor?.currentStage() ?? crashStage)),
+  report: () => (liveReport ??= new RunReport("unknown", "unknown")),
+  reportPath: () => reportPathFromEnv(),
+});
 
 async function main(): Promise<number> {
   const pathArg = process.argv[2];
@@ -241,6 +265,7 @@ async function main(): Promise<number> {
   );
 
   const executor = new MineflayerExecutor(config);
+  liveExecutor = executor;
   // Scope the completion oracle to this campaign: only markers naming it count
   // (AUDIT-P0). Comes from the contract, never inferred.
   executor.useCampaign(criticalPath.campaignId);
@@ -292,6 +317,9 @@ async function main(): Promise<number> {
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
   const actorFloor = actorFloorFromEnv();
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
+  // From here a crash writes THIS report — with everything the run had already
+  // established in it — rather than the placeholder.
+  liveReport = report;
   // Which objectives this run proves — the set that decides which actor fights it
   // can reach at all. Taken from the path being WALKED, so a branch run
   // (spec-0025) measures the actors its own storyline unleashes.
@@ -339,7 +367,10 @@ async function main(): Promise<number> {
     try {
       await withTimeout(
         (async () => {
+          crashStage = "connect";
           await executor.connect();
+          // From here the executor is the authority on which stage a crash is in.
+          crashStage = "critical-path";
           await runSequence(criticalPath, executor, {
             retryOnDeath: retryOnDeathFromEnv(),
           });

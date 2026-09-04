@@ -312,7 +312,12 @@ Order and bytes mirror `render-plan.json` (deterministic).
 
 The ladder step `validation/render-shots.sh <build-dir>` runs `scene` +
 `panorama` + `index` together, producing the Chunky scene set (review shots plus
-`<campaign>_panorama_se`) and the index in one shot.
+`<campaign>_panorama_se`) and the index in one shot. It refuses a build tree with
+no world save under `<build-dir>/world/` — the geometry a scene loads is stamped
+by the datapack on a server's first ticks, so `validation/world-save.sh` runs
+first — and points every scene at that world by absolute path, because Chunky
+resolves a scene's world path against the rendering process's working directory
+rather than against the scene directory.
 
 ## `delvec contact-sheet` — many candidates, one page, the owner's eye is the selector
 

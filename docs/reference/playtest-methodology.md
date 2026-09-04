@@ -69,6 +69,15 @@ a clean coverage set look identical to a reader who is not counting. When a
 campaign has hostile bodies but no tiered actor or wave, the floor gate is
 unbound; say so in the round summary rather than reporting a pass.
 
+**The mirror image, read the same way.** A run can go RED for a reason that is not a
+verdict on the delve either. When the harness itself dies, the run report carries
+`harness_crash: {stage, reason}` and the bot exits 4 — distinct from a failed step
+(1) and a bot death (3). `harness_crash` is stated as `null` on every run that
+reached a verdict, so a non-null value says in one field that no stage beside it
+decides anything about the content. A round reporting a red stage says which of
+the two it was; a crashed harness is a finding about the harness, and the delve is
+unmeasured rather than failed.
+
 ## Rule 2 — a finding is not closed until its general form is a diagnostic
 
 An instance fix leaves every other instance of the same defect in the build,
