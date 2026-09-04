@@ -28,11 +28,12 @@
 # ## Isolation
 #
 # `--project <id>` (or `DW_COMPOSE_PROJECT`) is REQUIRED. `compose.yaml` pins no
-# container name and publishes no host port, so the compose project is the ONLY
-# name this ladder has — and it is a complete one: two branch-run loops on one
-# host are independent, with no mutex and no queueing. An invocation without an
-# id fails here rather than landing in compose's default project (`validation`),
-# a shared name by another route.
+# container name and publishes no host port, and the image tag this loop builds
+# into follows the project too (`validation/lib/delve-image.sh`) — so the compose
+# project is the ONLY name this ladder has, and it is a complete one: two
+# branch-run loops on one host are independent, with no mutex and no queueing. An
+# invocation without an id fails here rather than landing in compose's default
+# project (`validation`), a shared name by another route.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -107,6 +108,16 @@ export DW_BOT_OUT="./run-out/$PROJECT"
 # export was proven with an absolute value and therefore proved nothing about
 # what this script actually exports.
 export DELVE_DOCKERFILE="$PWD/validation/Dockerfile.delve"
+# The image TAG is the third Docker-global name, after the container name and the
+# host port — and the one this script was still leaking. It runs the SAME
+# `validate` profile with `up --build` as bot-run.sh, so with DELVE_IMAGE unset it
+# built its tree into the shared `delvewright/delve:local` while claiming, in the
+# header above, that the compose project is "a complete" name. The rule lives in
+# one place now, and check-compose-isolation.py fails a compose `up --build` here
+# that does not call it.
+# shellcheck source=validation/lib/delve-image.sh
+. "$here/lib/delve-image.sh"
+dw_export_delve_image "$PROJECT"
 TIER="${DELVEWRIGHT_BRANCHES:-all}"
 
 COMPOSE=(docker compose -p "$PROJECT" -f "$here/compose.yaml" --profile validate)

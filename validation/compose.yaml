@@ -146,7 +146,13 @@ services:
       # tree in the wrong place. The entry scripts export an absolute path;
       # the default keeps a bare `docker compose` on the default tree working.
       dockerfile: ${DELVE_DOCKERFILE:-../Dockerfile.delve}
-    image: delvewright/delve:local
+    # Same variable as `server` above, and for the same reason. Hardcoded, this
+    # service tagged every build `delvewright/delve:local` — so the two flows that
+    # drive it (`playtest-note-flow.sh`, `rehearsal-flow.sh`) built DIFFERENT
+    # campaigns into one global tag while their headers claimed a unique compose
+    # project left them "no name either of them could collide with". A tag is a
+    # name, and it is the one `-p <project>` does not isolate.
+    image: ${DELVE_IMAGE:-delvewright/delve:local}
     environment:
       EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
       ONLINE_MODE: ${ONLINE_MODE:-FALSE}

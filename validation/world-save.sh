@@ -121,7 +121,9 @@ export DELVE_OUTPUT="$build_abs"
 export DELVE_DOCKERFILE="$here/Dockerfile.delve"
 # An image TAG is global to the daemon exactly as a container name is: two runs
 # building different trees into one tag race, and the loser boots the other's delve.
-export DELVE_IMAGE="delvewright/delve:$project"
+# shellcheck source=validation/lib/delve-image.sh
+. "$here/lib/delve-image.sh"
+dw_export_delve_image "$project"
 COMPOSE=(docker compose -p "$project" -f "$here/compose.yaml" --profile play)
 
 cleanup() { "$here/fresh-volumes.sh" --project "$project" >/dev/null 2>&1 || true; }

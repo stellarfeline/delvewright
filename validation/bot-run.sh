@@ -86,7 +86,11 @@ export DELVE_DOCKERFILE="$here/Dockerfile.delve"
 # The image tag follows the project, because an image TAG is global to the daemon
 # in exactly the way a container name is: two ladders building different trees into
 # `delvewright/delve:local` race, and the loser boots the other ladder's delve.
-export DELVE_IMAGE="delvewright/delve:$project"
+# The rule is `validation/lib/delve-image.sh` and nowhere else — written inline
+# here, it was copied to one sibling and missed by three.
+# shellcheck source=validation/lib/delve-image.sh
+. "$here/lib/delve-image.sh"
+dw_export_delve_image "$project"
 export DW_BOT_OUT="$run_abs"
 COMPOSE=(docker compose -p "$project" -f "$here/compose.yaml" --profile validate)
 
