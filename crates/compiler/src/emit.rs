@@ -925,21 +925,29 @@ pub fn build_with_warnings(
                 // unroutable. Planned alongside move-npc from the same occupancy model.
                 let am = crate::nav::plan_actor_moves(plan, &world)?;
                 crate::nav::check_cutscenes(plan, &world, &m, &am)?;
+                // spec-0031: the one lethal-volume obligation routing cannot see.
+                // A respawn SEAT inside a volume is reached by teleport and routes
+                // perfectly while killing the party on arrival, forever. The wave
+                // seating goes in with it: a mob put on a cell by the seating pass
+                // is put there by declaration too, and its body is not the walker
+                // the footing was proven for.
+                //
+                // **Before the route proofs, and that ordering is a judgement.** A
+                // volume that swallows a posted place usually closes the route to
+                // it as well, so the two findings arrive together — and `DW0510`
+                // then sends the author to "move the volume, or give the party a
+                // route around it" when what is actually wrong is that their
+                // Keeper is standing in the pit. The specific cause is the more
+                // actionable message, and the route closure is its symptom. This
+                // proof reads the plan and the seating, never the routes, so
+                // nothing is lost by asking it first.
+                let lethal_seats =
+                    crate::lethal::check_respawn_seats(plan, campaign_spawn(plan), &waves)?;
                 crate::nav::check_critical_path(plan, &world)?;
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
                 crate::nav::check_checkpoints(plan, &world)?;
-                // spec-0031: the one lethal-volume obligation routing cannot see.
-                // Every route proof already treats a volume's cells as impassable
-                // (`nav::World::with_lethal`), so `DW0510` fell out of DW0311
-                // above; a respawn SEAT inside a volume is reached by teleport and
-                // routes perfectly while killing the party on arrival, forever.
-                // The wave seating goes in with it: a mob put on a cell by the
-                // seating pass is put there by declaration too, and its body is
-                // wider than the walker the footing was proven for (DW0879).
-                let lethal_seats =
-                    crate::lethal::check_respawn_seats(plan, campaign_spawn(plan), &waves)?;
                 if !plan.lethal_volumes.is_empty() {
                     lethal_gate = Some(crate::lethal::gate(
                         plan.campaign,

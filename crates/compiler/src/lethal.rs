@@ -33,10 +33,10 @@
 //!
 //! One class of place is chosen by the compiler rather than by the campaign — a
 //! **wave's seats**, taken from whatever standable footing the anchor's room
-//! offers. That footing is proven for a player's body, so the seats that survive
-//! it are safe for a walker and not necessarily for a wider mob; and the author
-//! has no post to move. It is therefore its own diagnostic,
-//! [`DW_LETHAL_WAVE_SEAT`], with its own prescription — see [`ChosenBy`].
+//! offers. That footing is proven for a PLAYER's body, so a body taller than one
+//! reaches a volume from a seat a walker stands on safely; and the author has no
+//! post to move. Same rule, same code, different prescription — see
+//! [`ChosenBy`].
 //!
 //! ## Binding (`docs/reference/playtest-methodology.md` rule 1)
 //!
@@ -56,7 +56,7 @@ use delvewright_dsl::{DwCode, ExitTier};
 /// declared body to BE — lies inside a lethal volume (spec-0031).
 ///
 /// One rule, because it is one defect: *a body is put here by declaration, not by
-/// walking, so no route proof can see it.* Two families of site fall under it.
+/// walking, so no route proof can see it.* Three families of site fall under it.
 ///
 /// * **Respawn seats** — the campaign's entry spawn, a `set-checkpoint` cell, a
 ///   `bonfire` cell. The death loop: the party dies on arrival and is re-seated to
@@ -70,32 +70,19 @@ use delvewright_dsl::{DwCode, ExitTier};
 ///   is deleted on the first tick, the delve loses its speaker, and every static
 ///   proof stays green. Found while writing this feature's own CI fixture, which
 ///   is exactly the shape the rule now refuses.
+/// * **Wave seats** — the cells `emit::plan_wave_spawns` stands a wave's mobs on.
+///   The same defect with a different author: the cell is chosen by the compiler
+///   rather than written by the campaign, so the message says a different thing
+///   about what to move ([`ChosenBy`]) and the rule is unchanged. It is not its
+///   own code, and that is a judgement worth recording rather than assuming: the
+///   seating is drawn from the footing a PLAYER can stand on, which now excludes
+///   every cell a player's own hitbox could meet a volume from, and that ring is
+///   the same ring for every body in the engine's dims table up to two blocks
+///   wide. What is left is a body more than two blocks TALL seated exactly one
+///   cell below where a player's head would already have been refused — a
+///   warden, an iron golem or a ravager under a volume that floats two courses
+///   above the floor. One rule, one code, and the prescription branches.
 pub const DW_LETHAL_RESPAWN_SEAT: DwCode = DwCode::every_version("DW0511", ExitTier::Build);
-
-/// `DW0879`: a **wave seat** — a cell the COMPILER chose to stand one of a wave's
-/// mobs on — is a cell that body's own hitbox meets a lethal volume from.
-///
-/// A separate code from [`DW_LETHAL_RESPAWN_SEAT`] because the remedy is
-/// separate, and the remedy is the whole content of a diagnostic. Every place
-/// `DW0511` names is a cell the author WROTE: an anchor, a checkpoint, a `cast`
-/// placement — so "move the post out of the volume" is an instruction they can
-/// carry out. A wave seat is chosen by `emit::plan_wave_spawns` from whatever
-/// standable footing the anchor's own room offers; there is no post to move, and
-/// an author told to move one would go looking for a declaration that does not
-/// exist. What they can move is the wave's `anchor`, the volume's `extent`, or
-/// the mob count that forces the seating to spread as far as the volume.
-///
-/// It is also the case that separates a body's WIDTH from its cell, which is the
-/// second reason it cannot share `DW0511`'s wording: the routing model already
-/// keeps a **player** out of the ring around a volume, so the seats a wave can be
-/// given are all safe for a 0.6-wide body. What is left over is exactly the
-/// bodies that are wider than the walker the footing was proven for — a 1.4-wide
-/// spider on a cell a player stands in perfectly safely.
-///
-/// `every_version` for `DW0511`'s reason: a campaign below the `dsl_version` that
-/// introduced `lethal_volumes[]` cannot declare one, so the rule reaches nothing
-/// there and there is no obligation for a fence to grandfather.
-pub const DW_LETHAL_WAVE_SEAT: DwCode = DwCode::every_version("DW0879", ExitTier::Build);
 
 /// The binding ledger for the lethal-volume proofs.
 #[derive(Clone, Debug, Default)]
@@ -160,17 +147,19 @@ pub struct PostedPlace {
     pub chosen_by: ChosenBy,
 }
 
-/// **Who chose a posted place's cell.** The two answers get different
-/// diagnostics, because the author can only act on the one they wrote.
+/// **Who chose a posted place's cell.** One code either way — the rule is the
+/// same defect — but the PRESCRIPTION differs, because an author can only act on
+/// a position they wrote.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ChosenBy {
     /// The campaign: an entry spawn, a checkpoint anchor, an NPC's or actor's
-    /// post, a `cast` placement. [`DW_LETHAL_RESPAWN_SEAT`], whose prescription
-    /// is *move the post, or shrink the volume* — both things the author wrote.
+    /// post, a `cast` placement. *Move the post, or shrink the volume* — both
+    /// things the author wrote down.
     Campaign,
     /// The **compiler**, seating a wave's mobs on the standable footing its room
-    /// offers. [`DW_LETHAL_WAVE_SEAT`]: there is no post to move, so the
-    /// prescription is about the room, the anchor and the volume instead.
+    /// offers. There is no post to move and an author told to move one would go
+    /// looking for a declaration that does not exist, so the prescription names
+    /// the room, the anchor and the volume instead.
     WaveSeating,
 }
 
@@ -343,44 +332,40 @@ pub fn check_respawn_seats(
         let label = &place.label;
         let pos = place.cell;
         let (w, h) = (place.body.width, place.body.height);
-        return Err(match place.chosen_by {
-            ChosenBy::Campaign => Failure {
-                code: DW_LETHAL_RESPAWN_SEAT,
-                message: format!(
-                    "{label} at {pos:?} puts a body whose hitbox is {w} x {h} blocks INSIDE \
-                     lethal volume(s) {names}. A volume kills by a box selector and the server \
-                     adjudicates that on hitbox INTERSECTION, so a body wider than nothing \
-                     reaches out of the cell it stands on: this post is inside the volume even \
-                     where its cell is not. Whatever the campaign puts here is put here by \
-                     declaration, not by walking, so no route proof can see it: a respawn seat \
-                     means the party dies on arrival and is re-seated to die again on every \
-                     death, forever (`/spawnpoint` is only a hint and the engine re-seats on the \
-                     death edge, so nothing downstream can rescue it); a posted body means the \
-                     volume deletes it on the first tick and the delve loses it in silence. Move \
-                     the post clear of the volume — clear of its FACES, not merely out of its \
-                     cells — or shrink the volume's `extent`; do NOT delete the volume to \
-                     silence the proof."
-                ),
-            },
-            ChosenBy::WaveSeating => Failure {
-                code: DW_LETHAL_WAVE_SEAT,
-                message: format!(
-                    "{label} is the cell {pos:?}, and a body whose hitbox is {w} x {h} blocks \
-                     standing there is INSIDE lethal volume(s) {names}: a volume kills by a box \
-                     selector and the server adjudicates that on hitbox INTERSECTION, so a body \
-                     this wide reaches out of its own cell and into the volume's face. The mob \
-                     is killed on the tick it is summoned, the wave's counter never comes down, \
-                     and any objective that waits for the wave to be cleared waits forever. \
-                     Nothing here was authored as a position: the compiler seats a wave on the \
-                     standable footing its anchor's room offers, and that footing is proven for \
-                     a PLAYER's body, which is narrower than this one. So the fix is not a post \
-                     to move. Move the wave's `anchor` further from the volume, shrink the \
-                     volume's `extent`, or reduce the wave's mob count so its seating does not \
-                     have to spread as far as the volume's edge. Do NOT delete the volume, and \
-                     do NOT widen the room's footing to push the seating outward — that only \
-                     moves which mob lands on the edge."
-                ),
-            },
+        // One code, because it is one defect. What branches is the PRESCRIPTION:
+        // an author can act on a post they wrote, and cannot act on a cell the
+        // seating pass chose for them.
+        let harm = match place.chosen_by {
+            ChosenBy::Campaign => {
+                "Whatever the campaign puts here is put here by declaration, not by walking, so \
+                 no route proof can see it: a respawn seat means the party dies on arrival and \
+                 is re-seated to die again on every death, forever (`/spawnpoint` is only a \
+                 hint and the engine re-seats on the death edge, so nothing downstream can \
+                 rescue it); a posted body means the volume deletes it on the first tick and \
+                 the delve loses it in silence. Move the post clear of the volume — clear of \
+                 its FACES, not merely out of its cells — or shrink the volume's `extent`; do \
+                 NOT delete the volume to silence the proof."
+            }
+            ChosenBy::WaveSeating => {
+                "The mob is killed on the tick it is summoned, the wave's counter never comes \
+                 down, and any objective that waits for that wave to be cleared waits forever. \
+                 Nothing here was authored as a position: the compiler seats a wave on the \
+                 standable footing its anchor's own room offers, and that footing is proven for \
+                 a PLAYER's body — this body is larger than one. So there is no post to move. \
+                 Move the wave's `anchor` clear of the volume, shrink the volume's `extent`, or \
+                 give the wave a body that fits where its room can seat it; do NOT delete the \
+                 volume to silence the proof."
+            }
+        };
+        return Err(Failure {
+            code: DW_LETHAL_RESPAWN_SEAT,
+            message: format!(
+                "{label} at {pos:?} stands a body whose hitbox is {w} x {h} blocks INSIDE lethal \
+                 volume(s) {names}. A volume kills by a box selector and the server adjudicates \
+                 that on hitbox INTERSECTION, not on the cell a body stands in — so a body \
+                 reaches out of its own cell, and this place is inside the volume even where its \
+                 cell is not. {harm}"
+            ),
         });
     }
     Ok(seats.len())

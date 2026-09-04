@@ -55,7 +55,55 @@ fn quests_doc(extra: &str, talk_effects: &str) -> String {
     )
 }
 
+/// A second way through the keep's dividing wall, at its west end.
+///
+/// `hello-room` has one 2-wide doorway in the middle of that wall, and
+/// `anchor/exit` — where this file's lethal volume goes — is three cells beyond
+/// it. A volume kills on hitbox intersection, so the cells that share a face with
+/// one are not footing for any body, and a one-cell drop at the exit anchor
+/// therefore seals the only door. The fixture gains the geometry rather than the
+/// rule being narrowed to fit it. West rather than east because an endpoint snap
+/// breaks ties lexicographically and picks `[3, 65, 8]` over `[7, 65, 8]`.
+const SIDE_DOOR: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/side-door",
+        "area": "area/keep",
+        "note": "a second way through the dividing wall, clear of the drop",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/side-door",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [2, 1, 6],
+              "max": [2, 2, 6]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/side-door",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:air", "weight": 1.0 }] }
+          }
+        ]
+      }
+    ]
+  }
+}"#;
+
 fn parse_hw(quests: &str) -> Campaign {
+    parse_hw_with_edits(quests, None)
+}
+
+/// [`parse_hw`], with an optional stage-7 `world-edits` document — the door a
+/// campaign that declares a lethal volume at the exit needs.
+fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
     let raw = RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
@@ -63,7 +111,7 @@ fn parse_hw(quests: &str) -> Campaign {
         quest_plan: hw("quest-plan.json"),
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
-        world_edits: None,
+        world_edits: world_edits.map(str::to_string),
         geometry_brief: None,
         layout_graph: None,
         site_plan: None,
@@ -485,7 +533,10 @@ fn the_placement_table_is_a_compile_time_chain_with_no_search() {
          \"region\": {{ \"anchor\": \"anchor/exit\", \"extent\": [0, 0, 0] }}, \
          \"message\": \"The floor gives way.\" }} ]"
     );
-    let out = build(&parse_hw(&quests_doc(&with_volume, "")));
+    let out = build(&parse_hw_with_edits(
+        &quests_doc(&with_volume, ""),
+        Some(SIDE_DOOR),
+    ));
     let route = fnc(&out, "stk_route_embers");
 
     let rows: Vec<&str> = route

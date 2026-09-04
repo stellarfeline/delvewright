@@ -8463,6 +8463,101 @@ mod tests {
         World::from_solid_cells(solid)
     }
 
+    /// [`floored`], plus one declared lethal volume — the geometry the
+    /// footprint-versus-volume rule is stated over.
+    fn floored_with_lethal(w: i32, d: i32, y: i32, region: ([i32; 3], [i32; 3])) -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..w {
+            for z in 0..d {
+                solid.insert([x, y - 1, z]);
+                solid.insert([x, y + 2, z]);
+            }
+        }
+        World::from_occupancy(
+            crate::assembled::Occupancy {
+                solid,
+                tall: BTreeSet::new(),
+                use_gates: BTreeSet::new(),
+                flooded: BTreeSet::new(),
+                partial: BTreeMap::new(),
+            },
+            // The premises spelled out rather than derived from
+            // `Premises::geometry_only()`, for two reasons that both matter.
+            // `premise_declines_are_enumerated` counts that call in this file's
+            // production half and would count this one; and a struct literal is
+            // what makes a premise added later break THIS helper's compilation,
+            // which is the visibility the type exists for.
+            Premises {
+                ambient: Ambient::Void,
+                built: Vec::new(),
+                lethal_regions: vec![("lethal/the-pit".to_string(), region)],
+                world_load_seals: Vec::new(),
+                clocked_gates: BTreeSet::new(),
+                transit_teleports: Vec::new(),
+            },
+        )
+    }
+
+    /// **A body may not stand on the cell beside a killing volume's face.**
+    ///
+    /// The impassable set used to be the volume's own cells, so the cell one east
+    /// of a box was standable, routable and exported — and a walker standing
+    /// anywhere in it reaches into the box, because a box selector is adjudicated
+    /// on hitbox intersection. Measured, twice, on the gallery's own ladder: the
+    /// bot died at `[12, 65, 21]` and `[12, 65, 24]`, both outside the west pit.
+    #[test]
+    fn a_walker_may_not_stand_on_the_cell_beside_a_volumes_face() {
+        let pit = ([3, 65, 3], [5, 67, 5]);
+        let w = floored_with_lethal(12, 12, 65, pit);
+        // Inside: refused before and after — this is not what changed.
+        assert!(!w.is_standable([4, 65, 4]));
+        // The ring. Every cell that shares a face with the box, and the corners.
+        for c in [
+            [2, 65, 4],
+            [6, 65, 4],
+            [4, 65, 2],
+            [4, 65, 6],
+            [2, 65, 2],
+            [6, 65, 6],
+        ] {
+            assert!(
+                !w.is_standable(c),
+                "a body standing anywhere in {c:?} reaches the box, so it is not footing"
+            );
+        }
+        // …and the refusal stops there. Two cells out is real footing, or the
+        // rule would be eating rooms rather than edges.
+        assert!(w.is_standable([1, 65, 4]));
+        assert!(w.is_standable([7, 65, 4]));
+        assert!(w.is_standable([4, 65, 1]));
+        // The declared cell count is unchanged: the ring is a routing answer, not
+        // a redefinition of what the campaign declared, and `lethal-gate.json`
+        // reports the declaration.
+        assert_eq!(w.lethal_cells(), 3 * 3 * 3);
+        assert!(w.is_lethal([4, 65, 4]));
+        assert!(!w.is_lethal([6, 65, 4]));
+    }
+
+    /// A route that only exists by walking the ring is refused, and the refusal
+    /// can still NAME the volume — `lethal_volumes_over` reads the same widened
+    /// set, or the author would be sent to look at geometry that was never wrong.
+    #[test]
+    fn a_corridor_one_cell_wide_beside_a_volume_is_not_a_way_through() {
+        // A 3x12 corridor with the pit filling all but one column of its width.
+        let pit = ([0, 65, 4], [1, 67, 6]);
+        let w = floored_with_lethal(3, 12, 65, pit);
+        assert!(w.is_standable([2, 65, 1]), "the near end is footing");
+        assert!(w.is_standable([2, 65, 10]), "so is the far end");
+        // The only lane past the pit is x = 2, which is the ring.
+        assert!(!w.is_standable([2, 65, 5]));
+        assert_eq!(w.find_path([2, 65, 1], [2, 65, 10]), None);
+        assert_eq!(
+            w.lethal_volumes_over(&[[2, 65, 5]]),
+            vec!["lethal/the-pit"],
+            "the cell the counterfactual walk would have crossed names the volume"
+        );
+    }
+
     /// The linear "every earlier step is an ancestor" gate-ordering used by the
     /// synthetic gate tests (no parallel branches). Production routing uses the
     /// campaign's real DAG-causal predicate (`Plan::gate_fired_before`).

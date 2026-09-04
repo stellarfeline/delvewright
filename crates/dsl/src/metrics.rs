@@ -1868,6 +1868,99 @@ mod tests {
         }
     }
 
+    // --- a body has a width -------------------------------------------------
+
+    /// The fact the whole rule rests on, written down where it can be checked: a
+    /// box selector spelled `x=lo,dx=hi-lo` is the world volume `[lo, hi+1]`, so
+    /// `dx=0` is one whole block and never a plane.
+    #[test]
+    fn a_box_selector_spans_the_whole_of_its_last_cell() {
+        assert_eq!(
+            selection_aabb([7, 63, 20], [11, 67, 24]),
+            ([7.0, 63.0, 20.0], [12.0, 68.0, 25.0])
+        );
+        let (lo, hi) = selection_aabb([0, 0, 0], [0, 0, 0]);
+        assert_eq!((lo, hi), ([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]));
+    }
+
+    /// **The measurement this rule was written from.** A wave's spider, 1.4 wide,
+    /// walked to `x = 12.59` beside a pit whose box ends at `x = 12.0` and was
+    /// killed there — its hitbox reaches `11.89`. Its feet cell is 12, which is
+    /// outside the box, so every cell-shaped reading in the engine called that
+    /// position safe.
+    #[test]
+    fn a_body_beside_a_face_is_inside_the_volume_and_its_cell_is_not() {
+        let west_pit = ([7, 63, 20], [11, 67, 24]);
+        let spider = Body::new(1.4, 1.4);
+        assert!(
+            body_meets_volume([12.59, 65.0, 21.02], spider, west_pit.0, west_pit.1),
+            "hitbox 11.89..13.29 against a box face at 12.0"
+        );
+        // The cell it stands in is not one of the volume's cells.
+        assert!(!(west_pit.0[0]..=west_pit.1[0]).contains(&12));
+        // A player at the same cell's CENTRE is clear of it — 12.2..12.8 — which
+        // is why the seat rule and the walk rule are two different readings.
+        assert!(!body_meets_volume(
+            [12.5, 65.0, 21.5],
+            Body::PLAYER,
+            west_pit.0,
+            west_pit.1
+        ));
+        // …and the walk rule refuses that cell anyway, because a walker does not
+        // stand at cell centres.
+        assert!(cell_can_meet_volume(
+            [12, 65, 21],
+            Body::PLAYER,
+            west_pit.0,
+            west_pit.1
+        ));
+    }
+
+    /// The touching case is NOT an intersection, exactly as vanilla's own
+    /// `AABB::intersects` is strict: a body standing on a volume's top face with
+    /// its feet at the face is clear of it.
+    #[test]
+    fn a_face_that_exactly_touches_is_not_inside() {
+        let v = ([0, 0, 0], [0, 0, 0]);
+        assert!(!body_meets_volume([0.5, 1.0, 0.5], Body::PLAYER, v.0, v.1));
+        assert!(body_meets_volume([0.5, 0.999, 0.5], Body::PLAYER, v.0, v.1));
+    }
+
+    /// The keep-out box is a DERIVATION, not a constant one: it widens with the
+    /// body. Horizontally every body up to two blocks wide reaches exactly one
+    /// cell (half a width can never cross two cell boundaries at once);
+    /// vertically a body taller than two blocks reaches one cell further down
+    /// than a player does, which is the only place the bodies in this engine's
+    /// dims table differ.
+    #[test]
+    fn the_keep_out_box_widens_with_the_body() {
+        let v = ([10, 60, 10], [12, 62, 12]);
+        assert_eq!(
+            keep_out_box(Body::PLAYER, v.0, v.1),
+            ([9, 59, 9], [13, 62, 13])
+        );
+        // 1.4 wide: the same ring. Half a width is 0.7, which crosses one
+        // boundary and not two.
+        assert_eq!(
+            keep_out_box(Body::new(1.4, 1.4), v.0, v.1),
+            ([9, 59, 9], [13, 62, 13])
+        );
+        // 2.9 tall (a warden): one cell further DOWN, because its head reaches
+        // into the volume from a cell a player's head does not.
+        assert_eq!(
+            keep_out_box(Body::new(0.9, 2.9), v.0, v.1),
+            ([9, 58, 9], [13, 62, 13])
+        );
+        // Standing ON the volume's top cell is safe for every body: the feet
+        // start where the volume ends.
+        assert!(!cell_can_meet_volume(
+            [11, 63, 11],
+            Body::new(0.9, 2.9),
+            v.0,
+            v.1
+        ));
+    }
+
     #[test]
     fn the_derived_player_values_are_the_arithmetic_their_notes_claim() {
         assert!((walk_ticks_per_block() - 20.0 / 4.317).abs() < f64::EPSILON);

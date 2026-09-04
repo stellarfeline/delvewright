@@ -723,6 +723,63 @@ mod tests {
         );
     }
 
+    /// **The near lip of a lethal volume is not the cell beside its face.**
+    ///
+    /// A stake's anchor is the point a player walks BACK to, so it has to be a
+    /// point a player can stand at without dying. The rule used to exclude the
+    /// region's own cells and nothing else, and the gallery's two pits both got
+    /// an anchor one cell from a face: `[7, 65, 19]` against a box whose face is
+    /// at `z = 20`, and `[20, 65, 23]` against a face at `x = 21`. A body
+    /// standing anywhere in either cell is inside the volume.
+    #[test]
+    fn a_lethal_regions_lip_is_chosen_outside_the_ring_its_body_reaches() {
+        let region = ([7, 63, 20], [11, 67, 24]);
+        let lethal = DeathRegion {
+            label: "lethal volume `lethal/west-pit`".to_string(),
+            region,
+            lethal: true,
+        };
+        // The keep-out box is the volume widened by the player's own half-width,
+        // and downward by its height — not written down here, asked of the one
+        // authority.
+        assert_eq!(
+            lethal.keep_out(),
+            delvewright_dsl::metrics::keep_out_box(
+                delvewright_dsl::metrics::Body::PLAYER,
+                region.0,
+                region.1
+            )
+        );
+        let reachable: BTreeSet<[i32; 3]> = [[7, 65, 19], [7, 65, 18], [7, 65, 17]]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            choose_anchor(&reachable, &BTreeSet::new(), region, lethal.keep_out()).unwrap(),
+            [7, 65, 18],
+            "the nearest cell OUTSIDE the ring, not the nearest cell outside the box"
+        );
+        // The old reading, stated so the assertion above cannot pass for some
+        // other reason: measuring only against the declared box picks the cell
+        // that kills.
+        assert_eq!(
+            choose_anchor(&reachable, &BTreeSet::new(), region, region).unwrap(),
+            [7, 65, 19]
+        );
+    }
+
+    /// A runtime-mutable region is a question about BLOCKS, so its keep-out box
+    /// is the box: nothing about a lift car reaches out of its own cells.
+    #[test]
+    fn a_runtime_mutable_region_keeps_its_own_box() {
+        let region = ([0, 10, 0], [0, 10, 0]);
+        let ground = DeathRegion {
+            label: "the runtime-mutable ground of gate anchor `anchor/lift`".to_string(),
+            region,
+            lethal: false,
+        };
+        assert_eq!(ground.keep_out(), region);
+    }
+
     /// `DW0525`: nothing outside the death region is reachable at all — the
     /// one-way drop.
     #[test]

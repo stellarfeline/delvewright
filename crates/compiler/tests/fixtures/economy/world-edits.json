@@ -1,0 +1,53 @@
+{
+  "campaign_id": "economy",
+  "content": {
+    "batches": [
+      {
+        "area": "area/keep",
+        "edits": [
+          {
+            "name": "region/side-door",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "kind": "box",
+              "max": [
+                2,
+                2,
+                6
+              ],
+              "min": [
+                2,
+                1,
+                6
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "matching": [
+              "minecraft:stone"
+            ],
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:air",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/side-door",
+            "verb": "replace"
+          }
+        ],
+        "id": "batch/side-door",
+        "note": "A second way through the dividing wall, at the west end and clear of the drop. A body is as wide as its hitbox, so the cells around a killing volume are cells no route may use, and the one doorway this room was built with opens onto the drop's own edge."
+      }
+    ]
+  },
+  "dsl_version": "0.6.0",
+  "stage": "world-edits"
+}
