@@ -949,7 +949,7 @@
             },
             "hint": "Up the flight, once its treads are back.",
             "id": "obj/climb-the-loft",
-            "radius": 2,
+            "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
             ],
