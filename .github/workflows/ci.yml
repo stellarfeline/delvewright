@@ -225,6 +225,111 @@ jobs:
       - name: no internal reference reaches a crates.io front page
         run: python3 tools/check-crates-io-readmes.py
 
+      # SUPPLY CHAIN. Both repositories are public (ADR-0017) and neither had any
+      # dependency gate at all: no `dependabot.yml`, no `cargo audit`, no
+      # `npm audit`. `.github/dependabot.yml` is the half that opens a pull
+      # request; this is the half that refuses.
+      #
+      # A STEP, not a job: every job name here is a required status context.
+      #
+      # cargo-audit is an INSTRUMENT of a required check, so it is named
+      # literally (versions.toml [ci].cargo_audit_version) rather than resolved —
+      # an unpinned instrument moves a gate's verdict with nothing in any diff.
+      # `Swatinem/rust-cache` above caches `~/.cargo/bin`, so the compile is paid
+      # once per cache line and the install is a no-op afterwards.
+      - name: install cargo-audit (pinned)
+        run: cargo install cargo-audit --locked --version 0.22.2
+      # THE ONE LIVE REACH in this job besides the render workspace's pinned git
+      # dependency, and it is named here for the same reason: an advisory check
+      # cannot be offline (the RustSec database is cloned on every run), so a
+      # network failure must red in a step whose name says what it was reaching
+      # for. The tool refuses on a report it could not parse rather than reading
+      # an outage as a clean tree, and retries the transport a bounded number of
+      # times first.
+      #
+      # The population is DERIVED — `git ls-files '*Cargo.lock'`, all ten
+      # workspaces — never listed here, because a hand-written list of this
+      # repository's workspaces has gone stale before (the `fmt` sweep named nine
+      # of ten). Auditing zero lockfiles is a red.
+      - name: no published advisory matches what cargo resolves
+        run: python3 tools/check-advisories.py --cargo
+
+      # ADR-0006's LINUX HALF. The determinism promise is "same DSL + same seed
+      # -> byte-identical datapack and world", and until this step every gate
+      # holding it ran on one machine: the double-build gate inside `cargo test`
+      # above builds twice on THIS runner, and the prefab-generator job runs each
+      # generator twice on THIS runner. Both catch an unseeded RNG or a
+      # hash-ordered iteration; neither can catch a libm difference, a
+      # float-formatting difference, or a directory-ordering difference between
+      # platforms, because there is only ever one platform in the comparison.
+      #
+      # A STEP here, not a job: every job name is a required status context, and
+      # the digest is cheap next to what this job already did. The comparison is
+      # the `cross-OS determinism (macOS vs Linux bytes)` job, which builds the
+      # same subject on macOS and reads this artifact.
+      #
+      # The subject is `tools/determinism-subject.sh`, invoked identically on
+      # both runners so the two sides cannot drift into building different
+      # things.
+      - name: ADR-0006 cross-OS — the Linux side's digest
+        run: |
+          cargo build --locked -p delvec --bin delvec
+          bash tools/determinism-subject.sh \
+            --delvec target/debug/delvec --out determinism-linux.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-digest-linux
+          path: determinism-linux.txt
+          if-no-files-found: error
+
+  # ADR-0006's other half, and the only place in CI that builds on a second
+  # operating system. It was measured by hand once — macOS/Apple-libm against
+  # Linux/glibc, byte-identical over the gallery, the island and hollow-vigil —
+  # and a measurement taken by hand once is a claim about a day, not a gate.
+  #
+  # `needs: rust` because the Linux digest is that job's artifact. When `rust`
+  # reds this job is skipped, which is not a hole: the pull request is already
+  # red on `rust`, and there is no state in which this is the only thing between
+  # a divergence and `main`.
+  #
+  # macOS is the expensive runner, so it does exactly one thing: build `delvec`
+  # and nothing else in the workspace, then build one small campaign that needs
+  # no prefab library, no content checkout and no git-lfs.
+  determinism-cross-os:
+    # Name must stay exactly "cross-OS determinism (macOS vs Linux bytes)" — it
+    # is a required status context in branch protection; renaming it deadlocks
+    # every PR (see .github/required-status-checks.txt).
+    name: cross-OS determinism (macOS vs Linux bytes)
+    needs: rust
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with: { key: determinism-macos }
+      - name: build the engine under test
+        run: cargo build --locked -p delvec --bin delvec
+      - name: the macOS side's digest
+        run: |
+          bash tools/determinism-subject.sh \
+            --delvec target/debug/delvec --out determinism-macos.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: determinism-digest-linux
+      # The gate. Prints every differing path, so a divergence names the file
+      # rather than a hash nobody can act on.
+      - name: the two hosts wrote the same bytes
+        run: |
+          python3 tools/tree-digest.py \
+            --compare determinism-linux.txt determinism-macos.txt
+      # Both sides, kept, so a red can be read after the runners are gone.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: determinism-digests
+          path: |
+            determinism-linux.txt
+            determinism-macos.txt
+
   # ADR-0017: the release shelf must stay buildable as the repo grows, and the
   # way it silently stops is a new dependency that does not compile for musl,
   # msvc or darwin. Without this, that breaks at RELEASE time — after the tag is
@@ -325,6 +430,34 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test
+      # The other half of the supply-chain gate (see the cargo step in `rust`).
+      # `harness/package.json` declares `^` ranges over a committed lockfile, so
+      # what actually runs is whatever the lockfile pins and nothing was looking
+      # at it.
+      #
+      # NOT `npm audit --audit-level=high`. That was measured three times in
+      # sequence on one machine with one lockfile: exit 1, exit 1, exit 0 — the
+      # failing runs printed `undefined` and `audit endpoint returned an error`,
+      # a registry timeout, which the exit code presents as a finding.
+      #
+      # And NOT "any JSON is a report" either, which is how this step red a
+      # second time: with `--json`, npm's transport failure is itself valid JSON
+      # (`{"message": "…bulk failed…", "error": {…}}`), so the first reader
+      # accepted a five-minute timeout as an answer and refused with
+      # `no per-severity counts (None)` — a sentence that reads like an npm shape
+      # change and was the endpoint being down. The tool now asks whether the
+      # report carries what an ANSWER carries, names npm's version, bounds npm's
+      # own per-request timeout so three attempts cannot cost fifteen minutes,
+      # and prints the raw top-level keys when it refuses. It states every
+      # severity count on every run, including the ones below the failing floor,
+      # so nothing sits behind a green tick unseen.
+      #
+      # Run from `harness/` (this job's default working directory) with the
+      # script named relatively rather than by overriding that default: the tool
+      # resolves the repository from its own file location, so `--dir .` is this
+      # project and nothing depends on where the shell is standing.
+      - name: no published advisory matches what npm resolves
+        run: python3 ../tools/check-advisories.py --npm --dir .
 
   skin-tool:
     name: skin toolchain (pytest)
