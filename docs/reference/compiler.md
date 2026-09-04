@@ -3112,6 +3112,35 @@ is exercised by the harness bot wherever it rests at a bonfire or talks to an NP
 
 ### Nav (compile-time, over the assembled voxel grid)
 
+**A navigation world is geometry plus premises, and the premises are one value.**
+`nav::World` carries the collision classes measured off the assembled bytes and
+six things the *campaign* states about the world those bytes sit in: the
+world-generator `Ambient` (spec-0013 `horizon`), the built volume (where the
+content ends), the declared **lethal volumes** (impassable, `DW0510`), the
+measured **world-load gate seals**, the **clocked gate regions** a `timed-gate`'s
+own clock owns, and the **transit teleport** source volumes. Those six travel
+together as `nav::Premises`, and `nav::Premises::of_plan` is the only way to
+derive one from a campaign — a call site cannot state a subset, so it cannot
+carry half a world. Every arm that builds a world from a campaign passes one to
+`World::from_occupancy`, and that is the same set on **both** of `emit::build`'s
+arms: the pristine assembly (`World::from_plan`) and the stage-7 edit replay,
+which builds its world from the edited bytes. `edit::check_batch_invariants`,
+which re-runs the completability proofs after every batch, uses the same set.
+
+A world with no campaign behind it says `nav::Premises::geometry_only` by name,
+with its reason in a comment at the call site, and every production decline is
+enumerated by `nav::tests::premise_declines_are_enumerated`. There are five: the
+stage-5 blockout battery's two massing worlds (they carry their own sealing
+authority, from the quest graph's monotone closure); the two relight darkness
+surveys (`light::relight_over` and a `relight` verb's own — applying the premises
+would cut the reachable flood at a kill box and *shrink* the `DW0210` survey
+rather than sharpen it, and a pit that kills is a pit the player must be able to
+see before stepping into it); and `delvec snapshot`, where a camera is stood up
+against blocks and a reviewer framing a shot down into a lethal volume is looking
+at open air. `delvec blocking-chart` goes the other way: it re-derives
+`critical_path_routes`, so it carries the full set and draws the corridor the
+proof actually walks.
+
 `move-npc` paths and the critical path are routed by A* over the placed-world
 block data (obstacles per the collision classes above — full-cube solids, 1.5-tall
 fence/wall barriers, closed fence gates for walkers that cannot use them;
@@ -3504,11 +3533,12 @@ world. Invariants:
 - **Boundary safety and the world-generator ambient (`DW0322`).** The check's
   premise is what a column the compiler modelled *nothing* into actually holds in
   the delivered world — a property of the level generator (`nav::Ambient`,
-  spec-0013 `horizon`), not of the content. It rides on `nav::World`
-  (`World::with_ambient`, set from the plan by `World::from_plan`, by the edit
-  replay, and by the stage-10 whole-world call) and is read **only** by this
-  proof: it never feeds the walkability sets, so routing, standability and every
-  other proof stay byte-identical.
+  spec-0013 `horizon`), not of the content. It rides on `nav::World` as one of
+  the six premises `nav::Premises::of_plan` carries (see *Nav* above), so the
+  pristine assembly, the edit replay and the stage-10 whole-world call all have
+  it by construction rather than by three call sites remembering. It is read
+  **only** by this proof: it never feeds the walkability sets, so routing,
+  standability and every other proof stay byte-identical.
   - **Anchor seating (`nav::AnchorRoot`).** The walk region this proof examines
     is flooded from every resolved anchor, and an anchor is a declared *point*,
     not a floor cell — seating it is a nearest-standable-cell snap. That snap
@@ -5074,11 +5104,12 @@ was nothing to enumerate.
 
 A lethal volume is **geometry that kills**, so most of its completability
 reasoning is not a check of its own: [`nav::World`] carries its cells as
-impassable (`World::with_lethal`), and every route proof in the engine inherits
-that for free — the critical path, the checkpoint no-stranding proof (`DW0315`),
-the branch paths, the trap forced-cell set, the exported harness waypoints. That
-is the same move `close-gate`'s seal makes, and for the same reason: a fourth
-consumer inherits the proof instead of re-deriving it.
+impassable — one of the six premises `nav::Premises::of_plan` applies to every
+world built from a campaign, on every arm — and every route proof in the engine
+inherits that for free: the critical path, the checkpoint no-stranding proof
+(`DW0315`), the branch paths, the trap forced-cell set, the exported harness
+waypoints. That is the same move `close-gate`'s seal makes, and for the same
+reason: a fourth consumer inherits the proof instead of re-deriving it.
 
 `DW0510` exists because the *fix* for a blocked route differs in kind. A generic
 `DW0311` sends the author to look for a wedged doorway or a void gap; here the
