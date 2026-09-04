@@ -15,6 +15,7 @@ import {
   deathLoopBinding,
   deathLoopBindingFailures,
   entryCellOf,
+  markerAt,
   expectedForfeit,
   inBox,
   lethalTrialFailures,
@@ -138,6 +139,7 @@ function stakeRule(over: Partial<StakeRule> = {}): StakeRule {
 /** A trial in which everything the campaign promised actually happened. */
 function goodTrial(): LethalTrial {
   const t = openLethalTrial(VOLUME, [5, 65, 8], stakeRule());
+  t.enteredVolume = true;
   t.died = true;
   t.deathPos = [5, 65, 8];
   t.wordingSeen = true;
@@ -246,6 +248,71 @@ test("the entry cell is the nearest cell of the box, ties broken lexicographical
   assert.deepEqual(entryCellOf(box, [1, 0, 0]), [1, 0, 0]);
 });
 
+test("the entry cell is one a BODY can be in — a box corner filled by a block is not one", () => {
+  // The gallery's east pit declares [21,63,20]..[23,67,24]; a 4x4x2 structure
+  // stands in [21,65,20] and [21,66,20], so that corner — the cell nearest every
+  // approach from the west — is the one cell of the seventy-five no player can
+  // occupy. Chosen, the walk in drives at a wall until its deadline.
+  const box = { lo: [21, 65, 20] as const, hi: [21, 65, 22] as const };
+  const solid = (c: readonly number[]): boolean => !(c[0] === 21 && c[1] === 65 && c[2] === 20);
+  assert.deepEqual(entryCellOf(box, [16, 65, 19]), [21, 65, 20], "nearest, with no world to read");
+  assert.deepEqual(
+    entryCellOf(box, [16, 65, 19], (c) => solid(c)),
+    [21, 65, 21],
+    "the nearest cell a body can be in, once the world is readable",
+  );
+  assert.equal(
+    entryCellOf(box, [16, 65, 19], () => false),
+    undefined,
+    "a volume no body can be inside has no entry cell, and that is a finding rather than a guess",
+  );
+});
+
+// --- which body is the stake -----------------------------------------------
+
+const body = (name: string, x: number, y: number, z: number) => ({
+  name,
+  position: { x, y, z },
+});
+
+test("the stake is the interaction NEAREST the anchor, not the first one the map yields", () => {
+  // A stray interaction inside the search radius, offered first. Taking it makes
+  // the reported drift a fact about entity-map iteration order: the gallery's
+  // west-pit stake was reported 3.6 blocks off an anchor it was standing exactly
+  // on, measured at [7.5, 65.0, 18.5] over rcon on four consecutive deaths.
+  const anchor = [7, 65, 18] as const;
+  const stray = body("interaction", 10.6, 65, 20.4);
+  const stake = body("interaction", 7.5, 65, 18.5);
+  const chosen = markerAt(
+    [stray, stake],
+    [body("item_display", 10.6, 65, 20.4), body("item_display", 7.5, 65, 18.5)],
+    anchor,
+    4,
+    0.5,
+  );
+  assert.deepEqual(chosen, stake);
+});
+
+test("a display somewhere in the radius does not vouch for an interaction elsewhere in it", () => {
+  const anchor = [7, 65, 18] as const;
+  const lone = body("interaction", 7.5, 65, 18.5);
+  assert.equal(
+    markerAt([lone], [body("item_display", 10.6, 65, 20.4)], anchor, 4, 0.5),
+    undefined,
+    "the two halves are summoned at one position by one function; anything else is a " +
+      "different object vouching for this one",
+  );
+  assert.deepEqual(
+    markerAt([lone], [body("item_display", 7.5, 65, 18.5)], anchor, 4, 0.5),
+    lone,
+  );
+});
+
+test("nothing outside the search radius is the stake, however well paired", () => {
+  const far = body("interaction", 20.5, 65, 18.5);
+  assert.equal(markerAt([far], [body("item_display", 20.5, 65, 18.5)], [7, 65, 18], 4, 0.5), undefined);
+});
+
 test("the respawn seat is identified from the OBSERVED position, not from engine state", () => {
   const p = plan();
   // Vanilla lands a respawning player at cell + (0.5, 0.1, 0.5).
@@ -277,6 +344,26 @@ test("standing in a lethal volume and surviving is the first and loudest failure
   const out = lethalTrialFailures(t);
   assert.equal(out.length, 1, "nothing downstream of the death edge is even reported");
   assert.match(out[0]!, /did NOT die/);
+});
+
+test("a trial that never got the bot inside says THAT, and never that it stood there", () => {
+  // The gallery's east pit reported `the bot stood inside the declared lethal
+  // volume at [21, 65, 20] and did NOT die` over a cell filled by a block. The
+  // volume kills a real player at every one of the seventy-five cells of that
+  // box, measured live; what the run had established was that a walk did not
+  // arrive, and the verdict said something else entirely.
+  const t = goodTrial();
+  t.died = false;
+  t.enteredVolume = false;
+  const out = lethalTrialFailures(t);
+  assert.equal(out.length, 1);
+  assert.doesNotMatch(
+    out[0]!,
+    /stood inside/,
+    "a verdict may not assert a position the trial never observed the bot at",
+  );
+  assert.match(out[0]!, /never OBSERVED inside/);
+  assert.match(out[0]!, /the fault is the walk in, not the volume/);
 });
 
 test("a death with the volume's own wording withheld is a failure", () => {
