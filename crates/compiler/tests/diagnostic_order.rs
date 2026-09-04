@@ -44,8 +44,16 @@ fn validate_stdout(campaign: &Path, prefabs: &Path) -> String {
 /// one edit and it puts all three groups on the screen at once: a refusal
 /// (`DW0826`), an advisory about the campaign (`DW0822`), and a notice about the
 /// engine (`DW0813`).
-fn a_run_with_all_three_groups() -> String {
-    let tmp = tempdir("three-groups");
+///
+/// **`whose` is the calling test's own name, and it is a parameter rather than a
+/// constant for a reason that was measured here.** With one shared directory
+/// name the two tests that call this raced: `cargo test` runs them on different
+/// threads, the second one's `remove_dir_all` deleted the first one's campaign
+/// mid-run, and the result was a red that came and went — an under-specified
+/// test, which the debug doctrine says is root-caused and never re-run. A
+/// per-test path removes the sharing rather than making the window smaller.
+fn a_run_with_all_three_groups(whose: &str) -> String {
+    let tmp = tempdir(whose);
     let campaign = tmp.join("campaign");
     let prefabs = tmp.join("prefabs");
     std::fs::create_dir_all(&prefabs).unwrap();
@@ -67,7 +75,7 @@ fn line_of(out: &str, code: &str) -> Option<usize> {
 
 #[test]
 fn a_runs_lines_are_grouped_with_the_authors_first() {
-    let out = a_run_with_all_three_groups();
+    let out = a_run_with_all_three_groups("grouped");
 
     let refusal = out
         .lines()
@@ -105,7 +113,7 @@ fn a_runs_lines_are_grouped_with_the_authors_first() {
 /// zero times and a heading count is not.
 #[test]
 fn each_advisory_prints_exactly_once_per_run() {
-    let out = a_run_with_all_three_groups();
+    let out = a_run_with_all_three_groups("once-per-run");
     for code in ["DW0822", "DW0813"] {
         let n = out.lines().filter(|l| l.starts_with(code)).count();
         assert_eq!(n, 1, "{code} appears {n} time(s) in:\n{out}");
