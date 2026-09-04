@@ -1,24 +1,36 @@
 {
-  "added": [
-    "easy.en:packtest-datapack/data/gallery/test/verb_kill_uncredited.mcfunction",
-    "hard.en:packtest-datapack/data/gallery/test/verb_kill_uncredited.mcfunction",
-    "ocean-horizon.en:packtest-datapack/data/gallery/test/verb_kill_uncredited.mcfunction",
-    "primary.en:packtest-datapack/data/gallery/test/verb_kill_uncredited.mcfunction",
-    "primary.zh-cn:packtest-datapack/data/gallery/test/verb_kill_uncredited.mcfunction",
-    "void-horizon.en:packtest-datapack/data/gallery/test/verb_kill_uncredited.mcfunction"
-  ],
-  "base_commit": "4851360ce48b3e5f84e502506a2b7483a49cd566",
+  "added": [],
+  "base_commit": "2fa40449231d701b96201a427306ca5ec66063a5",
   "changed": [
+    "easy.en:critical-path.json",
     "easy.en:datapack/data/gallery/function/tick.mcfunction",
+    "easy.en:validation/branch-path-read.json",
+    "easy.en:validation/branch-path-skipped.json",
+    "hard.en:critical-path.json",
     "hard.en:datapack/data/gallery/function/tick.mcfunction",
+    "hard.en:validation/branch-path-read.json",
+    "hard.en:validation/branch-path-skipped.json",
+    "ocean-horizon.en:critical-path.json",
     "ocean-horizon.en:datapack/data/gallery/function/tick.mcfunction",
+    "ocean-horizon.en:validation/branch-path-read.json",
+    "ocean-horizon.en:validation/branch-path-skipped.json",
+    "primary.en:critical-path.json",
     "primary.en:datapack/data/gallery/function/tick.mcfunction",
+    "primary.en:validation/branch-path-read.json",
+    "primary.en:validation/branch-path-skipped.json",
+    "primary.zh-cn:critical-path.json",
     "primary.zh-cn:datapack/data/gallery/function/tick.mcfunction",
-    "void-horizon.en:datapack/data/gallery/function/tick.mcfunction"
+    "primary.zh-cn:validation/branch-path-read.json",
+    "primary.zh-cn:validation/branch-path-skipped.json",
+    "void-horizon.en:critical-path.json",
+    "void-horizon.en:datapack/data/gallery/function/tick.mcfunction",
+    "void-horizon.en:validation/branch-path-read.json",
+    "void-horizon.en:validation/branch-path-skipped.json"
   ],
   "classes": {
-    "PackTest": 6,
-    "datapack function": 6
+    "datapack function": 6,
+    "other": 6,
+    "validation ledger": 12
   },
   "removed": []
 }

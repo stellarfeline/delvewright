@@ -117,7 +117,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use delvewright_dsl::{Campaign, DialogueEffect, Objective, QuestEffect, Trigger};
+use delvewright_dsl::{
+    Campaign, CompareOp, DialogueEffect, Objective, QuestEffect, StateCompare, StateScope,
+    StateWrite, Trigger,
+};
 use delvewright_dsl::{DwCode, ExitTier};
 
 /// Objective-path incoherence (the replay check).
@@ -125,6 +128,9 @@ pub const DW_PATH_INCOHERENT: DwCode = DwCode::every_version("DW0204", ExitTier:
 
 /// Optional participation can skip a load-bearing mainline beat.
 pub const DW_OPTIONAL_GATES_MAINLINE: DwCode = DwCode::every_version("DW0205", ExitTier::Analysis);
+
+/// A forced-path numeric gate the path itself has already made unsatisfiable.
+pub const DW_STATE_GATE_CLEARED: DwCode = DwCode::every_version("DW0879", ExitTier::Analysis);
 
 /// Upper bound on enumerated branch worlds. The product of the *flag-reading*
 /// choice groups' arities; groups past the bound stay **unconstrained** (all
@@ -249,13 +255,120 @@ pub struct Playthrough {
 }
 
 /// The evolving state of one playthrough replay: which flags are set, which
-/// objectives/quests are done, which quests are active.
+/// objectives/quests are done, which quests are active, and what each declared
+/// datum holds.
 #[derive(Clone, Debug, Default)]
 struct ReplayState {
     flags: BTreeSet<String>,
     done_obj: BTreeSet<String>,
     done_quest: BTreeSet<String>,
     active: BTreeSet<String>,
+    /// Every declared datum's value at this point of the walk. A datum no
+    /// ordered walk can date is [`Datum::Undatable`] from the start and stays
+    /// that way — see [`Flow::undatable`].
+    state: BTreeMap<String, Datum>,
+    /// Per datum, the writes this walk has applied to it, in the order it
+    /// applied them. The blame a refusal names.
+    wrote: BTreeMap<String, Vec<StateWriteRecord>>,
+    /// Writes to a datum this walk deliberately did not apply, in path order —
+    /// a write whose own gate was open to question at the moment it was reached.
+    /// Their presence is what withholds a refusal, so they are recorded rather
+    /// than dropped.
+    unapplied: BTreeSet<String>,
+}
+
+/// One datum's value during a replay.
+///
+/// **`Undatable` is not "we did not look".** It is the model saying that no
+/// ordered walk of the campaign can name this datum's value at a given beat,
+/// because something writes it at a moment nothing in the document orders — an
+/// ambient producer the party may fire any number of times, a reaction bundle
+/// that runs when somebody dies, or a stake a death forfeits. The conservative
+/// direction is the only sound one here: a comparison against an undatable
+/// value is never refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Datum {
+    /// The walk knows this value exactly.
+    Known(i64),
+    /// No ordered walk can name it — see [`Flow::undatable`].
+    Undatable,
+}
+
+impl Datum {
+    /// Does this value satisfy `cmp`? `None` when the value is undatable, which
+    /// is the only answer that is neither yes nor no.
+    fn satisfies(self, cmp: &StateCompare) -> Option<bool> {
+        let Datum::Known(v) = self else {
+            return None;
+        };
+        let want = i64::from(cmp.value);
+        Some(match cmp.op {
+            CompareOp::Equals => v == want,
+            CompareOp::NotEquals => v != want,
+            CompareOp::AtLeast => v >= want,
+            CompareOp::AtMost => v <= want,
+        })
+    }
+
+    /// The value after `w` is applied. `initial` is the datum's declared
+    /// starting value, which is also what `clear-state` returns it to.
+    ///
+    /// **Undatable absorbs, including under `set-state` and `clear-state`.** A
+    /// write that pins a value pins it only until the next undated write, and an
+    /// undated write is by definition one that can land at any moment — the one
+    /// after this beat included. A `set-state 2` on a datum a death forfeits
+    /// says nothing about what the datum holds four beats later, so treating it
+    /// as freshly known would manufacture exactly the certainty
+    /// [`Flow::undatable`] exists to refuse.
+    fn write(self, w: StateWrite, initial: i64) -> Datum {
+        let Datum::Known(v) = self else {
+            return Datum::Undatable;
+        };
+        match w {
+            StateWrite::Set(n) => Datum::Known(i64::from(n)),
+            StateWrite::Clear => Datum::Known(initial),
+            StateWrite::Add(n) => Datum::Known(v + i64::from(n)),
+        }
+    }
+}
+
+/// One write a replay applied to a datum: which beat performed it, what it did,
+/// and what the datum held afterwards.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct StateWriteRecord {
+    /// The beat whose bundle carried the write.
+    beat: Beat,
+    /// 1-based path position of that beat.
+    position: usize,
+    /// The verb, for the message (`set-state` / `add-state` / `clear-state`).
+    verb: &'static str,
+    /// What the datum held once the write had been applied.
+    after: Datum,
+}
+
+/// A beat that can write a datum during a replay — the two dated effect roots.
+///
+/// This is the vocabulary the ORDER is expressed in: a refusal is only sound
+/// where every write the walk applied is forced, by the campaign's own `after`
+/// and `quest-complete` chains, to happen before the gate that reads it. See
+/// [`Flow::forced_before`].
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Beat {
+    /// A quest's `on_objective_complete[<objective>]` bundle.
+    Objective(String),
+    /// A quest's `on_complete` bundle — after every objective of that quest, and
+    /// before every beat of every quest it triggers.
+    QuestComplete(String),
+}
+
+impl Beat {
+    /// How a message names this beat.
+    fn phrase(&self) -> String {
+        match self {
+            Beat::Objective(o) => format!("`{o}`'s completion bundle"),
+            Beat::QuestComplete(q) => format!("`{q}`'s `on_complete` bundle"),
+        }
+    }
 }
 
 /// A proven n-agent division of labour (spec-0018).
@@ -347,6 +460,132 @@ impl ReplayFailure {
              the path, and make each gating flag producible before the step that reads it",
             self.position, self.objective, self.reason
         )
+    }
+}
+
+/// A forced-path numeric gate the path itself has already made unsatisfiable
+/// (`DW0879`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateGateCleared {
+    /// 1-based position of the objective on the path that was walked.
+    pub position: usize,
+    /// The quest the objective belongs to.
+    pub quest: String,
+    /// The objective whose gate cannot hold.
+    pub objective: String,
+    /// The datum the gate reads.
+    pub state: String,
+    /// The comparison, as written.
+    pub op: CompareOp,
+    /// What the comparison compares against.
+    pub value: i32,
+    /// What the replay holds at the moment the gate is read.
+    pub held: i64,
+    /// The write that left it holding that, and where on the path it happened.
+    /// `None` when nothing on the path wrote the datum at all and the value is
+    /// still the declared `initial`.
+    pub by: Option<StateBlame>,
+    /// The branch this was proven on, when it is branch-specific; `None` for the
+    /// campaign's own critical path.
+    pub branch: Option<String>,
+}
+
+/// The write a [`StateGateCleared`] blames, phrased for a reader.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateBlame {
+    /// The beat whose bundle carried the write.
+    beat: Beat,
+    /// 1-based path position of that beat.
+    pub position: usize,
+    /// The verb (`set-state` / `add-state` / `clear-state`).
+    pub verb: &'static str,
+}
+
+impl StateBlame {
+    /// The beat, as the message names it.
+    pub fn beat(&self) -> String {
+        self.beat.phrase()
+    }
+}
+
+impl StateGateCleared {
+    /// The `DW0879` diagnostic message.
+    pub fn message(&self) -> String {
+        let on = match &self.branch {
+            Some(b) => format!(" on branch `{b}`"),
+            None => String::new(),
+        };
+        let blame = match &self.by {
+            Some(b) => format!(
+                "{beat} performed a `{verb}` on it at step #{at}, and nothing between there and \
+                 here writes it again",
+                beat = b.beat(),
+                verb = b.verb,
+                at = b.position,
+            ),
+            None => "nothing on the path writes it at all, so it still holds its declared \
+                     `initial`"
+                .to_string(),
+        };
+        format!(
+            "objective `{obj}` is gated on `{state} {op} {value}`, and at its own position on the \
+             path{on} (step #{pos}) `{state}` holds {held} — so the gate cannot open, the beat \
+             never activates, and every beat after it is unreachable. {blame}. The campaign's own \
+             `after` and `quest-complete` chains force that write to happen before this gate, so \
+             no play order avoids it: this is not a beat the party can come back to. Move the \
+             write past the beat that reads the datum, or move the gate — a `clear-state` standing \
+             between a datum's producer and its reader empties it for every gate downstream, and \
+             the static checks around this one cannot see it (`DW0501` asks whether a datum is \
+             written ANYWHERE, and `DW0527` asks about one bundle's own effect list)",
+            obj = self.objective,
+            state = self.state,
+            op = self.op.token(),
+            value = self.value,
+            pos = self.position,
+            held = self.held,
+        )
+    }
+}
+
+/// What one [`Flow::state_gates`] walk examined — the binding count a run states
+/// whether or not anything was found.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StateWalk {
+    /// Declared data the walk carried a value for.
+    pub data: usize,
+    /// Of those, the ones no ordered walk can date (see [`Datum::Undatable`]).
+    pub undatable: usize,
+    /// Path steps walked.
+    pub steps: usize,
+    /// Comparison terms on those steps' objective gates that this walk read.
+    pub gates: usize,
+    /// State writes the walk applied.
+    pub writes: usize,
+    /// Gate terms that failed and were nonetheless NOT refused, because the
+    /// writes before them are not forced into one order — see
+    /// [`Flow::forced_before`].
+    pub withheld: usize,
+    /// Gate terms read against an **undatable** datum, which this walk can
+    /// neither hold nor refuse.
+    ///
+    /// Counted apart from [`Self::gates`] on purpose: a run that read twenty
+    /// terms and decided all twenty, and one that read twenty and could decide
+    /// none, print the same `gates` figure, and the second is the one where a
+    /// green means nothing. The pair is what separates them.
+    pub undated: usize,
+}
+
+impl StateWalk {
+    /// Fold another walk's counts in — the per-path counts add, and `data` /
+    /// `undatable` are campaign-wide facts, so the largest stands.
+    pub fn merge(&mut self, other: StateWalk) {
+        self.data = self.data.max(other.data);
+        self.undatable = self.undatable.max(other.undatable);
+        self.steps += other.steps;
+        self.gates += other.gates;
+        self.writes += other.writes;
+        self.withheld += other.withheld;
+        self.undated += other.undated;
     }
 }
 
@@ -466,6 +705,13 @@ pub struct Flow<'a> {
     obj_flags: BTreeMap<String, Vec<GatedFlag>>,
     quest_flags: BTreeMap<String, Vec<GatedFlag>>,
     worlds: Vec<World>,
+    /// Every declared datum's starting value — what it holds before anything
+    /// happens, and what `clear-state` returns it to.
+    initial: BTreeMap<String, i64>,
+    /// The data no ordered walk can date, and therefore the data no comparison
+    /// is ever refused against. See [`Datum::Undatable`] for the reasoning; the
+    /// three sources are named where the set is built.
+    undatable: BTreeSet<String>,
 }
 
 impl<'a> Flow<'a> {
@@ -567,6 +813,13 @@ impl<'a> Flow<'a> {
         }
 
         let worlds = enumerate_worlds(&groups, &gate_flags(c));
+        let initial: BTreeMap<String, i64> = c
+            .quests
+            .content
+            .state
+            .iter()
+            .map(|s| (s.id.as_str().to_string(), i64::from(s.initial)))
+            .collect();
         Flow {
             c,
             groups,
@@ -577,6 +830,8 @@ impl<'a> Flow<'a> {
             obj_flags,
             quest_flags,
             worlds,
+            initial,
+            undatable: undatable_state(c),
         }
     }
 
@@ -828,6 +1083,210 @@ impl<'a> Flow<'a> {
                     .to_string(),
             }),
         }
+    }
+
+    /// **Every numeric gate on `p`, read at the position it is read at**
+    /// (`DW0879`).
+    ///
+    /// The replay is the only thing in this model with a notion of *when*: the
+    /// fixpoint in [`Self::solve`] is monotone and has no position to evaluate a
+    /// comparison at, which is exactly why this rule cannot live there. Walking
+    /// `p` with [`Self::advance`] — the one transition function — carries each
+    /// declared datum's value forward through every write the path performs, and
+    /// at each objective asks whether the gate that objective declares can hold
+    /// *there*.
+    ///
+    /// **A refusal is withheld unless the order is forced.** A player may
+    /// complete two objectives with no `after` between them in either order, so
+    /// a gate that fails under the exported order and holds under another is not
+    /// a defect — it is a path this walk happened to pick. So a term is refused
+    /// only when every write the walk applied to that datum is chained into one
+    /// order by the campaign's own `after` and `quest-complete` relations, and
+    /// that chain ends before the gate ([`Self::forced_before`]). Where a write
+    /// to the datum was reached and NOT applied, the value depends on more than
+    /// the order and the term is withheld too. Both are counted in
+    /// [`StateWalk::withheld`] rather than dropped.
+    ///
+    /// `branch` names the playthrough for a reader; `None` is the campaign's own
+    /// critical path.
+    pub fn state_gates(
+        &self,
+        p: &Playthrough,
+        branch: Option<&str>,
+    ) -> (Vec<StateGateCleared>, StateWalk) {
+        let mut walk = StateWalk {
+            data: self.initial.len(),
+            undatable: self.undatable.len(),
+            steps: p.steps.len(),
+            ..StateWalk::default()
+        };
+        let mut out: Vec<StateGateCleared> = Vec::new();
+        if self.initial.is_empty() {
+            return (out, walk);
+        }
+        let ancestors = self.quest_ancestors();
+        let mut st = self.initial_state();
+        let mut complete_at: Option<(usize, String)> = None;
+        for (i, step) in p.steps.iter().enumerate() {
+            let pos = i + 1;
+            if let Some(obj) = self.objective(&step.objective) {
+                for cmp in obj.requires_state() {
+                    walk.gates += 1;
+                    let id = cmp.state.as_str();
+                    let held = st.state.get(id).copied().unwrap_or(Datum::Undatable);
+                    match held.satisfies(cmp) {
+                        Some(true) => continue,
+                        None => {
+                            walk.undated += 1;
+                            continue;
+                        }
+                        Some(false) => {}
+                    }
+                    let applied: &[StateWriteRecord] =
+                        st.wrote.get(id).map(|v| v.as_slice()).unwrap_or(&[]);
+                    if st.unapplied.contains(id)
+                        || !self.forced_before(applied, &step.objective, &ancestors)
+                    {
+                        walk.withheld += 1;
+                        continue;
+                    }
+                    // `satisfies` answered `Some(false)`, which only a `Known`
+                    // value can, so the value is there to name in the message.
+                    let Datum::Known(v) = held else {
+                        unreachable!("an undatable value answers None, not Some(false)")
+                    };
+                    out.push(StateGateCleared {
+                        position: pos,
+                        quest: step.quest.clone(),
+                        objective: step.objective.clone(),
+                        state: id.to_string(),
+                        op: cmp.op,
+                        value: cmp.value,
+                        held: v,
+                        by: applied.last().map(|w| StateBlame {
+                            beat: w.beat.clone(),
+                            position: w.position,
+                            verb: w.verb,
+                        }),
+                        branch: branch.map(str::to_string),
+                    });
+                }
+            }
+            self.advance(&mut st, step, pos, &mut complete_at);
+        }
+        walk.writes = st.wrote.values().map(Vec::len).sum();
+        (out, walk)
+    }
+
+    /// Are `applied` — the writes this walk performed on one datum, in the order
+    /// it performed them — forced into exactly that order, and forced to finish
+    /// before `objective` activates?
+    ///
+    /// The relation is the campaign's own, and nothing weaker: an objective's
+    /// transitive `after` closure inside its quest, and the `quest-complete`
+    /// trigger chain between quests. Two writes in one bundle are already
+    /// ordered by the bundle's own effect list, so a beat precedes itself here.
+    ///
+    /// An empty `applied` is forced vacuously — the datum still holds its
+    /// declared `initial`, and no play order changes that.
+    fn forced_before(
+        &self,
+        applied: &[StateWriteRecord],
+        objective: &str,
+        ancestors: &BTreeMap<String, BTreeSet<String>>,
+    ) -> bool {
+        let gate = Beat::Objective(objective.to_string());
+        let mut prev: Option<&Beat> = None;
+        for w in applied {
+            if let Some(p) = prev
+                && !self.beat_precedes(p, &w.beat, ancestors)
+            {
+                return false;
+            }
+            prev = Some(&w.beat);
+        }
+        match prev {
+            None => true,
+            Some(last) => self.beat_precedes(last, &gate, ancestors),
+        }
+    }
+
+    /// Does beat `a` necessarily happen at or before beat `b`, in every legal
+    /// play order? A beat precedes itself: one bundle's effect list is ordered.
+    fn beat_precedes(
+        &self,
+        a: &Beat,
+        b: &Beat,
+        ancestors: &BTreeMap<String, BTreeSet<String>>,
+    ) -> bool {
+        if a == b {
+            return true;
+        }
+        let ancestor = |p: &str, q: &str| {
+            ancestors
+                .get(q)
+                .is_some_and(|set| set.contains(p) && p != q)
+        };
+        match (a, b) {
+            (Beat::Objective(x), Beat::Objective(y)) => {
+                let (Some(qx), Some(qy)) = (self.objective_quest(x), self.objective_quest(y))
+                else {
+                    return false;
+                };
+                if qx == qy {
+                    self.after_closure(y).contains(x)
+                } else {
+                    ancestor(qx, qy)
+                }
+            }
+            // A quest's `on_complete` runs once every objective of that quest is
+            // done, so every objective of it precedes it.
+            (Beat::Objective(x), Beat::QuestComplete(q)) => self
+                .objective_quest(x)
+                .is_some_and(|qx| qx == q || ancestor(qx, q)),
+            // …and it runs before any beat of a quest it triggers. Never before a
+            // beat of its OWN quest.
+            (Beat::QuestComplete(q), Beat::Objective(y)) => {
+                self.objective_quest(y).is_some_and(|qy| ancestor(q, qy))
+            }
+            (Beat::QuestComplete(p), Beat::QuestComplete(q)) => ancestor(p, q),
+        }
+    }
+
+    /// Per quest, every quest that must complete before it activates — the
+    /// transitive closure of the `quest-complete` trigger chain.
+    fn quest_ancestors(&self) -> BTreeMap<String, BTreeSet<String>> {
+        let mut parent: BTreeMap<&str, &str> = BTreeMap::new();
+        for q in &self.c.quests.content.quests {
+            if let Trigger::QuestComplete { quest } = &q.trigger {
+                parent.insert(q.id.as_str(), quest.as_str());
+            }
+        }
+        let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for q in &self.c.quests.content.quests {
+            let mut set = BTreeSet::new();
+            let mut cur = q.id.as_str();
+            // A cycle here is `DW0130`'s to refuse; bound the walk so this cannot
+            // hang on a campaign that carries one.
+            for _ in 0..self.c.quests.content.quests.len() {
+                let Some(p) = parent.get(cur) else { break };
+                if !set.insert((*p).to_string()) {
+                    break;
+                }
+                cur = p;
+            }
+            out.insert(q.id.as_str().to_string(), set);
+        }
+        out
+    }
+
+    /// The index of the world [`Self::playthrough`] exported, when one completes
+    /// the finale.
+    pub fn playthrough_world(&self) -> Option<usize> {
+        let finale = self.c.quest_plan.content.finale.as_str();
+        self.worlds
+            .iter()
+            .position(|w| self.solve(w).completed.contains(finale))
     }
 
     /// The **participation-minimal walk**: replay `p` taking only the mainline,
@@ -1165,6 +1624,14 @@ impl<'a> Flow<'a> {
                 st.active.insert(q.id.as_str().to_string());
             }
         }
+        for (id, v) in &self.initial {
+            let d = if self.undatable.contains(id) {
+                Datum::Undatable
+            } else {
+                Datum::Known(*v)
+            };
+            st.state.insert(id.clone(), d);
+        }
         self.saturate_ambient(&mut st.flags);
         st
     }
@@ -1192,7 +1659,8 @@ impl<'a> Flow<'a> {
                 .on_objective_complete
                 .get(&delvewright_dsl::ObjectiveId(step.objective.clone()))
         {
-            self.fire(effs, &mut st.flags, complete_at, pos, &step.objective);
+            let beat = Beat::Objective(step.objective.clone());
+            self.fire(effs, st, complete_at, pos, &step.objective, &beat);
         }
         // Quest completion cascade.
         loop {
@@ -1210,13 +1678,8 @@ impl<'a> Flow<'a> {
                     continue;
                 }
                 st.done_quest.insert(qid.to_string());
-                self.fire(
-                    &q.on_complete,
-                    &mut st.flags,
-                    complete_at,
-                    pos,
-                    &step.objective,
-                );
+                let beat = Beat::QuestComplete(qid.to_string());
+                self.fire(&q.on_complete, st, complete_at, pos, &step.objective, &beat);
                 for other in &self.c.quests.content.quests {
                     if let Trigger::QuestComplete { quest } = &other.trigger
                         && quest.as_str() == qid
@@ -1493,29 +1956,58 @@ impl<'a> Flow<'a> {
         }
     }
 
-    /// Fire an effect bundle at a concrete point in the replay: honor every flag
-    /// gate against the current state, descend into `sequence` steps and
-    /// `on_arrive` bundles, and skip `on_respawn`/`on_caught` reaction bundles.
+    /// Fire an effect bundle at a concrete point in the replay: honor every gate
+    /// against the current state, descend into `sequence` steps and `on_arrive`
+    /// bundles, and skip `on_respawn`/`on_caught` reaction bundles.
+    ///
+    /// **The gate honored here is the whole gate**, not two of its three fields.
+    /// Sibling effects are consecutive commands in one generated function and
+    /// vanilla evaluates each `execute` condition where it stands, so a write's
+    /// own `requires_state` is read against the value the bundle holds *at that
+    /// effect* — which is what makes the value this walk carries the value the
+    /// datapack produces. A numeric term the walk cannot decide (the datum is
+    /// [`Datum::Undatable`]) is treated as OPEN: withholding a producer would be
+    /// the unsound direction, and it is the same conservative stance the flag
+    /// half already takes for `forbids_flags`.
     fn fire(
         &self,
         effs: &[QuestEffect],
-        flags: &mut BTreeSet<String>,
+        st: &mut ReplayState,
         complete_at: &mut Option<(usize, String)>,
         pos: usize,
         objective: &str,
+        beat: &Beat,
     ) {
         for e in effs {
             let gated = !e
                 .requires_flags()
                 .iter()
-                .all(|f| flags.contains(f.as_str()))
-                || e.forbids_flags().iter().any(|f| flags.contains(f.as_str()));
-            if gated {
+                .all(|f| st.flags.contains(f.as_str()))
+                || e.forbids_flags()
+                    .iter()
+                    .any(|f| st.flags.contains(f.as_str()));
+            // A numeric term this walk can decide and that does not hold closes
+            // the effect exactly as an unset flag does. `Some(false)` is the only
+            // closing answer: `None` is undatable, and an undatable gate has not
+            // been shown to close.
+            let numerically_closed = e.requires_state().iter().any(|cmp| {
+                st.state
+                    .get(cmp.state.as_str())
+                    .and_then(|d| d.satisfies(cmp))
+                    == Some(false)
+            });
+            if gated || numerically_closed {
+                // A write this walk did NOT perform is what makes a later gate's
+                // value depend on more than the order — record it so a refusal
+                // downstream can withhold rather than guess.
+                if let Some((id, _)) = e.writes_state() {
+                    st.unapplied.insert(id.as_str().to_string());
+                }
                 continue;
             }
             match e {
                 QuestEffect::SetFlag { flag, .. } => {
-                    flags.insert(flag.as_str().to_string());
+                    st.flags.insert(flag.as_str().to_string());
                 }
                 QuestEffect::CampaignComplete { .. } => {
                     if complete_at.is_none() {
@@ -1527,8 +2019,21 @@ impl<'a> Flow<'a> {
                 | QuestEffect::BeginStealth { .. } => continue,
                 _ => {}
             }
+            if let Some((id, w)) = e.writes_state() {
+                let id = id.as_str().to_string();
+                let initial = self.initial.get(&id).copied().unwrap_or(0);
+                let before = st.state.get(&id).copied().unwrap_or(Datum::Undatable);
+                let after = before.write(w, initial);
+                st.state.insert(id.clone(), after);
+                st.wrote.entry(id).or_default().push(StateWriteRecord {
+                    beat: beat.clone(),
+                    position: pos,
+                    verb: e.verb(),
+                    after,
+                });
+            }
             for list in e.nested_effect_lists() {
-                self.fire(list, flags, complete_at, pos, objective);
+                self.fire(list, st, complete_at, pos, objective, beat);
             }
         }
     }
@@ -1842,6 +2347,84 @@ fn choice_groups(trees: &[TreeModel]) -> (Vec<ChoiceGroup>, BTreeMap<(String, us
         }
     }
     (groups, map)
+}
+
+/// **The data no ordered walk of this campaign can date**, and therefore the
+/// data no comparison is ever refused against.
+///
+/// A flag is monotone and party-wide, so an ambient producer the party may fire
+/// at any moment is credited unconditionally — the flag is either set or it is
+/// not, and firing again changes nothing. A datum is neither: firing an ambient
+/// `add-state` twice is a different number, and `at-least`/`at-most` read that
+/// number. So the three ways a value stops being a function of the path are
+/// named here, and each yields the whole datum rather than a moment of it:
+///
+/// 1. **An ambient root writes it** — an environment trigger, a trap payload, a
+///    shortcut's `on_unlock`, a shop offer's effects. The party can walk over
+///    and fire any of those, any number of times, at any point. (The shop case
+///    is the one already stated in [`Flow::new`]'s producer table: a price is a
+///    runtime balance no static model can date.)
+/// 2. **A reaction bundle writes it** — the campaign's `on_death`, a dialogue
+///    or quest `set-checkpoint`'s `on_respawn`, a `bonfire`'s `on_rest`, a
+///    `begin-stealth`'s `on_caught`. Those fire when somebody dies, rests or is
+///    seen, which is exactly the moment this model refuses to name — the stance
+///    [`Flow::fire`] already takes by not descending into them.
+/// 3. **A stake forfeits it** — `stakes[].state`. The forfeit is a field rather
+///    than an effect, so no effect walk reaches it, and a death moves the number
+///    by a proportion of whatever the purse held.
+///
+/// A fourth case is about the walk rather than the campaign: a `player`-scoped
+/// datum under `min_players >= 2`. The replay is one agent's walk, and which
+/// agent performs which arm of a division of labour is nothing the document
+/// says, so "the acting player's value at this beat" is not a function of the
+/// path either. A `party`-scoped datum has one holder and is unaffected.
+fn undatable_state(c: &Campaign) -> BTreeSet<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    crate::plan::for_each_effect_root(c, &mut |site, effs| {
+        let dated = matches!(
+            site.root,
+            crate::plan::EffectRoot::ObjectiveComplete { .. }
+                | crate::plan::EffectRoot::QuestComplete(_)
+        );
+        collect_undated_writes(effs, !dated, &mut out);
+    });
+    for s in &c.quests.content.stakes {
+        out.insert(s.state.as_str().to_string());
+    }
+    if crate::plan::min_players(c) >= 2 {
+        for s in &c.quests.content.state {
+            if s.scope == StateScope::Player {
+                out.insert(s.id.as_str().to_string());
+            }
+        }
+    }
+    // A datum nothing declares has no `initial` to start from and no scope to
+    // read it at; `DW0500` owns that, and this walk carries no opinion.
+    out.retain(|id| c.quests.content.state_decl(id).is_some());
+    out
+}
+
+/// The writes in `effs` that no replay dates: all of them when `all`, otherwise
+/// only those inside a reaction bundle the replay does not fire.
+///
+/// The descent mirrors [`Flow::fire`] exactly — `sequence` steps and `on_arrive`
+/// bundles are replayed, `on_respawn` / `on_rest` / `on_caught` are not — so the
+/// two cannot disagree about which writes an ordered walk performs.
+fn collect_undated_writes(effs: &[QuestEffect], all: bool, out: &mut BTreeSet<String>) {
+    for e in effs {
+        let reaction = matches!(
+            e,
+            QuestEffect::SetCheckpoint { .. }
+                | QuestEffect::Bonfire { .. }
+                | QuestEffect::BeginStealth { .. }
+        );
+        if all && let Some((id, _)) = e.writes_state() {
+            out.insert(id.as_str().to_string());
+        }
+        for list in e.nested_effect_lists() {
+            collect_undated_writes(list, all || reaction, out);
+        }
+    }
 }
 
 /// Every flag read by a gate anywhere in the campaign: the `requires_flags` /

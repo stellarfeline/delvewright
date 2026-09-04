@@ -803,6 +803,20 @@ fn validate_loaded(
             // leakage, hard event contradictions — plus the forcing function that
             // every story node says what it does to the story. No-op below 0.8.0.
             diags.extend(delvewright_compiler::branch::check_branches(&campaign));
+            // spec-0031 (DSL v0.10): a numeric gate is judged against the writes
+            // the path performs before it (DW0879). The reachability model walks
+            // objectives and flags; the arithmetic a `requires_state` compares
+            // needs an ORDER, and the flow model's path replay is the one thing
+            // in the campaign model that has one. Bound HERE for the same reason
+            // the detail plan is: this is the one funnel every subcommand's
+            // validation goes through, so a delve whose finale gate can never
+            // open cannot reach a datapack by skipping `delvec analyze`. The
+            // binding line states what it walked, including the zeroes.
+            {
+                let (sd, sbind) = delvewright_compiler::statepath::check(&campaign);
+                examined.push(sbind.line());
+                diags.extend(sd);
+            }
             // THE OBLIGATION FENCE. Every check above ran; this is where a
             // campaign's own declared `dsl_version` decides which of their
             // findings it is answerable for. Nothing
