@@ -49,7 +49,6 @@ fn build_fixture() -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates; DW0378/DW0388/DW0393/DW0420 all hold")
@@ -300,7 +299,6 @@ fn a_gate_without_a_disarm_is_untouched() {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("builds");

@@ -18,12 +18,12 @@ file-by-file diff buries the one fact the reader needs.
 ## Three verdicts from one mismatch, because they mean different things
 
 - **no emitted path moved at all**, and the manifest differs anyway — a
-  **declared input moved**. A manifest is not its outputs: `content_sha`, the
-  pinned versions and the whole `inputs` index are SIBLINGS of `outputs`, so a
-  manifest can differ while every emitted byte is identical. Reported first
-  because it is the one the other two cannot describe: a pure content re-pin
-  came out as a determinism finding that then listed zero differing paths,
-  because the delta walks `outputs` and the thing that moved was next to it.
+  **declared input moved**. A manifest is not its outputs: the pinned versions,
+  `campaign_id`, `resource_pack_sha1` and the whole `inputs` index are SIBLINGS
+  of `outputs`, so a manifest can differ while every emitted byte is identical.
+  Reported first because it is the one the other two cannot describe: the delta
+  walks `outputs`, so it lists zero differing paths and the finding would come
+  out as a determinism violation over nothing at all.
 - the change touches an input that can reach emission (`EMISSION_INPUTS`) — an
   **emission change**: regenerate the baseline in this change, or explain the
   drift;
@@ -61,11 +61,11 @@ see `write_effect` and `write_report`.
 That is a repair to the pair rather than to either half. The previous shape
 ENUMERATED what to compare — emission, then the header, then, one fix later, the
 warning ledger — and was unsatisfiable for anything the enumeration had not met.
-It met one: a pure content re-pin moves the recorded `content_sha`, which is in
-none of the three, so verify refused the tree and `--write` refused the
-regeneration it had just prescribed. Enumerating is the defect; comparing the
-writer's own output cannot go stale, and a fifth produced document joins both
-arms by being produced.
+It met one: a change moving only a recorded manifest value — one that is in no
+header, no warning row and no output — left verify refusing the tree and
+`--write` refusing the regeneration it had just prescribed. Enumerating is the
+defect; comparing the writer's own output cannot go stale, and a fifth produced
+document joins both arms by being produced.
 
 The guard also runs BEFORE the write, so a refusal leaves the tree untouched and
 the exit status and the effect agree.
@@ -192,15 +192,18 @@ PRODUCED = RECORDED + DERIVED
 # rather than a violation of ADR-0006. Membership is decided by that question and
 # by nothing else.
 #
-# `versions.toml` is here because the compiler READS it at build time and records
-# `content_sha`, `dsl_version` and `mc_version` out of it into every manifest
-# (see its `[content]` block). Without it a pure content re-pin was reported as a
-# determinism finding — a change to a declared input, named as the one thing it
-# is not.
+# `versions.toml` is deliberately NOT here, and it is the member a reader most
+# expects: the compiler reads nothing from it. It is handed a campaign directory,
+# a prefab directory and its flags, and every byte it emits or records is a
+# function of those (`docs/reference/compiler.md`, Determinism). A pin is a fact
+# about a checkout; the manifest's `dsl_version` comes from the campaign and its
+# `mc_version` from a compiler constant. So a gallery mismatch alongside a re-pin
+# is exactly as unexplained as one alongside no change at all, and naming it an
+# emission change would be the reassuring direction.
 #
 # Widening this set makes nothing easier to ship: BOTH verdicts refuse, so it
 # decides only what the reader is told the finding IS.
-EMISSION_INPUTS = ("gallery/", "crates/", "versions.toml")
+EMISSION_INPUTS = ("gallery/", "crates/")
 
 
 def die(msg: str) -> None:
@@ -410,9 +413,9 @@ def classify() -> str:
 def under(path: str, prefix: str) -> bool:
     """`path` IS `prefix`, or lies inside it — never merely starts with its text.
 
-    A bare `startswith("versions.toml")` also claims `versions.toml.bak`, and a
-    prefix rule that quietly widens is how a determinism finding would get
-    renamed by a file nobody meant to name.
+    A bare `startswith("crates")` also claims `crates.bak`, and a prefix rule
+    that quietly widens is how a determinism finding would get renamed by a file
+    nobody meant to name.
     """
     return path == prefix.rstrip("/") or path.startswith(prefix.rstrip("/") + "/")
 
@@ -597,11 +600,12 @@ def main() -> int:
         #
         # It replaces an ENUMERATION — empty output delta, unchanged header,
         # unchanged warning ledger — which was correct about the three things its
-        # authors had met and silent about the fourth. `content_sha` is a sibling
-        # of `outputs`, in no header and no warning row, so a pure content re-pin
-        # moved something this baseline records while all three qualifiers held:
-        # verify refused the tree and prescribed `--write`, and `--write` refused
-        # the regeneration as noise. CLAUDE.md: when one gate's prescription is
+        # authors had met and silent about the fourth. A recorded manifest value
+        # is a sibling of `outputs`, in no header and no warning row, so a change
+        # moving one moved something this baseline records while all three
+        # qualifiers held: verify refused the tree and prescribed `--write`, and
+        # `--write` refused the regeneration as noise. CLAUDE.md: when one gate's
+        # prescription is
         # another gate's refusal, the defect belongs to the PAIR — so the repair
         # is one shared question, not a fourth qualifier.
         #
@@ -1021,13 +1025,13 @@ def manifest_field_delta(old: dict, new: dict, left: str = "baseline") -> list[s
     told the reader the committed file had moved, which is the same misreading
     `write_report` exists to end, one line further down the page.
 
-    A manifest is not its outputs. `content_sha`, the pinned `delvec_version` /
-    `dsl_version` / `mc_version`, `campaign_id`, `resource_pack_sha1` and the
-    whole `inputs` index are SIBLINGS of `outputs` — so a manifest can differ
-    while every emitted byte is identical, and `compute_delta`, which walks
-    `outputs`, then correctly reports nothing at all. That empty list beside a
-    real mismatch is how a pure content re-pin was announced as a determinism
-    finding over zero differing paths.
+    A manifest is not its outputs. The pinned `delvec_version` / `dsl_version` /
+    `mc_version`, `campaign_id`, `resource_pack_sha1` and the whole `inputs`
+    index are SIBLINGS of `outputs` — so a manifest can differ while every
+    emitted byte is identical, and `compute_delta`, which walks `outputs`, then
+    correctly reports nothing at all. That empty list beside a real mismatch is
+    how such a change is announced as a determinism finding over zero differing
+    paths unless something names the field that moved.
 
     Named rather than dumped: two seven-build manifests printed whole is not a
     reading anyone takes a finding from. `inputs` is descended one level so an

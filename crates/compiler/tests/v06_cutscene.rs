@@ -89,7 +89,6 @@ fn build_plan(
         &tree,
         prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates");

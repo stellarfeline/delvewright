@@ -63,7 +63,6 @@ fn build(campaign: &Campaign, dir: &std::path::Path) -> Result<BuildOutput, Buil
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

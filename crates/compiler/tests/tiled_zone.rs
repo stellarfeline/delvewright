@@ -94,7 +94,6 @@ fn build(root: &Path, id: &str) -> (Plan<'static>, emit::BuildOutput) {
         &delvewright_compiler::commands::CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "test",
         &BTreeMap::new(),
     )
     .expect("build succeeds");

@@ -66,7 +66,6 @@ fn build_fixture() -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
     .expect("every emitted command validates (DW0315/DW0316/DW0327 proofs pass)")
@@ -572,7 +571,6 @@ fn set_checkpoint_nested_in_sequence_binds_its_own_index() {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
     .expect("nested-checkpoint build emits valid commands");

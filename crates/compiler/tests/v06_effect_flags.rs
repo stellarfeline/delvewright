@@ -52,7 +52,6 @@ fn build_v06() -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates")

@@ -116,7 +116,6 @@ fn build(dir: &Path) -> Result<(BuildOutput, Vec<Diagnostic>), BuildFailure> {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
 }
@@ -342,7 +341,6 @@ fn a_combat_free_campaign_emits_no_combat_plan() {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("hello-world builds");

@@ -178,7 +178,6 @@ fn try_build(campaign: &Campaign, prefabs: &PrefabRegistry) -> Result<BuildOutpu
         &tree,
         prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

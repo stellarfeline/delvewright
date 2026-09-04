@@ -7,7 +7,10 @@
 //!
 //! JSON is serialized with `serde_json` (default `BTreeMap` maps → sorted keys)
 //! plus a trailing newline; mcfunction bodies are built line-by-line. No
-//! wall-clock, hostname, locale or absolute path enters any byte.
+//! wall-clock, hostname, locale or absolute path enters any byte — and no
+//! ambient state either: every value a build writes is a function of the
+//! documents, prefabs and flags it was handed, never of where it was launched
+//! from or what happens to sit above that directory.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -307,7 +310,6 @@ pub fn check_template_extents(
 /// build stays byte-identical to a pre-i18n one); `Some("<code>")` records the
 /// language in the manifest. The `plan`'s campaign must already be localized to
 /// that language by the caller ([`delvewright_dsl::localize`]).
-#[allow(clippy::too_many_arguments)]
 pub fn build(
     plan: &Plan,
     input_bytes: &BTreeMap<String, Vec<u8>>,
@@ -315,7 +317,6 @@ pub fn build(
     tree: &CommandTree,
     prefabs: &crate::registry::PrefabRegistry,
     language: Option<&str>,
-    content_sha: &str,
     skins: &BTreeMap<String, Vec<u8>>,
 ) -> Result<BuildOutput, BuildFailure> {
     build_with_warnings(
@@ -325,7 +326,6 @@ pub fn build(
         tree,
         prefabs,
         language,
-        content_sha,
         skins,
     )
     .map(|(out, _)| out)
@@ -338,7 +338,6 @@ pub fn build(
 /// discovered after `dsl::validate` has run and long after `analyze`. `build`
 /// stays the discard-warnings convenience wrapper so every existing caller —
 /// and every test asserting byte-identical output — is untouched.
-#[allow(clippy::too_many_arguments)]
 pub fn build_with_warnings(
     plan: &Plan,
     input_bytes: &BTreeMap<String, Vec<u8>>,
@@ -346,7 +345,6 @@ pub fn build_with_warnings(
     tree: &CommandTree,
     prefabs: &crate::registry::PrefabRegistry,
     language: Option<&str>,
-    content_sha: &str,
     skins: &BTreeMap<String, Vec<u8>>,
 ) -> Result<(BuildOutput, Vec<delvewright_dsl::Diagnostic>), BuildFailure> {
     let ns = &plan.namespace;
@@ -1754,7 +1752,6 @@ pub fn build_with_warnings(
         input_bytes,
         &out,
         language,
-        content_sha,
         resource_pack_sha1.as_deref(),
     );
     put_json(&mut out, "manifest.json", &manifest);
@@ -20261,12 +20258,29 @@ fn critical_path_json(
     })
 }
 
+/// `manifest.json` — the compiler's SHA-256 index over what it READ and what it
+/// WROTE, plus the versions that decide how the one becomes the other.
+///
+/// Every value here is a function of the arguments this build was given. It used
+/// to carry one that was not: `content_sha`, resolved by walking up from
+/// `std::env::current_dir()` for a `versions.toml` and reading its
+/// `[content].sha`. That made the manifest a function of where the operator was
+/// standing — the same campaign, the same prefabs and the same seed produced a
+/// different `manifest.json` from the engine checkout than from anywhere else —
+/// which is exactly the ambient state ADR-0006 and `CLAUDE.md`'s forbidden zone
+/// rule out, and the one flavour of it the double-build gate structurally cannot
+/// see, because both of its builds share a working directory. It is gone rather
+/// than repaired: a git revision is a property of a checkout, never of the bytes
+/// the compiler was handed, so there was no honest value for the compiler to
+/// compute. The question it pretended to answer — which content commit built
+/// this delve — is answered by the party that actually knows the revision, in
+/// the shipped image's `org.opencontainers.image.revision` and
+/// `…delvewright.campaign-commit` labels.
 fn emit_manifest(
     plan: &Plan,
     input_bytes: &BTreeMap<String, Vec<u8>>,
     out: &BuildOutput,
     language: Option<&str>,
-    content_sha: &str,
     resource_pack_sha1: Option<&str>,
 ) -> Value {
     let inputs: BTreeMap<String, String> = input_bytes
@@ -20282,12 +20296,6 @@ fn emit_manifest(
         "delvec_version": DELVEC_VERSION,
         "dsl_version": plan.campaign.world.dsl_version,
         "mc_version": MC_VERSION,
-        // The pinned content-repo SHA (spec-0007 Step 0), read from versions.toml
-        // `[content].sha` at build time (NOT git state) so the build stays
-        // deterministic + offline; "unpinned" when versions.toml is absent. This
-        // closes the ADR-0006 reproducibility loop: same DSL + same seed + same
-        // content_sha -> byte-identical output.
-        "content_sha": content_sha,
         "inputs": inputs,
         "outputs": outputs
     });

@@ -92,7 +92,6 @@ fn build(base_entity: &str, edits: Option<String>) -> Result<Vec<Diagnostic>, Bu
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .map(|(_, warnings)| warnings)

@@ -145,7 +145,6 @@ fn build(on_arrive: &str) -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates")
