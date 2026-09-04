@@ -88,8 +88,8 @@ pub use schema::stage_schema;
 pub use siteplan::{
     Axis, Ceiling, Cmp, Datum, ENTRY_ANCHOR, Face, Floor, Identity, Measure, PlanAxis, PlanBinding,
     PlanBox, SITE_AREA, Seam, Sightline, SitePlanContent, View, Volume, VolumeRole, WorldBox,
-    node_anchor, owed_anchors, placed_boxes, placed_seams, seam_anchor, seam_unlock_anchor,
-    synthesized_anchor_kinds, synthesized_anchors, synthesized_gate_block,
+    node_anchor, owed_anchors, placed_boxes, placed_seams, refused_upstream, seam_anchor,
+    seam_unlock_anchor, synthesized_anchor_kinds, synthesized_anchors, synthesized_gate_block,
 };
 pub use siteplan::{PlacedBox, PlacedSeam};
 pub use stages::{

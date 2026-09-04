@@ -1059,6 +1059,65 @@ fn dw0844_refuses_a_face_answering_no_seam() {
     assert!(e.contains("DISCOVERED rather than designed"), "{e}");
 }
 
+/// **One cause, one line — the DEFER shape** (`dsl::diagnostic`).
+///
+/// A `details[]` row is judged against a FRAME and a SEAM SET the site plan
+/// computed, so a plan whose own checks have already refused them makes a
+/// stage-6 line a true measurement against a number the map does not keep — and
+/// the primary is in ANOTHER document, where the reader cannot see the relation.
+/// Measured on a 24-place campaign: widening one box by one block printed
+/// `DW0825` and `DW0828` in the site plan and then `DW0843` and `DW0844` in the
+/// detail plan, five codes over three documents, with nothing saying which was
+/// the edit.
+///
+/// The stage-6 lines keep their own refusals — each names a real mismatch, and
+/// suppressing them is how fixing one thing produces a fresh crop nobody was
+/// shown — and gain a clause naming what they stand downstream of.
+#[test]
+fn a_stage_six_verdict_names_the_site_plan_refusal_it_stands_downstream_of() {
+    let tmp = tempdir("upstream-refused");
+    let d = detailed(&tmp, &["node/exit"]);
+    // One block wider on x: off the kit grid (`DW0825`), and the frame the piece
+    // is measured against moves with it.
+    common::patch_file(&d.campaign.join("site-plan.json"), |v| {
+        let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+        let b = boxes
+            .iter_mut()
+            .find(|b| b["node"] == "node/exit")
+            .expect("the fixture places `node/exit`");
+        let x = b["extent"][0].as_i64().unwrap();
+        b["extent"][0] = serde_json::json!(x + 1);
+    });
+    let e = check_and_expect(&d, "DW0843");
+    assert!(
+        e.contains("is not the shape of the box"),
+        "the verdict still refuses on its own terms: {e}"
+    );
+    assert!(
+        e.contains("downstream of a site-plan refusal") && e.contains("DW0825"),
+        "and says what it is downstream of: {e}"
+    );
+}
+
+/// The other side of the same rule: with a plan the plan's own checks accept,
+/// the clause is ABSENT. A deferral that fired on a settled plan would be
+/// telling every author their measurement is provisional.
+#[test]
+fn a_stage_six_verdict_carries_no_deferral_when_the_plan_is_settled() {
+    let tmp = tempdir("upstream-settled");
+    let d = detailed(&tmp, &["node/exit"]);
+    patch_piece(&d, "exit", |v| {
+        let n = v["structure"]["size"][0].as_i64().unwrap();
+        v["structure"]["size"][0] = serde_json::json!(n + 1);
+    });
+    let e = check_and_expect(&d, "DW0843");
+    assert!(e.contains("1 too many"), "the ordinary refusal: {e}");
+    assert!(
+        !e.contains("downstream of a site-plan refusal"),
+        "and nothing upstream to defer to: {e}"
+    );
+}
+
 #[test]
 fn dw0844_refuses_a_face_of_the_wrong_class() {
     let tmp = tempdir("dw0844-class");

@@ -1979,7 +1979,7 @@ fn grid(placed: &[Placed<'_>], table: &Metrics, reads: &mut Reads, d: &mut Vec<D
     for p in placed {
         for (axis, name) in [(0usize, "x"), (1usize, "z")] {
             let e = p.plan.extent[axis].get();
-            if e % q == 0 {
+            if !off_grid(e, q) {
                 continue;
             }
             d.push(Diagnostic::error(
@@ -1998,6 +1998,113 @@ fn grid(placed: &[Placed<'_>], table: &Metrics, reads: &mut Reads, d: &mut Vec<D
             ));
         }
     }
+}
+
+/// **`DW0825`'s own test, for one footprint on one axis.** One function so that
+/// a verdict computed from a box can ask the SAME question the refusal asked,
+/// rather than re-deriving the kit-grid rule beside it.
+fn off_grid(extent: u32, quantum: u32) -> bool {
+    quantum != 0 && !extent.is_multiple_of(quantum)
+}
+
+/// **The clause a stage-6 verdict owes when the allocation it measured against
+/// is one this plan has already refused** — the DEFER shape of
+/// [`crate::diagnostic`]'s "one cause, one line".
+///
+/// A `details[]` row is judged against a FRAME and a SEAM SET, and both are
+/// computed from the site plan. When the plan's own refusals have already
+/// touched them, the stage-6 line is a true, separate finding measured against a
+/// number the map does not really have — and, worse, the primary is in another
+/// document, so the reader has no way to see the relation. Measured: widening
+/// one box by one block printed `DW0825` and `DW0828` in the site plan and then
+/// `DW0843` and `DW0844` in the detail plan, five codes over three documents,
+/// with nothing saying which was the edit.
+///
+/// So the stage-6 verdicts keep their own lines — each still names a real
+/// mismatch, and suppressing them is how fixing one thing produces a fresh crop
+/// of refusals nobody was shown — and gain a clause saying what they are
+/// downstream of. Two things can be already-refused:
+///
+/// 1. the place's own box is off the kit grid (`DW0825`), so its frame is not a
+///    frame this map will keep;
+/// 2. the plan DECLARES a seam on this place that it did not resolve — a face
+///    the two boxes do not share (`DW0828`) or an opening that does not fit
+///    (`DW0829`) — so the allocated seam set this place answers is short of what
+///    the author wrote.
+///
+/// Empty when the plan settled both, which is the ordinary case and costs one
+/// pass over the plan's seams.
+#[must_use]
+pub fn refused_upstream(
+    c: &Campaign,
+    node: &NodeId,
+    resolved: &[PlacedSeam],
+    reads: &mut Reads,
+) -> String {
+    let Some(plan) = c.site_plan.as_ref().map(|p| &p.content) else {
+        return String::new();
+    };
+    let mut parts: Vec<String> = Vec::new();
+
+    if let Some(q) = Metrics::table().grid(reads).map(|g| g.quantum)
+        && let Some(b) = plan.boxes.iter().find(|b| &b.node == node)
+    {
+        let axes: Vec<&str> = [(0usize, "x"), (1usize, "z")]
+            .into_iter()
+            .filter(|(a, _)| off_grid(b.extent[*a].get(), q))
+            .map(|(_, name)| name)
+            .collect();
+        if !axes.is_empty() {
+            parts.push(format!(
+                "this place's box is off the kit grid on {axes} and `DW0825` has already refused \
+                 it, so the frame above is not one this map keeps",
+                axes = axes.join(" and "),
+            ));
+        }
+    }
+
+    // A seam the plan wrote and did not resolve: the graph edge names this
+    // place, the plan has a seam row for it, and nothing came out the other end.
+    let graph_edges: BTreeMap<&str, &Edge> = c
+        .layout_graph
+        .as_ref()
+        .map(|g| {
+            g.content
+                .edges
+                .iter()
+                .map(|e| (e.id().0.as_str(), e))
+                .collect()
+        })
+        .unwrap_or_default();
+    let unresolved: Vec<String> = plan
+        .seams
+        .iter()
+        .filter(|s| {
+            graph_edges
+                .get(s.edge.0.as_str())
+                .is_some_and(|e| e.a() == node || e.b() == node)
+                && !resolved.iter().any(|r| r.edge == s.edge)
+        })
+        .map(|s| format!("`{}`", s.edge))
+        .collect();
+    if !unresolved.is_empty() {
+        parts.push(format!(
+            "the plan writes {n} seam(s) on this place that it does not resolve ({list}), which \
+             `DW0828` or `DW0829` has already refused, so the allocation this piece is answering \
+             is short of what the plan says",
+            n = unresolved.len(),
+            list = unresolved.join(", "),
+        ));
+    }
+
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!(
+        " This measurement stands downstream of a site-plan refusal: {parts}. Repair the plan \
+         first — this line moves with it.",
+        parts = parts.join("; "),
+    )
 }
 
 /// `DW0826`: nothing the plan places leaves the region.

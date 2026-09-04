@@ -1359,9 +1359,10 @@ pub fn check(
                      smaller building means a smaller box. That is a site-plan edit and a \
                      re-walk, taken visibly, and it is the only way a part changes what the whole \
                      gave it. Run `delvec allocation {place}` for the frame, the datum and every \
-                     seam this box must answer.",
+                     seam this box must answer.{upstream}",
                     piece = row.piece,
                     place = row.place,
+                    upstream = delvewright_dsl::refused_upstream(c, &row.place, &seams, &mut reads),
                     gx = got64[0],
                     gy = got64[1],
                     gz = got64[2],
@@ -1509,7 +1510,9 @@ pub fn check(
                      the exact failure the allocation exists to end — and a body that takes it \
                      leaves the map's own graph. `{place}` is allocated {n} seam(s): {list}. \
                      Either seal this face in the piece, or allocate the connection in the layout \
-                     graph and the site plan — which is a plan edit, and re-runs the whole's walk.",
+                     graph and the site plan — which is a plan edit, and re-runs the whole's \
+                     walk.{upstream}",
+                    upstream = delvewright_dsl::refused_upstream(c, &row.place, &seams, &mut reads),
                     piece = row.piece,
                     class = f.class,
                     place = row.place,
