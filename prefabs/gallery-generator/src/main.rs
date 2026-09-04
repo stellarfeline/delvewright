@@ -246,10 +246,17 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/muster",
-        pos: [15, 1, 19],
+        pos: [16, 1, 16],
         facing: Some("south"),
         trigger_block: None,
-        note: "where a wave is seated and a lane begins",
+        note: "where a wave is seated: the strip between the dividing wall and \
+               the bay line, equidistant from the two killing volumes and as far \
+               from both as the far hall has room for. A wave seats on the \
+               standable cells nearest its anchor, and a killing volume selects \
+               on HITBOX INTERSECTION — a 1.4-wide spider two cells outside a box \
+               is inside it — so a muster on the bay line loses bodies to the \
+               pits it stands between, and the floor gate then grades a fight the \
+               world helped win. Held off both boxes by MUSTER_PIT_CLEARANCE",
         role: None,
     },
     Anchor {
@@ -320,7 +327,11 @@ const ANCHORS: &[Anchor] = &[
         pos: [9, 1, 22],
         facing: None,
         trigger_block: None,
-        note: "a killing volume with nothing posted in it (DW0511)",
+        note: "a killing volume with nothing posted in it (DW0511). Its box is \
+               three cells deep rather than five, because a five-deep box reaches \
+               z=25 and `anchor/exit` — the finale — stands at z=25 with a body \
+               0.6 wide: the volume selects on hitbox intersection, so the last \
+               anchor of the delve was a fifth of a block from a fatal one",
         role: None,
     },
     Anchor {
@@ -803,6 +814,82 @@ fn assert_anchors_are_standable(s: &Structure) {
     );
 }
 
+/// How far a wave anchor must stand from a killing volume's own anchor, in
+/// blocks, centre to centre.
+///
+/// **What the number is made of, so it can be re-derived rather than believed.**
+/// The campaign centres each pit's box on the pit anchor and gives it a half
+/// extent of two cells on `x` and one on `z`, so a box reaches at most 3.0
+/// blocks from its centre on either axis. A wave seats its bodies on the
+/// standable cells NEAREST its anchor, so a seat can be one cell out. And a
+/// lethal volume's selector takes any entity whose HITBOX intersects the box —
+/// a spider is 1.4 wide, so 0.7 more. Three plus one plus 0.7 is the distance
+/// at which a seated body merely touches the box; eight leaves the four blocks
+/// of open floor a fight needs to sprawl into without the world joining in.
+///
+/// The extents this reads off live in `gallery/quests.json`, which this program
+/// never sees — so this is a stated premise, not a derivation, and a campaign
+/// that grows its pits past a half extent of two invalidates it. The proof that
+/// cannot go stale is the one the engine does not have yet: `DW0511` refuses a
+/// body PUT inside a lethal volume by declaration, and its `posted_places`
+/// enumeration reaches entry cells, checkpoints, NPCs, cast placements and
+/// actors — every place a body is put except a wave's seated cells.
+const MUSTER_PIT_CLEARANCE: f64 = 8.0;
+
+/// Find one anchor by name, or panic: a clearance proof that silently examined
+/// nothing is the vacuity this file exists to refuse.
+fn anchor_at(name: &str) -> [i32; 3] {
+    ANCHORS
+        .iter()
+        .find(|a| a.name == name)
+        .unwrap_or_else(|| panic!("{ID}: no anchor named `{name}` to measure"))
+        .pos
+}
+
+/// Squared distance in the floor plane, where every one of these clearances is
+/// judged: a hall one storey tall gives `y` nothing to say.
+fn plan_dist(a: [i32; 3], b: [i32; 3]) -> f64 {
+    let (dx, dz) = ((a[0] - b[0]) as f64, (a[2] - b[2]) as f64);
+    (dx * dx + dz * dz).sqrt()
+}
+
+/// **A measured fight does not share its floor with a killing volume.**
+///
+/// Found by watching a body die to neither the party nor the design: a muster
+/// seated on the bay line lost its spider to `lethal/west-pit` mid-fight — the
+/// hitbox reached the box from outside it — and the floor gate then graded a
+/// wave the world had helped kill.
+///
+/// This is the strongest form available to a piece generator: the campaign's
+/// boxes are not visible from here, so the premise [`MUSTER_PIT_CLEARANCE`]
+/// states is what a reader has to check. The number fails on the staging that
+/// produced that run, which is what makes it more than decoration.
+fn assert_the_muster_clears_the_pits() {
+    let muster = anchor_at("anchor/muster");
+    let mut pits = Vec::new();
+    for pit in ["anchor/west-pit", "anchor/east-pit"] {
+        let d = plan_dist(muster, anchor_at(pit));
+        assert!(
+            d >= MUSTER_PIT_CLEARANCE,
+            "{ID}: `anchor/muster` stands {d:.2} blocks from `{pit}`, under the \
+             {MUSTER_PIT_CLEARANCE:.1} a seated body needs to clear a killing volume's \
+             hitbox reach — the wave will lose members to the world and the floor \
+             gate will grade the remainder"
+        );
+        pits.push(format!("{pit} {d:.2}"));
+    }
+    assert_eq!(
+        pits.len(),
+        2,
+        "{ID}: the pit clearance examined {} volume(s), not 2",
+        pits.len()
+    );
+    println!(
+        "{ID}: muster clearance bound — {} (floor {MUSTER_PIT_CLEARANCE:.1} block(s))",
+        pits.join(", ")
+    );
+}
+
 /// Every cell the broken flight is missing, as local coordinates — the way
 /// region, in the order the metadata exports it.
 fn tread_cells() -> Vec<[i32; 3]> {
@@ -1191,6 +1278,7 @@ fn write_piece(out: &Path) {
     let mut s = build();
     resolve_connections(ID, &mut s);
     assert_anchors_are_standable(&s);
+    assert_the_muster_clears_the_pits();
     assert_the_flight_is_broken(&s);
     let cells = invariant_cells(&s);
     invariants::assert_distress_never_stacks(ID, &cells);
