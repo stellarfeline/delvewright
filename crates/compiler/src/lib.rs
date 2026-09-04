@@ -31,6 +31,7 @@
 //! - [`edit`]: the map editor's stage-7 edit-script replay.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
 //! - [`faces`]: does the piece next to this one answer the way out it declares?
+//! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.
 //! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
@@ -94,6 +95,7 @@ pub mod eclipse;
 pub mod edit;
 pub mod emit;
 pub mod faces;
+pub mod failure;
 pub mod flow;
 pub mod gates;
 pub mod gym;

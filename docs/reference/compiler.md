@@ -153,6 +153,33 @@ only — `validate`/`analyze` are language-independent apart from coverage).
 build failure · `≥10` internal error. Undeclared `--lang` is a validation-class
 rejection (exit 1). Codes are stable API; the CI fixture matrix asserts them.
 
+**A failure that stops a build exits at its CODE's tier.** Which tier a rule
+fails at is a property of the rule, so every `DwCode` declares it
+(`dsl::diagnostic::ExitTier`) beside the version at which it starts binding, and
+there is no constructor that leaves it unsaid. `Analysis` means the compiler did
+its job and the CONTENT is the defect, and exits 2. `Build` means the compiler
+could not produce a tree it will stand behind, and exits 3; it is also what a
+rule reported as an ordinary validation diagnostic declares, because such a rule
+refusing with a build under way is a build failure. The analysis-tier codes are
+exactly these, and the second column says where the author's fix goes —
+`tools/check-dw-codes.py` holds this table and the source declarations in
+lockstep, in both directions:
+
+| Code | What the author changes |
+| --- | --- |
+| `DW0201` | the quest graph — the finale is unreachable |
+| `DW0202` | the quest graph — nothing that completes triggers the quest |
+| `DW0203` | the objective / dialogue graph — the objective completes in no branch |
+| `DW0204` | the beats on the critical path — the exported path is not one a player can walk |
+| `DW0205` | the objective's dependency edge — an optional button already gates the mainline |
+| `DW0210` | the area's `lighting` or `mitigation` declaration, or the prefab it is measured over |
+| `DW0211` | the area's declared fixture, or the place it has to reach |
+| `DW0312` | the wave's size, or the room it spawns in |
+| `DW0313` | the prefab — a gravity floor over the void needs a substrate |
+| `DW0342` | the trap's placement or `rearm`, or a disarm the party can reach first |
+
+Every other code is build tier.
+
 **Reading a campaign directory has two failure states, and they are different
 findings.** A directory that is present and does not hold all six stage
 documents is a campaign part-way through being written — the state an author is

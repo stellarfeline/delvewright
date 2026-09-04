@@ -259,15 +259,15 @@ fn a_reference_no_scope_settles_is_dw0859() {
         .expect("a reference no scope settles must be refused, not resolved");
 
     assert_eq!(
-        err.code, "DW0859",
+        err.failure.code, "DW0859",
         "the refusal must be the anchor-ambiguity code, not a generic build error: {err:#?}"
     );
     for expected in ["area/keep", "area/south", "area/annex", "area/hall", NAME] {
         assert!(
-            err.message.contains(expected),
+            err.failure.message.contains(expected),
             "the message must name the providers and both scopes that failed to settle it \
              (missing `{expected}`): {}",
-            err.message
+            err.failure.message
         );
     }
     // **The remedy has to be one this author can perform.** This message led
@@ -278,21 +278,30 @@ fn a_reference_no_scope_settles_is_dw0859() {
     // campaign-side option, and says plainly that renaming lives in the prefab
     // library and cannot be reached from these documents.
     assert!(
-        !err.message.contains("Rename the anchor in all but one"),
+        !err.failure
+            .message
+            .contains("Rename the anchor in all but one"),
         "the old prescription told the author to edit a library they do not own: {}",
-        err.message
+        err.failure.message
     );
     assert!(
-        err.message
+        err.failure
+            .message
             .contains("cast the npc at a name the beat's own area"),
         "{}",
-        err.message
+        err.failure.message
     );
-    assert!(err.message.contains("`world.areas[]`"), "{}", err.message);
     assert!(
-        err.message.contains("you cannot reach it from here"),
+        err.failure.message.contains("`world.areas[]`"),
+        "{}",
+        err.failure.message
+    );
+    assert!(
+        err.failure
+            .message
+            .contains("you cannot reach it from here"),
         "where the change is genuinely in the piece, the message must say so: {}",
-        err.message
+        err.failure.message
     );
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -43,7 +43,8 @@
 //!   different hat. The two overlays load *beside* the shipped pack, so their
 //!   own functions may call either their own tier or the shipped one.
 
-use delvewright_dsl::DwCode;
+use crate::failure::Failure;
+use delvewright_dsl::{DwCode, ExitTier};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// `DW0497`: an emitted `function <ns>:<name>` call whose target function is not
@@ -52,17 +53,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Build-tier (exit 3). The call compiles, the datapack loads, and the verb
 /// simply never happens — the failure shape that cost the island round 21 two of
 /// its three storm waves.
-pub const DW_DANGLING_FUNCTION_CALL: DwCode = DwCode::every_version("DW0497");
-
-/// A build-integrity failure: a stable DW code plus the message naming the
-/// caller, the line and the missing target.
-#[derive(Debug, Clone)]
-pub struct IntegrityError {
-    /// The stable DW code.
-    pub code: DwCode,
-    /// Human-readable explanation, with the whole fix list.
-    pub message: String,
-}
+pub const DW_DANGLING_FUNCTION_CALL: DwCode = DwCode::every_version("DW0497", ExitTier::Build);
 
 /// Which emitted datapack a function belongs to. Determines what it may call:
 /// the shipped pack ships alone, the overlays ship beside it.
@@ -177,10 +168,7 @@ fn callable_name(path: &str) -> Option<&str> {
 ///
 /// Iteration is over `BTreeMap`/`BTreeSet` throughout, so the reported fix list
 /// is byte-stable across runs (ADR-0006).
-pub fn check_functions(
-    ns: &str,
-    functions: &BTreeMap<String, String>,
-) -> Result<(), IntegrityError> {
+pub fn check_functions(ns: &str, functions: &BTreeMap<String, String>) -> Result<(), Failure> {
     // The callable set per tier, keyed by the name a `function ns:<name>` uses.
     let mut emitted: BTreeMap<Tier, BTreeSet<&str>> = BTreeMap::new();
     for path in functions.keys() {
@@ -217,7 +205,7 @@ pub fn check_functions(
     if dangling.is_empty() {
         return Ok(());
     }
-    Err(IntegrityError {
+    Err(Failure {
         code: DW_DANGLING_FUNCTION_CALL,
         message: format!(
             "the emitted datapack calls {n} function(s) it never emits — each call \
@@ -241,7 +229,7 @@ pub fn check_functions(
 /// bodies, which are call sites too (the island's generated census test called
 /// the very machinery that was missing) — and resolves against every emitted
 /// `<tier>/data/<ns>/function/**` name.
-pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<(), IntegrityError> {
+pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<(), Failure> {
     let mut functions: BTreeMap<String, String> = BTreeMap::new();
     for (path, bytes) in out {
         if !path.ends_with(".mcfunction") || Tier::of(path).is_none() {

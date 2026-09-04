@@ -51,7 +51,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::prefab::SpatialContract;
-use delvewright_dsl::{Diagnostic, DwCode};
+use delvewright_dsl::{Diagnostic, DwCode, ExitTier};
 use serde_json::json;
 
 use crate::plan::{AreaPlacement, PlanError};
@@ -59,18 +59,18 @@ use crate::registry::PrefabRegistry;
 use crate::solver::Rotation;
 
 /// `DW0547`: an `open-way` reference does not name exactly one placed way.
-pub const DW_WAY_REFERENCE: DwCode = DwCode::every_version("DW0547");
+pub const DW_WAY_REFERENCE: DwCode = DwCode::every_version("DW0547", ExitTier::Build);
 
 /// `DW0548`: required content stands beyond a way no forced opening precedes.
-pub const DW_WAY_UNOPENED: DwCode = DwCode::every_version("DW0548");
+pub const DW_WAY_UNOPENED: DwCode = DwCode::every_version("DW0548", ExitTier::Build);
 
 /// `DW0549`: a placed piece declares a way the staging could not put in the
 /// world — the disposition enumeration binds to fewer ways than exist.
-pub const DW_WAY_UNSTAGED: DwCode = DwCode::every_version("DW0549");
+pub const DW_WAY_UNSTAGED: DwCode = DwCode::every_version("DW0549", ExitTier::Build);
 
 /// `DW0555` (advisory): ways are staged and no required element stands behind
 /// any of them, so the reachability half of this gate examined nothing.
-pub const DW_WAY_UNBOUND: DwCode = DwCode::every_version("DW0555");
+pub const DW_WAY_UNBOUND: DwCode = DwCode::every_version("DW0555", ExitTier::Build);
 
 /// The space name a contract edge uses for "outside the piece".
 const EXTERIOR: &str = "exterior";
@@ -472,8 +472,8 @@ pub fn judge(
             .resolve(&opening.prefab_id, &opening.way)
             .map_err(|e| {
                 PlanError::new(
-                    e.code,
-                    format!("{} — written as {}", e.message, opening.describe()),
+                    e.failure.code,
+                    format!("{} — written as {}", e.failure.message, opening.describe()),
                 )
             })?;
     }
