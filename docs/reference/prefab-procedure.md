@@ -778,8 +778,11 @@ use.
 | `footprint_class` | no | The metrics-table size class this piece claims to serve (`size-class.*`). Judged against the piece's own structure size at `delve-admit audit` and again wherever a `detail-plan` row consumes the piece (`DW0848`; an unknown name is `DW0812`). Absent means the claim is not made — a piece bound by a `details[]` row is held to exact frame equality (`DW0843`) either way. |
 
 An **anchor** is `{pos?, facing?, role?, region?, block?, resolves_to?,
-dispenser?, trigger_block?}` — one object class covering a point, a gate region
-and a trap's pre-wired hardware, each writing only the keys it means.
+dispenser?, trigger_block?, note?}` — one object class covering a point, a gate
+region and a trap's pre-wired hardware, each writing only the keys it means.
+`note` is one line of prose about the place, for whoever opens the document; no
+reader acts on it, and a piece that says what each of its anchors is for can be
+reviewed without the campaign that binds them in hand.
 `resolves_to` is which element of the piece's own contract the anchor lands in —
 `space:`, `no_body:`, `via:`, `bar:` or `way:` and the element's name — resolved
 by whoever wrote the document, never by the reader.
