@@ -133,7 +133,8 @@ pub struct SurroundTile {
 /// quantization, because everything between the two — gravity settling, a
 /// stage-7 edit script, a palette change — can put back the riser the generator
 /// never wrote.
-pub const DW_VALLEY_CLIMB: delvewright_dsl::DwCode = delvewright_dsl::DwCode::since("DW0854", 16);
+pub const DW_VALLEY_CLIMB: delvewright_dsl::DwCode =
+    delvewright_dsl::DwCode::since("DW0854", 16, delvewright_dsl::ExitTier::Build);
 
 /// A biome-paint rectangle for the bootstrap `/fillbiome` pass (vanilla-native
 /// tint/ambience channel; spec-0026 §1 layering paragraph).

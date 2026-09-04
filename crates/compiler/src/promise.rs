@@ -74,7 +74,7 @@
 //! objective completes, so it is not a sound proxy, and the sound one (resolving
 //! each objective's anchor to its area) is a different subsystem's question.
 
-use delvewright_dsl::{Campaign, Diagnostic, DwCode, Objective, QuestEffect};
+use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, Objective, QuestEffect};
 
 /// `DW0860`: a **failure clock** — a `begin-stealth` that answers exposure with
 /// an `on_caught` bundle — armed with no prompt before it, or with too little
@@ -90,7 +90,7 @@ use delvewright_dsl::{Campaign, Diagnostic, DwCode, Objective, QuestEffect};
 /// `(arming offset − prompt offset) + grace_ticks`, in ticks, on the arming's own
 /// timeline. `needed` is [`READ_LEAD_TICKS`] plus [`READ_TICKS_PER_CHAR`] per
 /// character of that prompt.
-pub const DW_CLOCK_UNREAD: DwCode = DwCode::since("DW0860", PROMISE_SINCE);
+pub const DW_CLOCK_UNREAD: DwCode = DwCode::since("DW0860", PROMISE_SINCE, ExitTier::Build);
 
 /// `DW0861`: a `collect` that **adopts a prefab container** and does not identify
 /// its target to the party — no `title`, so nothing is announced, or no
@@ -102,7 +102,8 @@ pub const DW_CLOCK_UNREAD: DwCode = DwCode::since("DW0860", PROMISE_SINCE);
 /// objective activates, whereas an adopted container is — in
 /// [`Objective::Collect::container`]'s own words — *scenery the player has been
 /// walking past since minute one*.
-pub const DW_ADOPTED_CONTAINER_UNMARKED: DwCode = DwCode::since("DW0861", PROMISE_SINCE);
+pub const DW_ADOPTED_CONTAINER_UNMARKED: DwCode =
+    DwCode::since("DW0861", PROMISE_SINCE, ExitTier::Build);
 
 /// `DW0862`: an objective authors a `hint` and no `title`, so the emitter shows
 /// **neither** and the prompt reaches no player.
@@ -113,7 +114,7 @@ pub const DW_ADOPTED_CONTAINER_UNMARKED: DwCode = DwCode::since("DW0861", PROMIS
 /// sidecar, and never once put on a screen. Nothing else in the toolchain says
 /// so: it is not a warning, not a lint, and the l10n inventory counts it as a
 /// live string.
-pub const DW_PROMPT_UNSHOWN: DwCode = DwCode::every_version("DW0862");
+pub const DW_PROMPT_UNSHOWN: DwCode = DwCode::every_version("DW0862", ExitTier::Build);
 
 /// `DW0863`: a `kill` objective with no `title`, or with no `hint`.
 ///
@@ -127,7 +128,7 @@ pub const DW_PROMPT_UNSHOWN: DwCode = DwCode::every_version("DW0862");
 /// rod, an `interact` a lantern or its authored prop, a `collect` a chest, a
 /// `talk-to` a named body. A wave is bodies that appear somewhere, and the
 /// objective's own two lines are the only thing that can say where.
-pub const DW_FIGHT_UNSIGNED: DwCode = DwCode::since("DW0863", PROMISE_SINCE);
+pub const DW_FIGHT_UNSIGNED: DwCode = DwCode::since("DW0863", PROMISE_SINCE, ExitTier::Build);
 
 /// The `dsl_version` minor ordinal at which the three obligation-shaped rules in
 /// this module start binding: **`0.8.0`**.

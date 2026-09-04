@@ -54,10 +54,11 @@
 //! piece count in `[min,max]`). Every unmated socket is sealed with wall material;
 //! every mated socket's jigsaw block is cleared to air.
 
+use crate::failure::Failure;
 use std::collections::BTreeSet;
 
 use crate::registry::{Connector, PoolMember, PrefabRegistry};
-use delvewright_dsl::DwCode;
+use delvewright_dsl::{DwCode, ExitTier};
 
 // ---------------------------------------------------------------------------
 // Deterministic PRNG (splitmix64) — ADR-0006 named streams
@@ -341,10 +342,10 @@ pub struct AreaLayout {
 /// A solver failure (maps to a `DW03xx` build diagnostic, exit 3).
 #[derive(Debug)]
 pub struct SolveError {
-    /// The stable diagnostic code (`DW03xx`).
-    pub code: DwCode,
-    /// Human-readable explanation.
-    pub message: String,
+    /// The rule that refused and what the author does about it — the same
+    /// [`Failure`] every other pass raises, so the code and the message are
+    /// declared in one place and this type adds only what is its own.
+    pub failure: Failure,
     /// The prefab ids the draw had already seated when the failure was raised,
     /// in placement order — empty for failures raised before growth.
     ///
@@ -359,8 +360,7 @@ pub struct SolveError {
 impl SolveError {
     fn new(code: DwCode, message: impl Into<String>) -> Self {
         SolveError {
-            code,
-            message: message.into(),
+            failure: Failure::new(code, message),
             placed: Vec::new(),
         }
     }
@@ -373,22 +373,22 @@ impl SolveError {
 }
 
 /// `DW0301`: a pool declares no `entry`-role piece (nothing to seed the layout).
-pub const DW_NO_ENTRY: DwCode = DwCode::every_version("DW0301");
+pub const DW_NO_ENTRY: DwCode = DwCode::every_version("DW0301", ExitTier::Build);
 /// `DW0302`: a campaign-referenced anchor is provided by no member of the pool
 /// (unsatisfiable required anchor).
-pub const DW_UNSATISFIABLE_ANCHOR: DwCode = DwCode::every_version("DW0302");
+pub const DW_UNSATISFIABLE_ANCHOR: DwCode = DwCode::every_version("DW0302", ExitTier::Build);
 /// `DW0303`: the `pieces {min,max}` range is too small to fit the entry plus the
 /// required anchor-bearing pieces.
-pub const DW_RANGE_TOO_SMALL: DwCode = DwCode::every_version("DW0303");
+pub const DW_RANGE_TOO_SMALL: DwCode = DwCode::every_version("DW0303", ExitTier::Build);
 /// `DW0304`: the solver could not place a required piece without an overlap, or a
 /// branching layout has no branch piece (tee/cross) to fork its terminals
 /// (layout infeasible for this pool / seed).
-pub const DW_INFEASIBLE: DwCode = DwCode::every_version("DW0304");
+pub const DW_INFEASIBLE: DwCode = DwCode::every_version("DW0304", ExitTier::Build);
 /// `DW0305`: a campaign-referenced anchor is defined by **more than one** placed
 /// piece, so resolving it would be silent + arbitrary (ambiguous anchor). Also the
 /// role-aware failure when the only carrier of a required anchor is the entry
 /// piece and the entry does not already provide it.
-pub const DW_AMBIGUOUS_ANCHOR: DwCode = DwCode::every_version("DW0305");
+pub const DW_AMBIGUOUS_ANCHOR: DwCode = DwCode::every_version("DW0305", ExitTier::Build);
 
 /// The maximum number of deterministically-reordered branching attempts before a
 /// layout is declared infeasible (item 2: large-terminal placement robustness).

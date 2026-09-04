@@ -964,11 +964,11 @@ fn ambiguous_anchor_is_dw0305() {
         &mut s,
     )
     .expect_err("ambiguous anchor must fail");
-    assert_eq!(err.code, solver::DW_AMBIGUOUS_ANCHOR);
+    assert_eq!(err.failure.code, solver::DW_AMBIGUOUS_ANCHOR);
     assert!(
-        err.message.contains("anchor/npc-stand"),
+        err.failure.message.contains("anchor/npc-stand"),
         "names the ambiguous anchor: {}",
-        err.message
+        err.failure.message
     );
 }
 
@@ -1054,6 +1054,6 @@ fn a_pool_with_no_branch_piece_is_dw0304() {
         &mut stream,
     )
     .expect_err("a branchless pool cannot host two dead-end terminals");
-    assert_eq!(err.code, solver::DW_INFEASIBLE);
+    assert_eq!(err.failure.code, solver::DW_INFEASIBLE);
     assert_eq!(solver::DW_INFEASIBLE, "DW0304");
 }

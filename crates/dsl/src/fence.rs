@@ -206,7 +206,7 @@ fn stage_ordinal(versions: &BTreeMap<&'static str, u32>, stage: &str) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagnostic::DwCode;
+    use crate::diagnostic::{DwCode, ExitTier};
 
     #[test]
     fn structural_refuses_to_carry_a_version_scoped_obligation() {
@@ -214,8 +214,8 @@ mod tests {
         // is how `tools/check-dw-codes.py` learns that a symbol DECLARES a code,
         // and a test fixture declaring `DW0100` would read as a second rule
         // wearing the same number. (It said so, which is the check working.)
-        let every = DwCode::every_version("DW0100");
-        let since8 = DwCode::since("DW0481", 8);
+        let every = DwCode::every_version("DW0100", ExitTier::Build);
+        let since8 = DwCode::since("DW0481", 8, ExitTier::Build);
         let f = Fenced::structural(vec![
             Diagnostic::error(every, "quests", "", "malformed"),
             Diagnostic::error(since8, "quests", "", "requires a happening"),

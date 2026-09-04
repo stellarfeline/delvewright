@@ -49,6 +49,7 @@
 //! `HashMap` iteration (keys are sorted explicitly), no absolute paths in
 //! output. Directory discovery sorts entries rather than trusting `read_dir`.
 
+use crate::diagnostic::{DwCode, ExitTier};
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
@@ -81,7 +82,7 @@ pub enum Node {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParseError {
     /// `DW0771` for a duplicate object key, `DW0770` for a syntax error.
-    pub code: &'static str,
+    pub code: DwCode,
     /// 1-based line.
     pub line: usize,
     /// 1-based column, in characters.
@@ -96,17 +97,17 @@ impl std::fmt::Display for ParseError {
 }
 
 /// `DW0770`: authored JSON that is not valid JSON (`delvec fmt`).
-pub const DW_FMT_PARSE: &str = "DW0770";
+pub const DW_FMT_PARSE: DwCode = DwCode::every_version("DW0770", ExitTier::Build);
 /// `DW0771`: a duplicate object key in authored JSON (`delvec fmt`).
-pub const DW_FMT_DUPLICATE_KEY: &str = "DW0771";
+pub const DW_FMT_DUPLICATE_KEY: DwCode = DwCode::every_version("DW0771", ExitTier::Build);
 /// `DW0772`: the formatter's own output is not equivalent to its input —
 /// internal error, nothing is written (`delvec fmt`).
-pub const DW_FMT_NOT_EQUIVALENT: &str = "DW0772";
+pub const DW_FMT_NOT_EQUIVALENT: DwCode = DwCode::every_version("DW0772", ExitTier::Build);
 /// `DW0773`: a file is not in canonical form (`delvec fmt --check`).
-pub const DW_FMT_UNFORMATTED: &str = "DW0773";
+pub const DW_FMT_UNFORMATTED: DwCode = DwCode::every_version("DW0773", ExitTier::Build);
 /// `DW0774`: `delvec fmt` matched no files — a formatter or a check that binds
 /// to nothing is vacuous, not a pass (CLAUDE.md).
-pub const DW_FMT_NO_BINDING: &str = "DW0774";
+pub const DW_FMT_NO_BINDING: DwCode = DwCode::every_version("DW0774", ExitTier::Build);
 
 // ---------------------------------------------------------------- parsing --
 
@@ -127,7 +128,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn err(&self, code: &'static str, message: impl Into<String>) -> ParseError {
+    fn err(&self, code: DwCode, message: impl Into<String>) -> ParseError {
         ParseError {
             code,
             line: self.line,

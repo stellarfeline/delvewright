@@ -64,7 +64,7 @@ use std::num::NonZeroU32;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::diagnostic::{Diagnostic, DwCode};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 use crate::envelope::Campaign;
 use crate::ids::{DatumId, EdgeId, FactId, NodeId, ViewId, VolumeId};
 use crate::layout::{Edge, LayoutGraphContent, StationKind};
@@ -75,19 +75,19 @@ use crate::metrics::{
 use crate::stages::AreaLighting;
 
 /// `DW0824`: the graph and the plan do not agree exactly.
-pub const DW_PLAN_AGREEMENT: DwCode = DwCode::every_version("DW0824");
+pub const DW_PLAN_AGREEMENT: DwCode = DwCode::every_version("DW0824", ExitTier::Build);
 
 /// `DW0825`: a box leaves the kit grid.
-pub const DW_BOX_OFF_GRID: DwCode = DwCode::every_version("DW0825");
+pub const DW_BOX_OFF_GRID: DwCode = DwCode::every_version("DW0825", ExitTier::Build);
 
 /// `DW0826`: a box leaves the region.
-pub const DW_BOX_LEAVES_REGION: DwCode = DwCode::every_version("DW0826");
+pub const DW_BOX_LEAVES_REGION: DwCode = DwCode::every_version("DW0826", ExitTier::Build);
 
 /// `DW0827`: two boxes overlap.
-pub const DW_BOXES_OVERLAP: DwCode = DwCode::every_version("DW0827");
+pub const DW_BOXES_OVERLAP: DwCode = DwCode::every_version("DW0827", ExitTier::Build);
 
 /// `DW0828`: a seam is not on a shared face.
-pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::every_version("DW0828");
+pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::every_version("DW0828", ExitTier::Build);
 
 /// **How many cells stand between two connected boxes: the wall they share.**
 ///
@@ -106,13 +106,13 @@ pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::every_version("DW0828");
 pub const SHARED_FACE_GAP_CELLS: i64 = 1;
 
 /// `DW0829`: a seam's opening is not a standard, or does not fit.
-pub const DW_SEAM_OPENING: DwCode = DwCode::every_version("DW0829");
+pub const DW_SEAM_OPENING: DwCode = DwCode::every_version("DW0829", ExitTier::Build);
 
 /// `DW0830`: a stair seam cannot be built at standard pitch.
-pub const DW_STAIR_PITCH: DwCode = DwCode::every_version("DW0830");
+pub const DW_STAIR_PITCH: DwCode = DwCode::every_version("DW0830", ExitTier::Build);
 
 /// `DW0831`: a drop seam falls outside the drop policy.
-pub const DW_DROP_POLICY: DwCode = DwCode::every_version("DW0831");
+pub const DW_DROP_POLICY: DwCode = DwCode::every_version("DW0831", ExitTier::Build);
 
 /// `DW0876`: a seam does not declare a connection this engine builds
 /// (spec-0053 §6).
@@ -142,19 +142,19 @@ pub const DW_DROP_POLICY: DwCode = DwCode::every_version("DW0831");
 /// `every_version` for the reason its siblings are: the rule judges what the
 /// document SAYS, and a plan below [`crate::WAY_AND_CONTACT_SINCE`] has no
 /// `contact` to judge — the per-stage fence has already refused one.
-pub const DW_CONTACT: DwCode = DwCode::every_version("DW0876");
+pub const DW_CONTACT: DwCode = DwCode::every_version("DW0876", ExitTier::Build);
 
 /// `DW0832`: a box violates its node's size class.
-pub const DW_SIZE_CLASS: DwCode = DwCode::every_version("DW0832");
+pub const DW_SIZE_CLASS: DwCode = DwCode::every_version("DW0832", ExitTier::Build);
 
 /// `DW0833`: a brief identity does not hold.
-pub const DW_IDENTITY_FALSE: DwCode = DwCode::every_version("DW0833");
+pub const DW_IDENTITY_FALSE: DwCode = DwCode::every_version("DW0833", ExitTier::Build);
 
 /// `DW0834`: the identity gate binds nothing. Warning — see [`identities`].
-pub const DW_IDENTITY_EMPTY: DwCode = DwCode::every_version("DW0834");
+pub const DW_IDENTITY_EMPTY: DwCode = DwCode::every_version("DW0834", ExitTier::Build);
 
 /// `DW0835`: a whole-owned volume enters a box.
-pub const DW_VOLUME_IN_BOX: DwCode = DwCode::every_version("DW0835");
+pub const DW_VOLUME_IN_BOX: DwCode = DwCode::every_version("DW0835", ExitTier::Build);
 
 /// `DW0839`: two placement authorities in one campaign.
 ///
@@ -162,7 +162,7 @@ pub const DW_VOLUME_IN_BOX: DwCode = DwCode::every_version("DW0835");
 /// campaign SAYS — that a `site-plan.json` and a non-empty `areas[]` are both
 /// present — and a document below `dsl_version` 0.14.0 has no site plan to be
 /// the second authority, so there is no earlier campaign the rule could reach.
-pub const DW_TWO_AUTHORITIES: DwCode = DwCode::every_version("DW0839");
+pub const DW_TWO_AUTHORITIES: DwCode = DwCode::every_version("DW0839", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // The vocabulary the derivation synthesizes (spec-0049 §5.2)

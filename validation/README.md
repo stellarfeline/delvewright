@@ -55,6 +55,7 @@ EULA=TRUE validation/packtest-run.sh --project dw-worker-<id>
 EULA=TRUE validation/bot-run.sh      --project dw-worker-<id>
 EULA=TRUE validation/branch-runs.sh  --project dw-worker-<id>
 validation/fresh-volumes.sh          --project dw-worker-<id>   # teardown, proven
+validation/reclaim-ladder-images.sh                             # sweep, dry by default
 ```
 
 `--project` is **required** on every one of them; an invocation without it exits
@@ -105,12 +106,35 @@ create. `down -v` alone is not self-verifying: it leaves `<project>_server-data`
 behind whenever an exited container of the project still holds the volume, and the
 stale world carries the scoreboard into the next run — objectives already complete,
 so the bot fails and the failure looks like a content bug (three misattributed red
-runs, island round 13). `fresh-volumes.sh` force-removes that project's containers
-and volumes and then asserts they are gone. It has no daemon-wide mode: the old
+runs, island round 13). `fresh-volumes.sh` force-removes that project's containers,
+volumes, networks **and the images it built** and then asserts each class is
+gone. The images are the class that used to leak permanently: both tags a ladder
+mints are project-scoped by design (`delvewright/delve:<project>` and compose's
+own `<project>-bot:latest`), so nothing ever reused them and nothing removed
+them. It removes only names your ladder minted — a tag it did not mint, such as
+the shared `delvewright/delve:local`, is kept and named, as is any image a
+container still holds — and an image it cannot remove is reported rather than
+reddening your run. It has no daemon-wide mode: the old
 `--all` swept every project's world volumes and force-removed the pinned
 `delvewright-*` names, which is an outage, not a teardown. It also refuses outright
 to touch a project whose container publishes 25565 — that is an owner-facing
 session with a human possibly inside it.
+
+### What earlier runs left: `reclaim-ladder-images.sh`
+
+```bash
+validation/reclaim-ladder-images.sh              # lists; removes nothing
+validation/reclaim-ladder-images.sh --apply      # removes
+```
+
+The teardown bounds what your run leaves. This is the backstop for everything
+left before it. A project is swept only when it holds no container, no volume and
+no network — anything holding one is skipped as mid-run, so a sibling ladder is
+never touched — and only images built by a service this compose file declares,
+under a project named the way these scripts name one, are in scope at all.
+Compose's default project (`validation`, where the owner's play session lands) is
+swept only when named with `--project validation`. Build cache is left alone: it
+is content-addressed and global, so no project owns one.
 
 ### The 25565 mutex, for the two things that bind it
 
@@ -336,7 +360,8 @@ incl. Chinese note text) and the overlay emission + byte-determinism
   for reasons unrelated to the delve. `bot-run.sh` / `packtest-run.sh` /
   `branch-runs.sh` run it for you, before and after. The project name is required
   and there is no daemon-wide mode — a teardown that can reach another project is
-  an outage, not a teardown.
+  an outage, not a teardown. It reclaims the project's images too, and states
+  what it examined, removed and kept.
 - **The world first**: `EULA=TRUE validation/world-save.sh <build-dir> --project
   dw-<id>` boots the shipped delve image for that tree once, waits for the
   datapack to report `#placed dw.sys = 1` over rcon, and copies the world save it
