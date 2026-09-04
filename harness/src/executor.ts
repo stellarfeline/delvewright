@@ -46,8 +46,11 @@ import {
   deathPhases,
   floorFinding,
   checkpointPrecondition,
+  giveUpBudgetFor,
   observationOf,
   openTrial,
+  unboundedEncounterNote,
+  unkillableFinding,
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
@@ -62,6 +65,7 @@ import {
   type EncounterPhase,
   type PerformedRest,
   type ReengageObservation,
+  type UnkillableBody,
   type WaveCensus,
 } from "./combat.ts";
 import {
@@ -882,18 +886,9 @@ const ACTOR_FIGHT_TIMEOUT_MS = 45_000;
  * defeat the trial.
  */
 const MID_FIGHT_MS = 6_000;
-/**
- * How long (ms) the bot may melee a single target, in range, without it dying before
- * that target is deemed unkillable and blacklisted (task: bot-kill-hunt). A living
- * wave mob dies in a few sword swings; an Invulnerable story actor summoned into the
- * combat area — a `minecraft:warden` posing as Polyphemus, a `minecraft:mannequin`
- * class-post puppet — never dies, so without this the `nearestEntity` target selection
- * fixates on it and the wave never "clears" (a 90s timeout). The window is generous
- * (far longer than any wave mob survives) so a legitimately tanky mob is never
- * mis-blacklisted; it only ever catches a truly unkillable entity. NOT a threshold on
- * the kill objective — the wave still requires every real mob dead.
- */
-const WAVE_UNKILLABLE_MS = 6_000;
+// (how long the bot may swing at one body before giving up on it is no longer a
+// constant here: it is `bodies[].give_up_swings` in the combat plan, per kind,
+// out of the encounter's own arithmetic. See `giveUpBudgetFor`.)
 // (the wave-kill proximity rule and its constant now live in wave.ts, shared with the
 // self-defense path — see the import above.)
 /**
@@ -1322,6 +1317,15 @@ export class MineflayerExecutor implements StepExecutor {
    */
   private waypoints: Waypoints | undefined;
   /**
+   * The delve's own statement of which entity kinds are never a combat target,
+   * off `critical-path.json` (format 4). There is deliberately no default: the
+   * only fallback available is a set of entity names living in this file, which
+   * is the thing the field exists to delete. The path parser refuses a document
+   * without it, and {@link requireNonCombatants} refuses a run that never wired
+   * it through.
+   */
+  private nonCombatants: ReadonlySet<string> | undefined;
+  /**
    * spec-0023: the compiler's combat plan — which encounters are mandatory, what
    * the content bills each as, and which checkpoint governs a death at it.
    * Absent (a delve with no mandatory combat, or an older build) → `kill` behaves
@@ -1365,6 +1369,10 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly encounterPhases = new Map<string, EncounterPhase>();
   /** Inverted floor gate findings: billed fights the unassisted bot beat cold. */
   private readonly floorFindings: string[] = [];
+  /** Every body that outlived its kind's melee budget, with the arithmetic
+   * that budgeted it. Recorded rather than absorbed: the six-second timer
+   * this replaced blacklisted such a body and said nothing at all. */
+  private readonly unkillableBodies: UnkillableBody[] = [];
   /** Every NAMED entity death this run observed (`entityDead` on a body carrying a
    * custom name — an actor). Raw and unclassified; the entrypoint classifies each
    * against {@link classifyDeathDepth} (see teardown.ts) before it reaches the run
@@ -1624,7 +1632,8 @@ export class MineflayerExecutor implements StepExecutor {
     if (!bot?.entity) return { candidates, byId };
     const here = bot.entity.position;
     for (const entity of Object.values(bot.entities)) {
-      if (!entity?.position || !isWaveMob(entity, bot.entity)) continue;
+      if (!entity?.position || !isWaveMob(entity, bot.entity, this.requireNonCombatants()))
+        continue;
       candidates.push({ id: entity.id, distance: here.distanceTo(entity.position) });
       byId.set(entity.id, entity);
     }
@@ -3407,22 +3416,24 @@ export class MineflayerExecutor implements StepExecutor {
    * or no eligible wave mob remains, or the budget runs out.
    *
    * The delve world is sealed (`spawn_mobs false`), but it is NOT empty of mob-shaped
-   * entities: story actors are summoned as ordinary living mobs — an Invulnerable
-   * `minecraft:warden` posing as the cyclops Polyphemus, `minecraft:mannequin` NPC
-   * puppets at the class posts — and they sit right where combat happens (the surf
-   * wave spawns beside the eurylochus mannequin; the warden waits ~64 blocks off in a
-   * later cave area). `nearestEntity` cannot tell them from a wave mob by shape, and
-   * mineflayer on 1.21.11 cannot read the entity `Tags`/scoreboard that would (the
-   * `KillStep.tag` is informational only). So the bot proves the wave down without
-   * ever attacking — or walking to — a story actor:
-   *   * mannequin NPCs are excluded from targeting outright (see NON_WAVE_ENTITIES);
+   * entities: NPC puppets and staged story actors are summoned as ordinary living
+   * mobs and can sit right where combat happens. `nearestEntity` cannot tell them
+   * from a wave mob by shape, and mineflayer on 1.21.11 cannot read the entity
+   * `Tags`/scoreboard that would (the `KillStep.tag` is informational only). So the
+   * bot proves the wave down without ever attacking — or walking to — a body the
+   * delve says is not a fight:
+   *   * the kinds this delve stages as NPCs are excluded from targeting outright,
+   *     off `critical-path.json`'s `non_combatants` (see {@link isWaveMob});
    *   * a confirmed KILL is a targeted mob that winks out in melee near the anchor;
    *     reaching `step.count` clears the wave and returns immediately, so the bot
-   *     never treks off to the distant warden (which would trip later-area triggers);
-   *   * any candidate the bot cannot kill (meleed past {@link WAVE_UNKILLABLE_MS} and
-   *     still alive → Invulnerable) or cannot path to is blacklisted, so the loop
-   *     hunts the next real wave mob instead of fixating on an unkillable one; when no
-   *     eligible wave mob is left, the wave is likewise cleared.
+   *     never treks off to a distant staged actor (which would trip later-area
+   *     triggers);
+   *   * a candidate that outlives the melee budget the ENCOUNTER's own arithmetic
+   *     gives its kind (`bodies[].give_up_swings`), or that cannot be pathed to, is
+   *     dropped so the loop hunts the next real wave mob instead of fixating —
+   *     and a body dropped for outliving its budget is a FINDING the run report
+   *     names, never a blacklist this file invented. When no eligible wave mob is
+   *     left, the wave is likewise cleared.
    * Navigation + assertion only: the datapack's kill advancement + countdown are what
    * actually complete the objective when the last tagged mob dies.
    */
@@ -3448,6 +3459,10 @@ export class MineflayerExecutor implements StepExecutor {
     this.activeWave = engagement;
     // Entities the bot has proven it can neither kill nor reach — never re-targeted.
     const blacklist = new Set<number>();
+    // Kinds this encounter states no budget for — named in the timeout message,
+    // which is thrown outside the loop, because "the bot gave up on nothing" and
+    // "there was nothing to give up on" are different facts.
+    const unbounded = new Set<string>();
     try {
       await this.equipLoadout();
       await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak, {
@@ -3472,7 +3487,12 @@ export class MineflayerExecutor implements StepExecutor {
       let emptyStreak = 0;
       let clearedStreak = 0;
       let engagedId: number | undefined;
-      let engagedSince = 0;
+      // Swings landed on each body this step, so a body can be held to the budget
+      // its own kind was given. Counting SWINGS rather than seconds is the
+      // compiler's own choice of unit for this arithmetic: swing damage is
+      // Mojang's item data, while timing depends on charge discipline nothing
+      // here models.
+      const swings = new Map<number, number>();
       // The wave's own census: every "the fight is over" test below is
       // a guess made from SHAPES, and the server can simply be asked. See
       // `waveStillStands`.
@@ -3485,7 +3505,10 @@ export class MineflayerExecutor implements StepExecutor {
         if (engagement.killed >= step.count && !(await this.waveStillStands(step, enc))) return;
         // Eat between exchanges when hurt and nothing is in reach (no-op otherwise).
         await this.maybeEat(`wave ${step.wave}`);
-        const wave = bot.nearestEntity((e) => isWaveMob(e, bot.entity) && !blacklist.has(e.id));
+        const cast = this.requireNonCombatants();
+        const wave = bot.nearestEntity(
+          (e) => isWaveMob(e, bot.entity, cast) && !blacklist.has(e.id),
+        );
         // RETALIATION (souls ladder): the wave is the objective, but anything currently
         // drawing the bot's blood in melee outranks it — a souls `ambush` desugars to
         // spawn + unleash with no kill objective, so a bypassed ambusher belongs to no
@@ -3594,7 +3617,6 @@ export class MineflayerExecutor implements StepExecutor {
         } else {
           if (engagedId !== mob.id) {
             engagedId = mob.id;
-            engagedSince = Date.now();
           }
           // Every mob the bot melees during this step is recorded, retaliation target or
           // not. Excluding retaliation targets would keep a non-wave stalker from
@@ -3606,12 +3628,24 @@ export class MineflayerExecutor implements StepExecutor {
           engagement.engaged.add(mob.id);
           await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
           bot.attack(mob);
+          const landed = (swings.get(mob.id) ?? 0) + 1;
+          swings.set(mob.id, landed);
           await delay(ATTACK_INTERVAL_MS);
-          // Meleed in range this long and still alive → Invulnerable story actor;
-          // blacklist it so the loop stops fixating and looks for a real wave mob.
-          if (Date.now() - engagedSince >= WAVE_UNKILLABLE_MS) {
+          const budget = giveUpBudgetFor(enc, mob.name);
+          if (budget === undefined) {
+            // The encounter states no budget for this kind, so there is nothing
+            // to hold the body to. The bot keeps swinging until the step's own
+            // budget expires, and the timeout says which kinds it could not
+            // judge — never a fallback to a number nobody derived.
+            unbounded.add(mob.name ?? "?");
+          } else if (landed >= budget) {
+            // The body outlived the arithmetic that says how long it should
+            // take. That is a content defect, and the report NAMES it — the bot
+            // stops swinging so the run can go on, which is a different act from
+            // deciding the body is scenery.
             blacklist.add(mob.id);
             engagedId = undefined;
+            this.recordUnkillable(step.wave, mob.name ?? "?", landed, budget);
           }
         }
       }
@@ -3622,7 +3656,8 @@ export class MineflayerExecutor implements StepExecutor {
     throw new Error(
       `kill timed out after ${KILL_TIMEOUT_MS}ms: wave ${step.wave} ` +
         `(${engagement.killed}/${step.count} confirmed dead; ` +
-        `${engagement.engaged.size} mob(s) engaged) not cleared`,
+        `${engagement.engaged.size} mob(s) engaged) not cleared` +
+        unboundedEncounterNote(unbounded),
     );
   }
 
@@ -3634,6 +3669,32 @@ export class MineflayerExecutor implements StepExecutor {
    * a delve may be, and a billed `elite`/`boss` gets one honest unassisted attempt
    * so the inverted floor gate has something to measure.
    */
+  /**
+   * Adopt the delve's cast statement — the kinds nothing may swing at.
+   *
+   * Called by the entrypoint before the run starts, from the parsed critical
+   * path. An empty set is a legitimate value (a campaign with no NPCs); NOT
+   * calling this at all is a harness wiring bug, and {@link requireNonCombatants}
+   * refuses rather than guessing.
+   */
+  useNonCombatants(kinds: ReadonlySet<string>): void {
+    this.nonCombatants = kinds;
+  }
+
+  /** The cast statement, or a refusal naming what is missing. */
+  private requireNonCombatants(): ReadonlySet<string> {
+    if (!this.nonCombatants) {
+      throw new Error(
+        "the executor was never told which entity kinds are never a combat target. That " +
+          "statement is `non_combatants` in `critical-path.json` (contract format 4) and the " +
+          "entrypoint must hand it over before the run starts — there is no default, because " +
+          "the only available default is a list of entity names written in the harness, which " +
+          "is right only for the campaigns whose author happened to pick those bodies",
+      );
+    }
+    return this.nonCombatants;
+  }
+
   useCombatPlan(plan: CombatPlan, dieRetry: boolean, actorFloorGate = true): void {
     this.combatPlan = plan;
     this.dieRetry = dieRetry;
@@ -3682,6 +3743,27 @@ export class MineflayerExecutor implements StepExecutor {
   /** Inverted floor-gate findings (advisory, spec-0023). */
   floorGateFindings(): readonly string[] {
     return this.floorFindings;
+  }
+
+  /** Bodies that did not fall inside their encounter's own melee budget. */
+  unkillableFindings(): readonly string[] {
+    return this.unkillableBodies.map(unkillableFinding);
+  }
+
+  /** Note a body the encounter's arithmetic says should have fallen. */
+  private recordUnkillable(
+    wave: string,
+    kind: string,
+    swings: number,
+    budget: number,
+  ): void {
+    // One line per KIND per wave: a wave of eight of them is one defect,
+    // and eight identical findings would bury the seven other things the
+    // report has to say.
+    if (this.unkillableBodies.some((u) => u.wave === wave && u.kind === kind)) return;
+    const finding = { wave, kind, swings, budget };
+    this.unkillableBodies.push(finding);
+    process.stderr.write(`[kill ${wave}] ${unkillableFinding(finding)}\n`);
   }
 
   /** Every named-entity death this run observed, raw and unclassified — the
@@ -4321,7 +4403,8 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.requireBot();
     const deadline = Date.now() + MID_FIGHT_MS;
     while (Date.now() < deadline && !this.death) {
-      const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity));
+      const cast = this.requireNonCombatants();
+      const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity, cast));
       if (!mob) break;
       if (bot.entity.position.distanceTo(mob.position) > 3) {
         try {
@@ -5045,26 +5128,22 @@ export interface NamePreference {
 }
 
 /**
- * Entity names that are never a combat target. The delve world is sealed
- * (`spawn_mobs false`), so the only living mobs are compiler-summoned wave mobs;
- * everything else near the bot is an NPC, a display, or a dropped object.
+ * Vanilla shapes that are never a combat target, whatever campaign is running.
+ *
+ * Everything here is a fact about MINECRAFT and about the bot's own situation: a
+ * player is not a monster, a dropped item is not a body, a display entity has no
+ * health. No campaign can make any of them a fight, so no campaign has to say so.
+ *
+ * **What is deliberately NOT here**: which bodies THIS delve stages as NPCs. That
+ * used to be `"mannequin"` and `"villager"`, written down beside the vanilla
+ * shapes as though it were the same kind of fact. It is not — it is a statement
+ * about what the compiler summons an NPC as, and an author who bodies a
+ * quest-giver as a zombie gets a quest-giver the bot beats to death. The delve now
+ * states its own cast in `critical-path.json`'s `non_combatants`, which
+ * {@link isWaveMob} takes as an argument; see {@link Executor.useNonCombatants}.
  */
 const NON_WAVE_ENTITIES = new Set<string>([
   "player",
-  "villager",
-  // Every Delvewright NPC (class-post puppet, quest-giver) is summoned as an
-  // Invulnerable `minecraft:mannequin` (compiler emit.rs — `immovable:1b`,
-  // `Invulnerable:1b`). mineflayer's minecraft-data DOES resolve its name
-  // ("mannequin", type "living", height 1.8), so without this exclusion the kill
-  // loop's nearestEntity(isWaveMob) classifies a mannequin as a slayable wave mob.
-  // When a wave anchor sits next to a class post (the nobodys-cave surf wave spawns
-  // a block from the eurylochus mannequin), the nearest "wave mob" becomes an
-  // Invulnerable mannequin at d<3: the bot attacks it in place forever, never
-  // clearing the wave and never hunting the real remaining drowned that wandered
-  // off — a 90s kill timeout. NPCs are never combat targets, so exclude the whole
-  // entity type; this generalizes to every future mannequin-beside-combat layout
-  // rather than depending on anchor placement.
-  "mannequin",
   "interaction",
   "item",
   "experience_orb",
@@ -5084,10 +5163,15 @@ const NON_WAVE_ENTITIES = new Set<string>([
 ]);
 
 /**
- * True if `e` is something the bot could swing at: not the bot, not a
- * player/NPC/display/dropped object, and tall enough to be a living mob.
- * Classified by name (reliable across mineflayer versions) rather than
- * `type`/`kind`, which vary.
+ * True if `e` is something the bot could swing at: not the bot, not a vanilla
+ * non-body, not one of the kinds THIS delve stages as an NPC, and tall enough to
+ * be a living mob. Classified by name (reliable across mineflayer versions)
+ * rather than `type`/`kind`, which vary.
+ *
+ * `nonCombatants` is the delve's own cast statement, read off
+ * `critical-path.json` — required, never defaulted. Passing an empty set is a
+ * legitimate answer (a campaign with no NPCs states exactly that, and says so in
+ * its binding count); omitting the argument is not possible, which is the point.
  *
  * **This is a TARGETING predicate, never a measurement one**. The bot
  * can only attack what its client can see, so picking a swing target by shape is
@@ -5097,10 +5181,10 @@ const NON_WAVE_ENTITIES = new Set<string>([
  * now comes from the compiler's tag census instead; nothing here may be used to
  * decide what is standing at an encounter.
  */
-export function isWaveMob(e: unknown, self: unknown): boolean {
+export function isWaveMob(e: unknown, self: unknown, nonCombatants: ReadonlySet<string>): boolean {
   if (!e || e === self) return false;
   const ent = e as { name?: string; height?: number };
   const name = ent.name ?? "";
-  if (name === "" || NON_WAVE_ENTITIES.has(name)) return false;
+  if (name === "" || NON_WAVE_ENTITIES.has(name) || nonCombatants.has(name)) return false;
   return (ent.height ?? 0) >= 0.5;
 }

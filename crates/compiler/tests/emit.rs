@@ -531,7 +531,12 @@ fn completion_marker_channel_is_anchored_and_per_objective() {
         serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
 
     // The contract version is explicit and independent of the DSL version.
-    assert_eq!(cp["format_version"], 3);
+    // Enumerated, never restated: a literal here goes stale the moment the
+    // ledger moves, and reads as a fact until someone checks it.
+    assert_eq!(
+        cp["format_version"],
+        delvewright_compiler::plan::CRITICAL_PATH_FORMAT_VERSION
+    );
     assert_eq!(cp["version"], "0.2.0");
 
     let steps = cp["steps"].as_array().unwrap();
