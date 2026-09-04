@@ -220,6 +220,70 @@ export function needsStandoff(
   return gates.some((g) => insideGate(cell, g));
 }
 
+/**
+ * Which declared gates bind ONE walk, and where that binding came from.
+ *
+ * `gates` is the set the crossing machinery may wait on; `withheld` is what was
+ * deliberately left out of it, so the `[timed-gate]` line can say so rather than
+ * leave a reader to infer a silent subset; `source` names the authority the set
+ * came from. `gates.length` against the declared table's length is the walk's
+ * binding count.
+ */
+export interface WalkGateBinding {
+  readonly gates: readonly TimedGate[];
+  readonly withheld: readonly TimedGate[];
+  readonly source: string;
+}
+
+/**
+ * The gates that bind a walk to `pos`, from the compiler's exported facts.
+ *
+ * A `timed-gate` is a WORLD fact: the compiler exports the whole declared table at
+ * the root of `critical-path-waypoints.json` (region, clock, phase, `crush`), and a
+ * per-leg `timed_gates` array naming the subset each PROVEN leg's route crosses. The
+ * per-leg array is a narrowing of the table, not the only place a gate exists — so
+ * the licence to wait for a window comes from the table, and the leg's array is what
+ * narrows it when the compiler has proved a route.
+ *
+ * Without a proven leg (a death-loop approach or walk back, a die-retry return, a
+ * mob or actor chase, any post-transport step) the harness has no route and may not
+ * compute one — so it cannot name a subset, and the honest set is every gate the
+ * campaign declares. The looseness points the safe way: an over-included gate costs
+ * bounded patience on a walk that has ALREADY failed ({@link gateRetryBudgetMs} — two
+ * of the gate's own cycles plus margin, never a new duration), while an under-
+ * included one is the defect itself, a leg reported unwalkable because a declared
+ * clock happened to be shut when its single A* solve ran.
+ *
+ * **A `crush` gate is withheld from an unproven walk, and that is a stated gap, not
+ * an oversight.** The crush discipline is not patience: it stages at the
+ * compiler-pinned gate MOUTH, judges the crossing estimate against the fresh window,
+ * and treats a failed margin from that mouth as terminal because DW0378 proves the
+ * designed crossing fits FROM IT. A walk with no proven leg has no mouth, so every
+ * one of those rules would fire on a premise it does not have — a long unrelated hop
+ * would be refused with a crush-margin message about a gate it never approaches.
+ * Withholding leaves such a crossing exactly as unguarded as it is today (the walk
+ * gets no assist at all now); closing it needs a proven route for these walks, which
+ * only the compiler can supply.
+ */
+export function gatesBindingWalk(
+  legMatched: boolean,
+  legGates: readonly TimedGate[],
+  declared: readonly TimedGate[],
+): WalkGateBinding {
+  if (legMatched) {
+    return {
+      gates: legGates,
+      withheld: [],
+      source: "the compiler's proven route for this leg",
+    };
+  }
+  return {
+    gates: declared.filter((g) => !g.crush),
+    withheld: declared.filter((g) => g.crush),
+    source: "the campaign's declared gate table (this walk has no proven leg)",
+  };
+}
+
 /** Human-readable gate summary for a failure message: id and cycle, per gate. */
 export function describeGates(gates: readonly TimedGate[]): string {
   return gates

@@ -343,9 +343,18 @@ export async function loadWaypointsForBranchPath(
 /** The result of an ordered leg match: the proven waypoint polyline to replay (or
  * `undefined` for single-goal fallback) and the advanced cursor. */
 export interface LegMatch {
+  /**
+   * Whether the leg at `cursor` IS this walk's leg. Distinct from
+   * `timedGates.length === 0`, which a matched leg crossing no gate reports too:
+   * "the compiler proved this route crosses nothing" and "there is no proven route
+   * for this walk at all" are different facts, and only the second leaves the
+   * campaign's declared gate table as the walk's authority (`gatesBindingWalk`).
+   */
+  readonly matched: boolean;
   readonly waypoints: readonly Vec3Tuple[] | undefined;
   /** The timed gates the matched leg's proven route crosses (empty when none, and
-   * when no leg matched — an unmatched walk gets no gate licence to retry). */
+   * when no leg matched — an unmatched walk has no proven route to narrow the
+   * campaign's declared table with). */
   readonly timedGates: readonly TimedGate[];
   readonly cursor: number;
 }
@@ -370,9 +379,14 @@ export function nextLegWaypoints(
 ): LegMatch {
   const leg = legs[cursor];
   if (leg && samePos(leg.to, pos)) {
-    return { waypoints: leg.waypoints, timedGates: leg.timedGates, cursor: cursor + 1 };
+    return {
+      matched: true,
+      waypoints: leg.waypoints,
+      timedGates: leg.timedGates,
+      cursor: cursor + 1,
+    };
   }
-  return { waypoints: undefined, timedGates: [], cursor };
+  return { matched: false, waypoints: undefined, timedGates: [], cursor };
 }
 
 /**
