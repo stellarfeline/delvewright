@@ -70,7 +70,7 @@ fn refusal(dir: &Path) -> Result<(), (String, String)> {
     let (campaign, prefabs) = plan_of(dir).unwrap();
     match Plan::build(&campaign, &prefabs) {
         Ok(_) => Ok(()),
-        Err(e) => Err((e.code.id().to_string(), e.message)),
+        Err(e) => Err((e.failure.code.id().to_string(), e.failure.message)),
     }
 }
 
@@ -80,8 +80,8 @@ fn build(dir: &Path) -> Result<BuildOutput, BuildFailure> {
     let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("library loads");
     let plan = Plan::build(&campaign, &prefabs).map_err(|e| BuildFailure::Diagnostic {
-        code: e.code,
-        message: e.message,
+        code: e.failure.code,
+        message: e.failure.message,
     })?;
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {

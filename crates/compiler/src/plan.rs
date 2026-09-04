@@ -19,6 +19,7 @@
 //! `dw.o_<obj>`, `dw.q_<quest>`, `dw.qa_<quest>` (quest active), `dw.dlg_<npc>`,
 //! tag `dw_npc_<npc>`, function `class_apply_<class>`, dialog `<npc>_<node>`.
 
+use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{
@@ -1668,10 +1669,10 @@ pub fn wave_area<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a str> {
 /// `docs/reference/compiler.md` §5).
 #[derive(Debug)]
 pub struct PlanError {
-    /// The stable `DW03xx` code.
-    pub code: DwCode,
-    /// Human-readable explanation.
-    pub message: String,
+    /// The rule that refused and what the author does about it — the same
+    /// [`Failure`] every other pass raises, so the code and the message are
+    /// declared in one place and this type adds only what is its own.
+    pub failure: Failure,
     /// Advisory findings that were raised before this error stopped planning,
     /// and that explain it. Printed alongside the failure — a `DW0305` ambiguous
     /// anchor is usually the use-site symptom of a pool `DW0498` already
@@ -1684,8 +1685,7 @@ impl PlanError {
     /// Build a plan error with an explicit code.
     pub fn new(code: DwCode, message: impl Into<String>) -> Self {
         PlanError {
-            code,
-            message: message.into(),
+            failure: Failure::new(code, message),
             warnings: Vec::new(),
         }
     }
@@ -2562,7 +2562,7 @@ impl<'a> Plan<'a> {
                         },
                         e.placed.iter().map(String::as_str),
                     ));
-                    PlanError::new(e.code, e.message).with_warnings(w)
+                    PlanError::new(e.failure.code, e.failure.message).with_warnings(w)
                 })?;
                 // Stage-7 L2 massing (spec-0017): apply the edit script's
                 // massing batches for this area over the solved layout, so
@@ -2747,7 +2747,7 @@ impl<'a> Plan<'a> {
         let binding = crate::faces::check(&areas, prefabs).map_err(|e| {
             let mut w = warnings.clone();
             w.extend(e.warnings.clone());
-            PlanError::new(e.code, e.message).with_warnings(w)
+            PlanError::new(e.failure.code, e.failure.message).with_warnings(w)
         })?;
         if let Some(finding) = binding.finding(
             crate::faces::placed_pieces(&areas),

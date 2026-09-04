@@ -54,6 +54,7 @@
 //! piece count in `[min,max]`). Every unmated socket is sealed with wall material;
 //! every mated socket's jigsaw block is cleared to air.
 
+use crate::failure::Failure;
 use std::collections::BTreeSet;
 
 use crate::registry::{Connector, PoolMember, PrefabRegistry};
@@ -341,10 +342,10 @@ pub struct AreaLayout {
 /// A solver failure (maps to a `DW03xx` build diagnostic, exit 3).
 #[derive(Debug)]
 pub struct SolveError {
-    /// The stable diagnostic code (`DW03xx`).
-    pub code: DwCode,
-    /// Human-readable explanation.
-    pub message: String,
+    /// The rule that refused and what the author does about it — the same
+    /// [`Failure`] every other pass raises, so the code and the message are
+    /// declared in one place and this type adds only what is its own.
+    pub failure: Failure,
     /// The prefab ids the draw had already seated when the failure was raised,
     /// in placement order — empty for failures raised before growth.
     ///
@@ -359,8 +360,7 @@ pub struct SolveError {
 impl SolveError {
     fn new(code: DwCode, message: impl Into<String>) -> Self {
         SolveError {
-            code,
-            message: message.into(),
+            failure: Failure::new(code, message),
             placed: Vec::new(),
         }
     }

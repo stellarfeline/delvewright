@@ -1061,8 +1061,8 @@ pub fn build_with_warnings(
                         let cp = plan
                             .branch_critical_path(&flow, &flow.playthrough_in(widx))
                             .map_err(|e| BuildFailure::Diagnostic {
-                                code: e.code,
-                                message: format!("branch `{}`: {}", r.branch.id, e.message),
+                                code: e.failure.code,
+                                message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
                             })?;
                         let (region_events, ancestors) = plan.branch_gate_model(&cp);
                         let ancestor = |g: usize, s: usize| {
@@ -20050,8 +20050,8 @@ pub fn branch_transport_overlay(plan: &Plan) -> Result<BranchTransportOverlay, B
         let cp = plan
             .branch_critical_path(&flow, &flow.playthrough_in(w))
             .map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: format!("branch `{}`: {}", r.branch.id, e.message),
+                code: e.failure.code,
+                message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
             })?;
         for (oid, pos) in &cp.transport {
             match plan.transport.get(oid) {
@@ -20101,8 +20101,8 @@ fn branch_paths(
         let cp = plan
             .branch_critical_path(&flow, &flow.playthrough_in(w))
             .map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: format!("branch `{}`: {}", r.branch.id, e.message),
+                code: e.failure.code,
+                message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
             })?;
         out.push((
             r.branch.slug.clone(),

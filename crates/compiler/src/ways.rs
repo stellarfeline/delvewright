@@ -472,8 +472,8 @@ pub fn judge(
             .resolve(&opening.prefab_id, &opening.way)
             .map_err(|e| {
                 PlanError::new(
-                    e.code,
-                    format!("{} — written as {}", e.message, opening.describe()),
+                    e.failure.code,
+                    format!("{} — written as {}", e.failure.message, opening.describe()),
                 )
             })?;
     }

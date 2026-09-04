@@ -978,7 +978,7 @@ fn run_snapshot(
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
             print_diags(&Fenced::apply(&campaign, e.warnings), json);
-            print_build_error(e.code, &e.message, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };
@@ -1465,7 +1465,7 @@ fn run_blocking_chart(
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
             print_diags(&Fenced::apply(&campaign, e.warnings), json);
-            print_build_error(e.code, &e.message, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };
@@ -1624,7 +1624,7 @@ fn run_build(
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
             print_diags(&Fenced::apply(&campaign, e.warnings), json);
-            print_build_error(e.code, &e.message, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };
@@ -1882,7 +1882,7 @@ fn run_edit(
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
             print_diags(&Fenced::apply(&v.campaign, e.warnings), json);
-            print_build_error(e.code, &e.message, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };

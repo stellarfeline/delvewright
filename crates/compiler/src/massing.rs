@@ -205,7 +205,7 @@ pub fn apply(
                     )
                     .map_err(|e| Failure {
                         code: DW_MASSING,
-                        message: format!("world-edits batch `{bid}`: {}", e.message),
+                        message: format!("world-edits batch `{bid}`: {}", e.failure.message),
                     })?;
                     let is_mated = layout.pieces[idx].mated[ci];
                     match state {
@@ -322,7 +322,8 @@ fn mated_poses(
     let mut poses = Vec::new();
     for (ci, conn) in meta.connectors.iter().enumerate() {
         if piece.mated.get(ci).copied().unwrap_or(false) {
-            let (wp, f) = socket_world(piece.pos, piece.rotation, conn).map_err(|e| e.message)?;
+            let (wp, f) =
+                socket_world(piece.pos, piece.rotation, conn).map_err(|e| e.failure.message)?;
             poses.push((wp, f));
         }
     }
@@ -533,7 +534,7 @@ fn insert_at(
              prefab library — only admitted library prefabs can be placed (ADR-0013)"
         )
     })?;
-    let (ws, wf) = socket_world(host.pos, host.rotation, conn).map_err(|e| e.message)?;
+    let (ws, wf) = socket_world(host.pos, host.rotation, conn).map_err(|e| e.failure.message)?;
     let want = wf.opposite();
     for rot in Rotation::ALL {
         for (cj, c2) in meta.connectors.iter().enumerate() {
