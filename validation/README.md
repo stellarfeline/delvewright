@@ -362,9 +362,16 @@ incl. Chinese note text) and the overlay emission + byte-determinism
   and there is no daemon-wide mode — a teardown that can reach another project is
   an outage, not a teardown. It reclaims the project's images too, and states
   what it examined, removed and kept.
+- **The world first**: `EULA=TRUE validation/world-save.sh <build-dir> --project
+  dw-<id>` boots the shipped delve image for that tree once, waits for the
+  datapack to report `#placed dw.sys = 1` over rcon, and copies the world save it
+  stamped into `<build-dir>/world/`. A build output carries no world — the
+  geometry is placed on the first ticks of a server boot — and a Chunky scene
+  over a missing world renders an empty sky at exit 0.
 - **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir]` turns a build
   output into the Chunky scene set plus the shot index (`delvec scene` +
-  `index`) for visual review, including the first-person player-POV shots.
+  `index`) for visual review, including the first-person player-POV shots. It
+  refuses a tree with no `world/`, naming `world-save.sh`.
 
 ## Harness
 

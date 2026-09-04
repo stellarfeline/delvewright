@@ -4012,7 +4012,7 @@ A flag producer is conditional on its gating context:
 |----------|----------------|
 | `set-flag` in `on_objective_complete[o]` | `o` is completable **and** every `requires_flags` gate on the enclosing effect chain is satisfied |
 | `set-flag` in a quest's `on_complete` | that quest completes, same gate rule |
-| `set-flag` on a dialogue option | the option is reachable from its tree `root` through options whose own gates are satisfied, and is the world's selected alternative of its group |
+| `set-flag` on a dialogue option | the option is reachable from **one of the roots the campaign can put a body in front of** (below) through options whose own gates are satisfied, and is the world's selected alternative of its group |
 | `set-flag` in an environment trigger's `effects` | the trigger's `requires_flags` are satisfied — **ambient** (a `strike`/`use`/`approach` trigger is player-initiated and has no DAG position) |
 | `set-flag` in a `traps[].payload` | the trap's `requires_flags` are satisfied (ambient, same reasoning — the party can always walk over and spring it) |
 | a trap's `disarm.sets_flag` | the trap's `requires_flags` are satisfied (ambient, same reasoning) |
@@ -4023,6 +4023,29 @@ Consequences worth stating plainly: a `set-flag` gated on the very flag it sets
 `flag/flee` branch cannot satisfy a gate on the `flag/wait` branch; and flags set
 from dialogue, triggers, trap payloads and trap disarms are first-class
 producers, so those legitimate shapes no longer die as spurious `DW0203`.
+
+**A dialogue tree has more than one door, and the model walks from all of them.**
+The roots a reachability walk is seeded from — `Flow::entry_roots` — are the
+tree's declared stage-6 `root` **plus every node a quest's `cast` ledger names as
+that NPC's scene**, and a ledger root counts once its quest is active and its
+placement's `requires_flags` hold. A ledger root is not a shortcut into the tree:
+right-click opens it directly for that quest's duration, which is what the ledger
+is for (spec-0020) — an NPC's right-click being a different scene per quest. So a
+node no `next` link reaches is reachable when the ledger opens it, its options'
+flags are producible, and a branch that forks there is not `DW0482`. The
+quantifier is **per world**: a per-branch cast clause carries the branch's flag,
+so its root opens the node in the worlds holding that flag and nowhere else.
+`forbids_flags` is ignored here for the same reason the option walk ignores it —
+the model is monotone, and a negative gate that closes later cannot un-reach a
+node the party has already stood in. `"unchanged"` needs no resolution: it
+carries forward a root some earlier quest already declared, which is already in
+the union. `Flow::scene_root` asks a narrower question — which ONE root a
+right-click opens at a given instant, where later declaration wins — because it
+models the emitted `dw.cast` dispatch; reachability is the union over the whole
+playthrough. The DSL half has always asked the wider question:
+`NpcDialogue::reachable_from` is the one authority for "what can this tree show,
+entered here", and `DW0120`'s orphan walk and `DW0858` both seed it from a root
+SET.
 
 **Which effect lists those rows range over is not `flow`'s to decide.** Both
 halves of the model — the producer scan in `Flow::new` and the
@@ -5304,6 +5327,17 @@ therefore not optional for a branching campaign.
 - **`validation/branch-chronicle-<branch>.md`** — the 流水账: every reachable
   node's `happening` line in the order the compiled graph plays them, readable
   start to ending, followed by the undated ambient beats and the endings reached.
+  The dated account carries four kinds of line — `quest`, `objective`, `choice`
+  and `effect`. A **`choice` line is the dialogue option this branch takes to
+  complete a `talk-to` beat**, and it is where a fork's divergence lives: a
+  `DialogueEffect` carries no `happening` of its own, so the option is the only
+  thing on that side of the campaign that says what the choice did to the story.
+  The line names the option's own NPC, the node it stands in and its 1-based
+  ordinal — `npc/marshal dlg/marshal-read#2` — so a citation table can point at
+  it. The ordinal is resolved against **that NPC's tree**, the scope
+  `flow::flatten_trees` assigns it in and `plan::plan_npc` emits it in; the same
+  ordinal in another tree is a different option of a different speaker. An option
+  carrying no `happening` contributes no line, and the compiler never invents one.
   The SKELETON (ordering, reachability, which nodes appear) is derived machine
   truth — it is exactly the order `Flow::journal` replays, which is exactly the
   order `Flow::replay` proves; only the flesh (each line's text) is authored,
