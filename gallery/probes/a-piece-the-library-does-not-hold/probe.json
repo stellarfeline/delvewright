@@ -1,5 +1,13 @@
 {
   "code": "DW0856",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/areas/0/prefab",
+      "value": "prefab/gallery-halls"
+    }
+  ],
   "units": [],
   "why": "The gallery's own hall, bound to `prefab/gallery-halls` — the piece is real and the name is one letter wrong. It declares no unit for the reason its siblings give: `prefab` is bound in the primary and there is no unwritable surface to exempt, only a spelling that must not compile. What makes it worth committing is what the engine did with it before this refusal existed: nothing. The run exited 0 and printed the same diagnostics byte for byte as a correct one — and it was strictly LESS checked, because an area whose piece is absent contributes no anchors, so the per-area anchor proof over every quest in it examined zero anchors instead of twenty-eight and passed. Misspelling an anchor as well took the hall from seven `DW0142` refusals to none. A green that a typo makes greener is the vacuity this gallery exists to catch, and the probe is here so that it stays caught."
 }

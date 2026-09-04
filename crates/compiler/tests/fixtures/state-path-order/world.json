@@ -1,0 +1,20 @@
+{
+  "campaign_id": "state-path-order",
+  "content": {
+    "areas": [
+      {
+        "id": "area/keep",
+        "name": "The Keep",
+        "prefab": "prefab/hello-room"
+      }
+    ],
+    "difficulty": "normal",
+    "premise": "The room's labels are read one at a time, and the door out only opens for a party that has read at least one of them.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "theme": "A muniment room whose door reads the ledger before it opens.",
+    "title": "The Reading Room"
+  },
+  "dsl_version": "0.7.0",
+  "stage": "world"
+}

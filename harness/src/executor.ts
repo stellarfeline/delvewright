@@ -70,6 +70,7 @@ import {
 } from "./combat.ts";
 import {
   entryCellOf,
+  markerAt,
   expectedForfeit,
   inBox,
   openLethalTrial,
@@ -90,7 +91,11 @@ import {
   type CensusMob,
   type CensusSummary,
 } from "./markers.ts";
-import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
+import {
+  allowNonCollidingEntities,
+  configureLeg,
+  describeStuckNeighbours,
+} from "./movement.ts";
 import {
   nextLegWaypoints,
   retainStandableWaypoints,
@@ -1091,6 +1096,14 @@ const SCORE_TRACK_TIMEOUT_MS = 5_000;
 const MARKER_RETIRE_TIMEOUT_MS = 5_000;
 /** How far from the table's anchor the marker's own hardware is looked for. */
 const MARKER_SEARCH_RADIUS = 4;
+/**
+ * How close the glowing display must stand to the interaction for the two to be
+ * ONE stake. `stk_fill_<s>` summons both at the same position in one function, so
+ * this is a tolerance on floating point and on a client's rounding of it, never a
+ * search radius: at four blocks any display in the neighbourhood vouched for any
+ * interaction in it.
+ */
+const MARKER_PAIR_RADIUS = 0.5;
 /**
  * The pathfinder cost that makes a cell impassable. The library treats a step
  * whose total cost exceeds 100 as no move at all (`movements.js`: `if (cost > 100)
@@ -2474,12 +2487,37 @@ export class MineflayerExecutor implements StepExecutor {
   /** One volume: approach, step in, die, and assert the aftermath. */
   private async lethalTrial(plan: DeathPlan, volume: DeathPlan["volumes"][number]): Promise<void> {
     const bot = this.requireBot();
+    // A trial NEVER opens over an unrecovered death. `stepInto` rethrows the death
+    // latch on its first line, so a bot still lying dead from the previous trial's
+    // walk back never takes a step, never dies again, and the trial then reports
+    // that the bot stood in this volume and survived it — a verdict about a delve,
+    // produced by the harness leaving its own bot on the death screen. The
+    // previous trial's `deathPos` would also be read as this one's.
+    if (this.death !== undefined) {
+      process.stderr.write(
+        `[death-loop] ${volume.id}: the bot was still dead when this trial opened — ` +
+          `recovering before the approach, because a corpse cannot walk into anything\n`,
+      );
+      await this.recoverFromDeath();
+    }
     const here = this.feetCell() ?? [0, 0, 0];
-    const entryCell = entryCellOf(volume.region, here);
+    const entryCell = entryCellOf(volume.region, here, (c) => this.bodyCanOccupy(c));
     // Which stake this death is supposed to leave. `on_death`'s own declaration
     // decides — never "the first one declared" — so a campaign whose death drops
     // one of three stakes is asserted against the one it named.
     const stake: StakeRule | undefined = plan.stakes.find((s) => plan.dropsStake.includes(s.id));
+    if (entryCell === undefined) {
+      // Every cell of the declared box is filled by a block. That is a finding
+      // about the campaign — nothing can ever die in this volume — and it is
+      // stated as one rather than by driving at a wall for ten seconds.
+      const trial = openLethalTrial(volume, volume.region.lo, stake);
+      trial.abandoned =
+        `no cell of the declared volume [${volume.region.lo.join(", ")}]..` +
+        `[${volume.region.hi.join(", ")}] can hold a body: every one of them is filled by a ` +
+        `block, so nothing can ever be inside this volume for it to kill`;
+      this.lethalTrials.push(trial);
+      return;
+    }
     const trial = openLethalTrial(volume, entryCell, stake);
     this.lethalTrials.push(trial);
     // The near lip: the cell the placement table already proved is the reachable
@@ -2529,12 +2567,13 @@ export class MineflayerExecutor implements StepExecutor {
         }
       }
     }
+    if (this.feetInside(volume.region)) trial.enteredVolume = true;
     // The one leg of the whole run that is ALLOWED into the hazard — skipped when
     // the approach already delivered the death.
     if (navFault === undefined && this.deathSeq === deathsBefore) {
       this.lethalExclusionSuspended = true;
       try {
-        await this.stepInto(volume.region, entryCell);
+        await this.stepInto(volume.region, entryCell, trial);
       } catch (err) {
         if (!(err instanceof BotDeathError)) {
           navFault =
@@ -2575,6 +2614,21 @@ export class MineflayerExecutor implements StepExecutor {
     // promised line is asserted separately (`wordingSeen`), and a trial that
     // never saw it fails on that.
     const inside = trial.deathPos !== undefined && inBox(trial.deathPos, volume.keepOut);
+    // …and a death inside the DECLARED BOX is itself an observation that the body
+    // was in it.
+    //
+    // **The two questions came apart in this merge and must stay apart.** While
+    // credit meant `region`, "this volume killed the player" and "the player was
+    // inside this volume" were one test, and inferring the second from the first
+    // was free. They are now different sets: the ring is where the volume KILLS
+    // from and the region is where a body IS, and `enteredVolume` is the second —
+    // it is what {@link LethalTrial.enteredVolume} exists to tell apart, and the
+    // walk sets it from `feetInside(volume.region)` for the same reason. Reading
+    // `inside` here would report a body that never got its feet in the hole as
+    // having stood in it.
+    if (observed && trial.deathPos !== undefined && inBox(trial.deathPos, volume.region)) {
+      trial.enteredVolume = true;
+    }
     trial.died = observed && inside;
     if (navFault !== undefined) {
       trial.abandoned = navFault;
@@ -2594,7 +2648,10 @@ export class MineflayerExecutor implements StepExecutor {
       // Nothing downstream is meaningful, and every field stays at its honest
       // default so the report cannot read as if it had checked them.
       process.stderr.write(
-        `[death-loop] ${volume.id}: the bot is standing in the volume and is still alive\n`,
+        trial.enteredVolume
+          ? `[death-loop] ${volume.id}: the bot is standing in the volume and is still alive\n`
+          : `[death-loop] ${volume.id}: the bot never got its feet inside the volume, so the ` +
+            `volume was not exercised — this says nothing about whether it kills\n`,
       );
       return;
     }
@@ -2710,12 +2767,18 @@ export class MineflayerExecutor implements StepExecutor {
    * (the timed-gate dash, the unstick burst) and it is what a player pressing W
    * does. Throws whatever the walk threw — including the {@link BotDeathError}
    * that is the whole point.
+   *
+   * It also RECORDS what it saw. The drive can run its deadline out with the body
+   * still outside the box — a wall in the way, a cell no body fits in — and it
+   * returns normally when it does, so the only thing separating "the volume did
+   * not kill what was in it" from "nothing ever got in" is this flag.
    */
-  private async stepInto(box: Box, cell: Vec3Tuple): Promise<void> {
+  private async stepInto(box: Box, cell: Vec3Tuple, trial: LethalTrial): Promise<void> {
     const bot = this.requireBot();
     const inside = (): boolean => {
-      const feet = this.feetCell();
-      return feet !== undefined && inBox(feet, box);
+      if (!this.feetInside(box)) return false;
+      trial.enteredVolume = true;
+      return true;
     };
     if (inside()) return;
     const deadline = Date.now() + LETHAL_DEATH_TIMEOUT_MS;
@@ -2736,6 +2799,36 @@ export class MineflayerExecutor implements StepExecutor {
     }
   }
 
+  /** Whether the bot's feet are in `box` right now. */
+  private feetInside(box: Box): boolean {
+    const feet = this.feetCell();
+    return feet !== undefined && inBox(feet, box);
+  }
+
+  /**
+   * Whether a body could BE in `cell` — its own cell and the one above it clear.
+   *
+   * Deliberately weaker than {@link stanceStandable}: a lethal volume is often a
+   * hole, and falling into one is exactly how a player meets it, so demanding
+   * solid support underfoot would rule out the cells the volume is made of. What
+   * it does rule out is a cell filled by a block, which no walk can ever reach.
+   *
+   * Block-shape based (`boundingBox`), like {@link gateOpen}, so it stays right
+   * for whatever the campaign built with. A cell whose chunk is not loaded reads
+   * as occupiable: the conservative direction here is to keep a candidate the
+   * approach can then be measured against, never to silently narrow the box.
+   */
+  private bodyCanOccupy(cell: Vec3Tuple): boolean {
+    const bot = this.bot;
+    if (!bot?.entity) return true;
+    const p = bot.entity.position;
+    const at = (dy: number) => bot.blockAt(p.offset(cell[0] - p.x, cell[1] + dy - p.y, cell[2] - p.z));
+    const feet = at(0);
+    const head = at(1);
+    if (!feet || !head) return true;
+    return feet.boundingBox === "empty" && head.boundingBox === "empty";
+  }
+
   /**
    * The recovery stake's own hardware standing at `anchor`: the `interaction` box
    * a player right-clicks, provided the glowing `item_display` that says there is
@@ -2745,19 +2838,26 @@ export class MineflayerExecutor implements StepExecutor {
    * spec-0032 declares the stake to be an interaction for the hitbox AND a glowing
    * item display for the rendering, so an invisible hitbox is a stake no player
    * would ever find, not a stake that happens to render oddly.
+   *
+   * WHICH of them is the stake is {@link markerAt}'s rule, not this method's — the
+   * executor supplies the observation and the pure module decides, so the reading
+   * can be put to a test without a server in front of it.
    */
   private stakeHardwareAt(anchor: Vec3Tuple): Hitbox | undefined {
     const bot = this.bot;
     if (!bot) return undefined;
-    const near = (x: number, y: number, z: number): boolean =>
-      Math.hypot(x - (anchor[0] + 0.5), y - anchor[1], z - (anchor[2] + 0.5)) <=
-      MARKER_SEARCH_RADIUS;
-    const box = this.hitboxesNear(anchor, MARKER_SEARCH_RADIUS).find((h) => h.name === "interaction");
-    if (!box) return undefined;
-    const rendered = Object.values(bot.entities).some(
-      (e) => e?.position && e.name === "item_display" && near(e.position.x, e.position.y, e.position.z),
+    const displays = Object.values(bot.entities).flatMap((e) =>
+      e?.position && e.name === "item_display"
+        ? [{ name: "item_display", position: { x: e.position.x, y: e.position.y, z: e.position.z } }]
+        : [],
     );
-    return rendered ? box : undefined;
+    return markerAt(
+      this.hitboxesNear(anchor, MARKER_SEARCH_RADIUS),
+      displays,
+      anchor,
+      MARKER_SEARCH_RADIUS,
+      MARKER_PAIR_RADIUS,
+    );
   }
 
   /** Disconnect the bot, if connected. Safe to call more than once. */
@@ -3409,8 +3509,18 @@ export class MineflayerExecutor implements StepExecutor {
     const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
     const near = Object.values(bot.entities)
       .filter((e) => e && e !== bot.entity && bot.entity.position.distanceTo(e.position) < 12)
-      .map((e) => `${e.name ?? "?"}@${e.position.distanceTo(bot.entity.position).toFixed(1)}`);
-    process.stderr.write(`[stuck] near ${fmt(bot.entity.position)}: ${near.join(", ") || "none"}\n`);
+      .map((e) => ({
+        name: e.name ?? "?",
+        distance: e.position.distanceTo(bot.entity.position),
+      }));
+    // Classified by the pathfinder's OWN passable set, not by a list kept here —
+    // a raw dump of the neighbourhood names bodies the search never even indexed,
+    // and reads as an accusation. See `describeStuckNeighbours`.
+    const passable = (bot.pathfinder.movements as { passableEntities?: Set<string> } | undefined)
+      ?.passableEntities;
+    process.stderr.write(
+      `[stuck] near ${fmt(bot.entity.position)}: ${describeStuckNeighbours(near, passable)}\n`,
+    );
     throw new Error(
       `failed ${label} at [${x}, ${y}, ${z}] (range ${range}); bot at ` +
         `${fmt(bot.entity.position)}: ${detail}`,
