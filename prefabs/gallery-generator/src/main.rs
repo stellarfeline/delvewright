@@ -340,7 +340,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/east-pit",
-        pos: [20, 1, 1],
+        pos: [20, 1, 2],
         facing: None,
         trigger_block: None,
         note: "the second killing volume, so the two never share a box: a strip \

@@ -398,8 +398,9 @@ names. The wall is the guarantee; the generator checks the sides, not a radius.
 
 **The pits sit where nothing walks.** Each is four blocks clear of every anchor
 and of every cell the piece's own bodies are teleported through on their way to
-the pocket, and neither touches a gate mouth. The east one is a single cell
-deep on `z`, against the north wall.
+the pocket, and neither touches a gate mouth. Both are three cells square,
+because a volume one cell deep has no interior — the death loop walks a body
+to a cell inside the box, and every cell inside it was also its edge.
 
 **The muster keeps two cells of air on every side.** A wave takes the standable
 cells NEAREST its anchor, and standable is judged for a body one cell wide, so
