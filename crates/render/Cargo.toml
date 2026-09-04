@@ -83,7 +83,7 @@ delvec = { path = "../compiler" }
 
 # Save/compare rendered frames (fidelity color-key scan, double-render stability),
 # and decode block textures for the derived colour table. MIT/Apache-2.0.
-image = "0.24"
+image = "0.25"
 
 # Read the client jar / resource-pack zip directly. The viewer's colour
 # derivation needs `data/.../worldgen/biome/*.json` for grass, foliage and water
@@ -94,7 +94,7 @@ image = "0.24"
 # it, so the lock gains nothing: the defaults would add 29 crates of AES, bzip2,
 # lzma and zstd codecs — plus three `-sys` C builds — for an archive that is
 # plain deflate. MIT.
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
 # Nucleation (MIT) — headless mesher + wgpu GPU renderer. Pinned by git REV
 # because crates.io tops out at 0.8.0 which lacks the `rendering` feature; the
@@ -102,10 +102,10 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # The rev is recorded in versions.toml `[render]` (checked by check-versions.sh).
 # `pollster` blocks on the renderer's async init. Both MIT/Apache-2.0.
 nucleation = { git = "https://github.com/Schem-at/Nucleation", rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf", features = ["rendering"] }
-pollster = "0.4"
+pollster = "1.0"
 
 [dev-dependencies]
 # The contact-sheet tests build their own candidate renders (no GPU, no client
 # jar) and read the composited page back. Same version the crate already links.
-image = "0.24"
+image = "0.25"
 serde_json = "1"
