@@ -91,7 +91,11 @@ import {
   type CensusMob,
   type CensusSummary,
 } from "./markers.ts";
-import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
+import {
+  allowNonCollidingEntities,
+  configureLeg,
+  describeStuckNeighbours,
+} from "./movement.ts";
 import {
   nextLegWaypoints,
   retainStandableWaypoints,
@@ -3470,8 +3474,18 @@ export class MineflayerExecutor implements StepExecutor {
     const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
     const near = Object.values(bot.entities)
       .filter((e) => e && e !== bot.entity && bot.entity.position.distanceTo(e.position) < 12)
-      .map((e) => `${e.name ?? "?"}@${e.position.distanceTo(bot.entity.position).toFixed(1)}`);
-    process.stderr.write(`[stuck] near ${fmt(bot.entity.position)}: ${near.join(", ") || "none"}\n`);
+      .map((e) => ({
+        name: e.name ?? "?",
+        distance: e.position.distanceTo(bot.entity.position),
+      }));
+    // Classified by the pathfinder's OWN passable set, not by a list kept here —
+    // a raw dump of the neighbourhood names bodies the search never even indexed,
+    // and reads as an accusation. See `describeStuckNeighbours`.
+    const passable = (bot.pathfinder.movements as { passableEntities?: Set<string> } | undefined)
+      ?.passableEntities;
+    process.stderr.write(
+      `[stuck] near ${fmt(bot.entity.position)}: ${describeStuckNeighbours(near, passable)}\n`,
+    );
     throw new Error(
       `failed ${label} at [${x}, ${y}, ${z}] (range ${range}); bot at ` +
         `${fmt(bot.entity.position)}: ${detail}`,
