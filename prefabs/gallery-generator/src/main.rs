@@ -307,16 +307,20 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/lane-west",
-        pos: [5, 1, 26],
+        pos: [5, 1, 28],
         facing: Some("east"),
         trigger_block: None,
         note: "one end of the patrol lane — 20 blocks from its partner, because a \
-               leg under 12 is one vanilla re-rolls off the lane (DW0386)",
+               leg under 12 is one vanilla re-rolls off the lane (DW0386). On the \
+               hall's back wall, not across its middle: the squad's perception is \
+               its lane's `aggro_radius`, so a lane drawn through the muster room \
+               puts a second, unmeasured fight inside the one the floor gate is \
+               measuring. Held off the muster by LANE_MUSTER_CLEARANCE",
         role: None,
     },
     Anchor {
         name: "anchor/lane-east",
-        pos: [25, 1, 26],
+        pos: [25, 1, 28],
         facing: Some("west"),
         trigger_block: None,
         note: "the other end of the patrol lane",
@@ -836,6 +840,17 @@ fn assert_anchors_are_standable(s: &Structure) {
 /// actors — every place a body is put except a wave's seated cells.
 const MUSTER_PIT_CLEARANCE: f64 = 8.0;
 
+/// How far the patrol lane must keep from the wave anchor the floor gate
+/// measures, in blocks — measured to the lane's own SEGMENT, not to its ends.
+///
+/// A lane squad's `follow_range` is emitted verbatim from its lane's
+/// `aggro_radius` (the compiler refuses a contradicting override, `DW0381`), so
+/// the radius at which the patrol acquires a player is the campaign's own
+/// number: eight. Ten leaves two blocks for a fight that moves. The ends can be
+/// twenty blocks away and the LINE between them still cut through the muster,
+/// which is exactly the shape this measures and an endpoint check would miss.
+const LANE_MUSTER_CLEARANCE: f64 = 10.0;
+
 /// Find one anchor by name, or panic: a clearance proof that silently examined
 /// nothing is the vacuity this file exists to refuse.
 fn anchor_at(name: &str) -> [i32; 3] {
@@ -887,6 +902,43 @@ fn assert_the_muster_clears_the_pits() {
     println!(
         "{ID}: muster clearance bound — {} (floor {MUSTER_PIT_CLEARANCE:.1} block(s))",
         pits.join(", ")
+    );
+}
+
+/// **A measured fight does not share its floor with a second fight.**
+///
+/// A patrol lane drawn across the hall's middle put two crossbows inside the
+/// muster, unbilled and unmeasured — `DW0477` says in writing that nothing
+/// measures `wave/lane`, so every bolt it fires into the muster is damage the
+/// floor gate cannot account for.
+///
+/// Measured to the lane's SEGMENT: its two ends can be twenty blocks from the
+/// muster while the line between them runs straight through it, which is what
+/// an endpoint check would miss and what the staging that produced that run
+/// actually did.
+fn assert_the_lane_keeps_off_the_muster() {
+    let muster = anchor_at("anchor/muster");
+    let (w, e) = (anchor_at("anchor/lane-west"), anchor_at("anchor/lane-east"));
+    let (ax, az) = ((w[0] - e[0]) as f64, (w[2] - e[2]) as f64);
+    let len2 = ax * ax + az * az;
+    assert!(len2 > 0.0, "{ID}: the patrol lane's two ends are one cell");
+    let t = ((((muster[0] - e[0]) as f64) * ax + ((muster[2] - e[2]) as f64) * az) / len2)
+        .clamp(0.0, 1.0);
+    let near = [
+        (e[0] as f64 + t * ax).round() as i32,
+        muster[1],
+        (e[2] as f64 + t * az).round() as i32,
+    ];
+    let d = plan_dist(muster, near);
+    assert!(
+        d >= LANE_MUSTER_CLEARANCE,
+        "{ID}: the patrol lane passes {d:.2} blocks from `anchor/muster` at {near:?}, \
+         under the {LANE_MUSTER_CLEARANCE:.1} that keeps the squad's own perception \
+         radius out of the fight the floor gate measures"
+    );
+    println!(
+        "{ID}: lane clearance bound — the patrol line passes `anchor/muster` at \
+         {near:?}, {d:.2} block(s) away (floor {LANE_MUSTER_CLEARANCE:.1})"
     );
 }
 
@@ -1279,6 +1331,7 @@ fn write_piece(out: &Path) {
     resolve_connections(ID, &mut s);
     assert_anchors_are_standable(&s);
     assert_the_muster_clears_the_pits();
+    assert_the_lane_keeps_off_the_muster();
     assert_the_flight_is_broken(&s);
     let cells = invariant_cells(&s);
     invariants::assert_distress_never_stacks(ID, &cells);
