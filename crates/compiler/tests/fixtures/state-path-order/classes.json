@@ -1,0 +1,29 @@
+{
+  "campaign_id": "state-path-order",
+  "content": {
+    "classes": [
+      {
+        "blurb": "Sturdy boots, no questions.",
+        "id": "class/wanderer",
+        "kit": [
+          {
+            "count": 1,
+            "item": "minecraft:iron_sword",
+            "name": "Keeper's Gift"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:leather_boots"
+          },
+          {
+            "count": 3,
+            "item": "minecraft:bread"
+          }
+        ],
+        "name": "Wanderer"
+      }
+    ]
+  },
+  "dsl_version": "0.7.0",
+  "stage": "classes"
+}

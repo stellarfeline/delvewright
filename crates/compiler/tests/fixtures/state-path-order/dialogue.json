@@ -1,0 +1,46 @@
+{
+  "campaign_id": "state-path-order",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "objective": "obj/talk",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "Open the door, please."
+              }
+            ],
+            "text": "Halt, traveler. The door stays shut."
+          },
+          {
+            "id": "dlg/farewell",
+            "options": [],
+            "text": "The road is yours. Do not look back."
+          }
+        ],
+        "npc": "npc/keeper",
+        "root": "dlg/greeting"
+      },
+      {
+        "nodes": [
+          {
+            "id": "dlg/snore",
+            "options": [],
+            "text": "...mm. Not my watch. Not my watch."
+          }
+        ],
+        "npc": "npc/sleeper",
+        "root": "dlg/snore"
+      }
+    ]
+  },
+  "dsl_version": "0.7.0",
+  "stage": "dialogue"
+}

@@ -312,12 +312,22 @@ impl Datum {
 
     /// The value after `w` is applied. `initial` is the datum's declared
     /// starting value, which is also what `clear-state` returns it to.
+    ///
+    /// **Undatable absorbs, including under `set-state` and `clear-state`.** A
+    /// write that pins a value pins it only until the next undated write, and an
+    /// undated write is by definition one that can land at any moment — the one
+    /// after this beat included. A `set-state 2` on a datum a death forfeits
+    /// says nothing about what the datum holds four beats later, so treating it
+    /// as freshly known would manufacture exactly the certainty
+    /// [`Flow::undatable`] exists to refuse.
     fn write(self, w: StateWrite, initial: i64) -> Datum {
-        match (self, w) {
-            (_, StateWrite::Set(v)) => Datum::Known(i64::from(v)),
-            (_, StateWrite::Clear) => Datum::Known(initial),
-            (Datum::Known(v), StateWrite::Add(n)) => Datum::Known(v + i64::from(n)),
-            (Datum::Undatable, StateWrite::Add(_)) => Datum::Undatable,
+        let Datum::Known(v) = self else {
+            return Datum::Undatable;
+        };
+        match w {
+            StateWrite::Set(n) => Datum::Known(i64::from(n)),
+            StateWrite::Clear => Datum::Known(initial),
+            StateWrite::Add(n) => Datum::Known(v + i64::from(n)),
         }
     }
 }
