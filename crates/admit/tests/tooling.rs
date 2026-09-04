@@ -126,7 +126,11 @@ fn socket_out_of_bounds_errors() {
 #[test]
 fn light_probe_calls_lit_room_lit_and_dark_room_dark() {
     let room = fixtures::clean_room();
-    let lit = light::probe(&Zone::single(&room), light::DEFAULT_DARK_THRESHOLD);
+    let lit = light::probe(
+        &Zone::single(&room),
+        light::DEFAULT_DARK_THRESHOLD,
+        light::SkyClaim::OpenAir,
+    );
     assert_eq!(
         lit.profile, "lit",
         "ceiling glowstone -> lit ({:?})",
@@ -140,7 +144,11 @@ fn light_probe_calls_lit_room_lit_and_dark_room_dark() {
     assert!(lit.measured_min_light.unwrap() >= light::DEFAULT_DARK_THRESHOLD);
 
     let unlit = fixtures::dark_room();
-    let dark = light::probe(&Zone::single(&unlit), light::DEFAULT_DARK_THRESHOLD);
+    let dark = light::probe(
+        &Zone::single(&unlit),
+        light::DEFAULT_DARK_THRESHOLD,
+        light::SkyClaim::OpenAir,
+    );
     assert_eq!(dark.profile, "dark", "no light source -> dark");
     assert!(dark.is_dark());
     assert_eq!(dark.measured_min_light, Some(0));
@@ -161,6 +169,7 @@ fn a_roofed_but_open_pavilion_is_not_measured_as_a_sealed_box() {
     let p = light::probe(
         &Zone::single(&fixtures::pavilion()),
         light::DEFAULT_DARK_THRESHOLD,
+        light::SkyClaim::OpenAir,
     );
     assert!(
         p.measured_cells > 0,
@@ -192,6 +201,7 @@ fn a_colonnade_one_bay_deep_is_lit_by_the_sky_alone() {
     let p = light::probe(
         &Zone::single(&fixtures::colonnade()),
         light::DEFAULT_DARK_THRESHOLD,
+        light::SkyClaim::OpenAir,
     );
     assert!(p.measured_cells > 0, "the walk is walkable");
     assert_eq!(
@@ -219,7 +229,11 @@ fn an_open_air_piece_is_measurable() {
         }
     }
     let yard = delvewright_admit::structure::synth([5, 3, 5], &cells);
-    let p = light::probe(&Zone::single(&yard), light::DEFAULT_DARK_THRESHOLD);
+    let p = light::probe(
+        &Zone::single(&yard),
+        light::DEFAULT_DARK_THRESHOLD,
+        light::SkyClaim::OpenAir,
+    );
     assert!(
         !p.is_unbound(),
         "an open yard has somewhere to stand and something to measure: {}",
@@ -232,10 +246,185 @@ fn an_open_air_piece_is_measurable() {
     );
 }
 
+/// A spatial contract declaring one space with `envelope`, over the whole piece.
+fn contract_with(envelopes: &[(&str, &str)]) -> delvewright_dsl::prefab::SpatialContract {
+    delvewright_dsl::prefab::SpatialContract {
+        entry: envelopes
+            .first()
+            .map(|(n, _)| (*n).to_string())
+            .unwrap_or_default(),
+        spaces: envelopes
+            .iter()
+            .map(|(name, env)| {
+                (
+                    (*name).to_string(),
+                    delvewright_dsl::prefab::ContractSpace {
+                        envelope: (*env).to_string(),
+                        boxes: vec![delvewright_dsl::prefab::Region {
+                            from: [0, 1, 0],
+                            to: [4, 3, 4],
+                        }],
+                    },
+                )
+            })
+            .collect(),
+        no_body: Default::default(),
+        edges: Vec::new(),
+        faces: Vec::new(),
+        no_body_majority_ack: None,
+    }
+}
+
+/// **The sky a piece is probed under is the piece's own claim** (spec-0036's
+/// `envelope`, read by `light::SkyClaim`).
+///
+/// The four answers, and the two that must stay `OpenAir` are the ones that keep
+/// the library still: a contractless piece — which is every one of the 36 prefab
+/// documents on the content library — and a contract that declares no space at
+/// all are not claims of enclosure, and a piece answering `Enclosed` for either
+/// would silently re-grade a population nobody touched.
+#[test]
+fn the_sky_a_piece_is_probed_under_is_read_off_its_own_contract() {
+    assert_eq!(light::SkyClaim::of(None), light::SkyClaim::OpenAir);
+    assert_eq!(
+        light::SkyClaim::of(Some(&contract_with(&[]))),
+        light::SkyClaim::OpenAir,
+        "a contract with no space is not a claim of enclosure"
+    );
+    assert_eq!(
+        light::SkyClaim::of(Some(&contract_with(&[("room", "enclosed")]))),
+        light::SkyClaim::Enclosed
+    );
+    assert_eq!(
+        light::SkyClaim::of(Some(&contract_with(&[("yard", "open")]))),
+        light::SkyClaim::OpenAir
+    );
+    assert_eq!(
+        light::SkyClaim::of(Some(&contract_with(&[("well", "open_top")]))),
+        light::SkyClaim::OpenAir
+    );
+    assert_eq!(
+        light::SkyClaim::of(Some(&contract_with(&[
+            ("room", "enclosed"),
+            ("yard", "open"),
+        ]))),
+        light::SkyClaim::OpenAir,
+        "one open space is enough: the sky reaches this piece by its own design"
+    );
+    assert!(light::SkyClaim::OpenAir.admits_sky());
+    assert!(!light::SkyClaim::Enclosed.admits_sky());
+}
+
+/// **A profile the piece can have in no world it will be placed in.**
+///
+/// A `detail-plan` piece stands inside the box a site plan gave it: its frame is
+/// the play space plus one floor course (spec-0050 §3), the roof over it is the
+/// whole's, and it never meets the sky. Probed as if it stood in open air, an
+/// emitterless one measures the night floor at every cell and is written `lit` —
+/// while `DW0210` reds the same piece the moment it is built. Two instruments,
+/// one piece, opposite answers.
+///
+/// The colonnade is the fixture that separates them, and it separates ONLY them:
+/// it holds no emitter at all, so every level the probe reports is sky light and
+/// nothing else in the pipeline can supply one — and one bay deep it sits exactly
+/// at the threshold, so the claim moves the VERDICT and not merely a number. Same
+/// bytes, same binding, same threshold.
+#[test]
+fn an_enclosed_piece_is_not_credited_with_a_sky_it_will_never_stand_under() {
+    let piece = fixtures::colonnade();
+
+    let open = light::probe(
+        &Zone::single(&piece),
+        light::DEFAULT_DARK_THRESHOLD,
+        light::SkyClaim::OpenAir,
+    );
+    assert_eq!(
+        open.profile, "lit",
+        "the open-air answer is unchanged, and it is right for a piece that stands \
+         in the open: min={:?}",
+        open.measured_min_light
+    );
+
+    let closed = light::probe(
+        &Zone::single(&piece),
+        light::DEFAULT_DARK_THRESHOLD,
+        light::SkyClaim::Enclosed,
+    );
+    assert_eq!(
+        closed.measured_cells, open.measured_cells,
+        "the binding does not move: this is one piece measured twice, and a changed \
+         binding would mean the two verdicts are about different sets of cells"
+    );
+    assert_eq!(
+        closed.profile, "dark",
+        "with no sky, an emitterless piece brings no light of its own: min={:?}",
+        closed.measured_min_light
+    );
+    assert_eq!(closed.sky_light, 0);
+    assert_eq!(
+        closed.daylight_sky_light, 0,
+        "and there is no brighter hour to fall back on"
+    );
+    assert_eq!(
+        closed.measured_min_light, closed.min_light_daylight,
+        "so the two figures are one figure"
+    );
+
+    // The change reaches exactly the borrowed verdicts. A piece carrying its own
+    // light is `lit` either way, which is what keeps this from being a blanket
+    // re-grade of every enclosed room in the library.
+    let room = fixtures::clean_room();
+    for claim in [light::SkyClaim::OpenAir, light::SkyClaim::Enclosed] {
+        let p = light::probe(&Zone::single(&room), light::DEFAULT_DARK_THRESHOLD, claim);
+        assert_eq!(
+            p.profile, "lit",
+            "a room with a glowstone in its ceiling is lit by the glowstone: {claim:?}"
+        );
+    }
+}
+
+/// The record a closed measurement writes says which sky it was taken under, and
+/// does not repeat the open-air sentence it is the correction to.
+///
+/// A figure filed under the wrong sky is worse than no figure: it reads as a
+/// measurement and cannot be re-derived by anyone who believes it.
+#[test]
+fn the_written_method_states_the_sky_the_figure_was_taken_under() {
+    let s = fixtures::colonnade();
+    let probe = light::probe(
+        &Zone::single(&s),
+        light::DEFAULT_DARK_THRESHOLD,
+        light::SkyClaim::Enclosed,
+    );
+    let mut doc = PrefabMeta::skeleton("colonnade", s.size, s.data_version, "test", license());
+    meta::set_lighting_from_probe(&mut doc, &probe);
+    let method = doc
+        .lighting
+        .as_ref()
+        .and_then(|l| l.method.clone())
+        .expect("a probe writes a lighting block with a method");
+    assert!(
+        method.contains("`enclosed`"),
+        "the record names WHY no sky was applied: {method}"
+    );
+    assert!(
+        !method.contains("stands in open air"),
+        "and does not also claim the opposite: {method}"
+    );
+    assert!(
+        method.contains("effective sky 0"),
+        "and states the sky as a number, so the figure can be re-derived: {method}"
+    );
+}
+
 #[test]
 fn light_probe_writes_estimate_method_into_metadata() {
     let s = fixtures::clean_room();
-    let probe = light::probe(&Zone::single(&s), light::DEFAULT_DARK_THRESHOLD);
+    let probe = light::probe(
+        &Zone::single(&s),
+        light::DEFAULT_DARK_THRESHOLD,
+        light::SkyClaim::OpenAir,
+    );
     let mut doc = PrefabMeta::skeleton("clean", s.size, s.data_version, "test", license());
     meta::set_lighting_from_probe(&mut doc, &probe);
     let lighting = doc
@@ -318,7 +507,11 @@ fn a_probed_profile_still_carries_its_measurement() {
         "a skeleton has not been probed and must say so in a profile the DSL has"
     );
     let unlit = fixtures::dark_room();
-    let probe = light::probe(&Zone::single(&unlit), light::DEFAULT_DARK_THRESHOLD);
+    let probe = light::probe(
+        &Zone::single(&unlit),
+        light::DEFAULT_DARK_THRESHOLD,
+        light::SkyClaim::OpenAir,
+    );
     let mut doc = meta;
     meta::set_lighting_from_probe(&mut doc, &probe);
     let lighting = doc
