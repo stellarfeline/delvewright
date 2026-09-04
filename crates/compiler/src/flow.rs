@@ -1231,9 +1231,9 @@ impl<'a> Flow<'a> {
                 .is_some_and(|qx| qx == q || ancestor(qx, q)),
             // …and it runs before any beat of a quest it triggers. Never before a
             // beat of its OWN quest.
-            (Beat::QuestComplete(q), Beat::Objective(y)) => self
-                .objective_quest(y)
-                .is_some_and(|qy| ancestor(q, qy)),
+            (Beat::QuestComplete(q), Beat::Objective(y)) => {
+                self.objective_quest(y).is_some_and(|qy| ancestor(q, qy))
+            }
             (Beat::QuestComplete(p), Beat::QuestComplete(q)) => ancestor(p, q),
         }
     }
@@ -1664,14 +1664,7 @@ impl<'a> Flow<'a> {
                 }
                 st.done_quest.insert(qid.to_string());
                 let beat = Beat::QuestComplete(qid.to_string());
-                self.fire(
-                    &q.on_complete,
-                    st,
-                    complete_at,
-                    pos,
-                    &step.objective,
-                    &beat,
-                );
+                self.fire(&q.on_complete, st, complete_at, pos, &step.objective, &beat);
                 for other in &self.c.quests.content.quests {
                     if let Trigger::QuestComplete { quest } = &other.trigger
                         && quest.as_str() == qid

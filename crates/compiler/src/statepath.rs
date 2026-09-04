@@ -182,10 +182,7 @@ fn branch_label(flow: &Flow<'_>, i: usize, main_world: Option<usize>) -> Option<
     }
     let mine = flow.world_flags(i);
     let theirs = main_world.map(|m| flow.world_flags(m)).unwrap_or_default();
-    let extra: Vec<String> = mine
-        .difference(&theirs)
-        .map(|f| format!("`{f}`"))
-        .collect();
+    let extra: Vec<String> = mine.difference(&theirs).map(|f| format!("`{f}`")).collect();
     if extra.is_empty() {
         return Some("an alternative playthrough of this campaign".to_string());
     }

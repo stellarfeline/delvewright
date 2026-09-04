@@ -220,7 +220,10 @@ fn an_unforced_order_withholds_the_refusal() {
 
     let (d, b) = statepath::check(&c);
     assert!(d.is_empty(), "{:?}", codes(&d));
-    assert!(b.walk.withheld >= 1, "the term was read and withheld: {b:?}");
+    assert!(
+        b.walk.withheld >= 1,
+        "the term was read and withheld: {b:?}"
+    );
 }
 
 /// **A datum no ordered walk can date is never refused.** The campaign's
@@ -331,7 +334,10 @@ fn the_replay_is_still_the_same_replay() {
     assert!(!p.degenerate);
     assert!(flow.replay(&p).is_ok(), "{:?}", flow.replay(&p).err());
     assert_eq!(
-        p.steps.iter().map(|s| s.objective.as_str()).collect::<Vec<_>>(),
+        p.steps
+            .iter()
+            .map(|s| s.objective.as_str())
+            .collect::<Vec<_>>(),
         vec!["obj/talk", "obj/shelve", "obj/exit"]
     );
 }
