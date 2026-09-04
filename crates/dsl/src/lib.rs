@@ -43,7 +43,7 @@ pub mod validate;
 pub use canonical::to_canonical_string;
 pub use chrome::{Chrome, ChromeString, validate_chrome_namespace};
 pub use detailplan::{Detail, DetailPlanContent, FLOOR_COURSE, Frame, bound_places, is_bound};
-pub use diagnostic::{Binds, Diagnostic, DwCode, Severity, codes};
+pub use diagnostic::{Binds, Diagnostic, DwCode, Group, Severity, Subject, codes};
 pub use effects::{
     EffectRootKind, EffectRootOwner, EffectRootSite, RootBinding, for_each_effect_root,
     for_each_effect_root_mut,
@@ -88,8 +88,8 @@ pub use schema::stage_schema;
 pub use siteplan::{
     Axis, Ceiling, Cmp, Datum, ENTRY_ANCHOR, Face, Floor, Identity, Measure, PlanAxis, PlanBinding,
     PlanBox, SITE_AREA, Seam, Sightline, SitePlanContent, View, Volume, VolumeRole, WorldBox,
-    node_anchor, owed_anchors, placed_boxes, placed_seams, seam_anchor, seam_unlock_anchor,
-    synthesized_anchor_kinds, synthesized_anchors, synthesized_gate_block,
+    node_anchor, owed_anchors, placed_boxes, placed_seams, refused_upstream, seam_anchor,
+    seam_unlock_anchor, synthesized_anchor_kinds, synthesized_anchors, synthesized_gate_block,
 };
 pub use siteplan::{PlacedBox, PlacedSeam};
 pub use stages::{
