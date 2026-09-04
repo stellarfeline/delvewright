@@ -8,6 +8,15 @@ every existing check stayed green, and one of the two `respawns_on_rest` copies
 named the WRONG diagnostic — so the reference documented one field twice, in two
 contradicting ways, with nothing able to see it.
 
+A second defect pins rule 4: `docs/reference/tools.md`'s `validate` row carried
+a long passage twice, back to back, inside one cell of one physical line. Rule
+1 never saw it — it only compares the FIRST cell across DIFFERENT rows, and this
+duplicate touched neither the key column nor a line boundary. Before rule 4
+existed, `test_duplicate_passage_within_one_row_fails` below was RED against
+this file's own gate (asserting exit 1 where the gate actually returned 0) —
+that red was the gate's blindness made visible, exactly as the finding
+requires; rule 4 turns it green without touching rules 1-3.
+
 These tests drive the detectors over synthetic markdown rather than the live doc
 tree, so they keep failing for the right reason as the real docs grow.
 """
@@ -195,6 +204,104 @@ def test_conflict_marker_inside_a_code_fence_still_fails(gate):
     fenced block is an artifact just the same."""
     write(gate, "ref.md", "```\n<<<<<<< HEAD\n```\n")
     assert run(gate) == 1
+
+
+# -------------------------------------------------------- rule 4: within-row
+
+
+def test_duplicate_passage_within_one_row_fails(gate, capsys):
+    """The `tools.md` shape: one row, one physical line, the same multi-sentence
+    passage twice back to back inside one cell. This is the case rule 1 cannot
+    see (same key, no line boundary crossed) — before rule 4 existed this
+    assertion was the red half of the round's red→green."""
+    passage = (
+        "The run writes the report to disk. It records every assist window "
+        "with its own id. Fencing is telemetry, never the gate."
+    )
+    write(
+        gate,
+        "ref.md",
+        "| Verb | Behavior |\n"
+        "|------|----------|\n"
+        f"| `validate` | {passage} {passage} |\n",
+    )
+    assert run(gate) == 1
+    err = capsys.readouterr().err
+    assert "docs/ref.md:3" in err
+    assert "`validate`" in err
+    assert "The run writes the report to disk" in err
+
+
+def test_duplicate_short_cell_values_across_one_row_is_fine(gate):
+    """A comparison-matrix row legitimately repeats a bare value (`yes`, a
+    number) across several columns — that is an idiom, not a merge artifact,
+    and rule 4 must not fire on it. This is the false-positive class measured
+    on the live tree before `is_terminated_sentence` was added: 103 hits, every
+    one a bare cell value, none a sentence."""
+    write(
+        gate,
+        "ref.md",
+        "| Hazard | DS1 | DS3 | Elden Ring |\n"
+        "|--------|-----|-----|------------|\n"
+        "| fall | yes | yes | yes |\n",
+    )
+    assert run(gate) == 0
+
+
+def test_duplicate_passage_split_across_two_cells_of_one_row_fails(gate, capsys):
+    """The same complete sentence, once in one cell and again in a later cell
+    of the SAME row, is still a within-row duplicate — rule 4 scans every cell
+    of a row, not only the one the field defect happened to land in."""
+    write(
+        gate,
+        "ref.md",
+        "| Verb | Note A | Note B |\n"
+        "|------|--------|--------|\n"
+        "| `x` | Fencing is telemetry, never the gate. | Fencing is telemetry, never the gate. |\n",
+    )
+    assert run(gate) == 1
+    assert "docs/ref.md:3" in capsys.readouterr().err
+
+
+def test_an_unterminated_fragment_is_never_a_candidate(gate):
+    """A cell with no sentence-ending punctuation at all (the common case for a
+    short table value) contributes no rule-4 candidate, however many times its
+    bare text recurs across the row."""
+    write(
+        gate,
+        "ref.md",
+        "| K | A | B | C |\n"
+        "|---|---|---|---|\n"
+        "| `k` | pending | pending | pending |\n",
+    )
+    assert run(gate) == 0
+
+
+def test_passage_duplicated_across_different_rows_is_not_a_rule_4_finding(gate):
+    """Rule 4 is scoped to ONE row — a sentence legitimately repeated across
+    DIFFERENT rows (a shared caveat, a shared citation) is a different question
+    rule 4 does not answer."""
+    write(
+        gate,
+        "ref.md",
+        "| Verb | Behavior |\n"
+        "|------|----------|\n"
+        "| `a` | Fencing is telemetry, never the gate. |\n"
+        "| `b` | Fencing is telemetry, never the gate. |\n",
+    )
+    assert run(gate) == 0
+
+
+def test_rule_4_binding_is_printed(gate, capsys):
+    write(
+        gate,
+        "ref.md",
+        "| K | V |\n|---|---|\n| `a` | one. |\n",
+    )
+    assert run(gate) == 0
+    out = capsys.readouterr().out
+    assert "rule 4 binding" in out
+    assert "1 table row(s) examined" in out
 
 
 # ------------------------------------------------------------------ plumbing
