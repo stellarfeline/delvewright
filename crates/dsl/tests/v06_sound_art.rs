@@ -1,6 +1,6 @@
 //! DSL v0.6 (spec-0014): the `play-sound` effect and the `narrate` `art` style
 //! validate under `0.6.0` and are reserved (`DW0141`) earlier. Sound-event
-//! validation (`DW0326`), the deferred `play-sound at: actor` gate (`DW0335`), and
+//! validation (`DW0326`), the unsupported `play-sound at: actor` gate (`DW0335`), and
 //! art-glyph coverage (`DW0328`) are compiler-side checks (see the compiler's
 //! `v06` tests) — the DSL only carries the schema and the version gate.
 
