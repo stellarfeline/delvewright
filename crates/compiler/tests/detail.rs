@@ -2076,7 +2076,6 @@ fn build_into(d: &Detailed, out: &Path) -> BTreeMap<String, Vec<u8>> {
         &tree,
         &reg,
         None,
-        "test",
         &BTreeMap::new(),
     )
     .expect("the detailed campaign builds");

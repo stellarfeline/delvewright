@@ -76,7 +76,6 @@ fn build_campaign(campaign: &delvewright_dsl::Campaign) -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
     .expect("every emitted command validates (DW0315/DW0316 hold for the bonfire)")
@@ -830,7 +829,6 @@ fn an_equipped_actor_coexists_with_affordance_hardware() {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
     .expect("affordance proofs hold with spec-0021 emission present");

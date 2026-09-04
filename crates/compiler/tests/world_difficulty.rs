@@ -61,7 +61,6 @@ fn build_dir(dir: &Path) -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates")

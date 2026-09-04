@@ -108,7 +108,6 @@ fn build(dir: &Path) -> Result<BuildOutput, BuildFailure> {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
 }

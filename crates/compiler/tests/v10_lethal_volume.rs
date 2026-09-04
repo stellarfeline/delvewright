@@ -97,7 +97,6 @@ fn try_build(c: &Campaign) -> Result<BuildOutput, emit::BuildFailure> {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

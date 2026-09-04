@@ -102,7 +102,6 @@ fn build_with_skins(dir: &Path, skins_from: &Path) -> Result<BuildOutput, BuildF
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
 }

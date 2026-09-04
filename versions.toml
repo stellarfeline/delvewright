@@ -197,13 +197,16 @@ targets = [
 [content]
 # The pinned content repo (spec-0007 Step 0): the prefab library + campaign
 # sources live here, not in this GPL repo (ADR-0007). Determinism (ADR-0006):
-# same DSL + same seed + same content SHA -> byte-identical datapack.
+# same DSL + same seed + same prefab library -> byte-identical datapack.
+#
+# The COMPILER never reads this file. It is handed a campaign directory and a
+# `--prefabs` directory and emits a function of those and the flags beside them;
+# a pin is a fact about a checkout, not about the bytes it was handed, and a
+# value read out of the filesystem above the working directory would make the
+# same build emit different bytes depending on where it was launched from.
+# Nothing in `<out>/` names a revision.
 #
 # Consumed by:
-#   - the compiler at BUILD time: `delvec build` reads this `sha` and records it
-#     in manifest.json as `content_sha` (read from THIS file, never from git
-#     state, so the compiler stays deterministic + offline; absent file ->
-#     "unpinned"). See crates/compiler/src/main.rs.
 #   - CI (.github/workflows/*.yml): every job that builds a fixture or runs the
 #     ladder checks the content repo out at this exact `sha` and passes
 #     `--prefabs <checkout>/prefabs`.

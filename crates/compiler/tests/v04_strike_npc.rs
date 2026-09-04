@@ -89,7 +89,6 @@ fn build(triggers: &str) -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates")
@@ -130,7 +129,6 @@ fn try_build(triggers: &str) -> Result<BuildOutput, emit::BuildFailure> {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

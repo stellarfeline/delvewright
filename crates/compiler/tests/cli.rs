@@ -262,6 +262,88 @@ fn keep_crawl_builds_and_double_build_is_byte_identical() {
     );
 }
 
+/// **The build does not depend on where it was launched from** (ADR-0006, and
+/// `CLAUDE.md`'s forbidden zone on ambient state).
+///
+/// The double-build gate above runs both of its builds in ONE process with one
+/// working directory, so it is structurally blind to a value the compiler reads
+/// out of the filesystem ABOVE the inputs it was handed. One such value shipped:
+/// `manifest.json`'s `content_sha` walked up from `std::env::current_dir()` for
+/// a `versions.toml` and copied its `[content].sha`. The same campaign, the same
+/// prefabs and the same seed then produced a different `manifest.json` from the
+/// engine checkout (`f38ed73a…`) than from anywhere else (`unpinned`) — and the
+/// content release workflow had to rewrite the engine's `versions.toml` before
+/// building to make the field say something true.
+///
+/// So this is the perturbation the other gate cannot make: one build from a
+/// directory that CONTAINS a `versions.toml` naming a pin, one from a sibling
+/// that does not. The two directories are constructed here rather than borrowed
+/// from the machine, so the discriminating condition is a fact of the test and
+/// never of what happens to sit above `$TMPDIR` on some runner. Nothing else
+/// about the two runs differs: both name the campaign and the prefab directory
+/// by absolute path, exactly as the skill tells an author to.
+#[test]
+fn the_working_directory_cannot_reach_the_build() {
+    let hw = common::hello_world_dir();
+    let pf = common::prefabs_dir();
+
+    let here = tmp("cwd-pinned");
+    std::fs::write(
+        here.join("versions.toml"),
+        // A pin the walk-up would find in the cwd itself, before any real one
+        // further up. Deliberately not the repository's own value: the two runs
+        // have to be able to disagree for the test to be able to fail.
+        "[content]\nsha = \"0123456789abcdef0123456789abcdef01234567\"\n",
+    )
+    .unwrap();
+    let elsewhere = tmp("cwd-bare");
+
+    let mut trees = Vec::new();
+    for (i, cwd) in [&here, &elsewhere].into_iter().enumerate() {
+        let out = tmp(&format!("cwd-out-{i}"));
+        let r = Command::new(BIN)
+            .current_dir(cwd)
+            .args([
+                "build",
+                hw.to_str().unwrap(),
+                "-o",
+                out.to_str().unwrap(),
+                "--prefabs",
+                pf.to_str().unwrap(),
+            ])
+            .output()
+            .expect("run delvec");
+        assert_eq!(
+            code(&r),
+            0,
+            "build from {}: {}",
+            cwd.display(),
+            String::from_utf8_lossy(&r.stderr)
+        );
+        trees.push(read_tree(&out));
+    }
+
+    let (a, b) = (&trees[0], &trees[1]);
+    assert_eq!(
+        a.keys().collect::<Vec<_>>(),
+        b.keys().collect::<Vec<_>>(),
+        "the two builds emitted different path sets"
+    );
+    assert!(
+        !a.is_empty(),
+        "zero emitted paths compared — this gate binds to nothing"
+    );
+    for (path, bytes) in a {
+        assert_eq!(
+            bytes, &b[path],
+            "{path} differs between a build launched from a directory holding a \
+             versions.toml and one launched from a bare directory. Something the \
+             compiler emitted is a function of the working directory rather than \
+             of the documents, prefabs and flags it was given."
+        );
+    }
+}
+
 /// The two `DW03xx` build/solver diagnostics: an unsatisfiable required anchor
 /// (`DW0302`) and a `pieces` range too small for the required roles (`DW0303`).
 /// Both pass validate + analyze (the DSL cannot see pool-area anchors) and fail

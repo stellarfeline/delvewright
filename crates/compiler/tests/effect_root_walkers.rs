@@ -289,7 +289,6 @@ fn build(loaded: &LoadedCampaign, c: &Campaign) -> Result<BuildOutput, BuildFail
         &CommandTree::v1_21_11(),
         &pf,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

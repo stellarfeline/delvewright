@@ -235,7 +235,6 @@ fn build_v06(quests: &str) -> BuildOutput {
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("v0.6 campaign builds")
@@ -298,7 +297,6 @@ fn build_localized_v06(quests: &str, translations: &BTreeMap<String, String>) ->
         &tree,
         &prefabs,
         Some("zh-cn"),
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("localized v0.6 campaign builds")

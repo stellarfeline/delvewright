@@ -96,7 +96,6 @@ fn build(who: &str) -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("the lift-stake fixture builds clean")

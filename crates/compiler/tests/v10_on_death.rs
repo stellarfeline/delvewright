@@ -109,7 +109,6 @@ fn build(loaded: &LoadedCampaign, c: &Campaign) -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &skins,
     )
     .expect("every emitted command validates")

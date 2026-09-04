@@ -1641,7 +1641,6 @@ fn run_build(
     };
 
     let tree = CommandTree::v1_21_11();
-    let content_sha = resolve_content_sha();
     let output = match emit::build_with_warnings(
         &plan,
         &loaded.inputs,
@@ -1649,7 +1648,6 @@ fn run_build(
         &tree,
         &prefabs,
         build_lang,
-        &content_sha,
         &skins,
     ) {
         Ok((o, warnings)) => {
@@ -1999,7 +1997,6 @@ fn run_edit(
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
-    let content_sha = resolve_content_sha();
     match emit::build_with_warnings(
         &plan,
         &v.loaded.inputs,
@@ -2007,7 +2004,6 @@ fn run_edit(
         &tree,
         &v.prefabs,
         None,
-        &content_sha,
         &skins,
     ) {
         Ok((_, warnings)) => print_diags(&Fenced::apply(&v.campaign, warnings), json),
@@ -2079,59 +2075,6 @@ fn run_edit(
         );
     }
     ExitCode::SUCCESS
-}
-
-/// The pinned content-repo SHA stamped into `manifest.json` (spec-0007 Step 0).
-///
-/// Read from `versions.toml` `[content].sha` — the value pinned in the repo, NOT
-/// live git state — so the build stays deterministic and offline (ADR-0006:
-/// same DSL + same seed + same content_sha → byte-identical output). We walk up
-/// from the current directory to find `versions.toml` (delvec normally runs from
-/// the repo root); if none is found, or it declares no `[content].sha`, the SHA
-/// is reported as `"unpinned"`. Deliberately a plain line scan of the one key we
-/// need — no TOML dependency, no absolute path in the output.
-fn resolve_content_sha() -> String {
-    fn find_versions_toml() -> Option<PathBuf> {
-        let mut dir = std::env::current_dir().ok()?;
-        loop {
-            let candidate = dir.join("versions.toml");
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-            if !dir.pop() {
-                return None;
-            }
-        }
-    }
-    fn parse_content_sha(text: &str) -> Option<String> {
-        let mut in_content = false;
-        for raw in text.lines() {
-            let line = raw.trim();
-            if line.starts_with('#') || line.is_empty() {
-                continue;
-            }
-            if line.starts_with('[') {
-                in_content = line == "[content]";
-                continue;
-            }
-            if in_content
-                && let Some(rest) = line.strip_prefix("sha")
-                && let Some(rest) = rest.trim_start().strip_prefix('=')
-            {
-                // strip any inline `# comment`, then surrounding quotes/space.
-                let val = rest.split('#').next().unwrap_or(rest).trim();
-                let val = val.trim_matches('"');
-                if !val.is_empty() {
-                    return Some(val.to_string());
-                }
-            }
-        }
-        None
-    }
-    find_versions_toml()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|t| parse_content_sha(&t))
-        .unwrap_or_else(|| "unpinned".to_string())
 }
 
 fn write_output(out: &Path, output: &emit::BuildOutput) -> std::io::Result<()> {

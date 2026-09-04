@@ -49,7 +49,6 @@ fn build_fixture() -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates (DW0378 holds on the fixture)")
@@ -91,7 +90,6 @@ fn the_fixture_gate_can_be_watched_before_it_is_entered() {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("the build succeeds — DW0388 is not raised at error tier either");
@@ -286,7 +284,6 @@ fn build_with_crush(crush: bool) -> BuildOutput {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("both crush settings emit valid commands")

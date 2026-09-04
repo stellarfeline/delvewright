@@ -86,7 +86,6 @@ fn build(campaign: &Campaign, prefabs: &PrefabRegistry) -> BuildOutput {
         &tree,
         prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates; the close-gate nav proof passes")

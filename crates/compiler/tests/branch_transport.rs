@@ -57,7 +57,6 @@ fn try_build_campaign(dir: &Path) -> Result<BuildOutput, BuildFailure> {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
 }

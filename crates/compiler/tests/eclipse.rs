@@ -119,7 +119,6 @@ fn build_quests(
         &tree,
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .map(|(_, warnings)| warnings)

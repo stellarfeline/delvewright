@@ -169,7 +169,6 @@ fn a_tiled_zones_own_water_is_inside_the_built_volume() {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "test",
         &BTreeMap::new(),
     )
     .expect("a tiled zone whose water is indoors builds under the void horizon");
@@ -293,7 +292,6 @@ fn a_leaking_world_gets_no_boundary_verdict_through_the_entry_point() {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "test",
         &BTreeMap::new(),
     )
     .expect_err("a leaking world does not build");

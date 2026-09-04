@@ -92,7 +92,6 @@ fn build(cutscene: &str) -> (Plan<'static>, BuildOutput) {
         &CommandTree::v1_21_11(),
         prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("every emitted command validates");
@@ -443,7 +442,6 @@ fn the_tier3_fixture_seeds_the_proposal_the_flow_asserts() {
         &CommandTree::v1_21_11(),
         &prefabs,
         None,
-        "unpinned",
         &BTreeMap::new(),
     )
     .expect("the fixture builds");
