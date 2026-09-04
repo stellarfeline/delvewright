@@ -519,26 +519,25 @@ pub fn build_with_warnings(
                 &er.assembled.open_gates,
             );
             occ.solid.extend(relight.extra_solid.iter().copied());
-            // The ambient is the world-generator PREMISE (spec-0013), not
-            // geometry, and `from_occupancy` defaults it to `Void`. The
-            // sibling arm gets it for free through `from_plan`; this arm
-            // has to say it, or an `ocean` campaign's proofs would run
-            // against a void world that does not exist. Harmless while
-            // nothing here read it — `verify_boundary_safety` below now
-            // does.
-            // The world-load gate seals travel with this arm too, and
-            // they are the prefab's measurement, not the edit script's:
-            // a batch that writes INTO a gate region already appears as
-            // ordinary solid blocks above (and is `DW0353`'s advisory).
-            // Missing this line is how an edit-carrying campaign — the
-            // island is one — would have got a vacuous green out of the
-            // completability model while every fixture went red.
-            crate::nav::World::from_occupancy(occ)
-                .with_ambient(
-                    crate::nav::Ambient::of_plan(plan),
-                    crate::nav::built_volume(plan),
-                )
-                .with_world_load_seals(plan, er.assembled.gate_seals.clone())
+            // The campaign's premises about this world — the generator
+            // ambient, the built extent, the declared LETHAL VOLUMES, the
+            // measured world-load gate seals, the clocked gate regions and
+            // the teleport sources — travel as one value, so this arm and
+            // its `from_plan` sibling below carry the identical set by
+            // construction rather than by two authors agreeing.
+            //
+            // They did not, and the cost was the whole point of the model:
+            // this arm applied the ambient and the seals and not the lethal
+            // volumes, so every campaign declaring `world-edits.json` proved
+            // its completability over a world with no kill boxes in it. The
+            // gallery's exported critical path walked six waypoints through
+            // its two declared lethal volumes, `validation/lethal-gate.json`
+            // reported `"cells": 0` beside them, and the bot withered to
+            // death at step 10 of the ladder.
+            crate::nav::World::from_occupancy(
+                occ,
+                crate::nav::Premises::of_plan(plan, er.assembled.gate_seals.clone()),
+            )
         }
         None => crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid),
     };

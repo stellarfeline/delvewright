@@ -1010,11 +1010,18 @@ fn run_snapshot(
     // The occupancy view of the same assembled model the grid rasterises: the
     // render plan's cameras are stood up and proven against it (`DW0724`), so a
     // `--shot` here frames exactly what the built plan states.
+    //
+    // Geometry alone (`nav::Premises::geometry_only`): a camera is stood up
+    // against BLOCKS — the question is whether the eye is inside one — and a
+    // reviewer framing a shot down into a declared lethal volume is looking at
+    // open air, not at a wall. The campaign's premises are about what a body may
+    // walk through, which is not what this command asks.
     let world = delvewright_compiler::nav::World::from_occupancy(
         delvewright_compiler::assembled::occupancy_of(
             assembled.blocks.clone(),
             &assembled.open_gates,
         ),
+        delvewright_compiler::nav::Premises::geometry_only(),
     );
     let blocks = assembled.blocks;
     let grid = snapshot::VoxelGrid::build(&blocks);
@@ -1494,11 +1501,18 @@ fn run_blocking_chart(
         Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
+    // Every premise the campaign states (`nav::Premises::of_plan`), because the
+    // corridor this chart draws is `critical_path_routes` — the SAME derivation
+    // the build's completability proof takes — and a chart taken over a smaller
+    // premise set draws a corridor no proof ever walked. A route through a
+    // declared lethal volume was exactly that: a line on the blocking chart the
+    // author could read as cleared.
     let world = delvewright_compiler::nav::World::from_occupancy(
         delvewright_compiler::assembled::occupancy_of(
             assembled.blocks.clone(),
             &assembled.open_gates,
         ),
+        delvewright_compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
     );
     let blocks = assembled.blocks;
     let targets = delvewright_compiler::snapshot::collect_targets(&plan);
