@@ -1120,10 +1120,21 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
     let placement = delvewright_dsl::Placement::of(c);
 
     // The base assembled geometry (nav) and required-path cells fixtures must avoid.
-    let nav = World::from_occupancy(crate::assembled::occupancy_of(
-        assembled.blocks.clone(),
-        &assembled.open_gates,
-    ));
+    //
+    // **Geometry alone, and the decline is this pass's own** ([`nav::Premises`]).
+    // The darkness survey below floods `reachable_walkable` from an area's
+    // anchors and asks what a player can SEE; the campaign's premises are about
+    // what a player can survive, and applying them here would shrink the survey
+    // rather than sharpen it. A declared lethal volume is the concrete case: it
+    // is impassable to the router, so a kill box in the middle of a room would
+    // CUT the flood and drop every cell beyond it out of the `DW0210` survey —
+    // a silent coverage loss, in the direction that reads as a clean pass. A pit
+    // that kills is also a pit the player has to be able to see before stepping
+    // into it, so its own cells stay in the survey too.
+    let nav = World::from_occupancy(
+        crate::assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
+        crate::nav::Premises::geometry_only(),
+    );
     // move-npc waypoint cells are part of the required paths; plan them on the base
     // world (an unroutable move is a separate DW0307 handled by emit — here we
     // just collect paths, ignoring routing errors).
@@ -2076,10 +2087,10 @@ mod tests {
     /// as the shipped model does — unlike [`nav_of`], which force-solids every
     /// non-air cell.
     fn nav_occ_of(map: &BTreeMap<[i32; 3], String>) -> World {
-        World::from_occupancy(crate::assembled::occupancy_of(
-            map.clone(),
-            &BTreeSet::new(),
-        ))
+        World::from_occupancy(
+            crate::assembled::occupancy_of(map.clone(), &BTreeSet::new()),
+            crate::nav::Premises::geometry_only(),
+        )
     }
 
     /// [`reachable_of`] over the real collision classifier, seeded at `start`.

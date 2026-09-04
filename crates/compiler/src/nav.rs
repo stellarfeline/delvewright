@@ -977,6 +977,96 @@ pub struct World {
 /// and never re-decides whether it may be taken.
 use delvewright_dsl::metrics::{FULL_16, PLAYER_WIDTH, step_allowed};
 
+/// **Everything a [`World`] carries that is not a block** — the premises the
+/// campaign states about the world its geometry sits in: what the generator put
+/// in the columns the content never built, where the content ends, which volumes
+/// kill, which gates the prefabs shut at world-load, which of those a clock owns,
+/// and where the party can be carried instead of walking.
+///
+/// It exists because those premises were previously applied by a *chain of
+/// optional methods* on `World`, and an arm that forgot a link got a world that
+/// was wrong in exactly the direction nothing reports. That is not hypothetical:
+/// `emit::build`'s `edit_replay` arm — the arm every campaign declaring
+/// `world-edits.json` takes — applied the ambient and the gate seals and not the
+/// **lethal volumes**, so the completability proof of every edit-carrying
+/// campaign routed straight through its own kill boxes and reported
+/// `"cells": 0` in `validation/lethal-gate.json` while doing it. The gallery's
+/// exported critical path walked six waypoints through two declared lethal
+/// volumes and the bot died at the seventh step of the run.
+///
+/// The repair is this type rather than a fourth remembered method call: the
+/// premises travel as **one value**, [`Premises::of_plan`] is the only way to
+/// derive one from a campaign, and it fills every field. A caller cannot state a
+/// subset, so it cannot forget one — and a premise added here reaches every arm
+/// at once instead of reaching the arms whoever added it happened to grep for.
+///
+/// A world with no campaign behind it says so by name: [`Premises::geometry_only`].
+#[derive(Clone, Debug)]
+pub struct Premises {
+    ambient: Ambient,
+    built: Vec<BuiltPiece>,
+    lethal_regions: Vec<LethalRegion>,
+    world_load_seals: Vec<crate::assembled::GateSeal>,
+    clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
+    transit_teleports: Vec<([i32; 3], [i32; 3])>,
+}
+
+impl Premises {
+    /// Every premise `plan` states, with the world-load gate seals `seals`
+    /// measured off the assembled bytes the world is being built from.
+    ///
+    /// `seals` is an argument rather than a plan field because it is a
+    /// **measurement of the assembled world**, not a declaration: the plan is
+    /// built before any `.nbt` byte is read, and an edited world's seals are the
+    /// edited bytes'. Every call site that builds a world from a campaign has an
+    /// [`crate::assembled::Assembled`] in hand and passes that world's own
+    /// `gate_seals`.
+    ///
+    /// Two classes of measured seal are deliberately dropped by the model that
+    /// reads these, and both drops are stated on [`World::modelled_seals`]: a
+    /// gate authored open is not a seal, and a timed gate's region is its clock's.
+    pub fn of_plan(plan: &Plan, seals: Vec<crate::assembled::GateSeal>) -> Self {
+        Premises {
+            ambient: Ambient::of_plan(plan),
+            built: built_volume(plan),
+            lethal_regions: plan
+                .lethal_volumes
+                .iter()
+                .map(|v| (v.id.clone(), v.region))
+                .collect(),
+            world_load_seals: seals,
+            clocked_gates: plan.timed_gates.iter().map(|g| g.gate_region).collect(),
+            transit_teleports: plan.transit_teleports.clone(),
+        }
+    }
+
+    /// A world that is **geometry alone**: no ambient beyond [`Ambient::Void`],
+    /// no built extent, no lethal volume, no gate seal, no teleport source.
+    ///
+    /// This is not a default and it is not an omission — it is a claim, made by
+    /// name at the site that makes it, that the question being asked of this
+    /// world is a question about blocks. Every production call site of it is
+    /// enumerated by `premise_declines_are_enumerated`, which reds when a new one
+    /// appears: the whole point of this type is that declining a premise is
+    /// visible, and a decline nobody has to write down is the defect wearing the
+    /// repair's clothes.
+    ///
+    /// Synthetic worlds ([`World::from_solid_cells`],
+    /// [`World::from_solid_and_flooded`], the unit tests' hand-built
+    /// [`crate::assembled::Occupancy`]) have no campaign at all, so there is
+    /// nothing for them to state.
+    pub fn geometry_only() -> Self {
+        Premises {
+            ambient: Ambient::Void,
+            built: Vec::new(),
+            lethal_regions: Vec::new(),
+            world_load_seals: Vec::new(),
+            clocked_gates: BTreeSet::new(),
+            transit_teleports: Vec::new(),
+        }
+    }
+}
+
 impl World {
     /// Build the occupancy model from the plan's placed pieces and the structure
     /// `.nbt` bytes, via the shared assembled-world model. Every non-air cell of
@@ -986,17 +1076,13 @@ impl World {
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
         let assembled = crate::assembled::assemble(plan, structures);
         let seals = assembled.gate_seals.clone();
-        Self::from_occupancy(crate::assembled::occupancy_of(
-            assembled.blocks,
-            &assembled.open_gates,
-        ))
-        .with_ambient(Ambient::of_plan(plan), built_volume(plan))
-        .with_lethal(plan)
-        .with_world_load_seals(plan, seals)
+        Self::from_occupancy(
+            crate::assembled::occupancy_of(assembled.blocks, &assembled.open_gates),
+            Premises::of_plan(plan, seals),
+        )
     }
 
-    /// This world with the measured world-load gate seals it should carry
-    /// ([`World::world_load_seals`]).
+    /// The measured gates the model actually treats as **shut at world-load**.
     ///
     /// Two classes of measured seal are deliberately **dropped** here, and both
     /// drops are optimism the model states rather than hides:
@@ -1015,19 +1101,6 @@ impl World {
     /// same region at the same step is the same verdict either way — keeping it
     /// is what lets the diagnostic NAME a shortcut door that walls off the only
     /// route.
-    pub fn with_world_load_seals(
-        mut self,
-        plan: &Plan,
-        seals: Vec<crate::assembled::GateSeal>,
-    ) -> World {
-        self.clocked_gates = plan.timed_gates.iter().map(|g| g.gate_region).collect();
-        self.world_load_seals = seals;
-        self.transit_teleports = plan.transit_teleports.clone();
-        self
-    }
-
-    /// The measured gates the model actually treats as **shut at world-load** —
-    /// the two exclusions [`World::with_world_load_seals`] documents.
     fn modelled_seals(&self) -> impl Iterator<Item = &crate::assembled::GateSeal> {
         self.world_load_seals
             .iter()
@@ -1073,25 +1146,6 @@ impl World {
     /// emits no ledger, so a ledger that exists and reports zero is a finding.
     pub fn has_gate_anchors(&self) -> bool {
         !self.world_load_seals.is_empty()
-    }
-
-    /// This world with the plan's declared **lethal volumes** (DSL v0.10,
-    /// spec-0031) marked impassable.
-    ///
-    /// This is where "a volume that kills" becomes "a volume no proof may route
-    /// through", and it is deliberately applied to the base world rather than
-    /// per-leg the way a `close-gate`'s seal is: a seal has a point in the quest
-    /// DAG before which the region is open, and a lethal volume has none — it
-    /// kills from world-load, in every branch, on every leg. A campaign with no
-    /// volume gets the identical world back (the set is empty), so nothing moves
-    /// for anybody who has not declared one.
-    fn with_lethal(mut self, plan: &Plan) -> World {
-        for v in &plan.lethal_volumes {
-            self.lethal
-                .extend(crate::assembled::region_cells(v.region.0, v.region.1));
-            self.lethal_regions.push((v.id.clone(), v.region));
-        }
-        self
     }
 
     /// A copy of this world with **no** lethal volumes — the counterfactual the
@@ -1154,25 +1208,38 @@ impl World {
             .collect()
     }
 
-    /// Build the walkability model from a collision-classified [`Occupancy`]
-    /// — the sets map across one-to-one.
-    pub fn from_occupancy(occ: crate::assembled::Occupancy) -> Self {
+    /// Build the walkability model from a collision-classified [`Occupancy`] and
+    /// the [`Premises`] the campaign states about the world it sits in — the
+    /// **one door** every world goes through, so that adding a premise is one
+    /// edit in [`Premises::of_plan`] rather than a grep across the call sites
+    /// somebody remembers.
+    ///
+    /// The occupancy sets and the premises are separate arguments because they
+    /// are separate kinds of fact — the first is measured off the assembled
+    /// bytes, the second is declared by the campaign — but neither is optional.
+    /// A call site with a campaign in hand writes [`Premises::of_plan`]; one
+    /// without says [`Premises::geometry_only`] and means it.
+    pub fn from_occupancy(occ: crate::assembled::Occupancy, premises: Premises) -> Self {
         World {
             solid: occ.solid,
             tall: occ.tall,
             use_gates: occ.use_gates,
             flooded: occ.flooded,
             partial: occ.partial,
-            lethal: BTreeSet::new(),
-            lethal_regions: Vec::new(),
+            lethal: premises
+                .lethal_regions
+                .iter()
+                .flat_map(|(_, (lo, hi))| crate::assembled::region_cells(*lo, *hi))
+                .collect(),
+            lethal_regions: premises.lethal_regions,
             pinned: BTreeSet::new(),
-            world_load_seals: Vec::new(),
-            clocked_gates: BTreeSet::new(),
-            transit_teleports: Vec::new(),
+            world_load_seals: premises.world_load_seals,
+            clocked_gates: premises.clocked_gates,
+            transit_teleports: premises.transit_teleports,
             flood_written: BTreeSet::new(),
             flood_regions: Vec::new(),
-            ambient: Ambient::Void,
-            built: Vec::new(),
+            ambient: premises.ambient,
+            built: premises.built,
         }
     }
 
@@ -1180,6 +1247,13 @@ impl World {
     /// its [`built_volume`] recorded. The occupancy sets are untouched — both are
     /// *premises* ([`verify_boundary_safety`], [`measure_fluid_escape`]), not
     /// geometry.
+    ///
+    /// **Synthetic worlds only.** A world built from a campaign gets both through
+    /// [`Premises::of_plan`], along with every other premise, and that is the
+    /// point of [`Premises`]: this method can set two of six fields, and a
+    /// campaign world assembled out of it would be missing four. It survives
+    /// because the unit tests build worlds out of bare cell sets and need to say
+    /// what is in the columns around them.
     ///
     /// The two travel in one argument list on purpose. They answer the same
     /// question from opposite sides — *what is in a column the content did not
@@ -1549,45 +1623,25 @@ impl World {
     /// synthetic entry point; the relight unit tests build a world without a full
     /// [`Plan`]).
     pub fn from_solid_cells(solid: BTreeSet<[i32; 3]>) -> Self {
-        World {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
-            flooded: BTreeSet::new(),
-            partial: BTreeMap::new(),
-            lethal: BTreeSet::new(),
-            lethal_regions: Vec::new(),
-            pinned: BTreeSet::new(),
-            world_load_seals: Vec::new(),
-            clocked_gates: BTreeSet::new(),
-            transit_teleports: Vec::new(),
-            flood_written: BTreeSet::new(),
-            flood_regions: Vec::new(),
-            ambient: Ambient::Void,
-            built: Vec::new(),
-        }
+        Self::from_solid_and_flooded(solid, BTreeSet::new())
     }
 
     /// Build a [`World`] directly from disjoint solid + flooded cell sets (test /
     /// synthetic entry point for the flood-aware standability rules).
+    ///
+    /// Synthetic: there is no campaign behind these cells, so there is nothing
+    /// for them to state — [`Premises::geometry_only`], said by name.
     pub fn from_solid_and_flooded(solid: BTreeSet<[i32; 3]>, flooded: BTreeSet<[i32; 3]>) -> Self {
-        World {
-            solid,
-            tall: BTreeSet::new(),
-            use_gates: BTreeSet::new(),
-            flooded,
-            partial: BTreeMap::new(),
-            lethal: BTreeSet::new(),
-            lethal_regions: Vec::new(),
-            pinned: BTreeSet::new(),
-            world_load_seals: Vec::new(),
-            clocked_gates: BTreeSet::new(),
-            transit_teleports: Vec::new(),
-            flood_written: BTreeSet::new(),
-            flood_regions: Vec::new(),
-            ambient: Ambient::Void,
-            built: Vec::new(),
-        }
+        Self::from_occupancy(
+            crate::assembled::Occupancy {
+                solid,
+                tall: BTreeSet::new(),
+                use_gates: BTreeSet::new(),
+                flooded,
+                partial: BTreeMap::new(),
+            },
+            Premises::geometry_only(),
+        )
     }
 
     /// Whether a cell is a valid standing position (feet + head passable, solid
@@ -8248,6 +8302,94 @@ pub fn check_collapses(
 mod tests {
     use super::*;
 
+    /// **Every production decline of the campaign's premises, enumerated.**
+    ///
+    /// [`Premises::of_plan`] makes forgetting a premise impossible — you cannot
+    /// state a subset — but [`Premises::geometry_only`] is still a way to decline
+    /// the whole set, and a decline nobody has to write down is the original
+    /// defect with a better name. So the production call sites are listed here
+    /// with their counts, and a new one reds this test until it is added.
+    ///
+    /// The point is not the numbers. It is that adding a decline is an edit to
+    /// this list, which a reviewer reads, rather than an absence, which nobody
+    /// can see. Each entry's reason lives at its call site, in a comment beside
+    /// the call; this test only insists that the entry exists.
+    ///
+    /// The population is the compiler crate's own sources with each file's
+    /// top-level `#[cfg(test)]` tail removed — a synthetic world in a unit test
+    /// has no campaign behind it and nothing to state.
+    #[test]
+    fn premise_declines_are_enumerated() {
+        // (file, how many production call sites)
+        const EXPECTED: &[(&str, usize)] = &[
+            // `blockout.rs`: the stage-5 battery's `open` and `sealed` worlds,
+            // which carry their own sealing authority.
+            ("blockout.rs", 2),
+            // `edit.rs`: a `relight` verb's own darkness survey.
+            ("edit.rs", 1),
+            // `light.rs`: the relight pass's darkness survey.
+            ("light.rs", 1),
+            // `main.rs`: `delvec snapshot`, where a camera is stood up against
+            // blocks.
+            ("main.rs", 1),
+            // `nav.rs`: the synthetic constructors' own door
+            // (`from_solid_and_flooded`), which every unit-test world goes
+            // through.
+            ("nav.rs", 1),
+        ];
+
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files: Vec<std::path::PathBuf> = Vec::new();
+        let mut stack = vec![src.clone()];
+        while let Some(dir) = stack.pop() {
+            for e in std::fs::read_dir(&dir).expect("read the crate's own sources") {
+                let p = e.expect("dir entry").path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    files.push(p);
+                }
+            }
+        }
+        files.sort();
+        assert!(
+            files.len() > 20,
+            "the population is the crate's sources, not a handful: {}",
+            files.len()
+        );
+
+        let mut found: Vec<(String, usize)> = Vec::new();
+        for f in &files {
+            let text = std::fs::read_to_string(f).expect("read source");
+            // Everything from the file's own top-level `#[cfg(test)]` on is test
+            // code. Column zero is what makes it top-level; a nested one inside a
+            // function is indented and does not truncate the file.
+            let prod = match text.find("\n#[cfg(test)]\n") {
+                Some(i) => &text[..i],
+                None => &text[..],
+            };
+            // The definition itself is `pub fn geometry_only`, never a call.
+            let n = prod.matches("Premises::geometry_only()").count();
+            if n > 0 {
+                found.push((f.file_name().unwrap().to_string_lossy().into_owned(), n));
+            }
+        }
+        let expected: Vec<(String, usize)> = EXPECTED
+            .iter()
+            .map(|(f, n)| ((*f).to_string(), *n))
+            .collect();
+        assert_eq!(
+            found,
+            expected,
+            "a production world declines the campaign's premises somewhere this \
+             list does not name. That is legitimate — say WHY at the call site, \
+             then add it here. It is not legitimate to leave it unlisted: the \
+             whole reason `Premises` exists is that a premise nobody has to \
+             mention is a premise that goes missing. ({} source file(s) examined)",
+            files.len()
+        );
+    }
+
     /// A flat solid floor at `y-1` over `[0,w) × [0,d)`, with the given interior
     /// cells at `y` set solid (obstacles). Cells at `y` not listed are open air.
     fn floored(w: i32, d: i32, y: i32, walls: &[[i32; 3]]) -> World {
@@ -8301,7 +8443,7 @@ mod tests {
         }
         blocks.insert([2, 64, 1], "minecraft:water".to_string());
         let occ = crate::assembled::occupancy_of(blocks, &BTreeSet::new());
-        World::from_occupancy(occ)
+        World::from_occupancy(occ, Premises::geometry_only())
     }
 
     /// The plate's own AABB — one "piece" covering the built cells and nothing
@@ -8385,7 +8527,7 @@ mod tests {
         }
         blocks.insert([2, 64, 2], "minecraft:water".to_string());
         let occ = crate::assembled::occupancy_of(blocks, &BTreeSet::new());
-        let world = World::from_occupancy(occ).with_ambient(
+        let world = World::from_occupancy(occ, Premises::geometry_only()).with_ambient(
             Ambient::Void,
             vec![("prefab/dish".to_string(), ([0, 63, 0], [4, 64, 4]))],
         );
@@ -8421,7 +8563,7 @@ mod tests {
         }
         blocks.insert([2, 64, 1], "minecraft:water".to_string());
         let occ = crate::assembled::occupancy_of(blocks, &BTreeSet::new());
-        let world = World::from_occupancy(occ).with_ambient(
+        let world = World::from_occupancy(occ, Premises::geometry_only()).with_ambient(
             Ambient::Void,
             vec![
                 ("prefab/west".to_string(), ([-1, 63, -1], [2, 65, 3])),
@@ -8477,10 +8619,10 @@ mod tests {
                 dry.insert([x, 63, z], "minecraft:stone".to_string());
             }
         }
-        let dry_world = World::from_occupancy(crate::assembled::occupancy_of(
-            dry.clone(),
-            &BTreeSet::new(),
-        ))
+        let dry_world = World::from_occupancy(
+            crate::assembled::occupancy_of(dry.clone(), &BTreeSet::new()),
+            Premises::geometry_only(),
+        )
         .with_ambient(Ambient::Void, plate_built());
         let err = verify_boundary_safety(&dry_world, &roots([1, 64, 1]))
             .expect_err("a dry plate edge is a void drop");
@@ -8490,9 +8632,11 @@ mod tests {
         // `col_min` now finds arrest in each of them.
         let mut wet = dry;
         wet.insert([1, 64, 1], "minecraft:water".to_string());
-        let wet_world =
-            World::from_occupancy(crate::assembled::occupancy_of(wet, &BTreeSet::new()))
-                .with_ambient(Ambient::Void, plate_built());
+        let wet_world = World::from_occupancy(
+            crate::assembled::occupancy_of(wet, &BTreeSet::new()),
+            Premises::geometry_only(),
+        )
+        .with_ambient(Ambient::Void, plate_built());
         assert!(
             boundary_only(&wet_world, &roots([1, 64, 1])).is_ok(),
             "the leak silences the boundary proof — this is the masking, not a pass"
@@ -10247,13 +10391,16 @@ mod tests {
                 solid.insert([x, y - 1, z]);
             }
         }
-        World::from_occupancy(crate::assembled::Occupancy {
-            solid,
-            tall: tall.iter().copied().collect(),
-            use_gates: use_gates.iter().copied().collect(),
-            flooded: BTreeSet::new(),
-            partial: BTreeMap::new(),
-        })
+        World::from_occupancy(
+            crate::assembled::Occupancy {
+                solid,
+                tall: tall.iter().copied().collect(),
+                use_gates: use_gates.iter().copied().collect(),
+                flooded: BTreeSet::new(),
+                partial: BTreeMap::new(),
+            },
+            Premises::geometry_only(),
+        )
     }
 
     /// The gateless ram-pen shape: a closed fence ring at stand level around an
@@ -11801,7 +11948,10 @@ mod tests {
     fn blocks_world(cells: &[([i32; 3], &str)]) -> World {
         let map: BTreeMap<[i32; 3], String> =
             cells.iter().map(|(c, n)| (*c, (*n).to_string())).collect();
-        World::from_occupancy(crate::assembled::occupancy_of(map, &BTreeSet::new()))
+        World::from_occupancy(
+            crate::assembled::occupancy_of(map, &BTreeSet::new()),
+            Premises::geometry_only(),
+        )
     }
 
     #[test]
@@ -12136,7 +12286,7 @@ mod tests {
             Some(&8),
             "the slab course must be modelled as a half-height floor"
         );
-        let world = World::from_occupancy(occ).with_ambient(
+        let world = World::from_occupancy(occ, Premises::geometry_only()).with_ambient(
             Ambient::Ocean(Sea {
                 level: 62,
                 floor_top: 54,
@@ -12158,10 +12308,13 @@ mod tests {
 
         // The control: the identical geometry under the void premise is still a
         // void-drop error — partial heights do not disturb that verdict either.
-        let voidish = World::from_occupancy(crate::assembled::occupancy_of(
-            cells.iter().map(|(c, n)| (*c, (*n).to_string())).collect(),
-            &BTreeSet::new(),
-        ));
+        let voidish = World::from_occupancy(
+            crate::assembled::occupancy_of(
+                cells.iter().map(|(c, n)| (*c, (*n).to_string())).collect(),
+                &BTreeSet::new(),
+            ),
+            Premises::geometry_only(),
+        );
         let err = verify_boundary_safety(&voidish, &roots([3, 63, 3]))
             .expect_err("under `void` the same slab coast is a void drop");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);

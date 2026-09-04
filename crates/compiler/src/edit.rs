@@ -647,24 +647,22 @@ fn check_batch_invariants(
             message: format!("after world-edits batch `{bid}`: {}", diag.message),
         });
     }
-    // The world-generator ambient (spec-0013 `horizon`) is a *premise* of the
-    // boundary-safety proof, not geometry: under `ocean` the pinned superflat
-    // puts bedrock under every column, so there is no void to step into and the
-    // hazard is stranding instead (`nav::verify_boundary_safety`). Deriving it
-    // from the plan here is what keeps that proof from testing a false premise.
-    let ambient = crate::nav::Ambient::of_plan(plan);
-    let built = crate::nav::built_volume(plan);
-    let world = crate::nav::World::from_occupancy(assembled::occupancy_of(
-        assembled.blocks.clone(),
-        &assembled.open_gates,
-    ))
-    .with_ambient(ambient.clone(), built.clone());
-    let with_fixtures = if relight.extra_solid.is_empty() {
-        world
-    } else {
+    // Every premise the campaign states about this world (`nav::Premises`), not
+    // the subset this call site happened to think of. The batch checks below are
+    // the SAME proofs the final build runs — `check_critical_path`,
+    // `check_checkpoints`, `verify_boundary_safety` — so a world built here from
+    // a smaller premise set would let a batch pass a proof the build then fails,
+    // or, worse and what actually happened, pass one the build also passed
+    // vacuously. The world-generator ambient (spec-0013 `horizon`) is one of
+    // them: under `ocean` the pinned superflat puts bedrock under every column,
+    // so there is no void to step into and the hazard is stranding instead. The
+    // declared lethal volumes are another, and were missing here exactly as they
+    // were missing from `emit::build`'s edit arm.
+    let premises = crate::nav::Premises::of_plan(plan, assembled.gate_seals.clone());
+    let with_fixtures = {
         let mut occ = assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates);
         occ.solid.extend(relight.extra_solid.iter().copied());
-        crate::nav::World::from_occupancy(occ).with_ambient(ambient, built)
+        crate::nav::World::from_occupancy(occ, premises)
     };
     let ctx = |e: Failure| Failure {
         code: e.code,
@@ -1848,10 +1846,16 @@ fn relight_region(
             .ok_or_else(|| missing("min_light"))?,
     };
     let sky = crate::light::darkest_effective_sky(c);
-    let nav = crate::nav::World::from_occupancy(assembled::occupancy_of(
-        assembled.blocks.clone(),
-        &assembled.open_gates,
-    ));
+    // Geometry alone, for the same reason `light::relight_over` declines the
+    // campaign's premises (`nav::Premises::geometry_only`): this world backs a
+    // `relight` verb's own darkness survey, and applying the premises would
+    // shrink the set of cells that survey covers instead of sharpening it. The
+    // two passes are the same question asked over one area, so they are answered
+    // over the same kind of world.
+    let nav = crate::nav::World::from_occupancy(
+        assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
+        crate::nav::Premises::geometry_only(),
+    );
     let moves = crate::nav::plan_moves(plan, &nav).unwrap_or_default();
     let required = nav.required_path_cells(plan, &moves);
     let (amin, amax) = match bounds_of(cells.iter()) {
