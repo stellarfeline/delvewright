@@ -1843,21 +1843,22 @@ fn run_build(
     // success, and the output is dropped unwritten. `BuildKind::Demonstrate`
     // carries no path, so this is a statement about what did not happen rather
     // than a decision not to do it.
-    let BuildKind::Ship(out) = kind else {
-        let BuildKind::Demonstrate(knob, p) = kind else {
-            unreachable!("the let-else above rules out the only other kind")
-        };
-        eprintln!(
-            "perturbed build: the derivation was asked for `{}`{} and produced a datapack that \
-             NOTHING refused — {} did not fire, and neither did any other build-tier check. \
-             Either this campaign has nothing for that defect to damage, or an observer that \
-             claims to read the built bytes is reciting the arithmetic that laid them. The \
-             output was discarded; a perturbed run has no `--out` to write to.",
-            knob.name(),
-            p.place().map(|n| format!(" at `{n}`")).unwrap_or_default(),
-            knob.documented_code(),
-        );
-        return ExitCode::from(3);
+    let out = match kind {
+        BuildKind::Ship(out) => out,
+        BuildKind::Demonstrate(knob, p) => {
+            eprintln!(
+                "perturbed build: the derivation was asked for `{}`{} and produced a datapack that \
+                 NOTHING refused — {} did not fire, and neither did any other build-tier \
+                 check. Either this campaign has nothing for that defect to damage, or an \
+                 observer that claims to read the built bytes is reciting the arithmetic that \
+                 laid them. The output was discarded; a perturbed run has no `--out` to write \
+                 to.",
+                knob.name(),
+                p.place().map(|n| format!(" at `{n}`")).unwrap_or_default(),
+                knob.documented_code(),
+            );
+            return ExitCode::from(3);
+        }
     };
 
     if let Err(e) = write_output(out, &output) {
