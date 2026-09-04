@@ -1,0 +1,34 @@
+{
+  "campaign_id": "state-path-order",
+  "content": {
+    "finale": "quest/leave",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [],
+        "goal": "Read a label off the Keeper's ledger.",
+        "id": "quest/ask",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      },
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [
+          "quest/ask"
+        ],
+        "goal": "Put the ledger back and leave by the door.",
+        "id": "quest/leave",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.7.0",
+  "stage": "quest-plan"
+}

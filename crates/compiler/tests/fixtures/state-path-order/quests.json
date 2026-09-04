@@ -1,0 +1,155 @@
+{
+  "campaign_id": "state-path-order",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "reading a label aloud, one word at a time"
+          },
+          "npc/sleeper": {
+            "at": "anchor/exit",
+            "dialogue": {
+              "barks": [
+                "...mm. Not my watch."
+              ]
+            },
+            "doing": "wine-drowned sleep against the wall"
+          }
+        },
+        "happening": {
+          "subject": "npc/keeper",
+          "text": "The party asks the Keeper what the labels say.",
+          "verb": "learns"
+        },
+        "id": "quest/ask",
+        "objectives": [
+          {
+            "happening": {
+              "subject": "npc/keeper",
+              "text": "The Keeper reads the first label out.",
+              "verb": "learns"
+            },
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "title": "Hear the Keeper read",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [
+          {
+            "anchor": "anchor/door",
+            "happening": {
+              "subject": "anchor/door",
+              "text": "The Keeper stands aside and the door opens.",
+              "verb": "opens"
+            },
+            "type": "open-gate"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            {
+              "amount": 1,
+              "state": "state/labels-read",
+              "type": "add-state"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/farewell",
+            "doing": "standing aside, watching you go"
+          },
+          "npc/sleeper": {
+            "at": "anchor/exit",
+            "dialogue": "none",
+            "doing": "dead asleep, past waking"
+          }
+        },
+        "happening": {
+          "subject": "npc/keeper",
+          "text": "The party puts the ledger back and takes its leave.",
+          "verb": "departs"
+        },
+        "id": "quest/leave",
+        "objectives": [
+          {
+            "anchor": "anchor/keeper-stand",
+            "happening": {
+              "subject": "anchor/keeper-stand",
+              "text": "The ledger goes back on its shelf.",
+              "verb": "arrives"
+            },
+            "id": "obj/shelve",
+            "radius": 2,
+            "title": "Put the ledger back",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/shelve"
+            ],
+            "anchor": "anchor/exit",
+            "happening": {
+              "subject": "anchor/exit",
+              "text": "The party reaches the doorway out.",
+              "verb": "arrives"
+            },
+            "id": "obj/exit",
+            "radius": 2,
+            "requires_state": [
+              {
+                "op": "at-least",
+                "state": "state/labels-read",
+                "value": 1
+              }
+            ],
+            "title": "Leave by the door",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "ending": "The room is read and shut.",
+            "happening": {
+              "text": "The party walks out onto the moor.",
+              "verb": "departs"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/exit": [
+            {
+              "state": "state/labels-read",
+              "type": "clear-state"
+            }
+          ]
+        },
+        "trigger": {
+          "quest": "quest/ask",
+          "type": "quest-complete"
+        }
+      }
+    ],
+    "state": [
+      {
+        "id": "state/labels-read",
+        "initial": 0,
+        "note": "How many of the room's labels the party has read. Party-scoped: the room is read once, by whoever reads it. Written by three beats that the campaign's own after/quest-complete chains force into one order, which is what makes the walk over it decidable.",
+        "scope": "party"
+      }
+    ]
+  },
+  "dsl_version": "0.10.0",
+  "stage": "quests"
+}

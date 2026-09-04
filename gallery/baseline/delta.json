@@ -1,36 +1,7 @@
 {
   "added": [],
   "base_commit": "864dbe7367990528b606f9a72e6950dca866c966",
-  "changed": [
-    "easy.en:critical-path.json",
-    "easy.en:datapack/data/gallery/function/tick.mcfunction",
-    "easy.en:validation/branch-path-read.json",
-    "easy.en:validation/branch-path-skipped.json",
-    "hard.en:critical-path.json",
-    "hard.en:datapack/data/gallery/function/tick.mcfunction",
-    "hard.en:validation/branch-path-read.json",
-    "hard.en:validation/branch-path-skipped.json",
-    "ocean-horizon.en:critical-path.json",
-    "ocean-horizon.en:datapack/data/gallery/function/tick.mcfunction",
-    "ocean-horizon.en:validation/branch-path-read.json",
-    "ocean-horizon.en:validation/branch-path-skipped.json",
-    "primary.en:critical-path.json",
-    "primary.en:datapack/data/gallery/function/tick.mcfunction",
-    "primary.en:validation/branch-path-read.json",
-    "primary.en:validation/branch-path-skipped.json",
-    "primary.zh-cn:critical-path.json",
-    "primary.zh-cn:datapack/data/gallery/function/tick.mcfunction",
-    "primary.zh-cn:validation/branch-path-read.json",
-    "primary.zh-cn:validation/branch-path-skipped.json",
-    "void-horizon.en:critical-path.json",
-    "void-horizon.en:datapack/data/gallery/function/tick.mcfunction",
-    "void-horizon.en:validation/branch-path-read.json",
-    "void-horizon.en:validation/branch-path-skipped.json"
-  ],
-  "classes": {
-    "datapack function": 6,
-    "other": 6,
-    "validation ledger": 12
-  },
+  "changed": [],
+  "classes": {},
   "removed": []
 }
