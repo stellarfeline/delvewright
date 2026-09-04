@@ -281,11 +281,14 @@ fn dw0305_use_site_carries_the_pool_explanation() {
         Ok(_) => panic!("the referenced anchor is ambiguous — the build must fail"),
     };
 
-    assert_eq!(err.code, "DW0305", "the use-site verdict is unchanged");
+    assert_eq!(
+        err.failure.code, "DW0305",
+        "the use-site verdict is unchanged"
+    );
     assert!(
-        err.message.contains("anchor/npc-stand"),
+        err.failure.message.contains("anchor/npc-stand"),
         "DW0305 still names the anchor: {}",
-        err.message
+        err.failure.message
     );
     let expl = err
         .warnings

@@ -459,13 +459,13 @@ fn two_declared_entries_in_one_area_are_refused() {
     let Err(err) = Plan::build(&campaign, &prefabs) else {
         panic!("one area declaring two entries must not plan");
     };
-    assert_eq!(err.code.id(), "DW0804", "{}", err.message);
+    assert_eq!(err.failure.code.id(), "DW0804", "{}", err.failure.message);
     assert!(
-        err.message.contains("area/landing")
-            && err.message.contains("spawn")
-            && err.message.contains("anchor/exit"),
+        err.failure.message.contains("area/landing")
+            && err.failure.message.contains("spawn")
+            && err.failure.message.contains("anchor/exit"),
         "the refusal names the area and BOTH claimants: {}",
-        err.message
+        err.failure.message
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
