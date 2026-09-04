@@ -111,7 +111,22 @@ const assertComplete: AssertCompleteStep = {
 };
 
 function path(steps: Step[]): CriticalPath {
-  return { version: "0.2.0", formatVersion: 2, campaignId: "hello-world", steps };
+  return {
+    version: "0.2.0",
+    formatVersion: 2,
+    campaignId: "hello-world",
+    // Step ORDER is what this file is about; the cast statement rides along
+    // because a path carries one, and a campaign with no NPCs states exactly
+    // this — an empty list with its binding count at zero and the reason said.
+    nonCombatants: {
+      kinds: new Set<string>(),
+      ambiguous: [],
+      examined: 0,
+      unbound: true,
+      reason: "this fixture stages no NPC",
+    },
+    steps,
+  };
 }
 
 test("validateStepOrder accepts the canonical order", () => {

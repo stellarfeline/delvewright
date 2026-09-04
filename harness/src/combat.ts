@@ -48,12 +48,47 @@ export interface Encounter {
   readonly respawnsOnRest: boolean;
   /** Absent when the campaign has set no checkpoint by this step (world spawn). */
   readonly checkpoint: Vec3Tuple | undefined;
+  /**
+   * What stands at this encounter, per entity kind, with the melee budget the
+   * encounter's own arithmetic gives each body. Required — see
+   * {@link EncounterBody}.
+   */
+  readonly bodies: readonly EncounterBody[];
   /** The compiler-emitted tag-census probe for this wave. The names
    * come from the plan and are never re-derived here: `safe_local` is a compiler
    * naming rule, and reimplementing it in the harness is the downstream folklore
    * CLAUDE.md forbids. Required — a build too old to state them cannot be
    * measured by tag, and failing loudly beats silently measuring by silhouette. */
   readonly census: CensusProbe;
+}
+
+/**
+ * One kind of body standing at an encounter, and when the ladder must stop
+ * swinging at it.
+ *
+ * The bot used to decide a body was unkillable by meleeing it for a fixed six
+ * seconds. That is not a fact about anything — too long for a rat, too short for
+ * an elite — and it lived in the harness, where nothing knows what is standing
+ * there. The compiler does: declared `max_health`, the mob's resistance and the
+ * best weapon any class kit carries are the three numbers its winnability proof
+ * already bounds the whole fight with.
+ *
+ * `giveUpSwings` is `undefined` when that arithmetic could not run (Mojang
+ * publishes no per-entity default attributes, so an undeclared mob's health is
+ * genuinely unknown). The ladder then gives up on NOTHING here and lets the
+ * step's own budget expire, saying which kinds had no bound — never a fallback to
+ * a constant, which is the defect this field replaces.
+ */
+export interface EncounterBody {
+  /** Entity kind in the client's vocabulary (`zombie`) — the only identity the
+   * bot can read off a body. */
+  readonly kind: string;
+  /** How many of them the wave seats. */
+  readonly count: number;
+  /** Swings after which this body is not being killed by the class kit. */
+  readonly giveUpSwings: number | undefined;
+  /** Why there is no budget. Present exactly when `giveUpSwings` is undefined. */
+  readonly reason?: string;
 }
 
 /** The three functions the ladder calls to measure one wave by tag. */
@@ -266,6 +301,7 @@ export function parseCombatPlan(raw: unknown): CombatPlan {
       checkpoint:
         e["checkpoint"] === undefined ? undefined : requirePos(e["checkpoint"], `${p}/checkpoint`),
       census: parseCensusProbe(e["census"], `${p}/census`),
+      bodies: parseEncounterBodies(e["bodies"], `${p}/bodies`),
     };
   });
   return {
@@ -277,6 +313,56 @@ export function parseCombatPlan(raw: unknown): CombatPlan {
     floorGate: parseFloorLedger(raw["floor_gate"], "/floor_gate"),
     actorsGate: parseBindingCount(raw["actors_gate"], "/actors_gate"),
   };
+}
+
+/**
+ * The encounter's cast and its melee budgets. Required, and with no default: a
+ * plan too old to state what stands at a fight cannot be measured by one, and
+ * the only fallback is a constant in the harness — which is the thing these
+ * fields exist to delete.
+ */
+function parseEncounterBodies(v: unknown, pointer: string): readonly EncounterBody[] {
+  if (!Array.isArray(v)) throw new CombatPlanParseError(pointer, "expected an array");
+  if (v.length === 0) {
+    throw new CombatPlanParseError(pointer, "a wave with no bodies is not an encounter");
+  }
+  const seen = new Set<string>();
+  return v.map((b, i): EncounterBody => {
+    const p = `${pointer}/${i}`;
+    if (!isRecord(b)) throw new CombatPlanParseError(p, "expected an object");
+    const kind = b["kind"];
+    if (typeof kind !== "string" || kind.length === 0) {
+      throw new CombatPlanParseError(`${p}/kind`, "expected a non-empty string");
+    }
+    if (kind.includes(":")) {
+      throw new CombatPlanParseError(`${p}/kind`, "expected a client entity name, not an id");
+    }
+    // The lookup is by kind, so two entries for one kind would make the budget
+    // depend on which came first — a silent wrong answer, not an error.
+    if (seen.has(kind)) {
+      throw new CombatPlanParseError(`${p}/kind`, `duplicate kind ${kind}`);
+    }
+    seen.add(kind);
+    const count = b["count"];
+    if (!Number.isInteger(count) || (count as number) <= 0) {
+      throw new CombatPlanParseError(`${p}/count`, "expected a positive integer");
+    }
+    const swings = b["give_up_swings"];
+    const reason = b["reason"];
+    if (swings === null || swings === undefined) {
+      if (typeof reason !== "string" || reason.length === 0) {
+        throw new CombatPlanParseError(`${p}/reason`, "a body with no budget must state why");
+      }
+      return { kind, count: count as number, giveUpSwings: undefined, reason };
+    }
+    if (!Number.isInteger(swings) || (swings as number) <= 0) {
+      throw new CombatPlanParseError(`${p}/give_up_swings`, "expected a positive integer or null");
+    }
+    if (reason !== undefined) {
+      throw new CombatPlanParseError(`${p}/reason`, "a bounded body carries no reason");
+    }
+    return { kind, count: count as number, giveUpSwings: swings as number };
+  });
 }
 
 /**
@@ -470,6 +556,51 @@ function parseFloorLedger(v: unknown, pointer: string): FloorLedger {
     );
   }
   return { present: true, covered, notCovered, binding };
+}
+
+/**
+ * The melee budget this encounter gives a body of `kind`, or `undefined` when it
+ * gives none.
+ *
+ * `undefined` covers three honest cases and no dishonest one: the run carries no
+ * combat plan for this wave, the encounter seats no body of that kind (a
+ * retaliation target that wandered in from somewhere else), or the compiler could
+ * not compute the arithmetic. In every one of them the answer is "nothing here
+ * knows", and the caller must not substitute a number of its own — that
+ * substitution is the whole defect this replaced.
+ */
+export function giveUpBudgetFor(
+  encounter: Encounter | undefined,
+  kind: string | undefined,
+): number | undefined {
+  if (!encounter || kind === undefined || kind.length === 0) return undefined;
+  return encounter.bodies.find((b) => b.kind === kind)?.giveUpSwings;
+}
+
+/**
+ * One body that outlived the melee budget its encounter's arithmetic gave it.
+ *
+ * A finding, printed in the run report — never a silent blacklist. Either the
+ * body cannot be damaged by the class kit, or the encounter's numbers are wrong;
+ * both are content defects, and both used to be absorbed by a six-second timer
+ * that reported nothing.
+ */
+export interface UnkillableBody {
+  readonly wave: string;
+  readonly kind: string;
+  readonly swings: number;
+  readonly budget: number;
+}
+
+/** The run-report line for one {@link UnkillableBody}. */
+export function unkillableFinding(u: UnkillableBody): string {
+  return (
+    `${u.wave}: a \`${u.kind}\` took ${u.swings} swing(s) in melee and did not fall. The ` +
+    `encounter's own arithmetic budgets ${u.budget} for that body, out of its declared ` +
+    `\`attributes.max_health\`, its resistance and the best weapon a class kit carries — so ` +
+    `either nothing in the party's kit can damage it, or the encounter's numbers are wrong. ` +
+    `The bot stopped swinging at it and went on with the wave.`
+  );
 }
 
 /** Read the combat plan beside `criticalPathPath`; `undefined` when absent (a

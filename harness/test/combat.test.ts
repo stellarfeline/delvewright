@@ -14,9 +14,12 @@ import {
   dieRetryCoverageFailures,
   dieRetryFindings,
   floorFinding,
+  giveUpBudgetFor,
   openTrial,
+  unkillableFinding,
   checkpointPrecondition,
   observationOf,
+  CombatPlanParseError,
   parseCombatPlan,
   reseatFidelityFinding,
   respawnedAtCheckpoint,
@@ -42,6 +45,7 @@ function encounter(over: Partial<Encounter> = {}): Encounter {
       brand: "the-drowned-bell:wave_brand_bellkeeper",
       unbrand: "the-drowned-bell:wave_unbrand_bellkeeper",
     },
+    bodies: [{ kind: "drowned", count: 1, giveUpSwings: 24 }],
     ...over,
   };
 }
@@ -65,6 +69,7 @@ const PLAN = {
         brand: "the-drowned-bell:wave_brand_gate_assault",
         unbrand: "the-drowned-bell:wave_unbrand_gate_assault",
       },
+      bodies: [{ kind: "drowned", count: 2, give_up_swings: 24 }],
     },
   ],
 };
@@ -600,4 +605,75 @@ test("a stage that took deaths is bound, and owes no reason", () => {
   assert.equal(b.deathsScripted, 2);
   assert.equal(b.trialsCompleted, 1, "taken and completed are different counts");
   assert.equal(b.engaged, 1);
+});
+
+// --- the encounter's own melee budgets (the census round) ---------------------
+//
+// What replaced a six-second timer in the executor. The compiler states, per
+// entity kind, how many swings that body should take; the ladder holds it to
+// that and NAMES the ones that outlive it.
+
+function planWithBodies(bodies: unknown): unknown {
+  const raw = JSON.parse(JSON.stringify(PLAN)) as Record<string, unknown>;
+  (raw["encounters"] as Record<string, unknown>[])[0]!["bodies"] = bodies;
+  return raw;
+}
+
+test("an encounter's bodies parse with their per-kind melee budget", () => {
+  const plan = parseCombatPlan(
+    planWithBodies([
+      { kind: "drowned", count: 3, give_up_swings: 24 },
+      { kind: "husk", count: 1, give_up_swings: null, reason: "declares no max_health" },
+    ]),
+  );
+  const bodies = plan.encounters[0]!.bodies;
+  assert.equal(bodies.length, 2);
+  assert.equal(giveUpBudgetFor(plan.encounters[0], "drowned"), 24);
+  assert.equal(giveUpBudgetFor(plan.encounters[0], "husk"), undefined);
+  // A kind the encounter does not seat has no budget here either — a
+  // retaliation target that wandered in from elsewhere is not this fight's
+  // arithmetic to judge.
+  assert.equal(giveUpBudgetFor(plan.encounters[0], "creeper"), undefined);
+  assert.equal(giveUpBudgetFor(undefined, "drowned"), undefined);
+});
+
+test("a plan whose encounter states no bodies is refused", () => {
+  const raw = JSON.parse(JSON.stringify(PLAN)) as Record<string, unknown>;
+  delete (raw["encounters"] as Record<string, unknown>[])[0]!["bodies"];
+  assert.throws(
+    () => parseCombatPlan(raw),
+    (err: unknown) => err instanceof CombatPlanParseError && /bodies/.test(err.pointer),
+  );
+});
+
+test("a body with no budget must state why — silence would read as zero", () => {
+  assert.throws(
+    () => parseCombatPlan(planWithBodies([{ kind: "drowned", count: 1, give_up_swings: null }])),
+    (err: unknown) =>
+      err instanceof CombatPlanParseError && err.pointer === "/encounters/0/bodies/0/reason",
+  );
+});
+
+test("two entries for one kind are refused — the lookup is by kind", () => {
+  // Not a style rule: with two entries the budget would depend on which came
+  // first, which is a silent wrong answer rather than an error.
+  assert.throws(
+    () =>
+      parseCombatPlan(
+        planWithBodies([
+          { kind: "drowned", count: 1, give_up_swings: 24 },
+          { kind: "drowned", count: 1, give_up_swings: 40 },
+        ]),
+      ),
+    (err: unknown) =>
+      err instanceof CombatPlanParseError && /duplicate kind/.test(err.message),
+  );
+});
+
+test("the unkillable finding names the body, the swings and the arithmetic", () => {
+  const line = unkillableFinding({ wave: "wave/muster", kind: "husk", swings: 24, budget: 24 });
+  assert.match(line, /wave\/muster/);
+  assert.match(line, /husk/);
+  assert.match(line, /24 swing/);
+  assert.match(line, /max_health/);
 });

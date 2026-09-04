@@ -66,6 +66,7 @@ const CONFIG: BotConfig = {
 
 function attach(bot: FakeBot, env: Record<string, string | undefined> = {}): MineflayerExecutor {
   const executor = new MineflayerExecutor(CONFIG, env);
+  executor.useNonCombatants(new Set(["mannequin", "villager"]));
   executor.attachBot(bot as unknown as Bot);
   return executor;
 }
@@ -529,23 +530,42 @@ const SELF = { name: "delve-bot", height: 1.8, position: { x: 0, y: 64, z: 0 } }
 function ent(name: string | undefined, height = 1.8): unknown {
   return { name, height, position: { x: 1, y: 64, z: 0 } };
 }
+/** What the delve says is not a fight. In a real run this comes off
+ * `critical-path.json`; here it is written out so each case says which half of
+ * the rule it is exercising. */
+const CAST = new Set(["mannequin", "villager"]);
+const NO_CAST: ReadonlySet<string> = new Set<string>();
 
 test("isWaveMob classifies a living hostile as a wave mob", () => {
-  assert.equal(isWaveMob(ent("drowned", 1.95), SELF), true);
-  assert.equal(isWaveMob(ent("zombie"), SELF), true);
+  assert.equal(isWaveMob(ent("drowned", 1.95), SELF, CAST), true);
+  assert.equal(isWaveMob(ent("zombie"), SELF, CAST), true);
 });
 
-test("isWaveMob never targets an Invulnerable mannequin NPC (regression)", () => {
-  assert.equal(isWaveMob(ent("mannequin", 1.8), SELF), false);
+test("isWaveMob never targets a body the delve says is not a fight", () => {
+  // Both of these used to be literals in the harness. They are the compiler's
+  // knowledge, and they arrive as data now — so the same names are targets when
+  // the delve does not claim them.
+  assert.equal(isWaveMob(ent("mannequin", 1.8), SELF, CAST), false);
+  assert.equal(isWaveMob(ent("villager"), SELF, CAST), false);
+  assert.equal(
+    isWaveMob(ent("mannequin", 1.8), SELF, NO_CAST),
+    true,
+    "a delve that does not stage mannequins as NPCs has no reason to spare one",
+  );
 });
 
-test("isWaveMob excludes NPCs, displays, drops, and the bot itself", () => {
-  for (const name of ["villager", "armor_stand", "interaction", "item", "text_display"]) {
-    assert.equal(isWaveMob(ent(name), SELF), false, `${name} must not be a wave mob`);
+test("isWaveMob excludes vanilla non-bodies and the bot itself, cast or no cast", () => {
+  // These need no campaign to say so: no delve can make a dropped item a fight.
+  for (const name of ["player", "armor_stand", "interaction", "item", "text_display"]) {
+    assert.equal(isWaveMob(ent(name), SELF, NO_CAST), false, `${name} must not be a wave mob`);
   }
-  assert.equal(isWaveMob(SELF, SELF), false, "the bot is not its own target");
-  assert.equal(isWaveMob(ent(undefined), SELF), false, "an unnamed entity is not a target");
-  assert.equal(isWaveMob(ent("item", 0.25), SELF), false, "a short dropped entity is excluded");
+  assert.equal(isWaveMob(SELF, SELF, CAST), false, "the bot is not its own target");
+  assert.equal(isWaveMob(ent(undefined), SELF, CAST), false, "an unnamed entity is not a target");
+  assert.equal(
+    isWaveMob(ent("item", 0.25), SELF, CAST),
+    false,
+    "a short dropped entity is excluded",
+  );
 });
 
 // --- completion oracle (AUDIT-P0) ---------------------------------------------
@@ -1789,6 +1809,7 @@ function combatPlan(count = 1, respawnsOnRest = true): CombatPlan {
         count,
         respawnsOnRest,
         census: ENCOUNTER.census,
+        bodies: [{ kind: "drowned", count, giveUpSwings: 24 }],
         checkpoint: ENCOUNTER.checkpoint,
       },
     ],

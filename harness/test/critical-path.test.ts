@@ -16,8 +16,14 @@ import type { ReachCompletion } from "../src/critical-path.ts";
 function validRaw(): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 3,
+    format_version: 4,
     campaign_id: "hello-world",
+    non_combatants: {
+      kinds: ["mannequin", "villager"],
+      ambiguous: [],
+      examined: 2,
+      unbound: false,
+    },
     steps: [
       {
         action: "select-class",
@@ -677,4 +683,78 @@ test("a completion of an unknown kind is a structural fault, never coerced", () 
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && /kind/.test(err.message),
   );
+});
+
+// --- contract format 4: the delve's own cast statement -------------------------
+//
+// The bot picks a swing target by shape, so it has to be told which shapes are
+// not fights. That used to be a literal set in the harness holding `mannequin`
+// and `villager` — the compiler's knowledge, written where nothing could check
+// it. These cases pin that the path must carry it and that no reading of the
+// field is guessed.
+
+test("the parsed path carries the delve's non-combatant kinds", () => {
+  const path = parseCriticalPath(validRaw());
+  assert.deepEqual([...path.nonCombatants.kinds].sort(), ["mannequin", "villager"]);
+  assert.equal(path.nonCombatants.examined, 2);
+  assert.equal(path.nonCombatants.unbound, false);
+  assert.deepEqual(path.nonCombatants.ambiguous, []);
+});
+
+test("a path with no non_combatants is refused, never defaulted", () => {
+  // The refusal IS the feature: the only fallback available is a list of entity
+  // names in this file, which is right only for the campaigns whose author
+  // happened to pick those bodies.
+  const raw = validRaw();
+  delete raw["non_combatants"];
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError && err.pointer === "/non_combatants",
+  );
+});
+
+test("a namespaced kind is refused — it could never match a body", () => {
+  const raw = validRaw();
+  (raw["non_combatants"] as Record<string, unknown>)["kinds"] = ["minecraft:mannequin"];
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError &&
+      err.pointer === "/non_combatants/kinds/0" &&
+      /client entity name/.test(err.message),
+  );
+});
+
+test("`unbound` must agree with `examined === 0`", () => {
+  const raw = validRaw();
+  (raw["non_combatants"] as Record<string, unknown>)["unbound"] = true;
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError && err.pointer === "/non_combatants",
+  );
+});
+
+test("a census that examined nothing must say why", () => {
+  const raw = validRaw();
+  raw["non_combatants"] = { kinds: [], ambiguous: [], examined: 0, unbound: true };
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError && err.pointer === "/non_combatants/reason",
+  );
+});
+
+test("an NPC bodied as something the party fights arrives as an ambiguity", () => {
+  const raw = validRaw();
+  raw["non_combatants"] = {
+    kinds: [],
+    ambiguous: [{ kind: "zombie", why: "npc/keeper is bodied as a zombie, which wave/guards is" }],
+    examined: 1,
+    unbound: false,
+  };
+  const path = parseCriticalPath(raw);
+  assert.equal(path.nonCombatants.ambiguous[0]?.kind, "zombie");
+  assert.equal(path.nonCombatants.kinds.size, 0);
 });
