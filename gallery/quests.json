@@ -827,11 +827,7 @@
           "npc/marshal": [
             {
               "at": "anchor/muster",
-              "dialogue": {
-                "barks": [
-                  "Form up."
-                ]
-              },
+              "dialogue": "dlg/marshal-read",
               "doing": "calling the muster to a party that read the label",
               "forbids_flags": [
                 "flag/hall-sealed"
@@ -849,11 +845,7 @@
             },
             {
               "at": "anchor/muster",
-              "dialogue": {
-                "barks": [
-                  "You did not read it. Form up anyway."
-                ]
-              },
+              "dialogue": "dlg/marshal-skipped",
               "doing": "calling the muster to a party that walked straight past",
               "requires_flags": [
                 "flag/skipped-the-label"
@@ -871,6 +863,24 @@
         },
         "id": "quest/far-hall",
         "objectives": [
+          {
+            "id": "obj/answer-the-marshal",
+            "type": "talk-to",
+            "npc": "npc/marshal",
+            "title": "Answer the Marshal",
+            "hint": "She is at the muster line, and she wants the lectern accounted for.",
+            "after": [],
+            "requires_flags": [],
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "stealth": false,
+            "happening": {
+              "subject": "npc/marshal",
+              "verb": "arrives",
+              "text": "The Marshal stops the party at the muster line and asks after the lectern."
+            }
+          },
           {
             "after": [],
             "forbids_flags": [
@@ -1915,7 +1925,7 @@
           "npc/marshal": [
             {
               "at": "anchor/muster",
-              "dialogue": "unchanged",
+              "dialogue": "dlg/marshal-root",
               "doing": "forming up beyond the wall, indifferent to the cellar",
               "requires_flags": [
                 "flag/read-the-label"
@@ -1923,7 +1933,7 @@
             },
             {
               "at": "anchor/muster",
-              "dialogue": "unchanged",
+              "dialogue": "dlg/marshal-root",
               "doing": "forming up beyond the wall, having walked straight past the label",
               "requires_flags": [
                 "flag/skipped-the-label"

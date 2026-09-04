@@ -210,6 +210,48 @@
               }
             ],
             "text": "\"Form up or stand aside. The muster does not wait on readers.\""
+          },
+          {
+            "id": "dlg/marshal-read",
+            "text": "\"You stopped at the lectern. Say what it said, and say it in front of the muster.\"",
+            "options": [
+              {
+                "label": "It said who the hall is for.",
+                "tooltip": "Repeat the label, word for word, to a Marshal who did not read it.",
+                "happening": {
+                  "subject": "npc/marshal",
+                  "verb": "learns",
+                  "text": "The Marshal hears the label read back to her and lets the reading stand."
+                },
+                "effects": [
+                  {
+                    "type": "complete-objective",
+                    "objective": "obj/answer-the-marshal"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "dlg/marshal-skipped",
+            "text": "\"You walked past it. So say what you think the hall is for, and be quick.\"",
+            "options": [
+              {
+                "label": "We did not stop to read.",
+                "tooltip": "Admit to a Marshal who did not read it either that nobody read it.",
+                "happening": {
+                  "subject": "npc/marshal",
+                  "verb": "believes",
+                  "text": "The Marshal takes the party's word for the hall, there being nothing else to take."
+                },
+                "effects": [
+                  {
+                    "type": "complete-objective",
+                    "objective": "obj/answer-the-marshal"
+                  }
+                ]
+              }
+            ]
           }
         ],
         "npc": "npc/marshal",
