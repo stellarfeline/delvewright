@@ -27,6 +27,7 @@ import {
   retryOutcome,
   scriptedDeathCommand,
   trialVerdict,
+  waveAttribution,
   type DeathTrial,
   type Encounter,
 } from "../src/combat.ts";
@@ -214,7 +215,11 @@ test("an assist window the harness never closed is reported, not swallowed", () 
 // --- the inverted floor gate ------------------------------------------------
 
 test("an elite the unassisted bot beats first try is a floor finding", () => {
-  const finding = floorFinding(encounter({ tier: "elite" }), { attempted: true, won: true });
+  const finding = floorFinding(
+    encounter({ tier: "elite" }),
+    { attempted: true, won: true },
+    waveAttribution(2, 0, 2),
+  );
   assert.ok(finding);
   assert.match(finding, /billed `elite`/);
   assert.match(finding, /Advisory/);
@@ -222,13 +227,67 @@ test("an elite the unassisted bot beats first try is a floor finding", () => {
 
 test("an elite the unassisted bot LOSES to says nothing", () => {
   assert.equal(
-    floorFinding(encounter({ tier: "boss" }), { attempted: true, won: false }),
+    floorFinding(
+      encounter({ tier: "boss" }),
+      { attempted: true, won: false },
+      waveAttribution(2, 2, 0),
+    ),
     undefined,
   );
 });
 
 test("an ordinary encounter carries no floor expectation however easily it falls", () => {
-  assert.equal(floorFinding(encounter(), { attempted: true, won: true }), undefined);
+  assert.equal(
+    floorFinding(encounter(), { attempted: true, won: true }, waveAttribution(2, 0, 2)),
+    undefined,
+  );
+});
+
+// **The defect.** The gallery seats `wave/muster`'s three bodies within a stride
+// of `lethal/east-pit` and a drop. On the ladder run that measured this, one
+// withered, one fell, the bot felled the third — and the gate advised the author
+// to make an `elite` HARDER because the unassisted bot had "beaten it cold".
+test("a cohort the world mostly killed is not a fight the bot beat", () => {
+  const finding = floorFinding(
+    encounter({ tier: "elite", count: 3 }),
+    { attempted: true, won: true },
+    waveAttribution(3, 0, 1),
+  );
+  assert.ok(finding, "the encounter is still worth the author's attention");
+  assert.match(finding, /2 of its 3 bodies died with NO player credited/);
+  assert.match(finding, /does not measure the fight/);
+  assert.doesNotMatch(finding, /Advisory: raise the stack/);
+});
+
+// The step can END without the wave being down: with nothing eligible left to
+// attack it returns having SAID the census still counts mobs alive, and
+// `attemptUnassisted` reads that as `won`. Nothing fell, so nothing was credited,
+// and the gate must not advise on it.
+test("an encounter cleared with the party credited for nothing draws no advisory", () => {
+  const finding = floorFinding(
+    encounter({ tier: "boss", count: 2 }),
+    { attempted: true, won: true },
+    waveAttribution(2, 2, 0),
+  );
+  assert.match(String(finding), /credited with none of its 2 bodies/);
+  assert.doesNotMatch(String(finding), /Advisory: raise the stack/);
+});
+
+test("an attempt no census could attribute says so instead of claiming a clean win", () => {
+  const finding = floorFinding(encounter({ tier: "elite" }), { attempted: true, won: true }, {
+    kind: "unattributed",
+    reason: "no wave census answered during the unassisted attempt",
+  });
+  assert.match(String(finding), /cannot say who felled it/);
+  assert.match(String(finding), /no wave census answered/);
+});
+
+test("the attribution floors at zero rather than reporting a negative body count", () => {
+  // The three numbers are read at slightly different instants; a body dying
+  // between them must not produce -1 uncredited.
+  const a = waveAttribution(3, 1, 3);
+  assert.equal(a.kind, "measured");
+  assert.equal(a.kind === "measured" ? a.uncredited : -1, 0);
 });
 
 // --- die-retry (spec-0023 §1) -----------------------------------------------
@@ -427,7 +486,7 @@ function mob(over: Partial<{ distance: number; health: number; maxHealth: number
 /** A settled census: the server's totals plus the mob lines that closed it. */
 function census(
   mobs: ReturnType<typeof mob>[],
-  over: Partial<{ present: number; branded: number; damaged: number }> = {},
+  over: Partial<{ present: number; branded: number; damaged: number; credited: number }> = {},
 ) {
   return {
     summary: {
@@ -437,6 +496,7 @@ function census(
       present: over.present ?? mobs.length,
       branded: over.branded ?? 0,
       damaged: over.damaged ?? mobs.filter((m) => m.health < m.maxHealth).length,
+      credited: over.credited ?? 0,
     },
     mobs,
   };

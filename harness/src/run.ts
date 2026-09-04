@@ -463,6 +463,7 @@ async function main(): Promise<number> {
         assistPolicy: assistPolicy(enc),
         phaseReached: executor.encounterPhase(enc.wave),
         assistWindows: assists.filter((w) => w.wave === enc.wave).length,
+        attribution: executor.waveAttribution(enc.wave),
       }),
     );
     report.recordEncounters(encounterReports);

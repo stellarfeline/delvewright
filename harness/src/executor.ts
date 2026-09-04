@@ -38,6 +38,7 @@ import type { NamedEntityDeath } from "./teardown.ts";
 import type { StageName } from "./report.ts";
 import {
   AssistLedger,
+  actorAttribution,
   actorExercise,
   actorFloorFinding,
   assistClearCommand,
@@ -54,6 +55,7 @@ import {
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
+  waveAttribution,
   type ActorEncounter,
   type ActorOutcome,
   type ActorTrial,
@@ -63,6 +65,7 @@ import {
   type DeathTrialRecord,
   type Encounter,
   type EncounterPhase,
+  type FightAttribution,
   type PerformedRest,
   type ReengageObservation,
   type UnkillableBody,
@@ -143,9 +146,13 @@ import {
 import {
   WAVE_CLEAR_STREAK,
   WAVE_ENGAGE_NEAR,
+  beginCensusWatch,
   beginWave,
+  censusCleared,
   creditsWaveKill,
+  observeCensus,
   waveEngagementCleared,
+  type WaveCensusWatch,
   type WaveEngagement,
 } from "./wave.ts";
 
@@ -1021,6 +1028,19 @@ const REENGAGE_SETTLE_MS = 6_000;
  */
 const CENSUS_TIMEOUT_MS = 3_000;
 
+/**
+ * How often the kill step asks the server whether the wave still stands, while
+ * nothing else has prompted it to.
+ *
+ * The step's terminal condition is the census (`wave.ts`), so this is the
+ * background cadence that condition runs on: a census is a `/function` round trip
+ * plus a chat line per standing mob, which is cheap at this rate and would be
+ * noise at the loop's own 250ms. It is a FLOOR, not a schedule — a guess that the
+ * fight is over asks at once, and so does the bot's own tally reaching the wave's
+ * declared size, which is exactly when the old code asked.
+ */
+const WAVE_CENSUS_POLL_MS = 2_000;
+
 /** How many censuses' mob lines stay addressable. Only the newest is ever asked
  * for; the rest are kept so a late line cannot grow the map without bound. */
 const CENSUS_HISTORY = 4;
@@ -1369,6 +1389,13 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly encounterPhases = new Map<string, EncounterPhase>();
   /** Inverted floor gate findings: billed fights the unassisted bot beat cold. */
   private readonly floorFindings: string[] = [];
+  /**
+   * Who felled each wave's bodies, as its last census answered. The floor gate's
+   * verdict reads it, and so does the run report: an encounter cleared because a
+   * lethal volume ate two thirds of its cohort is not an encounter the bot beat,
+   * and before this nothing anywhere could tell the two apart.
+   */
+  private readonly waveAttributions = new Map<string, FightAttribution>();
   /** Every body that outlived its kind's melee budget, with the arithmetic
    * that budgeted it. Recorded rather than absorbed: the six-second timer
    * this replaced blacklisted such a body and said nothing at all. */
@@ -3424,10 +3451,12 @@ export class MineflayerExecutor implements StepExecutor {
    * delve says is not a fight:
    *   * the kinds this delve stages as NPCs are excluded from targeting outright,
    *     off `critical-path.json`'s `non_combatants` (see {@link isWaveMob});
-   *   * a confirmed KILL is a targeted mob that winks out in melee near the anchor;
-   *     reaching `step.count` clears the wave and returns immediately, so the bot
-   *     never treks off to a distant staged actor (which would trip later-area
-   *     triggers);
+   *   * a confirmed KILL is a targeted mob that winks out in melee near the anchor.
+   *     That tally is a DIAGNOSTIC and no longer a terminal condition: what ends the
+   *     step is the wave census, the server's own answer over the wave's tag (see
+   *     `wave.ts`). A tally reaching `step.count` still asks the census at once, so
+   *     the bot leaves the moment the fight is provably over and never treks off to
+   *     a distant staged actor (which would trip later-area triggers);
    *   * a candidate that outlives the melee budget the ENCOUNTER's own arithmetic
    *     gives its kind (`bodies[].give_up_swings`), or that cannot be pathed to, is
    *     dropped so the loop hunts the next real wave mob instead of fixating —
@@ -3446,6 +3475,13 @@ export class MineflayerExecutor implements StepExecutor {
     // that ambushes the bot on the way in, and that kill is wave progress like any other
     // — crediting it only from the kill loop deadlocked the objective (ladder run 13).
     const engagement = beginWave(step.wave, step.pos);
+    // What the SERVER has said about this wave during this step. The terminal
+    // condition, and the source of the fight's attribution. See `wave.ts`: a body
+    // that dies in a way the proximity rule cannot attribute, or a scripted death
+    // that re-seats the wave under a private counter, both leave `killed` unable
+    // ever to reach `step.count` — measured on the gallery, where two of three
+    // bodies withered and fell and `1/3` was as far as the tally could get.
+    const watch = beginCensusWatch();
     const onGone = (e: Entity): void => {
       if (!creditsWaveKill(engagement, e.id, e.position)) return;
       engagement.credited.add(e.id);
@@ -3497,12 +3533,31 @@ export class MineflayerExecutor implements StepExecutor {
       // a guess made from SHAPES, and the server can simply be asked. See
       // `waveStillStands`.
       const enc = this.encounterFor(step.wave);
+      let lastCensusAt = 0;
+      const askCensus = async (): Promise<number | undefined> => {
+        lastCensusAt = Date.now();
+        return this.pollWaveCensus(step, enc, watch);
+      };
       while (Date.now() < deadline) {
         // Fail fast if a mob killed the bot mid-fight (gap 7) rather than looping.
         if (this.death) throw this.death;
-        // The whole wave is confirmed down — done, wherever the bot happens to
-        // stand — unless the server says otherwise.
-        if (engagement.killed >= step.count && !(await this.waveStillStands(step, enc))) return;
+        // THE terminal condition: the server says nothing of this wave stands.
+        // Asked on its own cadence, and at once when the bot's own tally has
+        // reached the wave's declared size — which is the only thing that tally
+        // decides now.
+        const floorMs = engagement.killed >= step.count ? 0 : WAVE_CENSUS_POLL_MS;
+        if (Date.now() - lastCensusAt >= floorMs) {
+          await askCensus();
+          if (censusCleared(watch)) {
+            process.stderr.write(
+              `[kill ${step.wave}] the wave census reports nothing of ${step.wave} standing, ` +
+                `on ${watch.clearStreak} consecutive answers (${watch.peakStanding} standing ` +
+                `at its fullest this step; the bot confirmed ${engagement.killed} of ` +
+                `${step.count} itself) — wave cleared\n`,
+            );
+            return;
+          }
+        }
         // Eat between exchanges when hurt and nothing is in reach (no-op otherwise).
         await this.maybeEat(`wave ${step.wave}`);
         const cast = this.requireNonCombatants();
@@ -3542,7 +3597,7 @@ export class MineflayerExecutor implements StepExecutor {
           })
         ) {
           if (++clearedStreak >= WAVE_CLEAR_STREAK) {
-            if (!(await this.waveStillStands(step, enc))) {
+            if (!((await askCensus()) ?? 0)) {
               process.stderr.write(
                 `[kill ${step.wave}] every mob this fight engaged is down ` +
                   `(${engagement.killed} confirmed near the anchor) and no hostile is within ` +
@@ -3567,7 +3622,7 @@ export class MineflayerExecutor implements StepExecutor {
           // reach or unkillable — so the step still ends, but it ends having SAID so,
           // instead of reporting a clearance the objective will contradict.
           if (++emptyStreak >= WAVE_CLEAR_STREAK) {
-            if (await this.waveStillStands(step, enc)) {
+            if (((await askCensus()) ?? 0) > 0) {
               process.stderr.write(
                 `[kill ${step.wave}] nothing eligible is left to attack, but the wave census ` +
                   `still counts mobs alive — leaving the fight unfinished rather than claiming ` +
@@ -3654,9 +3709,11 @@ export class MineflayerExecutor implements StepExecutor {
       this.activeWave = undefined;
     }
     throw new Error(
-      `kill timed out after ${KILL_TIMEOUT_MS}ms: wave ${step.wave} ` +
-        `(${engagement.killed}/${step.count} confirmed dead; ` +
-        `${engagement.engaged.size} mob(s) engaged) not cleared` +
+      `kill timed out after ${KILL_TIMEOUT_MS}ms: wave ${step.wave} not cleared — the census ` +
+        `last reported ${watch.standing ?? "no"} of the wave standing over ${watch.answers} ` +
+        `answer(s)${watch.seen ? "" : ", and never once saw the wave exist"} ` +
+        `(the bot confirmed ${engagement.killed}/${step.count} itself; ` +
+        `${engagement.engaged.size} mob(s) engaged)` +
         unboundedEncounterNote(unbounded),
     );
   }
@@ -3745,6 +3802,21 @@ export class MineflayerExecutor implements StepExecutor {
     return this.floorFindings;
   }
 
+  /**
+   * Who felled `wave`'s bodies, as its last census answered.
+   *
+   * `unattributed` when no census answered during the fight — which is a fact
+   * about the probe, and must never be readable as a clean win.
+   */
+  waveAttribution(wave: string): FightAttribution {
+    return (
+      this.waveAttributions.get(wave) ?? {
+        kind: "unattributed",
+        reason: "no wave census answered during this run's fight at this encounter",
+      }
+    );
+  }
+
   /** Bodies that did not fall inside their encounter's own melee budget. */
   unkillableFindings(): readonly string[] {
     return this.unkillableBodies.map(unkillableFinding);
@@ -3804,7 +3876,14 @@ export class MineflayerExecutor implements StepExecutor {
     if (assistPolicy(enc) === "unassisted-first") {
       this.encounterPhases.set(enc.wave, "unassisted");
       const won = await this.attemptUnassisted(step, enc);
-      const finding = floorFinding(enc, { attempted: true, won });
+      // The attribution the attempt's own last census gave. `unattributed` only
+      // when no census answered during it, which is a fact about the probe rather
+      // than about the fight, and says so.
+      const finding = floorFinding(
+        enc,
+        { attempted: true, won },
+        this.waveAttribution(enc.wave),
+      );
       if (finding) {
         this.floorFindings.push(finding);
         process.stderr.write(`[floor] ${finding}\n`);
@@ -3858,7 +3937,7 @@ export class MineflayerExecutor implements StepExecutor {
       }
       const trial = await this.fightActor(a, objectiveId);
       this.actorTrials.push(trial);
-      const finding = actorFloorFinding(trial);
+      const finding = actorFloorFinding(trial, actorAttribution());
       if (finding) {
         this.floorFindings.push(finding);
         process.stderr.write(`[floor] ${finding}\n`);
@@ -4294,13 +4373,16 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Does the wave still stand? Asks the SERVER, by tag.
+   * How many of the wave stand? Asks the SERVER, by tag, and records the answer.
    *
-   * Every terminal condition in `fightWave` is a guess made from shapes — "a mob
-   * the bot hit winked out near the anchor", "everything it engaged is down and
-   * nothing hostile is close". None of them can tell a wave mob from any other
-   * mob, because the client cannot see the wave tag. On the drowned bell that
-   * cost the campaign a whole round: at the belfry the bot killed one of
+   * This is the kill step's terminal condition and the source of its attribution,
+   * so everything the step decides about the fight comes through here.
+   *
+   * Every OTHER test in `fightWave` is a guess made from shapes — "a mob the bot
+   * hit winked out near the anchor", "everything it engaged is down and nothing
+   * hostile is close". None of them can tell a wave mob from any other mob,
+   * because the client cannot see the wave tag. On the drowned bell that cost the
+   * campaign a whole round: at the belfry the bot killed one of
    * `ambush/the-rafters`' husks, counted it as the Bellkeeper (`confirmed kill:
    * husk#232 (1/1)`), and walked away from a wither skeleton that was still very
    * much alive. `obj/the-keeper` therefore never completed, `quest/the-keeper`
@@ -4308,26 +4390,43 @@ export class MineflayerExecutor implements StepExecutor {
    * `interact` click was adjudicated against an unarmed quest and spent. The
    * click was the SYMPTOM; this was the cause.
    *
-   * So the guesses now only get to END the fight with the server's agreement.
-   * They are still what drives it — the bot can only swing at what it can see —
-   * but "the wave is down" is a fact, and facts come from the census.
+   * The guesses still DRIVE the fight — the bot can only swing at what it can see
+   * — and they still prompt a census. What they no longer do is end the step on
+   * their own, and neither does the bot's tally of confirmed kills: a body that
+   * died where the proximity rule cannot attribute it, or a scripted death that
+   * re-seated the wave under that tally, both leave it unable to reach the wave's
+   * declared size for the rest of the step.
    *
-   * `false` when there is no census to ask (a wave outside the combat plan, or a
-   * census that did not answer): the pre-census terminal conditions then stand
-   * exactly as they did, because refusing to end the fight on a broken probe
-   * would hang the step instead of failing it.
+   * `undefined` when there is nothing to ask (a wave outside the combat plan) or
+   * when the census did not answer — never a zero, which would read as "the wave
+   * is gone" on a broken probe. The watch is not fed in that case, so a probe that
+   * never answers can never clear a fight.
    */
-  private async waveStillStands(step: KillStep, enc: Encounter | undefined): Promise<boolean> {
-    if (!enc) return false;
+  private async pollWaveCensus(
+    step: KillStep,
+    enc: Encounter | undefined,
+    watch: WaveCensusWatch,
+  ): Promise<number | undefined> {
+    if (!enc) return undefined;
     const census = await this.census(enc);
     if (!census) {
       process.stderr.write(
         `[kill ${step.wave}] the wave census did not answer; falling back to what the client ` +
           `can see\n`,
       );
-      return false;
+      return undefined;
     }
-    return census.summary.present > 0;
+    observeCensus(watch, {
+      present: census.summary.present,
+      credited: census.summary.credited,
+    });
+    // Who felled this cohort. `step.count` is the seating the compiler declared
+    // and `spawn_<wave>` wrote; the other two are the server's own answer.
+    this.waveAttributions.set(
+      step.wave,
+      waveAttribution(step.count, census.summary.present, census.summary.credited),
+    );
+    return census.summary.present;
   }
 
   /** Stamp this life's wave mobs so the next census can name the survivors. */
