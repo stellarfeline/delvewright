@@ -248,6 +248,30 @@ def test_an_npm_major_this_reader_does_not_know_is_refused(tmp_path):
     assert "outside the majors this reader was written against" in r.stderr
 
 
+def test_retrying_never_costs_more_than_the_one_attempt_it_replaced(tmp_path):
+    """The arithmetic nobody does. A first pass set the per-attempt timeout to
+    120s beside three attempts — six minutes, worse than the five-minute default
+    it was written to avoid, and invisible in the diff. The per-attempt value is
+    now derived from a stated budget, so this asserts the budget rather than the
+    number."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("check_advisories", TOOL)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    worst = (
+        mod.ATTEMPTS * mod.NPM_FETCH_TIMEOUT_MS / 1000
+        + mod.BACKOFF_SECONDS * (mod.ATTEMPTS - 1)
+    )
+    assert worst <= mod.NPM_TOTAL_BUDGET_SECONDS, (
+        f"{mod.ATTEMPTS} attempt(s) of {mod.NPM_FETCH_TIMEOUT_MS}ms plus backoff "
+        f"is {worst:.0f}s against a budget of {mod.NPM_TOTAL_BUDGET_SECONDS}s"
+    )
+    # And the budget is npm's own single-attempt default, so the gate cannot
+    # become slower than the command it wraps.
+    assert mod.NPM_TOTAL_BUDGET_SECONDS == 300
+
+
 def test_the_npm_instrument_is_named_on_every_run(tmp_path):
     proj = npm_project(tmp_path)
     fake_npm(tmp_path, npm_report())

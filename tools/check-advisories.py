@@ -107,11 +107,18 @@ SEVERITIES = ("info", "low", "moderate", "high", "critical")
 ATTEMPTS = 3
 BACKOFF_SECONDS = 5
 
-# npm's own per-request timeout, in milliseconds. Its default is 300000, and
-# three attempts at that is fifteen minutes of a required job spent discovering
-# that a registry is down. One bulk POST that has not answered in two minutes is
-# not going to.
-NPM_FETCH_TIMEOUT_MS = 120000
+# The whole npm arm's worst case, in seconds. It is the number that matters, and
+# it is held at npm's own single-attempt default so that retrying can never cost
+# MORE than the one attempt it replaced. Measured on the way to this constant: a
+# first pass set the per-attempt timeout to 120s, which at three attempts is six
+# minutes — worse than the five-minute default it was written to avoid, and
+# invisible until the arithmetic was done. So the per-attempt timeout is DERIVED
+# from the budget rather than chosen beside it, and raising ATTEMPTS shortens
+# each attempt instead of quietly blowing the budget.
+NPM_TOTAL_BUDGET_SECONDS = 300
+NPM_FETCH_TIMEOUT_MS = int(
+    (NPM_TOTAL_BUDGET_SECONDS - BACKOFF_SECONDS * (ATTEMPTS - 1)) / ATTEMPTS * 1000
+)
 
 # The npm majors whose `--json` audit report this reader was written against.
 # `metadata.vulnerabilities` is a npm 7+ shape; npm 6 reported a different one,
@@ -324,9 +331,10 @@ def audit_npm(directory: Path, level: str) -> int:
         return isinstance(counts, dict) and set(SEVERITIES) <= set(counts)
 
     r = fetching(
-        # npm's own timeout is bounded here: three attempts at its 300-second
-        # default is fifteen minutes of a required job, which is how the run
-        # that produced this code spent five.
+        # npm's own timeout is bounded here, and DERIVED from the arm's whole
+        # budget: three attempts at npm's 300-second default is fifteen minutes
+        # of a required job, which is how the run that produced this code spent
+        # five. Measured: the flag is honoured to within a second.
         ["npm", "audit", "--json", "--fetch-timeout", str(NPM_FETCH_TIMEOUT_MS)],
         answered,
         cwd=str(directory),
