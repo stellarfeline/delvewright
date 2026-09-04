@@ -638,7 +638,7 @@ fn derive_bound(
         let (mut lo, mut hi) = b.space();
         lo[1] -= sink;
         hi[1] -= sink;
-        let block = if perturb.brick_up == Some(b.node.0.as_str()) {
+        let block = if perturb.brick_up.as_deref() == Some(b.node.0.as_str()) {
             palette::WALL
         } else {
             palette::AIR
@@ -648,7 +648,7 @@ fn derive_bound(
         // than in (2) because (2)'s course sits ABOVE the play space and this
         // pass would clear anything laid inside it — the defect has to survive
         // the clear to be a defect at all.
-        if perturb.low_ceiling == Some(b.node.0.as_str()) {
+        if perturb.low_ceiling.as_deref() == Some(b.node.0.as_str()) {
             mass.write(
                 [lo[0], hi[1], lo[2]],
                 [hi[0], hi[1], hi[2]],
@@ -1320,9 +1320,23 @@ impl Battery {
     /// The first refusal, if the build must stop.
     #[must_use]
     pub fn refusal(&self) -> Option<&(DwCode, Diagnostic)> {
+        self.refusals().next()
+    }
+
+    /// **Every** refusal, in the order the battery raised them.
+    ///
+    /// A build stops at the first — `emit::BuildFailure` carries one code and
+    /// one message, as every check in this compiler does — but one defect is
+    /// routinely seen by more than one of these rules, and a report that names
+    /// only the first is a report about a smaller world than the battery
+    /// examined. Walls built a course tall are the standing example: the wall is
+    /// then open above every allocation (`DW0836`) *and* a body hops between two
+    /// places nothing connected (`DW0838`), and a creator who only ever sees the
+    /// first fixes it, rebuilds, and meets the second.
+    pub fn refusals(&self) -> impl Iterator<Item = &(DwCode, Diagnostic)> {
         self.findings
             .iter()
-            .find(|(_, d)| d.severity == delvewright_dsl::Severity::Error)
+            .filter(|(_, d)| d.severity == delvewright_dsl::Severity::Error)
     }
 
     /// The advisories, for the build's own warning list.
@@ -2693,7 +2707,15 @@ fn pacing(
 ///
 /// It is not an escape hatch and grants nothing: every field makes the output
 /// *worse*, and the battery's whole job is to refuse the result.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+///
+/// # How a creator asks for one
+///
+/// Through [`Knob`] and `delvec build --perturb <knob>`, which is the only
+/// caller outside a test. A perturbed build takes **no output directory** — the
+/// parser refuses `--out` beside `--perturb` — so the demonstration cannot
+/// produce a tree, cannot produce a `manifest.json`, and therefore cannot be
+/// bound to a staging admission token, whatever the observer says.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Perturb {
     /// Cut every seam's opening this many cells along its face's first in-plane
     /// axis, without telling the plan. Reddens `DW0836` from both directions at
@@ -2704,21 +2726,21 @@ pub struct Perturb {
     /// put it. Reddens `DW0836`'s realized rise and `DW0833`'s second call site,
     /// and nothing at stage 4 — which is the point: a plan-time green cannot see
     /// a datum the derivation moved.
-    pub sink: Option<&'static str>,
+    pub sink: Option<String>,
     /// Build every shell wall one course tall instead of to the play space's
     /// full height. Reddens `DW0838`: a body can hop the wall between two places
     /// and drop into the next, which is a way nothing allocated.
     pub short_walls: bool,
     /// Leave this place's interior solid. Reddens `DW0837`: the place exists,
     /// its seams are cut, and there is nowhere in it to stand.
-    pub brick_up: Option<&'static str>,
+    pub brick_up: Option<String>,
     /// Close this place one course lower than the plan put its ceiling, leaving
     /// its floor, its walls and every opening exactly where they are. Reddens
     /// `DW0833`'s second call site on a `box-height` identity and NOTHING else —
     /// no datum moves, so `DW0836`'s realized rise is untouched, and the place
     /// stays walkable, so `DW0837` is untouched. That narrowness is the point:
     /// it is a defect only the headroom measure can see.
-    pub low_ceiling: Option<&'static str>,
+    pub low_ceiling: Option<String>,
     /// Fill every **contact's** span with wall, as if the massing had closed the
     /// front the plan allocated. Reddens `DW0877`: the plan says two places meet
     /// along this span and the world has a wall there.
@@ -2756,6 +2778,179 @@ impl Perturb {
 
     /// How far this place's mass is displaced downward.
     fn drop_of(&self, node: &NodeId) -> i64 {
-        i64::from(self.sink == Some(node.0.as_str()))
+        i64::from(self.sink.as_deref() == Some(node.0.as_str()))
+    }
+
+    /// The place this asks for, if it asks for one — so a caller can check the
+    /// name against the plan before deriving anything.
+    #[must_use]
+    pub fn place(&self) -> Option<&str> {
+        self.sink
+            .as_deref()
+            .or(self.brick_up.as_deref())
+            .or(self.low_ceiling.as_deref())
+    }
+}
+
+/// **Every defect the derivation can be asked for, named.**
+///
+/// The enumeration exists so that the surface a creator reaches — `delvec build
+/// --perturb <knob>` — is derived from [`Perturb`] rather than written beside
+/// it. A field of `Perturb` with no arm here is caught at COMPILE time by
+/// `every_perturb_field_has_a_knob`, which destructures the struct exhaustively:
+/// adding a seventh defect and forgetting to name it does not compile.
+///
+/// `slide_openings` is an `i64` and this offers the one-cell case, because the
+/// smallest slip is the strongest demonstration — an observer that catches a
+/// hole cut one cell over catches every larger miss for free.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Knob {
+    /// [`Perturb::slide_openings`] by one cell.
+    SlideOpenings,
+    /// [`Perturb::sink`] — takes a place.
+    Sink,
+    /// [`Perturb::short_walls`].
+    ShortWalls,
+    /// [`Perturb::brick_up`] — takes a place.
+    BrickUp,
+    /// [`Perturb::low_ceiling`] — takes a place.
+    LowCeiling,
+    /// [`Perturb::wall_contacts`].
+    WallContacts,
+}
+
+impl Knob {
+    /// Every knob, in declaration order.
+    pub const ALL: [Knob; 6] = [
+        Knob::SlideOpenings,
+        Knob::Sink,
+        Knob::ShortWalls,
+        Knob::BrickUp,
+        Knob::LowCeiling,
+        Knob::WallContacts,
+    ];
+
+    /// The kebab-case name a creator types.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Knob::SlideOpenings => "slide-openings",
+            Knob::Sink => "sink",
+            Knob::ShortWalls => "short-walls",
+            Knob::BrickUp => "brick-up",
+            Knob::LowCeiling => "low-ceiling",
+            Knob::WallContacts => "wall-contacts",
+        }
+    }
+
+    /// One line of help, for the surface that offers the knob.
+    #[must_use]
+    pub fn blurb(self) -> &'static str {
+        match self {
+            Knob::SlideOpenings => "cut every seam's opening one cell along its face",
+            Knob::Sink => "lay one place's shell and interior a block low",
+            Knob::ShortWalls => "build every shell wall one course tall",
+            Knob::BrickUp => "leave one place's interior solid",
+            Knob::LowCeiling => "close one place a course under its plan's ceiling",
+            Knob::WallContacts => "wall every contact's span the plan allocated",
+        }
+    }
+
+    /// Whether this defect is about ONE place, and therefore needs one named.
+    #[must_use]
+    pub fn takes_place(self) -> bool {
+        matches!(self, Knob::Sink | Knob::BrickUp | Knob::LowCeiling)
+    }
+
+    /// Which observer this defect is DOCUMENTED to redden — the code the knob's
+    /// own doc comment on [`Perturb`] names, so a surface offering the knob does
+    /// not carry a second opinion about what it does.
+    ///
+    /// It is not a prediction of which code will stop a build. A build fails on
+    /// its first refusal and one defect is routinely seen by two of these rules:
+    /// walls a course tall open every wall above its allocation (`DW0836`) as
+    /// well as joining two places nothing connected (`DW0838`), and `DW0836` is
+    /// raised first. [`Battery::refusals`] is what says which rules actually saw
+    /// it.
+    #[must_use]
+    pub fn documented_code(self) -> &'static str {
+        match self {
+            Knob::SlideOpenings => "DW0836",
+            Knob::Sink => "DW0836",
+            Knob::ShortWalls => "DW0838",
+            Knob::BrickUp => "DW0837",
+            Knob::LowCeiling => "DW0833",
+            Knob::WallContacts => "DW0877",
+        }
+    }
+
+    /// The defect itself. `place` is required exactly when [`Self::takes_place`]
+    /// is true; a caller that disagrees gets `None` rather than a silently
+    /// place-less perturbation, which would derive a clean map and read as an
+    /// observer that failed to observe.
+    #[must_use]
+    pub fn perturb(self, place: Option<&str>) -> Option<Perturb> {
+        if self.takes_place() != place.is_some() {
+            return None;
+        }
+        let p = place.map(str::to_string);
+        Some(match self {
+            Knob::SlideOpenings => Perturb {
+                slide_openings: 1,
+                ..Perturb::none()
+            },
+            Knob::Sink => Perturb {
+                sink: p,
+                ..Perturb::none()
+            },
+            Knob::ShortWalls => Perturb {
+                short_walls: true,
+                ..Perturb::none()
+            },
+            Knob::BrickUp => Perturb {
+                brick_up: p,
+                ..Perturb::none()
+            },
+            Knob::LowCeiling => Perturb {
+                low_ceiling: p,
+                ..Perturb::none()
+            },
+            Knob::WallContacts => Perturb {
+                wall_contacts: true,
+                ..Perturb::none()
+            },
+        })
+    }
+}
+
+/// `--perturb`'s value set, taken from [`Knob::ALL`] rather than restated.
+///
+/// Written by hand rather than `#[derive(ValueEnum)]` because the derive would
+/// name each value from its VARIANT identifier, which is a second spelling
+/// authority beside [`Knob::name`] — and the two disagree exactly when somebody
+/// renames one of them. This impl enumerates nothing of its own: the variants
+/// are `Knob::ALL`, the spellings are `Knob::name`, the help lines are
+/// `Knob::blurb` and `Knob::documented_code`, so a seventh defect appears in
+/// `delvec build --help` the moment it exists.
+///
+/// It lives beside the type rather than in `main.rs` because the orphan rule
+/// puts it there; `view::panorama::Bearing` already carries a `ValueEnum` in
+/// this crate for the same reason.
+impl clap::ValueEnum for Knob {
+    fn value_variants<'a>() -> &'a [Self] {
+        &Knob::ALL
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        Some(clap::builder::PossibleValue::new(self.name()).help(format!(
+            "{} — expect {}{}",
+            self.blurb(),
+            self.documented_code(),
+            if self.takes_place() {
+                " (needs --perturb-place)"
+            } else {
+                ""
+            }
+        )))
     }
 }
