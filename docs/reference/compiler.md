@@ -4326,11 +4326,13 @@ undated write, which can land the beat after.
 the finale) or `DW0204` (the exported path is not walkable) already names a
 cause, and says which, rather than adding a second refusal about one break.
 
-**Binding**: paths walked, steps, numeric gate terms read, state writes
-replayed, terms withheld, declared data and how many of them are undatable —
-stated on every validate, analyze and build of a campaign, including the zeroes,
-because a walk that read no gate and a walk that read twenty and found nothing
-look identical from outside otherwise.
+**Binding**: paths walked, steps, numeric gate terms read — split into the ones
+read against an undatable datum and the ones withheld for an unforced order —
+state writes replayed, and declared data with how many of them are undatable.
+Stated on every validate, analyze and build of a campaign, including the zeroes.
+The split is the load-bearing half: a run that read twenty terms and decided all
+twenty and a run that read twenty and could decide none print the same
+`gate term(s) read`, and only the second is a green that means nothing.
 
 ### DW03xx — build / solver / nav (`compiler`; error; exit 3, `stage:"build"`)
 

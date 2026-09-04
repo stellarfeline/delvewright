@@ -246,6 +246,18 @@ fn an_undatable_datum_is_never_refused() {
     assert!(d.is_empty(), "{:?}", codes(&d));
     assert_eq!(b.walk.data, 1, "{b:?}");
     assert_eq!(b.walk.undatable, 1, "{b:?}");
+    // …and the terms it could not decide are counted apart from the ones it
+    // did, so this green cannot read as twenty gates proven.
+    assert_eq!(
+        b.walk.undated, b.walk.gates,
+        "every term read was against the undatable datum: {b:?}"
+    );
+    assert!(b.walk.gates >= 1, "{b:?}");
+    assert!(
+        b.line().contains("against an undatable datum"),
+        "{}",
+        b.line()
+    );
 }
 
 /// **A consequence is not named where the cause already is.** A campaign whose

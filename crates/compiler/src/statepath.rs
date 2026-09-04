@@ -95,13 +95,14 @@ impl StatePathBinding {
         }
         format!(
             "state path binding: {p} path(s) walked over {s} step(s); {g} numeric gate term(s) \
-             read, {w} state write(s) replayed, {h} term(s) withheld (the order is not forced); \
-             {d} declared datum(s) of which {u} undatable",
+             read, of which {n} against an undatable datum and {h} withheld (the order is not \
+             forced); {w} state write(s) replayed; {d} declared datum(s) of which {u} undatable",
             p = self.paths,
             s = self.walk.steps,
             g = self.walk.gates,
-            w = self.walk.writes,
+            n = self.walk.undated,
             h = self.walk.withheld,
+            w = self.walk.writes,
             d = self.walk.data,
             u = self.walk.undatable,
         )

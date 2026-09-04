@@ -565,6 +565,14 @@ pub struct StateWalk {
     /// writes before them are not forced into one order — see
     /// [`Flow::forced_before`].
     pub withheld: usize,
+    /// Gate terms read against an **undatable** datum, which this walk can
+    /// neither hold nor refuse.
+    ///
+    /// Counted apart from [`Self::gates`] on purpose: a run that read twenty
+    /// terms and decided all twenty, and one that read twenty and could decide
+    /// none, print the same `gates` figure, and the second is the one where a
+    /// green means nothing. The pair is what separates them.
+    pub undated: usize,
 }
 
 impl StateWalk {
@@ -577,6 +585,7 @@ impl StateWalk {
         self.gates += other.gates;
         self.writes += other.writes;
         self.withheld += other.withheld;
+        self.undated += other.undated;
     }
 }
 
@@ -1125,8 +1134,13 @@ impl<'a> Flow<'a> {
                     walk.gates += 1;
                     let id = cmp.state.as_str();
                     let held = st.state.get(id).copied().unwrap_or(Datum::Undatable);
-                    if held.satisfies(cmp) != Some(false) {
-                        continue;
+                    match held.satisfies(cmp) {
+                        Some(true) => continue,
+                        None => {
+                            walk.undated += 1;
+                            continue;
+                        }
+                        Some(false) => {}
                     }
                     let applied: &[StateWriteRecord] =
                         st.wrote.get(id).map(|v| v.as_slice()).unwrap_or(&[]);
@@ -1136,9 +1150,10 @@ impl<'a> Flow<'a> {
                         walk.withheld += 1;
                         continue;
                     }
+                    // `satisfies` answered `Some(false)`, which only a `Known`
+                    // value can, so the value is there to name in the message.
                     let Datum::Known(v) = held else {
-                        walk.withheld += 1;
-                        continue;
+                        unreachable!("an undatable value answers None, not Some(false)")
                     };
                     out.push(StateGateCleared {
                         position: pos,
