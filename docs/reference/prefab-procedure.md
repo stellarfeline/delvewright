@@ -638,11 +638,26 @@ at exit 2. Only a zone past the 48-per-axis cap has a manifest to hand it, and
 the next paragraph is about that zone.
 
 `delve-admit anchor` is the fourth step of the chain and is **not on this route**:
-it writes a place into an anchor of a piece whose producer could not, which is a
-hand-built or ingested piece. A grammar program declares its own anchors with
-`mark` (`grammar.md` §2b) and they are already in the metadata by the time this
-step is reached. Nothing here writes a **catalog card** either — that document
-belongs to the ingestion route (§0), not to a piece this project generated.
+it writes a place — and what that place is FOR — into an anchor of a piece whose
+producer could not, which is a hand-built or ingested piece. A grammar program
+declares its own anchors with `mark` (`grammar.md` §2b), role included, and they
+are already in the metadata by the time this step is reached. Nothing here writes
+a **catalog card** either — that document belongs to the ingestion route (§0), not
+to a piece this project generated.
+
+**Where the entry point is declared, per route.** A piece the party arrives in
+says so with `"role": "entry"` on the anchor at that cell (§9), and nothing else
+makes an anchor the entry — a name never does. On this route write it on the
+`mark`; on the ingestion route write it here:
+
+```sh
+delve-admit anchor out/<id>.nbt --name <anchor> --pos X,Y,Z --facing <dir> \
+                   --role entry          # ...and --no-role takes one off
+```
+
+An unknown term is refused where it is typed, naming the vocabulary. Omitting
+`--role` on a later edit keeps the role the anchor already has: moving a cell is
+not a statement that the piece stopped being the way in.
 
 A tiled zone has no `out/<id>.nbt` at all — its blocks are the
 `out/<id>.x<i>y<j>z<k>.nbt` files and `out/<id>.json` is the manifest — so on such
@@ -758,12 +773,22 @@ The row is a claim about the expansion, which is what makes it worth recording:
 it says the *geometry* came from that program at that seed, and the admission
 edits on top of it are the ones the procedure prescribes.
 
-Those four inputs are `license.generated_by { generator, program, program_hash,
-seed }` — a **machine-readable** row, not only the prose `provenance` sentence
-beside it. A shipped prefab carries it through every step above, so a tool can
-answer "what regenerates this file" without a human reading the sentence. The
-one prefab that legitimately has no row is one nothing can regenerate: an
-ingested community build, or a hand-edited piece.
+The inputs are `license.generated_by { generator, program, program_hash, seed,
+region, params?, roles? }` — a **machine-readable** row, not only the prose
+`provenance` sentence beside it. A shipped prefab carries it through every step
+above, so a tool can answer "what regenerates this file" without a human reading
+the sentence. The one prefab that legitimately has no row is one nothing can
+regenerate: an ingested community build, or a hand-edited piece.
+
+**Every input, or the row is worse than none.** `region` is there because the
+same program at the same seed over a different box is a different building;
+`params` and `roles` are the `--param` and `--role` overrides, which reach the
+bytes by mutating the program and would otherwise leave no trace of themselves.
+`program_hash` is taken over the program **as expanded** — the named document
+with those overrides already applied — so it is the checksum of the reproduction
+rather than a second statement of it: apply the two maps to the named document
+and this is the hash you must get. Both maps are omitted from the document when
+the program was expanded exactly as written.
 
 ## 9. The metadata document
 
@@ -809,15 +834,13 @@ and a term it does not know is refused by name (`DW0346`). There is one term:
   compiler has to find, so the piece that owns the cell says so. **The piece a
   party arrives in declares it**, one anchor per area (`DW0804` refuses a second),
   and in a `prefab_pool` that is the piece the layout is seeded from. A world
-  where nothing declares it and nothing carries the fallback spelling is
-  `DW0345`.
+  where nothing declares it is `DW0345`.
 
-The fallback is the bare anchor names `spawn` and `entry`, which is how every
-piece admitted before the role says it. That path is kept so those pieces keep
-building unedited; it is not a second way to declare one, and a piece being
-written now uses the role. Do not rename an anchor to `spawn` to make it the
-entry — a generated zone cannot do it anyway (every key it exports is
-`anchor/<stem>`), which is the whole reason the role exists.
+An anchor's **name** says nothing about this. Renaming an anchor makes it no more
+the entry than leaving it alone does — a generated zone could not spell a reserved
+name anyway (every key it exports is `anchor/<stem>`), which is the whole reason
+the role exists. Write the role where the producer writes the anchor: on the
+`mark` (§7, `grammar.md` §2b), or with `delve-admit anchor --role entry`.
 
 A **gate anchor** — the thing `close-gate`, `open-gate`, a `shortcut` and a
 `timed-gate` fill and clear — is declared either way and reads the same. Write

@@ -33,7 +33,8 @@
 //! the anchor and none of them is something the operator typed.
 //!
 //! So a step declares the **paths** it writes, as deep as it really writes them,
-//! and `anchor` owns four fields of one named anchor rather than the anchor map.
+//! and `anchor` owns the place and the role of one named anchor rather than the
+//! anchor map.
 //!
 //! # The fixture has to carry the fields at risk
 //!
@@ -233,7 +234,7 @@ fn every_metadata_writing_step_preserves_the_rest_of_the_document() {
 
     for command in WRITES_METADATA {
         let cases: &[&str] = match *command {
-            "anchor" => &["anchor:new", "anchor:existing"],
+            "anchor" => &["anchor:new", "anchor:existing", "anchor:role"],
             other => &[other],
         };
         for case in cases {
@@ -299,6 +300,30 @@ fn every_metadata_writing_step_preserves_the_rest_of_the_document() {
                         vec!["anchors", HARDWARE_ANCHOR, "facing"],
                         vec!["anchors", HARDWARE_ANCHOR, "region"],
                         vec!["anchors", HARDWARE_ANCHOR, "block"],
+                    ]
+                }
+                "anchor:role" => {
+                    // The same edit saying what the place is FOR. The role is a
+                    // fifth field this command owns; everything else about the
+                    // anchor is still the anchor's.
+                    run(&[
+                        "anchor",
+                        nbt_s,
+                        "--name",
+                        HARDWARE_ANCHOR,
+                        "--pos",
+                        "1,3,2",
+                        "--facing",
+                        "south",
+                        "--role",
+                        "entry",
+                    ]);
+                    vec![
+                        vec!["anchors", HARDWARE_ANCHOR, "pos"],
+                        vec!["anchors", HARDWARE_ANCHOR, "facing"],
+                        vec!["anchors", HARDWARE_ANCHOR, "region"],
+                        vec!["anchors", HARDWARE_ANCHOR, "block"],
+                        vec!["anchors", HARDWARE_ANCHOR, "role"],
                     ]
                 }
                 "lighting" => {
