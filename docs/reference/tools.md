@@ -267,7 +267,7 @@ delvec grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
     [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...   # a restyle keeps the role's axis frame
     [--id <prefab-id>] [--traversable [--allow-falls]] [--symmetric x|y|z]
     [--reachable-floor]
-delvec grammar coverage [--json <path>]   # which IR constructs no example demonstrates
+delvec grammar coverage [--report <path>] # which IR constructs no example demonstrates
 delvec grammar audit [--library] [--campaign-root <path>]... [--exclusions <path>]
 ```
 

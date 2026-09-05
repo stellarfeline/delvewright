@@ -2973,3 +2973,78 @@ fn print_diags(diags: &Fenced, json: bool) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::{Command, CommandFactory};
+
+    use super::Cli;
+
+    /// The whole mounted tree is one clap `Command`, and clap's own debug
+    /// assertions are the authority on what it holds well-formed. They do NOT
+    /// hold an id unique between a global flag and a subcommand's own argument
+    /// — that mismatch is raised only when the derived `FromArgMatches` reads
+    /// the subcommand's field, i.e. at the first parse that reaches the arm —
+    /// so the test below asserts that property itself.
+    #[test]
+    fn the_whole_command_tree_is_well_formed() {
+        Cli::command().debug_assert();
+    }
+
+    /// **One id per meaning across the whole mounted tree.** A global argument
+    /// (`--json`, `--prefabs`, `--lang`, `--version`) is propagated into every
+    /// subcommand's matches under its id; a subcommand that declares an
+    /// argument of its own under the same id then reads one definition through
+    /// the other's accessor, and clap panics with "Mismatch between definition
+    /// and access" — at run time, in whichever CI step first runs that arm. The
+    /// mounted crates declared their command lines before the global existed,
+    /// so this is the shape a merge produces silently. Walked over every
+    /// descendant, with the population printed so a zero cannot pass.
+    #[test]
+    fn no_subcommand_redeclares_a_global_argument_id() {
+        let root = Cli::command();
+        let globals: Vec<String> = root
+            .get_arguments()
+            .filter(|a| a.is_global_set())
+            .map(|a| a.get_id().to_string())
+            .collect();
+        assert!(
+            !globals.is_empty(),
+            "the root declares no global argument — the walk would examine nothing"
+        );
+
+        fn walk(
+            cmd: &Command,
+            path: &str,
+            globals: &[String],
+            seen: &mut usize,
+            hits: &mut Vec<String>,
+        ) {
+            for sub in cmd.get_subcommands() {
+                let here = format!("{path} {}", sub.get_name());
+                *seen += 1;
+                for arg in sub.get_arguments() {
+                    let id = arg.get_id().to_string();
+                    if globals.contains(&id) && !arg.is_global_set() {
+                        hits.push(format!(
+                            "`delvec{here}` declares `{id}`, which is a global flag's id"
+                        ));
+                    }
+                }
+                walk(sub, &here, globals, seen, hits);
+            }
+        }
+        let (mut seen, mut hits) = (0usize, Vec::new());
+        walk(&root, "", &globals, &mut seen, &mut hits);
+        assert!(
+            seen >= 40,
+            "only {seen} subcommand(s) walked — the tree is larger than that"
+        );
+        assert!(
+            hits.is_empty(),
+            "{} argument id(s) shadow a global over {seen} subcommand(s):\n  {}",
+            hits.len(),
+            hits.join("\n  ")
+        );
+    }
+}

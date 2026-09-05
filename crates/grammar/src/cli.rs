@@ -94,9 +94,11 @@ pub enum GrammarCommand {
     /// of the language is left undemonstrated. It is not evidence that an
     /// author can build any particular thing.
     Coverage {
-        /// Also write the report as JSON to this path.
+        /// Also write the report as JSON to this path. (`--json` is the
+        /// binary's global diagnostics switch; a report path is a different
+        /// thing and carries a different name.)
         #[arg(long, value_name = "PATH")]
-        json: Option<PathBuf>,
+        report: Option<PathBuf>,
     },
     /// Expand and judge **every** program of a corpus, and say what bound.
     ///
@@ -419,7 +421,7 @@ fn run_check(source: &Source) -> ExitCode {
     }
 }
 
-fn run_coverage(json: Option<&Path>) -> ExitCode {
+fn run_coverage(report_path: Option<&Path>) -> ExitCode {
     let report = coverage::measure(library::PROGRAMS);
 
     println!(
@@ -456,7 +458,7 @@ fn run_coverage(json: Option<&Path>) -> ExitCode {
     // GREEN being cited for something it never measured.
     println!("\n{}", coverage::MEASURES);
 
-    if let Some(path) = json {
+    if let Some(path) = report_path {
         if let Some(parent) = path.parent()
             && !parent.as_os_str().is_empty()
             && let Err(e) = std::fs::create_dir_all(parent)
@@ -1442,7 +1444,7 @@ pub fn run(args: GrammarArgs) -> ExitCode {
         } => run_audit(library, &campaign_roots, exclusions.as_deref()),
         GrammarCommand::Show { source } => run_show(&source),
         GrammarCommand::Check { source } => run_check(&source),
-        GrammarCommand::Coverage { json } => run_coverage(json.as_deref()),
+        GrammarCommand::Coverage { report } => run_coverage(report.as_deref()),
         GrammarCommand::Expand {
             source,
             region,

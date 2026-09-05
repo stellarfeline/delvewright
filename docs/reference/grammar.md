@@ -3347,7 +3347,7 @@ does not exist in practice, whatever §2 says the IR supports.
 
 ```sh
 delvec grammar coverage            # the table; exit 4 when anything is at zero
-delvec grammar coverage --json coverage.json
+delvec grammar coverage --report coverage.json
 ```
 
 It counts, over every program `delvec grammar list` names, how many times each
