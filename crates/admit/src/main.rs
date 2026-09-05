@@ -21,7 +21,7 @@ use delvewright_admit::diag::{
 };
 use delvewright_admit::gallery::{self, Candidate};
 use delvewright_admit::light::{self, Zone};
-use delvewright_admit::meta::{self, AnchorEdit, License, PrefabMeta, Region};
+use delvewright_admit::meta::{self, AnchorEdit, AnchorRole, License, PrefabMeta, Region};
 use delvewright_admit::settling;
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::spatial::Door;
@@ -69,7 +69,21 @@ fn main() -> ExitCode {
             facing,
             region,
             block,
-        } => run_anchor(&nbt, &name, pos, facing, region, block, json),
+            role,
+            no_role,
+        } => run_anchor(
+            &nbt,
+            &name,
+            AnchorArgs {
+                pos,
+                facing,
+                region,
+                block,
+                role,
+                no_role,
+            },
+            json,
+        ),
         Command::Lighting {
             nbt,
             write,
@@ -331,15 +345,25 @@ fn run_resolve_jigsaw(nbt: &Path, json: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn run_anchor(
-    nbt: &Path,
-    name: &str,
+/// What `anchor` was told, in the shape the parser produced it.
+struct AnchorArgs {
     pos: Option<String>,
     facing: Option<String>,
     region: Option<String>,
     block: Option<String>,
-    json: bool,
-) -> ExitCode {
+    role: Option<String>,
+    no_role: bool,
+}
+
+fn run_anchor(nbt: &Path, name: &str, args: AnchorArgs, json: bool) -> ExitCode {
+    let AnchorArgs {
+        pos,
+        facing,
+        region,
+        block,
+        role,
+        no_role,
+    } = args;
     let (_structure, mut meta) = match load_piece(nbt, json) {
         Ok(v) => v,
         Err(code) => return code,
@@ -366,11 +390,23 @@ fn run_anchor(
     if pos.is_none() && region.is_none() {
         return input_err("anchor needs --pos or --region", json);
     }
-    // This command declares one thing: where the anchor is. Which contract
-    // element it lands in is resolved by the exporter from the piece's own
-    // contract, and the dispenser cell and trigger block are hardware the prefab
-    // wired — none of that is something the operator types, so none of it is
-    // this edit's to write, and re-annotating an anchor that already exists
+    // **The role is refused HERE, where it is typed**, against the engine's own
+    // closed vocabulary rather than against a copy of it: a term this engine
+    // does not know written through into the document would be `DW0346` at the
+    // next build, about a file the operator would then have to go and edit.
+    let role: Option<Option<AnchorRole>> = match (role, no_role) {
+        (Some(r), _) => match r.parse::<AnchorRole>() {
+            Ok(role) => Some(Some(role)),
+            Err(e) => return input_err(&format!("--role: {e}"), json),
+        },
+        (None, true) => Some(None),
+        (None, false) => None,
+    };
+    // This command declares two things: where the anchor is, and what it is for.
+    // Which contract element it lands in is resolved by the exporter from the
+    // piece's own contract, and the dispenser cell and trigger block are hardware
+    // the prefab wired — none of that is something the operator types, so none of
+    // it is this edit's to write, and re-annotating an anchor that already exists
     // keeps all of it (`PrefabMeta::edit_anchor`).
     meta.edit_anchor(
         name,
@@ -379,12 +415,17 @@ fn run_anchor(
             facing,
             region: region.map(|(from, to)| Region { from, to }),
             block,
+            role,
         },
     );
     if let Err(e) = write_meta(nbt, &meta) {
         return output_err(&format!("cannot write metadata: {e}"), json);
     }
-    eprintln!("annotated anchor {name}");
+    match role {
+        Some(Some(r)) => eprintln!("annotated anchor {name} (role {r})"),
+        Some(None) => eprintln!("annotated anchor {name} (no role)"),
+        None => eprintln!("annotated anchor {name}"),
+    }
     ExitCode::SUCCESS
 }
 
@@ -460,6 +501,19 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
         "min_light_daylight": probe.min_light_daylight,
         "darkest_cell": probe.darkest_cell,
         "dark_threshold": probe.dark_threshold,
+        // **The distribution, not the minimum alone.** One cell at light 0 in
+        // the lee of a pillar and a room where every cell is at light 0 report
+        // the same `measured_min_light`, and they are a detail and a room
+        // nobody can see in. `cells_by_light` counts the measured floor at each
+        // level below the threshold; `cells` and `fraction` say how much of the
+        // room that is.
+        "dark_cells": {
+            "cells_by_light": probe.dark_by_level.iter()
+                .map(|(level, count)| (level.to_string(), *count))
+                .collect::<BTreeMap<String, usize>>(),
+            "cells": probe.dark_cells(),
+            "fraction": probe.dark_fraction(),
+        },
         "assumed_sky": {
             "profile_taken_at": probe.sky_light,
             "daylight": probe.daylight_sky_light,
@@ -491,7 +545,7 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
     if probe.is_dark() {
         let cell = probe
             .darkest_cell
-            .map(|c| format!(" (darkest at {},{},{})", c[0], c[1], c[2]))
+            .map(|c| format!("; darkest at {},{},{}", c[0], c[1], c[2]))
             .unwrap_or_default();
         // "Lit by day" is a sentence about a piece the sky reaches. An enclosed
         // piece meets no sky at either end of the table, so the second figure is
@@ -517,14 +571,22 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
         } else {
             format!("with no sky ({})", probe.sky.why())
         };
+        // **The distribution, and the minimum only as the place to start.** One
+        // cell at light 0 behind a pillar and a room where every cell is at
+        // light 0 used to print the same sentence, and they are a detail and a
+        // room nobody can see in. The repair is to re-arrange the room or raise
+        // the density of what is already lighting it, and neither is a decision
+        // a reader can take from one number.
         Diagnostic::warning(
             DW_DARK,
             format!(
-                "dark interior {under}: \
-                 min light {} < {} over {} floor cell(s) a player can walk to{cell}{by_day}",
-                probe.measured_min_light.unwrap_or(0),
-                dark_threshold,
-                probe.measured_cells
+                "dark interior {under}: {dark} of {measured} floor cell(s) a player can walk to \
+                 ({pct:.1}%) are below light {threshold} — {distribution}{cell}{by_day}",
+                dark = probe.dark_cells(),
+                measured = probe.measured_cells,
+                pct = probe.dark_fraction() * 100.0,
+                threshold = dark_threshold,
+                distribution = probe.dark_distribution(),
             ),
         )
         .print(json);

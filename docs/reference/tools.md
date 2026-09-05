@@ -389,6 +389,13 @@ delve-admit socket <nbt> --pos x,y,z --facing north|south|east|west
 delve-admit anchor <nbt> --name anchor/<id>
                          [--pos x,y,z] [--facing <kw>]
                          [--region x1,y1,z1:x2,y2,z2] [--block <id>]
+                         [--role entry | --no-role]
+    # --role is what the place is FOR: the engine's closed vocabulary, refused
+    # by name where it is typed when it is not a term. `--role entry` is how a
+    # hand-built or ingested piece declares the campaign's start (without it,
+    # DW0345 — no anchor NAME supplies one); `--no-role` takes a role off, which
+    # is the remedy DW0804 prescribes. Omitted, an existing role is kept: moving
+    # a cell is not a statement that the piece stopped being the way in
 delve-admit lighting <nbt|manifest.json> [--write] [--dark-threshold 3]
 delve-admit catalog validate <card.json ...>
 ```
@@ -402,22 +409,31 @@ these tools and the compiler share one definition of the document
 ([`prefab-procedure.md`](prefab-procedure.md) §9); a tool with its own copy of
 the shape deletes whatever its copy omits, silently, on the way out.
 
-The part is as deep as the edit really goes, and for `anchor` that is **four
+The part is as deep as the edit really goes, and for `anchor` that is **five
 fields of one anchor** rather than the anchor map: `pos`, `facing`, `region` and
-`block` say where the anchor is, and re-annotating an anchor the piece already
-carries leaves the rest of it alone — the `dispenser` cell and `trigger_block` a
-trap's hardware lives on, the `resolves_to` the exporter resolved from the
-piece's own contract, and any anchor key this version does not model. Naming a
-`--pos` does supersede a `--region` and vice versa: where the anchor is, is one
-property written two ways. `crates/admit/tests/metadata_preservation.rs` holds
+`block` say where the anchor is, `role` says what it is for, and re-annotating an
+anchor the piece already carries leaves the rest of it alone — the `dispenser`
+cell and `trigger_block` a trap's hardware lives on, the `resolves_to` the
+exporter resolved from the piece's own contract, and any anchor key this version
+does not model. Naming a `--pos` does supersede a `--region` and vice versa:
+where the anchor is, is one property written two ways. The role is not a sixth
+way of saying where, so it is written on `--role`, removed on `--no-role`, and
+untouched when the edit mentions neither. `crates/admit/tests/metadata_preservation.rs` holds
 every step to this, path by path, on a real export carrying every field at risk.
 
-`lighting` measures the **minimum light over the floor a body can walk to from
-outside**, and its report states the binding it took that minimum over:
-`standable_cells` in the whole region box, of which `measured_cells` are
-reachable on foot from `entry_cells` at grade. The flood is the compiler's own
-(`delvewright_compiler::light`) — block light and sky light, the same model
-`DW0210`/`DW0211` measure the assembled world with.
+`lighting` measures the light over the **floor a body can walk to from outside**,
+and its report states the binding it measured: `standable_cells` in the whole
+region box, of which `measured_cells` are reachable on foot from `entry_cells` at
+grade. The flood is the compiler's own (`delvewright_compiler::light`) — block
+light and sky light, the same model `DW0210`/`DW0211` measure the assembled world
+with.
+
+**The verdict is a distribution, not a minimum.** `dark_cells` gives
+`cells_by_light` (how many measured cells sit at each level below
+`dark_threshold`), `cells` (their total) and `fraction` (of `measured_cells`),
+and `DW0751` says all three. `measured_min_light` and `darkest_cell` are still
+there and are still what the profile is taken from — they are where to start
+looking, not how much room is dark.
 
 **Which sky the piece stands under is the piece's own claim, read off its
 `spatial_contract`.** A piece that declares no contract, or one declaring any

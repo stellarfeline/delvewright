@@ -54,6 +54,18 @@ fn socket_out_of_bounds_is_dw0750_exit1() {
 
 /// `DW0751`: the lighting probe's dark-interior advisory — measured, printed,
 /// but does not fail the command (spec-0010: advisory only, no longer gates).
+///
+/// **It reports the DISTRIBUTION of dark cells, not the darkest one.** One cell
+/// at light 0 in the lee of a pillar and a room where every cell is at light 0
+/// have the same minimum, and they are a detail and a room nobody can see in.
+/// The repair is to re-arrange the room or raise the density of what already
+/// lights it, and neither is a decision a reader can take from one number — so
+/// the advisory says how much of the walkable floor is dark, at which levels,
+/// and as what fraction. The darkest cell stays, as the place to start.
+///
+/// Every figure in the sentence is cross-checked against the machine report the
+/// same run printed: a message and a measurement that can drift apart are two
+/// authorities for one fact.
 #[test]
 fn lighting_dark_room_is_dw0751_advisory_exit0() {
     let dir = tmp("dark-room");
@@ -71,6 +83,50 @@ fn lighting_dark_room_is_dw0751_advisory_exit0() {
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("DW0751"), "expected DW0751: {stderr}");
+
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let dark = &report["dark_cells"];
+    let by_light = dark["cells_by_light"]
+        .as_object()
+        .expect("the report carries the distribution");
+    let cells = dark["cells"]
+        .as_u64()
+        .expect("the report counts dark cells");
+    let measured = report["binding"]["measured_cells"].as_u64().unwrap();
+    assert!(cells > 0, "a dark room has dark cells to count: {report}");
+    assert!(cells <= measured, "the count is over the binding: {report}");
+    assert_eq!(
+        cells,
+        by_light.values().map(|v| v.as_u64().unwrap()).sum::<u64>(),
+        "the total is the distribution's own sum: {report}"
+    );
+    let threshold = report["dark_threshold"].as_i64().unwrap();
+    for level in by_light.keys() {
+        assert!(
+            level.parse::<i64>().unwrap() < threshold,
+            "the distribution counts the levels BELOW the threshold: {report}"
+        );
+    }
+
+    // ...and the sentence says the same numbers.
+    assert!(
+        stderr.contains(&format!("{cells} of {measured} floor cell(s)")),
+        "the advisory states how much of the floor is dark: {stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("below light {threshold}")),
+        "the threshold stays in the message: {stderr}"
+    );
+    for (level, count) in by_light {
+        assert!(
+            stderr.contains(&format!("{} at light {level}", count.as_u64().unwrap())),
+            "every level of the distribution is named: {stderr}"
+        );
+    }
+    assert!(
+        stderr.contains("darkest at "),
+        "the darkest cell stays, as the place to start: {stderr}"
+    );
 }
 
 /// `DW0760`: gallery emission failure — the output path is blocked by an
@@ -146,7 +202,8 @@ fn stage_tile_set(dir: &std::path::Path) -> PathBuf {
                     "generator": "grammar",
                     "program": "zone",
                     "program_hash": "sha256:00",
-                    "seed": 1
+                    "seed": 1,
+                    "region": [60, 5, 14]
                 }
             }
         })

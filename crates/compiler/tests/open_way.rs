@@ -272,7 +272,8 @@ fn with_a_spawn(dir: &Path, id: &str) {
     let mut meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     // The near room's floor, under the shaft a body falls through.
-    meta["anchors"]["spawn"] = serde_json::json!({ "pos": [4, 1, 2], "facing": "south" });
+    meta["anchors"]["spawn"] =
+        serde_json::json!({ "pos": [4, 1, 2], "facing": "south", "role": "entry" });
     std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
 }
 

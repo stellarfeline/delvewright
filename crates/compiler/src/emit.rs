@@ -373,18 +373,18 @@ pub fn build_with_warnings(
             message: format!(
                 "the assembled world resolves no entry anchor — no area places a \
                  piece whose prefab metadata declares an anchor with \
-                 `\"role\": \"{role}\"`, and none carries the fallback spelling \
-                 {names:?} either. The compiler then has no cell to call the \
+                 `\"role\": \"{role}\"`. The compiler then has no cell to call the \
                  campaign's start: no `setworldspawn`, no class-apply teleport, no \
-                 first-join placement. Fix it where the anchors are declared: give \
-                 the piece the party arrives in an anchor at that cell and put \
+                 first-join placement. An anchor's NAME is never consulted for this, \
+                 so no spelling supplies it. Fix it where the anchors are declared: \
+                 give the piece the party arrives in an anchor at that cell and put \
                  `\"role\": \"{role}\"` on it (in a pool, that is the prefab the \
                  layout is seeded from), or bind the area to a prefab that already \
-                 has one. The two names are a compatibility path for pieces \
-                 admitted before the role existed — a piece written today declares \
-                 the role rather than being renamed to match a spelling.",
+                 has one. Every producer can write it: `delve-admit anchor <nbt> \
+                 --name <anchor> --pos <x,y,z> --role {role}` for a hand-built or \
+                 ingested piece, `\"role\": \"{role}\"` on the `mark` for a grammar \
+                 program.",
                 role = plan::AnchorRole::Entry,
-                names = plan::ENTRY_ANCHOR_NAMES,
             ),
         });
     }
