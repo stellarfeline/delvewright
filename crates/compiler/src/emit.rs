@@ -17431,15 +17431,23 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
 fn emit_fixture_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    // The first stake that can leave a marker, and the ONLY one this template
-    // needs. The marker is a place, so every stake summons the same two entities
-    // through the same `stk_place` — one template per teleport is the whole
-    // population of "a real marker inside a real teleport volume", and one per
-    // (teleport, stake) would be four templates racing to put one entity at one
-    // position on a shared batch server.
-    let Some((st, safe)) = stakes(plan).into_iter().find(|(st, _)| st.max_live() > 0) else {
+    // Every stake that can leave a marker, driven by ONE template per teleport.
+    //
+    // The marker is a place, so every stake summons the same two entities through
+    // the same `stk_place` at the same position — one template per (teleport,
+    // stake) would be four templates racing to put one entity at one absolute
+    // coordinate on a shared batch server, which is a collision rather than four
+    // proofs. Every member of the family is still driven, in one breath, which is
+    // both what `DW0810` demands and a stronger claim than the split templates
+    // made: the marker that survives the ride is one a death left several wagers
+    // at.
+    let marking: Vec<(&delvewright_dsl::Stake, String)> = stakes(plan)
+        .into_iter()
+        .filter(|(st, _)| st.max_live() > 0)
+        .collect();
+    if marking.is_empty() {
         return;
-    };
+    }
     let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for eff in all_campaign_effects(plan.campaign) {
         let Some((from, _to)) = eff.teleport() else {
@@ -17483,16 +17491,22 @@ fn emit_fixture_packtests(plan: &Plan, out: &mut BuildOutput) {
             "execute positioned {at} run kill @e[tag={hw},distance=..1]"
         ));
         t.push(format!("kill @e[tag={body}]"));
-        for k in 0..st.max_live() {
+        for (st, safe) in &marking {
+            for k in 0..st.max_live() {
+                t.push(format!(
+                    "scoreboard players set {me} {} 0",
+                    stk_live_obj(safe, k)
+                ));
+            }
+        }
+        // A real marker, put down by the real drop path, in the car — with a
+        // wager on it from EVERY stake that can leave one, because that is what a
+        // death which forfeits several datums leaves there.
+        for (_, safe) in &marking {
             t.push(format!(
-                "scoreboard players set {me} {} 0",
-                stk_live_obj(&safe, k)
+                "execute as {me} positioned {at} run function {ns}:stk_fill_{safe}"
             ));
         }
-        // A real marker, put down by the real drop path, in the car.
-        t.push(format!(
-            "execute as {me} positioned {at} run function {ns}:stk_fill_{safe}"
-        ));
         // Bound, not assumed: both halves are inside the volume the `tp` sweeps.
         t.push(format!(
             "execute store result score #fx_in_{sc} dw.sys if entity @e[tag={tag},{bx}]"
@@ -17524,11 +17538,13 @@ fn emit_fixture_packtests(plan: &Plan, out: &mut BuildOutput) {
         t.push(format!("kill @e[tag={body}]"));
         t.push(format!("kill @e[tag={tag},{bx}]"));
         t.push(format!("kill @e[tag={hw},{bx}]"));
-        for k in 0..st.max_live() {
-            t.push(format!(
-                "scoreboard players set {me} {} 0",
-                stk_live_obj(&safe, k)
-            ));
+        for (st, safe) in &marking {
+            for k in 0..st.max_live() {
+                t.push(format!(
+                    "scoreboard players set {me} {} 0",
+                    stk_live_obj(safe, k)
+                ));
+            }
         }
         out.insert(
             format!("packtest-datapack/data/{ns}/test/fixture_{sc}.mcfunction"),
