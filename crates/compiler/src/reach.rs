@@ -540,12 +540,11 @@ pub fn judge_reach_completion(
 pub struct ReachFootprintBinding {
     /// `reach` objectives whose anchor the plan resolved.
     pub sites: usize,
-    /// The denominator: cells a body can walk to anywhere in this world, which is
-    /// the population every footprint below is drawn from. A footprint cell count
-    /// means nothing without it — zero here is a world nobody can walk, and the
-    /// footprints are then all empty for a reason that has nothing to do with any
-    /// reach objective.
-    pub walkable: usize,
+    /// The denominator: cells the completion volumes cover, before the world is
+    /// asked anything. A footprint count means nothing without the population it
+    /// was drawn from — and a zero here with a non-zero `sites` is a volume
+    /// enumeration that stopped enumerating.
+    pub candidates: usize,
     /// Standable cells across all of them from which a body could complete.
     pub cells: usize,
     /// Of those, the ones no body can walk to the anchor's own footing from
@@ -557,11 +556,11 @@ impl ReachFootprintBinding {
     /// The one line this proof owes its reader.
     pub fn line(&self) -> String {
         format!(
-            "reach-footprint binding: {} reach objective(s) examined over {} walk-reachable \
-             cell(s); {} of those cells could complete one of the objectives, and {} of THOSE \
-             stand on floor a body cannot walk to the anchor's own footing from without leaving \
-             the completion volume.",
-            self.sites, self.walkable, self.cells, self.off_floor
+            "reach-footprint binding: {} reach objective(s) examined over {} cell(s) their \
+             completion volumes cover; {} of those are footing a body could complete from, and \
+             {} of THOSE stand on floor no body can walk to the anchor's own footing from \
+             without leaving the completion volume.",
+            self.sites, self.candidates, self.cells, self.off_floor
         )
     }
 }
@@ -649,19 +648,21 @@ const SHOWN_PER_FLOOR: usize = 6;
 /// anchor's own footing without leaving the footprint — see [`DW_REACH_OFF_FLOOR`]
 /// for why that is the rule and not a bound on `radius`.
 ///
-/// **`walkable` is part of the predicate, not an escape hatch**, and the
-/// difference is worth stating because the shape looks like one. A cell no body
-/// can walk to is not a cell a body completes from, so it was never in the
-/// footprint; without that clause the rule refuses every roof, wall top and
-/// stamped block a generous radius happens to cover, which is a false refusal in
-/// the one direction that reads as a finding about the campaign. It is a
-/// different demand from the one this rule catches, which is what
-/// `CLAUDE.md`'s sixth vacuity mode asks: the defect — a completion volume that
-/// reaches a lower floor — cannot supply "that floor is unreachable", because the
-/// floor it reaches is the one the party is standing on. The set handed in is the
-/// engine's own general answer ([`World::reachable_walkable_rooted`] over
-/// `edit::anchor_starts`), the same one `DW0851` measures against, so this rule
-/// does not get a private opinion about where a body can be.
+/// **Two walks over one graph, and the pair is the whole rule.** A cell is in the
+/// footprint only if a body at the anchor's footing could walk to it AT ALL
+/// ([`World::reachable_walkable`], over the whole assembled world) — a canopy
+/// three courses over a bay with nothing joining them is not somewhere a party
+/// can be, and refusing it would be a false red in the one direction that reads
+/// as a finding about the campaign. It is an offender only if it then cannot walk
+/// BACK to that footing without leaving the footprint. Same graph, same step
+/// rule, two different boundaries.
+///
+/// The first walk is a predicate and not an escape hatch, which
+/// `CLAUDE.md`'s sixth vacuity mode is the question to ask of it: could the defect
+/// itself supply what it demands? It could not — the floor a too-wide volume
+/// reaches is the floor the party fights on, maximally connected to everything,
+/// and a cell severed from the anchor's own footing in the whole world is a cell
+/// no player who can complete this objective can stand on.
 ///
 /// Returns the binding beside the verdict rather than short-circuiting on the
 /// first refusal, so the line a run prints is a count over every objective and not
@@ -672,29 +673,33 @@ const SHOWN_PER_FLOOR: usize = 6;
 pub fn check_reach_footprint(
     plan: &Plan,
     world: &World,
-    walkable: &BTreeSet<[i32; 3]>,
 ) -> (ReachFootprintBinding, Result<(), Failure>) {
     let v03 = is_cube_campaign(plan);
-    let mut binding = ReachFootprintBinding {
-        walkable: walkable.len(),
-        ..ReachFootprintBinding::default()
-    };
+    let mut binding = ReachFootprintBinding::default();
     let mut first: Option<Failure> = None;
     for site in sites(plan) {
         binding.sites += 1;
         let vol = reach_completion(site.pos, site.radius, v03);
-        let cells: BTreeSet<[i32; 3]> = vol
-            .footprint_candidates()
+        let candidates = vol.footprint_candidates();
+        binding.candidates += candidates.len();
+        let touching: BTreeSet<[i32; 3]> = candidates
             .into_iter()
-            .filter(|&c| walkable.contains(&c))
             .filter(|&c| world.is_standable(c) && vol.possibly_completes_from(c, world.feet_y(c)))
             .collect();
-        binding.cells += cells.len();
-        let Some(footing) = anchor_footing(world, site.pos, &cells) else {
-            // An empty footprint is `DW0850`'s finding, stated in its own words at
+        let Some(footing) = anchor_footing(world, site.pos, &touching) else {
+            // An empty volume is `DW0850`'s finding, stated in its own words at
             // the same site; saying it twice in two vocabularies helps nobody.
             continue;
         };
+        // The first walk: what a body standing at the anchor's own footing can
+        // walk to anywhere in this world. Everything outside it is geometry no
+        // party can be on, however well the volume covers it.
+        let anywhere = world.reachable_walkable(&[footing]);
+        let cells: BTreeSet<[i32; 3]> = touching
+            .into_iter()
+            .filter(|c| *c == footing || anywhere.contains(c))
+            .collect();
+        binding.cells += cells.len();
         let arriving = cells_that_reach(world, &cells, footing);
         let off: Vec<[i32; 3]> = cells.difference(&arriving).copied().collect();
         binding.off_floor += off.len();
