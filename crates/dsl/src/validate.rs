@@ -236,7 +236,12 @@ pub(crate) struct AnchorProviders {
     kinds: BTreeMap<String, crate::layout::StationKind>,
     /// The union of every known area's set.
     union: BTreeSet<String>,
-    /// Some area binds a pool, so the compiler resolves its anchors later.
+    /// **This campaign's answer is not knowable at this tier**, so no name is
+    /// refused for being outside the set. Two causes, one consequence: some area
+    /// binds a pool whose draw the compiler makes later, or the campaign hands
+    /// its space to a site plan whose `layout-graph.json` is absent — see
+    /// [`crate::placement::anchor_vocabulary_unknowable`], which is where that
+    /// second question is asked and the only place it is answered.
     deferred: bool,
     /// Every area contributed a set — the union is the whole truth.
     all_areas_known: bool,
@@ -259,11 +264,21 @@ impl AnchorProviders {
         let mut kinds: BTreeMap<String, crate::layout::StationKind> = BTreeMap::new();
         if c.site_plan.is_some() {
             declared_areas += 1;
-            kinds = crate::siteplan::synthesized_anchor_kinds(c);
-            per_area.insert(
-                crate::siteplan::SITE_AREA.to_string(),
-                kinds.keys().cloned().collect(),
-            );
+            // A derivation with no graph to read names NOTHING, and an empty set
+            // here would make every anchor reference in the campaign a refusal —
+            // of names that are correct, with a remedy that cannot be taken. The
+            // set is unknown, not empty, and that is exactly the pool area's
+            // situation, so it takes the pool area's path: contribute no set and
+            // let the whole campaign defer.
+            if crate::placement::anchor_vocabulary_unknowable(c) {
+                deferred = true;
+            } else {
+                kinds = crate::siteplan::synthesized_anchor_kinds(c);
+                per_area.insert(
+                    crate::siteplan::SITE_AREA.to_string(),
+                    kinds.keys().cloned().collect(),
+                );
+            }
         }
         for a in &c.world.content.areas {
             if let Some(prefab) = &a.prefab {
