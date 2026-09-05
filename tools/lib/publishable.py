@@ -119,11 +119,15 @@ def discover(root: Path) -> list[PublishableCrate]:
     # `[workspace.package]` is where an inherited `version` / `rust-version`
     # lives (a member says `version.workspace = true`); read it once so a page's
     # claim binds to the number cargo will actually publish.
-    try:
-        ws_pkg = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
-        ws_pkg = ws_pkg.get("workspace", {}).get("package", {})
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise DerivationError(f"{root / 'Cargo.toml'}: {exc}") from exc
+    # A tree with no root manifest has nothing to inherit from; that is an
+    # error only for a crate that tries to (below), never on its own.
+    ws_pkg: dict = {}
+    if (root / "Cargo.toml").is_file():
+        try:
+            ws_pkg = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+            ws_pkg = ws_pkg.get("workspace", {}).get("package", {})
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            raise DerivationError(f"{root / 'Cargo.toml'}: {exc}") from exc
 
     def inherited(pkg: dict, key: str):
         value = pkg.get(key)

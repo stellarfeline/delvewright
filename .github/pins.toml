@@ -80,7 +80,7 @@
 id = "rust-toolchain"
 value = "1.97.1"
 sites = [
-    "crates/compiler/Cargo.toml",
+    "Cargo.toml",
     "crates/dsl/Cargo.toml",
     "rust-toolchain.toml",
     "versions.toml",
@@ -92,9 +92,10 @@ why = """
 The Rust toolchain every artifact this project ships is built with. The channel
 in rust-toolchain.toml is the copy rustup obeys — it binds inside git worktrees
 too, and no workflow overrides it, so CI and a creator's own clone build on the
-same compiler. versions.toml restates it and both published manifests carry it as
-their `rust-version` floor; validation/check-versions.sh holds those four equal,
-and tools/check-reference-versions.py holds the two crate READMEs' "Rust 1.97.1
+same compiler. versions.toml restates it, the root manifest's `[workspace.package]` carries it
+as the `rust-version` floor every engine crate inherits, and the DSL crate's
+manifest carries its own; validation/check-versions.sh holds those four equal,
+and tools/check-reference-versions.py holds every crate README's "Rust 1.97.1
 or newer" line equal to them in turn.
 
 HELD FOR one instrument, constant across time and machines. ADR-0006's

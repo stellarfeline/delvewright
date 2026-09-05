@@ -181,12 +181,14 @@ def test_the_real_repository_yields_a_flag_surface(checker):
     parser stops recognising makes the demand unfalsifiable rather than red.
     Bound to the live tree, not a fixture."""
     owners, crates, files = checker.flag_owners(None)
-    assert crates >= 5, crates
+    # One binary, `delvec`; every library crate's flags are mounted into it.
+    assert crates == 1, crates
     assert files >= 50, files
     assert len(owners) >= 40, sorted(owners)
-    # Flags that only exist because a real binary declares them.
-    assert owners["view"] == {"delvec render"}
-    assert "delvec" in owners["lang"]
+    # A flag declared in a library crate (`--view`, crates/render) and one
+    # declared in the binary's own source (`--lang`) both belong to `delvec`.
+    assert owners["view"] == {"delvec"}
+    assert owners["lang"] == {"delvec"}
 
 
 # ---------------------------------------------------------------- demand ----
@@ -221,15 +223,18 @@ def test_the_same_change_with_its_row_is_green(checker, tmp_path, capsys, monkey
     assert "OK" in capsys.readouterr().out
 
 
-def test_a_flag_on_a_crate_with_no_binary_is_out_of_scope(checker, tmp_path, capsys, monkeypatch):
-    """Scope is the binaries an authoring session runs. A library gaining a
-    clap-shaped attribute is not new surface anyone can reach."""
+def test_a_flag_on_a_crate_with_no_binary_belongs_to_the_binary(checker, tmp_path, capsys, monkeypatch):
+    """Scope is the surface an authoring session can type. A library crate's
+    command line is mounted into the binary, so a clap flag it gains is new
+    surface under the binary's name, and owes its row like any other."""
     build(tmp_path, MAIN_ONE_FLAG, [ROW_TRAPS], MAIN_ONE_FLAG, [ROW_TRAPS])
     write_local(tmp_path, {"crates/libcrate/src/lib.rs": MAIN_TWO_FLAGS})
     checker.ROOT = tmp_path
     monkeypatch.setattr("sys.argv", ["check-demo-levels.py"])
-    assert checker.main() == 0
-    assert "OK" in capsys.readouterr().out
+    assert checker.main() == 1
+    out = capsys.readouterr().out
+    assert "--view  (delve-tool)" in out
+    assert "adds no row to docs/demo-levels.md" in out
 
 
 # ------------------------------------------------- where the table ends ----

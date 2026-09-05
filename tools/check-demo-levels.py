@@ -115,6 +115,7 @@ import argparse
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -126,7 +127,6 @@ ROOT = Path(__file__).resolve().parent.parent
 QUEUE = "docs/demo-levels.md"
 CRATES = "crates"
 
-BIN_NAME = re.compile(r"^\s*name\s*=\s*\"([^\"]+)\"", re.MULTILINE)
 ATTR_START = re.compile(r"#\[(?:arg|clap)\(")
 LONG_NAMED = re.compile(r"\blong\s*=\s*\"([A-Za-z0-9][A-Za-z0-9-]*)\"")
 LONG_BARE = re.compile(r"\blong\b\s*(?:[,)]|$)")
@@ -235,36 +235,44 @@ def flags_in_source(text: str) -> set[str]:
 
 def binary_crates(ref: str | None) -> dict[str, str]:
     """`crate directory -> binary name` for every crate under `crates/` that
-    declares a `[[bin]]`. Discovered, never listed: a seventh binary inherits
-    this gate with nobody remembering."""
+    declares a `[[bin]]`. Discovered, never listed: a second binary would
+    inherit this gate with nobody remembering. There is one — `delvec`, the
+    delve creator — and every library crate's command line is mounted into it."""
     out: dict[str, str] = {}
     for path in tree_paths(ref, CRATES):
         if not path.endswith("/Cargo.toml"):
             continue
-        text = read_text(ref, path)
-        if "[[bin]]" not in text:
+        # Parsed, not grepped: a manifest COMMENT may say `[[bin]]` about the
+        # binary it does not declare, and a substring test would count it.
+        try:
+            manifest = tomllib.loads(read_text(ref, path))
+        except tomllib.TOMLDecodeError:
             continue
-        section = text.split("[[bin]]", 1)[1]
-        name = BIN_NAME.search(section)
-        if name:
-            out[path.rsplit("/", 1)[0]] = name.group(1)
+        for target in manifest.get("bin", []):
+            name = target.get("name") if isinstance(target, dict) else None
+            if name:
+                out[path.rsplit("/", 1)[0]] = str(name)
     return out
 
 
 def flag_owners(ref: str | None) -> tuple[dict[str, set[str]], int, int]:
-    """`flag -> {binary names declaring it}`, plus crate count and file count."""
+    """`flag -> {binary names carrying it}`, plus binary-crate count and file count.
+
+    A flag declared in a binary crate's own `src/` belongs to that binary; a
+    flag declared in a library crate's `src/` belongs to every binary, because
+    the binaries are what mount the library crates' command lines and a flag
+    nobody can type is not a flag."""
     crates = binary_crates(ref)
     owners: dict[str, set[str]] = {}
     files = 0
     for path in tree_paths(ref, CRATES):
-        if not path.endswith(".rs"):
+        if not path.endswith(".rs") or "/src/" not in path:
             continue
         crate = next((c for c in crates if path.startswith(c + "/src/")), None)
-        if crate is None:
-            continue
+        names = {crates[crate]} if crate is not None else set(crates.values())
         files += 1
         for flag in flags_in_source(read_text(ref, path)):
-            owners.setdefault(flag, set()).add(crates[crate])
+            owners.setdefault(flag, set()).update(names)
     return owners, len(crates), files
 
 
