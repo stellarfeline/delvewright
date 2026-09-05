@@ -21,7 +21,7 @@ use delvewright_admit::diag::{
 };
 use delvewright_admit::gallery::{self, Candidate};
 use delvewright_admit::light::{self, Zone};
-use delvewright_admit::meta::{self, AnchorEdit, License, PrefabMeta, Region};
+use delvewright_admit::meta::{self, AnchorEdit, AnchorRole, License, PrefabMeta, Region};
 use delvewright_admit::settling;
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::spatial::Door;
@@ -69,7 +69,21 @@ fn main() -> ExitCode {
             facing,
             region,
             block,
-        } => run_anchor(&nbt, &name, pos, facing, region, block, json),
+            role,
+            no_role,
+        } => run_anchor(
+            &nbt,
+            &name,
+            AnchorArgs {
+                pos,
+                facing,
+                region,
+                block,
+                role,
+                no_role,
+            },
+            json,
+        ),
         Command::Lighting {
             nbt,
             write,
@@ -331,15 +345,25 @@ fn run_resolve_jigsaw(nbt: &Path, json: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn run_anchor(
-    nbt: &Path,
-    name: &str,
+/// What `anchor` was told, in the shape the parser produced it.
+struct AnchorArgs {
     pos: Option<String>,
     facing: Option<String>,
     region: Option<String>,
     block: Option<String>,
-    json: bool,
-) -> ExitCode {
+    role: Option<String>,
+    no_role: bool,
+}
+
+fn run_anchor(nbt: &Path, name: &str, args: AnchorArgs, json: bool) -> ExitCode {
+    let AnchorArgs {
+        pos,
+        facing,
+        region,
+        block,
+        role,
+        no_role,
+    } = args;
     let (_structure, mut meta) = match load_piece(nbt, json) {
         Ok(v) => v,
         Err(code) => return code,
@@ -366,11 +390,23 @@ fn run_anchor(
     if pos.is_none() && region.is_none() {
         return input_err("anchor needs --pos or --region", json);
     }
-    // This command declares one thing: where the anchor is. Which contract
-    // element it lands in is resolved by the exporter from the piece's own
-    // contract, and the dispenser cell and trigger block are hardware the prefab
-    // wired — none of that is something the operator types, so none of it is
-    // this edit's to write, and re-annotating an anchor that already exists
+    // **The role is refused HERE, where it is typed**, against the engine's own
+    // closed vocabulary rather than against a copy of it: a term this engine
+    // does not know written through into the document would be `DW0346` at the
+    // next build, about a file the operator would then have to go and edit.
+    let role: Option<Option<AnchorRole>> = match (role, no_role) {
+        (Some(r), _) => match r.parse::<AnchorRole>() {
+            Ok(role) => Some(Some(role)),
+            Err(e) => return input_err(&format!("--role: {e}"), json),
+        },
+        (None, true) => Some(None),
+        (None, false) => None,
+    };
+    // This command declares two things: where the anchor is, and what it is for.
+    // Which contract element it lands in is resolved by the exporter from the
+    // piece's own contract, and the dispenser cell and trigger block are hardware
+    // the prefab wired — none of that is something the operator types, so none of
+    // it is this edit's to write, and re-annotating an anchor that already exists
     // keeps all of it (`PrefabMeta::edit_anchor`).
     meta.edit_anchor(
         name,
@@ -379,12 +415,17 @@ fn run_anchor(
             facing,
             region: region.map(|(from, to)| Region { from, to }),
             block,
+            role,
         },
     );
     if let Err(e) = write_meta(nbt, &meta) {
         return output_err(&format!("cannot write metadata: {e}"), json);
     }
-    eprintln!("annotated anchor {name}");
+    match role {
+        Some(Some(r)) => eprintln!("annotated anchor {name} (role {r})"),
+        Some(None) => eprintln!("annotated anchor {name} (no role)"),
+        None => eprintln!("annotated anchor {name}"),
+    }
     ExitCode::SUCCESS
 }
 

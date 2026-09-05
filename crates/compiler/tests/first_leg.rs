@@ -140,11 +140,8 @@ fn the_perturbation_is_which_piece_declares_an_entry() {
         meta["anchors"]
             .as_object()
             .unwrap()
-            .iter()
-            .any(|(name, a)| {
-                a.get("role") == Some(&Value::from(plan::AnchorRole::Entry.to_string()))
-                    || plan::ENTRY_ANCHOR_NAMES.contains(&name.as_str())
-            })
+            .values()
+            .any(|a| a.get("role") == Some(&Value::from(plan::AnchorRole::Entry.to_string())))
     };
     assert!(entry_of(HAS_ENTRY), "{HAS_ENTRY} must be arrivable-in");
     assert!(!entry_of(NO_ENTRY), "{NO_ENTRY} must not be");
@@ -165,9 +162,8 @@ fn the_perturbation_is_which_piece_declares_an_entry() {
             .get("anchors")
             .and_then(Value::as_object)
             .is_some_and(|anchors| {
-                anchors.iter().any(|(name, a)| {
+                anchors.values().any(|a| {
                     a.get("role") == Some(&Value::from(plan::AnchorRole::Entry.to_string()))
-                        || plan::ENTRY_ANCHOR_NAMES.contains(&name.as_str())
                 })
             });
         with_entry += usize::from(has);

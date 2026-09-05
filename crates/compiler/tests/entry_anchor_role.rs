@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 
 use delvewright_compiler::commands::CommandTree;
 use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::{self, Plan};
+use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{AnchorRole, PrefabRegistry};
 use delvewright_dsl::parse_campaign;
 use delvewright_grammar::ir::Node;
@@ -37,6 +37,13 @@ use serde_json::Value;
 /// The landing's entry cell in world coordinates — where the bolt branch's
 /// crossing has to land, however the piece declares that anchor.
 const LANDING_ENTRY: [i32; 3] = [262, 66, 8];
+
+/// The two anchor NAMES the compiler once matched to find a campaign's entry.
+///
+/// They live here and nowhere in the engine, which is the point: the sweep below
+/// proves no source file spells one, and a needle the engine still held would be
+/// a needle the engine could still read.
+const ONCE_ENTRY_NAMES: [&str; 2] = ["spawn", "entry"];
 
 fn fixture_dir() -> PathBuf {
     common::compiler_fixtures_dir().join("branch-transport")
@@ -76,9 +83,10 @@ fn grammar_declared_entry() -> (String, Value) {
         .map(|(k, a)| (k.clone(), serde_json::to_value(a).unwrap()))
         .expect("the marked zone exports its one anchor");
     assert!(
-        !plan::ENTRY_ANCHOR_NAMES.contains(&key.as_str()),
-        "fixture drift: an exported key that IS an entry-anchor name would make \
-         every case below vacuous — the role would never be consulted"
+        !ONCE_ENTRY_NAMES.contains(&key.as_str()) && key.starts_with("anchor/"),
+        "fixture drift: an exported key that could pass for one of the spellings \
+         the compiler once matched would make every case below unreadable — the \
+         role is the only thing consulted, and the key must be seen not to be it"
     );
     assert_eq!(anchor["role"], Value::from("entry"));
     (key, anchor["role"].clone())
@@ -104,8 +112,16 @@ fn library_declaring_entry(tag: &str, with_role: bool) -> (PathBuf, String) {
         let mut anchor = anchors
             .remove("spawn")
             .unwrap_or_else(|| panic!("fixture drift: {piece} must declare a `spawn` anchor"));
+        // The role is SET or REMOVED, never merely left: the shipped piece
+        // declares one, so a fixture that only skipped writing it would carry
+        // the library's own declaration through and prove nothing.
         if with_role {
             anchor["role"] = role.clone();
+        } else {
+            anchor
+                .as_object_mut()
+                .expect("an anchor is an object")
+                .remove("role");
         }
         anchors.insert(key.clone(), anchor);
         std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
@@ -132,6 +148,31 @@ fn library_with_roles_on(tag: &str, sites: &[(&str, &str)]) -> PathBuf {
             role.clone();
         std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
     }
+    dir
+}
+
+/// The same library with one piece's role MOVED from `from` to `to` — the shape
+/// that asks whether the vacated name still means anything.
+fn library_moving_the_role(tag: &str, piece: &str, from: &str, to: &str) -> PathBuf {
+    let (_, role) = grammar_declared_entry();
+    let dir = std::env::temp_dir().join(format!("dw-entry-move-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&common::prefabs_dir(), &dir);
+    let path = dir.join(piece);
+    let mut meta: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let anchors = meta["anchors"].as_object_mut().unwrap();
+    anchors
+        .get_mut(from)
+        .unwrap_or_else(|| panic!("fixture drift: {piece} declares no `{from}`"))
+        .as_object_mut()
+        .expect("an anchor is an object")
+        .remove("role")
+        .unwrap_or_else(|| panic!("fixture drift: {piece}'s `{from}` declares no role to move"));
+    anchors
+        .get_mut(to)
+        .unwrap_or_else(|| panic!("fixture drift: {piece} declares no `{to}`"))["role"] =
+        role.clone();
+    std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
     dir
 }
 
@@ -315,11 +356,6 @@ fn no_source_file_outside_the_resolver_matches_an_entry_anchor_name() {
     /// anchor-name match.
     const EXEMPT: &[(&str, &str, &str)] = &[
         (
-            "plan.rs",
-            "pub const ENTRY_ANCHOR_NAMES",
-            "the fallback list itself — this is the resolver",
-        ),
-        (
             "solver.rs",
             "m.role == \"entry\"",
             "a POOL member's layout role (which prefab seeds the jigsaw layout), \
@@ -380,7 +416,7 @@ fn no_source_file_outside_the_resolver_matches_an_entry_anchor_name() {
     for file in &files {
         let name = file.file_name().unwrap().to_str().unwrap().to_string();
         for (n, line) in std::fs::read_to_string(file).unwrap().lines().enumerate() {
-            let hits = plan::ENTRY_ANCHOR_NAMES
+            let hits = ONCE_ENTRY_NAMES
                 .iter()
                 .filter(|needle| line.contains(&format!("\"{needle}\"")))
                 .count();
@@ -485,16 +521,16 @@ fn one_declared_entry_per_area_is_the_ordinary_case() {
 }
 
 // ---------------------------------------------------------------------------
-// the fallback stays a fallback
+// a name supplies nothing
 // ---------------------------------------------------------------------------
 
-/// A piece that declares a role is never reached by a name — which is what makes
-/// the compatibility list safe to keep. Here `spawn` keeps its cell and
-/// `anchor/exit` is declared the entry: the role wins, and the party arrives at
-/// the declared cell rather than at the one that is merely spelled right.
+/// The anchor still NAMED `spawn` — the first spelling the compiler once matched
+/// — supplies no entry point once its role is taken off. The role moves to
+/// `anchor/exit` and the party arrives there; the cell that is merely spelled
+/// right is not a candidate at all.
 #[test]
-fn a_declared_role_outranks_a_spelled_name() {
-    let dir = library_with_roles_on("outranks", &[("cave-shore.json", "anchor/exit")]);
+fn a_name_supplies_no_entry_point() {
+    let dir = library_moving_the_role("outranks", "cave-shore.json", "spawn", "anchor/exit");
     let (entry, exit) = with_plan(&dir, |p| {
         (
             p.entry_point("area/landing"),

@@ -135,37 +135,31 @@ const ANCHORS: &[Anchor] = &[
         note: "where the party arrives — the entry, declared by ROLE and not by name",
         role: Some("entry"),
     },
-    // `spawn` is one of the two compatibility spellings the compiler falls back to
-    // for a piece that predates the role (`ENTRY_ANCHOR_NAMES`), and it is the
-    // first of them, so it is what the fallback finds. It stands ten cells west of
-    // the real arrival, on the same strip of floor, and NOTHING in the campaign
-    // binds it.
+    // `spawn` is the decoy: the spelling the compiler used to fall back to, now
+    // an anchor like any other. It stands ten cells west of the real arrival, on
+    // the same strip of floor, and NOTHING in the campaign binds it.
     //
-    // It is here so that the precedence is a fact this campaign proves rather than
-    // a sentence in a doc comment. With the role declared, the entry is
-    // `anchor/arrival` and this anchor is inert. Delete the `role` above and the
-    // resolver falls back to this name: `setworldspawn`, the class-apply teleport,
-    // the first-join placement, the `dw:cp` seed and the POV planner's first frame
-    // all move ten blocks west, together, in the emitted datapack. That is the
-    // perturbation this element exists to answer — a gallery element that cannot
-    // fail when the surface it covers is removed is coverage in name only.
+    // It is here so that "a name supplies no entry point" is a fact this campaign
+    // proves rather than a sentence in a doc comment. Delete the `role` above and
+    // the world resolves NO entry at all and is refused by `DW0345` — it does not
+    // quietly move the start ten blocks west onto this cell, which is what it did
+    // while the fallback existed. That is the perturbation this element answers:
+    // a gallery element that cannot fail when the surface it covers is removed is
+    // coverage in name only.
     //
-    // Where it stands is chosen so that the perturbed campaign still BUILDS, and
+    // Where it stands is chosen so that the campaign BUILDS with it present, and
     // both halves of that were measured rather than guessed. Ten cells down the
-    // near hall's centre line is far enough that every seated body visibly moves;
-    // it is still dead ahead of `anchor/shortcut-door`, which is what keeps
-    // `DW0374`'s proof true (opening the shortcut must shorten the walk from the
-    // campaign entry to its own unlock). A decoy at the mouth of one of the other
-    // four gates — `[5, 1, 2]` was tried — reds that proof instead, and a
-    // perturbation that refuses the build proves the point by destroying the
-    // evidence: nothing can then be counted path by path.
+    // near hall's centre line keeps it dead ahead of `anchor/shortcut-door`, which
+    // is what keeps `DW0374`'s proof true (opening the shortcut must shorten the
+    // walk from the campaign entry to its own unlock). At the mouth of one of the
+    // other four gates — `[5, 1, 2]` was tried — it reds that proof instead.
     Anchor {
         name: "spawn",
         pos: [15, 1, 12],
         facing: Some("south"),
         trigger_block: None,
-        note: "the compatibility spelling, standing where the party must NOT arrive: \
-               what the entry falls back to if the arrival stops declaring its role",
+        note: "the old compatibility spelling, standing where the party must NOT arrive: \
+               a name the compiler no longer reads, so this cell is never the entry",
         role: None,
     },
     Anchor {

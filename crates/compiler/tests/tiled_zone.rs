@@ -30,7 +30,7 @@ use delvewright_dsl::{Severity, parse_campaign};
 /// cannot be completed unless the second tile was placed.
 fn anchors() -> serde_json::Value {
     serde_json::json!({
-        "spawn": { "pos": [4, 1, 2], "facing": "south" },
+        "spawn": { "pos": [4, 1, 2], "facing": "south", "role": "entry" },
         "anchor/keeper-stand": { "pos": [4, 1, 4], "facing": "north" },
         "anchor/door": {
             "region": { "from": [4, 1, 30], "to": [4, 3, 30] },
