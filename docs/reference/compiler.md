@@ -4895,9 +4895,9 @@ that exists and reports zero is a finding rather than an absence.
 marker has no such cell** — its position is the death point, or a row of the
 compile-time placement table picked by the respawn seat in force — so a lift and
 a stake in one room shipped a silent defect: the ride carried the marker away
-from the position its ledger recorded, and the next tick `stk_gc_<s>` found
-nobody holding a wager there and retired it. The wager was not uncollectable, it
-was deleted.
+from the position its ledger recorded, and the next tick `stk_gc` found nobody
+holding a wager there and retired it. The wager was not uncollectable, it was
+deleted.
 
 The two obvious fixes are both defects CLAUDE.md names. *Teleport exempts engine
 machinery* re-implements a general mechanism privately inside one verb; *the
@@ -4956,12 +4956,17 @@ does not read it). Because it can never be caused or fixed by campaign JSON it i
 campaign ship the defect in silence.
 
 **The runtime half is the only half that can witness the original defect**, and it
-is generated rather than argued: one PackTest template per (`teleport` × `stake`)
-pair leaves a real marker in a real volume through the campaign's own
-`stk_fill_<s>`, rides the campaign's own `teleport_<key>`, and asserts a plain
-body **left** the box while both halves of the marker stayed. The body assertion
-is what stops it being one-directional — without it, an engine whose teleport did
-nothing at all would pass.
+is generated rather than argued: one PackTest template per `teleport`, in a
+campaign that declares a stake able to leave a marker, puts a real marker in a
+real volume through the campaign's own `stk_fill_<id>`, rides the campaign's own
+`teleport_<key>`, and asserts a plain body **left** the box while both halves of
+the marker stayed. The body assertion is what stops it being one-directional —
+without it, an engine whose teleport did nothing at all would pass. One template
+per teleport rather than per (`teleport`, `stake`) pair because the marker is one
+object: every stake summons the same two entities through the same `stk_place`,
+so a second template for a second stake would race the first for one entity at
+one position on the shared batch server. Every selector such a template writes
+over the marker class is scoped to the place it is about, for the same reason.
 
 Binding: `validation/fixture-gate.json` states how many entities declared each
 class, how many box-narrowed selectors were examined, and how many runtime
@@ -5256,7 +5261,7 @@ this engine travels, `emit::tr` → `{"translate":…,"fallback":…}`, and vani
 own broadcast still fires, worded by the declared `damage_type`: the party reads
 *who* died, the victim reads *what the place was*.
 
-### DW0520–DW0527 — trade and the recovery stake (`dsl::validate` / `compiler::stake`; spec-0032, DSL v0.10)
+### DW0520–DW0527, DW0880 — trade and the recovery stake (`dsl::validate` / `compiler::stake`; spec-0032, DSL v0.10)
 
 **There is no price diagnostic here, and its absence is the design.** A price is a
 [`Gate`] term — the numeric comparison spec-0031 put in the shared gate rather than
@@ -5274,7 +5279,33 @@ schema and `crates/compiler/tests/v10_economy.rs` the negative half (no `price`,
 `DW0520`–`DW0524` and `DW0527` are declaration and authoring rules and live in `dsl::validate`. `DW0525` and
 `DW0526` are the **placement table's** proofs and live in `compiler::stake`,
 because where a stake lands is a question about the solved layout — the same split
-a lethal volume's `DW0512` and `DW0510`/`DW0511` make.
+a lethal volume's `DW0512` and `DW0510`/`DW0511` make. `DW0880` lives there too,
+and is about the marker rather than the anchor.
+
+#### A marker is a PLACE, and a death leaves one place
+
+The hardware is one class for the campaign — the `minecraft:interaction` box
+tagged `dw_stk` and the glowing `minecraft:item_display` beside it, both summoned
+by `stk_place` — and there is one of it at a place however many datums a death
+forfeited there. That is forced rather than chosen. The placement table is keyed
+on (respawn seat, death region) and never on the stake, so every stake one death
+drops resolves to one anchor; and the rule degenerates to *leave it where the
+player fell*, a position chosen at runtime that no compile-time separation can
+reach. Four `1.0 × 2.0` boxes at one cell are coincident: any pick ray enters them
+at the same distance and the client resolves the tie by entity iteration order,
+which is exactly what `DW0878` refuses between two authored affordances.
+
+So the place holds one box, and what was left there is counted in the per-player
+ledger — where a wager always lived. One advancement fires one `stk_collect`,
+which locates the place and offers it to every declared stake in turn, so one
+right-click returns every datum that death left; `stk_ref` counts live wagers at
+that position across every stake, and `stk_gc` — the one function permitted to
+retire the hardware (`DW0421`) — deletes a place nobody has a wager at. Each
+stake keeps its own forfeit rule, retention policy, collect rule, slots and
+message: those are properties of a wager, not of a place.
+
+What a place cannot hold is two answers to what it looks like, and that is
+`DW0880`.
 
 #### The placement rule, and why it is a table rather than a search
 
@@ -5307,7 +5338,7 @@ Two are `DW0526`'s, one is not, and the third is named rather than left silent.
 |---|---|---|
 | **Runtime-mutable ground** — `close-gate`, `set-block`, `collapse`, a shortcut's or a timed gate's seal | yes | the case spec-0031's ruling was written for: a stake left on a lift car is deleted by the next ride. |
 | **`fill-region` / `clear-region`** | yes, and it is *the same defect* | a `clear-region` deletes the block a marker stands on exactly as a departing car does. They enter through `QuestEffect::region_write` — the DSL's own answer to "which verbs rewrite a box" — so a later verb of that family is covered by existing rather than by being remembered. |
-| **A `teleport`'s `from` box** | **no — a deliberate ruling; closed by `DW0545` one layer away** | a teleport moves *entities*, not blocks: the ground under the marker is untouched, and what moves is the marker itself, away from the position the collecting player's ledger recorded — after which `stk_gc_<s>` finds nobody holding a wager there and retires it, taking the wager with it. Different defect, different fix, and not one a box check on this axis could state — `DW0526` is about **footing**, and a marker's position is chosen at RUNTIME, so no compile-time geometry test knows where it will be. |
+| **A `teleport`'s `from` box** | **no — a deliberate ruling; closed by `DW0545` one layer away** | a teleport moves *entities*, not blocks: the ground under the marker is untouched, and what moves is the marker itself, away from the position the collecting player's ledger recorded — after which `stk_gc` finds nobody holding a wager there and retires it, taking the wager with it. Different defect, different fix, and not one a box check on this axis could state — `DW0526` is about **footing**, and a marker's position is chosen at RUNTIME, so no compile-time geometry test knows where it will be. |
 
 The teleport case cannot simply inherit the teleport's own `DW0542` either, and the
 reason is the shape spec-0031 named when it refused to inherit `lethal_volumes[]`'s
@@ -5351,12 +5382,15 @@ twice independently, 2026-08-03 and 2026-08-09). So that tier cannot witness a
 player death, and therefore cannot prove the edge from a death to a stake being
 placed. Two templates are generated and both are honest about what they cover:
 `v10_shop_purchase` drives an offer handler as its own dummy and proves the debit
-and the refusal; `v10_stake_<id>` drives `stk_drop_<id>` and `stk_collect_<id>` and
-proves that the declared share leaves the purse, that a marker really stands where
-the drop put it, that collecting returns **exactly** what was taken, and that a
-second collection in the same breath returns nothing more. No template is generated
-for the death edge itself — a template that bound to nothing and reported green is
-the vacuity CLAUDE.md names, and it is worse than an absence because review cannot
+and the refusal; `v10_stake_<id>` drives `stk_drop_<id>` and the campaign's real
+`stk_collect` and proves that the declared share leaves the purse, that a marker
+really stands where the drop put it, that collecting returns **exactly** what was
+taken, and that a second collection in the same breath returns nothing more; and
+`v10_stake_two_datums` drives two forfeits from one position and proves that the
+two leave **one** `minecraft:interaction` and one display, that one press returns
+both datums, and that the place then retires. No template is generated for the
+death edge itself — a template that bound to nothing and reported green is the
+vacuity CLAUDE.md names, and it is worse than an absence because review cannot
 see it.
 
 **The open obligation, stated the way spec-0031 stated its own.** spec-0032's
@@ -5404,7 +5438,8 @@ Binding (playtest-methodology rule 1): a campaign with a stake emits
 `validation/stake-gate.json` — stakes declared, respawn seats and death regions the
 table is keyed on (and how many of those regions are lethal volumes), quest-state
 configurations enumerated, rows proved, distinct anchors resolved, runtime-mutable
-cells excluded, and stranded cells found. A campaign with no stake emits **no file
+cells excluded, stranded cells found, and how many of the declared stakes can
+actually leave a marker. A campaign with no stake emits **no file
 at all**, so a file that exists and reports zero is a finding rather than an
 absence.
 
@@ -5418,6 +5453,7 @@ absence.
 | `DW0525` | **No walkable route back.** From some respawn seat, under every quest state that can hold while it is in force, there is no reachable cell a stake could stand on for deaths in some region — or there are cells a player can walk to and die on that the seat cannot reach at all (the one-way drop). Build-tier (exit 3), `compiler::stake`. The message names the death region, the seat and how many quest states were examined. Prescription: give the drop a way back (a shortcut, a ladder), or declare the place a `lethal_volume` so the stake is projected to its near lip instead — never delete the stake to silence it. |
 | `DW0527` | **A comparison read after the bundle changed what it compares.** An effect's `requires_state` names a datum that an earlier effect in the same bundle writes **behind a gate on that same datum** — so the comparison is made on the far side of the boundary the bundle just tested. Warning-tier (exit 0), `dsl::validate`. Found in the emitted output of this feature's own first shop: written "purchase, then apology", buying your LAST coin debits it and the `at-most` apology — evaluated after the debit — then holds too, so the player is charged AND told they cannot afford it. The fix is always local: put every reading effect ahead of the write. An **unconditional** write followed by a comparison is deliberately NOT diagnosed — `set-state toll 0` and then a door gated on `toll at-most 0` is the ordinary sequenced idiom and plainly means the value the bundle just produced. **Its scope is ONE bundle's own effect list, and that is what it does not cover**: a write and a read four beats apart are two bundles, so a `clear-state` that empties a datum a later objective's gate depends on is invisible here. `DW0879` is that question, asked over the path rather than over a list. Prescription: reorder, or gate on something this bundle does not change. |
 | `DW0526` | **No safe footing.** Every cell reachable from the seat that a stake could be projected onto for some death region stands on a block the runtime removes — a lift car, a sealed gate region, a collapsed floor — so a marker left there would be destroyed by the next ride. Build-tier (exit 3), `compiler::stake`. Distinguished from `DW0525` because the prescription is the opposite: there IS a route back, and the ground it ends on is the problem. |
+| `DW0880` | **Two stakes that can each leave a marker disagree about what a place looks like.** Two `stakes[]` entries with `max_live` above zero declare a different `marker_item`. Build-tier (exit 3), `compiler::stake::check_marker_faces`, run beside `DW0878` and the rest of the ray-pick family. A marker is a **place** — the spot a death left its wagers — and a place holds ONE `minecraft:interaction` and one glowing display however many datums were forfeited there, because the placement table is keyed on (respawn seat, death region) rather than on the stake and the rule's common branch leaves the stake at the death point. The display therefore renders one item, and two declarations cannot both be it: whichever stake filled the place first would silently decide what every other stake's marker looks like, and the losing declaration would be read, emitted nowhere, and disagree with what the player sees. **Not a question about one death.** A marker outlives the death that made it until somebody collects it, so a later death's drop finds an earlier one's marker standing and reuses it, whatever gates separate the two `on_death` bundles — co-droppability is not the test, and every stake shares every place. **Binding:** the marker-leaving stakes it compared, stated as `marker_leaving_stakes` in `validation/stake-gate.json`; a campaign whose every stake is `max_live: 0` places nothing, reports zero, and emits no `stk_place` at all. Prescription: give every stake that can leave a marker the same `marker_item`. A stake that must look different is a stake that must land somewhere else, and the engine has one place per death. |
 
 ### DW0495 — emitted score-read integrity (`compiler::seeding`; error; exit 3)
 

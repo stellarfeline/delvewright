@@ -73,16 +73,16 @@ import {
 import {
   bodyInVolume,
   entryCellOf,
-  markerAt,
+  markersAt,
   expectedForfeit,
   inBox,
   openLethalTrial,
   seatAtRespawn,
+  stakesDropped,
   tableAnchor,
   type Box,
   type DeathPlan,
   type LethalTrial,
-  type StakeRule,
 } from "./death-loop.ts";
 import { presentAndTrigger } from "./held-item.ts";
 import {
@@ -2501,15 +2501,16 @@ export class MineflayerExecutor implements StepExecutor {
     }
     const here = this.feetCell() ?? [0, 0, 0];
     const entryCell = entryCellOf(volume.region, here, (c) => this.bodyCanOccupy(c));
-    // Which stake this death is supposed to leave. `on_death`'s own declaration
-    // decides — never "the first one declared" — so a campaign whose death drops
-    // one of three stakes is asserted against the one it named.
-    const stake: StakeRule | undefined = plan.stakes.find((s) => plan.dropsStake.includes(s.id));
+    // EVERY stake this death is supposed to leave. `on_death`'s own declaration
+    // decides which — never "the first one declared" — and all of them are
+    // asserted, because a death that forfeits four datums promises four things and
+    // leaves them at one place.
+    const stakes = stakesDropped(plan);
     if (entryCell === undefined) {
       // Every cell of the declared box is filled by a block. That is a finding
       // about the campaign — nothing can ever die in this volume — and it is
       // stated as one rather than by driving at a wall for ten seconds.
-      const trial = openLethalTrial(volume, volume.region.lo, stake);
+      const trial = openLethalTrial(volume, volume.region.lo, stakes);
       trial.abandoned =
         `no cell of the declared volume [${volume.region.lo.join(", ")}]..` +
         `[${volume.region.hi.join(", ")}] can hold a body: every one of them is filled by a ` +
@@ -2517,7 +2518,7 @@ export class MineflayerExecutor implements StepExecutor {
       this.lethalTrials.push(trial);
       return;
     }
-    const trial = openLethalTrial(volume, entryCell, stake);
+    const trial = openLethalTrial(volume, entryCell, stakes);
     this.lethalTrials.push(trial);
     // The near lip: the cell the placement table already proved is the reachable
     // point nearest this volume. Nothing new is computed — it is the anchor a
@@ -2528,16 +2529,22 @@ export class MineflayerExecutor implements StepExecutor {
       `[death-loop] ${volume.id}: standing at [${here.join(", ")}]; walking into ` +
         `[${entryCell.join(", ")}] to die there via the near lip ` +
         `${lip ? `[${lip.join(", ")}]` : "(none — the build declares no placement row)"}` +
-        `${stake ? `; expecting stake ${stake.id} on ledger ${stake.currency.objective}` : ""}\n`,
+        `${
+          trial.wagers.length > 0
+            ? `; expecting ${trial.wagers.length} wager(s): ${trial.wagers
+                .map((w) => `${w.stake} on ${w.objective}`)
+                .join(", ")}`
+            : ""
+        }\n`,
     );
 
-    // --- the ledger before -------------------------------------------------
-    if (stake) {
-      if (await this.trackScore(stake.currency.objective)) {
-        trial.balanceBefore = this.myScore(stake.currency.objective);
+    // --- the ledger before, for EVERY datum this death takes ----------------
+    for (const w of trial.wagers) {
+      if (await this.trackScore(w.objective)) {
+        w.balanceBefore = this.myScore(w.objective);
       }
-      if (trial.balanceBefore !== undefined) {
-        trial.expectedForfeit = expectedForfeit(stake.forfeit, trial.balanceBefore);
+      if (w.balanceBefore !== undefined) {
+        w.expectedForfeit = expectedForfeit(w.forfeit, w.balanceBefore);
       }
     }
 
@@ -2651,22 +2658,23 @@ export class MineflayerExecutor implements StepExecutor {
         `(${trial.respawnSeat ?? "NO declared seat"})\n`,
     );
 
-    if (stake === undefined) return;
-    const objective = stake.currency.objective;
+    if (trial.wagers.length === 0) return;
 
-    // --- the forfeit -------------------------------------------------------
-    if (trial.balanceBefore !== undefined) {
-      trial.balanceAfterDeath = await this.settledScore(
-        objective,
-        trial.balanceBefore - (trial.expectedForfeit ?? 0),
-      );
+    // --- the forfeit, for every datum ---------------------------------------
+    for (const w of trial.wagers) {
+      if (w.balanceBefore !== undefined) {
+        w.balanceAfterDeath = await this.settledScore(
+          w.objective,
+          w.balanceBefore - (w.expectedForfeit ?? 0),
+        );
+      }
     }
 
     // --- the walk back, and the stake at the end of it ----------------------
     const anchor = trial.expectedAnchor;
     if (anchor === undefined) return;
     try {
-      await this.walkTo(anchor, 1, `death-loop walk back to the ${stake.id} at the near lip`);
+      await this.walkTo(anchor, 1, `death-loop walk back to the place at the near lip`);
       trial.walkedBack = true;
     } catch (err) {
       process.stderr.write(
@@ -2676,9 +2684,20 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     await this.awaitEntitySettle();
-    const marker = this.stakeHardwareAt(anchor);
+    // Every marker standing at the anchor, not the nearest: a death leaves ONE
+    // place, and two coincident boxes have no nearest — the pick is an exact tie.
+    const markers = this.stakeHardwareAt(anchor);
+    trial.markersFound = markers.length;
+    const marker = markers[0];
     trial.markerPos = marker ? [marker.position.x, marker.position.y, marker.position.z] : undefined;
     if (!marker) return;
+    if (markers.length > 1) {
+      process.stderr.write(
+        `[death-loop] ${volume.id}: ${markers.length} recovery-stake markers stand at ` +
+          `[${anchor.join(", ")}] — one death leaves ONE place, and coincident interaction ` +
+          `boxes are a ray-pick tie the client resolves by iteration order\n`,
+      );
+    }
 
     // --- the collection, twice in one tick ---------------------------------
     // AC6 is *idempotent under a double right-click in one tick*, so the two
@@ -2716,19 +2735,23 @@ export class MineflayerExecutor implements StepExecutor {
       trial.collectClicks = clicks.length;
       await Promise.allSettled(clicks);
     }
-    trial.balanceAfterCollect =
-      trial.balanceBefore === undefined
-        ? this.myScore(objective)
-        : await this.settledScore(objective, trial.balanceBefore);
+    // EVERY datum comes back from the one press: the place is offered to every
+    // stake the death left a wager at.
+    for (const w of trial.wagers) {
+      w.balanceAfterCollect =
+        w.balanceBefore === undefined
+          ? this.myScore(w.objective)
+          : await this.settledScore(w.objective, w.balanceBefore);
+    }
     trial.markerRetired = await this.waitFor(
-      () => this.stakeHardwareAt(anchor) === undefined,
+      () => this.stakeHardwareAt(anchor).length === 0,
       MARKER_RETIRE_TIMEOUT_MS,
       LEDGER_POLL_MS,
     );
     process.stderr.write(
-      `[death-loop] ${volume.id}: collected — ledger ${trial.balanceAfterDeath ?? "?"} → ` +
-        `${trial.balanceAfterCollect ?? "?"}; marker ` +
-        `${trial.markerRetired ? "retired" : "STILL STANDING"}\n`,
+      `[death-loop] ${volume.id}: collected — ${trial.wagers
+        .map((w) => `${w.stake} ${w.balanceAfterDeath ?? "?"} → ${w.balanceAfterCollect ?? "?"}`)
+        .join("; ")}; marker ${trial.markerRetired ? "retired" : "STILL STANDING"}\n`,
     );
   }
 
@@ -2824,19 +2847,25 @@ export class MineflayerExecutor implements StepExecutor {
    * item display for the rendering, so an invisible hitbox is a stake no player
    * would ever find, not a stake that happens to render oddly.
    *
-   * WHICH of them is the stake is {@link markerAt}'s rule, not this method's — the
-   * executor supplies the observation and the pure module decides, so the reading
-   * can be put to a test without a server in front of it.
+   * WHICH of them is the stake is {@link markersAt}'s rule, not this method's —
+   * the executor supplies the observation and the pure module decides, so the
+   * reading can be put to a test without a server in front of it.
+   *
+   * **Every one of them, not the nearest.** A death leaves ONE place, so a second
+   * marker standing at the anchor is a defect the run has to be able to state; and
+   * a client cannot state it by acquiring the nearest, because coincident boxes
+   * have no nearest — the pick is an exact tie the server resolves by iteration
+   * order. Counting is the only observation available from this side.
    */
-  private stakeHardwareAt(anchor: Vec3Tuple): Hitbox | undefined {
+  private stakeHardwareAt(anchor: Vec3Tuple): Hitbox[] {
     const bot = this.bot;
-    if (!bot) return undefined;
+    if (!bot) return [];
     const displays = Object.values(bot.entities).flatMap((e) =>
       e?.position && e.name === "item_display"
         ? [{ name: "item_display", position: { x: e.position.x, y: e.position.y, z: e.position.z } }]
         : [],
     );
-    return markerAt(
+    return markersAt(
       this.hitboxesNear(anchor, MARKER_SEARCH_RADIUS),
       displays,
       anchor,

@@ -561,6 +561,38 @@ export interface MarkerCandidate {
  * because what counts as the stake is a reading of the campaign's promise and is
  * exactly the kind of claim that has to be testable without a server.
  */
+export function markersAt<T extends MarkerCandidate>(
+  bodies: readonly T[],
+  displays: readonly MarkerCandidate[],
+  anchor: Vec3Tuple,
+  searchRadius: number,
+  pairRadius: number,
+): T[] {
+  const at = (c: MarkerCandidate): number =>
+    Math.hypot(
+      c.position.x - (anchor[0] + 0.5),
+      c.position.y - anchor[1],
+      c.position.z - (anchor[2] + 0.5),
+    );
+  return bodies
+    .filter((c) => c.name === "interaction" && at(c) <= searchRadius)
+    .filter((c) =>
+      displays.some(
+        (d) =>
+          Math.hypot(
+            d.position.x - c.position.x,
+            d.position.y - c.position.y,
+            d.position.z - c.position.z,
+          ) <= pairRadius,
+      ),
+    )
+    .sort((a, b) => at(a) - at(b));
+}
+
+/**
+ * The nearest of {@link markersAt} — the one a player's crosshair would acquire
+ * if the pick were decidable at all.
+ */
 export function markerAt<T extends MarkerCandidate>(
   bodies: readonly T[],
   displays: readonly MarkerCandidate[],
@@ -568,27 +600,7 @@ export function markerAt<T extends MarkerCandidate>(
   searchRadius: number,
   pairRadius: number,
 ): T | undefined {
-  const at = (c: MarkerCandidate): number =>
-    Math.hypot(
-      c.position.x - (anchor[0] + 0.5),
-      c.position.y - anchor[1],
-      c.position.z - (anchor[2] + 0.5),
-    );
-  let best: T | undefined;
-  for (const c of bodies) {
-    if (c.name !== "interaction" || at(c) > searchRadius) continue;
-    const rendered = displays.some(
-      (d) =>
-        Math.hypot(
-          d.position.x - c.position.x,
-          d.position.y - c.position.y,
-          d.position.z - c.position.z,
-        ) <= pairRadius,
-    );
-    if (!rendered) continue;
-    if (best === undefined || at(c) < at(best)) best = c;
-  }
-  return best;
+  return markersAt(bodies, displays, anchor, searchRadius, pairRadius)[0];
 }
 
 /**
@@ -631,15 +643,51 @@ export function tableAnchor(
   return plan.rows.find((r) => r.seat === seat && r.region === region)?.anchor;
 }
 
+/**
+ * **One datum this death forfeits**, and the ledger read across the whole loop.
+ *
+ * There is one of these per stake the campaign's own `on_death` drops, not one
+ * per trial: a death that forfeits four datums promises four things, and asserting
+ * the first stake declared is asserting a quarter of the promise while reporting
+ * on all of it. Which quarter is not even decidable from the campaign — it is
+ * whichever the plan happens to list first.
+ */
+export interface TrialWager {
+  /** The stake id, as the campaign declares it. */
+  readonly stake: string;
+  /** The currency objective this datum's ledger is kept in. */
+  readonly objective: string;
+  /** The forfeit rule the campaign promised for it. */
+  readonly forfeit: ForfeitRule;
+  balanceBefore: number | undefined;
+  balanceAfterDeath: number | undefined;
+  expectedForfeit: number | undefined;
+  balanceAfterCollect: number | undefined;
+}
+
+/** A fresh wager record for one stake the death drops. */
+export function openWager(stake: StakeRule): TrialWager {
+  return {
+    stake: stake.id,
+    objective: stake.currency.objective,
+    forfeit: stake.forfeit,
+    balanceBefore: undefined,
+    balanceAfterDeath: undefined,
+    expectedForfeit: undefined,
+    balanceAfterCollect: undefined,
+  };
+}
+
 /** One walk into one lethal volume, and everything that was observed of it. */
 export interface LethalTrial {
   readonly volume: string;
   /** The cell the bot walked into. */
   readonly entryCell: Vec3Tuple;
-  /** The stake this trial expects the death to leave, if any. */
-  readonly stake: string | undefined;
-  /** The currency objective the ledger was read from. */
-  readonly objective: string | undefined;
+  /**
+   * Every datum this death forfeits — one per stake the campaign's `on_death`
+   * drops, in the plan's own order. Empty for a death that promises no wager.
+   */
+  readonly wagers: TrialWager[];
   /**
    * Whether the body was ever OBSERVED with its feet inside the declared volume.
    *
@@ -654,16 +702,25 @@ export interface LethalTrial {
   deathPos: Vec3Tuple | undefined;
   /** Whether the volume's own promised line reached this player. */
   wordingSeen: boolean;
-  balanceBefore: number | undefined;
-  balanceAfterDeath: number | undefined;
-  expectedForfeit: number | undefined;
   respawnPos: Vec3Tuple | undefined;
   respawnSeat: string | undefined;
   expectedAnchor: Vec3Tuple | undefined;
   markerPos: Vec3Tuple | undefined;
+  /**
+   * **How many recovery-stake markers stood at the anchor**, not whether one did.
+   *
+   * A marker is a PLACE, so a death that forfeits four datums leaves ONE
+   * `minecraft:interaction` there and counts its four wagers in the ledger. Two
+   * boxes at one cell are `1.0 x 2.0` and coincident: every pick ray enters them
+   * at the same distance, the client resolves the tie by entity iteration order,
+   * and which one answers a right-click is not decidable from the campaign at all.
+   * A bot that took "the nearest interaction" could never see that — it acquires
+   * by proximity and a tie has no nearest — so the count is what has to be
+   * recorded.
+   */
+  markersFound: number;
   walkedBack: boolean;
   collectClicks: number;
-  balanceAfterCollect: number | undefined;
   markerRetired: boolean;
   /** A step that could not be attempted at all, with the reason. */
   abandoned: string | undefined;
@@ -673,30 +730,37 @@ export interface LethalTrial {
 export function openLethalTrial(
   volume: LethalVolume,
   entryCell: Vec3Tuple,
-  stake: StakeRule | undefined,
+  stakes: readonly StakeRule[],
 ): LethalTrial {
   return {
     volume: volume.id,
     entryCell,
-    stake: stake?.id,
-    objective: stake?.currency.objective,
+    wagers: stakes.map(openWager),
     enteredVolume: false,
     died: false,
     deathPos: undefined,
     wordingSeen: false,
-    balanceBefore: undefined,
-    balanceAfterDeath: undefined,
-    expectedForfeit: undefined,
     respawnPos: undefined,
     respawnSeat: undefined,
     expectedAnchor: undefined,
     markerPos: undefined,
+    markersFound: 0,
     walkedBack: false,
     collectClicks: 0,
-    balanceAfterCollect: undefined,
     markerRetired: false,
     abandoned: undefined,
   };
+}
+
+/**
+ * Every stake this death drops, in the plan's own order.
+ *
+ * `on_death`'s own declaration decides — never "the first one declared" — so a
+ * campaign whose death drops three of its five stakes is asserted against exactly
+ * those three.
+ */
+export function stakesDropped(plan: DeathPlan): StakeRule[] {
+  return plan.stakes.filter((s) => plan.dropsStake.includes(s.id));
 }
 
 /** Distance from a float position to a block cell's centre-of-floor. */
@@ -739,21 +803,24 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
         `required field precisely because there is no default that could be right`,
     );
   }
-  if (t.objective !== undefined) {
-    if (t.balanceBefore === undefined || t.balanceAfterDeath === undefined) {
+  // EVERY datum this death forfeits, not the first one declared. A death that
+  // takes four things promises four things.
+  for (const w of t.wagers) {
+    if (w.balanceBefore === undefined || w.balanceAfterDeath === undefined) {
       out.push(
-        `${t.volume}: the currency ledger \`${t.objective}\` could not be read across the death, ` +
-          `so the declared forfeit was never checked — an unread ledger is not a matched one`,
+        `${t.volume}: the currency ledger \`${w.objective}\` (stake \`${w.stake}\`) could not be ` +
+          `read across the death, so the declared forfeit was never checked — an unread ledger ` +
+          `is not a matched one`,
       );
-    } else {
-      const expected = t.balanceBefore - (t.expectedForfeit ?? 0);
-      if (t.balanceAfterDeath !== expected) {
-        out.push(
-          `${t.volume}: the death took the wrong amount. \`${t.objective}\` was ` +
-            `${t.balanceBefore} before and ${t.balanceAfterDeath} after; the campaign's declared ` +
-            `forfeit rule says it should be ${expected} (a forfeit of ${t.expectedForfeit ?? 0})`,
-        );
-      }
+      continue;
+    }
+    const expected = w.balanceBefore - (w.expectedForfeit ?? 0);
+    if (w.balanceAfterDeath !== expected) {
+      out.push(
+        `${t.volume}: the death took the wrong amount for \`${w.stake}\`. \`${w.objective}\` was ` +
+          `${w.balanceBefore} before and ${w.balanceAfterDeath} after; the campaign's declared ` +
+          `forfeit rule says it should be ${expected} (a forfeit of ${w.expectedForfeit ?? 0})`,
+      );
     }
   }
   if (t.respawnSeat === undefined) {
@@ -765,7 +832,7 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
         `re-seat exists to prevent`,
     );
   }
-  if (t.stake === undefined) return out;
+  if (t.wagers.length === 0) return out;
   if (t.expectedAnchor === undefined) {
     out.push(
       `${t.volume}: the placement table has NO row for this (death region, respawn seat) pair, ` +
@@ -781,6 +848,26 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
         `placement table chose for this death. The purse was taken and left nowhere`,
     );
     return out;
+  }
+  // **One place, one box.** A death leaves its wagers at ONE position — the
+  // placement table is keyed on (respawn seat, death region) and never on the
+  // stake, and a death on ordinary ground leaves the stake where the player fell
+  // — so the hardware there is one `minecraft:interaction` however many datums
+  // were forfeited. Two of them at one cell are coincident `1.0 x 2.0` boxes: any
+  // pick ray enters both at the same distance and the client resolves the tie by
+  // entity iteration order, so which one answers a right-click is not decidable
+  // from the campaign at all. A player then presses a purse and gets part of it,
+  // or none, depending on which box the client happened to pick.
+  if (t.markersFound > 1) {
+    out.push(
+      `${t.volume}: ${t.markersFound} recovery-stake markers stand at ${anchor}, and one death ` +
+        `leaves ONE place. Their \`minecraft:interaction\` boxes are 1.0 x 2.0 at the same cell ` +
+        `centre and therefore coincident: every pick ray enters them at the same distance, the ` +
+        `client resolves the tie by entity iteration order, and which of them answers a ` +
+        `right-click is not decidable from the campaign at all. The player presses their purse ` +
+        `and gets whichever wager the tie fell to. The ${t.wagers.length} datum(s) this death ` +
+        `forfeited belong in the per-player ledger at one marker, not in a marker each`,
+    );
   }
   // Under three quarters of a block, because a stake placed at the anchor the
   // table chose stands at its exact centre (`stk_put_<n>` positions at
@@ -805,24 +892,34 @@ export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): str
     );
     return out;
   }
-  if (t.balanceAfterCollect === undefined) {
-    out.push(`${t.volume}: the ledger could not be read after collecting the stake`);
-    return out;
-  }
-  if (t.balanceBefore !== undefined && t.balanceAfterCollect !== t.balanceBefore) {
-    out.push(
-      `${t.volume}: collecting the stake did not return exactly what the death took. ` +
-        `\`${t.objective}\` was ${t.balanceBefore} before the death and ${t.balanceAfterCollect} ` +
-        `after ${t.collectClicks} right-click(s) in one tick; it must be ${t.balanceBefore} — ` +
-        `more means the collection is not idempotent, less means the stake short-changed the ` +
-        `player`,
-    );
+  // EVERY datum comes back, from ONE press. The place is offered to every stake
+  // the death left a wager at, so a collection that restores one datum and leaves
+  // the others short is a collection that lost the rest of the purse.
+  for (const w of t.wagers) {
+    if (w.balanceAfterCollect === undefined) {
+      out.push(
+        `${t.volume}: the ledger \`${w.objective}\` (stake \`${w.stake}\`) could not be read ` +
+          `after collecting the stake`,
+      );
+      continue;
+    }
+    if (w.balanceBefore !== undefined && w.balanceAfterCollect !== w.balanceBefore) {
+      out.push(
+        `${t.volume}: collecting the stake did not return exactly what the death took from ` +
+          `\`${w.stake}\`. \`${w.objective}\` was ${w.balanceBefore} before the death and ` +
+          `${w.balanceAfterCollect} after ${t.collectClicks} right-click(s) in one tick; it must ` +
+          `be ${w.balanceBefore} — more means the collection is not idempotent, less means the ` +
+          `stake short-changed the player. One press at one place gives back every datum that ` +
+          `death forfeited there`,
+      );
+    }
   }
   if (!t.markerRetired) {
     out.push(
-      `${t.volume}: the stake was collected and its hardware is still standing at ${anchor}. ` +
-        `A collected stake that does not vanish is an affordance that answers a click with ` +
-        `nothing, forever`,
+      `${t.volume}: every wager at ${anchor} was collected and the hardware is still standing ` +
+        `there. A collected stake that does not vanish is an affordance that answers a click ` +
+        `with nothing, forever — and a place nobody holds a wager at is a place the engine ` +
+        `retires`,
     );
   }
   return out;
@@ -838,6 +935,16 @@ export interface DeathLoopBinding {
   readonly deathsObserved: number;
   /** Recovery stakes this run examined at a table anchor. */
   readonly stakesExamined: number;
+  /**
+   * **Datums this run read across a whole death loop** — the count of wagers whose
+   * ledger was read both after the death and after the collection.
+   *
+   * Distinct from {@link stakesExamined}, which counts PLACES. A death that
+   * forfeits four datums leaves one place, so a run reporting one examined stake
+   * and one examined datum has asserted a quarter of what that death promised
+   * while looking exactly as green as a run that asserted all of it.
+   */
+  readonly datumsExamined: number;
   /** Respawns matched to a declared seat. */
   readonly seatsMatched: number;
   /** Walk-back legs completed. */
@@ -854,6 +961,10 @@ export function deathLoopBinding(
     volumesEntered: trials.length,
     deathsObserved: trials.filter((t) => t.died).length,
     stakesExamined: trials.filter((t) => t.markerPos !== undefined).length,
+    datumsExamined: trials
+      .flatMap((t) => t.wagers)
+      .filter((w) => w.balanceAfterDeath !== undefined && w.balanceAfterCollect !== undefined)
+      .length,
     seatsMatched: trials.filter((t) => t.respawnSeat !== undefined).length,
     walksBack: trials.filter((t) => t.walkedBack).length,
   };
@@ -883,4 +994,16 @@ export function deathLoopBindingFailures(b: DeathLoopBinding): string[] {
     );
   }
   return out;
+}
+
+/**
+ * The datums a run PROMISED to examine — every stake every declared volume's
+ * death drops.
+ *
+ * Reported beside {@link DeathLoopBinding.datumsExamined} so a run that asserted
+ * one of four is legible as such from outside. A count that equals its own
+ * population is a measurement; one that does not is a finding.
+ */
+export function datumsPromised(plan: DeathPlan): number {
+  return plan.volumes.length * stakesDropped(plan).length;
 }

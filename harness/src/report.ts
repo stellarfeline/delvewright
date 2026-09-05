@@ -492,6 +492,10 @@ export class RunReport {
                 volumes_entered: this.deathLoopBinding.volumesEntered,
                 deaths_observed: this.deathLoopBinding.deathsObserved,
                 stakes_examined: this.deathLoopBinding.stakesExamined,
+                // Places examined and DATUMS examined are different numbers: a
+                // death that forfeits four datums leaves one place, so a run
+                // reporting one of each has asserted a quarter of the promise.
+                datums_examined: this.deathLoopBinding.datumsExamined,
                 seats_matched: this.deathLoopBinding.seatsMatched,
                 walks_back: this.deathLoopBinding.walksBack,
                 unbound: this.deathLoopBinding.deathsObserved === 0,
@@ -499,28 +503,36 @@ export class RunReport {
         trials: this.lethalTrials.map((t) => ({
           volume: t.volume,
           entry_cell: [...t.entryCell],
-          stake: t.stake ?? null,
-          objective: t.objective ?? null,
+          // One row per datum this death forfeits, because a death that takes four
+          // things promises four things and leaves them all at one place.
+          wagers: t.wagers.map((w) => ({
+            stake: w.stake,
+            objective: w.objective,
+            balance_before: w.balanceBefore ?? null,
+            balance_after_death: w.balanceAfterDeath ?? null,
+            // Computed from the DECLARED forfeit rule, never from the emission.
+            expected_forfeit: w.expectedForfeit ?? null,
+            balance_after_collect: w.balanceAfterCollect ?? null,
+          })),
           died: t.died,
           death_pos: t.deathPos ?? null,
           // The volume's OWN promised line, seen by the player it was about.
           wording_seen: t.wordingSeen,
-          balance_before: t.balanceBefore ?? null,
-          balance_after_death: t.balanceAfterDeath ?? null,
-          // Computed from the DECLARED forfeit rule, never from the emission.
-          expected_forfeit: t.expectedForfeit ?? null,
           respawn_pos: t.respawnPos ?? null,
           respawn_seat: t.respawnSeat ?? null,
           // Where the compile-time placement table said the stake would be.
           expected_anchor: t.expectedAnchor ?? null,
           marker_pos: t.markerPos ?? null,
+          // How many markers stood there. One death leaves ONE place; a second box
+          // at the same cell is a ray-pick tie the client resolves by iteration
+          // order, which no "the nearest interaction" reading could ever state.
+          markers_found: t.markersFound,
           walked_back: t.walkedBack,
           // Packets SENT in one event-loop turn, not collections adjudicated: a
           // client cannot observe how many the server resolved in one tick, and
           // vanilla's once-per-tick advancement grant usually absorbs the second.
           // The claim is the outcome below, never this count.
           collect_clicks_sent: t.collectClicks,
-          balance_after_collect: t.balanceAfterCollect ?? null,
           marker_retired: t.markerRetired,
           abandoned: t.abandoned ?? null,
         })),
