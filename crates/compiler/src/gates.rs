@@ -272,6 +272,15 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
         if delvewright_dsl::synthesized_gate_block(c, anchor).is_some() {
             return Vec::new();
         }
+        // And a derivation with no `layout-graph.json` to read names no gate at
+        // all, so the question above cannot be answered rather than answered no.
+        // The same silence the DSL tier keeps over every other anchor reference
+        // in that state, kept here for the same reason and from the same
+        // authority: `DW0824` is the finding, and this gate is re-judged the
+        // moment the graph exists.
+        if delvewright_dsl::anchor_vocabulary_unknowable(c) {
+            return Vec::new();
+        }
         let (areas, refusals) = gate_providers(c, prefabs, anchor);
         if let Some(diagnostic) = ambiguous(&areas, anchor, verb, path.clone()) {
             return vec![diagnostic];
