@@ -781,6 +781,35 @@ fn a_blockout_that_moved_under_an_unchanged_plan_is_a_warning_not_a_refusal() {
     );
 }
 
+/// **An ABSENT graph is not an unchanged one.** The advisory's whole text is the
+/// claim that both authored documents were compared and found equal, and the
+/// clause enforcing that read the graph's hash through an `if let Some` — so a
+/// campaign with no `layout-graph.json` at all fell straight past it and printed
+/// "under an unchanged site plan and an unchanged layout graph" beside a binding
+/// line reading `1 of 2 freshness hash(es) compared`. That is the laundering
+/// channel the clause exists to close, reached by the arm it did not cover.
+/// `DW0824` is the finding in that state.
+#[test]
+fn the_drift_advisory_never_calls_an_absent_graph_unchanged() {
+    let tmp = tempdir("drift-nograph");
+    let d = detailed(&tmp, &["node/exit"]);
+    common::patch_file(&d.campaign.join("walk-record.json"), |v| {
+        v["blockout_sha256"] = serde_json::json!("0".repeat(64));
+    });
+    let rec = walk_record_at(&d.campaign);
+    // With the graph present this is exactly the sibling above: the advisory
+    // stands, because both documents really did compare equal.
+    assert!(
+        detail::blockout_drift(&campaign_at(&d.campaign), rec.as_deref()).is_some(),
+        "the perturbation reaches the advisory at all"
+    );
+    std::fs::remove_file(d.campaign.join("layout-graph.json")).unwrap();
+    assert!(
+        detail::blockout_drift(&campaign_at(&d.campaign), rec.as_deref()).is_none(),
+        "and a document that is not there is never reported as unchanged"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // DW0842 — the binding does not bind
 // ---------------------------------------------------------------------------

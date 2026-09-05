@@ -77,7 +77,7 @@ pub use layout::{
     LayoutBinding, LayoutGraphContent, OpensFrom, Station, StationKind,
 };
 pub use mclang::mc_lang_code;
-pub use placement::Placement;
+pub use placement::{Placement, anchor_vocabulary_unknowable};
 pub use prefab::PrefabMeta;
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
