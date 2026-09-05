@@ -373,7 +373,7 @@
             },
             "hint": "The Factor keeps the counter on the east side of the near hall.",
             "id": "obj/reach-the-counter",
-            "radius": 3,
+            "radius": 2,
             "requires_flags": [],
             "requires_state": [
               {
@@ -1982,7 +1982,7 @@
               "verb": "arrives"
             },
             "id": "obj/look-in-the-east-bay",
-            "radius": 3,
+            "radius": 2,
             "title": "Look into the east bay",
             "type": "reach-anchor"
           },

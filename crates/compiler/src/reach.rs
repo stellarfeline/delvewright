@@ -648,21 +648,20 @@ const SHOWN_PER_FLOOR: usize = 6;
 /// anchor's own footing without leaving the footprint — see [`DW_REACH_OFF_FLOOR`]
 /// for why that is the rule and not a bound on `radius`.
 ///
-/// **Two walks over one graph, and the pair is the whole rule.** A cell is in the
-/// footprint only if a body at the anchor's footing could walk to it AT ALL
-/// ([`World::reachable_walkable`], over the whole assembled world) — a canopy
-/// three courses over a bay with nothing joining them is not somewhere a party
-/// can be, and refusing it would be a false red in the one direction that reads
-/// as a finding about the campaign. It is an offender only if it then cannot walk
-/// BACK to that footing without leaving the footprint. Same graph, same step
-/// rule, two different boundaries.
-///
-/// The first walk is a predicate and not an escape hatch, which
-/// `CLAUDE.md`'s sixth vacuity mode is the question to ask of it: could the defect
-/// itself supply what it demands? It could not — the floor a too-wide volume
-/// reaches is the floor the party fights on, maximally connected to everything,
-/// and a cell severed from the anchor's own footing in the whole world is a cell
-/// no player who can complete this objective can stand on.
+/// **There is deliberately no "but nobody can get up there" clause, and the
+/// reason is a measurement rather than a preference.** The obvious softening is
+/// to keep only cells a body at the anchor's footing can walk to somewhere in the
+/// world, so that a roof or a canopy the volume happens to cover is not reported.
+/// Run against the gallery it makes this rule SILENT on the instance it was
+/// written for: the mezzanine's flight ships broken and is laid by an `open-way`
+/// during play, so in the assembled world the loft is severed from the hall it
+/// overlooks, and the hall floor — the floor the party actually completes from —
+/// drops straight out of the population. A softening whose failure mode is
+/// silence on the motivating case is not a softening, and the direction it fails
+/// in is the one nothing downstream re-checks. So the footprint is every standable
+/// cell the volume reaches, and a volume that covers floor which is not the
+/// anchor's place is reported whether a body can get to that floor today or not:
+/// the remedy — a radius that fits the place — is right either way.
 ///
 /// Returns the binding beside the verdict rather than short-circuiting on the
 /// first refusal, so the line a run prints is a count over every objective and not
@@ -686,20 +685,13 @@ pub fn check_reach_footprint(
             .into_iter()
             .filter(|&c| world.is_standable(c) && vol.possibly_completes_from(c, world.feet_y(c)))
             .collect();
-        let Some(footing) = anchor_footing(world, site.pos, &touching) else {
+        let cells = touching;
+        binding.cells += cells.len();
+        let Some(footing) = anchor_footing(world, site.pos, &cells) else {
             // An empty volume is `DW0850`'s finding, stated in its own words at
             // the same site; saying it twice in two vocabularies helps nobody.
             continue;
         };
-        // The first walk: what a body standing at the anchor's own footing can
-        // walk to anywhere in this world. Everything outside it is geometry no
-        // party can be on, however well the volume covers it.
-        let anywhere = world.reachable_walkable(&[footing]);
-        let cells: BTreeSet<[i32; 3]> = touching
-            .into_iter()
-            .filter(|c| *c == footing || anywhere.contains(c))
-            .collect();
-        binding.cells += cells.len();
         let arriving = cells_that_reach(world, &cells, footing);
         let off: Vec<[i32; 3]> = cells.difference(&arriving).copied().collect();
         binding.off_floor += off.len();

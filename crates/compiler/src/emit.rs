@@ -1078,11 +1078,8 @@ pub fn build_with_warnings(
                 // world, and its binding line is printed whether it found
                 // anything or not — a count only says something when the run that
                 // found nothing prints it too.
-                let (reach_footprint, off_floor) = crate::reach::check_reach_footprint(
-                    plan,
-                    &world,
-                    &world.reachable_walkable_rooted(&crate::edit::anchor_starts(plan)),
-                );
+                let (reach_footprint, off_floor) =
+                    crate::reach::check_reach_footprint(plan, &world);
                 eprintln!("{}", reach_footprint.line());
                 off_floor?;
                 // Stair-orientation proof (DW0430). Nav models a stair
