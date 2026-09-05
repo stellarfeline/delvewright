@@ -119,7 +119,8 @@ PY
 }
 
 local_cksum() { # <crate-name> <version>
-  local f="$ROOT/target/package/$1-$2.crate"
+  # Where tools/check-publishable.sh packages: its verify target directory.
+  local f="$ROOT/target/package-verify/package/$1-$2.crate"
   [ -f "$f" ] || { echo "crates-io-publish: no packaged tarball at $f — run tools/check-publishable.sh first" >&2; exit 2; }
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$f" | cut -d' ' -f1
   else shasum -a 256 "$f" | cut -d' ' -f1; fi

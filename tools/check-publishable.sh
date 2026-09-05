@@ -16,7 +16,7 @@
 # siblings ON DISK, it would prove nothing about a tarball a stranger downloads.
 # MEASURED on cargo 1.97.1 (2026-08-06) rather than assumed: a multi-package
 # `cargo package` builds a temporary LOCAL REGISTRY under
-# `target/package/tmp-registry/` holding the packaged siblings, and verifies each
+# `<target>/package/tmp-registry/` holding the packaged siblings, and verifies each
 # dependent against THAT. Good. But "good on the version we measured" is a fact
 # about today, so this script does not rely on it: check 3 below rebuilds the
 # packaged `delvec` tarball in a directory OUTSIDE the workspace entirely, with
@@ -119,29 +119,41 @@ emit_log() { # <log-path> <what-was-being-run>
 # moved (every push of a branch does this) therefore verifies the dependents
 # against the previous packaging's source, and the verdict is about a tree that
 # no longer exists (measured: grammar's verify failed on a `GeneratedBy` shape
-# the packaged dsl had already left behind). The extraction of OUR crates at
-# OUR versions is purged from every registry cache except crates.io's own —
-# whose copy, if one exists at this version, is the burned-version finding
-# `crates-io-publish.sh` reports and nothing here may hide.
-CARGO_REG_SRC="${CARGO_HOME:-$HOME/.cargo}/registry/src"
+# the packaged dsl had already left behind), and the same holds one layer up:
+# the `.crate` cargo copies into `registry/cache/<registry>/<name>-<version>.crate`
+# is reused by name and version too (measured: the compiler's verify unpacked a
+# dsl 0.2.0 tarball from the previous run and missed a function the packaged one
+# exports). Both copies of OUR crates at OUR versions are purged from every
+# registry cache except crates.io's own — whose copy, if one exists at this
+# version, is the burned-version finding `crates-io-publish.sh` reports and
+# nothing here may hide.
+CARGO_REG="${CARGO_HOME:-$HOME/.cargo}/registry"
 purged=0
-if [ -d "$CARGO_REG_SRC" ]; then
-  i=0
-  while [ "$i" -lt "${#NAMES[@]}" ]; do
-    for d in "$CARGO_REG_SRC"/*/"${NAMES[$i]}-${VERS[$i]}"; do
-      [ -d "$d" ] || continue
-      case "$d" in "$CARGO_REG_SRC"/index.crates.io-*) continue ;; esac
-      rm -rf "$d"; purged=$((purged + 1))
-    done
-    i=$((i + 1))
+i=0
+while [ "$i" -lt "${#NAMES[@]}" ]; do
+  for d in "$CARGO_REG"/src/*/"${NAMES[$i]}-${VERS[$i]}" "$CARGO_REG"/cache/*/"${NAMES[$i]}-${VERS[$i]}.crate"; do
+    [ -e "$d" ] || continue
+    case "$d" in "$CARGO_REG"/*/index.crates.io-*) continue ;; esac
+    rm -rf "$d"; purged=$((purged + 1))
   done
-fi
+  i=$((i + 1))
+done
 echo "== 0. stale extractions of our own crates purged from the temporary registry cache: $purged =="
 
 echo "== 1. every published crate packages =="
 echo "   (${#NAMES[@]} crates: ${NAMES[*]}; engine v$VERSION, $DSL_CRATE v$DSL_CRATE_VERSION)"
 mkdir -p "$ROOT/target"
-rm -rf "$ROOT/target/package"
+# The verify builds get a target directory of their own, emptied first. Cargo
+# fingerprints a REGISTRY dependency as immutable — by name, version and
+# registry, never by its bytes — so a `delvewright-dsl 0.2.0` rlib compiled by
+# a previous run's verify from a previous packaging is reused as-is by the next
+# run's, and a dependent is then judged against a sibling that no longer exists
+# (measured: the compiler's verify missed a function the freshly packaged dsl
+# exports, with `Unpacking` of the fresh tarball printed right above it). An
+# unpublished version has no immutable bytes, so nothing built from one may
+# outlive the run that built it.
+VERIFY_TARGET="$ROOT/target/package-verify"
+rm -rf "$VERIFY_TARGET"
 PKG_LOG="$ROOT/target/package-log.txt"
 rm -f "$PKG_LOG"
 PKG_ARGS=()
@@ -151,7 +163,7 @@ rc=0
 # "${arr[@]}" on an EMPTY array as an unbound variable under `set -u`. The
 # `${arr[@]+...}` guard expands to nothing when the array is unset or empty and
 # to the quoted elements otherwise, so it is correct on 3.2 and on bash 5 alike.
-(cd "$ROOT" && cargo package "${PKG_ARGS[@]}" ${DIRTY_FLAG[@]+"${DIRTY_FLAG[@]}"} \
+(cd "$ROOT" && CARGO_TARGET_DIR="$VERIFY_TARGET" cargo package "${PKG_ARGS[@]}" ${DIRTY_FLAG[@]+"${DIRTY_FLAG[@]}"} \
       >"$PKG_LOG" 2>&1) || rc=$?
 if [ "$rc" -eq 0 ]; then
   pass "cargo package ${PKG_ARGS[*]}"
@@ -160,7 +172,8 @@ else
   echo; echo "check-publishable: 1 finding" >&2; exit 1
 fi
 
-PKG="$ROOT/target/package"
+# `cargo package` writes beside the target directory it builds in.
+PKG="$VERIFY_TARGET/package"
 i=0
 while [ "$i" -lt "${#NAMES[@]}" ]; do
   d="$PKG/${NAMES[$i]}-${VERS[$i]}"
