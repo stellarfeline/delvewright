@@ -1068,6 +1068,23 @@ pub fn build_with_warnings(
                 // the completion cube reaches one, so a route can be proven,
                 // exported and walked to a cell that never fires the objective.
                 crate::reach::check_reach_completion(plan, &world, &routes)?;
+                // `DW0881`: the other direction of the same sentence. `DW0850`
+                // asks whether the party can complete this at all; this asks
+                // whether anybody can complete it WITHOUT arriving. The volume is
+                // centred on the anchor in all three axes and vanilla tests it
+                // against the whole body box, so a raised anchor whose radius
+                // reaches the floor below completes from that floor and the party
+                // never climbs. Bound here, to the same event and the same final
+                // world, and its binding line is printed whether it found
+                // anything or not — a count only says something when the run that
+                // found nothing prints it too.
+                let (reach_footprint, off_floor) = crate::reach::check_reach_footprint(
+                    plan,
+                    &world,
+                    &world.reachable_walkable_rooted(&crate::edit::anchor_starts(plan)),
+                );
+                eprintln!("{}", reach_footprint.line());
+                off_floor?;
                 // Stair-orientation proof (DW0430). Nav models a stair
                 // as a full cube, so a reversed stair reads as a legal one-block
                 // jump and every existing proof passes — the delve ships with a
