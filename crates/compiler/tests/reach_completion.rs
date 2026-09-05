@@ -479,6 +479,15 @@ fn hall_and_dais(anchor: [i32; 3], half: i32) -> BTreeSet<[i32; 3]> {
     solid
 }
 
+/// Where the party comes in: a hall-floor cell four out from the dais, outside
+/// every volume these fixtures author and connected to the whole hall floor. The
+/// population `DW0881` draws its footprint from is walked from here, so handing it
+/// explicitly is what keeps these tests about the rule rather than about whatever
+/// `hello-world` happens to declare as its start.
+fn entry(anchor: [i32; 3]) -> [i32; 3] {
+    [anchor[0] + 4, anchor[1] - 3, anchor[2] + 4]
+}
+
 /// The same hall and dais with a flight climbing the dais's near face, every
 /// tread inside a radius-3 cube: standing cells at `y-2` on `dz = 3` and `y-1` on
 /// `dz = 2`, which is three one-block steps from the hall floor to the top.
@@ -505,15 +514,22 @@ fn a_raised_anchor_whose_volume_reaches_the_floor_below_is_refused() {
         let (pos, obj) = only_site(plan);
         let world = World::from_solid_and_flooded(hall_and_dais(pos, 5), BTreeSet::new());
         // The premises, checked rather than assumed.
-        assert!(world.is_standable(pos), "the anchor's own cell is the dais top");
+        assert!(
+            world.is_standable(pos),
+            "the anchor's own cell is the dais top"
+        );
         assert!(
             world.is_standable([pos[0] + 3, pos[1] - 3, pos[2]]),
             "and the hall floor three courses down is standable"
         );
         judge_reach_completion(plan, &world, &BTreeMap::new())
             .expect("DW0850 is green here: the volume holds the dais");
+        assert!(
+            world.is_standable(entry(pos)),
+            "the fixture's premise: the party has somewhere to come in"
+        );
 
-        let (binding, verdict) = check_reach_footprint(plan, &world);
+        let (binding, verdict) = check_reach_footprint(plan, &world, Some(entry(pos)));
         let err = verdict.expect_err(
             "a completion volume that reaches the floor below its anchor must be refused",
         );
@@ -563,7 +579,10 @@ fn a_way_up_inside_the_volume_is_arriving_and_passes() {
             [pos[0], pos[1] - 2, pos[2] + 3],
             [pos[0], pos[1] - 1, pos[2] + 2],
         ] {
-            assert!(world.is_standable(tread), "{tread:?} is a tread a body stands on");
+            assert!(
+                world.is_standable(tread),
+                "{tread:?} is a tread a body stands on"
+            );
             assert!(
                 vol.certainly_completes_from(tread),
                 "{tread:?} is inside the completion volume, which is what makes the \
@@ -571,7 +590,7 @@ fn a_way_up_inside_the_volume_is_arriving_and_passes() {
             );
         }
 
-        let (binding, verdict) = check_reach_footprint(plan, &world);
+        let (binding, verdict) = check_reach_footprint(plan, &world, Some(entry(pos)));
         verdict.expect("a volume whose floors are joined inside it completes by arriving");
         assert_eq!(binding.off_floor, 0);
         assert!(
@@ -591,10 +610,14 @@ fn a_volume_that_stops_above_the_lower_floor_is_silent() {
     with_plan("0.6.0", 1, |plan| {
         let (pos, _) = only_site(plan);
         let world = World::from_solid_and_flooded(hall_and_dais(pos, 5), BTreeSet::new());
-        let (binding, verdict) = check_reach_footprint(plan, &world);
+        let (binding, verdict) = check_reach_footprint(plan, &world, Some(entry(pos)));
         verdict.expect("at radius 1 the cube stops two courses above the hall floor");
         assert_eq!(binding.off_floor, 0);
-        assert!(binding.cells > 0, "binding: {} footprint cell(s)", binding.cells);
+        assert!(
+            binding.cells > 0,
+            "binding: {} footprint cell(s)",
+            binding.cells
+        );
     });
 }
 
@@ -638,7 +661,7 @@ fn dw0881_binds_at_every_declared_version() {
         with_plan(version, 4, |plan| {
             let (pos, _) = only_site(plan);
             let world = World::from_solid_and_flooded(hall_and_dais(pos, 6), BTreeSet::new());
-            let (_, verdict) = check_reach_footprint(plan, &world);
+            let (_, verdict) = check_reach_footprint(plan, &world, Some(entry(pos)));
             let err = verdict.expect_err(
                 "DW0881 must bind at every declared version; a version-shaped hole here is \
                  the `unfenced` vacuity mode",
@@ -652,7 +675,11 @@ fn dw0881_binds_at_every_declared_version() {
         versions.len(),
         "binding: every declared dsl_version drove the red"
     );
-    assert!(versions.len() >= 14, "binding: {} version(s)", versions.len());
+    assert!(
+        versions.len() >= 14,
+        "binding: {} version(s)",
+        versions.len()
+    );
 }
 
 // =============================================== 3. the agreement, on bytes ==

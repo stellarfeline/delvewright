@@ -1079,7 +1079,7 @@ pub fn build_with_warnings(
                 // anything or not — a count only says something when the run that
                 // found nothing prints it too.
                 let (reach_footprint, off_floor) =
-                    crate::reach::check_reach_footprint(plan, &world);
+                    crate::reach::check_reach_footprint(plan, &world, campaign_spawn(plan));
                 eprintln!("{}", reach_footprint.line());
                 off_floor?;
                 // Stair-orientation proof (DW0430). Nav models a stair

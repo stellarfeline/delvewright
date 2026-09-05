@@ -248,11 +248,7 @@ impl ReachCompletion {
         match *self {
             ReachCompletion::Cube { lo, hi } => {
                 let half = delvewright_dsl::metrics::PLAYER_WIDTH / 2.0;
-                let body_lo = [
-                    c[0] as f64 + 0.5 - half,
-                    feet_y,
-                    c[2] as f64 + 0.5 - half,
-                ];
+                let body_lo = [c[0] as f64 + 0.5 - half, feet_y, c[2] as f64 + 0.5 - half];
                 let body_hi = [
                     c[0] as f64 + 0.5 + half,
                     feet_y + delvewright_dsl::metrics::PLAYER_HEIGHT,
@@ -545,6 +541,11 @@ pub struct ReachFootprintBinding {
     /// was drawn from — and a zero here with a non-zero `sites` is a volume
     /// enumeration that stopped enumerating.
     pub candidates: usize,
+    /// The other denominator: cells the party can walk to from the campaign's own
+    /// starting cell. A zero here over a campaign that declares a start is a world
+    /// nobody can move in, and every verdict below is then vacuous rather than
+    /// clean.
+    pub standing: usize,
     /// Standable cells across all of them from which a body could complete.
     pub cells: usize,
     /// Of those, the ones no body can walk to the anchor's own footing from
@@ -557,10 +558,10 @@ impl ReachFootprintBinding {
     pub fn line(&self) -> String {
         format!(
             "reach-footprint binding: {} reach objective(s) examined over {} cell(s) their \
-             completion volumes cover; {} of those are footing a body could complete from, and \
-             {} of THOSE stand on floor no body can walk to the anchor's own footing from \
-             without leaving the completion volume.",
-            self.sites, self.candidates, self.cells, self.off_floor
+             completion volumes cover, against {} cell(s) the party can stand on; {} of those \
+             are footing a body could complete from, and {} of THOSE stand on floor no body \
+             can walk to the anchor's own footing from without leaving the completion volume.",
+            self.sites, self.candidates, self.standing, self.cells, self.off_floor
         )
     }
 }
@@ -648,20 +649,29 @@ const SHOWN_PER_FLOOR: usize = 6;
 /// anchor's own footing without leaving the footprint — see [`DW_REACH_OFF_FLOOR`]
 /// for why that is the rule and not a bound on `radius`.
 ///
-/// **There is deliberately no "but nobody can get up there" clause, and the
-/// reason is a measurement rather than a preference.** The obvious softening is
-/// to keep only cells a body at the anchor's footing can walk to somewhere in the
-/// world, so that a roof or a canopy the volume happens to cover is not reported.
-/// Run against the gallery it makes this rule SILENT on the instance it was
-/// written for: the mezzanine's flight ships broken and is laid by an `open-way`
-/// during play, so in the assembled world the loft is severed from the hall it
-/// overlooks, and the hall floor — the floor the party actually completes from —
-/// drops straight out of the population. A softening whose failure mode is
-/// silence on the motivating case is not a softening, and the direction it fails
-/// in is the one nothing downstream re-checks. So the footprint is every standable
-/// cell the volume reaches, and a volume that covers floor which is not the
-/// anchor's place is reported whether a body can get to that floor today or not:
-/// the remedy — a radius that fits the place — is right either way.
+/// **The population is rooted at the party's own starting cell, and which root is
+/// used is the whole difference between a rule and a false alarm.** An offender
+/// has to be somewhere the party can already stand: `standing` is the walk from
+/// `entry` over this same assembled world, so a roof, a canopy or the top of a
+/// stamped block that a generous radius happens to cover is not reported, and
+/// neither is floor on the far side of a doorway whose planks a beat lays at
+/// runtime — before that beat nobody is over there, and the beat that puts them
+/// there is the same one that joins the two inside the volume.
+///
+/// Rooting it at the ANCHOR's footing instead is the version that looks equally
+/// reasonable and is wrong, measured rather than argued: the gallery's mezzanine
+/// ships with its flight broken and laid by an `open-way`, so in the assembled
+/// world the loft is severed from the hall it overlooks — and a population walked
+/// from the loft therefore drops the hall floor, the very floor the party
+/// completes from. Zero offenders where there are nine. A root whose failure mode
+/// is silence on the motivating case fails in the direction nothing downstream
+/// re-checks.
+///
+/// The residual, named rather than implied: a cell the party reaches only after a
+/// runtime write is outside `standing` and so outside this rule. That is the
+/// conservative direction and it is bounded by the same write — whatever joins the
+/// party to such a cell is a change to the geometry the volume is measured
+/// against, which no static world can hold two versions of at once.
 ///
 /// Returns the binding beside the verdict rather than short-circuiting on the
 /// first refusal, so the line a run prints is a count over every objective and not
@@ -672,9 +682,20 @@ const SHOWN_PER_FLOOR: usize = 6;
 pub fn check_reach_footprint(
     plan: &Plan,
     world: &World,
+    entry: Option<[i32; 3]>,
 ) -> (ReachFootprintBinding, Result<(), Failure>) {
     let v03 = is_cube_campaign(plan);
-    let mut binding = ReachFootprintBinding::default();
+    let standing: BTreeSet<[i32; 3]> = match entry {
+        Some(e) => world.reachable_walkable(&[e]),
+        // A campaign with no resolvable start has no party to reason about, and
+        // an empty population would make every green here vacuous. Say so with a
+        // zero binding rather than by passing quietly.
+        None => BTreeSet::new(),
+    };
+    let mut binding = ReachFootprintBinding {
+        standing: standing.len(),
+        ..ReachFootprintBinding::default()
+    };
     let mut first: Option<Failure> = None;
     for site in sites(plan) {
         binding.sites += 1;
@@ -685,7 +706,16 @@ pub fn check_reach_footprint(
             .into_iter()
             .filter(|&c| world.is_standable(c) && vol.possibly_completes_from(c, world.feet_y(c)))
             .collect();
-        let cells = touching;
+        // The anchor's own footing is in by construction: the party is proven to
+        // reach it by `DW0311`, and a walk that started outside its own root
+        // would have nothing to measure connectivity against.
+        let cells: BTreeSet<[i32; 3]> = match anchor_footing(world, site.pos, &touching) {
+            Some(f) => touching
+                .into_iter()
+                .filter(|c| *c == f || standing.contains(c))
+                .collect(),
+            None => touching,
+        };
         binding.cells += cells.len();
         let Some(footing) = anchor_footing(world, site.pos, &cells) else {
             // An empty volume is `DW0850`'s finding, stated in its own words at
