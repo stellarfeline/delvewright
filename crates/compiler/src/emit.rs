@@ -3406,6 +3406,60 @@ fn emit_functions(
             }
         }
     }
+    // **The wave countdown is a MEASUREMENT of the living bodies, not a tally of
+    // kills.** One line pair per spawned wave, recomputed every tick, ahead of
+    // every gate that reads the countdown.
+    //
+    // What this exists to remove: `k_reward_<wave>` decrements the countdown from
+    // a `minecraft:player_killed_entity` advancement, and vanilla has no trigger
+    // for "this entity died". A wave mob that dies any other way — a fall, a
+    // lethal volume, a trap, fire, drowning, another mob, a `/kill` — was
+    // therefore never counted, and the countdown could not reach zero however
+    // empty the room was. The `kill` objective then stayed open forever, taking
+    // with it everything gated behind it: its quest, and every later objective
+    // whose `after`/`requires_flags` name it. Measured on the gallery's own bot
+    // ladder: of three `wave/muster` bodies, one fell to its death and two were
+    // cut down, the countdown stopped at 1, `obj/clear-the-muster` never
+    // completed, and the drop-gated `collect` behind it timed out with the bone
+    // already in the bot's pocket.
+    //
+    // A dying body is not a standing one: `/kill` and lethal damage set `Health`
+    // to `0.0f` immediately but leave the entity in the world for its death
+    // animation, so a plain `@e[tag=…]` would keep counting corpses for a second
+    // after the room went quiet. `nbt=!{Health:0.0f}` is the vanilla primitive
+    // that separates them, and it makes the clear land on the tick of the last
+    // death rather than twenty ticks later.
+    //
+    // The guard is `matches 1..`, so this only ever CORRECTS a countdown a spawn
+    // has already opened: a wave that has not spawned has no score at all and
+    // must not acquire one (a zero there would complete its `kill` objective on
+    // tick one), and a wave already at zero is left alone — which is also what
+    // keeps a `respawns_on_rest` wave's re-seat authoritative, since
+    // `spawn_<wave>` writes the fresh total before this line next reads it.
+    // Written as `store` into a scratch holder plus a guarded copy rather than as
+    // one `execute if … store result …`: a `store` that sits AFTER a failed
+    // condition is exactly the shape whose write-or-not-write nobody should have
+    // to remember, and the two-line form has no such question in it.
+    //
+    // This is NOT the census (`wave_census_<wave>`): that one answers the
+    // harness, tellraws a line per mob, and counts corpses on purpose so a
+    // report can see them. Sharing it here would put a chat line per mob on
+    // every tick.
+    //
+    // Empty for a campaign with no spawned wave — i.e. every v0.2 campaign — so
+    // hello-world and keep-crawl stay byte-identical.
+    for w in wave_machinery_waves(plan, wave_placements) {
+        let counter = plan::wave_counter(w.id.as_str());
+        let obj = plan::WAVE_OBJECTIVE;
+        tick.push(format!(
+            "execute store result score {WAVE_LIVE} dw.sys if entity @e[tag={},nbt=!{{Health:0.0f}}]",
+            plan::wave_tag(w.id.as_str())
+        ));
+        tick.push(format!(
+            "execute if score {counter} {obj} matches 1.. run scoreboard players operation \
+             {counter} {obj} = {WAVE_LIVE} dw.sys"
+        ));
+    }
     // Per-tick objective completion checks. `reach-anchor` (proximity) is
     // unchanged for v0.2; `kill` (wave countdown reached zero) and `interact`
     // (trigger fired + optional item) are v0.3 additions. `collect` completes via
@@ -11706,6 +11760,13 @@ const COLLECT_HOLD: &str = "dw.hold";
 /// only for a campaign that declares `min_players >= 2`.
 const LOBBY_COUNT: &str = "#lobby";
 
+/// The `dw.sys` scratch holder the per-tick wave recount writes the standing-body
+/// count into, one wave at a time, immediately before copying it over that wave's
+/// countdown. Shared across waves on purpose: `tick` is one atomic function call,
+/// so the write and the read that consumes it cannot be interleaved with another
+/// wave's — the same argument the census makes for `#wcen_*`.
+const WAVE_LIVE: &str = "#wlive";
+
 /// The lobby's waiting message (spec-0018): a live "x / n" actionbar for players
 /// who have not taken a class yet, while the party is short. The count is a
 /// vanilla `score` component reading [`LOBBY_COUNT`], so it updates itself
@@ -19335,6 +19396,62 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         write("verb_kill", b);
+    }
+
+    // kill, with NOBODY credited for the deaths. The countdown used to be a tally
+    // of `minecraft:player_killed_entity` grants, and vanilla has no trigger for
+    // "this entity died" — so a wave mob that fell, burned, drowned, walked into a
+    // lethal volume or was cut down by another mob left the countdown stuck above
+    // zero and the objective open forever, along with everything gated behind it.
+    // `/kill` is the cheapest death vanilla has that credits no player, and it is
+    // the same shape as every one of those: health to zero, no advancement.
+    //
+    // Deliberately NOT written as a variant of `verb_kill`: that one drives
+    // `k_reward_<wave>` by hand, so it can only ever prove the tally path. This
+    // one never touches the reward, which is exactly what makes it able to fail.
+    if let Some((qid, o)) = first_kill
+        && let Objective::Kill { id, wave, .. } = o
+        && let Some(w) = plan::wave_of(c, wave.as_str())
+    {
+        let total = plan::wave_total(w);
+        let ws = plan::safe_local(wave.as_str());
+        let tag = plan::wave_tag(wave.as_str());
+        let counter = plan::wave_counter(wave.as_str());
+        let wobj = plan::WAVE_OBJECTIVE;
+        let (pin, sel) = pin_dummy("dw_t_vkun");
+        let mut b = packtest_header(&format!(
+            "{}: wave `{wave}` clears when its bodies die with no player credited",
+            artifact_title(c)
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!(
+            "scoreboard players set {} {} 0",
+            plan::PARTY,
+            obj_score(id.as_str())
+        ));
+        b.extend(packtest_preamble(plan, qid, o, true, &sel));
+        // Own init: `spawn_<wave>` is unguarded and a sibling may already have
+        // fired it, so clear before spawning — the spawn is what writes the total.
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{ws}"));
+        b.push(format!("assert score {counter} {wobj} matches {total}"));
+        // Every body dies, and no player is credited with any of it.
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:tick"));
+        // The outcome is the objective, and only the countdown reaching zero can
+        // produce it — so this one assertion carries the whole mechanism,
+        // including that corpses still in their death animation are not counted.
+        // The countdown itself is deliberately NOT asserted here: after the drive
+        // it is an outcome `spawn_<wave>` also writes, and `DW0807` would then
+        // (correctly) make every gate on the quest that spawns this wave this
+        // template's business.
+        b.push(format!(
+            "assert score {} {} matches 1",
+            plan::PARTY,
+            obj_score(id.as_str())
+        ));
+        write("verb_kill_uncredited", b);
     }
 
     // collect: satisfy guards + hold the item, run the collect reward, assert.
