@@ -141,11 +141,14 @@ const ANCHORS: &[Anchor] = &[
     //
     // It is here so that "a name supplies no entry point" is a fact this campaign
     // proves rather than a sentence in a doc comment. Delete the `role` above and
-    // the world resolves NO entry at all and is refused by `DW0345` — it does not
-    // quietly move the start ten blocks west onto this cell, which is what it did
-    // while the fallback existed. That is the perturbation this element answers:
-    // a gallery element that cannot fail when the surface it covers is removed is
-    // coverage in name only.
+    // the hall stops being a place a body can arrive in at all: measured, the
+    // build is REFUSED at exit 3 with `DW0873` — the campaign then starts in
+    // `area/annex`, whose piece still declares a role, and its first leg becomes
+    // a crossing into a hall nothing can put the party down in. It does not
+    // quietly move the start ten blocks west onto this cell, which is exactly
+    // what it did while a name could supply an entry. That is the perturbation
+    // this element answers: a gallery element that cannot fail when the surface
+    // it covers is removed is coverage in name only.
     //
     // Where it stands is chosen so that the campaign BUILDS with it present, and
     // both halves of that were measured rather than guessed. Ten cells down the
