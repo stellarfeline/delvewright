@@ -205,7 +205,7 @@ fn anchor_writes_and_clears_the_role_and_refuses_a_term_it_does_not_know() {
     std::fs::write(&nbt, fixtures::clean_room().write()).unwrap();
 
     let anchor = |args: &[&str]| {
-        Command::new(bin())
+        prefab()
             .arg("anchor")
             .arg(&nbt)
             .args(["--name", "anchor/arrival"])

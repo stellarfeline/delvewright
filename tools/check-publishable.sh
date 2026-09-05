@@ -111,6 +111,33 @@ emit_log() { # <log-path> <what-was-being-run>
   fi
 }
 
+# A STALE SIBLING IS A SILENT WRONG ANSWER. `cargo package` verifies each
+# dependent against the siblings in its temporary registry, and cargo extracts a
+# registry crate into `$CARGO_HOME/registry/src/<registry>/<name>-<version>/`
+# keyed by name and version alone — it never re-extracts when the bytes under
+# the same version change. Re-packaging an UNPUBLISHED version after its source
+# moved (every push of a branch does this) therefore verifies the dependents
+# against the previous packaging's source, and the verdict is about a tree that
+# no longer exists (measured: grammar's verify failed on a `GeneratedBy` shape
+# the packaged dsl had already left behind). The extraction of OUR crates at
+# OUR versions is purged from every registry cache except crates.io's own —
+# whose copy, if one exists at this version, is the burned-version finding
+# `crates-io-publish.sh` reports and nothing here may hide.
+CARGO_REG_SRC="${CARGO_HOME:-$HOME/.cargo}/registry/src"
+purged=0
+if [ -d "$CARGO_REG_SRC" ]; then
+  i=0
+  while [ "$i" -lt "${#NAMES[@]}" ]; do
+    for d in "$CARGO_REG_SRC"/*/"${NAMES[$i]}-${VERS[$i]}"; do
+      [ -d "$d" ] || continue
+      case "$d" in "$CARGO_REG_SRC"/index.crates.io-*) continue ;; esac
+      rm -rf "$d"; purged=$((purged + 1))
+    done
+    i=$((i + 1))
+  done
+fi
+echo "== 0. stale extractions of our own crates purged from the temporary registry cache: $purged =="
+
 echo "== 1. every published crate packages =="
 echo "   (${#NAMES[@]} crates: ${NAMES[*]}; engine v$VERSION, $DSL_CRATE v$DSL_CRATE_VERSION)"
 mkdir -p "$ROOT/target"

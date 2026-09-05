@@ -38,7 +38,7 @@ repository = "https://github.com/stellarfeline/delvewright"
 # `[workspace.package] version` above by check-versions.sh, except the DSL
 # crate's, which is bound to `[engine] dsl_crate_req` in versions.toml.
 [workspace.dependencies]
-delvewright-dsl = { path = "crates/dsl", version = "=0.1.0" }
+delvewright-dsl = { path = "crates/dsl", version = "=0.2.0" }
 delvewright-compiler = { path = "crates/compiler", version = "=1.1.0" }
 delvewright-grammar = { path = "crates/grammar", version = "=1.1.0" }
 delvewright-schem = { path = "crates/schem", version = "=1.1.0" }

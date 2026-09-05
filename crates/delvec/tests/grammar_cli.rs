@@ -494,7 +494,7 @@ fn re_expand_from(record: &serde_json::Value, file: &Path, dir: &Path, tag: &str
         args.push(format!("{name}={}", value.as_str().unwrap()));
     }
     let out_dir = dir.join(format!("replay-{tag}"));
-    let out = Command::new(GRAMMAR)
+    let out = grammar()
         .args(["expand", "--file"])
         .arg(file)
         .args(&args)
@@ -529,7 +529,7 @@ fn the_provenance_record_is_every_input_and_replaying_it_gives_the_same_bytes() 
 
     let expand_with = |tag: &str, extra: &[&str]| -> (serde_json::Value, Vec<u8>) {
         let out_dir = dir.join(tag);
-        let out = Command::new(GRAMMAR)
+        let out = grammar()
             .args(["expand", "--file"])
             .arg(&file)
             .args(["--region", region, "--seed", "1", "--id", tag])

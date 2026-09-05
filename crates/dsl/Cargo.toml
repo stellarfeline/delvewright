@@ -12,7 +12,7 @@ name = "delvewright-dsl"
 # library anyone should depend on directly. Bound to `[engine] dsl_crate_version`
 # in versions.toml by validation/check-versions.sh, together with the `=`
 # requirement `delvec` declares on it.
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 # The toolchain this repo actually builds and tests on (rust-toolchain.toml).
 # Asserted equal to that pin by check-versions.sh: a `rust-version` looser than
