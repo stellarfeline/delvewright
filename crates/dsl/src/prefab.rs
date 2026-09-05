@@ -519,6 +519,38 @@ impl AnchorRole {
             AnchorRole::Entry => "entry",
         }
     }
+
+    /// The terms a refusal lists, comma-separated — one rendering, so a message
+    /// written at a command line and a message written by the prefab registry
+    /// cannot name different vocabularies.
+    pub fn vocabulary() -> String {
+        AnchorRole::ALL
+            .iter()
+            .map(|r| format!("`{r}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// A role typed at a command line is the same closed vocabulary a role written
+/// into a document is, read from the same table — so `delve-admit anchor
+/// --role` refuses exactly what deserialising the document refuses, by name,
+/// and the two cannot come to know different terms.
+impl std::str::FromStr for AnchorRole {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<AnchorRole, String> {
+        AnchorRole::ALL
+            .iter()
+            .copied()
+            .find(|r| r.as_str() == s)
+            .ok_or_else(|| {
+                format!(
+                    "unknown anchor role `{s}` — the engine's vocabulary is {}",
+                    AnchorRole::vocabulary()
+                )
+            })
+    }
 }
 
 impl std::fmt::Display for AnchorRole {
@@ -706,7 +738,8 @@ fn one_box(boxes: &[Region]) -> Option<Region> {
     Some(Region { from, to })
 }
 
-/// Where an anchor is — the only part of an anchor an editing tool declares.
+/// Where an anchor is and what it is for — the parts of an anchor an editing
+/// tool declares.
 ///
 /// Deliberately a different type from [`Anchor`]: the whole anchor is what a
 /// caller must not be able to hand an editing step, because constructing one
@@ -722,6 +755,20 @@ pub struct AnchorEdit {
     pub region: Option<Region>,
     /// Block id filling a gate region.
     pub block: Option<String>,
+    /// **What the anchor is for** ([`Anchor::role`]), tri-state because the
+    /// place and the purpose are two properties and an edit may speak about
+    /// either without speaking about the other:
+    ///
+    /// * `None` — the edit says nothing about the role, so an existing one is
+    ///   kept. Moving a cell is not a statement that the piece stopped being
+    ///   the place a party arrives at, and silently answering it as one is the
+    ///   deletion this type exists to prevent.
+    /// * `Some(None)` — the edit says the anchor has **no** role, and an
+    ///   existing one is removed. This is the remedy `DW0804` prescribes when
+    ///   two anchors in one area both claim a role, and it is reachable here
+    ///   rather than only by hand-editing the document.
+    /// * `Some(Some(role))` — the anchor is declared to have that role.
+    pub role: Option<Option<AnchorRole>>,
 }
 
 /// An inclusive local cell range.
@@ -779,16 +826,41 @@ pub struct License {
 }
 
 /// Everything needed to reproduce the `.nbt` byte for byte (ADR-0006).
+///
+/// **Every input that reaches the bytes, and nothing that does not.** A record
+/// missing one of them is worse than no record: it names a set of inputs, and a
+/// re-expansion from that set produces a different artifact while the document
+/// claims byte reproducibility. The set is the source program, the overrides
+/// applied to it, the region and the seed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedBy {
     /// The back end that produced the bytes.
     pub generator: String,
     /// The source program's name.
     pub program: String,
-    /// `sha256:<64 hex>` over the program's canonical JSON.
+    /// `sha256:<64 hex>` over the canonical JSON of the program **as expanded**
+    /// — the source document with [`Self::params`] and [`Self::roles`] already
+    /// applied. It is therefore the checksum of the reproduction rather than a
+    /// second statement of it: apply the overrides to the named document and
+    /// this is the hash you must get.
     pub program_hash: String,
     /// The expansion seed.
     pub seed: u64,
+    /// The region the program was expanded over, `[x, y, z]`. An independent
+    /// input: the same program at the same seed over a different box is a
+    /// different building.
+    pub region: [i32; 3],
+    /// Integer parameters overridden on the way in (`delve-grammar expand
+    /// --param`), by name. Empty — and absent from the document — where the
+    /// program was expanded as written.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, i64>,
+    /// Palette roles rebound on the way in (`--role`), by name, each the block
+    /// state as the caller wrote it. The axis frame is not recorded because it
+    /// is not an input: a rebind inherits the frame of the binding it replaces,
+    /// which the named source document already carries.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub roles: BTreeMap<String, String>,
 }
 
 impl PrefabMeta {
@@ -981,8 +1053,8 @@ impl PrefabMeta {
         }
     }
 
-    /// Annotate a named anchor's **place**, creating the anchor when it is not
-    /// there yet.
+    /// Annotate a named anchor's **place and purpose**, creating the anchor
+    /// when it is not there yet.
     ///
     /// An anchor is an object, not a value. A tool that names where the anchor
     /// is has said nothing about the hardware the prefab wired at it
@@ -996,12 +1068,20 @@ impl PrefabMeta {
     /// The place itself is one property expressed two ways — a cell or a region
     /// — so an edit redeclares all four of its fields together and a `pos` does
     /// supersede a stale `region`.
+    ///
+    /// The **role** is a fifth field and not a fifth way of saying where: what
+    /// an anchor is for is a property of the anchor, so it is written when the
+    /// edit speaks about it, cleared when the edit says it has none, and left
+    /// alone when the edit says nothing ([`AnchorEdit::role`]).
     pub fn edit_anchor(&mut self, name: &str, edit: AnchorEdit) {
         let anchor = self.anchors.entry(name.to_string()).or_default();
         anchor.pos = edit.pos;
         anchor.facing = edit.facing;
         anchor.region = edit.region;
         anchor.block = edit.block;
+        if let Some(role) = edit.role {
+            anchor.role = role;
+        }
     }
 
     /// **The ONE authority on the region and block a gate anchor names**, in
@@ -1186,7 +1266,8 @@ mod tests {
       "generator": "grammar",
       "program": "bell_chapel_ward",
       "program_hash": "sha256:00",
-      "seed": 1
+      "seed": 1,
+      "region": [11, 6, 13]
     }
   },
   "waterline_y": 2
@@ -1372,7 +1453,13 @@ mod tests {
     "spdx": "GPL-3.0-or-later",
     "note": "n",
     "provenance": "p",
-    "generated_by": { "generator": "grammar", "program": "nd", "program_hash": "sha256:00", "seed": 1 }
+    "generated_by": {
+      "generator": "grammar",
+      "program": "nd",
+      "program_hash": "sha256:00",
+      "seed": 1,
+      "region": [3, 3, 3]
+    }
   },
   "a_key_no_engine_models": { "kept": true }
 }
@@ -1583,5 +1670,68 @@ mod tests {
             serde_json::to_string(&Anchor::point([1, 2, 3], "north").with_role(AnchorRole::Entry))
                 .unwrap();
         assert!(declared.contains(r#""role":"entry""#), "{declared}");
+    }
+
+    /// A role typed at a command line goes through the **same** closed table a
+    /// role written into a document does, so the two cannot come to know
+    /// different terms — and a term the engine does not know is refused with
+    /// both the term and the vocabulary in the message.
+    #[test]
+    fn a_role_parsed_from_a_word_is_the_same_vocabulary_as_a_role_read_from_a_document() {
+        for role in AnchorRole::ALL {
+            assert_eq!(role.as_str().parse::<AnchorRole>(), Ok(*role));
+        }
+        let err = "dispenser".parse::<AnchorRole>().expect_err("not a term");
+        assert!(err.contains("dispenser"), "{err}");
+        for role in AnchorRole::ALL {
+            assert!(err.contains(role.as_str()), "{err}");
+        }
+        // The name the compiler once matched is a name and has never been a
+        // role, so it is refused here exactly as it is refused by `serde`.
+        assert!("spawn".parse::<AnchorRole>().is_err());
+    }
+
+    /// `edit_anchor`'s role is TRI-state, and the middle state is the one that
+    /// matters: an edit that says nothing about the role keeps it. A tool that
+    /// moved an anchor's cell would otherwise delete the piece's entry point,
+    /// which is the silent deletion [`AnchorEdit`] exists to prevent.
+    #[test]
+    fn an_edit_that_says_nothing_about_the_role_keeps_it() {
+        let mut meta = PrefabMeta::skeleton(
+            "x",
+            [3, 3, 3],
+            4671,
+            "test",
+            License {
+                source: "original".to_string(),
+                spdx: "GPL-3.0-or-later".to_string(),
+                note: String::new(),
+                provenance: String::new(),
+                generated_by: None,
+            },
+        );
+        let place = |role| AnchorEdit {
+            pos: Some([1, 1, 1]),
+            role,
+            ..AnchorEdit::default()
+        };
+
+        meta.edit_anchor("anchor/a", place(Some(Some(AnchorRole::Entry))));
+        assert_eq!(meta.anchors["anchor/a"].role, Some(AnchorRole::Entry));
+
+        // Silent: kept.
+        meta.edit_anchor(
+            "anchor/a",
+            AnchorEdit {
+                pos: Some([2, 1, 1]),
+                ..AnchorEdit::default()
+            },
+        );
+        assert_eq!(meta.anchors["anchor/a"].pos, Some([2, 1, 1]));
+        assert_eq!(meta.anchors["anchor/a"].role, Some(AnchorRole::Entry));
+
+        // Said to have none: removed — the remedy `DW0804` prescribes.
+        meta.edit_anchor("anchor/a", place(Some(None)));
+        assert_eq!(meta.anchors["anchor/a"].role, None);
     }
 }

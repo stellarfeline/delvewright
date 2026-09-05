@@ -6151,11 +6151,13 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
     flags
 }
 
-/// DSL v0.6 trap validation (spec-0011). Each trap binds to an `anchor/trap`
-/// marker and gives the mute prefab hardware meaning. Structural failures are
-/// `DW0340` (a malformed/duplicate id, an `at`/`disarm.via` no area's prefab
-/// provides, or a `disarm.via` colliding with the trap's own trigger anchor); a
-/// dispense payload item unknown to the pinned registry is `DW0341`. A trap's
+/// DSL v0.6 trap validation (spec-0011). Each trap binds to a **point anchor**
+/// an area's prefab provides — any anchor, whatever it is called; a spec-0022
+/// command `payload` needs that cell and nothing else of the piece, because the
+/// compiler emits the detection. Structural failures are `DW0340` (a
+/// malformed/duplicate id, an `at`/`disarm.via` no area's prefab provides, or a
+/// `disarm.via` colliding with the trap's own trigger anchor); a dispense
+/// payload item unknown to the pinned registry is `DW0341`. A trap's
 /// `requires_flags` resolves against the declared-flag set like a trigger's
 /// (`DW0172`). The completability obligation for a *lethal* trap is discharged
 /// later by the compiler nav proof (`DW0342`).
@@ -6222,8 +6224,12 @@ fn v06_trap_checks(
                     "trap `at` anchor `{}` is not provided by any area's prefab — {}",
                     t.at,
                     providers.anchor_remedy(
-                        "bind the trap to an `anchor/trap` marker some area's prefab exposes \
-                         (anchor names come from prefab metadata; do NOT invent one)"
+                        "bind the trap to a point anchor some area's prefab exposes, whatever \
+                         that anchor is called (names come from prefab metadata; do NOT invent \
+                         one). A `payload` trap needs nothing of the piece but that one cell — \
+                         the compiler emits the detection; only a legacy `dispense` effect \
+                         needs the anchor's `dispenser` socket, and only a flag-gated trap \
+                         needs its `trigger_block`"
                     ),
                 ),
             ));
