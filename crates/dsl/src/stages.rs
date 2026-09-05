@@ -1841,11 +1841,13 @@ pub struct QuestsContent {
     /// staging effects. Empty/absent before v0.6.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actors: Vec<Actor>,
-    /// Traps (DSL v0.6, spec-0011): redstone-native environmental hazards bound to
-    /// `anchor/trap` prefab markers. Each gives mute trap hardware meaning — its
-    /// trigger, dispenser payload, lethality, disarm, and reset. Empty/absent in
-    /// pre-0.6 campaigns (reserved `DW0141`), so a v0.5-or-earlier campaign that
-    /// declares none stays byte-identical.
+    /// Traps (DSL v0.6, spec-0011; command payloads spec-0022): environmental
+    /// hazards, each at one point anchor an area's prefab provides. Each says
+    /// what springs the trap, what it then does (a command `payload`, a legacy
+    /// dispenser `effect`, or both), how dangerous it is, how it is disarmed and
+    /// whether it re-arms. Empty/absent in pre-0.6 campaigns (reserved
+    /// `DW0141`), so a v0.5-or-earlier campaign that declares none stays
+    /// byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub traps: Vec<Trap>,
     /// Shortcut doors (spec-0016 §2): a gate that is sealed from world-load and
@@ -2188,24 +2190,46 @@ fn one_u32() -> u32 {
     1
 }
 
-/// A stage-5 trap (DSL v0.6, spec-0011): a redstone-native environmental hazard.
-/// The trap *mechanism* — the trigger (pressure plate / tripwire / trapped chest)
-/// wired to a pre-placed empty dispenser — lives in the `.nbt` prefab at an
-/// `anchor/trap` marker; this declaration gives the mute hardware meaning. The
-/// compiler fills the dispenser payload, models the trigger cell as a hazard for
-/// the completability proofs (`DW0342`), and — for a disarmable trap — emits the
-/// disarm affordance. No detection is emitted for the harm itself: the redstone
-/// fires it ("harm is redstone-native", spec-0011). Player-vs-mob distinguishing
-/// matters in a sealed box-garden with controlled mobs, so `trapped-chest` (opened
-/// by a player) is called out as the only player-distinct trigger.
+/// A stage-5 trap (DSL v0.6, spec-0011; command payloads spec-0022): an
+/// environmental hazard at one cell of a placed piece.
+///
+/// **What the prefab has to provide is one point anchor, and for most traps that
+/// is all.** [`Trap::at`] names the trigger/hazard cell; the compiler models it
+/// as a hazard for the completability proofs (`DW0342`) and, for a disarmable
+/// trap, emits the disarm affordance. A [`payload`](Trap::payload) trap needs
+/// nothing else: **the compiler owns the detection**, emitting a per-tick,
+/// edge-latched `execute … if entity @a[<cell>]` and running the authored effect
+/// bundle from it.
+///
+/// Two things a piece must pre-wire, each for one case and neither for the
+/// common one:
+///
+/// * the legacy [`effect`](Trap::effect) — a `dispense` payload the prefab's own
+///   redstone fires — needs the anchor's `dispenser` socket cell, which the
+///   compiler fills. That is the case "harm is redstone-native" (spec-0011) was
+///   written about, and the only one in which no detection is emitted.
+/// * a **flag-gated** trap ([`requires_flags`](Trap::requires_flags) /
+///   [`forbids_flags`](Trap::forbids_flags)) needs the anchor's `trigger_block`,
+///   because gating removes the trigger block from the world while the gate is
+///   shut and puts it back verbatim (`DW0363`).
+///
+/// Player-vs-mob distinguishing matters in a sealed box-garden with controlled
+/// mobs, so `trapped-chest` (opened by a player) is called out as the only
+/// player-distinct trigger.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Trap {
     /// Unique trap id (`trap/<kebab>`).
     pub id: TrapId,
-    /// The `anchor/trap` marker this trap binds to. Its cell is the trigger/hazard
-    /// cell the compiler models; the anchor also carries the dispenser socket the
-    /// payload fills.
+    /// **The point anchor this trap sits on** — any anchor an area's prefab
+    /// provides, whatever it is called. Its cell is the trigger/hazard cell the
+    /// compiler models, and for a `payload` trap that cell is the whole of what
+    /// the piece has to provide: detection is the compiler's.
+    ///
+    /// The anchor additionally needs a `dispenser` socket for a legacy
+    /// [`effect`](Trap::effect) trap, and a `trigger_block` for a flag-gated one
+    /// (`DW0363`). `anchor/trap` is the name the shipped pieces use, and a name
+    /// is all it is.
     pub at: AnchorId,
     /// What springs the trap (all redstone-native).
     pub trigger: TrapTrigger,
