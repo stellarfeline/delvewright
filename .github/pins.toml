@@ -150,12 +150,12 @@ facts and then that the value stands as a whole token at every site.
 
 [[pin]]
 id = "content-repo"
-value = "42ee707db69b83d27534608b2758d8697ad2c46e"
+value = "a8c3f98831735aa370908a43d37db85d09fae25c"
 sites = ["versions.toml"]
 repo = "stellarfeline/delvewright-campaigns"
 policy = "track"
 judged_by = ".github/workflows/ci.yml"
-reviewed = "42ee707db69b83d27534608b2758d8697ad2c46e"
+reviewed = "a8c3f98831735aa370908a43d37db85d09fae25c"
 builds = []
 why = """
 The content commit every reproducible build resolves the prefab library and

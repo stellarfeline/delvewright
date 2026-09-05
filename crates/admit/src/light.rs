@@ -345,6 +345,17 @@ pub struct LightProbe {
     /// The darkest measured cell at [`night_sky`], in zone coordinates — where to
     /// put a light.
     pub darkest_cell: Option<[i32; 3]>,
+    /// **How much of the floor is dark, level by level**: light level → how many
+    /// measured cells sit at it, over the levels below
+    /// [`Self::dark_threshold`] only.
+    ///
+    /// The minimum alone answers a question nobody has: one cell at light 0 in
+    /// the lee of a pillar and a room where every cell is at light 0 report the
+    /// same number, and the two are a detail and a room nobody can see in.
+    /// Light is placed while the room is designed and the engine only checks, so
+    /// what the check owes an author is the SHAPE of the darkness — how much of
+    /// the floor, and how far below the line.
+    pub dark_by_level: BTreeMap<i32, usize>,
     /// `"lit"` / `"dark"` / `"unbound"`.
     pub profile: &'static str,
     /// The threshold used.
@@ -371,6 +382,29 @@ pub struct LightProbe {
 impl LightProbe {
     pub fn is_dark(&self) -> bool {
         self.profile == "dark"
+    }
+
+    /// How many measured cells sit below the threshold.
+    pub fn dark_cells(&self) -> usize {
+        self.dark_by_level.values().sum()
+    }
+
+    /// What fraction of the measured floor is dark, `0.0` when nothing bound.
+    pub fn dark_fraction(&self) -> f64 {
+        if self.measured_cells == 0 {
+            return 0.0;
+        }
+        self.dark_cells() as f64 / self.measured_cells as f64
+    }
+
+    /// The distribution as a reader meets it: `"3 at light 0, 12 at light 1"`,
+    /// darkest first. Empty for a piece with no dark cell.
+    pub fn dark_distribution(&self) -> String {
+        self.dark_by_level
+            .iter()
+            .map(|(level, count)| format!("{count} at light {level}"))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     /// Did the probe bind to nothing? A zero binding is a finding, not a pass.
@@ -422,11 +456,17 @@ pub fn probe(zone: &Zone, dark_threshold: i32, sky: SkyClaim) -> LightProbe {
     let mut min_light: Option<i32> = None;
     let mut darkest: Option<[i32; 3]> = None;
     let mut min_daylight: Option<i32> = None;
+    // The distribution, counted in the same sweep the minimum is taken in, so
+    // the two cannot come to describe different cells.
+    let mut dark_by_level: BTreeMap<i32, usize> = BTreeMap::new();
     for &c in &measured {
         let l = at(&night_field, c);
         if min_light.is_none_or(|m| l < m) {
             min_light = Some(l);
             darkest = Some(c);
+        }
+        if l < dark_threshold {
+            *dark_by_level.entry(l).or_default() += 1;
         }
         let d = at(&day_field, c);
         if min_daylight.is_none_or(|m| d < m) {
@@ -443,6 +483,7 @@ pub fn probe(zone: &Zone, dark_threshold: i32, sky: SkyClaim) -> LightProbe {
         measured_min_light: min_light,
         min_light_daylight: min_daylight,
         darkest_cell: darkest,
+        dark_by_level,
         profile,
         dark_threshold,
         sky,

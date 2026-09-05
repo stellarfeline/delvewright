@@ -3046,13 +3046,21 @@ does not itself model:
   "license": { "source": "original", "spdx": "GPL-3.0-or-later",
                "note": "…", "provenance": "…",
                "generated_by": { "generator": "grammar", "program": "temple",
-                                 "program_hash": "sha256:…", "seed": 7 } }
+                                 "program_hash": "sha256:…", "seed": 7,
+                                 "region": [13, 14, 21] } }
 }
 ```
 
-- **`generated_by`** is the spec-0027 §2 provenance row. `program_hash` is
-  `sha256` over the program's canonical serde JSON bytes — content-addressed, so
-  a program built in Rust and the same program parsed from JSON hash alike.
+- **`generated_by`** is the spec-0027 §2 provenance row, and it carries **every
+  input that reaches the bytes**: the program, the seed, the `region` it was
+  expanded over, and the `--param` / `--role` overrides applied on the way in
+  (`params` / `roles`, omitted where there were none). `program_hash` is `sha256`
+  over the canonical serde JSON bytes of the program **as expanded** — the named
+  document with those overrides applied — content-addressed, so a program built
+  in Rust and the same program parsed from JSON hash alike. Re-expanding the
+  named document with exactly this row's inputs reproduces the `.nbt` byte for
+  byte, which `tests/cli.rs` asserts by replaying the row and by perturbing one
+  `--param` and checking the row, the hash and the bytes all move.
 - **`anchors`** is exactly what the program's `mark` declarations produced (§2b),
   in the hand-built `{pos, facing}` shape with `pos` local to the structure.
   Nothing infers one from the block pattern afterwards — that is precisely the
@@ -3215,13 +3223,15 @@ that page is the automatic part: nothing yet drives "expand N seed-varied
 candidates → `batch`-render them → sheet", so the sweep is assembled by hand
 today.
 
-`mark` declares point anchors only. Trap anchors (`dispenser`,
-`trigger_block`) and the entry names the engine treats specially (`spawn`,
-`entry`) are expressible in prefab metadata but not yet by a rule — each needs
-its own declaration, not a widened `mark`. A rule can name a *region* (§2d), and
-a `barred` edge's bar region is the cells a campaign's `shortcut` / `close-gate`
-/ `lift` addresses; what is missing is the export half, since a claimed region
-reaches the metadata's `spatial_contract` block and not its `anchors` map.
+`mark` declares point anchors, and what they are FOR (`role`, §2b — a marked
+program's `entry` reaches the exported metadata and is what makes a generated
+zone a place a party can arrive in). What it does not declare is a **trap**
+anchor's pre-wired hardware (`dispenser`, `trigger_block`), which is expressible
+in prefab metadata but not yet by a rule — that needs its own declaration, not a
+widened `mark`. A rule can name a *region* (§2d), and a `barred` edge's bar
+region is the cells a campaign's `shortcut` / `close-gate` / `lift` addresses;
+what is missing is the export half, since a claimed region reaches the metadata's
+`spatial_contract` block and not its `anchors` map.
 
 **Three pieces still spell out per-frame variants they no longer need to.**
 An orientation-dependent block is a palette role as of the local axis frame

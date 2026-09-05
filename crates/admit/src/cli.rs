@@ -80,6 +80,16 @@ pub enum PrefabCommand {
         /// Block id (for gate anchors).
         #[arg(long)]
         block: Option<String>,
+        /// What the anchor is FOR, from the engine's closed vocabulary — today
+        /// `entry`, the cell a body arrives at when it enters the area this
+        /// piece is placed in. Omitted, an existing role is kept.
+        #[arg(long)]
+        role: Option<String>,
+        /// Declare that this anchor has NO role, removing one it carries — the
+        /// remedy `DW0804` prescribes when two anchors in an area both claim
+        /// one.
+        #[arg(long, conflicts_with = "role")]
+        no_role: bool,
     },
     /// Static block-light probe over player space -> declared lighting profile.
     Lighting {

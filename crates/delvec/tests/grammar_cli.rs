@@ -24,7 +24,8 @@ use std::process::{Command, Output};
 use delvewright_grammar::Program;
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::{Material, Node};
-use delvewright_grammar::library::store_room;
+use delvewright_grammar::library::{ambush_door, store_room};
+use delvewright_grammar::{AnchorRole, Mark, MarkAt};
 
 /// `delvec grammar …`: the one binary, entered at the grammar program surface.
 fn grammar() -> Command {
@@ -399,4 +400,208 @@ fn every_expansion_prints_and_records_the_reachability_measurement() {
         ],
         "{ids:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// A `mark`'s role reaches the metadata through the BINARY (§2b)
+// ---------------------------------------------------------------------------
+
+/// **The pair this closes.** `grammar.md` §2b says a `mark` carries a `role` and
+/// that it is written through to the exported anchor's metadata; §7 used to say
+/// a rule could not declare the entry at all. Two authorities for one fact, and
+/// the one an author acted on was the wrong one — so this asserts the fact
+/// itself, along the path an author walks: a JSON program document, through
+/// `delvec grammar expand`, into the metadata file on disk.
+///
+/// The library test (`tests/marks.rs`) proves the exporter writes it. This
+/// proves the BINARY does, which is a different claim: `run_expand` builds the
+/// program, applies overrides and calls the exporter itself, and a step that
+/// dropped the role on the way through would leave that test green.
+#[test]
+fn a_marks_role_reaches_the_exported_metadata_through_the_binary() {
+    let dir = scratch("mark-role");
+    let program = Program::new("arrival", "root").rule(
+        "root",
+        Node::Mark {
+            mark: Mark::new("landing", MarkAt::FloorCenter).role(AnchorRole::Entry),
+            body: Box::new(Node::Fill {
+                material: Material::block("minecraft:stone_bricks".parse().unwrap()),
+            }),
+        },
+    );
+    let file = program_file(&dir, "arrival.json", &program);
+    let out_dir = dir.join("out");
+    let out = expand(&file, &out_dir, &[]);
+    assert!(
+        out.status.success(),
+        "the marked program expands: {}",
+        combined(&out)
+    );
+
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("arrival.json")).unwrap())
+            .unwrap();
+    let anchors = meta["anchors"].as_object().expect("the piece has anchors");
+    assert_eq!(
+        anchors["anchor/landing"]["role"],
+        serde_json::Value::from("entry"),
+        "a mark's role is written through to the exported anchor: {meta}"
+    );
+    // The KEY is untouched, which is the invariant the role exists to work
+    // around rather than to break: a mark still cannot name an anchor the DSL
+    // could not reference, so no export can ever spell a reserved name.
+    for key in anchors.keys() {
+        assert!(key.starts_with("anchor/"), "{key}");
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------------
+// The provenance record is every input, and a re-expansion from it is the bytes
+// ---------------------------------------------------------------------------
+
+/// The `license.generated_by` row, read off a written prefab.
+fn record(out_dir: &Path, id: &str) -> serde_json::Value {
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join(format!("{id}.json"))).unwrap())
+            .unwrap();
+    meta["license"]["generated_by"].clone()
+}
+
+/// Expand a program document using **only** what a `generated_by` row says, and
+/// hand back the `.nbt` bytes. Nothing about the invocation comes from the test.
+fn re_expand_from(record: &serde_json::Value, file: &Path, dir: &Path, tag: &str) -> Vec<u8> {
+    let region = record["region"]
+        .as_array()
+        .expect("the record names a region");
+    let region = format!("{}x{}x{}", region[0], region[1], region[2]);
+    let seed = record["seed"].as_u64().expect("the record names a seed");
+    let mut args: Vec<String> = vec![
+        "--region".into(),
+        region,
+        "--seed".into(),
+        seed.to_string(),
+        "--id".into(),
+        tag.into(),
+    ];
+    for (name, value) in record["params"].as_object().into_iter().flatten() {
+        args.push("--param".into());
+        args.push(format!("{name}={value}"));
+    }
+    for (name, value) in record["roles"].as_object().into_iter().flatten() {
+        args.push("--role".into());
+        args.push(format!("{name}={}", value.as_str().unwrap()));
+    }
+    let out_dir = dir.join(format!("replay-{tag}"));
+    let out = Command::new(GRAMMAR)
+        .args(["expand", "--file"])
+        .arg(file)
+        .args(&args)
+        .arg("-o")
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "the record's own inputs must expand: {}",
+        combined(&out)
+    );
+    std::fs::read(out_dir.join(format!("{tag}.nbt"))).unwrap()
+}
+
+/// **`--param` and `--role` are inputs that reach the bytes, and the record used
+/// to omit them.** `generated_by` named the generator, the program, a hash and a
+/// seed and claimed those regenerated the NBT byte for byte; the region was in
+/// no field at all, and an override left no trace of itself, so re-expanding the
+/// named document from the recorded inputs produced a different artifact under a
+/// record asserting it would not.
+///
+/// Three claims. The record carries every input; a re-expansion driven by
+/// nothing but the record is byte-identical; and perturbing one `--param` moves
+/// the record, moves the hash and moves the bytes — so the record is not merely
+/// present but bound to what was built.
+#[test]
+fn the_provenance_record_is_every_input_and_replaying_it_gives_the_same_bytes() {
+    let dir = scratch("provenance");
+    let file = program_file(&dir, "ambush-door.json", &ambush_door());
+    let region = "11x7x13";
+
+    let expand_with = |tag: &str, extra: &[&str]| -> (serde_json::Value, Vec<u8>) {
+        let out_dir = dir.join(tag);
+        let out = Command::new(GRAMMAR)
+            .args(["expand", "--file"])
+            .arg(&file)
+            .args(["--region", region, "--seed", "1", "--id", tag])
+            .args(extra)
+            .arg("-o")
+            .arg(&out_dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", combined(&out));
+        (
+            record(&out_dir, tag),
+            std::fs::read(out_dir.join(format!("{tag}.nbt"))).unwrap(),
+        )
+    };
+
+    // Overridden both ways: an integer knob that changes geometry, and a palette
+    // role that changes which blocks are written.
+    let (rec, bytes) = expand_with(
+        "a",
+        &[
+            "--param",
+            "head=4",
+            "--role",
+            "stone=minecraft:deepslate_bricks",
+        ],
+    );
+    assert_eq!(rec["region"], serde_json::json!([11, 7, 13]));
+    assert_eq!(rec["seed"], serde_json::json!(1));
+    assert_eq!(rec["params"], serde_json::json!({ "head": 4 }));
+    assert_eq!(
+        rec["roles"],
+        serde_json::json!({ "stone": "minecraft:deepslate_bricks" })
+    );
+
+    // Driven by the record alone.
+    assert_eq!(
+        re_expand_from(&rec, &file, &dir, "a"),
+        bytes,
+        "the recorded inputs must regenerate the NBT byte for byte (ADR-0006)"
+    );
+
+    // Perturb ONE param. The record moves, the hash moves, the bytes move.
+    let (perturbed, perturbed_bytes) = expand_with(
+        "b",
+        &[
+            "--param",
+            "head=3",
+            "--role",
+            "stone=minecraft:deepslate_bricks",
+        ],
+    );
+    assert_eq!(perturbed["params"], serde_json::json!({ "head": 3 }));
+    assert_ne!(
+        perturbed["program_hash"], rec["program_hash"],
+        "an override that changes the program must change the program's hash"
+    );
+    assert_ne!(
+        perturbed_bytes, bytes,
+        "the perturbation must be one that reaches the bytes, or this test \
+         proves nothing about the record"
+    );
+    assert_eq!(
+        re_expand_from(&perturbed, &file, &dir, "b"),
+        perturbed_bytes
+    );
+
+    // A program expanded as its document reads writes neither map, so a piece
+    // that overrode nothing carries no key saying so.
+    let (plain, _) = expand_with("c", &[]);
+    assert!(plain.get("params").is_none(), "{plain}");
+    assert!(plain.get("roles").is_none(), "{plain}");
+    assert_eq!(plain["region"], serde_json::json!([11, 7, 13]));
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -1740,10 +1740,11 @@ pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345", ExitTier:
 /// nobody chose for their sort) is how a spawn that moved becomes a mystery
 /// nothing in the build output mentions.
 ///
-/// Only reachable through a declared role. Two anchors *named* `spawn` and
-/// `entry` in one area are the pre-role compatibility case and stay ordered by
-/// [`ENTRY_ANCHOR_NAMES`], because that ordering is what every shipped piece was
-/// admitted under and refusing it now would red a library nobody has touched.
+/// Only reachable through a declared role, which is the only way an area has an
+/// entry point at all. The remedy is to take the role off one of the two, which
+/// every producer can do where it wrote it: `delvec prefab anchor --no-role` on a
+/// hand-built or ingested piece, and dropping `role` from the `mark` on a
+/// grammar program.
 pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::every_version("DW0804", ExitTier::Build);
 
 /// `DW0872`: **a crossing into an area with nowhere to arrive.** A leg of the
@@ -1803,21 +1804,6 @@ pub fn resolve_campaign_start(
 /// the party at the spawn with the harness reporting `No path to the goal!` and
 /// no diagnostic code at all.
 pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::every_version("DW0873", ExitTier::Build);
-
-/// The prefab-metadata anchor names that mark a campaign's **entry point**, in
-/// resolution order — the **fallback**, not the mechanism (spec-0046).
-///
-/// The mechanism is [`AnchorRole::Entry`], declared on the anchor by whoever
-/// authored the piece. This list is what an area resolves through when **no**
-/// anchor in it declares that role: one concept, two spellings in the shipped
-/// tileset library (the keep/cave/test tilesets name it `spawn`, the island
-/// tileset names it `entry`), and it exists so that a piece admitted before the
-/// role existed keeps resolving without being edited.
-///
-/// It is not a second authoring surface. A piece written today declares the
-/// role; nothing new should be added here, and the list is deleted when every
-/// producer declares one.
-pub const ENTRY_ANCHOR_NAMES: [&str; 2] = ["spawn", "entry"];
 
 /// The plan's resolved anchors, **and what the pieces said they were for**.
 ///
@@ -1943,10 +1929,11 @@ impl AnchorTable {
                      on the one cell the party should arrive at and drop the `role` key from \
                      the other (the anchor itself stays, and content can still bind it by \
                      name). If the two anchors are in two pieces of one `prefab_pool`, only \
-                     the piece that seeds the layout should carry it. Do NOT resolve this by \
-                     renaming an anchor to `spawn` or `entry` — the name list is a \
-                     compatibility fallback for pieces that predate the role, and it is not \
-                     consulted at all once an area declares one"
+                     the piece that seeds the layout should carry it. Take the role off where \
+                     it was written: `delvec prefab anchor <nbt> --name <anchor> --pos <x,y,z> \
+                     --no-role` for a hand-built or ingested piece, or drop `role` from the \
+                     `mark` for a grammar program. Renaming an anchor achieves nothing — the \
+                     role is the only thing the compiler reads here"
                 ),
             ));
         }
@@ -1960,22 +1947,20 @@ impl AnchorTable {
             .map(String::as_str)
     }
 
-    /// One area's **entry anchor**: the anchor declaring [`AnchorRole::Entry`],
-    /// or — when the area declares none — the first of [`ENTRY_ANCHOR_NAMES`]
-    /// it carries.
+    /// One area's **entry anchor**: the anchor declaring [`AnchorRole::Entry`].
     ///
-    /// **The single resolver.** Every consumer of an entry point reaches it
-    /// through this or through the [`Plan`] methods below, and none matches an
-    /// anchor name itself: the three that once did (inter-area transport, the
-    /// POV shot planner, the trap-safety start set) each asked an honest
-    /// question about the wrong key and got an honest `None`, so every
-    /// island-tileset area was silently never transported into, never framed
-    /// and never counted as a place a player can start from.
-    ///
-    /// Role first is what makes the fallback safe to keep: an area that
-    /// declares the role is never reached by a name, so a piece cannot acquire
-    /// the campaign's start by calling one of its anchors `entry` for its own
-    /// reasons.
+    /// **The single resolver, and the role is the whole of it.** Every consumer
+    /// of an entry point reaches it through this or through the [`Plan`] methods
+    /// below, and none matches an anchor name: the three that once did
+    /// (inter-area transport, the POV shot planner, the trap-safety start set)
+    /// each asked an honest question about the wrong key and got an honest
+    /// `None`, so every area whose tileset spelled the anchor differently was
+    /// silently never transported into, never framed and never counted as a
+    /// place a player can start from. A spelling is a fact about the producer
+    /// that wrote the piece; the role is a fact about the piece, and it is what
+    /// every producer writes — `mark { role }` on a grammar program,
+    /// `delvec prefab anchor --role` on a hand-built or ingested one, and the
+    /// derivation's own [`crate::blockout`] anchor.
     pub fn entry_anchor(&self, area: &str) -> Option<&ResolvedAnchor> {
         self.entry_anchor_name(area)
             .and_then(|name| self.at.get(&(area.to_string(), name.to_string())))
@@ -1985,16 +1970,7 @@ impl AnchorTable {
     /// gate-deadlock proof, which reads its start node out of prefab metadata
     /// rather than out of the resolved map and must not re-spell the question.
     pub fn entry_anchor_name(&self, area: &str) -> Option<String> {
-        if let Some(name) = self.role_name(area, AnchorRole::Entry) {
-            return Some(name.to_string());
-        }
-        ENTRY_ANCHOR_NAMES
-            .iter()
-            .find(|name| {
-                self.at
-                    .contains_key(&(area.to_string(), (*name).to_string()))
-            })
-            .map(|name| (*name).to_string())
+        self.role_name(area, AnchorRole::Entry).map(str::to_string)
     }
 
     /// Every area that provides `name`, in `BTreeMap` order.
@@ -4276,9 +4252,9 @@ fn build_critical_path(
                             ),
                             None => format!(
                                 "nothing says where: no anchor in `{area}`'s prefab carries \
-                                 `\"role\": \"{role}\"`, and none is named {names:?} either",
+                                 `\"role\": \"{role}\"`, and an anchor's name is never \
+                                 consulted for this",
                                 role = AnchorRole::Entry,
-                                names = ENTRY_ANCHOR_NAMES,
                             ),
                         },
                     ),

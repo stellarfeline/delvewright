@@ -957,12 +957,11 @@ fn an_argument_that_never_reaches_its_base_case_hits_the_depth_budget() {
         &program,
         Box3::at_origin([1, 1, 1]),
         &ExpandOptions {
-            seed: 0,
             limits: Limits {
                 max_depth: 32,
                 ..Limits::default()
             },
-            orientation: Default::default(),
+            ..ExpandOptions::seeded(0)
         },
     )
     .expect_err("an endless recursion must not expand");

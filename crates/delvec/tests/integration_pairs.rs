@@ -49,7 +49,7 @@ fn scratch(case: &str) -> PathBuf {
 /// The corridor's anchors, in whole-zone coordinates; `exit` is past the cut.
 fn corridor_anchors() -> serde_json::Value {
     serde_json::json!({
-        "spawn": { "pos": [4, 1, 2], "facing": "south" },
+        "spawn": { "pos": [4, 1, 2], "facing": "south", "role": "entry" },
         "anchor/keeper-stand": { "pos": [4, 1, 4], "facing": "north" },
         "anchor/door": {
             "region": { "from": [4, 1, 30], "to": [4, 3, 30] },
@@ -248,7 +248,7 @@ fn a_leaking_world_gets_no_boundary_verdict_through_the_entry_point() {
         [9, 8, 9],
         &cells,
         serde_json::json!({
-            "spawn": { "pos": [5, 1, 5], "facing": "south" },
+            "spawn": { "pos": [5, 1, 5], "facing": "south", "role": "entry" },
             "anchor/keeper-stand": { "pos": [5, 1, 6], "facing": "north" },
             "anchor/door": {
                 "region": { "from": [4, 1, 4], "to": [4, 1, 4] },

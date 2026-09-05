@@ -41,7 +41,7 @@ use crate::coverage;
 use crate::document::{self, Loaded};
 use crate::gates;
 use crate::ir::{Paint, Program};
-use crate::{Axis, Box3, ExpandOptions, expand, export, library};
+use crate::{Axis, Box3, ExpandOptions, Overrides, expand, export, library};
 
 const EXIT_INPUT: u8 = 2;
 const EXIT_OUTPUT: u8 = 3;
@@ -538,6 +538,10 @@ fn run_expand(
         Err(e) => return bad_input(e),
     };
 
+    // What this run changed about the document it was handed — filled in beside
+    // every mutation below and handed to the export, which is what writes the
+    // ADR-0006 provenance row.
+    let mut overrides = Overrides::none();
     for spec in params {
         let (name, value) = match split_once_eq(spec, "--param") {
             Ok(p) => p,
@@ -550,6 +554,13 @@ fn run_expand(
         if let Err(e) = program.set_param(name.trim(), value) {
             return bad_input(format!("--param {spec:?}: {e}"));
         }
+        // Recorded as it is applied, at the one site that applies it. An
+        // override reaches the bytes only through the program, so the program's
+        // hash is honest without this — and the provenance ROW is not: it names
+        // a source document, and re-expanding that document without this line
+        // gives a different artifact under a record claiming byte
+        // reproducibility.
+        overrides.params.insert(name.trim().to_string(), value);
     }
     for spec in roles {
         let (name, value) = match split_once_eq(spec, "--role") {
@@ -577,9 +588,16 @@ fn run_expand(
         if let Err(e) = program.set_role(name.trim(), paint) {
             return bad_input(format!("--role {spec:?}: {e}"));
         }
+        // The block state as the caller wrote it, and not the `Paint` it became:
+        // the frame is inherited from the binding this replaced, so it is a fact
+        // about the source document rather than an input of its own, and writing
+        // it here would be a second authority for it.
+        overrides
+            .roles
+            .insert(name.trim().to_string(), value.trim().to_string());
     }
 
-    let opts = ExpandOptions::seeded(seed);
+    let opts = ExpandOptions::seeded(seed).with_overrides(overrides);
     let box3 = Box3::at_origin(size);
 
     // Judge before freezing: the report is about the expansion, and a red gate

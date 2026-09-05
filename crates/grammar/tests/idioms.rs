@@ -1261,13 +1261,12 @@ fn fact_a_world_cardinal_state_does_not_turn_with_the_scope() {
         &guarded,
         Box3::at_origin([4, 1, 1]),
         &ExpandOptions {
-            seed: 1,
-            limits: Default::default(),
             orientation: delvewright_grammar::geom::Orientation::from_axes([
                 Axis::Z,
                 Axis::Y,
                 Axis::X,
             ]),
+            ..ExpandOptions::seeded(1)
         },
     )
     .unwrap();

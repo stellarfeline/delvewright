@@ -2010,62 +2010,83 @@ fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
     );
 }
 
-/// `DW0345` + the entry-anchor alias. Every campaign must resolve an ENTRY POINT —
-/// the one cell that is `setworldspawn`, the class-apply teleport, the first-join
-/// placement and the `dw:cp` seed. The shipped tileset library spells that anchor
-/// two ways (`spawn` in the keep/cave/test tilesets, `entry` in the island one),
-/// so the compiler owns the resolution; resolving NEITHER used to compile clean
-/// and ship a delve with no start, which a dedicated server papers over (vanilla
-/// spawn search finds the surface) and the integrated singleplayer server does
-/// not (it drops the join at the build floor, inside stone).
+/// `DW0345`, and **the name is not what carries it**. Every campaign must
+/// resolve an ENTRY POINT — the one cell that is `setworldspawn`, the
+/// class-apply teleport, the first-join placement and the `dw:cp` seed — and the
+/// only thing that says which cell that is, is the anchor's declared `role`.
+/// Resolving none used to compile clean and ship a delve with no start, which a
+/// dedicated server papers over (vanilla spawn search finds the surface) and the
+/// integrated singleplayer server does not (it drops the join at the build
+/// floor, inside stone).
+///
+/// The two halves are one perturbation applied to one document: **rename** the
+/// entry anchor to a word no resolver has ever heard of and the delve still
+/// starts, because the role travelled with it; take the **role** off and leave
+/// the name it historically had, and the build is refused. A test that only
+/// renamed would pass on an engine that still matched a spelling.
 #[test]
-fn missing_entry_anchor_exits_3_with_dw0345_and_entry_is_an_alias_of_spawn() {
+fn the_entry_point_is_the_role_and_no_name_supplies_it() {
     let prefabs_copy = tmp("dw0345-prefabs");
     common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
     let meta_path = prefabs_copy.join("hello-room.json");
     let read_meta = || -> serde_json::Value {
         serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap()
     };
-    // Rename the entry anchor to the island tileset's spelling: still resolves.
-    let rename_entry_anchor_to = |name: &str| {
-        let mut meta = read_meta();
-        let anchors = meta["anchors"].as_object_mut().unwrap();
-        let v = anchors
-            .remove("spawn")
-            .or_else(|| anchors.remove("entry"))
-            .or_else(|| anchors.remove("lobby"))
-            .expect("hello-room declares an entry anchor");
-        anchors.insert(name.into(), v);
-        std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    let write_meta = |meta: &serde_json::Value| {
+        std::fs::write(&meta_path, serde_json::to_string_pretty(meta).unwrap()).unwrap();
+    };
+    let entry_key = |meta: &serde_json::Value| -> String {
+        meta["anchors"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .find(|(_, a)| a.get("role") == Some(&serde_json::Value::from("entry")))
+            .map(|(k, _)| k.clone())
+            .expect("hello-room declares an entry anchor by role")
     };
 
-    rename_entry_anchor_to("entry");
-    let out_alias = tmp("dw0345-out-alias");
-    let alias = delvec(&[
+    // Rename it to a word nothing has ever resolved by. The role rides with it.
+    let mut meta = read_meta();
+    let key = entry_key(&meta);
+    let anchors = meta["anchors"].as_object_mut().unwrap();
+    let v = anchors.remove(&key).unwrap();
+    anchors.insert("lobby".into(), v);
+    write_meta(&meta);
+
+    let out_renamed = tmp("dw0345-out-renamed");
+    let renamed = delvec(&[
         "build",
         common::hello_world_dir().to_str().unwrap(),
         "-o",
-        out_alias.to_str().unwrap(),
+        out_renamed.to_str().unwrap(),
         "--prefabs",
         prefabs_copy.to_str().unwrap(),
     ]);
     assert_eq!(
-        code(&alias),
+        code(&renamed),
         0,
-        "`entry` must resolve exactly like `spawn`: {}",
-        String::from_utf8_lossy(&alias.stderr)
+        "the entry is the role, so any name resolves: {}",
+        String::from_utf8_lossy(&renamed.stderr)
     );
     let setup_finish = std::fs::read_to_string(
-        out_alias.join("datapack/data/hello-world/function/setup_finish.mcfunction"),
+        out_renamed.join("datapack/data/hello-world/function/setup_finish.mcfunction"),
     )
     .unwrap();
     assert!(
         setup_finish.contains("setworldspawn "),
-        "the alias must still drive setworldspawn:\n{setup_finish}"
+        "a renamed entry must still drive setworldspawn:\n{setup_finish}"
     );
 
-    // Neither spelling → hard build error, not a silently start-less delve.
-    rename_entry_anchor_to("lobby");
+    // Now put the historical spelling back and take the ROLE off. A name has
+    // never been able to supply an entry point, so this is a hard build error
+    // rather than a silently start-less delve.
+    let mut meta = read_meta();
+    let anchors = meta["anchors"].as_object_mut().unwrap();
+    let mut v = anchors.remove("lobby").unwrap();
+    v.as_object_mut().unwrap().remove("role");
+    anchors.insert("spawn".into(), v);
+    write_meta(&meta);
+
     let out = tmp("dw0345-out");
     let b = delvec(&[
         "build",

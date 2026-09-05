@@ -226,30 +226,39 @@ targets = [
 # reds on a count instead of sweeping as a silent zero. Moving this `sha` without
 # it is a tier-1 red (validation/check-versions.sh).
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip that carries the storybook's Minecraft-version marker —
-# `nobodys-cave-island`'s two-language README restamped from the two-number
-# form to the three-number one, which is what the CI job "campaign storybooks
-# (engine-version marker)" (`tools/check-storybook-version.py`) reads — and the
-# release-workflow fix that stops the release job writing into the engine
-# checkout. Those two READMEs are the only files this pin moves under either
-# on-pin campaign's own directory; neither `hollow-vigil` nor
-# `nobodys-cave-island` gained, lost, or otherwise moved a build input
-# (`world.json`, `quests.json`, or any zone program — neither declares
-# `design/programs/`, unchanged from the previous pin).
+# Content `main` tip at which the prefab library declares its entry points by
+# ROLE. An entry is a role, not a spelling: this engine no longer matches an
+# anchor's NAME to find where a party arrives, so the library it is pointed at
+# must say so on the anchor, and at the previous pin none of it did. This pin is
+# what makes that true, and it is why the pin and the engine change are one act
+# rather than two.
 #
-# The batch also carries several prefab pieces' re-measured lighting metadata
-# (the static block+sky-flood estimator, not a live-server probe) and new
-# authoring-pin / skill tooling upstream of the content repo's own CI — neither
-# is a campaign build input this repo's compiler reads through `--prefabs` in a
-# way that changes ADR-0006 determinism: at this pin every campaign still
-# builds byte-identically twice, which is the claim this comment can make
-# without restating a count that would go stale the moment the engine moves.
+# What moves under `prefabs/`, cross-checked by parsing both trees rather than
+# by reading the line diff: five documents — `cave-shore`, `hello-room`,
+# `island-beach-camp`, `island-galley`, `keep-spawn-hall` — and each gains
+# EXACTLY ONE key, its entry anchor's `"role": "entry"`. Nothing else about any
+# of them differs: no cell, facing, connector, contract or licence value. Of 37
+# library documents, 5 declared an entry by name and 0 by role before; 5 declare
+# it by role after, and they are the same five pieces. `hello-room.json`'s
+# larger line count is the writer re-emitting a hand-formatted document in its
+# own canonical form — one added key by the parsed comparison, zero changed
+# values.
+#
+# Nothing under `campaigns/` moves at all in this interval (`git diff --name-only
+# -- campaigns/` is empty), so neither `hollow-vigil` nor `nobodys-cave-island`
+# gained, lost or moved a build input; neither declares `design/programs/`, and
+# the pinned tree holds no such path anywhere, so the zone inventory restated in
+# `.github/content-zone-corpus.json` stays at zero for both.
+#
+# The rest of the batch is the content repository's own CI, skill page and
+# authoring-pin tooling, upstream of everything this repo reads: no file it
+# touches is an input the compiler is handed through `--prefabs`.
 #
 # `DW0735` says a state that omits a shape-carrying property drops the geometry
 # the property assembles; the library sweep (`crates/admit/tests/library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
-sha = "42ee707db69b83d27534608b2758d8697ad2c46e"
+sha = "a8c3f98831735aa370908a43d37db85d09fae25c"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

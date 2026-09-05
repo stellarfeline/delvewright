@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use delvewright_admit::fixtures;
-use delvewright_admit::meta::PrefabMeta;
+use delvewright_admit::meta::{AnchorRole, PrefabMeta};
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {
@@ -180,6 +180,89 @@ fn gallery_and_curate_merge_end_to_end() {
     let cur = merged.curation.unwrap();
     assert_eq!(cur.notes.len(), 1);
     assert_eq!(cur.notes[0].text, "keep it");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+// ---------------------------------------------------------------------------
+// `anchor --role` — an anchor's role is written where the anchor is
+// ---------------------------------------------------------------------------
+
+/// **The gap this closes.** `anchor` could say where a place is and not what it
+/// is for, so a piece admitted through this route could never declare an entry
+/// point: every campaign built from new pieces was refused by `DW0345`, and the
+/// only way to give one a role was to hand-edit the JSON the tool had written.
+///
+/// Five claims, one document: the role is written; an unknown term is refused
+/// **where it is typed** rather than ridden through into the metadata; the role
+/// survives an edit that says nothing about it (moving a cell is not a statement
+/// that the piece stopped being the way in); `--no-role` removes it, which is the
+/// remedy `DW0804` prescribes; and the two flags cannot both be given.
+#[test]
+fn anchor_writes_and_clears_the_role_and_refuses_a_term_it_does_not_know() {
+    let dir = tmp("anchor-role");
+    let nbt = dir.join("piece.nbt");
+    std::fs::write(&nbt, fixtures::clean_room().write()).unwrap();
+
+    let anchor = |args: &[&str]| {
+        Command::new(bin())
+            .arg("anchor")
+            .arg(&nbt)
+            .args(["--name", "anchor/arrival"])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let role_now = || -> Option<AnchorRole> {
+        PrefabMeta::beside_nbt(&nbt).unwrap().unwrap().anchors["anchor/arrival"].role
+    };
+
+    // Written.
+    let out = anchor(&["--pos", "3,1,3", "--facing", "north", "--role", "entry"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(role_now(), Some(AnchorRole::Entry));
+
+    // An unknown term is refused at exit 2, naming both the term and the
+    // vocabulary, and nothing is written: the document still says what it said.
+    let out = anchor(&["--pos", "3,1,3", "--role", "dispenser"]);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "an unknown role is an input error"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("dispenser") && stderr.contains("`entry`"),
+        "{stderr}"
+    );
+    assert_eq!(
+        role_now(),
+        Some(AnchorRole::Entry),
+        "a refused role must not have moved the document"
+    );
+
+    // Silent about the role → the role stays. This is the case that would
+    // otherwise delete a piece's entry point every time somebody nudged a cell.
+    let out = anchor(&["--pos", "4,1,4", "--facing", "south"]);
+    assert!(out.status.success());
+    assert_eq!(role_now(), Some(AnchorRole::Entry));
+
+    // ...and `--no-role` says it has none.
+    let out = anchor(&["--pos", "4,1,4", "--no-role"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(role_now(), None);
+
+    // The two are contradictory and the parser says so rather than picking one.
+    let out = anchor(&["--pos", "4,1,4", "--role", "entry", "--no-role"]);
+    assert_eq!(out.status.code(), Some(2));
 
     std::fs::remove_dir_all(&dir).ok();
 }
