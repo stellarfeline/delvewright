@@ -697,6 +697,7 @@ pub fn check_reach_footprint(
         ..ReachFootprintBinding::default()
     };
     let mut first: Option<Failure> = None;
+    let mut others: Vec<String> = Vec::new();
     for site in sites(plan) {
         binding.sites += 1;
         let vol = reach_completion(site.pos, site.radius, v03);
@@ -725,7 +726,15 @@ pub fn check_reach_footprint(
         let arriving = cells_that_reach(world, &cells, footing);
         let off: Vec<[i32; 3]> = cells.difference(&arriving).copied().collect();
         binding.off_floor += off.len();
-        if off.is_empty() || first.is_some() {
+        if off.is_empty() {
+            continue;
+        }
+        if first.is_some() {
+            // Named, never silently dropped. The failure channel carries one code
+            // and one message, which is the compiler's contract; what a reader
+            // must not lose is that the campaign has more than one of these, or
+            // they fix the first and meet the second on the next build.
+            others.push(site.objective_id.clone());
             continue;
         }
         let mut by_y: BTreeMap<i32, Vec<[i32; 3]>> = BTreeMap::new();
@@ -760,15 +769,19 @@ pub fn check_reach_footprint(
                  `{}`, and {} standable cell(s) inside it stand on floor a body cannot walk to \
                  the anchor's own footing {footing:?} from without leaving that volume: {floors}. \
                  Vanilla adjudicates the selector against the whole body box, which rises {} \
-                 blocks from the feet, so a party standing on a floor BELOW a raised anchor \
-                 completes this objective without ever climbing to it — the beat fires during \
-                 whatever they were doing down there, and every proof this build runs stays \
-                 green. `reach` means arriving where the anchor is and the volume is a tolerance \
-                 around that, so a tolerance that admits a different floor is not a tolerance. \
-                 Lower `radius` until the volume stops reaching that floor, or move the anchor so \
-                 that its own footing is the only floor inside it. Building a way UP inside the \
-                 volume is the third answer and this rule passes it: a body on a stair that the \
-                 volume covers end to end is arriving.",
+                 blocks from the feet, so the volume reaches every floor within a course of it \
+                 and a party standing on any of them completes this objective without arriving \
+                 at the anchor, while every proof this build runs stays green. The commonest \
+                 shape is a raised anchor over a room the party is already in: the beat fires \
+                 during whatever they were doing down there and nobody ever climbs. A floor at \
+                 the anchor's own height, walled off from it inside the volume, is the same \
+                 defect laid flat. `reach` means arriving where the anchor is and the volume is \
+                 a tolerance around that, so a tolerance that admits a place you cannot walk to \
+                 the anchor from is not a tolerance. Lower `radius` until the volume covers only \
+                 the anchor's own floor, or move the anchor so that floor is the only one inside \
+                 it. Joining the two INSIDE the volume is the third answer and this rule passes \
+                 it: a body on a stair, or on a walk, that the volume covers end to end is \
+                 arriving.",
                 site.objective_id,
                 vol.describe(),
                 site.anchor_id,
@@ -776,6 +789,17 @@ pub fn check_reach_footprint(
                 delvewright_dsl::metrics::PLAYER_HEIGHT,
             ),
         });
+    }
+    if let Some(f) = first.as_mut()
+        && !others.is_empty()
+    {
+        f.message.push_str(&format!(
+            " This campaign has {} more reach objective(s) with the same defect, which this \
+             channel can only name rather than describe: {}. Fixing the one above will not \
+             clear them.",
+            others.len(),
+            others.join(", ")
+        ));
     }
     (binding, first.map_or(Ok(()), Err))
 }
