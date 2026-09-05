@@ -700,6 +700,39 @@ def measure(wt: Worktree) -> None:
     wt.lease = read_lease(wt.path)
 
 
+def branch_has_no_work_beyond_base(
+    path: Path, head: str, base_ref: str = "origin/main"
+) -> tuple[bool, str]:
+    """Is `head` already contained in `base_ref` — i.e. is there nothing to land?
+
+    True exactly when the merge-base of the tree's own HEAD and `base_ref`
+    IS that HEAD: every commit this tree carries is already on `base_ref`, so
+    a branch cut from it and never advanced is not "work not yet proposed",
+    it is no work at all. A branch that has advanced past its base can still
+    lack a pull request — that is the ordinary in-flight case, and this
+    function says False for it, leaving the existing "the work has not
+    landed" refusal to hold it.
+
+    Reached only after the tree has already passed dirty, unpushed, inbound,
+    lease and self/lock — so a HEAD equal to this merge-base is, by
+    construction, also on some remote (`git rev-list HEAD --not --remotes`
+    already read 0), whether or not this exact branch's own remote ref still
+    exists. "Fully pushed" and "unpushed-but-empty" are the same fact from
+    this rung's point of view.
+    """
+    code, out, err = git(path, "merge-base", head, base_ref)
+    if code != 0:
+        return False, f"merge-base against {base_ref} could not be computed ({err.strip() or 'git failed'})"
+    merge_base = out.strip()
+    if merge_base == head:
+        return True, f"merge-base(HEAD, {base_ref}) == {head[:8]} == the tree's own HEAD"
+    return (
+        False,
+        f"merge-base(HEAD, {base_ref}) == {merge_base[:8]}, not HEAD ({head[:8]}) — "
+        "commits beyond base",
+    )
+
+
 def decide(wt: Worktree, *, self_paths: set[Path], authority: Authority) -> None:
     """The verdict ladder. Order is the design: every KEEP above the reclaim
     rung outranks the pull-request authority, so no amount of "it merged" can
@@ -811,6 +844,15 @@ def decide(wt: Worktree, *, self_paths: set[Path], authority: Authority) -> None
         wt.reason = f"NO PR AUTHORITY — {pr_error}; absence of the authority is not permission"
         return
     if pr is None:
+        no_work, proof = branch_has_no_work_beyond_base(wt.path, wt.head)
+        if no_work:
+            wt.verdict = "RECLAIM"
+            wt.reason = (
+                "no pull request on the remote for this branch, and there is no work to "
+                f"land — {proof}; clean, fully pushed or unpushed-but-empty, unreferenced, "
+                "unleased"
+            )
+            return
         wt.verdict = "KEEP"
         wt.reason = (
             "the remote, asked about this branch, holds no pull request for it — "

@@ -14,7 +14,7 @@ test, rather than a mocked-out function that a refactor could silently re-bind.
 
 ## Binding count for the build-output ladder
 
-61 tests here, of which 11 cover `decide_target`. Run against the version that
+63 tests here, of which 11 cover `decide_target`. Run against the version that
 preceded it, **10 of those 11 go red** — which is what says they bind to the new
 behaviour rather than passing for an unrelated reason.
 
@@ -264,8 +264,53 @@ def test_open_pull_request_wins_over_a_stale_closed_one(fx, tmp_path):
 
 
 def test_no_pull_request_at_all_is_kept(fx, tmp_path):
+    """A branch with real, pushed work and no pull request yet is still KEPT.
+
+    Distinct from an empty branch (below): here the tree has advanced past its
+    base, so `branch_has_no_work_beyond_base` says False and the tool falls
+    through to the ordinary "the work has not landed" refusal.
+    """
     wt = fx.worktree("wt-fresh", "just-dispatched")
-    assert verdict_for(sweep(fx, fake_gh(tmp_path, [])), wt)[0] == "KEEP"
+    (wt / "progress.txt").write_text("still working\n", encoding="utf-8")
+    git(wt, "add", "-A")
+    git(wt, "commit", "-m", "progress")
+    git(wt, "push")
+    v, why = verdict_for(sweep(fx, fake_gh(tmp_path, [])), wt)
+    assert v == "KEEP" and "has not landed" in why
+
+
+def test_an_empty_branch_with_no_pull_request_is_reclaimed(fx, tmp_path):
+    """A branch cut from main and never advanced carries no work to land.
+
+    This is the exact shape of the found defect: `wt-bh`
+    (`fix/the-manifest-names-what-was-read`) had no commits beyond its base and
+    no pull request, and the old ladder read "no PR" as "the work has not
+    landed" and kept it forever. There is nothing here `origin/main` does not
+    already hold, so it is reclaimable on the merge-base proof alone.
+    """
+    wt = fx.worktree("wt-empty", "nothing-to-land")
+    v, why = verdict_for(sweep(fx, fake_gh(tmp_path, [])), wt)
+    assert v == "RECLAIM"
+    assert "merge-base" in why and "no work to land" in why
+
+    out = sweep(fx, fake_gh(tmp_path, []), "--apply")
+    assert not wt.exists()
+
+
+def test_an_unpushed_commit_beyond_base_is_still_kept_with_no_pull_request(fx, tmp_path):
+    """One real, unpushed commit is not "no work" — the new rung must not reach it.
+
+    The branch is cut from main (so it starts equal to its merge-base, exactly
+    like the reclaimed case above) and then advanced by one commit that is
+    never pushed anywhere. The pre-existing UNPUSHED refusal (rung 1) must
+    still catch this before the new merge-base rung is ever consulted.
+    """
+    wt = fx.worktree("wt-empty-ahead", "still-working")
+    (wt / "wip.txt").write_text("wip\n", encoding="utf-8")
+    git(wt, "add", "-A")
+    git(wt, "commit", "-m", "wip")
+    v, why = verdict_for(sweep(fx, fake_gh(tmp_path, [])), wt)
+    assert v == "KEEP" and "UNPUSHED" in why
 
 
 def test_a_request_outside_the_first_page_is_still_found(fx, tmp_path):
