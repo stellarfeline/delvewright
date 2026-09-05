@@ -1575,11 +1575,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.after_merge or args.tree:
         if not selected:
             print(f"no worktree matches {args.after_merge or args.tree} in any swept repository")
+            # Naming which repositories were actually swept is the difference
+            # between a refusal a reader can act on and one that only reports its
+            # own confusion: this message cannot know the branch lives elsewhere,
+            # but it can say exactly what it looked at, so a repository the sweep
+            # never touched (a hand-rolled content clone that is not a worktree of
+            # the shared checkout, e.g.) is visible as an omission rather than
+            # read as "the branch does not exist anywhere".
+            swept = ", ".join(f"{name.strip()} ({path})" for name, path in repos)
+            print(f"swept: {swept}")
             print(
                 "Nothing was deleted, and this exits non-zero on purpose: a name that matched\n"
                 "nothing is a finding when a tree was expected there. It is also the ordinary\n"
                 "answer when the sweep bound to the session hook already reclaimed it — check\n"
-                "the last page before treating it as a problem."
+                "the last page before treating it as a problem.\n"
+                "If the branch lives in a checkout not listed above — a hand-rolled clone, a\n"
+                "second content worktree, anything this sweep would not discover on its own —\n"
+                "point at it explicitly with --repo <path>. This sweep never guesses at a\n"
+                "checkout you did not name."
             )
             return 1
 

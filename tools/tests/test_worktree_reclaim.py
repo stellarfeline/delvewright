@@ -909,6 +909,12 @@ def test_a_name_that_matches_nothing_is_a_finding(fx, tmp_path):
     )
     assert p.returncode == 1
     assert "finding" in p.stdout
+    # A refusal that only says "no match" cannot be told apart from a repository
+    # the sweep never looked at. It states what it swept, by path, and names the
+    # flag that reaches a checkout outside that set.
+    assert "swept:" in p.stdout
+    assert fx.repo.name in p.stdout
+    assert "--repo <path>" in p.stdout
 
 
 def test_naming_a_detached_tree_is_the_authority_it_lacks_but_not_the_only_key(fx, tmp_path):
