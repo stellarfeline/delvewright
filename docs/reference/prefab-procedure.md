@@ -773,12 +773,22 @@ The row is a claim about the expansion, which is what makes it worth recording:
 it says the *geometry* came from that program at that seed, and the admission
 edits on top of it are the ones the procedure prescribes.
 
-Those four inputs are `license.generated_by { generator, program, program_hash,
-seed }` — a **machine-readable** row, not only the prose `provenance` sentence
-beside it. A shipped prefab carries it through every step above, so a tool can
-answer "what regenerates this file" without a human reading the sentence. The
-one prefab that legitimately has no row is one nothing can regenerate: an
-ingested community build, or a hand-edited piece.
+The inputs are `license.generated_by { generator, program, program_hash, seed,
+region, params?, roles? }` — a **machine-readable** row, not only the prose
+`provenance` sentence beside it. A shipped prefab carries it through every step
+above, so a tool can answer "what regenerates this file" without a human reading
+the sentence. The one prefab that legitimately has no row is one nothing can
+regenerate: an ingested community build, or a hand-edited piece.
+
+**Every input, or the row is worse than none.** `region` is there because the
+same program at the same seed over a different box is a different building;
+`params` and `roles` are the `--param` and `--role` overrides, which reach the
+bytes by mutating the program and would otherwise leave no trace of themselves.
+`program_hash` is taken over the program **as expanded** — the named document
+with those overrides already applied — so it is the checksum of the reproduction
+rather than a second statement of it: apply the two maps to the named document
+and this is the hash you must get. Both maps are omitted from the document when
+the program was expanded exactly as written.
 
 ## 9. The metadata document
 

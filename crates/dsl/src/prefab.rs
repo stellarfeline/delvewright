@@ -826,16 +826,41 @@ pub struct License {
 }
 
 /// Everything needed to reproduce the `.nbt` byte for byte (ADR-0006).
+///
+/// **Every input that reaches the bytes, and nothing that does not.** A record
+/// missing one of them is worse than no record: it names a set of inputs, and a
+/// re-expansion from that set produces a different artifact while the document
+/// claims byte reproducibility. The set is the source program, the overrides
+/// applied to it, the region and the seed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedBy {
     /// The back end that produced the bytes.
     pub generator: String,
     /// The source program's name.
     pub program: String,
-    /// `sha256:<64 hex>` over the program's canonical JSON.
+    /// `sha256:<64 hex>` over the canonical JSON of the program **as expanded**
+    /// — the source document with [`Self::params`] and [`Self::roles`] already
+    /// applied. It is therefore the checksum of the reproduction rather than a
+    /// second statement of it: apply the overrides to the named document and
+    /// this is the hash you must get.
     pub program_hash: String,
     /// The expansion seed.
     pub seed: u64,
+    /// The region the program was expanded over, `[x, y, z]`. An independent
+    /// input: the same program at the same seed over a different box is a
+    /// different building.
+    pub region: [i32; 3],
+    /// Integer parameters overridden on the way in (`delve-grammar expand
+    /// --param`), by name. Empty — and absent from the document — where the
+    /// program was expanded as written.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, i64>,
+    /// Palette roles rebound on the way in (`--role`), by name, each the block
+    /// state as the caller wrote it. The axis frame is not recorded because it
+    /// is not an input: a rebind inherits the frame of the binding it replaces,
+    /// which the named source document already carries.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub roles: BTreeMap<String, String>,
 }
 
 impl PrefabMeta {
@@ -1241,7 +1266,8 @@ mod tests {
       "generator": "grammar",
       "program": "bell_chapel_ward",
       "program_hash": "sha256:00",
-      "seed": 1
+      "seed": 1,
+      "region": [11, 6, 13]
     }
   },
   "waterline_y": 2
@@ -1427,7 +1453,13 @@ mod tests {
     "spdx": "GPL-3.0-or-later",
     "note": "n",
     "provenance": "p",
-    "generated_by": { "generator": "grammar", "program": "nd", "program_hash": "sha256:00", "seed": 1 }
+    "generated_by": {
+      "generator": "grammar",
+      "program": "nd",
+      "program_hash": "sha256:00",
+      "seed": 1,
+      "region": [3, 3, 3]
+    }
   },
   "a_key_no_engine_models": { "kept": true }
 }

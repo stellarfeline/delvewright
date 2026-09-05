@@ -63,7 +63,7 @@ use delvewright_schem::schematic::{BlockState as SchemBlockState, ParsedSchemati
 pub use delvewright_schem::split::{TilePart, TileSet};
 use delvewright_schem::split::{part_filename, plan_split};
 
-use crate::expand::{ExpandError, ExpandOptions, Expansion, expand};
+use crate::expand::{ExpandError, ExpandOptions, Expansion, Overrides, expand};
 use crate::geom::Box3;
 use crate::ir::Program;
 use crate::model::VoxelModel;
@@ -503,7 +503,14 @@ pub fn export_prefab(
         // the same claim.
         connectors: Vec::new(),
         lighting: Some(LightingMetadata::unmeasured()),
-        license: Some(license_metadata(program, &hash, options.seed, size, None)),
+        license: Some(license_metadata(
+            program,
+            &hash,
+            options.seed,
+            size,
+            &options.overrides,
+            None,
+        )),
         waterline_y: None,
         spatial_contract: contract_metadata(&expansion),
         // The export makes no `footprint_class` claim (spec-0050 §5). A program
@@ -628,6 +635,7 @@ pub fn export_zone(
             &hash,
             options.seed,
             size,
+            &options.overrides,
             Some((plan.grid, tiles.len())),
         )),
         waterline_y: None,
@@ -814,6 +822,7 @@ fn license_metadata(
     hash: &str,
     seed: u64,
     size: [i32; 3],
+    overrides: &Overrides,
     tiling: Option<([i32; 3], usize)>,
 ) -> LicenseMetadata {
     let packaging = match tiling {
@@ -825,6 +834,21 @@ fn license_metadata(
             grid[0], grid[1], grid[2]
         ),
     };
+    // Named in the sentence too, and not only in the machine row: a reader
+    // handed "these inputs regenerate it" and a list that omits one of them has
+    // been told something false.
+    let restyled = if overrides.is_empty() {
+        " as its document reads".to_string()
+    } else {
+        let mut said = Vec::new();
+        for (name, value) in &overrides.params {
+            said.push(format!("{name}={value}"));
+        }
+        for (role, block) in &overrides.roles {
+            said.push(format!("{role}={block}"));
+        }
+        format!(" with {}", said.join(", "))
+    };
     LicenseMetadata {
         source: "original".to_string(),
         spdx: "GPL-3.0-or-later".to_string(),
@@ -834,8 +858,8 @@ fn license_metadata(
             .to_string(),
         provenance: format!(
             "Generated deterministically by {GENERATOR} (spec-0027) from grammar program \
-             {:?} ({hash}) at seed {seed} over a {}x{}x{} region; ADR-0006: those four inputs \
-             regenerate this NBT byte for byte.{packaging}",
+             {:?}{restyled} ({hash}) at seed {seed} over a {}x{}x{} region; ADR-0006: the \
+             inputs in `generated_by` regenerate this NBT byte for byte.{packaging}",
             program.name, size[0], size[1], size[2]
         ),
         // Optional in the document — an ingested piece has nothing that
@@ -845,6 +869,9 @@ fn license_metadata(
             program: program.name.clone(),
             program_hash: hash.to_string(),
             seed,
+            region: size,
+            params: overrides.params.clone(),
+            roles: overrides.roles.clone(),
         }),
     }
 }

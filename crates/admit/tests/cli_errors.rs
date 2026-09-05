@@ -146,7 +146,8 @@ fn stage_tile_set(dir: &std::path::Path) -> PathBuf {
                     "generator": "grammar",
                     "program": "zone",
                     "program_hash": "sha256:00",
-                    "seed": 1
+                    "seed": 1,
+                    "region": [60, 5, 14]
                 }
             }
         })

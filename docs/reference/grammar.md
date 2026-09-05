@@ -3046,13 +3046,21 @@ does not itself model:
   "license": { "source": "original", "spdx": "GPL-3.0-or-later",
                "note": "…", "provenance": "…",
                "generated_by": { "generator": "grammar", "program": "temple",
-                                 "program_hash": "sha256:…", "seed": 7 } }
+                                 "program_hash": "sha256:…", "seed": 7,
+                                 "region": [13, 14, 21] } }
 }
 ```
 
-- **`generated_by`** is the spec-0027 §2 provenance row. `program_hash` is
-  `sha256` over the program's canonical serde JSON bytes — content-addressed, so
-  a program built in Rust and the same program parsed from JSON hash alike.
+- **`generated_by`** is the spec-0027 §2 provenance row, and it carries **every
+  input that reaches the bytes**: the program, the seed, the `region` it was
+  expanded over, and the `--param` / `--role` overrides applied on the way in
+  (`params` / `roles`, omitted where there were none). `program_hash` is `sha256`
+  over the canonical serde JSON bytes of the program **as expanded** — the named
+  document with those overrides applied — content-addressed, so a program built
+  in Rust and the same program parsed from JSON hash alike. Re-expanding the
+  named document with exactly this row's inputs reproduces the `.nbt` byte for
+  byte, which `tests/cli.rs` asserts by replaying the row and by perturbing one
+  `--param` and checking the row, the hash and the bytes all move.
 - **`anchors`** is exactly what the program's `mark` declarations produced (§2b),
   in the hand-built `{pos, facing}` shape with `pos` local to the structure.
   Nothing infers one from the block pattern afterwards — that is precisely the
