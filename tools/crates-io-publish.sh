@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# ADR-0017: publish `delvewright-dsl` and `delvec` to crates.io from CI — the
-# only path there is. No human ever runs `cargo publish` for this project.
+# ADR-0017 / ADR-0023 §6: publish every crate the engine is made of —
+# `delvewright-dsl`, the engine library crates and `delvec` — to crates.io from
+# CI, the only path there is. No human ever runs `cargo publish` for this
+# project. The set and its order come from `versions.toml [engine]`.
 #
 # THE ONE-WAY DOOR
 #
@@ -11,10 +13,11 @@
 #
 # WHY THIS IS IDEMPOTENT, AND WHY THAT IS NOT A SHORTCUT
 #
-# `delvewright-dsl` must land before `delvec`, so the sequence can half-succeed:
-# dsl uploaded, delvec rejected. Naively retried, the second run dies on "crate
-# version already uploaded" and that dsl version is burned. This script instead
-# asks the registry what it already holds:
+# Every dependency must land before its dependent, so the sequence can
+# half-succeed: the dsl and the library crates uploaded, `delvec` rejected.
+# Naively retried, the second run dies on "crate version already uploaded" and
+# those versions are burned. This script instead asks the registry what it
+# already holds:
 #
 #   * version absent               -> publish it
 #   * present, cksum == our bytes  -> SKIP; the previous run got that far
@@ -22,7 +25,7 @@
 #                                     a version already served. crates.io will
 #                                     never accept the new bytes and pretending
 #                                     otherwise would ship a `delvec` bound to a
-#                                     `delvewright-dsl` nobody can reproduce.
+#                                     sibling crate nobody can reproduce.
 #
 # The comparison is exact: the registry index publishes the sha256 of the
 # uploaded `.crate`, and `cargo package` output is byte-identical run to run
@@ -36,8 +39,8 @@
 # before publishing its dependent — its own binary carries the message "due to a
 # timeout while waiting for published dependencies to be available" — so nothing
 # here sleeps. What this script adds is the POST-CONDITION: after cargo returns,
-# both crates must be visible in the sparse index at the exact versions with the
-# exact checksums we uploaded. That is a poll on an observable condition with a
+# every crate must be visible in the sparse index at the exact version with the
+# exact checksum we uploaded. That is a poll on an observable condition with a
 # stated timeout, not a sleep chosen by feel, and it turns "cargo's internal wait
 # was not enough" from an unresolvable `delvec` on the registry into a red job.
 #
@@ -64,6 +67,7 @@ sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-new
 e = tomllib.load(open(sys.argv[1], "rb"))["engine"]
 for k in ("version", "crate", "dsl_crate", "dsl_crate_version"):
     print(f'{k.upper()}={e[k]!r}'.replace("'", '"'))
+print('ENGINE_CRATES=' + repr(" ".join(e["crates"])).replace("'", '"'))
 PY
 )"
 
@@ -148,8 +152,12 @@ echo "  ok   serde 1.0.0 resolves to sha256 $probe"
 echo
 
 # ------------------------------------------------------------------- the plan
-NAMES=("$DSL_CRATE" "$CRATE")            # dependency order: dsl before delvec
-VERS=("$DSL_CRATE_VERSION" "$VERSION")
+# Dependency order, as versions.toml states it: the DSL crate, the engine
+# library crates, the binary last. bash 3.2 (macOS) has no `mapfile`.
+NAMES=("$DSL_CRATE")
+VERS=("$DSL_CRATE_VERSION")
+for n in $ENGINE_CRATES; do NAMES+=("$n"); VERS+=("$VERSION"); done
+NAMES+=("$CRATE"); VERS+=("$VERSION")
 TO_PUBLISH=()
 echo "== what crates.io already holds =="
 i=0
@@ -168,7 +176,7 @@ while [ "$i" -lt "${#NAMES[@]}" ]; do
     printf '            ours     sha256 %s\n' "$mine"
     echo >&2
     echo "crates-io-publish: $n $v cannot be republished — a crates.io version is permanent." >&2
-    echo "  Bump [engine] $( [ "$n" = "$CRATE" ] && echo version || echo 'dsl_crate_version + dsl_crate_req' ) in versions.toml and re-tag." >&2
+    echo "  Bump [engine] $( [ "$n" = "$DSL_CRATE" ] && echo 'dsl_crate_version + dsl_crate_req' || echo 'version (and the root Cargo.toml [workspace.package] + [workspace.dependencies] it binds)' ) in versions.toml and re-tag." >&2
     exit 1
   fi
   i=$((i + 1))
@@ -183,7 +191,7 @@ fi
 
 # ---------------------------------------------------------------- the upload
 if [ "${#TO_PUBLISH[@]}" -eq 0 ]; then
-  echo "== nothing to upload; the registry already holds both, byte-identical =="
+  echo "== nothing to upload; the registry already holds every crate, byte-identical =="
 else
   : "${CARGO_REGISTRY_TOKEN:?crates-io-publish: CARGO_REGISTRY_TOKEN is not set — this job must declare the crates-io environment}"
   args=()
@@ -198,7 +206,7 @@ fi
 
 # ------------------------------------------------- the post-condition, polled
 echo
-echo "== post-condition: both crates visible in the index with our checksums =="
+echo "== post-condition: every crate visible in the index with our checksums =="
 deadline=$((SECONDS + POLL_TIMEOUT))
 while :; do
   ok=0
@@ -223,5 +231,5 @@ while :; do
 done
 
 echo
-echo "crates-io-publish: OK — $CRATE $VERSION and $DSL_CRATE $DSL_CRATE_VERSION are on crates.io"
+echo "crates-io-publish: OK — ${#NAMES[@]} crate(s) are on crates.io: $DSL_CRATE $DSL_CRATE_VERSION, and $CRATE $VERSION with its $((${#NAMES[@]} - 2)) library crates"
 echo "crates-io-publish: \`cargo install $CRATE\` now resolves to $VERSION"

@@ -105,14 +105,14 @@ NOT_CONNECTION_EMITTERS = {
         "crate could not call it in any case: the derivation is source-included by the seven "
         "`prefabs/*` generator workspaces and `delvec` does not depend on them."
     ),
-    "crates/admit/tests/footprint_class.rs": (
+    "crates/delvec/tests/prefab_footprint_class.rs": (
         "test fixture for the footprint-class admission door (spec-0050 §5). Its palette is two "
         "states named in one `STATES` constant the file also judges against the pinned registry "
         "- stone bricks and air - neither of which is a fence, wall, pane or multiface block, "
         "and the shell it frames is written into a temp directory and never admitted into the "
         "library."
     ),
-    "crates/compiler/tests/edit.rs": (
+    "crates/delvec/tests/edit.rs": (
         "test fixture for the edit-stage determinism gate. Its palette is four states — air, "
         "stone, a lantern and an oak log — none of them a fence, wall, pane or multiface block, "
         "and the box it frames is never admitted into the library."
@@ -133,7 +133,7 @@ NOT_EMITTERS = {
     "crates/schem/src/convert.rs": (
         "converter, not an emitter: `build_region` re-serialises the states it read out of an "
         "input `.schem`, so the palette is the input's and not this file's. The id verdict "
-        "belongs to whoever admits the result — `delve-admit audit` (DW0733/DW0734) for an "
+        "belongs to whoever admits the result — `delvec prefab audit` (DW0733/DW0734) for an "
         "imported piece, `refuse_unknown_states` for a grammar expansion — and both judge "
         "against the DataVersion the piece declares, which this function does not know."
     ),
@@ -145,20 +145,20 @@ NOT_EMITTERS = {
         "`#[cfg(test)]` fixture: hand-frames a template to feed `structure_cells`. Emits "
         "nothing; reads its own bytes back in the same function."
     ),
-    "crates/compiler/tests/boundary_assembled.rs": "test fixture for the assembled-world model.",
-    "crates/compiler/tests/common/mod.rs": (
+    "crates/delvec/tests/boundary_assembled.rs": "test fixture for the assembled-world model.",
+    "crates/delvec/tests/common/mod.rs": (
         "test fixture for the tiled-placement proof: synthesises a sealed corridor past the "
         "48-per-axis cap as two tiles plus a manifest, into a per-test temp dir. Its whole "
         "palette is two literal ids in the same function (`minecraft:stone`, "
         "`minecraft:glowstone`), and nothing writes it into a prefab library — the bytes exist "
         "to be read back by the same test that wrote them."
     ),
-    "crates/compiler/tests/emit.rs": "test fixture for the emitted datapack.",
-    "crates/compiler/tests/lava_floor.rs": (
+    "crates/delvec/tests/emit.rs": "test fixture for the emitted datapack.",
+    "crates/delvec/tests/lava_floor.rs": (
         "test fixture for the fluid-occupancy proof: hand-frames a synthetic room whose floor "
         "course is the variable. Its palette is deliberately minimal and is never admitted."
     ),
-    "crates/compiler/tests/relight.rs": "test fixture for the spec-0010 relight.",
+    "crates/delvec/tests/relight.rs": "test fixture for the spec-0010 relight.",
     "docs/experiments/m2-jigsaw-seed-stability/generator/src/main.rs": (
         "frozen experiment record — the script exactly as it was run, beside the evidence it "
         "produced. Rewriting it would make the recorded result irreproducible from the "

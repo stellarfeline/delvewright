@@ -185,7 +185,7 @@ def test_the_real_repository_yields_a_flag_surface(checker):
     assert files >= 50, files
     assert len(owners) >= 40, sorted(owners)
     # Flags that only exist because a real binary declares them.
-    assert owners["view"] == {"delve-render"}
+    assert owners["view"] == {"delvec render"}
     assert "delvec" in owners["lang"]
 
 

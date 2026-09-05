@@ -5,10 +5,9 @@
 # something shipping. This file is what makes the remedy reachable, and a gate
 # whose remedy nobody can reach is half a gate.
 #
-# THE POPULATION IS DERIVED, NEVER REMEMBERED. Ten cargo workspaces live in this
-# tree — the root, `crates/render` (its own workspace so that a git dependency
-# stops being a precondition for every cargo command here), seven prefab
-# generators, and one docs experiment — and a workspace member is covered by its
+# THE POPULATION IS DERIVED, NEVER REMEMBERED. Nine cargo workspaces live in
+# this tree — the root (every crate under `crates/`), seven prefab generators,
+# and one docs experiment — and a workspace member is covered by its
 # workspace root, so the entries below are one per workspace and not one per
 # crate. `tools/tests/test_dependabot_coverage.py` asserts that set against
 # `git ls-files '*Cargo.toml'`, so a generator added next month reds until it is
@@ -28,13 +27,6 @@ updates:
     open-pull-requests-limit: 5
     groups:
       cargo-engine:
-        patterns: ["*"]
-  - package-ecosystem: cargo
-    directory: "/crates/render"
-    schedule: { interval: weekly }
-    open-pull-requests-limit: 3
-    groups:
-      cargo-render:
         patterns: ["*"]
   - package-ecosystem: cargo
     directory: "/prefabs/generator"

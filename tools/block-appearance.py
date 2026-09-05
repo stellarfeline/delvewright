@@ -68,12 +68,12 @@ skipped, and reads as a pass over a palette nobody measured.
 
 Not a renderer, and not a chooser. Constraints **eliminate**; they never score.
 What survives a screen is a shelf of equals, and the last step is a look — at the
-swatch sheet here, then at the geometry in light via `delve-render piece`.
+swatch sheet here, then at the geometry in light via `delvec render piece`.
 Measurement can prove a mix is not warm; only a look decides it is right.
 
 The jar is EULA-gated and never committed (versions.toml [render]). It is
 resolved from --jar, then $DELVEWRIGHT_CLIENT_JAR, then
-~/.chunky/resources/minecraft.jar — the same order `delve-render` uses, so one
+~/.chunky/resources/minecraft.jar — the same order `delvec render` uses, so one
 machine setup serves both. Without it this tool **refuses**; it never reports a
 partial answer as a whole one.
 """
@@ -104,7 +104,7 @@ FALLBACK_TEXTURE_KEYS = ("all", "texture", "particle", "side", "top", "still", "
 
 # Technical blocks: real 1.21.11 blocks that are never building material. A
 # colour query ranks by colour alone, so without this it cheerfully proposes
-# `structure_block` for "dark grey stone" — a block `delve-admit` hard-forbids as
+# `structure_block` for "dark grey stone" — a block `delvec prefab` hard-forbids as
 # a code-injection vector, and one no reviewer would have questioned in a palette
 # list. Ranking by appearance and filtering by role are two different jobs.
 TECHNICAL = {
@@ -1263,7 +1263,7 @@ def load_registry() -> str:
             "1.21.11 block list from crates/dsl/data/, and this checkout "
             "does not have it.\n"
             "The palette step is not optional: take role names from the corpus "
-            "instead (`delve-grammar list`, then `delve-grammar show --program "
+            "instead (`delvec grammar list`, then `delvec grammar show --program "
             "<nearest>`), which is a palette that was measured already. Never "
             "name a block from memory — an id that does not exist is refused at "
             "export, and an id that exists but looks nothing like its name is "
@@ -1283,7 +1283,7 @@ def resolve_jar(explicit: str | None) -> Path:
     raise SystemExit(
         "refusing: no client jar, so nothing here can be measured — pass "
         "--jar <1.21.11 client jar>, set $DELVEWRIGHT_CLIENT_JAR, or place it at "
-        "~/.chunky/resources/minecraft.jar (the same order delve-render uses). "
+        "~/.chunky/resources/minecraft.jar (the same order delvec render uses). "
         "A palette answer given without the textures is a recollection, which is "
         "the failure this tool exists to remove."
     )
@@ -1619,7 +1619,7 @@ def main(argv: list[str]) -> int:
                 f"Some survivors will be right on every measured axis and wrong for the job "
                 f"(a light source, a gravity block, wool): light emission is in no vanilla\n"
                 f"data branch at all. LOOK at them: re-run with --sheet, then put the winner "
-                f"on real geometry with `delve-render piece <prefab.nbt> -o <dir>`."
+                f"on real geometry with `delvec render piece <prefab.nbt> -o <dir>`."
             )
         if not args.sheet:
             return 0
@@ -1653,7 +1653,7 @@ def main(argv: list[str]) -> int:
     print(f"\n{len(rows)} row(s); {unresolved} block(s) had no resolvable model or texture.")
     print(
         "A mean colour ranks candidates; it cannot see pattern or scale. SEE the shortlist "
-        "before binding it: `delve-render piece <prefab.nbt> -o <dir>`."
+        "before binding it: `delvec render piece <prefab.nbt> -o <dir>`."
     )
     return 0
 

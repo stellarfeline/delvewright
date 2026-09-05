@@ -121,17 +121,35 @@ mineflayer = "4.37.1"
 # Consumed by: validation/check-versions.sh (every assertion below),
 # .github/workflows/engine-release.yml (tag gate + build matrix),
 # .github/workflows/ci.yml (the cross-build shelf job),
-# tools/build-release-binaries.sh + tools/check-publishable.sh (which hold NO
-# copy of any value here — they read this file, the way
-# validation/server-bootstrap-cache.sh does).
+# tools/build-release-binaries.sh + tools/check-publishable.sh +
+# tools/crates-io-publish.sh (which hold NO copy of any value here — they read
+# this file, the way validation/server-bootstrap-cache.sh does).
+#
+# The number lives in the root Cargo.toml's `[workspace.package] version`, which
+# every engine crate inherits; check-versions.sh holds the two equal.
 version = "1.1.0"
 
-# crates.io identity. `cargo install` resolves by CRATE name, never by binary
-# name, so the package had to BE `delvec` — `cargo install delvewright-compiler`
-# is the only spelling that could ever have worked and nobody would guess it.
-# The lib TARGET keeps the old name (`delvewright_compiler`) so 366 in-tree use
-# paths do not churn.
+# crates.io identity of the ONE binary (ADR-0023 §3). `cargo install` resolves
+# by CRATE name, never by binary name, so the package that carries the
+# executable IS `delvec` (crates/delvec), and nothing else in it.
 crate = "delvec"
+
+# The library crates the binary is assembled from, every one on this version
+# line and every one published beside it (ADR-0023 §6): `cargo install delvec`
+# must build the same surface the release archive carries. Dependency order —
+# the order `cargo publish` uploads them in. The compiler library keeps its
+# library-target name `delvewright_compiler`, which every `use` path spells.
+# Consumed by: validation/check-versions.sh (every manifest under crates/ is
+# either here, `delvec`, or the DSL crate — a new crate is a decision),
+# tools/check-publishable.sh, tools/crates-io-publish.sh.
+crates = [
+    "delvewright-compiler",
+    "delvewright-schem",
+    "delvewright-grammar",
+    "delvewright-orchestrator",
+    "delvewright-admit",
+    "delvewright-render",
+]
 
 # `delvewright-dsl` is a real dependency of `delvec`, so it must exist on
 # crates.io first — but it is DELIBERATELY NOT on the engine version line.
@@ -156,39 +174,23 @@ dsl_crate_req = "=0.1.0"
 # `cargo install` is where a stranger would discover it.
 rust_toolchain = "1.97.1"
 
-# THE RELEASE SHELF (ADR-0017). Every platform a creator might plausibly drive
-# Claude Code from. Before this, release `v1.0.0` existed with ZERO assets: the
-# engine pin ADR-0016 requires and the skill's `requires.delvec` window were
-# promises against an empty shelf.
+# THE RELEASE SHELF (ADR-0017, targets per ADR-0023 §4). Every platform a
+# creator might plausibly drive Claude Code from, and every archive carries the
+# WHOLE binary — the GPU render arms included.
 #
-# Linux is musl-STATIC on purpose. `delvec`'s whole dependency set is pure Rust
-# (flate2 uses the miniz_oxide backend, not zlib-sys), so a static binary has no
-# glibc floor, runs on Alpine and on distros older than the runner, and cannot
-# fail at the one moment a downloaded binary is expected to just work.
+# Linux is gnu: the binary links the build runner's glibc dynamically, and the
+# release workflow prints the glibc floor each Linux artifact actually requires.
+# A creator on an older distro builds from source (ADR-0023 §2). Each Linux
+# target is built natively on a runner of its own architecture, so the recipe
+# carries no cross-linker and no cross C compiler.
 #
 # Windows ships `.tar.gz` like everything else rather than `.zip`: one archive
 # format is one extraction path for ADR-0014's future bootstrap, and a format
 # branch is somewhere for the shelf to end up half-built. Windows 10 1803+ ships
 # bsdtar and Windows 11 Explorer opens `.tar.gz` natively.
-#
-# `delve-render` is deliberately NOT on this shelf (ADR-0021 §3), and it is worth
-# being exact about what that does and does not say. The CPU render surface —
-# `viewer`, `scene`, `panorama`, `contact-sheet`, `palette`, `index` — IS on the
-# shelf, because it is `delvec` subcommands (ADR-0021 §1). What is not is the
-# three arms that mesh and rasterise, and the reason is the shelf's own shape:
-# these Linux targets are static-musl on purpose, a fully static binary cannot
-# `dlopen` a Vulkan loader, and `nucleation` carries a C build script no musl
-# cross-compiler in the release recipe can run.
-#
-# That is a statement about DISTRIBUTION and never about capability. Every
-# validation the pipeline needs stays runnable on the creator's own machine
-# because the source build is the guarantee and the shelf is only an
-# optimisation of it: a creator who needs the GPU arms builds
-# `crates/render` from a checkout, which the skill's `Init` section does at the
-# step that needs it.
 targets = [
-    "x86_64-unknown-linux-musl",
-    "aarch64-unknown-linux-musl",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
     "x86_64-pc-windows-msvc",
@@ -254,12 +256,14 @@ sha = "42ee707db69b83d27534608b2758d8697ad2c46e"
 # are VALIDATION ARTIFACTS, never shipped — but their toolchain is pinned here so
 # fidelity is reproducible per (input, version).
 #
-# Nucleation (per-prefab headless renderer, wgpu). Pinned by git REV because
-# crates.io tops out at 0.8.0 which lacks the `rendering` feature; the
-# GpuRenderer/ResourcePackSource API lives on master (0.9.1). MIT.
-# Consumed by: crates/render/Cargo.toml (git dep `rev`).
-nucleation_repo = "https://github.com/Schem-at/Nucleation"
-nucleation_rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf"
+# Nucleation (per-prefab headless renderer, wgpu), from crates.io at exactly
+# this version (ADR-0023 §5). The newest release at pin time, 0.10.16, does not
+# compile with the `rendering` feature against the newest published
+# `schematic-mesher` (its `animation::glb` names exports 0.2.0 lacks); 0.10.14
+# is the newest that builds and passes the render crate's whole test suite,
+# the GPU tests included. MIT.
+# Consumed by: crates/render/Cargo.toml (`nucleation = { version = "=…" }`).
+nucleation_version = "0.10.14"
 nucleation_license = "MIT"
 
 # Chunky (whole-scene path tracer, GPL-3.0, out-of-process — NOT bundled). The
@@ -268,8 +272,8 @@ nucleation_license = "MIT"
 # 1.21.x needs a snapshot core (stable stops at 1.20.4); this is the snapshot the
 # spike verified. `java -jar ChunkyLauncher.jar --update snapshot` self-installs
 # it into ~/.chunky/lib.
-# Consumed by: crates/render (scene emission targets this scene format) + README
-# + docs/reference/tools.md §4a.
+# Consumed by: crates/compiler (scene emission targets this scene format) +
+# README + docs/reference/tools.md §4a.
 chunky_core = "chunky-core-2.5.0-SNAPSHOT.474.g156e2bb"
 chunky_update_url = "https://chunkyupdate.lemaik.de"
 chunky_launcher_url = "https://chunkyupdate.lemaik.de/ChunkyLauncher.jar"

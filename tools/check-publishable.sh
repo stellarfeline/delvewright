@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# ADR-0017: prove `cargo install delvec` will work — WITHOUT publishing anything.
+# ADR-0017 / ADR-0023 §6: prove `cargo install delvec` will work — WITHOUT
+# publishing anything.
 #
 # THE FAILURE MODE THIS EXISTS TO RULE OUT
 #
@@ -10,34 +11,36 @@
 #
 # The obvious instrument, `cargo publish --dry-run`, has a documented way of
 # being VACUOUS — this repo's own named failure class (CLAUDE.md: a green gate
-# that binds to nothing). `delvec` depends on `delvewright-dsl`, which is a
-# sibling in this workspace. If the dry run satisfied that dependency by reaching
-# for the sibling ON DISK, it would prove nothing about a tarball a stranger
-# downloads. MEASURED on cargo 1.97.1 (2026-08-06) rather than assumed: a
-# multi-package `cargo package -p delvewright-dsl -p delvec` builds a temporary
-# LOCAL REGISTRY under `target/package/tmp-registry/` holding the packaged
-# sibling, and verifies the dependent against THAT — the build log prints
-# `Compiling delvewright-dsl v0.1.0` with no path, where a workspace resolution
-# would have printed the path. Good. But "good on the version we measured" is a
-# fact about today, so this script does not rely on it: check 3 below rebuilds
-# the packaged tarball in a directory OUTSIDE the workspace entirely.
+# that binds to nothing). `delvec` depends on seven sibling crates in this
+# workspace. If the dry run satisfied those dependencies by reaching for the
+# siblings ON DISK, it would prove nothing about a tarball a stranger downloads.
+# MEASURED on cargo 1.97.1 (2026-08-06) rather than assumed: a multi-package
+# `cargo package` builds a temporary LOCAL REGISTRY under
+# `target/package/tmp-registry/` holding the packaged siblings, and verifies each
+# dependent against THAT. Good. But "good on the version we measured" is a fact
+# about today, so this script does not rely on it: check 3 below rebuilds the
+# packaged `delvec` tarball in a directory OUTSIDE the workspace entirely, with
+# every sibling supplied from ITS packaged tarball.
 #
 # WHAT IS CHECKED
 #
-# 1. Both crates package at all (`cargo package`), which is where a path-only
-#    dependency, a missing `description`/`license`, a `publish = false`, or a
-#    file `include!`d from outside the package would fail — by name.
+# 1. Every published crate packages at all (`cargo package`), which is where a
+#    path-only dependency, a missing `description`/`license`, a `publish =
+#    false`, or a file `include!`d from outside the package would fail — by
+#    name. The set is `versions.toml [engine]`: the DSL crate, every crate in
+#    `crates`, and `crate` itself.
 # 2. The GENERATED manifest that crates.io will actually serve declares no
-#    `path`, carries the `=` requirement on the dsl crate, and has dropped EVERY
-#    path-only dev-dependency entirely. (That last is the reason an unpublished
-#    sibling may be used by `delvec`'s tests: verified here rather than trusted.
-#    The set is read out of `crates/compiler/Cargo.toml`, never named here — a
-#    named one binds to the dev-dep somebody thought of, and the second such
-#    dependency arrived and was examined by nothing.)
+#    `path` under any `*dependencies*` table (dev-dependencies included — a
+#    path-only dev-dependency is stripped, one carrying a version survives as a
+#    registry dependency, and either way nothing named `path` may remain),
+#    carries the four fields crates.io refuses an upload without, and names
+#    every in-tree sibling by the `=` requirement versions.toml declares.
 # 3. The packaged `delvec` tarball, extracted into a temp directory with NO
 #    workspace above it and NO path dependency anywhere, builds its binary — with
-#    `delvewright-dsl` supplied from the packaged DSL TARBALL, i.e. the exact
-#    bytes crates.io will hold, never from `crates/dsl` on disk.
+#    every sibling supplied from the packaged TARBALLS, i.e. the exact bytes
+#    crates.io will hold, never from `crates/*` on disk — and the binary it
+#    builds offers the whole surface (`--version`, and `--help` on every
+#    mounted group).
 #
 # WHAT THIS DOES NOT PROVE
 #
@@ -69,8 +72,15 @@ sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-new
 e = tomllib.load(open(sys.argv[1], "rb"))["engine"]
 for k in ("version", "crate", "dsl_crate", "dsl_crate_version", "dsl_crate_req"):
     print(f'{k.upper()}={e[k]!r}'.replace("'", '"'))
+print('ENGINE_CRATES=' + repr(" ".join(e["crates"])).replace("'", '"'))
 PY
 )"
+# Dependency order, as versions.toml states it: the DSL crate first, the engine
+# library crates, the binary last. bash 3.2 (macOS) has no `mapfile`.
+NAMES=("$DSL_CRATE")
+VERS=("$DSL_CRATE_VERSION")
+for n in $ENGINE_CRATES; do NAMES+=("$n"); VERS+=("$VERSION"); done
+NAMES+=("$CRATE"); VERS+=("$VERSION")
 
 fails=0
 pass() { printf '  ok   %s\n' "$1"; }
@@ -101,140 +111,124 @@ emit_log() { # <log-path> <what-was-being-run>
   fi
 }
 
-echo "== 1. both crates package =="
-echo "   ($CRATE v$VERSION, $DSL_CRATE v$DSL_CRATE_VERSION)"
+echo "== 1. every published crate packages =="
+echo "   (${#NAMES[@]} crates: ${NAMES[*]}; engine v$VERSION, $DSL_CRATE v$DSL_CRATE_VERSION)"
 mkdir -p "$ROOT/target"
 rm -rf "$ROOT/target/package"
 PKG_LOG="$ROOT/target/package-log.txt"
 rm -f "$PKG_LOG"
+PKG_ARGS=()
+for n in "${NAMES[@]}"; do PKG_ARGS+=(-p "$n"); done
 rc=0
 # bash 3.2 — which macOS still ships, and which CLAUDE.md names as Dev — treats
 # "${arr[@]}" on an EMPTY array as an unbound variable under `set -u`. The
 # `${arr[@]+...}` guard expands to nothing when the array is unset or empty and
 # to the quoted elements otherwise, so it is correct on 3.2 and on bash 5 alike.
-(cd "$ROOT" && cargo package -p "$DSL_CRATE" -p "$CRATE" ${DIRTY_FLAG[@]+"${DIRTY_FLAG[@]}"} \
+(cd "$ROOT" && cargo package "${PKG_ARGS[@]}" ${DIRTY_FLAG[@]+"${DIRTY_FLAG[@]}"} \
       >"$PKG_LOG" 2>&1) || rc=$?
 if [ "$rc" -eq 0 ]; then
-  pass "cargo package -p $DSL_CRATE -p $CRATE"
+  pass "cargo package ${PKG_ARGS[*]}"
 else
   fail "cargo package exited $rc:"; emit_log "$PKG_LOG" "cargo package"
   echo; echo "check-publishable: 1 finding" >&2; exit 1
 fi
 
 PKG="$ROOT/target/package"
-CRATE_DIR="$PKG/$CRATE-$VERSION"
-DSL_DIR="$PKG/$DSL_CRATE-$DSL_CRATE_VERSION"
-for d in "$CRATE_DIR" "$DSL_DIR"; do
-  [ -d "$d" ] || { fail "expected packaged tree $d"; }
+i=0
+while [ "$i" -lt "${#NAMES[@]}" ]; do
+  d="$PKG/${NAMES[$i]}-${VERS[$i]}"
+  [ -d "$d" ] || fail "expected packaged tree $d"
+  i=$((i + 1))
 done
 [ "$fails" -eq 0 ] || { echo; echo "check-publishable: $fails finding(s)" >&2; exit 1; }
 
 echo
-echo "== 2. the manifest crates.io will serve =="
-# `grep -c` counts the whole file and never exits early — `grep -q` on the right
-# of a pipe is the SIGPIPE trap this repo has a gate for
-# (tools/check-shell-pipe-shortcircuit.py).
-for name in "$CRATE" "$DSL_CRATE"; do
-  case "$name" in
-    "$CRATE") gen="$CRATE_DIR/Cargo.toml" ;;
-    *)        gen="$DSL_DIR/Cargo.toml" ;;
-  esac
-  n_path="$(grep -cE '^[[:space:]]*path[[:space:]]*=' "$gen" || true)"
-  # `[lib] path` / `[[bin]] path` are TARGET paths, not dependency paths, and are
-  # normal in a published manifest. Only a dependency `path` is disqualifying, so
-  # count the ones that sit under a `[*dependencies*]` table.
-  n_dep_path="$(python3 - "$gen" <<'PY'
+echo "== 2. the manifests crates.io will serve =="
+# One pass over every packaged manifest, in python: `path` keys under any
+# dependencies table, the four required fields, and the `=` requirement on every
+# in-tree sibling. tomllib rather than grep: `path =` also names `[lib] path`,
+# which is a target path and is fine in a published manifest.
+report_file="$(mktemp)"
+python3 - "$PKG" "$VERSION" "$DSL_CRATE" "$DSL_CRATE_VERSION" "$DSL_CRATE_REQ" "${NAMES[@]}" > "$report_file" <<'PY'
 import sys, tomllib
+from pathlib import Path
 sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
-m = tomllib.load(open(sys.argv[1], "rb"))
-n = 0
-for key, tbl in m.items():
-    if "dependencies" not in key or not isinstance(tbl, dict):
-        continue
-    for _, spec in tbl.items():
-        if isinstance(spec, dict) and "path" in spec:
-            n += 1
-print(n)
+pkg, version, dsl_crate, dsl_version, dsl_req = sys.argv[1:6]
+names = sys.argv[6:]
+out = []
+ok = lambda m: out.append(("ok", m))
+bad = lambda m: out.append(("FAIL", m))
+n_req = 0
+for n in names:
+    gen = Path(pkg) / f"{n}-{dsl_version if n == dsl_crate else version}" / "Cargo.toml"
+    m = tomllib.load(gen.open("rb"))
+    paths = [
+        f"{key}.{dep}" for key, tbl in m.items() if "dependencies" in key and isinstance(tbl, dict)
+        for dep, spec in tbl.items() if isinstance(spec, dict) and "path" in spec
+    ]
+    if paths:
+        bad(f"{n}: dependency `path` key(s) survive packaging: {paths} — crates.io cannot resolve those")
+    else:
+        ok(f"{n}: 0 dependency `path` keys survive packaging")
+    for field in ("description", "license", "repository", "readme"):
+        if field in m["package"]:
+            ok(f"{n}: declares {field}")
+        else:
+            bad(f"{n}: packaged manifest has no `{field}` (crates.io rejects the upload)")
+    # Once `path` is gone, the `=` requirement is the ONLY thing binding a crate
+    # to its siblings, so every in-tree dependency is asserted by version.
+    for key, tbl in m.items():
+        if "dependencies" not in key or not isinstance(tbl, dict):
+            continue
+        for dep, spec in tbl.items():
+            if dep not in names:
+                continue
+            req = spec if isinstance(spec, str) else spec.get("version", "<absent>")
+            want = dsl_req if dep == dsl_crate else f"={version}"
+            n_req += 1
+            if req == want:
+                ok(f"{n} depends on {dep} '{req}' (== versions.toml)")
+            else:
+                bad(f"{n} depends on {dep} '{req}' but versions.toml says '{want}'")
+if n_req == 0:
+    bad("binding count is zero: no packaged manifest names an in-tree sibling, so the `=` requirement check examined nothing")
+else:
+    ok(f"in-tree requirements examined: {n_req}")
+for status, msg in out:
+    print(f"{status}\t{msg}")
 PY
-)"
-  if [ "$n_dep_path" -eq 0 ]; then
-    pass "$name: 0 dependency \`path\` keys survive packaging ($n_path target path(s), which are fine)"
-  else
-    fail "$name: $n_dep_path dependency \`path\` key(s) in the packaged manifest — crates.io cannot resolve those"
-  fi
-  for field in description license repository readme; do
-    if python3 -c "import sys,tomllib;sys.exit(0 if '$field' in tomllib.load(open('$gen','rb'))['package'] else 1)"; then
-      pass "$name: declares $field"
-    else
-      fail "$name: packaged manifest has no \`$field\` (crates.io rejects the upload)"
-    fi
-  done
-done
-
-# The `=` requirement is the ONLY thing binding the two crates once `path` is
-# gone, so it is asserted against versions.toml rather than eyeballed.
-got_req="$(python3 - "$CRATE_DIR/Cargo.toml" "$DSL_CRATE" <<'PY'
-import sys, tomllib
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
-m = tomllib.load(open(sys.argv[1], "rb"))
-spec = m.get("dependencies", {}).get(sys.argv[2])
-print(spec if isinstance(spec, str) else (spec or {}).get("version", "<absent>"))
-PY
-)"
-if [ "$got_req" = "$DSL_CRATE_REQ" ]; then
-  pass "$CRATE depends on $DSL_CRATE '$got_req' (== versions.toml dsl_crate_req)"
-else
-  fail "$CRATE depends on $DSL_CRATE '$got_req' but versions.toml says '$DSL_CRATE_REQ'"
-fi
-
-# A path-only DEV-dependency is stripped on publish, which is what lets an
-# unpublished sibling be used by `delvec`'s test suite. That is load-bearing, so
-# it is verified, not assumed — and the SET is read out of the source manifest
-# rather than named here. A named one is a check that binds to the dev-dep
-# somebody thought of: the second such dependency arrived (`delvewright-schem`,
-# for the one test that authors a prefab palette) and was examined by nothing.
-dev_paths="$(python3 - "$ROOT/crates/compiler/Cargo.toml" <<'PY'
-import sys, tomllib
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
-m = tomllib.load(open(sys.argv[1], "rb"))
-for name, spec in (m.get("dev-dependencies") or {}).items():
-    if isinstance(spec, dict) and "path" in spec and "version" not in spec:
-        print(name)
-PY
-)"
-n_dev=0
-for dep in $dev_paths; do
-  n_dev=$((n_dev + 1))
-  n_left="$(grep -cF "$dep" "$CRATE_DIR/Cargo.toml" || true)"
-  if [ "$n_left" -eq 0 ]; then
-    pass "path-only dev-dependency $dep is stripped from the packaged manifest"
-  else
-    fail "$dep survives into the packaged manifest ($n_left line(s)) — it would have to be published too"
-  fi
-done
-if [ "$n_dev" -eq 0 ]; then
-  fail "binding count is zero: no path-only dev-dependency found in crates/compiler/Cargo.toml, so this check examined nothing"
-else
-  pass "path-only dev-dependencies examined: $n_dev"
-fi
+while IFS=$'\t' read -r status msg; do
+  [ -n "$status" ] || continue
+  if [ "$status" = "ok" ]; then pass "$msg"; else fail "$msg"; fi
+done < "$report_file"
+rm -f "$report_file"
 
 echo
-echo "== 3. the packaged tarball builds standing alone =="
+echo "== 3. the packaged binary builds standing alone =="
 # Outside the workspace, so no parent `[workspace]` and no sibling on disk can
-# rescue it. `delvewright-dsl` comes from the packaged DSL TARBALL — the bytes
-# crates.io will hold — via a config-level `[patch.crates-io]`. If the `=`
-# requirement and the packaged dsl version disagreed, cargo would go looking for
-# a `delvewright-dsl` on crates.io that does not exist and fail here.
+# rescue it. Every sibling comes from ITS packaged TARBALL — the bytes crates.io
+# will hold — via a config-level `[patch.crates-io]`. If an `=` requirement and
+# a packaged version disagreed, cargo would go looking for a crate on crates.io
+# that does not exist and fail here.
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH"' EXIT
-tar -xzf "$PKG/$CRATE-$VERSION.crate" -C "$SCRATCH"
-tar -xzf "$PKG/$DSL_CRATE-$DSL_CRATE_VERSION.crate" -C "$SCRATCH"
+i=0
+while [ "$i" -lt "${#NAMES[@]}" ]; do
+  tar -xzf "$PKG/${NAMES[$i]}-${VERS[$i]}.crate" -C "$SCRATCH"
+  i=$((i + 1))
+done
 STANDALONE="$SCRATCH/$CRATE-$VERSION"
 mkdir -p "$STANDALONE/.cargo"
-cat > "$STANDALONE/.cargo/config.toml" <<EOF
-[patch.crates-io]
-$DSL_CRATE = { path = "../$DSL_CRATE-$DSL_CRATE_VERSION" }
-EOF
+{
+  echo "[patch.crates-io]"
+  i=0
+  while [ "$i" -lt "${#NAMES[@]}" ]; do
+    if [ "${NAMES[$i]}" != "$CRATE" ]; then
+      echo "${NAMES[$i]} = { path = \"../${NAMES[$i]}-${VERS[$i]}\" }"
+    fi
+    i=$((i + 1))
+  done
+} > "$STANDALONE/.cargo/config.toml"
 # Same shape as check 1, and therefore the same treatment: `$SCRATCH` is a
 # `mktemp -d` so the directory is guaranteed here, but the else-branch must still
 # be honest about a log that does not exist or is empty (a failed `cd`, a full
@@ -244,7 +238,7 @@ rc=0
 (cd "$STANDALONE" && cargo build --release --bin delvec \
       >"$BUILD_LOG" 2>&1) || rc=$?
 if [ "$rc" -eq 0 ]; then
-  pass "extracted $CRATE-$VERSION.crate builds \`delvec\` with no workspace and no path dep"
+  pass "extracted $CRATE-$VERSION.crate builds \`delvec\` with no workspace and no path dep ($((${#NAMES[@]} - 1)) sibling tarballs patched in)"
 else
   fail "the packaged tarball does not build standing alone (cargo build exited $rc):"
   emit_log "$BUILD_LOG" "cargo build"
@@ -258,11 +252,22 @@ if [ -x "$STANDALONE/target/release/delvec" ]; then
   else
     fail "the standalone binary reports '$reported', expected it to open with 'delvec $VERSION'"
   fi
+  # The crates.io bytes must build the SAME surface the archive carries
+  # (ADR-0023 §3): every mounted group answers `--help`.
+  n_groups=0
+  for group in grammar prefab schem harvest render; do
+    if "$STANDALONE/target/release/delvec" "$group" --help >/dev/null 2>&1; then
+      n_groups=$((n_groups + 1))
+    else
+      fail "the standalone binary does not offer \`delvec $group\`"
+    fi
+  done
+  pass "the standalone binary mounts $n_groups/5 surfaces"
 fi
 
 echo
 # Binding counts, so a green here can never be a green that examined nothing.
-echo "check-publishable: 2 crate(s) packaged, 1 standalone build, ${VERSION} / ${DSL_CRATE_VERSION}"
+echo "check-publishable: ${#NAMES[@]} crate(s) packaged, 1 standalone build, engine ${VERSION} / dsl ${DSL_CRATE_VERSION}"
 if [ "$fails" -ne 0 ]; then
   echo "check-publishable: $fails finding(s)" >&2; exit 1
 fi

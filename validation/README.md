@@ -257,8 +257,8 @@ loop (`souls_bonfire_rest`/`_reseat`/`_options`, `souls_reseat_stationed`,
 `souls_td_lane_march`, `souls_td_lane_release`, `souls_td_lane_reseat`,
 `souls_td_aggro_edge`) were emitted and never executed — including the codec-trap
 test, whose entire reason to exist is that a wrong `patrol_target` key is
-invisible to every static proof. `crates/compiler/tests/fixtures/souls-bonfire`
-and `crates/compiler/tests/fixtures/souls-td-lanes` are two more. They are two fixtures and not one because `DW0478` forbids a bonfire
+invisible to every static proof. `crates/delvec/tests/fixtures/souls-bonfire`
+and `crates/delvec/tests/fixtures/souls-td-lanes` are two more. They are two fixtures and not one because `DW0478` forbids a bonfire
 inside a hostile's aggro range, and the lane fixture's corridor tileset has no
 cell more than 16 blocks off its own lane.
 
@@ -266,7 +266,7 @@ cell more than 16 blocks off its own lane.
 clean, so there is no separate teardown command to forget:
 
 ```sh
-delvec build crates/compiler/tests/fixtures/cast-ledger \
+delvec build crates/delvec/tests/fixtures/cast-ledger \
   -o validation/delve-output-cast --prefabs campaigns/prefabs
 
 EULA=TRUE validation/packtest-run.sh --project dw-cast --output ./delve-output-cast
@@ -311,12 +311,12 @@ After the session, turn the log into a report with the harvester:
 ```sh
 docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
   --profile playtest logs --no-color > playtest.log
-cargo run -p delvewright-orchestrator --bin delve-harvest -- \
+cargo run -p delvec --bin delvec -- harvest \
   playtest.log validation/delve-output/creator-datapack/layout.json \
   -o playtest-report.json
 ```
 
-`delve-harvest` pairs each `[DelveNote]` stamp with the nearest creator chat line
+`delvec harvest` pairs each `[DelveNote]` stamp with the nearest creator chat line
 (±60s, preferring the line *after* the stamp) and resolves area→prefab and the live
 objective states into per-quest `quest_state` via the overlay's `layout.json`. The
 report is the contract input of the future `/revise-delve` skill (spec-0006 §4).

@@ -7,8 +7,9 @@ name: engine release (delvec)
 #      target in `versions.toml [engine].targets`. Release `v1.0.0` existed with
 #      ZERO assets, so the engine pin ADR-0016 requires and the skill's
 #      `requires.delvec` window were promises against an empty shelf.
-#   2. crates.io — `delvewright-dsl` then `delvec`, so `cargo install delvec`
-#      installs this compiler.
+#   2. crates.io — `delvewright-dsl`, the engine library crates, then `delvec`
+#      (`versions.toml [engine]`, ADR-0023 §6), so `cargo install delvec`
+#      installs the same creator the archive carries.
 #
 # NOTHING HERE MAY BE DONE BY HAND. A human `cargo publish` or a hand-uploaded
 # asset is the failure mode being closed, not a fallback.
@@ -121,13 +122,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux is musl-STATIC (see versions.toml [engine].targets). BOTH musl
-          # targets build on the x86_64 runner because
-          # `tools/build-release-binaries.sh` links them with rustup's own
-          # `rust-lld` — no `musl-tools`, no cross-gcc, and the same command works
-          # on the owner's macOS workstation.
-          - { target: x86_64-unknown-linux-musl,  runner: ubuntu-latest }
-          - { target: aarch64-unknown-linux-musl, runner: ubuntu-latest }
+          # Linux is gnu (versions.toml [engine].targets, ADR-0023 §4), and each
+          # Linux target builds NATIVELY on a runner of its own architecture —
+          # no cross-linker, no cross C compiler, and `nucleation`'s build
+          # script runs on the host it targets. The runner's glibc is the
+          # binary's floor, which `tools/build-release-binaries.sh` measures
+          # off the ELF and prints; the oldest LTS image GitHub hosts is chosen
+          # so that floor is as low as a hosted runner can make it.
+          - { target: x86_64-unknown-linux-gnu,   runner: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu,  runner: ubuntu-22.04-arm }
           # The macOS runner is arm64 and carries both Apple slices' std.
           - { target: x86_64-apple-darwin,        runner: macos-latest }
           - { target: aarch64-apple-darwin,       runner: macos-latest }
@@ -238,12 +241,13 @@ jobs:
       # tree the upload will come from.
       - name: the packaged tarballs are publishable
         run: bash tools/check-publishable.sh
-      # The other half of what the upload carries: the front page. This job is a
-      # `needs:` of `publish-crates`, so it is the LAST place these two pages can
+      # The other half of what the upload carries: the front pages. This job is a
+      # `needs:` of `publish-crates`, so it is the LAST place those pages can
       # be judged before the one-way door — and the tagged tree is not
       # necessarily the tree CI last saw. Enumerating the entry points is the
       # point (CLAUDE.md: a gate nothing invokes is UNRUN): `ci.yml`'s `rust` job
-      # covers every push, and this covers the publish itself.
+      # covers every push, and this covers the publish itself. The page set is
+      # derived from the manifests: every crate under `crates/` publishes one.
       - name: the front pages carry no internal reference and no stale version
         run: |
           python3 tools/check-crates-io-readmes.py

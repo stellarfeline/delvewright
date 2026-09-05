@@ -171,18 +171,18 @@ enforced separately by validation/check-versions.sh and
 # ---------------------------------------------------------------------------
 
 [[pin]]
-id = "nucleation-rev"
-value = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf"
+id = "nucleation-version"
+value = "0.10.14"
 sites = ["crates/render/Cargo.toml", "versions.toml"]
 policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "nucleation_version"
 why = """
-Nucleation (MIT), the per-prefab headless renderer, pinned by git rev because no
-crates.io release carries its `rendering` feature (versions.toml [render]). Its
-currency is deliberately NOT checked here: judging it would mean a full clone of
-a third-party repository inside a required job, which is the reach
-tools/check-workspace-git-deps.py exists to keep out of required jobs. It
-renders validation artifacts and decides no verdict, so its drift changes no
-gate's answer.
+Nucleation (MIT), the per-prefab headless renderer, from crates.io at exactly
+this version (versions.toml [render], ADR-0023 §5). It renders validation
+artifacts and decides no verdict, so its drift changes no gate's answer; a bump
+is an ordinary reviewed edit that re-runs the render crate's tests, the GPU
+ones included.
 """
 
 [[pin]]
