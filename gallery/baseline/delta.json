@@ -43,7 +43,7 @@
     "void-horizon.en:packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction",
     "void-horizon.en:packtest-datapack/data/gallery/test/v10_stake_two_datums.mcfunction"
   ],
-  "base_commit": "0e63746426c4aeb701d69aecec3bebd3307a8d0f",
+  "base_commit": "e099750c04fdb4b447becebf6b3842e6d448ea6e",
   "changed": [
     "easy.en:datapack/data/gallery/function/stk_collect_keepsake.mcfunction",
     "easy.en:datapack/data/gallery/function/stk_collect_relics.mcfunction",

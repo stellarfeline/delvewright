@@ -417,7 +417,7 @@
       "packtest-datapack/data/gallery/test/env_trigger_skip_the_label.mcfunction": "a7357f72e80bce80a9d7bf090856925d84e26d387c5c7076ba6ef64044b899e9",
       "packtest-datapack/data/gallery/test/env_trigger_strike_the_hearth.mcfunction": "79da7f286fc72b6be94ce4c53e2d99bfe9466df2732e2bd8d3d280acfa11a274",
       "packtest-datapack/data/gallery/test/env_trigger_west_bay.mcfunction": "3e291879778bd73a0a88b707faa45b1dd09c069291c1faa727f8b8e3bcb77287",
-      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "0116bc26c804ff7b42fffdb2906466c3446819b0c1a3d929abb27ff57c78139e",
+      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "ecbe8d04219437dec40377860d8f0614cc8ac298d4c10e52244c1766cd10fbad",
       "packtest-datapack/data/gallery/test/lethal_east_pit.mcfunction": "a9a0519b58e1c1e723b60022cff9dae1fd7dbdc223dfa244122db2c90d32bb63",
       "packtest-datapack/data/gallery/test/lethal_east_pit_claim.mcfunction": "4d0e5e394d811731acc1b4a340bcbe14383e863d10062c4e535538dab808e0f6",
       "packtest-datapack/data/gallery/test/lethal_west_pit.mcfunction": "7f81c3046c2188ceccb2be982680cff9ea4e652908caed84337748a6b2897296",
@@ -535,7 +535,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5a08eb7f00631285e53d9768f9f17b5acfe67e0dbf36b24c0609bff584b0a6fa",
-      "validation/watch-ledger.json": "e9beaf7d827babd05a5f7c28c3639b3a88ff269d3b3adc8b907cd67ee1bfb1cc",
+      "validation/watch-ledger.json": "bc739a66d08b454d155c2b3727b6a1ba60dc0c5fe99f5ad34b658a474bab80e0",
       "validation/ways.json": "fccbb17bbbac207e5ae23afa183772875a2ead26214e37752728d51bfc24854e"
     },
     "resource_pack_sha1": "87239fc4d97d9d067e109acca40de0330a51ba49"
@@ -958,7 +958,7 @@
       "packtest-datapack/data/gallery/test/env_trigger_skip_the_label.mcfunction": "a7357f72e80bce80a9d7bf090856925d84e26d387c5c7076ba6ef64044b899e9",
       "packtest-datapack/data/gallery/test/env_trigger_strike_the_hearth.mcfunction": "79da7f286fc72b6be94ce4c53e2d99bfe9466df2732e2bd8d3d280acfa11a274",
       "packtest-datapack/data/gallery/test/env_trigger_west_bay.mcfunction": "3e291879778bd73a0a88b707faa45b1dd09c069291c1faa727f8b8e3bcb77287",
-      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "0116bc26c804ff7b42fffdb2906466c3446819b0c1a3d929abb27ff57c78139e",
+      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "ecbe8d04219437dec40377860d8f0614cc8ac298d4c10e52244c1766cd10fbad",
       "packtest-datapack/data/gallery/test/lethal_east_pit.mcfunction": "a9a0519b58e1c1e723b60022cff9dae1fd7dbdc223dfa244122db2c90d32bb63",
       "packtest-datapack/data/gallery/test/lethal_east_pit_claim.mcfunction": "4d0e5e394d811731acc1b4a340bcbe14383e863d10062c4e535538dab808e0f6",
       "packtest-datapack/data/gallery/test/lethal_west_pit.mcfunction": "7f81c3046c2188ceccb2be982680cff9ea4e652908caed84337748a6b2897296",
@@ -1076,7 +1076,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5a08eb7f00631285e53d9768f9f17b5acfe67e0dbf36b24c0609bff584b0a6fa",
-      "validation/watch-ledger.json": "e9beaf7d827babd05a5f7c28c3639b3a88ff269d3b3adc8b907cd67ee1bfb1cc",
+      "validation/watch-ledger.json": "bc739a66d08b454d155c2b3727b6a1ba60dc0c5fe99f5ad34b658a474bab80e0",
       "validation/ways.json": "fccbb17bbbac207e5ae23afa183772875a2ead26214e37752728d51bfc24854e"
     },
     "resource_pack_sha1": "87239fc4d97d9d067e109acca40de0330a51ba49"
@@ -1499,7 +1499,7 @@
       "packtest-datapack/data/gallery/test/env_trigger_skip_the_label.mcfunction": "a7357f72e80bce80a9d7bf090856925d84e26d387c5c7076ba6ef64044b899e9",
       "packtest-datapack/data/gallery/test/env_trigger_strike_the_hearth.mcfunction": "79da7f286fc72b6be94ce4c53e2d99bfe9466df2732e2bd8d3d280acfa11a274",
       "packtest-datapack/data/gallery/test/env_trigger_west_bay.mcfunction": "3e291879778bd73a0a88b707faa45b1dd09c069291c1faa727f8b8e3bcb77287",
-      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "2e10e1d5871f9c70e567385ea0c75b0e862907b8821d00250aeb6f88a5c53990",
+      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "fbaf2809fd98e2d0cb2e20af8bcd9e5d56a955f70be78007c583e81258a0dd9f",
       "packtest-datapack/data/gallery/test/lethal_east_pit.mcfunction": "4bea8e550e660e58293aa178ef6fb28f9123bcf37e87c4df21af179fb008a700",
       "packtest-datapack/data/gallery/test/lethal_east_pit_claim.mcfunction": "6f61f92bbb0fddd5fc8912133c66e3c60ed236ec15b650856bd8f78c8da880e1",
       "packtest-datapack/data/gallery/test/lethal_west_pit.mcfunction": "5b633fac6da6c7c63752b6245878367cd5c4fd99d78598a065f0141fe21d1677",
@@ -1617,7 +1617,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5a08eb7f00631285e53d9768f9f17b5acfe67e0dbf36b24c0609bff584b0a6fa",
-      "validation/watch-ledger.json": "e9beaf7d827babd05a5f7c28c3639b3a88ff269d3b3adc8b907cd67ee1bfb1cc",
+      "validation/watch-ledger.json": "bc739a66d08b454d155c2b3727b6a1ba60dc0c5fe99f5ad34b658a474bab80e0",
       "validation/ways.json": "fccbb17bbbac207e5ae23afa183772875a2ead26214e37752728d51bfc24854e"
     },
     "resource_pack_sha1": "87239fc4d97d9d067e109acca40de0330a51ba49"
@@ -2040,7 +2040,7 @@
       "packtest-datapack/data/gallery/test/env_trigger_skip_the_label.mcfunction": "a7357f72e80bce80a9d7bf090856925d84e26d387c5c7076ba6ef64044b899e9",
       "packtest-datapack/data/gallery/test/env_trigger_strike_the_hearth.mcfunction": "79da7f286fc72b6be94ce4c53e2d99bfe9466df2732e2bd8d3d280acfa11a274",
       "packtest-datapack/data/gallery/test/env_trigger_west_bay.mcfunction": "3e291879778bd73a0a88b707faa45b1dd09c069291c1faa727f8b8e3bcb77287",
-      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "0116bc26c804ff7b42fffdb2906466c3446819b0c1a3d929abb27ff57c78139e",
+      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "ecbe8d04219437dec40377860d8f0614cc8ac298d4c10e52244c1766cd10fbad",
       "packtest-datapack/data/gallery/test/lethal_east_pit.mcfunction": "a9a0519b58e1c1e723b60022cff9dae1fd7dbdc223dfa244122db2c90d32bb63",
       "packtest-datapack/data/gallery/test/lethal_east_pit_claim.mcfunction": "4d0e5e394d811731acc1b4a340bcbe14383e863d10062c4e535538dab808e0f6",
       "packtest-datapack/data/gallery/test/lethal_west_pit.mcfunction": "7f81c3046c2188ceccb2be982680cff9ea4e652908caed84337748a6b2897296",
@@ -2158,7 +2158,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5a08eb7f00631285e53d9768f9f17b5acfe67e0dbf36b24c0609bff584b0a6fa",
-      "validation/watch-ledger.json": "e9beaf7d827babd05a5f7c28c3639b3a88ff269d3b3adc8b907cd67ee1bfb1cc",
+      "validation/watch-ledger.json": "bc739a66d08b454d155c2b3727b6a1ba60dc0c5fe99f5ad34b658a474bab80e0",
       "validation/ways.json": "fccbb17bbbac207e5ae23afa183772875a2ead26214e37752728d51bfc24854e"
     },
     "resource_pack_sha1": "87239fc4d97d9d067e109acca40de0330a51ba49"
@@ -2582,7 +2582,7 @@
       "packtest-datapack/data/gallery/test/env_trigger_skip_the_label.mcfunction": "3327a80d2e0ae1bbc78fdcaf142f6d9f4011e02a239c488e542681d359897a7b",
       "packtest-datapack/data/gallery/test/env_trigger_strike_the_hearth.mcfunction": "51b773e58b215a6e6303362809e3eb82f914b8750e217535829c9ec82b206fd2",
       "packtest-datapack/data/gallery/test/env_trigger_west_bay.mcfunction": "cddd5b6363be299a04e96b57787a84c5e170d1f1c6dbe04cde1b90a8c98b0152",
-      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "17c404fcdf7561a6fc51a37e2572f1c51119a397c94ddf9dc9964589c3e4a543",
+      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "0cc0d931e7fccac87a8e2bad234ad70de450416252917ebb29a7962d3515784e",
       "packtest-datapack/data/gallery/test/lethal_east_pit.mcfunction": "f942a3ad7f4d81137ef191bdf3097fd24eb7a181d53f1ff599263c13d9b9fb36",
       "packtest-datapack/data/gallery/test/lethal_east_pit_claim.mcfunction": "65ac05795d3ee9e593f7ee679fc201caa7e659c3539051b3d183ad6be828fb7a",
       "packtest-datapack/data/gallery/test/lethal_west_pit.mcfunction": "73b8f711195dc1b94662eb512b5106b72695330aace5d35add0bdecabf85e6e5",
@@ -2700,7 +2700,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5a08eb7f00631285e53d9768f9f17b5acfe67e0dbf36b24c0609bff584b0a6fa",
-      "validation/watch-ledger.json": "e9beaf7d827babd05a5f7c28c3639b3a88ff269d3b3adc8b907cd67ee1bfb1cc",
+      "validation/watch-ledger.json": "bc739a66d08b454d155c2b3727b6a1ba60dc0c5fe99f5ad34b658a474bab80e0",
       "validation/ways.json": "fccbb17bbbac207e5ae23afa183772875a2ead26214e37752728d51bfc24854e"
     },
     "resource_pack_sha1": "8fa9fce7e721dc837cb7a9a2093ea60b07559cd0"
@@ -3426,7 +3426,7 @@
       "packtest-datapack/data/gallery/test/env_trigger_skip_the_label.mcfunction": "a7357f72e80bce80a9d7bf090856925d84e26d387c5c7076ba6ef64044b899e9",
       "packtest-datapack/data/gallery/test/env_trigger_strike_the_hearth.mcfunction": "79da7f286fc72b6be94ce4c53e2d99bfe9466df2732e2bd8d3d280acfa11a274",
       "packtest-datapack/data/gallery/test/env_trigger_west_bay.mcfunction": "3e291879778bd73a0a88b707faa45b1dd09c069291c1faa727f8b8e3bcb77287",
-      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "0116bc26c804ff7b42fffdb2906466c3446819b0c1a3d929abb27ff57c78139e",
+      "packtest-datapack/data/gallery/test/fixture_70aabe5a729c5fef.mcfunction": "ecbe8d04219437dec40377860d8f0614cc8ac298d4c10e52244c1766cd10fbad",
       "packtest-datapack/data/gallery/test/lethal_east_pit.mcfunction": "a9a0519b58e1c1e723b60022cff9dae1fd7dbdc223dfa244122db2c90d32bb63",
       "packtest-datapack/data/gallery/test/lethal_east_pit_claim.mcfunction": "4d0e5e394d811731acc1b4a340bcbe14383e863d10062c4e535538dab808e0f6",
       "packtest-datapack/data/gallery/test/lethal_west_pit.mcfunction": "7f81c3046c2188ceccb2be982680cff9ea4e652908caed84337748a6b2897296",
@@ -3544,7 +3544,7 @@
       "validation/teleport-gate.json": "f461e69c52da82d6df98e7aff7bd1080d2fbebb6ed72edcb3f4a9030811494aa",
       "validation/traversal-gate.json": "d26f59349826c4f80b13a8120101d76b8e18c6a7598dfe3f2490f31b808ad96c",
       "validation/watch-claims.json": "5a08eb7f00631285e53d9768f9f17b5acfe67e0dbf36b24c0609bff584b0a6fa",
-      "validation/watch-ledger.json": "e9beaf7d827babd05a5f7c28c3639b3a88ff269d3b3adc8b907cd67ee1bfb1cc",
+      "validation/watch-ledger.json": "bc739a66d08b454d155c2b3727b6a1ba60dc0c5fe99f5ad34b658a474bab80e0",
       "validation/ways.json": "fccbb17bbbac207e5ae23afa183772875a2ead26214e37752728d51bfc24854e"
     },
     "resource_pack_sha1": "87239fc4d97d9d067e109acca40de0330a51ba49"
