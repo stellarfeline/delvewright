@@ -114,6 +114,55 @@ done
 [ -n "$PATH_ARG" ] || { echo "--path is required" >&2; exit 2; }
 [ -n "$BRANCH" ] || [ -n "$DETACH" ] || { echo "one of --branch / --detach is required" >&2; exit 2; }
 
+# --- refuse a --path under a session-scoped scratch root -------------------
+#
+# A worktree is where a dispatched worker keeps everything it has not pushed
+# yet, sometimes for hours. The Claude Code harness gives every session a
+# scratch root under `$TMPDIR` (on macOS, realised as `/private/tmp/claude-501/
+# <project>/<session>/…`) and deletes it the moment the owning process exits —
+# and a live round's worktree, with everything unpushed in it, was lost this
+# way. `/tmp` (and its macOS alias `/private/tmp`) is the same shape one level
+# up: whatever a session or a reboot considers disposable. There is no override
+# flag, because a worktree in one of these is never safe to build in — the
+# thing this refuses is not a mistake in one invocation, it is the location.
+#
+# Resolved through python's realpath rather than shell `cd`, because the leaf
+# component does not exist yet (this runs before `git worktree add`) and a
+# `cd` into a not-yet-created directory has nothing to enter.
+resolve_path() {
+  python3 -c 'import os, sys; sys.stdout.reconfigure(newline="\n"); print(os.path.realpath(sys.argv[1]))' "$1"
+}
+RESOLVED_PATH="$(resolve_path "$PATH_ARG")"
+TMP_ROOTS=(/tmp /private/tmp)
+if [ -n "${TMPDIR:-}" ]; then
+  TMP_ROOTS+=("$(resolve_path "${TMPDIR%/}")")
+fi
+for root in "${TMP_ROOTS[@]}"; do
+  case "$RESOLVED_PATH" in
+    "$root"|"$root"/*)
+      cat <<EOF >&2
+--path refused: '$PATH_ARG' resolves to
+  $RESOLVED_PATH
+which is under '$root' — a session-scoped temporary directory that the OS (or,
+under Claude Code, the harness) deletes the moment the owning process exits.
+A worktree built there, and everything unpushed inside it, is destroyed with
+no warning at that moment; it already happened once.
+
+Use a directory the project owns instead. This repository names no default
+for that, so derive one from \$HOME or a documented env var and say which —
+e.g.:
+  DELVEWRIGHT_WORKTREES_DIR="\${DELVEWRIGHT_WORKTREES_DIR:-\$HOME/delvewright-worktrees}"
+  tools/worktree-new.sh --path "\$DELVEWRIGHT_WORKTREES_DIR/<name>" ...
+
+There is no override flag: a --path under an OS tmp root is refused
+unconditionally, because it is never the process's memory that is wrong here,
+it is the location.
+EOF
+      exit 1
+      ;;
+  esac
+done
+
 # No `cd` below ever ESCAPES its subshell. A `cd` in the first clause of a
 # compound command persists through the rest of it, which is how this project
 # has made `git` and `gh` answer confidently about the wrong repository. Where a

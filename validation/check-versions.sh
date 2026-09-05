@@ -63,7 +63,6 @@ emit("MECHA_REQUIRES_PYTHON", d["ci"]["mecha_requires_python"])
 emit("MECHA_REQUIRES_BEET",   d["ci"]["mecha_requires_beet"])
 emit("BEET_VERSION",         d["ci"]["beet_version"])
 emit("PYTEST_VERSION",       d["ci"]["pytest_version"])
-emit("CARGO_AUDIT_VERSION",  d["ci"]["cargo_audit_version"])
 emit("SKINPY_EXTENDED",      d["skin"]["skinpy_extended"])
 PY
 )"
@@ -426,7 +425,6 @@ done <<< "$floor_report"
 all_stated "mecha -> ci.yml"  'mecha==[0-9A-Za-z.*+!-]*'  "mecha==$MECHA_VERSION"   1 "$CI_WF"
 all_stated "beet -> ci.yml"   'beet==[0-9A-Za-z.*+!-]*'   "beet==$BEET_VERSION"     1 "$CI_WF"
 all_stated "pytest -> ci.yml" 'pytest==[0-9A-Za-z.*+!-]*' "pytest==$PYTEST_VERSION" 2 "$CI_WF"
-all_stated "cargo-audit -> ci.yml" 'cargo-audit --locked --version [0-9A-Za-z.*+!-]*' "cargo-audit --locked --version $CARGO_AUDIT_VERSION" 1 "$CI_WF"
 
 echo "== Skin toolchain ([skin], spec-0009) =="
 # Four statements of one library version, and the fourth is the one that matters

@@ -1651,6 +1651,20 @@ impl World {
         self.standable(c)
     }
 
+    /// **Where a standing body's feet actually are**, in blocks, for a body
+    /// standing in cell `c` — the cell's own floor unless the support under it is
+    /// partial, in which case it is lower (a bottom slab puts them half a block
+    /// down).
+    ///
+    /// Public wrapper over [`World::feet_16_fp`] at the player footprint, for the
+    /// same reason [`World::is_standable`] is one: a caller that needs the height a
+    /// body's hitbox starts at must read this model's own measurement rather than
+    /// assume the cell floor. [`crate::reach`] is that caller — vanilla adjudicates
+    /// a completion volume against the body's AABB, and the AABB starts at the feet.
+    pub fn feet_y(&self, c: [i32; 3]) -> f64 {
+        self.feet_16_fp(c, &Footprint::player()) as f64 / FULL_16 as f64
+    }
+
     /// Whether a cell is unoccupied — neither a solid block nor water-flooded, so a
     /// camera eye placed in it sees open air rather than the inside of a block.
     /// Public wrapper for the visual-tier clear-eye self-check
