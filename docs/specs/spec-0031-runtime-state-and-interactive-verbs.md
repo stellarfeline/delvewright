@@ -277,7 +277,7 @@ Rulings on the cases:
 
    **Correction (implementation, the lift round): this criterion is PARTLY
    satisfiable, and what blocks the rest is worth more than the lift.** The
-   fixture is `crates/compiler/tests/fixtures/lift`; the proofs are
+   fixture is `crates/delvec/tests/fixtures/lift`; the proofs are
    `crates/compiler/tests/v10_lift.rs`. No engine surface was added — the whole
    ride is one `sequence` over the five primitives above, and a test enumerating
    every name in all seven stage schemas (derived from the types, not from a

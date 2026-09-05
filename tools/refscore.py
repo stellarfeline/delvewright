@@ -12,7 +12,7 @@ accumulated batch data. Do not add one here.
 
 Two images, two stages, two producers. A **reference image** is concept art
 drawn by an image model at the design-alignment gate (`tools/refimg.py`), before
-any prefab exists. A **render** is a candidate prefab imaged by `delve-render`,
+any prefab exists. A **render** is a candidate prefab imaged by `delvec render`,
 later, at contact-sheet curation. This tool measures the second against the
 first; it draws neither.
 
@@ -160,7 +160,7 @@ def load_config(path: Path | None = None) -> dict:
 def candidates_from_sheet(path: Path) -> list[tuple[str, Path]]:
     """Read the candidate list out of a contact-sheet manifest.
 
-    The manifest is the recommended input because it makes `delve-render` the
+    The manifest is the recommended input because it makes `delvec render` the
     SINGLE discoverer of candidates: the ids scored here are, by construction,
     the ids the sheet will bind against. A second directory walk written in
     Python would be a second source of truth for what a candidate is called, and
@@ -185,7 +185,7 @@ def candidates_from_sheet(path: Path) -> list[tuple[str, Path]]:
 def candidates_from_images(paths: list[Path]) -> list[tuple[str, Path]]:
     """Ad-hoc candidate list: one image per candidate, id = file stem.
 
-    For a flat folder of picks. In `delve-render batch` output the stems carry
+    For a flat folder of picks. In `delvec render batch` output the stems carry
     the shot suffix (`temple-a-ext-se`), which will NOT bind to the sheet's
     candidate ids — use `--sheet` for that layout. A mismatch is not silent:
     the sheet reports its binding count and refuses a zero binding (DW0726).
@@ -318,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--sheet", type=Path,
-                     help="contact-sheet manifest (the .json delve-render wrote beside "
+                     help="contact-sheet manifest (the .json delvec render wrote beside "
                           "its PNG) — the recommended input: same discoverer, same ids")
     src.add_argument("--images", type=Path, nargs="+",
                      help="explicit candidate images; id = file stem")

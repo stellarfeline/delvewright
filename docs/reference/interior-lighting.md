@@ -72,7 +72,7 @@ lights itself), so no plan-level `lighting` reaches them, and that paragraph nam
 piece bound to it, and the darkest cell in the piece's own coordinates — where the author has to go
 and hang something.
 
-The same rule reaches the piece one stage earlier: `delve-admit lighting` measures a piece whose
+The same rule reaches the piece one stage earlier: `delvec prefab lighting` measures a piece whose
 spatial contract declares every space `enclosed` under **no sky**, because such a piece will stand
 inside a plan's box under the whole's roof and meets none. A piece declaring an `open` or
 `open_top` space, or no contract at all, is measured standing in open air as before. Without that,

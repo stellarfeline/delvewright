@@ -1,7 +1,7 @@
 //! **The settling gates' second door** — the same two rules over a piece
 //! nobody generated.
 //!
-//! `delve-grammar expand` judges an expansion before it freezes it; this is the
+//! `delvec grammar expand` judges an expansion before it freezes it; this is the
 //! other end, where a hand-built or ingested `.nbt` arrives with no program
 //! behind it. Both doors call the same implementation
 //! ([`delvewright_grammar::settle`]) over the same kind of argument — a block
@@ -67,7 +67,7 @@ pub fn zone_grid(zone_size: [i32; 3], tiles: &[(TilePart, Structure)]) -> VoxelM
 /// What the two rules examined in one piece, and what they found.
 ///
 /// The counts are carried rather than printed because they belong in the
-/// REPORT: `delve-admit audit`'s report is the machine-readable artifact, and a
+/// REPORT: `delvec prefab audit`'s report is the machine-readable artifact, and a
 /// binding count that is only ever a log line is a binding count no reader can
 /// act on. A diagnostic is raised only when something is wrong — a piece with
 /// no stairs and no fluid is not two warnings, it is two zeroes in the report.

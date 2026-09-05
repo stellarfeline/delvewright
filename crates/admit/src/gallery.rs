@@ -9,7 +9,7 @@
 //! The note stamp/emit functions reproduce the proven `crates/compiler/src/creator.rs`
 //! pattern, but with **per-asset AABBs** so a note resolves `area=<asset-id>`. The
 //! gallery emits a `gallery-layout.json` that is shape-compatible with the
-//! orchestrator's `Layout`, so `curate` reuses the **exact** `delve-harvest` server-log
+//! orchestrator's `Layout`, so `curate` reuses the **exact** `delvec harvest` server-log
 //! parser and pairing heuristic (each grid cell is an "area", each asset its own
 //! "prefab"). Nothing about note capture is re-implemented.
 //!
@@ -125,7 +125,7 @@ pub fn emit(
 /// objective was created, no chunk was forceloaded, no piece was placed and no
 /// label was summoned. The gallery world booted, answered `list`, and was empty.
 /// Nothing read the server's answer, so nothing could fail — and a check that
-/// only runs in `cargo test` is a check the operator running `delve-admit
+/// only runs in `cargo test` is a check the operator running `delvec prefab
 /// gallery` on a fresh piece does not run.
 pub fn validate_functions(out: &BTreeMap<String, Vec<u8>>) -> Vec<CommandError> {
     let tree = CommandTree::v1_21_11();
@@ -153,7 +153,7 @@ fn emit_unchecked(gallery_id: &str, cands: &[Candidate], cols: usize) -> BTreeMa
         "datapack/pack.mcmeta",
         &serde_json::json!({
             "pack": {
-                "description": format!("delve-admit gallery: {gallery_id}"),
+                "description": format!("delvec prefab gallery: {gallery_id}"),
                 "min_format": [94, 1],
                 "max_format": [94, 1],
             }
@@ -389,7 +389,7 @@ fn server_properties(gallery_id: &str) -> String {
         ("spawn-protection", "0".to_string()),
     ]);
     let mut text =
-        format!("# delve-admit gallery world for {gallery_id} (browse-only, spec-0007).\n");
+        format!("# delvec prefab gallery world for {gallery_id} (browse-only, spec-0007).\n");
     text.push_str("# Void world; the grid is placed by the datapack bootstrap on first boot.\n");
     for (k, v) in &props {
         text.push_str(&format!("{k}={v}\n"));

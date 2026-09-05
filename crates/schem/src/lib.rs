@@ -1,4 +1,4 @@
-//! `delve-schem` library: Sponge schematic (`.schem`, v2/v3) -> vanilla structure
+//! `delvec schem` library: Sponge schematic (`.schem`, v2/v3) -> vanilla structure
 //! `.nbt` conversion for the spec-0007 asset pipeline.
 //!
 //! The pipeline is: [`schematic::parse_schematic`] -> optional [`split`] plan ->
@@ -12,11 +12,12 @@
 //! [`prefab`] is the document, re-exported from
 //! [`delvewright_dsl::prefab`] where it is defined. Every tool that produces,
 //! reads or edits a prefab — the grammar back end, the hand-written generators,
-//! `delve-admit`, `delve-render`, `delvec` — goes through that one definition
+//! `delvec prefab`, `delvec render`, `delvec` — goes through that one definition
 //! rather than a local copy of its shape, because a copy that models fewer
 //! fields deletes the rest on read-modify-write and reports nothing, and a copy
 //! that refuses what it does not model turns a forward addition into an outage.
 
+pub mod cli;
 pub mod convert;
 pub mod diag;
 pub mod fixtures;

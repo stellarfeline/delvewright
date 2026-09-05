@@ -1,8 +1,13 @@
 [package]
 name = "delvewright-grammar"
-version = "0.0.0"
-edition = "2024"
-publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Box-split grammar prefab back end for Delvewright: a typed program in, a deterministic structure template out — mounted as `delvec grammar`."
+readme = "README.md"
+exclude = ["tests/"]
 
 # `delvewright-grammar` (spec-0027 phase 1): Box-Split Grammars — the prefab
 # back end whose input is a grammar *program* (typed JSON IR) rather than
@@ -21,16 +26,9 @@ publish = false
 [lib]
 path = "src/lib.rs"
 
-# `delve-grammar` (spec-0027 §3): the entry point the back end never had. The
-# crate was reachable only from `cargo test`, so "the model authors rules, the
-# expander does geometry, machine gates judge" had nowhere to be run from.
-[[bin]]
-name = "delve-grammar"
-path = "src/main.rs"
-
 [dependencies]
-# The CLI. Same version and derive style as `delve-schem` and `delve-render`.
-# MIT/Apache-2.0.
+# The command line (`cli`), mounted by the `delvec` binary as `delvec grammar`
+# (spec-0027 §3, ADR-0023 §3). MIT/Apache-2.0.
 clap = { version = "4", features = ["derive"] }
 
 # The grammar program is a typed JSON IR (spec-0027 §3), like every other DSL
@@ -43,21 +41,16 @@ serde_json = "1"
 # is a fact about a vanilla block state under the pinned game version, and this
 # is the crate every consumer of it already resolves; a private copy here is
 # exactly the defect spec-0056 exists to end.
-delvewright-dsl = { path = "../dsl" }
+delvewright-dsl.workspace = true
 
 # Structure `.nbt` emission goes through the asset pipeline's existing writer
 # (spec-0007) rather than a second one: one place defines the 1.21.11 template
 # shape and its determinism guarantees (sorted palette, fixed cell order, gzip
 # mtime 0).
-delvewright-schem = { path = "../schem" }
+delvewright-schem.workspace = true
 
 # The provenance row identifies a grammar program by a hash of its canonical
 # JSON bytes (spec-0027 §2). Same crate the compiler already uses for datapack
 # hashing. MIT/Apache-2.0.
 sha2 = "0.10"
 
-[dev-dependencies]
-# The export tests read the emitted `.nbt` back with the same reader the asset
-# pipeline verifies its own output with, so "the structure round-trips" means
-# the same thing on both paths.
-delvewright-schem = { path = "../schem" }

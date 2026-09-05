@@ -241,7 +241,7 @@ are job splitting and caching; **sampling the unit set is the one forbidden
 move** — a sampled coverage gate is the vacuity this spec exists to close.
 
 **Prefabs.** The gallery's pieces are **generated at build time by the
-engine's own generators** (`prefabs/` programs → `delve-grammar` → `.nbt` in
+engine's own generators** (`prefabs/` programs → `delvec grammar` → `.nbt` in
 the build directory), passing admission like any piece. Committed source is
 generator programs, never `.nbt`. Reasons, in order: the coverage gate's
 same-PR property must not wait on a content re-pin (a gate whose discharge

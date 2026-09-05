@@ -4,7 +4,7 @@
 //! and this is the module that carries it out.
 //!
 //! A [`Program`](crate::ir::Program) is a long-lived on-disk document: the
-//! authoring form `delve-grammar --file` reads, and the form `show` prints. The
+//! authoring form `delvec grammar --file` reads, and the form `show` prints. The
 //! crate's semver covers its Rust API, not that document. Two compatibility
 //! surfaces, so the document carries its own version — and an engine that meets
 //! a version it does not know **refuses**, instead of parsing the parts it

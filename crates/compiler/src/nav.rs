@@ -7495,8 +7495,8 @@ fn ocean_window(world: &World) -> Option<([i32; 2], [i32; 2])> {
 /// `DW0318`: **a body of fluid runs out of the built world**, stated against the
 /// world-generator [`Ambient`] the way [`DW_EDIT_BORDERS_VOID`] already is.
 ///
-/// The piece-level containment rule (`DW0800`, `delve-grammar` /
-/// `delve-admit`) proves that every fluid source in a piece has something in
+/// The piece-level containment rule (`DW0800`, `delvec grammar` /
+/// `delvec prefab`) proves that every fluid source in a piece has something in
 /// each of the five cells it would run into — *within that piece's own bytes*.
 /// A run direction that leaves the piece's outer face it counts and explicitly
 /// does not judge, because what is beyond a face is not in those bytes:
@@ -8329,9 +8329,10 @@ mod tests {
     /// can see. Each entry's reason lives at its call site, in a comment beside
     /// the call; this test only insists that the entry exists.
     ///
-    /// The population is the compiler crate's own sources with each file's
-    /// top-level `#[cfg(test)]` tail removed — a synthetic world in a unit test
-    /// has no campaign behind it and nothing to state.
+    /// The population is the compiler crate's own sources plus the `delvec`
+    /// binary's (`crates/delvec/src`, where `delvec snapshot` stands a camera
+    /// up), each file's top-level `#[cfg(test)]` tail removed — a synthetic
+    /// world in a unit test has no campaign behind it and nothing to state.
     #[test]
     fn premise_declines_are_enumerated() {
         // (file, how many production call sites)
@@ -8352,9 +8353,9 @@ mod tests {
             ("nav.rs", 1),
         ];
 
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut files: Vec<std::path::PathBuf> = Vec::new();
-        let mut stack = vec![src.clone()];
+        let mut stack = vec![here.join("src"), here.join("../delvec/src")];
         while let Some(dir) = stack.pop() {
             for e in std::fs::read_dir(&dir).expect("read the crate's own sources") {
                 let p = e.expect("dir entry").path();
@@ -8388,6 +8389,8 @@ mod tests {
                 found.push((f.file_name().unwrap().to_string_lossy().into_owned(), n));
             }
         }
+        // Two source roots, one list: order by file name, as EXPECTED is.
+        found.sort();
         let expected: Vec<(String, usize)> = EXPECTED
             .iter()
             .map(|(f, n)| ((*f).to_string(), *n))

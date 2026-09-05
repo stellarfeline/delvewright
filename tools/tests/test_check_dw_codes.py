@@ -63,8 +63,8 @@ def test_a_collision_across_crates_is_detected_too(gate):
 
 def test_distinct_codes_and_reused_constant_names_are_not_collisions(gate):
     """The legitimate pattern the gate must never flag: two crates reusing a
-    constant NAME for DIFFERENT codes (`DW_INPUT` is DW0710 in delve-schem and
-    DW0732 in delve-admit). Same name, different code = fine; the collision is
+    constant NAME for DIFFERENT codes (`DW_INPUT` is DW0710 in delvec schem and
+    DW0732 in delvec prefab). Same name, different code = fine; the collision is
     the reverse."""
     _rs(gate, "schem", "diag.rs", 'pub const DW_INPUT: &str = "DW0710";')
     _rs(gate, "admit", "diag.rs", 'pub const DW_INPUT: &str = "DW0732";')

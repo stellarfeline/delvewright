@@ -13,7 +13,7 @@
 //! Adds a `dw.note` **trigger** objective and a per-tick handler. When the creator
 //! fires `/trigger dw.note`, the overlay stamps **one machine-readable line** into
 //! the server log, then the creator types the actual note as a normal chat message
-//! (also logged). The harvester (`delve-harvest`) pairs the two after the session.
+//! (also logged). The harvester (`delvec harvest`) pairs the two after the session.
 //!
 //! ### The stamp line
 //!

@@ -20,7 +20,7 @@
 //! doc that stopped being true.
 //!
 //! **They declare no anchors** (except the composition demonstration), so
-//! `delve-grammar expand` reports the "declared no anchors" finding over them.
+//! `delvec grammar expand` reports the "declared no anchors" finding over them.
 //! That is correct: a teaching program is not a prefab a campaign binds to.
 
 use crate::block::BlockState;
@@ -276,7 +276,7 @@ pub fn priority() -> Program {
 /// way round —
 ///
 /// ```sh
-/// delve-grammar expand --program idiom-shape --region 15x9x3 --seed 1 \
+/// delvec grammar expand --program idiom-shape --region 15x9x3 --seed 1 \
 ///     --role mass=minecraft:air --role cut=minecraft:stone_bricks -o out/
 /// ```
 ///
@@ -640,7 +640,7 @@ pub fn skip() -> Program {
 /// own business.
 ///
 /// It matters because a piece that places no light **is** dark, the grammar
-/// cannot warn about it, and the static probe (`delve-admit lighting --write`,
+/// cannot warn about it, and the static probe (`delvec prefab lighting --write`,
 /// procedure §7) reports the fact after the fact. Expansion places blocks, not
 /// photons: the emitted metadata says `"profile": "unmeasured"` and means it.
 ///

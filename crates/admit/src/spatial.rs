@@ -151,7 +151,7 @@ pub struct DoorBinding {
 /// The word a report prints for a door that was never opened.
 ///
 /// The library-level [`audit`] and [`crate::audit::audit`] do not open it; only
-/// `delve-admit audit` does. A report that says so is not the same artifact as a
+/// `delvec prefab audit` does. A report that says so is not the same artifact as a
 /// report that says the door opened and found nothing wrong, which is the whole
 /// obligation here.
 pub const UNOPENED: &str = "unopened";

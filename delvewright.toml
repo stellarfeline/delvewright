@@ -34,7 +34,7 @@
 # [refimg] — draw a REFERENCE IMAGE for the design-alignment gate: concept art
 # produced BEFORE any prefab exists, so the owner confirms the design against a
 # picture instead of prose. NOT a render — a render is a candidate prefab imaged
-# by `delve-render`, later, at contact-sheet curation. Two stages, two producers.
+# by `delvec render`, later, at contact-sheet curation. Two stages, two producers.
 #
 #   consumed by: tools/refimg.py           ·   docs: docs/reference/tools.md
 #

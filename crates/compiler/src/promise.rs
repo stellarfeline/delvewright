@@ -145,7 +145,7 @@ pub const DW_FIGHT_UNSIGNED: DwCode = DwCode::since("DW0863", PROMISE_SINCE, Exi
 /// this repository ships plus every campaign blob in the content repository:
 /// exactly two documents violate a rule here without being a probe that means to
 /// — `crates/dsl/fixtures/valid/keep-vertical` at `0.3.0` and
-/// `crates/compiler/tests/fixtures/souls-td-lanes` at `0.6.0`, both `DW0863`.
+/// `crates/delvec/tests/fixtures/souls-td-lanes` at `0.6.0`, both `DW0863`.
 /// Both are grandfathered here. No campaign at any version violates any of the
 /// four.
 pub const PROMISE_SINCE: u32 = 8;

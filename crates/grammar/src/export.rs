@@ -30,7 +30,7 @@
 //! and [`export_zone`] decides which of the two shapes it writes from the region
 //! alone. Nothing an author writes mentions 48.
 //!
-//! The cut positions are not this module's invention. `delve-schem` has tiled
+//! The cut positions are not this module's invention. `delvec schem` has tiled
 //! oversize `.schem` imports since spec-0007, so
 //! [`delvewright_schem::split::plan_split`] is *the* tiling of this project, and
 //! grammar export calls it. Two paths that tile the same volume the same way
@@ -47,7 +47,7 @@
 //!   conventions to be settled first; a guessed socket is worse than none. The
 //!   key is emitted as an empty list rather than omitted: "this piece has no
 //!   sockets" and "this metadata predates sockets" are not the same claim, and
-//!   `delve-admit socket` appends to it afterwards.
+//!   `delvec prefab socket` appends to it afterwards.
 //! * **A lighting measurement.** See [`LIGHTING_PROFILE`].
 
 use std::collections::BTreeMap;

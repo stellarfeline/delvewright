@@ -1742,7 +1742,7 @@ pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345", ExitTier:
 ///
 /// Only reachable through a declared role, which is the only way an area has an
 /// entry point at all. The remedy is to take the role off one of the two, which
-/// every producer can do where it wrote it: `delve-admit anchor --no-role` on a
+/// every producer can do where it wrote it: `delvec prefab anchor --no-role` on a
 /// hand-built or ingested piece, and dropping `role` from the `mark` on a
 /// grammar program.
 pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::every_version("DW0804", ExitTier::Build);
@@ -1930,7 +1930,7 @@ impl AnchorTable {
                      the other (the anchor itself stays, and content can still bind it by \
                      name). If the two anchors are in two pieces of one `prefab_pool`, only \
                      the piece that seeds the layout should carry it. Take the role off where \
-                     it was written: `delve-admit anchor <nbt> --name <anchor> --pos <x,y,z> \
+                     it was written: `delvec prefab anchor <nbt> --name <anchor> --pos <x,y,z> \
                      --no-role` for a hand-built or ingested piece, or drop `role` from the \
                      `mark` for a grammar program. Renaming an anchor achieves nothing — the \
                      role is the only thing the compiler reads here"
@@ -1959,7 +1959,7 @@ impl AnchorTable {
     /// place a player can start from. A spelling is a fact about the producer
     /// that wrote the piece; the role is a fact about the piece, and it is what
     /// every producer writes — `mark { role }` on a grammar program,
-    /// `delve-admit anchor --role` on a hand-built or ingested one, and the
+    /// `delvec prefab anchor --role` on a hand-built or ingested one, and the
     /// derivation's own [`crate::blockout`] anchor.
     pub fn entry_anchor(&self, area: &str) -> Option<&ResolvedAnchor> {
         self.entry_anchor_name(area)

@@ -1,6 +1,9 @@
 # ADR-0021: Creator toolchain re-derived — one distributed binary, registry Nucleation, an off-the-shelf viewer core
 
-- **Status**: Proposed
+- **Status**: Superseded by ADR-0023 (§1 stands; §2 implemented there on a
+  current registry release; §3 and the musl-static rationale superseded; §4–§6
+  stand as the record of the viewer core, the client-jar mechanism and the
+  non-Rust criterion)
 - **Date**: 2026-08-13
 - **Source**: the toolchain shape re-derived under the dependencies as they are
   today, not as they were when ADR-0017/0018 were written. The rules it rests on:

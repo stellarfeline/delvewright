@@ -82,7 +82,7 @@ job is to fill them. The vision model is the generation-time agent
    at `catalog/<asset-id>.json` — rejects included (prevents re-scouting). The
    catalog is what `/new-delve` queries when choosing prefab sets.
 3. **Download + ingest** the remaining approved set: API/direct fetch where
-   allowed (anti-bot items were already fetched in step 2); then `delve-schem`
+   allowed (anti-bot items were already fetched in step 2); then `delvec schem`
    conversion (safety strip + palette report + oversize splitting) and the
    palette audit.
 4. **In-game gallery walk (owner spot-check, optional)**: the ingested batch
@@ -96,7 +96,7 @@ job is to fill them. The vision model is the generation-time agent
    probe → admission. Admitted prefab metadata links its catalog card; card
    tags become the searchable vocabulary for generation-time prefab selection.
 
-## Rendering infra (verified 2026-07-31; BUILT M3 as `crates/render` / `delve-render`)
+## Rendering infra (verified 2026-07-31; BUILT M3 as `crates/render` / `delvec render`)
 
 > **Status (M3):** the render layer is built and green — see `crates/render`
 > (README). Nucleation per-prefab renders, the 1.21.11 newest-block **fidelity
@@ -111,7 +111,7 @@ job is to fill them. The vision model is the generation-time agent
 
 - **Per-prefab renders**: **Nucleation** (Rust, MIT — vendors into the
   workspace) ingests `.nbt`/`.schem` directly and renders headlessly; wrapped
-  as a `delve-render` tool emitting a deterministic multi-angle set per piece.
+  as a `delvec render` tool emitting a deterministic multi-angle set per piece.
 - **Whole-scene renders**: **Chunky** (GPLv3, out-of-process, headless under
   xvfb in the toolserver image) path-traces the compiler's generated world
   from JSON-scripted cameras. Caveat: 1.21.x needs Chunky snapshot builds.
@@ -122,12 +122,12 @@ job is to fill them. The vision model is the generation-time agent
   the guaranteed-coverage oracle for cross-checks; its output never ships.
 - Rejected after verification: prismarine-viewer (rendering capped at 1.21.4).
 
-## Admission machinery (BUILT M3 as `crates/admit` / `delve-admit`)
+## Admission machinery (BUILT M3 as `crates/admit` / `delvec prefab`)
 
 > **Status (M3, admission half):** the admission tooling is built and green — see
 > `crates/admit` (README). It ships: the **mechanical NBT palette audit** (the CI
 > gate — a configurable block-palette allowlist plus a hard-forbid of command
-> blocks, structure blocks, and NBT-bearing spawners, reusing `delve-schem`'s
+> blocks, structure blocks, and NBT-bearing spawners, reusing `delvec schem`'s
 > code-injection scan so there is no drift; `DW073x` diagnostics + a machine-readable
 > report; every shipped `campaigns/prefabs/*.nbt` passes, jigsaw sockets included);
 > **adaptation tooling** (socket carving that writes generator-shape connectors +
@@ -136,10 +136,10 @@ job is to fill them. The vision model is the generation-time agent
 > tileset — honestly recorded as an estimate, not a live probe); **catalog cards**
 > (`catalog/<id>.json`, a `deny_unknown_fields` serde schema with a `1..=5` quality
 > bound and the ADR-0013 **license allowlist** — NC/ND/SA/unknown reject); and the
-> **gallery world** (`delve-admit gallery` emits a labelled browse world + datapack
+> **gallery world** (`delvec prefab gallery` emits a labelled browse world + datapack
 > with the spec-0006 `dw.note` capture wired to per-asset AABBs, and `curate` /
 > `curate-merge` harvest the notes into a per-asset curation report that folds back
-> into the cards, reusing the exact `delve-harvest` parser). *Open / flagged for
+> into the cards, reusing the exact `delvec harvest` parser). *Open / flagged for
 > owner review:* the exact allowlist contents + jigsaw-allowed decision, the
 > lit/dark threshold, ShareAlike-reject for prefab licenses, and a dedicated
 > tier-3 live gallery boot (the note channel itself is already live-verified via
@@ -200,7 +200,7 @@ browse; `GENERATION.md` stays the behind-the-scenes record).
       for anti-bot sites; cards committed to the content repo `catalog/`.
 - [ ] Owner gallery-walk verdicts (dw.note) round-trip into the catalog cards.
 - [x] Gallery world: one command, candidates placed + labeled; dw.note verdicts
-      harvest into a curation report (`delve-admit gallery` + `curate` /
+      harvest into a curation report (`delvec prefab gallery` + `curate` /
       `curate-merge`, `crates/admit`; note channel byte-identical to the
       spec-0006 live-verified overlay, round-trip covered in `tests/gallery.rs`).
 - [ ] A build using a user-local prefab is refused by the release path

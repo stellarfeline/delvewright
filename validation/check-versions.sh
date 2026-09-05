@@ -47,8 +47,7 @@ emit("PACKTEST_SHA1",     d["packtest"]["sha1"])
 emit("MINEFLAYER",        d["harness"]["mineflayer"])
 emit("CONTENT_REPO",      d["content"]["repo"])   # spec-0007 pinned content repo
 emit("CONTENT_SHA",       d["content"]["sha"])
-emit("NUCLEATION_REV",    d["render"]["nucleation_rev"])   # spec-0007 render layer
-emit("NUCLEATION_REPO",   d["render"]["nucleation_repo"])
+emit("NUCLEATION_VERSION", d["render"]["nucleation_version"])   # spec-0007 render layer
 emit("CHUNKY_CORE",       d["render"]["chunky_core"])
 emit("DEEPSLATE_VERSION", d["render"]["deepslate_version"])
 emit("GL_MATRIX_VERSION", d["render"]["gl_matrix_version"])
@@ -160,16 +159,15 @@ else
 fi
 
 echo "== Render layer ([render], spec-0007) =="
-# Nucleation is pinned by git REV; the compiler-independent render crate must pin
-# exactly this rev, and a rev must be a full 40-hex commit (determinism/repro).
-if [[ $NUCLEATION_REV =~ ^[0-9a-f]{40}$ ]]; then
-  pass "render.nucleation_rev is a full 40-hex commit ($NUCLEATION_REV)"
+# Nucleation comes from crates.io at EXACTLY this version (ADR-0023 §5): the
+# render crate's requirement is `=<version>`, and a version is three numbers.
+if [[ $NUCLEATION_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  pass "render.nucleation_version is an exact semver ($NUCLEATION_VERSION)"
 else
-  fail "render.nucleation_rev '$NUCLEATION_REV' is not a full 40-hex commit SHA"
+  fail "render.nucleation_version '$NUCLEATION_VERSION' is not an exact x.y.z version"
 fi
 if [ -f "$RENDER_CARGO" ]; then
-  want_in "nucleation rev -> crates/render/Cargo.toml"  "$NUCLEATION_REV"  "$RENDER_CARGO"
-  want_in "nucleation repo -> crates/render/Cargo.toml" "$NUCLEATION_REPO" "$RENDER_CARGO"
+  want_in "nucleation =version -> crates/render/Cargo.toml" "nucleation = { version = \"=$NUCLEATION_VERSION\"" "$RENDER_CARGO"
 else
   fail "crates/render/Cargo.toml missing (cannot verify the render dep pin)"
 fi
@@ -211,12 +209,11 @@ else
   fail "render.chunky_core '$CHUNKY_CORE' is not a chunky-core snapshot build"
 fi
 
-echo "== Engine release line ([engine], ADR-0016 / ADR-0017) =="
+echo "== Engine release line ([engine], ADR-0016 / ADR-0017 / ADR-0023) =="
 # ADR-0016 requires four numbers to be ONE number: the version compiled into the
 # binary, the git tag, the crates.io version, and the window the `/new-delve`
-# skill declares. Before this block they agreed only by intention, and this
-# repo's history is a list of contracts that lived in comments. Here they are
-# bound; `.github/workflows/engine-release.yml` binds the git tag at release time
+# skill declares — and ADR-0023 §6 puts seven crates on that one number. Here
+# they are bound; `.github/workflows/engine-release.yml` binds the git tag at release time
 # (it cannot be checked from a working tree), and the skill's window is bound in
 # the campaigns repository, by `tools/check-skill-version.py` there — the page
 # lives with the creator who clones that repository (ADR-0014), and a gate over a
@@ -244,79 +241,121 @@ out = []
 def ok(msg):   out.append(("ok", msg))
 def bad(msg):  out.append(("FAIL", msg))
 
-compiler = tomllib.load((root / "crates/compiler/Cargo.toml").open("rb"))
-dsl      = tomllib.load((root / "crates/dsl/Cargo.toml").open("rb"))
+ws_manifest = tomllib.load((root / "Cargo.toml").open("rb"))
+ws = ws_manifest["workspace"]
+ws_pkg = ws.get("package", {})
+ws_deps = ws.get("dependencies", {})
+dsl = tomllib.load((root / "crates/dsl/Cargo.toml").open("rb"))
 
-# 1. crates.io identity. `cargo install` resolves by CRATE name, never by binary
-#    name, so the package must BE `delvec` or `cargo install delvec` installs
-#    somebody else's crate (or nothing).
-for label, mani, want_name, want_ver in (
-    ("compiler", compiler, e["crate"], e["version"]),
-    ("dsl", dsl, e["dsl_crate"], e["dsl_crate_version"]),
-):
-    got_name, got_ver = mani["package"]["name"], mani["package"]["version"]
-    (ok if got_name == want_name else bad)(
-        f"{label} package name {got_name!r} (manifest: {want_name!r})")
-    (ok if got_ver == want_ver else bad)(
-        f"{label} package version {got_ver!r} (manifest: {want_ver!r})")
+def load_member(m):
+    return tomllib.load((root / m / "Cargo.toml").open("rb"))
 
-# 2. The lib TARGET keeps the pre-rename name on purpose (366 in-tree
-#    `use delvewright_compiler::` paths). If that ever moves silently, every one
-#    of them breaks at once, so it is pinned here rather than left to luck.
+def resolved(pkg, key):
+    """A `[package]` field, followed through `key.workspace = true`."""
+    v = pkg.get(key)
+    if isinstance(v, dict) and v.get("workspace") is True:
+        return ws_pkg.get(key, "<workspace.package has no %s>" % key)
+    return v
+
+members = {m: load_member(m) for m in ws["members"]}
+by_name = {mani["package"]["name"]: (m, mani) for m, mani in members.items()}
+engine_names = [e["crate"], *e["crates"]]
+
+# 1. The engine version line is ONE literal: `[workspace.package] version`,
+#    inherited by every engine crate (ADR-0023 §6). The DSL crate keeps its own.
+(ok if ws_pkg.get("version") == e["version"] else bad)(
+    f"root Cargo.toml [workspace.package] version {ws_pkg.get('version')!r} (manifest: {e['version']!r})")
+for name in engine_names:
+    if name not in by_name:
+        bad(f"versions.toml names {name!r}, which is not a workspace member")
+        continue
+    m, mani = by_name[name]
+    got_ver = resolved(mani["package"], "version")
+    (ok if got_ver == e["version"] else bad)(
+        f"{name} version {got_ver!r} (manifest: {e['version']!r}; inherit it: `version.workspace = true`)")
+got_name, got_ver = dsl["package"]["name"], dsl["package"]["version"]
+(ok if got_name == e["dsl_crate"] else bad)(f"dsl package name {got_name!r} (manifest: {e['dsl_crate']!r})")
+(ok if got_ver == e["dsl_crate_version"] else bad)(f"dsl package version {got_ver!r} (manifest: {e['dsl_crate_version']!r})")
+
+# 2. The one binary: the `delvec` package carries exactly one `[[bin]]` named
+#    `delvec`, and no other member carries any (ADR-0023 §3).
+bins = []
+for m, mani in members.items():
+    for b in mani.get("bin", []):
+        bins.append((mani["package"]["name"], b.get("name")))
+(ok if bins == [(e["crate"], "delvec")] else bad)(
+    f"exactly one [[bin]] in the workspace, `delvec` in package {e['crate']!r} (found: {bins})")
+
+# 3. The compiler library target keeps its name: every `use` path spells it.
+_, compiler = by_name.get("delvewright-compiler", (None, {}))
 lib_name = compiler.get("lib", {}).get("name")
 (ok if lib_name == "delvewright_compiler" else bad)(
     f"compiler lib target name {lib_name!r} (must stay 'delvewright_compiler')")
 
-# 3. Once `path` is stripped on publish, the `=` requirement is the ONLY thing
-#    tying `delvec` to a specific `delvewright-dsl`.
-req = compiler["dependencies"][e["dsl_crate"]]
-req = req if isinstance(req, str) else req.get("version", "<absent>")
-(ok if req == e["dsl_crate_req"] else bad)(
-    f"compiler depends on {e['dsl_crate']} {req!r} (manifest: {e['dsl_crate_req']!r})")
+# 4. Every in-tree dependency is declared ONCE, in `[workspace.dependencies]`,
+#    with the `=` requirement that is the only binding left once `path` is
+#    stripped on publish: `=<engine version>` for engine crates, the DSL
+#    crate's own `dsl_crate_req`. A member manifest may name a sibling only as
+#    `name.workspace = true`.
+n_req = 0
+for name in [e["dsl_crate"], *e["crates"]]:
+    spec = ws_deps.get(name)
+    want = e["dsl_crate_req"] if name == e["dsl_crate"] else f"={e['version']}"
+    req = spec.get("version") if isinstance(spec, dict) else None
+    n_req += 1
+    (ok if req == want else bad)(f"[workspace.dependencies] {name} = {req!r} (manifest: {want!r})")
+stray = []
+for m, mani in members.items():
+    for key, tbl in mani.items():
+        if "dependencies" not in key or not isinstance(tbl, dict):
+            continue
+        for dep, spec in tbl.items():
+            if dep in by_name and not (isinstance(spec, dict) and spec.get("workspace") is True):
+                stray.append(f"{m}: [{key}] {dep}")
+(ok if not stray else bad)(
+    "every in-tree dependency of every member goes through [workspace.dependencies]"
+    if not stray else f"in-tree dependencies declared outside [workspace.dependencies]: {stray}")
 
-# 4. Publishability inventory, in BOTH directions. The two crates that must be
-#    publishable, and every other crate under `crates/` that must NOT be — a new
-#    crate added without `publish = false` would otherwise be swept onto
-#    crates.io by the first `--workspace` anything, irreversibly.
-#
-#    `exclude` counts as much as `members`: `crates/render` sits outside the
-#    workspace (its git dependency is quarantined there, /Cargo.toml), and a
-#    members-only walk would have quietly dropped it from this inventory — the
-#    exemption a crate gets for free by leaving the workspace is exactly the kind
-#    that nobody notices. The binding count below is what makes that visible.
-ws = tomllib.load((root / "Cargo.toml").open("rb"))["workspace"]
-crates = list(ws["members"]) + [x for x in ws.get("exclude", []) if x.startswith("crates/")]
-publishable = {e["crate"], e["dsl_crate"]}
-n_pub = n_priv = 0
-for m in crates:
-    mani = tomllib.load((root / m / "Cargo.toml").open("rb"))
+# 5. Publishability inventory, in BOTH directions (ADR-0023 §6): every member
+#    under `crates/` is on versions.toml's list and is publishable; the root
+#    excludes nothing under `crates/`. A crate added without a versions.toml row
+#    would otherwise be swept onto crates.io by the first `--workspace` anything,
+#    irreversibly — or, with `publish = false`, would silently leave the binary
+#    with a dependency `cargo install delvec` cannot resolve.
+publishable = {e["crate"], e["dsl_crate"], *e["crates"]}
+n_pub = 0
+for m, mani in members.items():
     name, flag = mani["package"]["name"], mani["package"].get("publish", True)
     if name in publishable:
         n_pub += 1
         (ok if flag is not False else bad)(f"{name} is publishable")
     else:
-        n_priv += 1
-        (ok if flag is False else bad)(
-            f"{name} declares `publish = false` (it is not on the release line "
-            f"and must never reach crates.io)")
-missing = publishable - {tomllib.load((root / m / "Cargo.toml").open("rb"))["package"]["name"] for m in ws["members"]}
+        bad(f"{name} ({m}) is a workspace member versions.toml [engine] does not name — a new crate is a decision")
+missing = publishable - set(by_name)
 if missing:
     bad(f"versions.toml names crate(s) that are not workspace members: {sorted(missing)}")
-ok(f"publish inventory: {len(crates)} crate(s) = {n_pub} publishable + {n_priv} private "
-   f"({len(ws['members'])} workspace member(s) + {len(crates) - len(ws['members'])} excluded)")
+excluded = [x for x in ws.get("exclude", []) if x.startswith("crates/")]
+(ok if not excluded else bad)(
+    "the root workspace excludes nothing under crates/" if not excluded else f"root Cargo.toml excludes {excluded} — every crate is a member (ADR-0023 §5)")
+ok(f"publish inventory: {len(members)} member(s) = {n_pub} publishable, {len(publishable)} named in versions.toml, {n_req} workspace requirement(s) bound")
 
-# 5. `rust-version` in a published manifest is a promise to a stranger running
+# 6. `rust-version` in a published manifest is a promise to a stranger running
 #    `cargo install`. It must be the toolchain this repo actually builds on, not
-#    a looser number nobody has tested.
+#    a looser number nobody has tested — inherited by every engine crate from
+#    `[workspace.package]`, and stated by the DSL crate itself.
 toolchain = tomllib.load((root / "rust-toolchain.toml").open("rb"))["toolchain"]["channel"]
 (ok if toolchain == e["rust_toolchain"] else bad)(
     f"rust-toolchain.toml channel {toolchain!r} (manifest: {e['rust_toolchain']!r})")
-for label, mani in (("compiler", compiler), ("dsl", dsl)):
-    rv = mani["package"].get("rust-version")
-    (ok if rv == e["rust_toolchain"] else bad)(
-        f"{label} rust-version {rv!r} (manifest: {e['rust_toolchain']!r})")
+(ok if ws_pkg.get("rust-version") == e["rust_toolchain"] else bad)(
+    f"[workspace.package] rust-version {ws_pkg.get('rust-version')!r} (manifest: {e['rust_toolchain']!r})")
+for name in engine_names:
+    if name in by_name:
+        rv = resolved(by_name[name][1]["package"], "rust-version")
+        (ok if rv == e["rust_toolchain"] else bad)(f"{name} rust-version {rv!r} (manifest: {e['rust_toolchain']!r})")
+rv = dsl["package"].get("rust-version")
+(ok if rv == e["rust_toolchain"] else bad)(f"dsl rust-version {rv!r} (manifest: {e['rust_toolchain']!r})")
 
-# 6. The release matrix and the shelf must be the same set, both directions —
+# 7. The release matrix and the shelf must be the same set, both directions —
 #    a target in versions.toml with no matrix row is a promised binary nobody
 #    builds; a matrix row with no manifest line is a binary nobody declared.
 wf = (root / ".github/workflows/engine-release.yml").read_text(encoding="utf-8")
@@ -332,8 +371,13 @@ elif in_matrix == declared and stray == declared:
     ok(f"release matrix == [engine].targets ({len(declared)} target(s))")
 else:
     bad(f"release matrix {sorted(stray)} != [engine].targets {sorted(declared)}")
+# Linux targets are gnu (ADR-0023 §4): a static target back on the shelf would
+# silently drop the GPU arms' Vulkan loader again.
+non_gnu = sorted(t for t in declared if "linux" in t and not t.endswith("-linux-gnu"))
+(ok if not non_gnu else bad)(
+    "every Linux shelf target is gnu" if not non_gnu else f"non-gnu Linux target(s) on the shelf: {non_gnu}")
 
-# 7. The build script must hold no COPY of the shelf — the way a consumer cannot
+# 8. The build script must hold no COPY of the shelf — the way a consumer cannot
 #    drift from the manifest is to carry nothing (same rule as the server-jar
 #    bootstrap below).
 script = (root / "tools/build-release-binaries.sh").read_text(encoding="utf-8")

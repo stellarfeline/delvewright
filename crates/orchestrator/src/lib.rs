@@ -1,4 +1,4 @@
-//! `delve-harvest` core (spec-0006 M2): turn a playtest server log + the creator
+//! `delvec harvest` core (spec-0006 M2): turn a playtest server log + the creator
 //! overlay's `layout.json` into a versioned `playtest-report.json`.
 //!
 //! The orchestrator's first real job — thin glue (ADR-0012), no game logic. It
@@ -31,6 +31,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub mod cli;
 pub mod rehearsal;
 
 /// The report schema version (tracks the DSL/critical-path versioning).

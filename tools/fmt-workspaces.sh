@@ -6,9 +6,8 @@
 # ## What this exists to remove
 #
 # `cargo fmt --all` at the repository root reaches the ROOT workspace and nothing
-# else. `crates/render` and every `prefabs/*-generator` are separate workspaces on
-# purpose (see /Cargo.toml for why render is), so the obvious local command
-# reports clean while a generator is unformatted — and CI's per-workspace fmt
+# else. Every `prefabs/*-generator` is a separate workspace on purpose, so the
+# obvious local command reports clean while a generator is unformatted — and CI's per-workspace fmt
 # steps then redden the pull request. That is not a hypothetical: a stage's new
 # generator code went in unformatted and reddened a pull request after a merge.
 #

@@ -116,6 +116,30 @@ def discover(root: Path) -> list[PublishableCrate]:
                 "in tools/lib/publishable.py."
             )
 
+    # `[workspace.package]` is where an inherited `version` / `rust-version`
+    # lives (a member says `version.workspace = true`); read it once so a page's
+    # claim binds to the number cargo will actually publish.
+    # A tree with no root manifest has nothing to inherit from; that is an
+    # error only for a crate that tries to (below), never on its own.
+    ws_pkg: dict = {}
+    if (root / "Cargo.toml").is_file():
+        try:
+            ws_pkg = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+            ws_pkg = ws_pkg.get("workspace", {}).get("package", {})
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            raise DerivationError(f"{root / 'Cargo.toml'}: {exc}") from exc
+
+    def inherited(pkg: dict, key: str):
+        value = pkg.get(key)
+        if isinstance(value, dict) and value.get("workspace") is True:
+            if key not in ws_pkg:
+                raise DerivationError(
+                    f"a crate inherits `{key}` from the workspace and the root "
+                    f"Cargo.toml's [workspace.package] has no `{key}`"
+                )
+            return ws_pkg[key]
+        return value
+
     crates: list[PublishableCrate] = []
     for manifest in manifests:
         try:
@@ -156,12 +180,14 @@ def discover(root: Path) -> list[PublishableCrate]:
         crates.append(
             PublishableCrate(
                 name=str(pkg.get("name", manifest.parent.name)),
-                version=str(pkg.get("version", "")),
+                version=str(inherited(pkg, "version") or ""),
                 # Cargo spells it `rust-version`; tomllib does not fold the
                 # hyphen, so reading `rust_version` silently yields None and the
                 # page's minimum-Rust claim binds to nothing while staying green.
                 rust_version=(
-                    str(pkg["rust-version"]) if "rust-version" in pkg else None
+                    str(inherited(pkg, "rust-version"))
+                    if "rust-version" in pkg
+                    else None
                 ),
                 manifest=manifest,
                 readme=readme,

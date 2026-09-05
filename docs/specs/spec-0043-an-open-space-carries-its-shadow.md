@@ -196,7 +196,7 @@ than being absorbed.
    its standable count — measured and asserted, so §3's residual exists as a
    fixture, not a memory. *Vacuous if* the region holds no standable cell
    (the kind gate would red on emptiness instead of computing anything).
-7. **One checker, two doors.** `delve-admit audit` agrees with `expand` on a
+7. **One checker, two doors.** `delvec prefab audit` agrees with `expand` on a
    piece whose contract carries a shadow-bearing `open` space — same bytes,
    same resolved contract, same verdict and enumeration. *Vacuous if* the
    admit-side fixture's contract has no shadow.
@@ -209,7 +209,7 @@ than being absorbed.
 
 1. Checker: the partition, the two demands, the enumeration lines, the
    binding count; the distilled fixtures of §6 in the same PR.
-2. `delve-admit` door parity (no metadata change — the contract block is
+2. `delvec prefab` door parity (no metadata change — the contract block is
    already carried whole).
 3. Docs in the same PR: `grammar.md` §2d's closure row and envelope prose.
 4. Bell adoption, scheduled with this milestone per version-adoption

@@ -1,138 +1,52 @@
-# delve-admit
+# delvewright-admit
 
-The prefab **admission** half of the spec-0007 asset pipeline (M3). Turns an
-approved, `delve-schem`-converted `.nbt` candidate into a library-grade prefab, and
-gates community contributions. Composes with `delve-schem` (conversion + the shared
-code-injection NBT scan) and `delve-render` (renders); it does not duplicate them.
+Prefab admission for [`delvec`](https://crates.io/crates/delvec), the delve
+creator for **Minecraft Java Edition 1.21.11** adventure maps. A converted or
+generated structure template becomes a library-grade prefab here: its palette
+is audited against an allowlist and a code-injection forbid, its jigsaw sockets
+and named anchors are carved and declared, its lighting is measured with the
+compiler's own light model, its catalog card is validated, and a browse world
+lets a person walk the candidates and leave notes that come back as curation.
 
-Deterministic (ADR-0006): no wall-clock, no unseeded RNG, no hash-order iteration —
-`BTreeMap`/sorted maps, gzip mtime pinned to 0 on every structure write.
+`delvec` mounts it as `delvec prefab`:
 
-## CLI
+| Command | What it does |
+|---|---|
+| `audit <piece.nbt>` | Palette allowlist, code-injection forbid, and the piece's own spatial contract against its bytes. |
+| `resolve-jigsaw <piece.nbt>` | Bake foreign worldgen jigsaw markers to their final block. |
+| `socket <piece.nbt> --pos … --facing …` | Carve a jigsaw socket and declare it. |
+| `anchor <piece.nbt> --name …` | Declare a named point or gate anchor. |
+| `lighting <piece.nbt> [--write]` | Measure the light a body walking in would find. |
+| `catalog validate <card.json>…` | Validate catalog cards, licence included. |
+| `gallery <dir> -o <out>` | A browse world of candidate pieces. |
+| `curate`, `curate-merge` | Harvest the notes left in it into the catalog. |
 
-```
-delve-admit [--json] <command>
+Every write goes through one definition of the prefab metadata document, so a
+step that edits one part of it leaves every other part exactly as it found it.
 
-audit    <piece.nbt|manifest.json> [--allowlist <file>] [-o <report.json>]   # CI gate
-resolve-jigsaw <piece.nbt>                                       # neutralize foreign worldgen jigsaws
-socket   <piece.nbt> --pos x,y,z --facing <dir> [--opening w,h]  # carve a jigsaw socket
-anchor   <piece.nbt> --name <id> (--pos x,y,z | --region a:b) [--facing d] [--block b]
-lighting <piece.nbt|manifest.json> [--write] [--dark-threshold N]           # static light probe
-catalog validate <card.json>...                                  # catalog card schema
-gallery  <dir> -o <out> [--id <id>] [--cols N]                   # browse world
-curate   <server.log> --layout <gallery-layout.json> [-o <r.json>]
-curate-merge <curation.json> --catalog <dir>
-```
+## Use
 
-**Exit codes**: `0` ok · `1` audit/validation failure · `2` input error · `3`
-output error · `≥10` internal. Diagnostics (`DW073x..DW076x`) go to **stderr**, one
-JSON object per line under `--json`; machine-readable reports go to **stdout** (or a
-`-o`/`--report` file). Diagnostic codes are documented in `src/diag.rs`.
-
-## 1. `audit` — the mechanical NBT palette audit (CI gate)
-
-Two checks over a converted `.nbt`, producing a machine-readable `AuditReport`:
-
-- **Hard-forbid** (`DW0731`): the code-injection vectors — command blocks,
-  structure blocks, and **NBT-bearing spawners**, plus any block entity carrying an
-  embedded `Command`. The recursive `Command`/spawn-NBT scan is the exact one the
-  `delve-schem` conversion strip uses (reused, no drift).
-- **Palette allowlist** (`DW0730`): every palette block name must be in the
-  (configurable) allowlist, so a reviewer sees any surprising block.
-
-**A zone that ships as a tile set is one building, and is handed over as its
-manifest.** A zone past the 48-per-axis cap is split into several `.nbt` plus a
-`<base>.json` manifest; `audit` and `lighting` take that manifest, reassemble the
-tiles and judge the zone as one thing — light crosses a packaging plane like any
-other cell, and a contract declared on the zone is zone-relative. Handing any
-whole-piece command **one tile** is `DW0739` (exit 2), because the alternative is
-a confident answer about a fifth of a building.
-
-**Jigsaw is intentionally not hard-forbidden here.** The conversion strip forbids
-jigsaw on *raw community schematics* (contributors don't bring their own sockets);
-but the admission audit runs on **library prefabs**, whose jigsaw blocks are the
-legitimate sockets the compiler's solver mates — and a jigsaw block entity cannot
-carry a `Command`. Verified: every shipped `campaigns/prefabs/*.nbt` passes.
-
-The allowlist is a broad default vanilla **building + decoration** set (see
-`src/allowlist.rs`) — stone/wood/glass/copper families, plus inert flora (grasses,
-flowers, mushrooms, vines, coral, saplings), non-functional furniture/job-site
-blocks, decorative mineral blocks + ores, and archaeology. It deliberately still
-flags *surprising* blocks (redstone contraptions, tnt, note blocks) for review, and
-is overridable with `--allowlist <file>` (`{ "allow": [...], "allow_suffixes": [...] }`).
-The default was broadened for the first real Modrinth ingestion run (FLAGGED for
-owner ratification in `src/allowlist.rs`).
-
-## 2. Admission tooling — `resolve-jigsaw` / `socket` / `anchor` / `lighting`
-
-**`resolve-jigsaw`** neutralizes the worldgen jigsaw markers a *community* structure
-ships with (Modrinth building content is overwhelmingly worldgen datapacks). It
-replaces each `minecraft:jigsaw` block with its block-entity `final_state` — exactly
-the block the vanilla generator would bake in — then prunes the orphaned palette
-entry. This is the **intended NBT primitive**, not a heuristic, and must run at
-import **before** `socket` (our own sockets are jigsaw blocks with `final_state`=air;
-resolving after carving would dissolve them).
-
-
-- **`socket`** carves a `w×h` opening to air, drops a `minecraft:jigsaw` marker with
-  the structure-form block entity, and appends the `connectors[]` entry — byte-for-
-  byte the shape the generator emits, so the solver mates it like any library piece.
-- **`anchor`** adds a named point/gate anchor to the metadata.
-- **`lighting`** floods the piece with the **compiler's own light model**
-  (`delvewright_compiler::light`, the one spec-0010 measures the assembled world
-  with) and reports the minimum over the floor cells a body can walk to from a
-  ground-level entrance. The piece is modelled **standing in open air**, so sky
-  light enters through its openings from the side: a colonnade is lit by the sky
-  and not by a lantern. A prefab has no campaign and therefore no hour, so the
-  probe measures at both ends of the engine's sky table — the profile is taken at
-  a clear night, the darkest state the engine models, and the daylight minimum is
-  reported beside it. The report states its **binding** (`standable_cells`,
-  `entry_cells`, `measured_cells`) and the sky each figure was taken at; a binding
-  of zero is `DW0752` and fails the command. It is honest — the written `method`
-  marks it a *static estimate*, never a live probe.
-
-Metadata (`<piece>.json`) is not a shape this crate defines. It is
-`delvewright_schem::prefab::PrefabMeta` (`prefab_id`, `structure`, `anchors`,
-`connectors`, `lighting`, `license`), the same type the generators write, so an
-admitted external piece is indistinguishable consumer-side from a generated one
-— and so a subcommand that edits one block of the document cannot delete the
-blocks it does not model. Each writing subcommand owns exactly one key
-(`socket` → `connectors`, `anchor` → `anchors`, `lighting --write` →
-`lighting`) and `tests/metadata_preservation.rs` holds every one of them to it.
-
-## 3. `catalog` — catalog cards
-
-`catalog/<asset-id>.json` (spec-0007 step 2), validated with the same rigor as the
-DSL stages: a `deny_unknown_fields` serde model, enum verdicts, a `1..=5` quality
-bound, and a **license allowlist** (ADR-0013 — CC0 / CC BY / original / MIT /
-Apache-2.0 / GPL-compatible; NC / ND / ShareAlike / unknown reject). A non-original
-license must carry a source `url` ("free download" ≠ licensed).
-
-## 4. `gallery` + `curate` — the browse world
-
-`gallery` lays candidate pieces in a labelled grid (`text_display` name + asset-id),
-copies the structures into a datapack that places them on first boot, wires in the
-`dw.note` capture (spec-0006 reuse) with **per-asset AABBs** so a note resolves
-`area=<asset-id>`, and writes a `gallery-layout.json` that is shape-compatible with
-the orchestrator's `Layout`. `curate` then reuses the **exact** `delve-harvest`
-server-log parser to group notes into a per-asset `CurationReport`;
-`curate-merge` folds them into each catalog card's `curation` field.
-
-The `dw.note` stamp/emit functions are byte-pattern-identical to the spec-0006
-`creator.rs` channel, which is **live-verified on a pinned 1.21.11 server**
-(`validation/playtest-note-flow.sh`). The gallery round-trip (log → `curate` →
-per-asset report) is covered deterministically in `tests/gallery.rs` through the
-**real** orchestrator `delve-harvest` parser; a dedicated live gallery boot is a
-tier-3 follow-up (it needs an itzg datapack server + world env; keep it off the
-shared compose to avoid touching the versions.toml manifest gate).
-
-## Tests
-
-```
-cargo test -p delvewright-admit    # audit fixtures, socket/light, catalog, gallery, CLI
+```toml
+[dependencies]
+delvewright-admit = "1"
 ```
 
-Fixtures (`src/fixtures.rs`) are built in code — no network: a clean piece, a
-command-block piece, an NBT-bearing spawner, a disallowed-palette piece, and the
-roofed-but-open pair (a pavilion and a colonnade) that a light model without a
-sky term measures as pitch black.
+```rust
+use delvewright_admit::audit::audit;
+```
+
+## Compatibility
+
+- **Minecraft**: Java Edition 1.21.11.
+- **Campaign format**: `dsl_version` `0.2.0` through `0.19.0`.
+- **Rust**: 1.97.1 or newer.
+
+## Documentation
+
+- [Tool reference](https://github.com/stellarfeline/delvewright/blob/main/docs/reference/tools.md)
+  — every flag, what each step measures, and what it refuses.
+- [Project repository](https://github.com/stellarfeline/delvewright).
+
+## Licence
+
+GPL-3.0-only.

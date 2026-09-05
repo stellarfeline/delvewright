@@ -106,7 +106,7 @@ fn carved_jigsaw_socket_passes_the_audit() {
         "clean",
         s.size,
         s.data_version,
-        "delve-admit (external admission)",
+        "delvec prefab (external admission)",
         License {
             source: "original".into(),
             spdx: "CC0-1.0".into(),

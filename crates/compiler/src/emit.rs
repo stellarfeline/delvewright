@@ -380,7 +380,7 @@ pub fn build_with_warnings(
                  give the piece the party arrives in an anchor at that cell and put \
                  `\"role\": \"{role}\"` on it (in a pool, that is the prefab the \
                  layout is seeded from), or bind the area to a prefab that already \
-                 has one. Every producer can write it: `delve-admit anchor <nbt> \
+                 has one. Every producer can write it: `delvec prefab anchor <nbt> \
                  --name <anchor> --pos <x,y,z> --role {role}` for a hand-built or \
                  ingested piece, `\"role\": \"{role}\"` on the `mark` for a grammar \
                  program.",
@@ -1501,7 +1501,7 @@ pub fn build_with_warnings(
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
     // Deterministic camera + expect-checklist shot list for the visual tier;
-    // consumed by `delve-render`. Emitted before the manifest so its hash is
+    // consumed by `delvec render`. Emitted before the manifest so its hash is
     // recorded there like every other output.
     //
     // `render_plan` is the only way to a render-plan value, and it takes the

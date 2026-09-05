@@ -49,7 +49,7 @@ def gate(tmp_path, monkeypatch):
     root.mkdir(parents=True)
 
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(module, "COMPILER_CARGO_TOML", cargo_toml)
+    monkeypatch.setattr(module, "ROOT_CARGO_TOML", cargo_toml)
     monkeypatch.setattr(module, "DEFAULT_CAMPAIGNS_ROOT", root)
     monkeypatch.setattr(module, "ALLOWLIST", {})
     # The Minecraft pin is engine state exactly as `DELVEC_VERSION` is, and the

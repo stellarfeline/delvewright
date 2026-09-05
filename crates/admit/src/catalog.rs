@@ -31,7 +31,7 @@ pub struct CatalogCard {
     pub style_fit: StyleFit,
     /// Quality 1–5.
     pub quality: u8,
-    /// Render paths (deterministic `delve-render` output the verdict was ruled on).
+    /// Render paths (deterministic `delvec render` output the verdict was ruled on).
     #[serde(default)]
     pub renders: Vec<String>,
     /// Which demand-sheet categories this asset fills.

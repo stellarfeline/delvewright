@@ -96,7 +96,7 @@ def grammar_md(
             f"{heading_count} techniques, one minimal program each:",
             "",
             "```sh",
-            "delve-grammar expand --program idiom-shape --region 15x9x3 --seed 1",
+            "delvec grammar expand --program idiom-shape --region 15x9x3 --seed 1",
             "```",
             "",
             "| # | Technique | Program | Region, seed | What it shows |",

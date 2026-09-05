@@ -70,7 +70,7 @@ ingested.
 
 ## Render-critique loop (the probe's evidence)
 
-Rendered with `delve-render batch` on the pinned 1.21.11 client jar; renders read
+Rendered with `delvec render batch` on the pinned 1.21.11 client jar; renders read
 back multimodally against the brief. Three substantive rounds:
 
 - **Round 1 (baseline).** The core risk — "does the wall read as natural rock or
@@ -213,7 +213,7 @@ claimed to have fixed it:
 Only `cave-shore.nbt` changes; its size, sockets, connectors, anchors and every
 byte of its metadata JSON are identical. The class is now caught **at the
 emitter**: `invariants::assert_fluid_is_contained` runs in every generator
-before any bytes are written, sharing the block rules with `delve-admit audit`
+before any bytes are written, sharing the block rules with `delvec prefab audit`
 rather than restating them, and prints each piece's binding.
 
 ## Honest self-assessment vs the brief

@@ -1,4 +1,4 @@
-//! Per-piece shot planner for `delve-render piece`.
+//! Per-piece shot planner for `delvec render piece`.
 //!
 //! Two camera kinds, answering two different questions.
 //!

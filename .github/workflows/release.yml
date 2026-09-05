@@ -63,7 +63,7 @@ jobs:
   # Its own tier-3 job rather than a second stage of `playthrough` above, because
   # it needs a campaign that HAS a death loop: hello-world declares no lethal
   # volume, no `on_death` and no stake, so the whole contract is absent there and
-  # the stage would report SKIPPED forever. `crates/compiler/tests/fixtures/economy`
+  # the stage would report SKIPPED forever. `crates/delvec/tests/fixtures/economy`
   # is the fixture that declares all three (spec-0031 + spec-0032). Same cost
   # profile as the playthrough: one server, one bot, no new pull.
   #
@@ -80,7 +80,7 @@ jobs:
       - name: build the economy delve output (spec-0031 + spec-0032)
         run: |
           cargo run -p delvec --bin delvec -- \
-            build crates/compiler/tests/fixtures/economy \
+            build crates/delvec/tests/fixtures/economy \
             -o validation/delve-output-economy --prefabs campaigns/prefabs
       - name: the bot dies in a declared lethal volume and recovers its stake
         run: |
@@ -105,7 +105,7 @@ jobs:
   # scripted deaths everywhere it had ever run — the island's floor-gate defect,
   # in a second place.
   #
-  # `crates/compiler/tests/fixtures/die-retry` is the smallest campaign that lets
+  # `crates/delvec/tests/fixtures/die-retry` is the smallest campaign that lets
   # it bind: one conversation that sets a checkpoint and summons one wave, and one
   # `kill` objective four blocks away. The run report's `die_retry_binding` is the
   # thing to read — `deaths_scripted: 0` means the stage examined nothing,
@@ -125,7 +125,7 @@ jobs:
       - name: build the die-retry delve output
         run: |
           cargo run -p delvec --bin delvec -- \
-            build crates/compiler/tests/fixtures/die-retry \
+            build crates/delvec/tests/fixtures/die-retry \
             -o validation/delve-output-die-retry --prefabs campaigns/prefabs
       - name: the bot dies twice at a checkpointed encounter and comes back
         run: |
@@ -204,7 +204,7 @@ jobs:
       - name: build the two-branch fixture
         run: |
           cargo run --locked -p delvec --bin delvec -- \
-            build crates/compiler/tests/fixtures/branch-two-endings \
+            build crates/delvec/tests/fixtures/branch-two-endings \
             -o validation/delve-output --prefabs campaigns/prefabs
       - name: every enumerated branch is walked to its own ending
         run: bash validation/branch-runs.sh --project dw-ci-branches

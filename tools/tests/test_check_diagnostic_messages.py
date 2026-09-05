@@ -1,6 +1,6 @@
 """The diagnostic-message wholeness gate (`tools/check-diagnostic-messages.py`).
 
-The defect this pins, from the field: `delve-grammar expand` refused an author's
+The defect this pins, from the field: `delvec grammar expand` refused an author's
 export with
 
     ... so freezing it would put a  on disk whose metadata describes ...
