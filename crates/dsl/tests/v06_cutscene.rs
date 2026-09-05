@@ -1,6 +1,6 @@
 //! DSL v0.6 cutscene surface: the camera-aim field (`look_at`) and the
 //! multi-shot `shots` list. Both are additive fields on the v0.4 `cutscene`
-//! verb, reserved (`DW0141`) under a pre-0.6 quests stage; the single-shot
+//! verb; the single-shot
 //! spelling stays valid forever. A cutscene that mixes the two spellings,
 //! declares neither, or gives a shot with no camera waypoint is `DW0199`.
 

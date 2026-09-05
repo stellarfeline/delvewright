@@ -2,7 +2,7 @@
 //! boss leaves behind a **declared subset** — usually one worn piece, plus any
 //! quest token the fight yields — never automatically everything.
 //!
-//! Covered here: the version fence (`DW0141`), the worn-piece rule (`DW0490`),
+//! Covered here: the worn-piece rule (`DW0490`),
 //! the tier rule (`DW0491`), and the two halves of the drop-gated `collect`
 //! proof — that the wave really yields the item (`DW0492`) and that the fight is
 //! proven to happen first (`DW0493`).

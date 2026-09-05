@@ -7,7 +7,7 @@
 //! `set-flag`).
 //!
 //! Contract under test:
-//! * validates clean under `0.6.0`; reserved (`DW0141`) on a pre-0.6 campaign;
+//! * validates clean;
 //! * every deep effect walker recurses into it: a `set-flag` nested in
 //!   `move-npc.on_arrive` COUNTS as a flag producer (no spurious `DW0172`), and
 //!   a nested narrate enters the l10n inventory under the `…​.arrive.<j>.…` key;

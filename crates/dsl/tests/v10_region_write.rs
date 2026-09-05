@@ -1,5 +1,5 @@
 //! DSL v0.10 region writes (spec-0031): `fill-region` / `clear-region` — the
-//! version fence, the block registry, the anchor reference, and the gate the verbs
+//! the block registry, the anchor reference, and the gate the verbs
 //! carry like every other gate consumer.
 //!
 //! What is deliberately NOT here: a second copy of the checks these verbs inherit.

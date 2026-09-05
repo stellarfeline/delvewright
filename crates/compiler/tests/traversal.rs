@@ -139,7 +139,7 @@ fn barrier_line(line: &str, middle: &str, middle_dy: i32) -> String {
 ///
 /// The declaration is fenced on the **npcs** document's own `dsl_version`, which
 /// is why this fixture can adopt it without touching the quests stage — the
-/// per-stage fence, exercised rather than asserted.
+/// declaration, exercised rather than asserted.
 fn npcs_declaring(base_entity: &str, locomotion: Option<&str>) -> String {
     let mut doc: serde_json::Value = serde_json::from_str(&read_hw("npcs.json")).unwrap();
     doc["dsl_version"] = serde_json::json!("0.19.0");

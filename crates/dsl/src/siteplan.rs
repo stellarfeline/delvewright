@@ -138,10 +138,6 @@ pub const DW_DROP_POLICY: DwCode = DwCode::new("DW0831", ExitTier::Build);
 /// declared a contact to dodge the standard set is refused by its own width.
 /// That is the property `CLAUDE.md` demands of an escape hatch — the defect this
 /// exists to catch is incapable of supplying the hatch's proof obligation.
-///
-/// `every_version` for the reason its siblings are: the rule judges what the
-/// document SAYS, and a plan below [`crate::WAY_AND_CONTACT_SINCE`] has no
-/// `contact` to judge — the per-stage fence has already refused one.
 pub const DW_CONTACT: DwCode = DwCode::new("DW0876", ExitTier::Build);
 
 /// `DW0832`: a box violates its node's size class.
@@ -156,12 +152,8 @@ pub const DW_IDENTITY_EMPTY: DwCode = DwCode::new("DW0834", ExitTier::Build);
 /// `DW0835`: a whole-owned volume enters a box.
 pub const DW_VOLUME_IN_BOX: DwCode = DwCode::new("DW0835", ExitTier::Build);
 
-/// `DW0839`: two placement authorities in one campaign.
-///
-/// `every_version` for the reason its siblings are: the rule judges what the
-/// campaign SAYS — that a `site-plan.json` and a non-empty `areas[]` are both
-/// present — and a document below `dsl_version` 0.14.0 has no site plan to be
-/// the second authority, so there is no earlier campaign the rule could reach.
+/// `DW0839`: two placement authorities in one campaign — a `site-plan.json` and
+/// a non-empty `areas[]` both present.
 pub const DW_TWO_AUTHORITIES: DwCode = DwCode::new("DW0839", ExitTier::Build);
 
 // ---------------------------------------------------------------------------

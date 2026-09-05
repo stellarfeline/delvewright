@@ -3,7 +3,7 @@
 //! `requires_state` numeric comparison every gate consumer carries.
 //!
 //! What this file pins down:
-//! * the whole surface validates clean at `0.10.0` and is `DW0141` below it, at
+//! * the whole surface validates clean, at
 //!   every site — declaration, verb and comparison;
 //! * a reference to an undeclared datum is `DW0500`;
 //! * a datum a gate reads and nothing writes is `DW0501`, and a datum nothing

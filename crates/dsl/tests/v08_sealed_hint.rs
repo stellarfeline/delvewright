@@ -1,6 +1,6 @@
 //! DSL v0.8 `close-gate.sealed_hint`: the
 //! line a sealed gate answers a right-click with. Validates under
-//! `dsl_version 0.8.0`, is reserved (`DW0141`) earlier, enters the l10n inventory
+//! enters the l10n inventory
 //! when authored (and only then), and never moves a content key by existing.
 
 mod common;

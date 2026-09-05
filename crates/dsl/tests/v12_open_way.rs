@@ -1,4 +1,4 @@
-//! DSL v0.12 (spec-0042): the `open-way` effect — the version fence, the gate it
+//! DSL v0.12 (spec-0042): the `open-way` effect — the gate it
 //! carries like every other gate consumer, and the fields it deliberately does
 //! not have.
 //!

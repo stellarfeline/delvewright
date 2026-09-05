@@ -213,7 +213,7 @@ fn the_green_states_a_one_body_wide_route_and_a_front_and_validates() {
     let d = graph_with(|_| {});
     let ours: Vec<_> = d
         .iter()
-        .filter(|x| matches!(x.code.as_str(), "DW0875" | "DW0876" | "DW0832" | "DW0141"))
+        .filter(|x| matches!(x.code.as_str(), "DW0875" | "DW0876" | "DW0832"))
         .collect();
     assert!(
         ours.is_empty(),

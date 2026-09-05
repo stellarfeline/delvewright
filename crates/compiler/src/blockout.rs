@@ -1227,7 +1227,7 @@ pub const DW_NODE_UNREACHED: DwCode = DwCode::new("DW0837", ExitTier::Build);
 /// taken under. A second step rule here would make this the one proof in the
 /// compiler taken under different physics.
 ///
-/// Build tier (exit 3), `every_version`.
+/// Build tier (exit 3).
 pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::new("DW0877", ExitTier::Build);
 
 /// `DW0838`: a connection nothing allocated.

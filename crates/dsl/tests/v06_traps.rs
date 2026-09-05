@@ -1,5 +1,5 @@
 //! DSL v0.6 traps (spec-0011): the stage-5 `traps[]` surface validates under
-//! `0.6.0` and is reserved (`DW0141`) earlier. A trap whose `at`/`disarm.via`
+//! `0.6.0`. A trap whose `at`/`disarm.via`
 //! anchor no prefab provides (or a duplicate/malformed id) is `DW0340`; a
 //! `dispense` payload item outside the pinned registry is `DW0341`.
 //!

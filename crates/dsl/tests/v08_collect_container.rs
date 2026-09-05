@@ -8,7 +8,7 @@
 //! `fill_count` pads the container so it reads full.
 //!
 //! Same contract every reserved field before them kept: declaring any of them
-//! below 0.8.0 is `DW0141`, and absence emits byte-identically to every campaign
+//! absence emits byte-identically to a campaign
 //! written before them.
 
 mod common;

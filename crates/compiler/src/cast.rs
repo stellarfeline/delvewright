@@ -40,7 +40,7 @@
 //!
 //! Supporting rules: `DW0463` (the forcing function — an on-stage placement must
 //! say what the character is doing and what right-click offers), `DW0464`
-//! (dangling refs), `DW0465` (the pre-0.7 deprecation window), `DW0466`
+//! (dangling refs), `DW0466`
 //! (`"unchanged"` with nothing to carry forward) and `DW0467` (the staleness
 //! lint: an NPC whose dialogue never changes across the whole story).
 

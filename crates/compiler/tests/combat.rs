@@ -652,7 +652,7 @@ fn an_optional_tiered_wave_is_uncovered_too() {
 
 #[test]
 fn declaring_an_actor_tier_moves_no_shipped_byte() {
-    // The version fence exists so a tier is pure validation metadata. Compile
+    // A tier is pure validation metadata. Compile
     // the same campaign with and without the field and compare EVERY output
     // outside `validation/` byte for byte (`manifest.json` indexes the whole
     // tree, `validation/` included, so it is the one documented exception —

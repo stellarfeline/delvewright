@@ -38,26 +38,13 @@
 //!   authored prose the emitter drops on the floor, with nothing anywhere
 //!   saying so.
 //!
-//! # Three obligations behind a fence, one contradiction in front of it
+//! # Three obligations and one contradiction
 //!
 //! [`DW_PROMPT_UNSHOWN`] judges what the document SAYS — a `hint` that asks to be
-//! shown and an absent `title` that guarantees it will not be — which is
-//! `Binds::EveryVersion`'s own stated category, *a contradiction between two
-//! authored fields*. It requires nothing a campaign could not always have had:
-//! a document with no `hint` cannot violate it at any version.
-//!
-//! The other three **require the campaign to HAVE something**, which is the
-//! other category and the one that owes a fence. The doctrine's test — *could
-//! this go from green to red on a campaign whose own documents did not change?*
-//! — answers yes for all three, and it answered yes in practice on the first run:
-//! `keep-vertical` (0.3.0) and `souls-td-lanes` (0.6.0) are engine fixtures that
-//! declare an old version, carry a `kill` objective from before the announcement
-//! surface existed, and are entitled to keep compiling unchanged. That is what
-//! the fence is for, and editing them to satisfy a new obligation would destroy
-//! the version they exist to pin.
-//!
-//! [`PROMISE_SINCE`] states which version, and why it is that one rather than the
-//! number that happened to make the tests pass.
+//! shown and an absent `title` that guarantees it will not be — *a contradiction
+//! between two authored fields*. The other three **require the campaign to HAVE
+//! something**: they are the forcing function `DW0481` applies to the story,
+//! turned to face the player.
 //!
 //! # What these rules deliberately do NOT claim
 //!

@@ -12,7 +12,7 @@
 //! and `DW0331` (which exists to reject *scrolling* captions) has nothing to say
 //! about it.
 //!
-//! Same contract every v0.8 field carries: declaring it below 0.8.0 is `DW0141`,
+//! Same contract every v0.8 field carries:
 //! absence is byte-identical to every campaign written before it.
 
 mod common;

@@ -12,7 +12,6 @@
 //! * validates clean under `0.6.0` everywhere `requires_flags` is accepted;
 //! * an unknown flag in `forbids_flags` gets the same `DW0172` treatment as in
 //!   `requires_flags`;
-//! * reserved (`DW0141`) under a pre-0.6 campaign, at every site;
 //! * a completing dialogue option gated only by `forbids_flags` counts as gated
 //!   for the `DW0191` deadlock guard (conservative: no temporal flag reasoning).
 

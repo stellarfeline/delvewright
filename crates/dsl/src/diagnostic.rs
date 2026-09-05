@@ -349,8 +349,8 @@ impl Group {
 /// The stable validation diagnostic codes (catalogued in
 /// `docs/reference/compiler.md` §5).
 ///
-/// Every entry is a [`DwCode`], so every entry states when it starts binding a
-/// campaign ([`Binds`]) — there is no way to add one that does not.
+/// Every entry is a [`DwCode`], so every entry states its exit tier — there is
+/// no way to add one that does not.
 pub mod codes {
     use super::{DwCode, ExitTier};
 
@@ -395,40 +395,21 @@ pub mod codes {
     /// one shared name would buy coverage for whichever rule the file happens to
     /// sit next to.
     pub const PLAN_NOT_CONVERGENT: DwCode = DwCode::new("DW0132", ExitTier::Build);
-    /// Non-mandatory quest below [`crate::OPTIONAL_QUESTS_SINCE`], where the
-    /// surface is reserved.
-    ///
-    /// **`every_version` deliberately**, and it is the case the [`Binds`]
-    /// doctrine names first: this judges what the document SAYS against the
-    /// version the document itself declares. Fencing it as `Since(17)` would
-    /// *stop rejecting* `mandatory: false` in a 0.12 campaign — the exact
-    /// inversion the doctrine warns about.
-    pub const NON_MANDATORY: DwCode = DwCode::new("DW0133", ExitTier::Build);
     /// An optional quest inside the finale's dependency closure (spec-0051
     /// §8.1) — including a finale that declares itself optional.
-    ///
-    /// `every_version`: only a document at [`crate::OPTIONAL_QUESTS_SINCE`] can
-    /// carry `mandatory: false` at all, so no campaign below it can reach this
-    /// rule and there is nothing to grandfather. Its verdict is a function of
-    /// the campaign alone.
     pub const OPTIONAL_ON_SPINE: DwCode = DwCode::new("DW0866", ExitTier::Build);
     /// A mandatory quest whose `depends_on` edge or stage-5 `quest-complete`
     /// trigger names an optional quest (spec-0051 §8.2).
-    ///
-    /// `every_version`, for the same reason as [`OPTIONAL_ON_SPINE`].
     pub const MANDATORY_ON_OPTIONAL: DwCode = DwCode::new("DW0867", ExitTier::Build);
     /// A mandatory objective gated on a flag only an optional quest produces
     /// (spec-0051 §8.3) — the mainline key behind participation.
     ///
-    /// `every_version`, for the same reason as [`OPTIONAL_ON_SPINE`]. The
-    /// participation-minimal replay (`DW0204`) is the compensating stronger
+    /// The participation-minimal replay (`DW0204`) is the compensating stronger
     /// check behind it; this one refuses at the edge so the message can name
     /// the strand.
     pub const MAINLINE_KEY_OPTIONAL: DwCode = DwCode::new("DW0868", ExitTier::Build);
     /// Objective `after` cycle.
     pub const AFTER_CYCLE: DwCode = DwCode::new("DW0140", ExitTier::Build);
-    /// Reserved feature used (reserved enum value or reserved field).
-    pub const RESERVED: DwCode = DwCode::new("DW0141", ExitTier::Build);
     /// Anchor not provided by the area's bound prefab.
     pub const ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0142", ExitTier::Build);
     /// Item id not in the pinned 1.21.11 registry.
@@ -684,11 +665,6 @@ pub mod codes {
     pub const BOUNDARY_MARGIN: DwCode = DwCode::new("DW0321", ExitTier::Build);
     /// A stage-1 `horizon` param is out of range, or is a param of a base other
     /// than the one declared (spec-0026): validation-tier (exit 1).
-    ///
-    /// `Since(16)` because it can only fire on a declaration the surface below
-    /// 0.16.0 has no spelling for — the two names that predate the horizon
-    /// library carry no params at all, so a campaign that never opted in binds
-    /// zero of this.
     pub const HORIZON_PARAM: DwCode = DwCode::new("DW0853", ExitTier::Build);
     /// A `horizon` whose base BUILDS terrain, on a campaign that states no
     /// extent for that terrain to stand around (spec-0026): validation-tier
@@ -699,10 +675,6 @@ pub mod codes {
     /// whatever gets placed is not a substitute: it is an artifact of the
     /// compiler's fixed area stride, mostly the void between areas, so ringing
     /// it builds a mountain range around empty space.
-    ///
-    /// `Since(16)` for the same reason as `DW0853`: only a base introduced with
-    /// the horizon library can build terrain, so a campaign that never opted in
-    /// binds zero of this.
     pub const SURROUND_NO_REGION: DwCode = DwCode::new("DW0855", ExitTier::Build);
     /// (v0.6) A `sequence` effect is nested inside another `sequence` (directly, or
     /// reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse
@@ -990,11 +962,6 @@ pub mod codes {
     /// click at all. Approximating it (polling the record and assuming the nearest
     /// player) is the downstream folklore CLAUDE.md's no-hack rule excludes, so the
     /// capability is refused rather than faked.
-    ///
-    /// [`Binds::EveryVersion`]: its verdict is a function of the document alone
-    /// — a contradiction between two authored fields on one trigger — and
-    /// `audience` itself is unwritable below 0.11.0 (`DW0141`), so no campaign
-    /// can go green-to-red on it without being edited.
     pub const TRIGGER_AUDIENCE_UNATTRIBUTABLE: DwCode = DwCode::new("DW0427", ExitTier::Build);
 
     /// (v0.11) **A trigger id in the compiler's reserved `dw-` namespace.** The
@@ -1003,12 +970,6 @@ pub mod codes {
     /// triggers sharing an id would share one `dw_trig_…` tag and one emitted
     /// function, so one of them would silently disappear. Reserving the prefix
     /// makes the collision impossible by construction instead of improbable.
-    ///
-    /// [`Binds::EveryVersion`], and deliberately: the collision it prevents is
-    /// real at *every* version, because a `close-gate` below 0.11.0 is still
-    /// given a synthesized `dw-press-…` answer. It requires the campaign to HAVE
-    /// nothing — it forbids one shape of id — so fencing it would be fencing a
-    /// wellformedness rule, which [`Binds`] names as the wrong direction.
     pub const TRIGGER_ID_RESERVED: DwCode = DwCode::new("DW0428", ExitTier::Build);
 
     /// (v0.11) **A sealed body with no press answer**, uniformly over the
@@ -1027,14 +988,6 @@ pub mod codes {
     /// One rule for the whole pressable class: two objects of the same class do
     /// not get two defaulting policies, which would be the "capability keyed to
     /// the verb" defect this very surface is CLAUDE.md's worked example of.
-    ///
-    /// [`Binds::Since`] 0.11.0, because it is a tightening — it requires the
-    /// campaign to HAVE something it need not have had before. A campaign
-    /// authored under the older rule keeps its verdicts and its behaviour: a
-    /// door still says nothing, a seal still takes the compiler's canonical
-    /// English. The fence is [`crate::fence`]'s, not a private version test:
-    /// the check raises the diagnostic and the general fence decides whether it
-    /// reaches a verdict.
     pub const SEALED_BODY_UNANSWERED: DwCode = DwCode::new("DW0429", ExitTier::Build);
 
     /// (v0.11, spec-0034) **A declared locomotion the engine cannot hold the
@@ -1059,13 +1012,6 @@ pub mod codes {
     /// validation tier (exit 1). Prescription: remove the declaration — a body whose
     /// route crosses water is governed by the flooded-cell rules already, and
     /// the derived aquatic class still reaches the binding ledger.
-    ///
-    /// [`Binds::EveryVersion`]: it judges what the document SAYS — an authored
-    /// value the engine refuses — so its verdict is a function of the campaign
-    /// alone and there is nothing to grandfather. The surface that carries the
-    /// value is itself fenced per stage at 0.11 by [`RESERVED`], which is where
-    /// the version gate belongs; fencing this code as well would only stop
-    /// rejecting a bad document, which is the direction [`Binds`] warns about.
     pub const TRAVERSAL_UNPROVABLE: DwCode = DwCode::new("DW0455", ExitTier::Build);
 
     /// A gate contradicts itself, so it can NEVER open: a flag on both its
@@ -1078,8 +1024,7 @@ pub mod codes {
     /// ([`crate::gate::for_each_gate`]), because satisfiability is a property
     /// of the gate, never of the verb that first needed the question answered.
     ///
-    /// Error tier, validation (exit 1). [`Binds::EveryVersion`]: it judges an
-    /// authored contradiction, a function of the campaign alone.
+    /// Error tier, validation (exit 1).
     pub const GATE_NEVER_OPENS: DwCode = DwCode::new("DW0847", ExitTier::Build);
 }
 

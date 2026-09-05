@@ -2,7 +2,7 @@
 //!
 //! Every struct is `deny_unknown_fields`. Reserved enum values (objective and
 //! effect types a campaign's `dsl_version` is too low for) parse successfully
-//! but are rejected by validation ([`crate::validate`]) with code `DW0141`.
+//! and are checked by validation ([`crate::validate`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -555,7 +555,7 @@ pub struct AreaLighting {
     /// The fixture the relight pass places.
     pub fixture: Fixture,
     /// The minimum block+sky light guaranteed on reachable walkable cells
-    /// (1..=14, default 7). Validated by `DW0141`-adjacent bounds checking.
+    /// (1..=14, default 7). Range-checked (`DW0196`).
     #[serde(default = "default_min_light")]
     pub min_light: u8,
 }
@@ -1171,8 +1171,7 @@ pub struct DialogueNode {
 pub struct DialogueOption {
     /// Button label.
     pub label: String,
-    /// The full line this button is the caption of (DSL v0.8; reserved
-    /// `DW0141` earlier). Vanilla's dialog button codec
+    /// The full line this button is the caption of (DSL v0.8). Vanilla's dialog button codec
     /// (`CommonButtonData`) carries an optional `tooltip` component beside
     /// `label`, and the client hangs it on the button as a real hover tooltip —
     /// so a caption on the button and the sentence the character actually says
@@ -1192,7 +1191,7 @@ pub struct DialogueOption {
     /// option cannot make a critical-path node unreachable (`DW0191`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_flags: Vec<FlagId>,
-    /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the option is
+    /// Negative flag gate (DSL v0.6): the option is
     /// **hidden** (and its `/trigger` handler inert) while ANY listed flag is set
     /// for the player — the dual of `requires_flags`. A `forbids_flags`-gated
     /// option counts as *gated* for the `DW0191` deadlock guard: it can be
@@ -1208,8 +1207,8 @@ pub struct DialogueOption {
     /// Effects fired when this option is chosen.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<DialogueEffect>,
-    /// What choosing this option does to the story (DSL v0.8, spec-0025;
-    /// reserved `DW0141` earlier). Required at 0.8.0 for a **story-weight** beat
+    /// What choosing this option does to the story (spec-0025). Required for a
+    /// **story-weight** beat
     /// — an option carrying a `set-flag` effect, which is how a player's choice
     /// forks the world (`DW0481`). An option that only walks the tree or
     /// completes an objective needs none: the objective already declares one.
@@ -1273,8 +1272,7 @@ impl DialogueEffect {
     }
 
     /// The v0.6 effect name if this dialogue effect is one introduced in DSL v0.6
-    /// (`set-checkpoint`, spec-0012; `spawn-npc`). Reserved (`DW0141`) in an
-    /// earlier campaign.
+    /// (`set-checkpoint`, spec-0012; `spawn-npc`).
     pub fn v06_effect(&self) -> Option<&'static str> {
         match self {
             DialogueEffect::SetCheckpoint { .. } => Some("set-checkpoint"),
@@ -1336,7 +1334,7 @@ impl DialogueEffect {
     }
 
     /// The v0.4 effect name if this dialogue effect is one introduced in DSL v0.4
-    /// (`set-flag`). Reserved (`DW0141`) in an earlier campaign.
+    /// (`set-flag`).
     pub fn v04_effect(&self) -> Option<&'static str> {
         match self {
             DialogueEffect::SetFlag { .. } => Some("set-flag"),
@@ -1578,8 +1576,7 @@ pub struct QuestPlanContent {
     pub quests: Vec<PlannedQuest>,
     /// The quest whose completion ends the campaign.
     pub finale: QuestId,
-    /// The campaign's declared **story forks** (DSL v0.8, spec-0025; reserved
-    /// `DW0141` earlier). Empty/absent = a campaign that claims to have no
+    /// The campaign's declared **story forks** (DSL v0.8, spec-0025). Empty/absent = a campaign that claims to have no
     /// branch — which the compiler then *verifies* rather than assumes: any flag
     /// that gates casts, staging or structure and is set on some playthroughs and
     /// not others belongs to no declared point and is `DW0480`.
@@ -1621,7 +1618,7 @@ impl QuestPlanContent {
     ///
     /// **Not the same question as the `mandatory` field**, and the name says so
     /// deliberately. Today the two sets always coincide, because `DW0132` demands
-    /// every declared quest be a transitive dependency of the finale and `DW0133`
+    /// every declared quest be a transitive dependency of the finale and `DW0866`
     /// demands every quest set `mandatory: true`. If `mandatory: false` ever
     /// becomes legal those coincide no longer, and this function keeps answering
     /// the graph question it has always answered.
@@ -1655,13 +1652,6 @@ impl QuestPlanContent {
     /// side has one derivation — which is the defect the spine function was
     /// created to end, and which a second private `!q.mandatory` filter in the
     /// compiler would re-introduce on the other half.
-    ///
-    /// **The version fence is upstream, not here.** A document below
-    /// [`crate::OPTIONAL_QUESTS_SINCE`] that declares `mandatory: false` is a
-    /// `DW0133` *error*, and an error means no datapack is written at all — so
-    /// every consumer downstream of a green validate sees an empty set on a
-    /// campaign that predates the surface, without this function needing a
-    /// version it does not carry (`QuestPlanContent` has no envelope).
     #[must_use]
     pub fn optional(&self) -> BTreeSet<&str> {
         self.quests
@@ -1810,7 +1800,7 @@ pub struct PlannedQuest {
     pub npcs: Vec<NpcId>,
     /// Prerequisite quests; edges must form a DAG.
     pub depends_on: Vec<QuestId>,
-    /// v0 requires `true`; optional quests are reserved (`DW0133`).
+    /// `false` declares an optional quest (spec-0051).
     pub mandatory: bool,
     /// Act number (informational).
     pub act: u32,
@@ -1844,18 +1834,18 @@ pub struct QuestsContent {
     /// Traps (DSL v0.6, spec-0011): redstone-native environmental hazards bound to
     /// `anchor/trap` prefab markers. Each gives mute trap hardware meaning — its
     /// trigger, dispenser payload, lethality, disarm, and reset. Empty/absent in
-    /// pre-0.6 campaigns (reserved `DW0141`), so a v0.5-or-earlier campaign that
+    /// pre-0.6 campaigns, so a v0.5-or-earlier campaign that
     /// declares none stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub traps: Vec<Trap>,
     /// Shortcut doors (spec-0016 §2): a gate that is sealed from world-load and
     /// is opened — permanently — from the FAR side. Empty/absent in pre-0.6
-    /// campaigns (reserved `DW0141`), so a campaign that declares none stays
+    /// campaigns, so a campaign that declares none stays
     /// byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shortcuts: Vec<Shortcut>,
     /// Ambushes (spec-0016 §3): sugar over "deferred actors + a trigger that
-    /// springs them". Empty/absent in pre-0.6 campaigns (reserved `DW0141`).
+    /// springs them". Empty/absent in pre-0.6 campaigns.
     ///
     /// **Never serialized.** [`parse_campaign`](crate::parse_campaign) expands
     /// each ambush into `triggers`, so the canonical form of a campaign is its
@@ -1866,24 +1856,23 @@ pub struct QuestsContent {
     /// downstream needing to know it was ever there. The list itself is kept in
     /// memory so diagnostics can name the ambush the author wrote.
     /// Timed gates (spec-0016 §4): gates on a deterministic open/close clock.
-    /// Empty/absent in pre-0.6 campaigns (reserved `DW0141`).
+    /// Empty/absent in pre-0.6 campaigns.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub timed_gates: Vec<TimedGate>,
     /// Container fills (spec-0021): pre-placed chests/barrels in the prefabs
     /// given contents at world init. Empty/absent in pre-0.6 campaigns
-    /// (reserved `DW0141`).
+    ///.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loot: Vec<Loot>,
     /// Runtime state data (DSL v0.10, spec-0031): named, scoped, integer-valued
     /// counters the campaign sets, adds to and clears at runtime, and compares
-    /// against in any gate. Empty/absent in pre-0.10 campaigns (reserved
-    /// `DW0141`), so a campaign that declares none stays byte-identical.
+    /// against in any gate. A campaign that declares none emits none of it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub state: Vec<StateDecl>,
     /// **The campaign's death beat** (DSL v0.10, spec-0031): effects run at the
     /// moment a player dies, for that player. Effect root **R7**
-    /// ([`crate::EffectRootKind::OnDeath`]); empty/absent below 0.10.0 (reserved
-    /// `DW0141`), so every existing campaign emits byte-identically.
+    /// ([`crate::EffectRootKind::OnDeath`]); a campaign that declares none emits
+    /// none of it.
     ///
     /// **Why this is campaign-wide and not a field on a checkpoint.** The engine
     /// already has `on_respawn`, and it hangs off a `set-checkpoint` because
@@ -1910,18 +1899,18 @@ pub struct QuestsContent {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub on_death: Vec<QuestEffect>,
     /// Lethal volumes (DSL v0.10, spec-0031): declared boxes that kill whatever
-    /// enters them. Empty/absent in pre-0.10 campaigns (reserved `DW0141`), so a
+    /// enters them. Empty/absent in pre-0.10 campaigns, so a
     /// campaign that declares none stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lethal_volumes: Vec<LethalVolume>,
     /// Shops (DSL v0.10, spec-0032): interaction points that open a list of
-    /// gated offers. Empty/absent in pre-0.10 campaigns (reserved `DW0141`), so a
+    /// gated offers. Empty/absent in pre-0.10 campaigns, so a
     /// campaign that declares none stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shops: Vec<Shop>,
     /// Recovery stakes (DSL v0.10, spec-0032): what a death forfeits, where the
     /// marker lands, and how it comes back. Empty/absent in pre-0.10 campaigns
-    /// (reserved `DW0141`), so a campaign that declares none stays byte-identical.
+    ///, so a campaign that declares none stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stakes: Vec<Stake>,
     #[serde(default, skip_serializing)]
@@ -2619,7 +2608,7 @@ pub struct EnvTrigger {
     /// Flags that must be set before the trigger can fire (DSL v0.4).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_flags: Vec<FlagId>,
-    /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the trigger is
+    /// Negative flag gate (DSL v0.6): the trigger is
     /// **suppressed** while ANY listed flag is set (by any player — flags are
     /// campaign state). The dual of `requires_flags`, so an "armed between two
     /// story beats" trigger needs no re-arm plumbing: e.g. a strike-the-giant
@@ -2717,8 +2706,7 @@ pub enum TriggerOn {
         /// Approach radius (blocks).
         range: u32,
     },
-    /// The player attacks (left-clicks) an **NPC's body** (DSL v0.6, reserved
-    /// `DW0141` earlier).
+    /// The player attacks (left-clicks) an **NPC's body** (DSL v0.6).
     ///
     /// The place-based [`TriggerOn::Strike`] cannot express "hit the giant": it
     /// summons its own `minecraft:interaction` at a *cell*, and a large NPC's
@@ -2936,8 +2924,7 @@ pub struct WaveMob {
     /// chance 0 so players can never farm wave gear (no-grind constitution).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equipment: Option<MobEquipment>,
-    /// What this mob leaves behind when it dies (DSL v0.9; reserved
-    /// `DW0141` earlier). Only an `elite`/`boss` wave may declare it (`DW0491`)
+    /// What this mob leaves behind when it dies (DSL v0.9). Only an `elite`/`boss` wave may declare it (`DW0491`)
     /// — an ordinary mob's kit is never farmable. Empty = drop chance 0 on
     /// every slot.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -3249,12 +3236,11 @@ pub struct Quest {
     /// retires *because the ledger says so*, not because an author remembered a
     /// flag.
     ///
-    /// Empty/absent before v0.7 (`DW0465` deprecation warning for one version
-    /// window), so a campaign that declares none compiles byte-identically.
+    /// Every NPC live during the quest owes an entry (`DW0460`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub cast: BTreeMap<NpcId, CastEntry>,
     /// What this quest does to the story (DSL v0.8, spec-0025; required at 0.8.0,
-    /// `DW0481`; reserved `DW0141` earlier).
+    /// `DW0481`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub happening: Option<Happening>,
 }
@@ -3480,9 +3466,7 @@ pub enum Trigger {
 
 /// A quest objective.
 ///
-/// `kill`, `collect` and `interact` are **implemented in DSL v0.3**; in a v0.2
-/// campaign they are still reserved and rejected with `DW0141` (see
-/// [`Objective::v03_verb`]). Every variant may carry `requires_flags` (v0.3):
+/// Every variant may carry `requires_flags`:
 /// flag-gated activation, satisfied only once each referenced flag has been set
 /// by a `set-flag` effect.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -3506,7 +3490,7 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
-        /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the
+        /// Negative flag gate (DSL v0.6): the
         /// objective is suppressed (cannot activate or complete) while ANY listed
         /// flag is set for the player — the dual of `requires_flags`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -3524,7 +3508,7 @@ pub enum Objective {
         #[serde(default, skip_serializing_if = "is_false")]
         stealth: bool,
         /// What this objective does to the story (DSL v0.8, spec-0025; required
-        /// at 0.8.0, `DW0481`; reserved `DW0141` earlier).
+        /// at 0.8.0, `DW0481`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
     },
@@ -3548,7 +3532,7 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
-        /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the
+        /// Negative flag gate (DSL v0.6): the
         /// objective is suppressed (cannot activate or complete) while ANY listed
         /// flag is set for the player — the dual of `requires_flags`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -3566,7 +3550,7 @@ pub enum Objective {
         #[serde(default, skip_serializing_if = "is_false")]
         stealth: bool,
         /// What this objective does to the story (DSL v0.8, spec-0025; required
-        /// at 0.8.0, `DW0481`; reserved `DW0141` earlier).
+        /// at 0.8.0, `DW0481`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
     },
@@ -3588,7 +3572,7 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
-        /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the
+        /// Negative flag gate (DSL v0.6): the
         /// objective is suppressed (cannot activate or complete) while ANY listed
         /// flag is set for the player — the dual of `requires_flags`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -3606,7 +3590,7 @@ pub enum Objective {
         #[serde(default, skip_serializing_if = "is_false")]
         stealth: bool,
         /// What this objective does to the story (DSL v0.8, spec-0025; required
-        /// at 0.8.0, `DW0481`; reserved `DW0141` earlier).
+        /// at 0.8.0, `DW0481`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
     },
@@ -3632,8 +3616,8 @@ pub enum Objective {
         count: u32,
         /// The anchor items are provided at (chest / pickup).
         anchor: AnchorId,
-        /// **Adopt the container the prefab already placed** (DSL v0.8;
-        /// reserved `DW0141` earlier): the anchor whose assembled-world cell holds
+        /// **Adopt the container the prefab already placed**: the anchor whose
+        /// assembled-world cell holds
         /// a `chest` / `trapped_chest` / `barrel` this collect fills instead of
         /// conjuring its own chest at [`Objective::Collect::anchor`].
         ///
@@ -3649,8 +3633,8 @@ pub enum Objective {
         /// *this* block), and no chest is placed at `anchor` when it is set.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         container: Option<AnchorId>,
-        /// **The item comes off a body, not out of a box** (DSL v0.9;
-        /// reserved `DW0141` earlier): the wave whose declared `drops[]` yield
+        /// **The item comes off a body, not out of a box**: the wave whose
+        /// declared `drops[]` yield
         /// this objective's item. No container is placed — not the compiler's own
         /// chest at `anchor`, not a prefab one — and `container` is therefore
         /// mutually exclusive with it (`DW0100`-adjacent; `DW0492`).
@@ -3671,8 +3655,7 @@ pub enum Objective {
         /// still declare `drops[]`; those drops just cannot gate a quest.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dropped_by: Option<WaveId>,
-        /// Display name for the collected item (DSL v0.8; reserved
-        /// `DW0141` earlier), emitted as the vanilla `custom_name` item component.
+        /// Display name for the collected item (DSL v0.8), emitted as the vanilla `custom_name` item component.
         ///
         /// A quest item is a *named thing* in the story ("Cheese", "Tide
         /// Ledger"), and a player who opens the barrel must read that name — an
@@ -3685,8 +3668,8 @@ pub enum Objective {
         /// stack still carries.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         item_name: Option<String>,
-        /// Padding stacks that make the container **read full** (DSL v0.8;
-        /// reserved `DW0141` earlier). Default `0` = the single required
+        /// Padding stacks that make the container **read full**. Default `0` =
+        /// the single required
         /// stack and nothing else.
         ///
         /// A barrel of cheese that opens on one lonely wheel reads as a bug, and
@@ -3706,7 +3689,7 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
-        /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the
+        /// Negative flag gate (DSL v0.6): the
         /// objective is suppressed (cannot activate or complete) while ANY listed
         /// flag is set for the player — the dual of `requires_flags`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -3724,7 +3707,7 @@ pub enum Objective {
         #[serde(default, skip_serializing_if = "is_false")]
         stealth: bool,
         /// What this objective does to the story (DSL v0.8, spec-0025; required
-        /// at 0.8.0, `DW0481`; reserved `DW0141` earlier).
+        /// at 0.8.0, `DW0481`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
     },
@@ -3754,7 +3737,7 @@ pub enum Objective {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         requires_item: Option<String>,
         /// Diegetic feedback for a click that arrives without the required item in
-        /// hand (DSL v0.7, reserved `DW0141` earlier): narrated to that player in
+        /// hand (DSL v0.7): narrated to that player in
         /// chat instead of the silence the gate used to answer with. Requires
         /// `requires_item` (`DW0437`).
         ///
@@ -3775,7 +3758,7 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
-        /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the
+        /// Negative flag gate (DSL v0.6): the
         /// objective is suppressed (cannot activate or complete) while ANY listed
         /// flag is set for the player — the dual of `requires_flags`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -3793,7 +3776,7 @@ pub enum Objective {
         #[serde(default, skip_serializing_if = "is_false")]
         stealth: bool,
         /// What this objective does to the story (DSL v0.8, spec-0025; required
-        /// at 0.8.0, `DW0481`; reserved `DW0141` earlier).
+        /// at 0.8.0, `DW0481`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
     },
@@ -3880,8 +3863,8 @@ pub struct Actor {
     /// (`DW0477`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
-    /// What this actor leaves behind when a player kills it (DSL v0.9;
-    /// reserved `DW0141` earlier). Only an `elite`/`boss` actor may
+    /// What this actor leaves behind when a player kills it. Only an
+    /// `elite`/`boss` actor may
     /// declare it (`DW0491`). Emitted into BOTH the staged puppet and the
     /// unleashed twin, exactly as `equipment` is — the drop belongs to the body,
     /// not to one of its two lifecycles. A `despawn-actor` strips the
@@ -4134,7 +4117,7 @@ impl Objective {
 
     /// The v0.3 verb name if this objective is one of the verbs introduced in
     /// DSL v0.3 (`kill`/`collect`/`interact`). These validate in v0.3 campaigns
-    /// and are reserved (`DW0141`) in v0.2 campaigns.
+    ///.
     pub fn v03_verb(&self) -> Option<&'static str> {
         match self {
             Objective::Kill { .. } => Some("kill"),
@@ -4146,10 +4129,6 @@ impl Objective {
 }
 
 /// An effect fired by quest progress.
-///
-/// `give-item`, `set-flag` and `spawn-wave` are **implemented in DSL v0.3**; in a
-/// v0.2 campaign they are still reserved and rejected with `DW0141` (see
-/// [`QuestEffect::v03_effect`]).
 ///
 /// `Debug` is hand-written (see the impl below the enum) because it is a
 /// **stable content-key rendering** — the compiler's `sequence_key` hashes
@@ -4177,7 +4156,7 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
@@ -4209,14 +4188,13 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
-        /// What the seal *says* when a player right-clicks it (DSL v0.8; reserved
-        /// `DW0141` earlier). A sealed gate is a wall the party will walk back to
+        /// What the seal *says* when a player right-clicks it (DSL v0.8). A sealed gate is a wall the party will walk back to
         /// and press: the compiler answers that press on the actionbar. Absent, the
         /// compiler's canonical English is baked in (`The way is sealed.`) exactly
         /// as `world.boundary.message` does; authored, the line is l10n-inventoried
@@ -4233,7 +4211,7 @@ pub enum QuestEffect {
     /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
     /// so this variant carries no `requires_flags`.
     CampaignComplete {
-        /// Which ENDING this is (DSL v0.8, spec-0025; reserved `DW0141` earlier).
+        /// Which ENDING this is (DSL v0.8, spec-0025).
         /// A campaign with more than one `campaign-complete` has more than one
         /// ending, and a branch that runs to an ending names it here — so the
         /// terminality proof (`DW0482`) can state *which* ending a branch reached
@@ -4243,7 +4221,7 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ending: Option<EndingId>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
@@ -4399,7 +4377,7 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
@@ -4596,7 +4574,7 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
@@ -4616,8 +4594,8 @@ pub enum QuestEffect {
         /// Optional travel speed in blocks/tick (defaults to ~0.15).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
-        /// Effects fired once the NPC arrives at the destination cell (DSL v0.6,
-        /// reserved `DW0141` earlier) — exact parity with [`QuestEffect::MoveActor`]
+        /// Effects fired once the NPC arrives at the destination cell — exact
+        /// parity with [`QuestEffect::MoveActor`]
         /// `on_arrive`: same arrival detection (the walk driver's final tick), same
         /// execution context, and every deep effect walker recurses into it via
         /// [`QuestEffect::nested_effect_lists`]. This is what lets content gate a
@@ -4640,7 +4618,7 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
@@ -4891,7 +4869,7 @@ pub enum QuestEffect {
         /// The NPC (stage-2 ref) to summon.
         npc: NpcId,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
@@ -4905,7 +4883,7 @@ pub enum QuestEffect {
         /// The actor (stage-5 `actors` ref) to summon.
         actor: ActorId,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
@@ -4920,7 +4898,7 @@ pub enum QuestEffect {
         /// How the puppet is removed.
         style: DespawnStyle,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
@@ -4944,7 +4922,7 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         on_arrive: Vec<QuestEffect>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
@@ -4959,7 +4937,7 @@ pub enum QuestEffect {
         /// The actor (stage-5 `actors` ref) to unleash.
         actor: ActorId,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
-        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// 0.8.0, `DW0481`). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
         /// validation metadata with no emission of its own, so a content key can
         /// never move because a beat gained a line of prose.
@@ -6711,7 +6689,7 @@ impl QuestEffect {
 
     /// The v0.3 effect name if this effect is one introduced in DSL v0.3
     /// (`give-item`/`set-flag`/`spawn-wave`). These validate in v0.3 campaigns
-    /// and are reserved (`DW0141`) in v0.2 campaigns.
+    ///.
     pub fn v03_effect(&self) -> Option<&'static str> {
         match self {
             QuestEffect::GiveItem { .. } => Some("give-item"),
@@ -6763,7 +6741,7 @@ impl QuestEffect {
 
     /// The v0.4 effect name if this effect is one introduced in DSL v0.4
     /// (`narrate`/`set-block`/`despawn-npc`/`move-npc`/`cutscene`). These validate
-    /// in v0.4 campaigns and are reserved (`DW0141`) earlier.
+    /// in v0.4 campaigns.
     pub fn v04_effect(&self) -> Option<&'static str> {
         match self {
             QuestEffect::Narrate { .. } => Some("narrate"),
@@ -6776,8 +6754,7 @@ impl QuestEffect {
     }
 
     /// The v0.5 effect name if this effect is one introduced in DSL v0.5
-    /// (`set-time`/`set-weather`, spec-0010). These validate in v0.5 campaigns and
-    /// are reserved (`DW0141`) earlier.
+    /// (`set-time`/`set-weather`, spec-0010).
     pub fn v05_effect(&self) -> Option<&'static str> {
         match self {
             QuestEffect::SetTime { .. } => Some("set-time"),
@@ -6790,7 +6767,7 @@ impl QuestEffect {
     /// (`set-checkpoint`, spec-0012; `begin-stealth`/`end-stealth`, spec-0014;
     /// `play-sound`, spec-0014; the scripted-actor staging verbs
     /// `spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`/`sequence`,
-    /// spec-0014). These validate in v0.6 campaigns and are reserved (`DW0141`)
+    /// spec-0014). These validate in v0.6 campaigns
     /// earlier. (The `narrate` `art` style is a v0.6 addition to an existing verb
     /// — see [`QuestEffect::narrate_art`] — not a new effect.)
     pub fn v06_effect(&self) -> Option<&'static str> {
@@ -6818,7 +6795,7 @@ impl QuestEffect {
     /// The v0.10 effect name if this effect is one introduced in DSL v0.10
     /// (`set-state`/`add-state`/`clear-state` and the region writes
     /// `fill-region`/`clear-region`, spec-0031). These validate in v0.10
-    /// campaigns and are reserved (`DW0141`) earlier.
+    /// campaigns.
     pub fn v10_effect(&self) -> Option<&'static str> {
         match self {
             QuestEffect::SetState { .. } => Some("set-state"),
@@ -6835,8 +6812,7 @@ impl QuestEffect {
     }
 
     /// The v0.12 effect name if this effect is one introduced in DSL v0.12
-    /// (`open-way`, spec-0042). It validates in v0.12 campaigns and is reserved
-    /// (`DW0141`) earlier.
+    /// (`open-way`, spec-0042).
     pub fn v12_effect(&self) -> Option<&'static str> {
         match self {
             QuestEffect::OpenWay { .. } => Some("open-way"),
@@ -7313,7 +7289,7 @@ impl QuestEffect {
     }
 
     /// The `cutscene` camera subject if this is a single-shot `cutscene` carrying
-    /// the v0.6 `look_at` field (reserved `DW0141` under a pre-0.6 campaign).
+    /// the v0.6 `look_at` field.
     pub fn cutscene_look_at(&self) -> Option<&CameraTarget> {
         match self {
             QuestEffect::Cutscene { look_at, .. } => look_at.as_ref(),
@@ -7322,7 +7298,7 @@ impl QuestEffect {
     }
 
     /// `true` if this is a `cutscene` written in the v0.6 multi-shot form
-    /// (reserved `DW0141` under a pre-0.6 campaign).
+    ///.
     pub fn cutscene_multi_shot(&self) -> bool {
         matches!(self, QuestEffect::Cutscene { shots, .. } if !shots.is_empty())
     }
@@ -7362,8 +7338,8 @@ impl QuestEffect {
         }
     }
 
-    /// `true` if this is a `narrate` carrying the v0.6 `art` style (reserved
-    /// `DW0141` under a pre-0.6 campaign; glyph-checked `DW0328`).
+    /// `true` if this is a `narrate` carrying the `art` style (glyph-checked
+    /// `DW0328`).
     pub fn narrate_art(&self) -> bool {
         matches!(
             self,
@@ -7437,8 +7413,7 @@ impl QuestEffect {
     /// the verbs that are not per-effect gatable — terminal `campaign-complete`
     /// and the party/session-global `set-checkpoint` / `begin-stealth` /
     /// `end-stealth`. Emission wraps a gated effect's commands in a per-player
-    /// `execute if score @s dw.f_<flag> matches 1` guard; a pre-0.6 campaign that
-    /// gates any effect is rejected (`DW0141`).
+    /// `execute if score @s dw.f_<flag> matches 1` guard.
     pub fn requires_flags(&self) -> &[FlagId] {
         match self {
             QuestEffect::OpenGate { requires_flags, .. }
@@ -7495,7 +7470,7 @@ impl QuestEffect {
     /// `execute unless score @s dw.f_<flag> matches 1` guard, so an unset score
     /// counts as "not set" (flag scores are never pre-initialized). Empty for an
     /// ungated effect and for the verbs that are not per-effect gatable (see
-    /// `requires_flags`); a pre-0.6 campaign that uses it is rejected (`DW0141`).
+    /// `requires_flags`).
     pub fn forbids_flags(&self) -> &[FlagId] {
         match self {
             QuestEffect::OpenGate { forbids_flags, .. }
@@ -7598,7 +7573,7 @@ impl QuestEffect {
 
     /// The `on_arrive` bundle if this is a `move-npc` carrying one (DSL v0.6;
     /// parity with `move-actor`). `None` for a bare `move-npc` and every other
-    /// effect — the v0.6-reserved gate (`DW0141`) keys off `Some`.
+    /// effect.
     pub fn move_npc_on_arrive(&self) -> Option<&[QuestEffect]> {
         match self {
             QuestEffect::MoveNpc { on_arrive, .. } if !on_arrive.is_empty() => {

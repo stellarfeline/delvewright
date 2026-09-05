@@ -2,14 +2,13 @@
 
 The defect this pins, from the field: `docs/reference/compiler.md` is the
 authoritative current-behavior record, and its header read `delvec 0.1.0`,
-`dsl 0.8.0` and listed `dsl_version 0.2.0 … 0.8.0` while the build was at
-`delvec 1.1.0` / `dsl 0.9.0` and accepted `0.9.0`. The BODY of that same file
-documented the v0.9 surface correctly; only the header a reader consults first
-to pick a stage envelope's `dsl_version` was wrong, and every gate was green,
-because no gate related the two.
+`dsl 0.8.0` while the build was at `delvec 1.1.0` / `dsl 0.9.0`. The BODY of
+that same file documented the v0.9 surface correctly; only the header a reader
+consults first to pick a stage envelope's `dsl_version` was wrong, and every gate
+was green, because no gate related the two.
 
 The second instance, found while fixing the first: the `DW0102` catalog row
-restates the supported set by hand and had gone stale the same way.
+restates the accepted number by hand and had gone stale the same way.
 `check-dw-codes.py` was green on it and always would be — it proves a code
 EXISTS in both source and doc and is asserted by a test, never that the BEHAVIOR
 the doc ascribes to it is the behavior the code has.
@@ -34,11 +33,10 @@ DOC_TEMPLATE = """\
 # delvec compiler — behavior reference
 
 - Versions (as of this doc): `delvec {delvec}`, `dsl {dsl}`, `mc {mc}`.
-  Supported campaign `dsl_version`: **{supported}** (additive supersets).
 
 | Code | Meaning |
 |---|---|
-| `DW0102` | Unsupported `dsl_version` (not in `{{{dw0102}}}`). |
+| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `{dw0102}`; the message names it. |
 """
 
 CARGO_TEMPLATE = """\
@@ -49,16 +47,7 @@ version = "{version}"
 
 ENVELOPE_TEMPLATE = """\
 //! doc
-pub const SUPPORTED_DSL_VERSION: &str = "{latest}";
-pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
-    {list}
-];
-{reserved}"""
-
-# A held-but-refused number. It is IN the ledger — that is what stops a second
-# change taking it — and `is_supported_version` says no, so no page may offer it.
-RESERVED_TEMPLATE = """\
-pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[{rows}];
+pub const DSL_VERSION: &str = "{dsl}";
 """
 
 VERSIONS_TOML_TEMPLATE = """\
@@ -82,7 +71,7 @@ command it writes against the vendored {prose_mc} command tree.
 ## Compatibility
 
 - **Minecraft**: Java Edition {mc}.
-- **Campaign format**: `dsl_version` `{lo}` through `{hi}`.
+- **Campaign format**: `dsl_version` `{dsl}`.
 - **Rust**: {rust} or newer.
 """
 
@@ -126,19 +115,15 @@ def run(
     gate,
     *,
     doc_delvec="1.1.0",
-    doc_dsl="0.9.0",
+    doc_dsl="0.19.0",
     doc_mc="1.21.11",
-    doc_supported=("0.8.0", "0.9.0"),
     doc_dw0102=None,
     real_delvec="1.1.0",
-    real_dsl="0.9.0",
+    real_dsl="0.19.0",
     real_mc="1.21.11",
-    real_supported=("0.8.0", "0.9.0"),
-    real_reserved=(),
     page_mc=None,
     page_prose_mc=None,
-    page_lo=None,
-    page_hi=None,
+    page_dsl=None,
     page_rust="1.97.1",
     crate_rust="1.97.1",
     crate_version="1.1.0",
@@ -146,7 +131,7 @@ def run(
     crate_manifest=None,
 ) -> int:
     if doc_dw0102 is None:
-        doc_dw0102 = doc_supported
+        doc_dw0102 = doc_dsl
     crate_dir = gate.REPO_ROOT / "crates" / "published"
     crate_dir.mkdir(parents=True, exist_ok=True)
     (crate_dir / "Cargo.toml").write_text(
@@ -159,8 +144,7 @@ def run(
         README_TEMPLATE.format(
             mc=real_mc if page_mc is None else page_mc,
             prose_mc=real_mc if page_prose_mc is None else page_prose_mc,
-            lo=real_supported[0] if page_lo is None else page_lo,
-            hi=real_supported[-1] if page_hi is None else page_hi,
+            dsl=real_dsl if page_dsl is None else page_dsl,
             rust=page_rust,
         )
         if page_text is None
@@ -168,33 +152,13 @@ def run(
         encoding="utf-8",
     )
     gate.DOC.write_text(
-        DOC_TEMPLATE.format(
-            delvec=doc_delvec,
-            dsl=doc_dsl,
-            mc=doc_mc,
-            supported="**" + ", ".join(f"`{v}`" for v in doc_supported) + "**",
-            dw0102=",".join(doc_dw0102),
-        ),
+        DOC_TEMPLATE.format(delvec=doc_delvec, dsl=doc_dsl, mc=doc_mc, dw0102=doc_dw0102),
         encoding="utf-8",
     )
     gate.COMPILER_CARGO_TOML.write_text(
         CARGO_TEMPLATE.format(version=real_delvec), encoding="utf-8"
     )
-    ledger = list(real_supported) + [v for v, _ in real_reserved]
-    gate.ENVELOPE_RS.write_text(
-        ENVELOPE_TEMPLATE.format(
-            latest=real_dsl,
-            list=", ".join(f'"{v}"' for v in ledger),
-            reserved=(
-                RESERVED_TEMPLATE.format(
-                    rows=", ".join(f'("{v}", "{a}")' for v, a in real_reserved)
-                )
-                if real_reserved
-                else ""
-            ),
-        ),
-        encoding="utf-8",
-    )
+    gate.ENVELOPE_RS.write_text(ENVELOPE_TEMPLATE.format(dsl=real_dsl), encoding="utf-8")
     gate.VERSIONS_TOML.write_text(
         VERSIONS_TOML_TEMPLATE.format(mc=real_mc), encoding="utf-8"
     )
@@ -213,25 +177,14 @@ def test_stale_delvec_version_is_red(gate):
 
 
 def test_stale_dsl_version_is_red(gate):
-    assert run(gate, doc_dsl="0.8.0", real_dsl="0.9.0") == 1
+    """The exact motivating drift: the build moved to 0.19.0, the doc says 0.18.0."""
+    assert run(gate, doc_dsl="0.18.0", doc_dw0102="0.18.0", real_dsl="0.19.0") == 1
 
 
-def test_stale_supported_list_is_red(gate):
-    """The exact motivating drift: the build accepts 0.9.0, the doc lists to 0.8.0."""
-    assert run(gate, doc_supported=("0.8.0",), real_supported=("0.8.0", "0.9.0")) == 1
-
-
-def test_stale_dw0102_row_alone_is_red(gate):
+def test_stale_dw0102_row_alone_is_red(gate, capsys):
     """The second instance: header right, the DW0102 row restating it stale."""
-    assert (
-        run(
-            gate,
-            doc_supported=("0.8.0", "0.9.0"),
-            doc_dw0102=("0.8.0",),
-            real_supported=("0.8.0", "0.9.0"),
-        )
-        == 1
-    )
+    assert run(gate, doc_dsl="0.19.0", doc_dw0102="0.18.0", real_dsl="0.19.0") == 1
+    assert "the `DW0102` catalog row restates the accepted dsl_version" in capsys.readouterr().err
 
 
 # --- the ahead-of-the-build direction, which a one-sided gate would miss ----
@@ -241,16 +194,11 @@ def test_doc_ahead_of_the_build_is_red(gate):
     assert run(gate, doc_delvec="2.0.0", real_delvec="1.1.0") == 1
 
 
-def test_supported_list_naming_a_version_the_build_rejects_is_red(gate):
-    assert run(gate, doc_supported=("0.8.0", "0.9.0", "1.0.0")) == 1
+def test_doc_dsl_ahead_of_the_build_is_red(gate):
+    assert run(gate, doc_dsl="0.20.0", doc_dw0102="0.20.0", real_dsl="0.19.0") == 1
 
 
-# --- ordering, and the pinned Minecraft version ----------------------------
-
-
-def test_same_members_wrong_order_is_red(gate):
-    """The list doubles as the reading order for the additive-superset claim."""
-    assert run(gate, doc_supported=("0.9.0", "0.8.0")) == 1
+# --- the pinned Minecraft version ------------------------------------------
 
 
 def test_stale_minecraft_pin_is_red(gate):
@@ -271,27 +219,34 @@ def test_missing_version_header_exits_2(gate):
     assert gate.main() == 2
 
 
-def test_missing_supported_constant_exits_2(gate):
+def test_missing_dsl_version_constant_exits_2(gate):
     run(gate)
-    gate.ENVELOPE_RS.write_text(
-        'pub const SUPPORTED_DSL_VERSION: &str = "0.9.0";\n', encoding="utf-8"
-    )
+    gate.ENVELOPE_RS.write_text('pub const SOMETHING_ELSE: &str = "0.19.0";\n', encoding="utf-8")
     assert gate.main() == 2
 
 
 def test_missing_dw0102_row_exits_2(gate):
     run(gate)
     gate.DOC.write_text(
-        DOC_TEMPLATE.format(
-            delvec="1.1.0",
-            dsl="0.9.0",
-            mc="1.21.11",
-            supported="**`0.8.0`, `0.9.0`**",
-            dw0102="0.8.0,0.9.0",
-        ).replace("| `DW0102` |", "| `DW9999` |"),
+        DOC_TEMPLATE.format(delvec="1.1.0", dsl="0.19.0", mc="1.21.11", dw0102="0.19.0").replace(
+            "| `DW0102` |", "| `DW9999` |"
+        ),
         encoding="utf-8",
     )
     assert gate.main() == 2
+
+
+def test_a_detached_dw0102_row_is_red(gate):
+    """A blank line above the row ends the table: the reader sees a paragraph of
+    pipes and the accepted number is stated to nobody."""
+    run(gate)
+    gate.DOC.write_text(
+        DOC_TEMPLATE.format(delvec="1.1.0", dsl="0.19.0", mc="1.21.11", dw0102="0.19.0").replace(
+            "|---|---|\n| `DW0102` |", "|---|---|\n\n| `DW0102` |"
+        ),
+        encoding="utf-8",
+    )
+    assert gate.main() == 1
 
 
 def test_absent_file_exits_2(gate):
@@ -304,8 +259,8 @@ def test_absent_file_exits_2(gate):
 #
 # `crates/compiler/README.md` and `crates/dsl/README.md` are rendered VERBATIM
 # as crates.io front pages. They state the Minecraft version, the `dsl_version`
-# window and the minimum Rust — the facts that decide whether a visitor can use
-# the crate — and those were bound to nothing before this gate. The file set is
+# and the minimum Rust — the facts that decide whether a visitor can use the
+# crate — and those were bound to nothing before this gate. The file set is
 # DERIVED from the manifests, never listed.
 
 
@@ -322,12 +277,9 @@ def test_page_ahead_of_the_build_is_red(gate):
     assert run(gate, real_mc="1.21.11", page_mc="1.22.0", page_prose_mc="1.22.0") == 1
 
 
-def test_stale_dsl_version_window_on_the_page_is_red(gate):
+def test_stale_dsl_version_on_the_page_is_red(gate):
     """The exact live risk: a `dsl_version` bump the front page never heard about."""
-    assert (
-        run(gate, real_supported=("0.8.0", "0.9.0"), page_hi="0.8.0", page_lo="0.8.0")
-        == 1
-    )
+    assert run(gate, real_dsl="0.19.0", page_dsl="0.18.0") == 1
 
 
 def test_page_rust_version_disagreeing_with_the_manifest_is_red(gate):
@@ -361,7 +313,7 @@ def test_a_version_literal_the_build_does_not_own_is_red(gate):
                 "# published-crate\n\n"
                 "## Compatibility\n\n"
                 "- **Minecraft**: Java Edition 1.21.11.\n"
-                "- **Campaign format**: `dsl_version` `0.8.0` through `0.9.0`.\n"
+                "- **Campaign format**: `dsl_version` `0.19.0`.\n"
                 "- **Rust**: 1.97.1 or newer.\n"
                 "- Also needs libfoo 3.4.5.\n"
             ),
@@ -395,7 +347,7 @@ def test_a_crate_that_becomes_publishable_is_picked_up_with_no_edit(gate):
     (private / "README.md").write_text(
         "# private-crate\n\n"
         "- **Minecraft**: Java Edition 1.21.11.\n"
-        "- **Campaign format**: `dsl_version` `0.8.0` through `0.9.0`.\n"
+        "- **Campaign format**: `dsl_version` `0.19.0`.\n"
         "- **Rust**: 1.97.1 or newer.\n"
         "- Stale: 1.21.9.\n",
         encoding="utf-8",
@@ -439,73 +391,3 @@ def test_a_stale_allowlist_entry_is_red(gate):
         assert run(gate) == 1
     finally:
         gate.UNBOUND_VERSION_LITERALS.clear()
-
-
-# --- a reserved number is in the ledger and is not a supported version ------
-#
-# The ledger gained a way to HOLD a number whose surface a sibling change will
-# land (`RESERVED_DSL_VERSIONS`). Held is not accepted: `is_supported_version`
-# refuses it and `DW0102` fires on it. Bound to the raw ledger, this gate would
-# have demanded the doc list a version the build rejects — the stale-claim defect
-# it exists to stop, arriving through the gate.
-
-
-def test_a_reserved_version_is_not_owed_by_the_doc(gate):
-    """The green case, and the one that would have gone red: the ledger holds
-    `0.10.0`, the doc lists only what the build accepts."""
-    assert (
-        run(
-            gate,
-            doc_supported=("0.8.0", "0.9.0"),
-            real_supported=("0.8.0", "0.9.0"),
-            real_reserved=(("0.10.0", "OPEN_WAY_SINCE"),),
-        )
-        == 0
-    )
-
-
-def test_a_doc_offering_a_reserved_version_is_red(gate, capsys):
-    """The direction that matters: the page tells an authoring session to write
-    a `dsl_version` the compiler refuses."""
-    assert (
-        run(
-            gate,
-            doc_supported=("0.8.0", "0.9.0", "0.10.0"),
-            real_supported=("0.8.0", "0.9.0"),
-            real_reserved=(("0.10.0", "OPEN_WAY_SINCE"),),
-        )
-        == 1
-    )
-    err = capsys.readouterr().err
-    assert "listed but NOT accepted by the build: 0.10.0" in err
-    assert "RESERVED and therefore refused: 0.10.0 (held for OPEN_WAY_SINCE)" in err
-
-
-def test_the_dw0102_row_owes_the_accepted_set_not_the_ledger(gate, capsys):
-    """The row restates `!is_supported_version`, so a reserved number belongs on
-    the firing side of it, never inside the braces."""
-    assert (
-        run(
-            gate,
-            doc_supported=("0.8.0", "0.9.0"),
-            doc_dw0102=("0.8.0", "0.9.0", "0.10.0"),
-            real_supported=("0.8.0", "0.9.0"),
-            real_reserved=(("0.10.0", "OPEN_WAY_SINCE"),),
-        )
-        == 1
-    )
-    assert "the `DW0102` catalog row restates the supported set" in capsys.readouterr().err
-
-
-def test_a_crate_page_window_stops_at_the_last_accepted_version(gate, capsys):
-    """A stranger's compatibility line may not promise the held number either."""
-    assert (
-        run(
-            gate,
-            real_supported=("0.8.0", "0.9.0"),
-            real_reserved=(("0.10.0", "OPEN_WAY_SINCE"),),
-            page_hi="0.10.0",
-        )
-        == 1
-    )
-    assert "0.8.0 through 0.10.0" in capsys.readouterr().err

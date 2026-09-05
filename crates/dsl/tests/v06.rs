@@ -1,5 +1,5 @@
 //! DSL v0.6 (spec-0013): the stage-1 `horizon` and `boundary` world fields
-//! validate under `0.6.0` and are reserved (`DW0141`) earlier. Under 0.6.0,
+//! validate under `0.6.0`. Under 0.6.0,
 //! `horizon: "ocean"` without a `boundary` is `DW0320` and a `boundary.margin`
 //! outside `0..=64` is `DW0321`.
 //!

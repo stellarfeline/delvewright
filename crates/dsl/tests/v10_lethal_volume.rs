@@ -1,4 +1,4 @@
-//! DSL v0.10 lethal volumes (spec-0031): the version fence, the structural
+//! DSL v0.10 lethal volumes (spec-0031): the structural
 //! checks, and the l10n obligation the death wording carries.
 
 use std::collections::BTreeMap;

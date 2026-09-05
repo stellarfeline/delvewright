@@ -87,14 +87,8 @@ pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::new("DW0510", ExitTier::B
 /// counterfactual — the leg is re-routed over the identical world with the
 /// world-load gate seals lifted, and the gates covering that route are named.
 ///
-/// `every_version`, and the choice is load-bearing. The fence's question is
-/// whether the rule requires a campaign to HAVE something it may not have had
-/// (`since`) or detects that what it already says is wrong (`every_version`): this
-/// is the second. `open-gate` has existed since v0.4, no surface is being asked
-/// for, and "the delve must be completable" is ADR-0005, day one. Fencing it at
-/// the current version would also make it **vacuous on every live campaign** —
-/// `hollow-vigil` declares 0.3.0 and `nobodys-cave-island` 0.8.0 — which is the
-/// unfenced-vacuity failure in the opposite direction.
+/// No surface is being asked for: "the delve must be completable" is ADR-0005,
+/// day one.
 pub const DW_GATE_NEVER_OPENED: DwCode = DwCode::new("DW0317", ExitTier::Build);
 /// `DW0544`: a forced critical-path leg depends on standing where a runtime region
 /// write leaves **fluid** — water or lava.
@@ -139,11 +133,8 @@ pub const DW_FLUID_FILL_ON_CRITICAL_PATH: DwCode = DwCode::new("DW0544", ExitTie
 /// skippable — because "no collision-free path" would send them to hunt a wedged
 /// doorway that is not there.
 ///
-/// `every_version`, on the same test [`DW_GATE_NEVER_OPENED`] states: the rule asks
-/// for no surface a campaign may not have (every effect root it names has existed
-/// since the root was added) and detects that what a campaign already says is
-/// unsound. Fencing it at the current version would leave it vacuous on every live
-/// campaign, all of which declare below it.
+/// Like [`DW_GATE_NEVER_OPENED`], the rule asks for no surface: it detects that
+/// what a campaign already says is unsound.
 pub const DW_UNFORCED_FOOTING: DwCode = DwCode::new("DW0546", ExitTier::Build);
 /// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
 /// checkpoint cell, a remaining required critical-path anchor is no longer
@@ -261,15 +252,11 @@ pub const DW_LANE_GEOMETRY: DwCode = DwCode::new("DW0386", ExitTier::Build);
 /// capability belongs to the object class it acts on*; the staging gate's
 /// `UNBOUND` verdict, row `bell-08`).
 ///
-/// [`Binds::EveryVersion`], and the widening onto `set-checkpoint` does not
-/// change that. A [`Binds::Since`] fence grandfathers campaigns against a new
-/// **authoring obligation** — a field they must now write. This rule asks for
-/// nothing to be written: its verdict is a function of geometry the campaign
-/// already declares, and a campaign that trips it was always soft-locked. The
-/// widening is a defect fixed in the proof, not a requirement added to the
-/// document, so fencing it would grandfather the soft-lock rather than the
-/// paperwork — and the six live violations it found on the shipped island are
-/// what that would have preserved.
+/// The widening onto `set-checkpoint` asks for nothing to be written: the
+/// verdict is a function of geometry the campaign already declares, and a
+/// campaign that trips it was always soft-locked. The widening is a defect fixed
+/// in the proof, not a requirement added to the document — the six live
+/// violations it found on the shipped island are what it exists for.
 pub const DW_RESPAWN_IN_AGGRO: DwCode = DwCode::new("DW0478", ExitTier::Build);
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.

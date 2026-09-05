@@ -188,7 +188,7 @@ fn the_green_graph_declares_three_stations_and_validates() {
     let d = graph_with(|_| {});
     let stationy: Vec<_> = d
         .iter()
-        .filter(|x| matches!(x.code.as_str(), "DW0869" | "DW0870" | "DW0871" | "DW0141"))
+        .filter(|x| matches!(x.code.as_str(), "DW0869" | "DW0870" | "DW0871"))
         .collect();
     assert!(
         stationy.is_empty(),
@@ -405,7 +405,7 @@ fn dw0871s_remedy_is_reachable() {
 }
 
 // ---------------------------------------------------------------------------
-// §7.6 — the per-stage fence
+// §7.6
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

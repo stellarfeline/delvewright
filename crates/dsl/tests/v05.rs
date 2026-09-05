@@ -1,6 +1,6 @@
 //! DSL v0.5 (spec-0010): declared world `time`/`weather` + per-area `lighting`
 //! and the `set-time`/`set-weather` effect verbs validate under `0.5.0` and are
-//! reserved (`DW0141`) earlier; `lighting.min_light` is range-checked (`DW0196`).
+//! `lighting.min_light` is range-checked (`DW0196`).
 //!
 //! Built on the hello-world casting/quests/dialogue (unchanged, 0.2.0) with a
 //! v0.5 stage-1 `world` document — additive fields, so the rest is untouched.

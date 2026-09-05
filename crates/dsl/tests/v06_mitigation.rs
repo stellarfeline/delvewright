@@ -1,6 +1,6 @@
 //! DSL v0.6 stage-1 area `mitigation` — the first-class darkness declaration that
 //! replaced the `DW0210` display-name heuristic. Validates under `dsl_version
-//! 0.6.0`, reserved (`DW0141`) earlier.
+//! 0.6.0`.
 
 mod common;
 

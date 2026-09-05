@@ -1,5 +1,5 @@
 //! DSL v0.6 `close-gate` (the physical dual of `open-gate`): validates under
-//! `dsl_version 0.6.0` and is reserved (`DW0141`) earlier; an unresolved gate
+//! `dsl_version 0.6.0`; an unresolved gate
 //! anchor is `DW0142` (the fill-block declaration is a compiler-side check,
 //! `DW0343`). Built on the hello-world casting/dialogue (unchanged).
 

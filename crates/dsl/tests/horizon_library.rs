@@ -7,7 +7,7 @@
 //!   author who wrote it believes something is reading it.
 //! * `DW0855` — a base that BUILDS terrain, on a campaign that never says how
 //!   big its map is. A surround rings a declared extent; `areas[]` states none.
-//! * and the fence: the object form is `DW0141` below 0.16.0, while the two
+//! * and the two
 //!   string shorthands stay writable at the version that introduced them, which
 //!   is what makes this a widening rather than a break.
 

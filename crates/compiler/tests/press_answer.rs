@@ -92,11 +92,11 @@ fn fixture() -> Campaign {
 }
 
 /// The diagnostics the campaign is **answerable for** — raised, then put through
-/// the obligation fence, which is the list `delvec` prints and exits on.
+/// the list `delvec` prints and exits on.
 ///
 /// The fence is load-bearing for this file specifically: the base fixture
 /// declares 0.9.0 and is deliberately a silent door, so `DW0429` is raised
-/// against it on every call and grandfathered on every call. Reading the raw
+/// against it on every call. Reading the raw
 /// list here would make the fixture's own silence — the thing the tests below
 /// bump to 0.11.0 in order to observe — look like a broken fixture.
 fn diagnostics(c: &Campaign) -> Vec<delvewright_dsl::Diagnostic> {
@@ -446,7 +446,7 @@ fn an_authored_trigger_in_the_reserved_namespace_is_dw0428() {
 /// **The binding count, stated.** The compiler's press answers bind to the
 /// pressable bodies whose class lets it speak — which, since the ruling, is
 /// `close-gate` seals alone. A shortcut door is in the same list and carries
-/// `SilencePolicy::Authored`, so it is examined and deliberately produces nothing.
+/// the same obligation, so it is examined and deliberately produces nothing.
 ///
 /// Zero synthesized answers here is therefore a *pass*, not the vacuity CLAUDE.md
 /// warns about: the door is bound (the obligation `DW0429` fires on it), and what

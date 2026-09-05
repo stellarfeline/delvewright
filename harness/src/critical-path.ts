@@ -18,90 +18,11 @@
 // compiler put here (CLAUDE.md: assertions and navigation, no game logic).
 
 /**
- * The critical-path format is versioned with the DSL (spec-0002). Each DSL
- * version is an additive superset (v0.3 kill/collect/interact steps; v0.4
- * sneak/transport/cutscene step fields), and the `version` field is
- * campaign-derived (a v0.2 delve still emits a v0.2 path). v0.5 (world
- * time/weather/lighting) and v0.6 (horizon/boundary, checkpoints/stealth,
- * sound/art, per-effect flag gating) add DSL/emission surface but leave the
- * critical-path step contract the bot consumes unchanged, so their paths parse
- * and run exactly as a v0.4 path does — the allowlist simply tracks the DSL.
- * v0.7 (the cast ledger) and v0.8 (spec-0025 branch points, per-node
- * `happening`, named endings) are the same kind of addition: they add
- * VALIDATION surface — `branch-plan.json`, the chronicles, the per-branch paths —
- * and change no step the bot walks, so a v0.8 path is walked exactly as a v0.6
- * one is. Without them here, the first campaign to declare a branch could not be
- * run at all, branch tier or not. v0.9 (spec-0026) adds the stage-1
- * horizon-library surface (`horizon` object form, new base/shorthand names) —
- * world-generation input the compiler consumes to build the map, not a change
- * to the step contract, so a v0.9 path is walked exactly as a v0.8 one is.
- * v0.10 (spec-0031) adds three things, none of which touches the step
- * contract: **runtime state** — a declared integer datum, the
- * `set-state`/`add-state`/`clear-state` verbs and the `requires_state`
- * comparison every gate carries, all of it server-side scoreboard state the
- * datapack drives — the campaign-wide `on_death` effect root, effects that
- * run at the moment a player dies, and **lethal volumes**, which change what
- * the WORLD does to a body that enters a declared box. None exports a new step
- * or reorders one (a death beat is a reaction to something the bot may never
- * do, and the compiler proves no forced leg crosses a volume — `DW0510`), so a
- * v0.10 path is walked exactly as a v0.9 one is.
- *
- * **v0.11** adds two surfaces, and neither reaches the bot. The per-body
- * `traversal` declaration (spec-0034) — what a body can do when it moves — is a
- * compile-time claim about `move-npc`/`move-actor` puppets, proven by `delvec`
- * before anything ships (`DW0454`). The press-answer lift — a `narrate`
- * `actionbar` style and a trigger's `audience: presser` — is a reply to a
- * right-click on a sealed body, a gesture no critical path makes. Both export no
- * step, reorder none, and change nothing the bot walks: a v0.11 path is walked
- * exactly as a v0.10 one is.
- *
- * **v0.13** adds two campaign documents and no step: a geometry brief, which is
- * the whole map's written brief reduced to named numbers, and a layout graph,
- * which states the campaign's space as places and the connections between them
- * before any coordinate exists. Both are compile-time claims the compiler proves
- * on its own; neither exports a step, reorders one, or changes anything the bot
- * walks, so a v0.13 path is walked exactly as a v0.12 one is.
- *
- * **v0.14** adds one document and no step: a site plan, the geometric embedding
- * of that graph — the region, a box per place, a seam per connection on a face
- * the two boxes share, and the comparisons that hold all of it to the brief's
- * numbers. Like its two siblings it is a compile-time claim the compiler proves
- * on its own; it exports no step, reorders none, and changes nothing the bot
- * walks, so a v0.14 path is walked exactly as a v0.13 one is.
- *
- * **v0.15** adds one document and no step: a detail plan, which piece stands in
- * which of the plan's places. It carries no coordinate — the frame is computed
- * from the site plan's own box — and it exports no step, reorders none, and
- * changes nothing the bot walks, so a v0.15 path is walked exactly as a v0.14
- * one is. What it changes is what the bot walks THROUGH: a detailed place is a
- * building rather than a shell, and the critical path across it is the same
- * path, which is the property stage 6 exists to preserve.
- *
- * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
- * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
- * enforces that in CI: an allowlist that lags the ceiling refuses a v0.9.0
- * campaign at this gate after the server booted and the bot connected.
+ * `version` is the `dsl_version` the compiler built the campaign at. The harness
+ * records it and never judges it: the engine accepts exactly one number
+ * (ADR-0024) and refuses every other before an artifact exists, and what the
+ * bot depends on is the artifact's own `format_version`, checked below.
  */
-export const SUPPORTED_DSL_VERSIONS = [
-  "0.2.0",
-  "0.3.0",
-  "0.4.0",
-  "0.5.0",
-  "0.6.0",
-  "0.7.0",
-  "0.8.0",
-  "0.9.0",
-  "0.10.0",
-  "0.11.0",
-  "0.12.0",
-  "0.13.0",
-  "0.14.0",
-  "0.15.0",
-  "0.16.0",
-  "0.17.0",
-  "0.18.0",
-  "0.19.0",
-] as const;
 
 /**
  * The version of the critical-path **contract** itself, independent of the DSL
@@ -886,12 +807,6 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
   }
 
   const version = requireString(root, "version", "");
-  if (!(SUPPORTED_DSL_VERSIONS as readonly string[]).includes(version)) {
-    fail(
-      "/version",
-      `unsupported version ${JSON.stringify(version)}; harness supports ${SUPPORTED_DSL_VERSIONS.join(", ")}`,
-    );
-  }
 
   const campaignId = requireString(root, "campaign_id", "");
 

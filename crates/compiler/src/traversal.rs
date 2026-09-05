@@ -251,12 +251,6 @@ pub const DW_BARRIER_SURMOUNTED: DwCode = DwCode::new("DW0453", ExitTier::Build)
 
 /// `DW0454`: a body's `traversal` declaration is **inert** — it changed no
 /// rule's verdict, so nothing in this build holds the body to it (spec-0034).
-///
-/// [`Binds::EveryVersion`](delvewright_dsl::Binds::EveryVersion), like its two
-/// neighbours: the verdict is a function of the campaign alone — the author's
-/// own declaration set against the world the author built — so there is nothing
-/// to grandfather. The surface that carries the declaration is fenced per stage
-/// at 0.11 by `DW0141`, so a campaign below 0.11 cannot raise this code at all.
 pub const DW_TRAVERSAL_DECLARATION_INERT: DwCode = DwCode::new("DW0454", ExitTier::Build);
 
 /// How many route steps after a rise still count as "and came down the other

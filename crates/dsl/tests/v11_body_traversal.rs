@@ -7,7 +7,7 @@
 //! merely rendering.
 //!
 //! This file covers the DSL half: the surface exists on **both** body classes,
-//! it is fenced **per stage** (`DW0141`), and a value the compiler could never
+//! and a value the compiler could never
 //! hold a body to is refused at declaration time (`DW0455`) rather than accepted
 //! and silently ignored. The proof half — a declaration must change a verdict
 //! (`DW0454`) — lives in `delvec`'s `tests/traversal.rs`, where there is a world
@@ -81,13 +81,13 @@ fn both_body_classes_accept_a_declaration_at_v11() {
     for locomotion in ["ground", "climber", "flier"] {
         let r = raw(npcs("0.19.0", Some(locomotion)), quests("0.19.0", None));
         assert!(
-            !codes(&r).iter().any(|c| c == "DW0141" || c == "DW0455"),
+            !codes(&r).iter().any(|c| c == "DW0455"),
             "npc `{locomotion}`: {:#?}",
             check_campaign(&r)
         );
         let r = raw(npcs("0.19.0", None), quests("0.19.0", Some(locomotion)));
         assert!(
-            !codes(&r).iter().any(|c| c == "DW0141" || c == "DW0455"),
+            !codes(&r).iter().any(|c| c == "DW0455"),
             "actor `{locomotion}`: {:#?}",
             check_campaign(&r)
         );
@@ -160,8 +160,7 @@ fn declaring_nothing_at_v11_raises_nothing() {
     let r = raw(npcs("0.19.0", None), quests("0.19.0", None));
     let d = check_campaign(&r);
     assert!(
-        !d.iter()
-            .any(|d| d.code == "DW0141" || d.code == "DW0454" || d.code == "DW0455"),
+        !d.iter().any(|d| d.code == "DW0454" || d.code == "DW0455"),
         "{d:#?}"
     );
 }

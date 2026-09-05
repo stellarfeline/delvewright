@@ -383,7 +383,7 @@ fn the_press_ledger_counts_the_compilers_own_press() {
 /// **The engine does not talk over the campaign.** Once the author answers the
 /// press at that anchor themselves, the compiler supplies nothing — one press,
 /// one answer. (For a `close-gate` the compiler still *may* speak; that
-/// licence is withdrawn for shortcut doors only, and `plan::SilencePolicy`
+/// licence is withdrawn for shortcut doors only, and `plan::press_answer_bodies`
 /// is where the two classes differ.)
 #[test]
 fn an_authored_trigger_replaces_the_compilers_seal_answer() {

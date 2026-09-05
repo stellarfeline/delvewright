@@ -8,7 +8,7 @@
 //! list read as a pass while covering nothing.
 //!
 //! Same contract as the wave field, one version later: declaring it below 0.8.0
-//! is `DW0141`, absence is byte-identical to every campaign written before it,
+//! absence is byte-identical to a campaign that declares none,
 //! and it never reaches emission.
 
 mod common;

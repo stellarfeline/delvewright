@@ -9,18 +9,16 @@ against the same constants, by EQUALITY in both directions.
 
 `docs/reference/compiler.md` is the authoritative current-behavior record for
 `delvec` (CLAUDE.md Methodology), and its very first factual claim is the
-"Versions (as of this doc)" line: the delvec version, the DSL version, the
-pinned Minecraft version, and the full list of `dsl_version` values a campaign
-may declare. A reader ACTS on that line — it is where an authoring session
-learns which `dsl_version` to write into a stage envelope.
+"Versions (as of this doc)" line: the delvec version, the one `dsl_version`
+the engine accepts, and the pinned Minecraft version. A reader ACTS on that
+line — it is where an authoring session learns which `dsl_version` to write
+into a stage envelope.
 
-That line was bound to nothing. It read `delvec 0.1.0`, `dsl 0.8.0` and listed
-`0.2.0 … 0.8.0` while the build was at `delvec 1.1.0`, `dsl 0.9.0` and accepted
-`0.9.0` — every other gate green, because no gate related the two. The body of
-the same document described the v0.9 surface correctly; only the header a reader
-consults first was wrong. `tools/check-dw-codes.py` keeps the DIAGNOSTICS
-catalog honest against the source in both directions; nothing did the same for
-the versions, and the skill's own gate — in the campaigns repository, where the
+That line was bound to nothing. It read `delvec 0.1.0`, `dsl 0.8.0` while the
+build was at `delvec 1.1.0`, `dsl 0.9.0` — every other gate green, because no
+gate related the two. `tools/check-dw-codes.py` keeps the DIAGNOSTICS catalog
+honest against the source in both directions; nothing did the same for the
+versions, and the skill's own gate — in the campaigns repository, where the
 page lives — binds only the *skill's* `verified_with` to the engine, never the
 reference doc's.
 
@@ -31,24 +29,19 @@ neither stale-older nor prematurely-newer:
 
 - `delvec <X>`  == `crates/compiler/Cargo.toml` `[package] version`
   (the same constant the skill gate calls the engine version)
-- `dsl <Y>`     == `crates/dsl/src/envelope.rs` `SUPPORTED_DSL_VERSION`
+- `dsl <Y>`     == `crates/dsl/src/envelope.rs` `DSL_VERSION`, the one
+  `dsl_version` the engine accepts (ADR-0024)
 - `mc <Z>`      == `versions.toml` `[minecraft] version`
-- the bold supported-`dsl_version` list == `crates/dsl/src/envelope.rs`
-  `SUPPORTED_DSL_VERSIONS` **minus** `RESERVED_DSL_VERSIONS`, as an ORDERED
-  sequence. A reserved version is in the ledger and refused: the number is held
-  so a second change cannot take it, and `is_supported_version` says no. Binding
-  the page to the whole ledger would make this gate DEMAND a doc promise the
-  build refuses.
-- the `DW0102` catalog row's `{…}` set == the same accepted list, because
-  `DW0102` fires on exactly `!is_supported_version(version)`
-  (`crates/dsl/src/validate.rs`) and its row restates that set by hand
+- the `DW0102` catalog row names the same one number, because `DW0102` fires
+  on exactly `version != DSL_VERSION` (`crates/dsl/src/validate.rs`) and its
+  row restates that number by hand
 
 That last one is a second instance of the same defect, found while fixing the
-first: the row read `{0.2.0 … 0.8.0}` with `0.9.0` accepted and tested.
-`tools/check-dw-codes.py` was green on it and always would be — that gate proves
-a code EXISTS in both source and doc and is asserted by a test, never that the
-BEHAVIOR the doc ascribes to it is the behavior the code has. A code's prose is
-otherwise unbound, and this is the mechanically checkable slice of it.
+first: the row restated an accepted set that had moved on. `tools/check-dw-codes.py`
+was green on it and always would be — that gate proves a code EXISTS in both
+source and doc and is asserted by a test, never that the BEHAVIOR the doc
+ascribes to it is the behavior the code has. A code's prose is otherwise
+unbound, and this is the mechanically checkable slice of it.
 
 Equality in both directions is the point. A gate that only rejected a version
 NEWER than the build is exactly the shape that let a storybook ship a stale
@@ -56,15 +49,11 @@ NEWER than the build is exactly the shape that let a storybook ship a stale
 the stale-older direction is the one that actually happens, because docs are
 written once and the build moves.
 
-The ordered-sequence comparison matters too: the list doubles as the reading
-order for the "additive superset" claim beside it, and a set comparison would
-pass on a shuffled list.
-
 ## The same claims, on the pages a stranger reads
 
 `crates/compiler/README.md` and `crates/dsl/README.md` are rendered VERBATIM as
 the crates.io front pages of `delvec` and `delvewright-dsl`, and each states the
-Minecraft version, the `dsl_version` window and the minimum Rust — the three
+Minecraft version, the `dsl_version` and the minimum Rust — the three
 facts that decide whether a visitor can use the crate at all. Those were the
 same numbers this file already owned, and on those two pages they were bound to
 NOTHING. The next `dsl_version` bump would have made a stranger-facing page
@@ -81,13 +70,13 @@ Two rules per page, and the second is the one that catches prose:
 
 1. **The three labelled claims must be present and equal to the build** —
    `**Minecraft**: Java Edition <mc>`, ``**Campaign format**: `dsl_version`
-   `<first>` through `<last>` `` and `**Rust**: <rust-version> or newer`. Present
+   `<version>` `` and `**Rust**: <rust-version> or newer`. Present
    AND equal: a page that quietly drops its compatibility section stops telling a
    stranger the one thing they need, so an absent claim is a shape error (exit 2),
    never a silent pass.
 2. **No unbound version literal anywhere on the page.** Every `X.Y.Z` on the page
-   must be one of the build's own constants — the pinned Minecraft version, a
-   supported `dsl_version`, or a publishable crate's `version` / `rust-version`.
+   must be one of the build's own constants — the pinned Minecraft version, the
+   `dsl_version`, or a publishable crate's `version` / `rust-version`.
    Rule 1 alone binds only the compatibility bullets; the `delvec` page states the
    Minecraft version three times, and "the vendored 1.21.11 Brigadier command
    tree" is prose that rule 1 cannot see. Under rule 2 an `mc` bump reds every
@@ -124,64 +113,36 @@ DOC_VERSIONS_RE = re.compile(
     r"`mc ([^`]+)`"
 )
 
-# The bold list that follows it:
-#   Supported campaign `dsl_version`: **`0.2.0`, ..., `0.9.0`**
-DOC_SUPPORTED_RE = re.compile(
-    r"Supported campaign `dsl_version`:\s*\*\*(.+?)\*\*", re.DOTALL
-)
-
 # `[package]` ... `version = "1.1.0"` — first `version =` at line start wins,
 # which is the package version in both crate manifests here.
 CARGO_VERSION_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"')
 
-RS_SUPPORTED_ONE_RE = re.compile(
-    r'pub\s+const\s+SUPPORTED_DSL_VERSION\s*:\s*&str\s*=\s*"([^"]+)"\s*;'
-)
-RS_SUPPORTED_ALL_RE = re.compile(
-    r"pub\s+const\s+SUPPORTED_DSL_VERSIONS\s*:\s*&\[&str\]\s*=\s*&\[(.*?)\]\s*;",
-    re.DOTALL,
-)
-
-# `pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[("0.12.0", "OPEN_WAY_SINCE")];`
-#
-# A reserved version is IN the ledger and NOT accepted: it is held so a second
-# change cannot take the number, and `is_supported_version` refuses it. So every
-# claim this gate binds — the header list, the `DW0102` row, the crate pages'
-# `<first>` through `<last>` — is bound to the ledger MINUS its reservations. Bind
-# them to the whole ledger instead and this gate would force the doc to promise a
-# version the build refuses, which is the stale-claim defect it exists to stop,
-# arriving through the gate itself.
-RS_RESERVED_RE = re.compile(
-    r"pub\s+const\s+RESERVED_DSL_VERSIONS\s*:\s*&\[\(&str,\s*&str\)\]\s*=\s*&\[(.*?)\]\s*;",
-    re.DOTALL,
-)
-RESERVED_ROW_RE = re.compile(r'\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')
+# `pub const DSL_VERSION: &str = "0.19.0";` — the one `dsl_version` the engine
+# accepts (ADR-0024).
+RS_DSL_VERSION_RE = re.compile(r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*"([^"]+)"\s*;')
 
 # The Minecraft pin is read by `lib/versions.py`, through `tomllib` — a real
 # implementation of the format the file is written in, and the one reading every
 # gate that wants a pin shares. A regex here was a second parser of TOML.
 
-# The DW0102 catalog row restates the same set by hand:
-#   | `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,…,0.9.0}`). |
+# The DW0102 catalog row restates the one number by hand:
+#   | `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.19.0`. … |
 #
 # It is looked for among the rows a TABLE holds, not anywhere in the file. A
 # blank line ends a pipe table, so a row under one renders as a paragraph of
 # literal pipe characters — it would restate the set for this gate and show a
 # reader nothing. `compiler.md` carried twenty-one such rows at once.
 DOC_DW0102_ROW = re.compile(r"^\|\s*`DW0102`\s*\|")
-DOC_DW0102_RE = re.compile(r"\|\s*`DW0102`\s*\|[^|]*?not in `\{([^}]*)\}`")
-
-QUOTED_RE = re.compile(r'"([^"]+)"')
-BACKTICKED_RE = re.compile(r"`([^`]+)`")
+DOC_DW0102_RE = re.compile(
+    r"\|\s*`DW0102`\s*\|[^|]*?is not the one this engine accepts, `([^`]+)`"
+)
 
 # --- the crates.io front pages ---------------------------------------------
 
 # `- **Minecraft**: Java Edition 1.21.11.`
 README_MC_RE = re.compile(r"\*\*Minecraft\*\*:\s*Java Edition\s+`?(\d[\d.]*\d)`?")
-# ``- **Campaign format**: `dsl_version` `0.2.0` through `0.10.0`.``
-README_FORMAT_RE = re.compile(
-    r"\*\*Campaign format\*\*:\s*`dsl_version`\s+`([^`]+)`\s+through\s+`([^`]+)`"
-)
+# ``- **Campaign format**: `dsl_version` `0.19.0`.``
+README_FORMAT_RE = re.compile(r"\*\*Campaign format\*\*:\s*`dsl_version`\s+`([^`]+)`")
 # `- **Rust**: 1.97.1 or newer.`
 README_RUST_RE = re.compile(r"\*\*Rust\*\*:\s*`?(\d[\d.]*\d)`?\s+or newer")
 
@@ -236,7 +197,7 @@ class PageShapeError(Exception):
 
 
 def check_published_pages(
-    root: pathlib.Path, real_mc: str, real_supported: list[str]
+    root: pathlib.Path, real_mc: str, real_dsl: str
 ) -> tuple[list[str], list[str], set[str], int]:
     """Bind every version claim on every crates.io front page to the build.
 
@@ -254,10 +215,10 @@ def check_published_pages(
             "derivation in tools/lib/publishable.py stopped matching the tree."
         )
 
-    # What a page is allowed to say: the pinned game version, any `dsl_version`
-    # the build accepts, and any publishable crate's own version or minimum
-    # toolchain. Anything else is a number nothing in the build owns.
-    known: set[str] = {real_mc, *real_supported}
+    # What a page is allowed to say: the pinned game version, the one
+    # `dsl_version` the build accepts, and any publishable crate's own version or
+    # minimum toolchain. Anything else is a number nothing in the build owns.
+    known: set[str] = {real_mc, real_dsl}
     for crate in crates:
         known.add(crate.version)
         if crate.rust_version:
@@ -289,19 +250,14 @@ def check_published_pages(
         m = README_FORMAT_RE.search(text)
         if m is None:
             raise PageShapeError(
-                "the ``**Campaign format**: `dsl_version` `<first>` through "
-                "`<last>``` claim",
+                "the ``**Campaign format**: `dsl_version` `<version>``` claim",
                 crate.readme,
                 "README_FORMAT_RE",
             )
-        want_lo, want_hi = real_supported[0], real_supported[-1]
-        if (m.group(1), m.group(2)) != (want_lo, want_hi):
+        if m.group(1) != real_dsl:
             problems.append(
-                f"  {rel}: `dsl_version {m.group(1)} through {m.group(2)}` != "
-                f"`{want_lo} through {want_hi}` in the build\n"
-                "      source of truth: crates/dsl/src/envelope.rs "
-                "SUPPORTED_DSL_VERSIONS minus RESERVED_DSL_VERSIONS "
-                "(first and last)"
+                f"  {rel}: `dsl_version {m.group(1)}` != `{real_dsl}` in the build\n"
+                "      source of truth: crates/dsl/src/envelope.rs DSL_VERSION"
             )
 
         m = README_RUST_RE.search(text)
@@ -387,45 +343,16 @@ def main() -> int:
         )
     doc_delvec, doc_dsl, doc_mc = m.group(1), m.group(2), m.group(3)
 
-    m = DOC_SUPPORTED_RE.search(doc_text)
-    if m is None:
-        return fail_shape(
-            "the bold ``Supported campaign `dsl_version`: **…**`` list",
-            DOC,
-            "DOC_SUPPORTED_RE",
-        )
-    doc_supported = BACKTICKED_RE.findall(m.group(1))
-
     m = CARGO_VERSION_RE.search(COMPILER_CARGO_TOML.read_text(encoding="utf-8"))
     if m is None:
         return fail_shape("a `version = \"…\"` line", COMPILER_CARGO_TOML,
                           "CARGO_VERSION_RE")
     real_delvec = m.group(1)
 
-    m = RS_SUPPORTED_ONE_RE.search(rs_text)
+    m = RS_DSL_VERSION_RE.search(rs_text)
     if m is None:
-        return fail_shape("`pub const SUPPORTED_DSL_VERSION`", ENVELOPE_RS,
-                          "RS_SUPPORTED_ONE_RE")
+        return fail_shape("`pub const DSL_VERSION`", ENVELOPE_RS, "RS_DSL_VERSION_RE")
     real_dsl = m.group(1)
-
-    m = RS_SUPPORTED_ALL_RE.search(rs_text)
-    if m is None:
-        return fail_shape("`pub const SUPPORTED_DSL_VERSIONS`", ENVELOPE_RS,
-                          "RS_SUPPORTED_ALL_RE")
-    ledger = QUOTED_RE.findall(m.group(1))
-
-    # The ledger minus its reservations — what the build actually accepts, and
-    # therefore what every claim below is bound to. A ledger with no reservation
-    # list is the ordinary case and leaves this a no-op.
-    m = RS_RESERVED_RE.search(rs_text)
-    reserved = dict(RESERVED_ROW_RE.findall(m.group(1))) if m else {}
-    real_supported = [v for v in ledger if v not in reserved]
-    if not real_supported:
-        return fail_shape(
-            "at least one ACCEPTED `dsl_version` (the ledger is entirely reserved)",
-            ENVELOPE_RS,
-            "RS_RESERVED_RE",
-        )
 
     try:
         real_mc = minecraft_version()
@@ -436,7 +363,7 @@ def main() -> int:
     problems: list[str] = []
     for label, claimed, real, source in (
         ("delvec", doc_delvec, real_delvec, "crates/compiler/Cargo.toml [package] version"),
-        ("dsl", doc_dsl, real_dsl, "crates/dsl/src/envelope.rs SUPPORTED_DSL_VERSION"),
+        ("dsl", doc_dsl, real_dsl, "crates/dsl/src/envelope.rs DSL_VERSION"),
         ("mc", doc_mc, real_mc, "versions.toml [minecraft] version"),
     ):
         if claimed != real:
@@ -446,33 +373,6 @@ def main() -> int:
                 f"-- {direction}\n"
                 f"      source of truth: {source}"
             )
-
-    if doc_supported != real_supported:
-        missing = [v for v in real_supported if v not in doc_supported]
-        phantom = [v for v in doc_supported if v not in real_supported]
-        detail = []
-        if missing:
-            detail.append(f"accepted by the build but NOT listed: {', '.join(missing)}")
-        if phantom:
-            detail.append(f"listed but NOT accepted by the build: {', '.join(phantom)}")
-        held = [v for v in phantom if v in reserved]
-        if held:
-            detail.append(
-                "of those, RESERVED and therefore refused: "
-                + ", ".join(f"{v} (held for {reserved[v]})" for v in held)
-                + " -- a reserved number is in the ledger to stop a second change "
-                "taking it, not to be offered to an author"
-            )
-        if not detail:
-            detail.append("same members, different ORDER (the list is read in order)")
-        problems.append(
-            "  the supported `dsl_version` list disagrees with "
-            "crates/dsl/src/envelope.rs SUPPORTED_DSL_VERSIONS minus "
-            "RESERVED_DSL_VERSIONS\n"
-            f"      doc:   {', '.join(doc_supported)}\n"
-            f"      build: {', '.join(real_supported)}\n"
-            + "".join(f"\n      {d}" for d in detail)
-        )
 
     catalog_rows, detached_rows = mdtable.rows_matching(doc_text, DOC_DW0102_ROW)
     m = next(
@@ -495,7 +395,7 @@ def main() -> int:
             f"{lines}\n"
             "       A blank line above it ends the pipe table, so the page a "
             "reader opens shows a\n"
-            "       paragraph of literal pipe characters and the supported set "
+            "       paragraph of literal pipe characters and the accepted number "
             "is stated to nobody.\n"
             "       Delete that blank line. Do NOT loosen DOC_DW0102_RE — the "
             "pattern is correct.",
@@ -504,26 +404,27 @@ def main() -> int:
         return 1
     if m is None:
         return fail_shape(
-            "the `DW0102` catalog row's ``not in `{…}``` set", DOC, "DOC_DW0102_RE"
+            "the `DW0102` catalog row's ``is not the one this engine accepts, `…```"
+            " clause",
+            DOC,
+            "DOC_DW0102_RE",
         )
-    doc_dw0102 = [v.strip() for v in m.group(1).split(",") if v.strip()]
-    if doc_dw0102 != real_supported:
+    doc_dw0102 = m.group(1).strip()
+    if doc_dw0102 != real_dsl:
         problems.append(
-            "  the `DW0102` catalog row restates the supported set and it "
+            "  the `DW0102` catalog row restates the accepted dsl_version and it "
             "disagrees with\n"
-            "      crates/dsl/src/envelope.rs SUPPORTED_DSL_VERSIONS minus "
-            "RESERVED_DSL_VERSIONS (DW0102\n"
-            "      fires on exactly\n"
-            "      `!is_supported_version(version)` — crates/dsl/src/validate.rs)\n"
-            f"      row:   {{{','.join(doc_dw0102)}}}\n"
-            f"      build: {{{','.join(real_supported)}}}"
+            "      crates/dsl/src/envelope.rs DSL_VERSION (DW0102 fires on exactly\n"
+            "      `version != DSL_VERSION` — crates/dsl/src/validate.rs)\n"
+            f"      row:   {doc_dw0102}\n"
+            f"      build: {real_dsl}"
         )
 
     # The same constants, on the pages a stranger reads. The file set is derived
     # from the manifests, so this needs no edit when a crate becomes publishable.
     try:
         page_problems, pages, known, n_literals = check_published_pages(
-            REPO_ROOT, real_mc, real_supported
+            REPO_ROOT, real_mc, real_dsl
         )
     except DerivationError as exc:
         sys.stderr.write(
@@ -562,9 +463,7 @@ def main() -> int:
     print(
         "reference version header OK: "
         f"delvec {real_delvec}, dsl {real_dsl}, mc {real_mc}; "
-        f"{len(real_supported)} supported dsl_version value(s) "
-        f"({', '.join(real_supported)}) matched in order, "
-        "and the DW0102 row restates the same set. "
+        "the DW0102 row restates the one accepted dsl_version. "
         "Bound by equality in both directions."
     )
     print(

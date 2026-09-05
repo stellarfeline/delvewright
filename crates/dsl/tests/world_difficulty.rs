@@ -4,7 +4,7 @@
 //! `peaceful` for one without. Easy halves incoming player damage
 //! (`min(dmg / 2 + 1, dmg)`), so "the enemies are too weak" was in part a setting
 //! nobody could declare. It is now a stage-1 field — an additive v0.6 surface,
-//! reserved (`DW0141`) on an older world stage, absent by default so every
+//! absent by default so every
 //! earlier campaign keeps the derivation.
 //!
 //! `peaceful` is refused (`DW0468`): on peaceful the server discards every

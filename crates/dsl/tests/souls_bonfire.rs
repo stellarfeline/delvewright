@@ -2,7 +2,7 @@
 //!
 //! `bonfire{anchor, on_rest}` is the souls sibling of `set-checkpoint`: it places
 //! a rest affordance rather than moving the respawn point outright. It validates
-//! under `dsl_version 0.6.0` and is reserved (`DW0141`) earlier; its anchor
+//! under `dsl_version 0.6.0`; its anchor
 //! resolves like every other effect anchor (`DW0142`); its `on_rest` bundle is a
 //! first-class nested effect list (l10n inventory, deep consumer checks); and a
 //! wave declaring `respawns_on_rest` with no bonfire to fire it is a **loud**

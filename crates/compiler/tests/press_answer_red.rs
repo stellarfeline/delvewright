@@ -56,11 +56,11 @@ const ANSWER: &str = r#"{ "id": "trigger/from-the-wrong-side", "at": "anchor/doo
 /// not the red it looks like.** The obligation is fenced at `dsl_version`
 /// 0.11.0, so demonstrating it needs a document that declares 0.11.0 — which an
 /// engine whose ceiling is 0.10.0 refuses outright (`unsupported dsl_version`,
-/// then a cascade of `DW0141`). Such a run therefore measures two things at once
+/// then a cascade). Such a run therefore measures two things at once
 /// and cannot separate "this engine lacks the obligation" from "this engine
 /// lacks the version". The honest red for a fenced obligation is the fence
 /// itself: unfence `DW0429` and `seal_hint::a_pre_0_11_seal_keeps_its_default`
-/// goes red, which is the pair that proves the grandfathering is real.
+/// goes red.
 #[test]
 fn a_barred_door_with_nothing_to_say_is_refused() {
     let mut c = fixture();

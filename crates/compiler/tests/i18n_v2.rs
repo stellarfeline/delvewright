@@ -846,7 +846,7 @@ fn renaming_one_body_makes_another_bodys_row_stale_dw0187() {
     let mut q: Value = serde_json::from_str(&std::fs::read_to_string(&quests).unwrap()).unwrap();
     // 0.10.0, because an actor NAMEPLATE is only a coverage obligation from 0.10
     // onward (`l10n::ACTOR_NAME_ENTRY`): the widening that inventoried
-    // it landed over v0.6 surface, so campaigns below 0.10 are grandfathered. The
+    // it landed over v0.6 surface. The
     // pair to this line is `an_actor_nameplate_is_not_demanded_below_0_10`.
     q["dsl_version"] = serde_json::json!("0.19.0");
     q["content"]["actors"] = serde_json::json!([

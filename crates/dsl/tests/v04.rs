@@ -3,7 +3,7 @@
 //! `effects`, `set-block` block ids, environment triggers, and the
 //! despawned-npc `talk-to` guard. Each test bumps only the stage(s) that carry
 //! the v0.4 construct under test to `dsl_version 0.4.0` (avoiding an incidental
-//! `DW0141` reserved-feature diagnostic on an unrelated stage) and asserts the
+//! diagnostic on an unrelated stage) and asserts the
 //! expected code fires.
 //!
 //! Built on the hello-world fixture campaign (`crates/dsl/fixtures/valid/

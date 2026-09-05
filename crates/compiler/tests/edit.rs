@@ -266,7 +266,7 @@ fn edit_breaching_the_outer_wall_is_dw0322() {
 /// unfenced" is a claim about a constant rather than a measurement (CLAUDE.md's
 /// *unfenced* vacuity mode). Only this stage moves: raising every stage to
 /// `0.14.0` makes the fixture red on five `DW0481` obligations before the build
-/// tier is reached, which would demonstrate the version fence and nothing else.
+/// tier is reached.
 fn set_ocean_horizon_at(dir: &Path, dsl_version: &str) {
     let path = dir.join("world.json");
     let mut doc: serde_json::Value =
@@ -279,7 +279,7 @@ fn set_ocean_horizon_at(dir: &Path, dsl_version: &str) {
 }
 
 /// The world-stage version floor for `horizon` (spec-0013) and the current
-/// `SUPPORTED_DSL_VERSION` — the two ends every `horizon: ocean` proof is driven
+/// `DSL_VERSION` — the two ends every `horizon: ocean` proof is driven
 /// at.
 const OCEAN_VERSIONS: [&str; 2] = ["0.19.0", "0.19.0"];
 
@@ -352,7 +352,7 @@ fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
 /// — so nothing is lost by this fixture telling the truth about itself.
 ///
 /// Driven at both ends of the range `horizon` has existed over (`OCEAN_VERSIONS`):
-/// the code is `every_version`, and this is what makes that a measurement.
+/// and this is what makes that a measurement.
 #[test]
 fn edit_ocean_breach_lets_the_sea_into_the_walk_region_dw0851() {
     for version in OCEAN_VERSIONS {

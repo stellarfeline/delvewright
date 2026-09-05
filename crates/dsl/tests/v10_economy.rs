@@ -1,5 +1,5 @@
 //! DSL v0.10 trade and the recovery stake (spec-0032), validation tier: what a
-//! campaign may declare, what it may not, and what the version fence reserves.
+//! campaign may declare and what it may not.
 //!
 //! The geometric half — where a stake lands, whether the party can walk back to it,
 //! whether the ground under it is ground the runtime rewrites — is deliberately not

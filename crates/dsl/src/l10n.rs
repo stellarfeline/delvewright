@@ -450,9 +450,6 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
     // Stage 5 — lethal volumes (v0.10, spec-0031): the line the volume says as it
     // kills. As player-visible as a narrate, and read at the worst possible moment
     // to be reading a raw key, so it is inventoried like any other authored line.
-    // Widening this reaches NO older campaign: only a 0.10.0 quests stage may
-    // declare a lethal volume at all (`DW0141`), so the error-tier obligation this
-    // module's `inventory` doc warns about cannot be created retroactively here.
     for v in &mut c.quests.content.lethal_volumes {
         let vl = local(v.id.as_str()).to_string();
         f(&format!("lethal.{vl}.message"), &mut v.message);
@@ -460,8 +457,6 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
     // Stage 5 — a runtime datum's player-visible name (v0.10, spec-0032). A named
     // datum is a currency: the engine states `<name>: <value>` on the holder's
     // action bar on every write, so the name is read as often as any narrate.
-    // Widening this reaches no older campaign — only a 0.10.0 quests stage may
-    // carry the field at all (`DW0141`).
     for st in &mut c.quests.content.state {
         let sl = local(st.id.as_str()).to_string();
         if let Some(name) = st.name.as_mut() {
@@ -530,10 +525,9 @@ fn entity_name_key(claimed: &mut BTreeMap<String, String>, text: &str, own: Stri
 /// `DW0180 [error]`.
 ///
 /// **The asymmetry is the finding, and it is with this module's own siblings.**
-/// Two comparable obligations on existing content take a warn-first window and
-/// say so in their own text: `DW0188` (translation provenance, in
-/// [`validate_l10n_provenance`] right here) and `DW0465` (the cast ledger, in
-/// `compiler::cast`). Coverage does not. Whether it should is an owner call —
+/// One comparable obligation on existing content takes a warn-first window and
+/// says so in its own text: `DW0188` (translation provenance, in
+/// [`validate_l10n_provenance`] right here). Coverage does not. Whether it should is an owner call —
 /// changing a check's tier is never a mechanical change (CLAUDE.md) — so this
 /// records the measurement rather than acting on it.
 ///

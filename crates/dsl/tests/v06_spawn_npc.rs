@@ -1,5 +1,5 @@
 //! DSL v0.6 `deferred` NPCs + the `spawn-npc` effect (the dual of `despawn-npc`):
-//! validates under `dsl_version 0.6.0` and is reserved (`DW0141`) earlier; an
+//! validates under `dsl_version 0.6.0`; an
 //! unknown npc ref is `DW0112`; a deferred npc nobody spawns is `DW0197`; a
 //! `talk-to` on a deferred npc every spawn provably follows is `DW0198`.
 //!

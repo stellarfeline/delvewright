@@ -1549,10 +1549,8 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// *this is not really optional*, the other says *this dependency is not really
 /// mandatory* — and a campaign can trip either without the other.
 ///
-/// Inert below [`crate::OPTIONAL_QUESTS_SINCE`]: `optional` is empty there, so
-/// every loop below ranges over nothing. That is what makes the whole of
-/// spec-0051 byte-identical on a campaign that predates it, rather than a
-/// promise that it is.
+/// Inert on a campaign that declares no optional quest: `optional` is empty, so
+/// every loop below ranges over nothing.
 fn partition(
     c: &Campaign,
     optional: &BTreeSet<&str>,
@@ -2022,21 +2020,6 @@ fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 ///
 /// A `strike` discharges neither: pressing a thing is a right-click, and a
 /// left-click reply is a gesture the player may never make.
-///
-/// **Fenced on the quests stage's `dsl_version`.** This is a tightening, not new
-/// surface, and the fence is what makes an already-approved design keep its
-/// verdicts: the same declared version yields the same behaviour. Below
-/// 0.11.0 a silent door still compiles and
-/// still emits nothing, and an unauthored `close-gate` still takes the compiler's
-/// canonical English — `plan::SilencePolicy`'s two grandfathered arms, which
-/// differ from each other only because the two classes historically differed.
-///
-/// The fence is the general one: `DW0429` is declared [`Binds::Since`] 0.11.0 on
-/// its own [`DwCode`](crate::DwCode), and [`crate::fence::Fenced`] grandfathers
-/// it against a quests stage below that version. This check therefore raises the
-/// diagnostic unconditionally and never tests a version itself — a private
-/// `is_v11(...)` guard here would be a second, narrower copy of the mechanism
-/// that already governs exactly this case.
 fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let quests = &c.quests.content;
 
@@ -3431,10 +3414,6 @@ fn v06_checks(
 /// honest: `DW0487` refuses the placeholder (a potion-bearing kit item that
 /// declares no contents), `DW0486` refuses contents 1.21.11 cannot pour.
 ///
-/// Runs only at `dsl_version` 0.8.0 on the classes stage — the same asymmetry the
-/// version ledger uses everywhere: *declaring* `contents` earlier is `DW0141`,
-/// and the *requirement* fires only at 0.8.0, so no pre-0.8 campaign's datapack
-/// can move by a byte.
 fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Diagnostic>) {
     for (i, cl) in c.classes.content.classes.iter().enumerate() {
         for (k, item) in cl.kit.iter().enumerate() {
@@ -6074,8 +6053,8 @@ fn dfs_cycle<'a>(
 
 /// Structural validation of the stage-7 edit script: id syntax/uniqueness
 /// (`DW0110`/`DW0111`), area refs (`DW0112`), strictly-backward region refs and
-/// shape/recipe well-formedness (`DW0162`), block ids (`DW0193`), and the v0.6
-/// stage gate (`DW0141`). Frame/region *resolution* against the solved layout
+/// shape/recipe well-formedness (`DW0162`) and block ids (`DW0193`).
+/// Frame/region *resolution* against the solved layout
 /// is the compiler's job (`DW0323`) — validation never needs prefabs.
 fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diagnostic>) {
     let Some(env) = &c.world_edits else {

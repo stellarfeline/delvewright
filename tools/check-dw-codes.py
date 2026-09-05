@@ -94,16 +94,13 @@ from lib import mdtable  # noqa: E402
 CODE_RE = re.compile(r"DW[0-9]{4}")
 # A diagnostic-code constant, in either shape the workspace uses:
 #
-#   pub const L10N_MISSING: DwCode = DwCode::every_version("DW0180");
-#   pub const DW_HAPPENING_MISSING: DwCode = DwCode::since("DW0481", 8);
+#   pub const L10N_MISSING: DwCode = DwCode::new("DW0180", ExitTier::Build);
 #   pub const DW_STRIP: &str = "DW0700";
 #
-# The `DwCode` form is the campaign-facing one: it carries the version at which
-# the rule starts binding a campaign (`dsl::diagnostic::Binds`), which is what
-# makes an unfenced obligation impossible to add. The bare `&str` form remains in
-# `delve-schem` / `delve-admit` / `delve-render`, whose diagnostics are about
-# prefabs, schematics and renders — artifacts that carry no `dsl_version`, so
-# there is nothing for a fence to grandfather against.
+# The `DwCode` form is the campaign-facing one: it carries the exit tier and the
+# subject of the rule. The bare `&str` form remains in `delve-schem` /
+# `delve-admit` / `delve-render`, whose diagnostics are about prefabs,
+# schematics and renders.
 #
 # Matching BOTH is load-bearing, not tidiness: this regex is how a symbol name is
 # resolved to its code, so a form it does not know silently drops every code
@@ -111,7 +108,7 @@ CODE_RE = re.compile(r"DW[0-9]{4}")
 # exactly that — 20 codes reported uncovered that were covered all along).
 CONST_RE = re.compile(
     r'const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:&(?:\'static\s+)?str|DwCode)\s*=\s*'
-    r'(?:DwCode::(?:every_version|since)\(\s*)?"(DW[0-9]{4})"'
+    r'(?:DwCode::new\(\s*)?"(DW[0-9]{4})"'
 )
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOC_PATH = REPO_ROOT / "docs" / "reference" / "compiler.md"
@@ -305,11 +302,11 @@ EXIT_TIER_HEADER = ("Code", "What the author changes")
 
 # A `DwCode` constant together with the tier it declares. Deliberately separate
 # from CONST_RE, which also matches the bare `&str` codes in the tooling
-# binaries: those carry no `dsl_version` and no tier, so demanding one of them
+# binaries: those carry no tier, so demanding one of them
 # would be a gate asking a question its subject cannot answer.
 TIERED_CONST_RE = re.compile(
     r'const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:\w+::)*DwCode\s*=\s*'
-    r'(?:\w+::)*DwCode::(?:every_version|since)\(\s*"(DW[0-9]{4})"'
+    r'(?:\w+::)*DwCode::new\(\s*"(DW[0-9]{4})"'
     r'([^;]*?)\)\s*;'
 )
 TIER_RE = re.compile(r"ExitTier::(Analysis|Build)")

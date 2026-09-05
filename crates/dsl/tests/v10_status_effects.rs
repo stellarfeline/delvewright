@@ -3,7 +3,7 @@
 //! duration the thing that ends it.
 //!
 //! What this file pins down:
-//! * the surface validates clean at `0.10.0` and is `DW0141` below it;
+//! * the surface validates clean;
 //! * an effect id outside the pinned 1.21.11 `mob_effect` registry is `DW0192` —
 //!   the same code and the same registry a wave mob's `effects[]` answers to,
 //!   because it is the same rule and one code names one rule;

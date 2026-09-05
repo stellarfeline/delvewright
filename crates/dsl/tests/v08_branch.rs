@@ -1,7 +1,7 @@
 //! DSL v0.8 (spec-0025): the stage-4 `branch_points` declaration, the per-node
 //! `happening`, and the named `campaign-complete` `ending`.
 //!
-//! This file owns the **structural** half — the version fence (`DW0141`) and the
+//! This file owns the **structural** half — the
 //! ordinary id/reference rules a branch declaration obeys like every other
 //! declaration in the DSL. The proofs *about* branches (`DW0480`–`DW0485`) are
 //! compiler-tier and live in `crates/compiler/tests/branch.rs`.
@@ -119,8 +119,6 @@ fn v08_reference_campaign_is_clean() {
     let d = green();
     assert!(d.is_empty(), "expected a clean campaign, got: {d:#?}");
 }
-
-// --- the version fence (DW0141) --------------------------------------------
 
 // --- ordinary declaration rules --------------------------------------------
 

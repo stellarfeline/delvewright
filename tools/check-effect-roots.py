@@ -91,15 +91,6 @@ ALLOWED = {
         "THE enumeration. This is the one file that is supposed to name every "
         "root; every other walk inherits from it."
     ),
-    "crates/dsl/src/validate.rs": (
-        "`reserved_v06_world` — the v0.6 version fence, sound by construction "
-        "rather than by walking. It checks R1-R3 for v0.6-only FIELDS, and R4-R7 "
-        "cannot exist below v0.6 at all: `/content/traps` and `/content/shortcuts` "
-        "are reserved wholesale a few lines below, a dialogue `set-checkpoint` is "
-        "reserved by `v06_effect()` in the stage-6 block, and `/content/on_death` "
-        "is reserved to 0.10.0 by `reserved_v10`. Widening the fence would report "
-        "the same campaigns with a worse message."
-    ),
     "crates/compiler/src/plan.rs": (
         "`required_anchors_for_area` — OPEN FINDING, not a false positive. It "
         "collects the anchors an area's assembly must provide from R1+R2 (and R3 "

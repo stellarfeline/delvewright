@@ -533,16 +533,11 @@ jobs:
     name: docs (local link check)
     runs-on: ubuntu-latest
     steps:
-      # Full history, and it is `check-version-ledger-uniqueness.py` that needs
-      # it: deciding whether a ledger row missing from this branch was WITHDRAWN
-      # by it or simply arrived at `origin/main` after it was cut is a question
-      # about the fork point, and the two look identical in the tree. The
-      # default depth-1 checkout cannot answer it — measured on this
-      # repository's own PR merge-preview shape, `git merge-base HEAD
-      # origin/main` exits 1 with no output there and resolves at depth 0. The
-      # gate fails CLOSED without it (nothing is withdrawn, rule 1 is the union
-      # it always was), so this is what makes a correct cancellation green
-      # rather than what makes a collision red.
+      # Full history: `check-numbered-doc-uniqueness.py` diffs this checkout
+      # against `origin/main` through `git merge-base`, which the default
+      # depth-1 checkout cannot answer — measured on this repository's own PR
+      # merge-preview shape, `git merge-base HEAD origin/main` exits 1 with no
+      # output there and resolves at depth 0.
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       # docs/reference/compiler.md is the authoritative current-behavior record;
@@ -577,9 +572,9 @@ jobs:
       # broke it instead of on the PR. Nothing in the required-context list
       # changed — this was a STEP of `docs (local link check)`, never a job.
       # The same document's VERSION HEADER was bound to nothing. It claimed
-      # `delvec 0.1.0`, `dsl 0.8.0` and listed dsl_version 0.2.0..0.8.0 while the
-      # build was at delvec 1.1.0 / dsl 0.9.0 and accepted 0.9.0 — with the body
-      # of that very file describing the v0.9 surface correctly. It is the first
+      # `delvec 0.1.0`, `dsl 0.8.0` while the build was at delvec 1.1.0 / dsl
+      # 0.9.0 — with the body of that very file describing the v0.9 surface
+      # correctly. It is the first
       # thing an authoring session reads to pick a stage envelope's dsl_version,
       # so a stale claim there is acted on. Bound by EQUALITY in both directions:
       # the stale-OLDER direction is the one that happens (docs are written once,
@@ -590,22 +585,13 @@ jobs:
       # The same script now binds the same constants on the crates.io FRONT
       # PAGES, over the same derived publishable-crate set the README gate uses
       # (`tools/lib/publishable.py`). Those pages state the Minecraft version,
-      # the `dsl_version` window and the minimum Rust — the facts a stranger acts
+      # the `dsl_version` and the minimum Rust — the facts a stranger acts
       # on — and they were bound to nothing, so the next `dsl_version` bump would
       # have made a published page wrong. Extending the checker that already owns
       # the question, rather than adding a second one, is deliberate: a parallel
       # mechanism is the privately-re-implemented-general-mechanism defect.
       - name: documented versions match the build (reference + crates.io pages)
         run: python3 tools/check-reference-versions.py
-      # The bot tier's dsl_version allowlist (harness/src/critical-path.ts) must
-      # never trail the compiler's own SUPPORTED_DSL_VERSION ceiling
-      # (crates/dsl/src/envelope.rs) — nothing else in the repo relates the two
-      # files, so a compiler version bump landed with zero signal to the harness
-      # and the bot tier refused every campaign at the newest dsl_version, after
-      # the server booted and the bot connected. Deterministic,
-      # offline, stdlib-only python3.
-      - name: harness dsl_version allowlist covers the compiler ceiling
-        run: python3 tools/check-harness-dsl-version.py
       # Nothing in the type system stops a walk over the campaign's effects from
       # enumerating the five effect roots by hand, and thirteen of them did — each
       # naming a different three or four, none of them ever red, because a walk
@@ -744,25 +730,6 @@ jobs:
       # against itself.
       - name: every index row agrees with its document, and every spec carries its acceptance criteria
         run: python3 tools/check-numbered-doc-index.py
-      # The same defect one layer down, on a different kind of number. A version
-      # ledger is picked exactly the way a spec number is — list what exists,
-      # write the next one — so two branches take the same number for different
-      # surfaces and both are green. One branch wrote `MIRROR_SINCE = "1.1.0"`
-      # and another wrote `CONTRACT_SINCE = "1.1.0"` into the same new file. Those
-      # two DO conflict textually; the hazard is the resolution, because
-      # unioning both constants under one `1.1.0` compiles, passes clippy, and
-      # ships an engine that accepts a `1.1.0` document written against the
-      # construct it does not implement and silently drops it — ADR-0018 §7's
-      # failure, reintroduced by the fence's own numbering. Covers every version
-      # ledger in the repo (grammar `Program` version, campaign `dsl_version`),
-      # not one crate. Uses the fetch above plus `git merge-base` against the
-      # full history the checkout now carries — a row missing from this branch
-      # was WITHDRAWN by it or arrived at the base after it was cut, and only
-      # the fork point tells those apart. No network action of its own. What it
-      # cannot see, and where `dsl_version`'s anchors are self-naming so its
-      # first rule cannot bind, are both in the script's own docstring.
-      - name: no version number names two surfaces after this merges
-        run: python3 tools/check-version-ledger-uniqueness.py
       # Every new mechanic owes a demo level (CLAUDE.md), and the demo queue is
       # not a backlog — it is the form an engine capability's confirmation takes,
       # so a capability with no row cannot be put in front of anyone. That

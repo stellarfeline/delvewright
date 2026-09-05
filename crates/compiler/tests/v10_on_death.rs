@@ -338,7 +338,7 @@ fn removing_the_beat_restores_the_whole_tree() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. the version fence
+// 3. the surface's shape
 // ---------------------------------------------------------------------------
 
 /// …and the control: the identical campaign at 0.10.0 validates clean, so the

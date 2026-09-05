@@ -175,7 +175,7 @@ fn all_functions(out: &BuildOutput) -> String {
     s
 }
 
-/// A two-quest stage-4 plan at `OPTIONAL_QUESTS_SINCE`: the hello-world finale,
+/// A two-quest stage-4 plan: the hello-world finale,
 /// plus a second quest whose `mandatory` this arm varies. The second quest
 /// depends on nothing and nothing depends on it, so when it is declared
 /// optional it is legally off the finale's closure (spec-0051 §4).

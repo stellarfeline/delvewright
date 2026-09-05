@@ -72,24 +72,16 @@ use serde::Serialize;
 
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 
-/// `DW0812`: a document names a metrics entry the table does not define.
-///
-/// `every_version`, and by the test [`crate::diagnostic::Binds`] states: the rule
-/// judges what a document SAYS — a `size_class`, an `opening` or a `pitch` that
-/// resolves to nothing — and its verdict is a function of the campaign alone. It
-/// cannot reach a campaign written before the surface existed, because there is
-/// no field below `dsl_version` 0.13.0 in which to write such a name and
-/// `DW0141` refuses one that tries.
+/// `DW0812`: a document names a metrics entry the table does not define — a
+/// `size_class`, an `opening` or a `pitch` that resolves to nothing.
 pub const DW_METRIC_UNKNOWN: DwCode = DwCode::new("DW0812", ExitTier::Build);
 
 /// `DW0813`: a verdict rests on a standard the gym has not walked.
 ///
-/// `every_version` for a different reason from its neighbour, and the difference
-/// is worth stating: this rule asks the campaign for nothing at all. It reports a
-/// property of the ENGINE's own table — that some number a check just used is a
-/// seed rather than a standard — so there is no obligation for a fence to
-/// grandfather and no campaign that could adopt its way out of it. It is a
-/// warning (exit 0) for the same reason: a provisional number is still a number,
+/// This rule asks the campaign for nothing at all. It reports a property of the
+/// ENGINE's own table — that some number a check just used is a seed rather than
+/// a standard — so no campaign could adopt its way out of it. It is a warning
+/// (exit 0) for the same reason: a provisional number is still a number,
 /// the check still refuses, and what the line adds is that the green rests on
 /// something nobody has walked.
 pub const DW_METRIC_PROVISIONAL: DwCode = DwCode::new("DW0813", ExitTier::Build).about_the_engine();
@@ -110,12 +102,9 @@ pub const DW_METRIC_PROVISIONAL: DwCode = DwCode::new("DW0813", ExitTier::Build)
 /// to break. It is also not a claim anybody makes about their own change —
 /// whether a version has merged is a fact of `origin/main`.
 ///
-/// It is deliberately **not** a version ledger in the sense
-/// `tools/check-version-ledger-uniqueness.py` guards. That gate compares the
-/// *fence anchors* two branches attach to one number, and this ledger has none:
-/// nothing grandfathers against a metrics version, no document declares one, and
-/// no surface is gated by one. What it needs instead is that the number cannot
-/// stand still while the table moves, and that is the digest test.
+/// No document declares a metrics version and no surface is gated by one. What
+/// it needs is that the number cannot stand still while the table moves, and
+/// that is the digest test.
 pub const METRICS_VERSION: u32 = 2;
 
 /// Player collision-box width in blocks (`0.6 × 0.6 × 1.8` standing).

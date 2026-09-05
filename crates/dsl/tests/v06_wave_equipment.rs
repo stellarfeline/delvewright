@@ -1,7 +1,7 @@
 //! DSL v0.6 wave-mob `equipment`: optional worn/held gear on a
 //! [`delvewright_dsl::WaveMob`] — the sanctioned daylight-undead fix is a
 //! helmet, never `set-time`. Validates under `dsl_version 0.6.0`, reserved
-//! (`DW0141`) earlier; slot item ids validate against the pinned 1.21.11 item
+//! slot item ids validate against the pinned 1.21.11 item
 //! registry (`DW0143`, the give-item family); an unknown slot name is a schema
 //! rejection (`DW0100`).
 

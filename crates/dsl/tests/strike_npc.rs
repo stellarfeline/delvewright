@@ -9,7 +9,7 @@
 //!
 //! These tests pin the DSL surface: `at` and `strike-npc` are mutually
 //! exclusive (`DW0194` either way), the target must be a declared NPC
-//! (`DW0112`), and the whole form is a v0.6 surface (`DW0141` before that).
+//! (`DW0112`), and the whole form is a v0.6 surface.
 
 mod common;
 

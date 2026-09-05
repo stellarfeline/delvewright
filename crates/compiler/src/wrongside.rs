@@ -53,8 +53,8 @@
 //!   the `gate`, on the presser's actionbar, re-armed every press. From
 //!   `dsl_version` 0.11.0 the campaign **must** write it: the compiler does not
 //!   word a sealed thing for its author, and one with nothing to say is `DW0429`
-//!   — the same rule a `close-gate` wall is held to at that version, because they
-//!   are two objects of one class ([`crate::plan::SilencePolicy`]);
+//!   — the same rule a `close-gate` wall is held to, because they are two
+//!   objects of one class ([`crate::plan::press_answer_bodies`]);
 //! * the left-click half is the author's: an ordinary `strike` trigger anchored
 //!   on the `gate` now **rides these hitboxes** instead of summoning its own dead
 //!   co-located box, so it can carry whatever prose and sound the campaign wants.

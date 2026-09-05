@@ -65,12 +65,8 @@ use crate::ids::{AnchorId, EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId}
 use crate::metrics::{MetricKind, Metrics, Reads};
 use crate::stages::Objective;
 
-/// `DW0814`: the layout graph is not a graph.
-///
-/// `every_version`: the rule judges what the document SAYS — a duplicate id, an
-/// endpoint naming no place, a self-loop, an `entry` that is not a node. Its
-/// verdict is a function of the campaign alone, and there is no field below
-/// `dsl_version` 0.13.0 in which to write any of it.
+/// `DW0814`: the layout graph is not a graph — a duplicate id, an endpoint
+/// naming no place, a self-loop, an `entry` that is not a node.
 pub const DW_GRAPH_MALFORMED: DwCode = DwCode::new("DW0814", ExitTier::Build);
 
 /// `DW0816`: a node the closure never reaches.
@@ -93,11 +89,6 @@ pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::new("DW0820", ExitTier::Build);
 pub const DW_PACING: DwCode = DwCode::new("DW0822", ExitTier::Build);
 
 /// `DW0869`: a station takes a name in the engine's own namespace (spec-0052 §7.1).
-///
-/// `every_version` for the reason its siblings are: the rule judges what the
-/// document SAYS, and a graph below [`crate::STATIONS_SINCE`] has no `stations[]`
-/// to judge — the per-stage fence (`DW0141`) has already refused it — so there is
-/// no earlier campaign this rule could reach.
 pub const DW_STATION_RESERVED: DwCode = DwCode::new("DW0869", ExitTier::Build);
 
 /// `DW0870`: two stations claim one name (spec-0052 §7.2).
@@ -106,8 +97,6 @@ pub const DW_STATION_DUPLICATE: DwCode = DwCode::new("DW0870", ExitTier::Build);
 /// `DW0871`: a reference demands a shape the station is not (spec-0052 §7.3).
 ///
 /// Judged at the reference site from the DECLARATION, with zero pieces bound.
-/// `every_version` for its siblings' reason: below [`crate::STATIONS_SINCE`] a
-/// graph carries no station whose kind could disagree with anything.
 pub const DW_STATION_KIND: DwCode = DwCode::new("DW0871", ExitTier::Build);
 
 /// `DW0875`: a place is classified twice, or not at all (spec-0053 §6).
@@ -117,13 +106,6 @@ pub const DW_STATION_KIND: DwCode = DwCode::new("DW0871", ExitTier::Build);
 /// downstream geometric rule would have to pick, and there is no rule to pick
 /// by. Neither is a place with no standard at all, which is what the size-class
 /// ladder was made compulsory to prevent.
-///
-/// `every_version` for the reason its siblings are: the rule judges what the
-/// document SAYS. Below [`crate::WAY_AND_CONTACT_SINCE`] there is no `way_class`
-/// to write — the per-stage fence has already refused one — so the only shape
-/// this can reach in an older campaign is a node that classifies itself in no
-/// way at all, which no campaign that compiled has ever been (the field was
-/// required, so its absence was `DW0100`).
 pub const DW_PLACE_CLASS: DwCode = DwCode::new("DW0875", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
@@ -1583,8 +1565,8 @@ fn connected_without(graph: &LayoutGraphContent, skip: &EdgeId, a: &NodeId, b: &
 ///
 /// Where the campaign carries **no site plan**, a way leg has no geometry yet
 /// and the projection says so: the leg is counted as **unprojected** in the
-/// line's own binding rather than being given an invented number. A campaign at
-/// [`crate::LAYOUT_GRAPH_SINCE`] with no plan is a real and intended state — the
+/// line's own binding rather than being given an invented number. A campaign
+/// with a graph and no plan is a real and intended state — the
 /// graph is authored before the embedding — so this is the ordinary case for a
 /// way and not a fault. Every other leg still projects, and the figure printed
 /// is honest about what it left out.

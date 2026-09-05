@@ -1,7 +1,7 @@
 //! DSL v0.6 party surface (spec-0018): `world.min_players` and the `carrier`
 //! field on `give-item` / class-kit items.
 //!
-//! Both are additive v0.6 fields, so they are reserved (`DW0141`) under an
+//! Both are additive fields, absent by default, under an
 //! earlier `dsl_version` on the stage that carries them, and absent by default —
 //! every pre-0.6 campaign reads as a party of one whose items go to everyone.
 //! `min_players` outside `1..=4` is `DW0356`; a `carrier: "one"` in a bundle only

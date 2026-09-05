@@ -1,5 +1,5 @@
 //! DSL v0.6 `damage-players` (spec-0014): the stealth/souls consequence verb.
-//! Validates under `dsl_version 0.6.0`, reserved (`DW0141`) earlier; an unknown
+//! Validates under `dsl_version 0.6.0`; an unknown
 //! `damage_type` is a schema rejection (`DW0100`); an `in` filter-zone anchor the
 //! prefab does not provide is `DW0142`; per-effect `requires_flags` is allowed
 //! (it is a per-`@s` verb) and resolves against declared flags (`DW0172`).

@@ -1,6 +1,6 @@
 //! spec-0021: the stage-5 `loot` section and actor `equipment`.
 //!
-//! Both are v0.6 surfaces, reserved (`DW0141`) earlier. Loot validates its item
+//! Both are v0.6 surfaces. Loot validates its item
 //! ids against the pinned registry (`DW0143`), its anchors against prefab
 //! metadata (`DW0142`), rejects two fills of one container (`DW0435`) and a
 //! fill deeper than a container (`DW0432`). Enchantments — on loot stacks and

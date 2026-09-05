@@ -174,9 +174,9 @@ The ledger is every number the format has and the one surface each names
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
-`1.1.0` document means, and each silently drops the other's half.
-`tools/check-version-ledger-uniqueness.py` holds that against `origin/main`, for
-this ledger and for `dsl_version`.
+`1.1.0` document means, and each silently drops the other's half. The next
+number is allocated by the planner across every remote ref before a round is
+dispatched, never picked by the round.
 
 A number whose surface is introduced by a change still in flight is **reserved**
 in the ledger rather than skipped, because a skipped number is a free number and
@@ -190,8 +190,7 @@ land**, so a reserved number can sit below an accepted one. That is the number
 still meaning exactly what it names: a document declaring it is refused, and
 every fence reads as shut at it. What must never happen is a reservation whose
 surface this engine has — it would refuse a version the engine can honour — and
-that is what is checked, in the crate and in
-`tools/check-version-ledger-uniqueness.py`, rather than the ordering.
+that is what is checked, in the crate, rather than the ordering.
 
 **`split`** cuts one local axis into pieces: `absolute` pieces take a fixed block
 count, `relative` pieces share what is left. `rounding` (`truncate` — the

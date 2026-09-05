@@ -453,8 +453,6 @@ fn unknown_npc_in_cast_is_dw0464() {
     assert!(d.message.contains("npc/ghost"), "{}", d.message);
 }
 
-// --- DW0465: the deprecation window ---------------------------------------
-
 // --- DW0466 / DW0467: the `"unchanged"` sugar and the staleness lint -------
 
 /// `"unchanged"` carries the previous scene forward.
