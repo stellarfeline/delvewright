@@ -79,7 +79,7 @@ fn every_library_piece_builds_something_inside_its_box() {
 }
 
 /// **Every program in the registry gives the verdict the record says it gives,
-/// at the expansion it declares** — the sweep `delve-grammar audit --library`
+/// at the expansion it declares** — the sweep `delvec grammar audit --library`
 /// runs, run here so `cargo test` carries it too.
 ///
 /// One program is recorded red: `causeway`'s flood is not contained, which is a

@@ -13,7 +13,7 @@
 //! shading, block-edge relief, distance fade. It answers "is the thing where I
 //! think it is, is it visible, is it framed" — layout questions — in one process
 //! with no GPU, no resource pack and no server. It does **not** answer "does it
-//! look good": Chunky (`delve-render`, spec-0007) remains the beauty pass, and
+//! look good": Chunky (`delvec render`, spec-0007) remains the beauty pass, and
 //! nothing here competes with it.
 //!
 //! Three consequences worth knowing before reading a frame:
@@ -92,7 +92,7 @@ pub const SEA_PLANE_NOTE: &str = "ocean-horizon sea plane drawn at world-gen sea
 // ---------------------------------------------------------------------------
 
 /// The colour an unrecognised block renders as: full magenta, the same
-/// missing-texture key `delve-render`'s fidelity gate scans for
+/// missing-texture key `delvec render`'s fidelity gate scans for
 /// (`crate::…`/`delvewright_render::detect`). Deliberately loud — a block the
 /// palette has never seen must be *obvious* in the frame rather than quietly
 /// shaded as generic stone, so extending the palette is prompted by looking at a

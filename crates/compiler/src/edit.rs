@@ -1652,7 +1652,7 @@ fn fragment(
         message: format!(
             "world-edits batch `{bid}`: fragment prefab `{prefab}` is not in the prefab \
              library — only admitted library prefabs (with provenance/license metadata, \
-             ADR-0013) can be stamped. Admit the fragment via `delve-admit` first, or fix \
+             ADR-0013) can be stamped. Admit the fragment via `delvec prefab` first, or fix \
              the id"
         ),
     })?;

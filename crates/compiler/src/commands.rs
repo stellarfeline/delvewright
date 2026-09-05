@@ -488,7 +488,7 @@ mod tests {
 
     /// An SNBT byte/short literal that overflows its suffix.
     ///
-    /// `delve-admit`'s gallery summoned its labels with `text_opacity:255b`. The
+    /// `delvec prefab`'s gallery summoned its labels with `text_opacity:255b`. The
     /// command is structurally flawless, so every structural check passed — and
     /// 1.21.11 dropped `admit:finish` in its entirety ("Failed to parse number:
     /// Value out of range. Value:\"255\""), taking the spawn platform, the

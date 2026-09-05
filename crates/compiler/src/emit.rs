@@ -1487,7 +1487,7 @@ pub fn build_with_warnings(
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
     // Deterministic camera + expect-checklist shot list for the visual tier;
-    // consumed by `delve-render`. Emitted before the manifest so its hash is
+    // consumed by `delvec render`. Emitted before the manifest so its hash is
     // recorded there like every other output.
     //
     // `render_plan` is the only way to a render-plan value, and it takes the

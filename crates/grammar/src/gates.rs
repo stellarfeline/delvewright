@@ -179,7 +179,7 @@ pub(crate) const ZERO_BINDING: &str = "examined ZERO objects — its verdict bin
 ///   a gate that has found something says it.
 ///
 /// Idempotent, because it runs at two levels: `contract::check` seals its own
-/// gates (its report has three consumers of its own — `delve-admit`'s spatial
+/// gates (its report has three consumers of its own — `delvec prefab`'s spatial
 /// audit and the export refusal among them, and neither of those goes through
 /// `judge`), and `judge` seals the whole list afterwards so that a gate added
 /// later cannot escape by being added in the wrong place.
@@ -217,7 +217,7 @@ pub(crate) fn seal_zero_bindings(
         }
     }
     // **The invariant, checked rather than trusted.** Everything downstream —
-    // the corpus audit's red set, the export refusal, `delve-admit`'s spatial
+    // the corpus audit's red set, the export refusal, `delvec prefab`'s spatial
     // audit — now reads a gate's own state and asks nothing further about its
     // binding. That is only sound while no report can carry a gate that is
     // green over nothing, so the claim is asserted here instead of being left

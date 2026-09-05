@@ -36,8 +36,8 @@
 //!
 //! # The corpus
 //!
-//! [`crate::library::PROGRAMS`] — every program `delve-grammar list` names and
-//! `delve-grammar show --program <id>` can hand an author. The drowned-bell zone
+//! [`crate::library::PROGRAMS`] — every program `delvec grammar list` names and
+//! `delvec grammar show --program <id>` can hand an author. The drowned-bell zone
 //! programs are deliberately *not* in it: they are one campaign's composition,
 //! unreachable from `list`, so a construct used only there is not demonstrated
 //! to anybody. Counting them would turn a gap into a green.

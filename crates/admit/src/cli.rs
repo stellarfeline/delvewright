@@ -1,35 +1,30 @@
-//! The `delve-admit` command line, as a type.
+//! The `delvec prefab` command line, as a type; [`run`] is what runs it.
 //!
-//! It sits in the library rather than in `main.rs` for one reason: the set of
-//! commands this binary has is a fact a TEST must be able to read. Every command
+//! The type is public for one reason beyond the `delvec` binary mounting it:
+//! the set of commands this surface has is a fact a TEST must be able to read. Every command
 //! that opens a piece an author named owes a lone tile a refusal (`DW0739`), and
 //! the only way to check that every one of them does is to enumerate them from
 //! the parser itself — a hand-written list of doors is what let the guard reach
-//! two of three in the first place. `tests/fragment_doors.rs` walks
-//! [`Cli::command()`]; a command added here and classified nowhere is a red.
+//! two of three in the first place. `crates/delvec/tests/prefab_fragment_doors.rs`
+//! walks [`PrefabCommand`]'s clap tree; a command added here and classified
+//! nowhere is a red.
 
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Subcommand};
 
 use crate::light::DEFAULT_DARK_THRESHOLD;
+pub use crate::run::run;
 
-#[derive(Parser)]
-#[command(
-    name = "delve-admit",
-    about = "Prefab admission pipeline: audit, socket carving, anchors, lighting, catalog cards, gallery world",
-    version
-)]
-pub struct Cli {
-    /// Emit diagnostics as one JSON object per line.
-    #[arg(long, global = true)]
-    pub json: bool,
+/// `delvec prefab`: the command line, as a type.
+#[derive(Clone, Args)]
+pub struct PrefabArgs {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: PrefabCommand,
 }
 
-#[derive(Subcommand)]
-pub enum Command {
+#[derive(Clone, Subcommand)]
+pub enum PrefabCommand {
     /// Mechanical NBT palette audit (CI gate): allowlist + code-injection forbid.
     Audit {
         /// Input structure `.nbt`, or the `.json` manifest of a zone that ships
@@ -139,7 +134,7 @@ pub enum Command {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Clone, Subcommand)]
 pub enum CatalogCmd {
     /// Validate one or more catalog card files.
     Validate {

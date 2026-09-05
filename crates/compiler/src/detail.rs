@@ -27,7 +27,7 @@
 //! |---|---|
 //! | `DW0841`–`DW0845` ([`check`]) | `validate_loaded` in `delvec`'s `main` — the one funnel every subcommand's validation goes through, `build` included |
 //! | `DW0841` again ([`check_walk`]) | `delvec allocation`, before it prints a single number |
-//! | `DW0848` | `delve-admit audit`, and [`check`] wherever a row consumes the piece |
+//! | `DW0848` | `delvec prefab audit`, and [`check`] wherever a row consumes the piece |
 //! | the frame, and the piece's bytes | [`place`], inside `Plan::build` |
 //! | the hash line, and the blockout-drift advisory | `emit::build_with_warnings`, the one function that turns a `Plan` into a datapack |
 //!
@@ -1388,7 +1388,7 @@ pub fn check(
                      beside the map's; a piece with no contract gives the equivalence instrument \
                      nothing to read, and a place detailed with one would be a hole in the proof \
                      rather than a finding in it. Re-export the piece with its contract, or admit \
-                     it through `delve-admit`, which resolves one.",
+                     it through `delvec prefab`, which resolves one.",
                     piece = row.piece,
                 ),
             ));

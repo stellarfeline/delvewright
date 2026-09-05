@@ -1,10 +1,15 @@
 [package]
 name = "delvewright-admit"
-version = "0.0.0"
-edition = "2024"
-publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Prefab admission for Delvewright: palette audit, jigsaw sockets, anchors, lighting, catalog cards and the gallery world — mounted as `delvec prefab`."
+readme = "README.md"
+exclude = ["tests/"]
 
-# `delve-admit` (spec-0007, M3 asset pipeline — admission half): the machinery
+# `delvec prefab` (spec-0007, M3 asset pipeline — admission half): the machinery
 # that turns an approved, converted `.nbt` candidate into a library-grade prefab
 # and gates community contributions.
 #
@@ -17,10 +22,7 @@ publish = false
 #               allowlist, ADR-0013).
 # - `gallery` — one command: candidate pieces -> browse world + note overlay;
 #               `curate` harvests `dw.note` verdicts into a per-asset report.
-[[bin]]
-name = "delve-admit"
-path = "src/main.rs"
-
+# The command line is `cli`, mounted by the `delvec` binary (ADR-0023 §3).
 [lib]
 path = "src/lib.rs"
 
@@ -45,8 +47,8 @@ flate2 = "1"
 # where a CHECK over that document is asked (`check_footprint_class`, spec-0050
 # §5), because that check takes the metrics-read ledger and a re-export of a
 # ledger through a third crate would be a second path to one authority.
-delvewright-dsl = { path = "../dsl" }
-delvewright-schem = { path = "../schem" }
+delvewright-dsl.workspace = true
+delvewright-schem.workspace = true
 
 # The spatial contract has ONE checker (spec-0036 §1c) and this is its second
 # door. A prefab nobody generated carries the same resolved contract block in its
@@ -54,11 +56,11 @@ delvewright-schem = { path = "../schem" }
 # over the same two inputs — otherwise "one checker, two doors" is two checkers
 # that agree until they do not. Generation-time tooling only; nothing here ships
 # in a delve (ADR-0003).
-delvewright-grammar = { path = "../grammar" }
-delvewright-orchestrator = { path = "../orchestrator" }
+delvewright-grammar.workspace = true
+delvewright-orchestrator.workspace = true
 
 # The pinned 1.21.11 Brigadier command tree and its validator (`delvewright_
-# compiler::commands`). `delve-admit` writes `.mcfunction` files into a datapack
+# compiler::commands`). `delvec prefab` writes `.mcfunction` files into a datapack
 # exactly as `delvec` does, so it is bound by exactly the same rule: a command
 # line that the pinned server will not parse must never reach a world. The
 # compiler owned that check because it was the first emitter to need it, and the
@@ -67,14 +69,5 @@ delvewright-orchestrator = { path = "../orchestrator" }
 # `admit:finish` outright. The capability belongs to the object class
 # "an mcfunction this repo emits", not to `delvec`, so the second emitter reuses
 # the ONE vendored tree rather than growing a private copy of the rule.
-# (The package is `delvec` — ADR-0016 — while its library target keeps the
-# `delvewright_compiler` name, so that is what `use` paths spell.)
-delvec = { path = "../compiler" }
+delvewright-compiler.workspace = true
 
-[dev-dependencies]
-# The metadata-preservation test drives the admission steps over a REAL grammar
-# export rather than a hand-written fixture. A fixture would be one more private
-# copy of the prefab-metadata shape — the exact defect that test exists to
-# catch — and it would go stale the first time a producer gained a field.
-delvewright-grammar = { path = "../grammar" }
-serde_json = "1"

@@ -6,8 +6,8 @@
 //! are, how lit it is, what it claims about the space inside it, and what
 //! regenerates it. Both halves are produced and consumed by several tools of
 //! several ages — the grammar back end and the hand-written generators write the
-//! pair from scratch, `delve-admit` reads it and writes it back after every
-//! admission step, `delvec` reads it to plan a world, `delve-render` reads it to
+//! pair from scratch, `delvec prefab` reads it and writes it back after every
+//! admission step, `delvec` reads it to plan a world, `delvec render` reads it to
 //! aim a camera — so the document's shape is defined once, here, and every one
 //! of them reads that definition instead of a copy of it.
 //!
@@ -79,7 +79,7 @@ use crate::split::TileSet;
 /// the pool declaration (`{"pools": {...}}`), read by the compiler's registry.
 ///
 /// Named once because more than one tool walks the library directory — the
-/// registry, `delvec view`'s page builder, `delve-render batch` — and each of
+/// registry, `delvec view`'s page builder, `delvec render batch` — and each of
 /// them opens every `.json` it finds. A walker that does not know this name
 /// hands a pool file to [`PrefabMeta::from_json`] and reports it as a malformed
 /// prefab, which is a true statement about the bytes and a wrong one about the
@@ -230,7 +230,7 @@ pub const DW_FOOTPRINT_CLASS: crate::DwCode =
 /// size.**
 ///
 /// One authority with two doors, on the pattern spec-0036 §1c fixed for the
-/// spatial contract: `delve-admit audit` asks it at the admission event, where
+/// spatial contract: `delvec prefab audit` asks it at the admission event, where
 /// the library's integrity lives, and `delvewright_compiler::detail` asks it
 /// again wherever a `detail-plan` row consumes the piece. Two implementations
 /// that agreed until they did not is the failure this shape removes.
@@ -1493,7 +1493,7 @@ mod tests {
             "ingested",
             [3, 3, 3],
             4671,
-            "delve-admit (external admission)",
+            "delvec prefab (external admission)",
             License {
                 source: "unknown".to_string(),
                 spdx: "UNKNOWN".to_string(),

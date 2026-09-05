@@ -1,4 +1,4 @@
-//! Diagnostics + exit codes for `delve-render`, mirroring the compiler / schem
+//! Diagnostics + exit codes for `delvec render`, mirroring the compiler / schem
 //! `DWxxxx` + one-JSON-object-per-line convention (spec-0002). spec-0007 owns the
 //! `DW07xx` range; schem holds `DW0700..DW0702`/`DW0710`, so render takes the
 //! `DW072x` block. Diagnostics go to stderr; the only stdout output is a

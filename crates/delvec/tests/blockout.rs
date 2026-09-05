@@ -1,0 +1,1087 @@
+//! **The derived blockout, and its independent observer** (spec-0049 §5).
+//!
+//! Two halves, and the second is the one that makes the first mean anything.
+//!
+//! The first half is that the whole map derives, builds and walks from four
+//! JSON documents with no authored geometry anywhere — `tests/fixtures/blockout`
+//! carries a five-place graph with a walk, a stair, a designed fall that closes
+//! a loop, a barred way the keeper opens and a vista, and nothing that describes
+//! a block.
+//!
+//! The second half is spec-0049's acceptance criterion 8, and it is the reason
+//! this file is shaped the way it is: **every red here is produced by a
+//! deliberately perturbed DERIVATION, never by hand-authored bytes.** A check
+//! that replays the derivation's own arithmetic agrees with it by construction,
+//! however wrong both are; the only demonstration that `DW0836`, `DW0837` and
+//! `DW0838` are observing the mass rather than reciting it is to make the
+//! derivation build the map wrong in a named way and watch them say so. So each
+//! perturbation test asserts three things: that the code fires under the defect,
+//! that it does NOT fire without it, and what the check bound to while deciding.
+
+mod common;
+
+use std::collections::BTreeMap;
+
+use delvewright_compiler::blockout::{self, Perturb};
+use delvewright_compiler::plan::Plan;
+use delvewright_compiler::registry::PrefabRegistry;
+use delvewright_dsl::siteplan::PlacedBox;
+use delvewright_dsl::{Campaign, Severity};
+
+/// The site-plan fixture: five places, zero authored geometry.
+fn fixture_dir() -> std::path::PathBuf {
+    common::repo_root().join("crates/delvec/tests/fixtures/blockout")
+}
+
+fn campaign() -> Campaign {
+    let loaded = delvewright_compiler::load::load_campaign_dir(&fixture_dir())
+        .expect("the blockout fixture is readable");
+    delvewright_dsl::parse_campaign(&loaded.raw).expect("the blockout fixture parses")
+}
+
+fn prefabs() -> PrefabRegistry {
+    PrefabRegistry::load_dir(&common::prefabs_dir()).expect("the prefab library loads")
+}
+
+/// Derive the blockout under `perturb`, assemble it, and run the battery.
+///
+/// The same two steps `emit::build_with_warnings` takes, in the same order, over
+/// the same models — so what this file proves is what a build proves.
+fn battery_under(perturb: Perturb) -> (blockout::Battery, Vec<String>) {
+    let c = campaign();
+    let reg = prefabs();
+    let plan = Plan::build_with(&c, &reg, perturb).expect("the blockout fixture plans");
+    let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let battery = blockout::check(&plan, &blocks).expect("a site-plan campaign has a blockout");
+    let codes = battery
+        .findings
+        .iter()
+        .map(|(_, d)| d.code.clone())
+        .collect();
+    (battery, codes)
+}
+
+fn errors(b: &blockout::Battery) -> Vec<String> {
+    b.findings
+        .iter()
+        .filter(|(_, d)| d.severity == Severity::Error)
+        .map(|(_, d)| d.code.clone())
+        .collect()
+}
+
+fn message_for(b: &blockout::Battery, code: &str) -> String {
+    b.findings
+        .iter()
+        .find(|(_, d)| d.code == code)
+        .map(|(_, d)| d.message.clone())
+        .unwrap_or_else(|| panic!("no `{code}` among {:?}", errors(b)))
+}
+
+// ---------------------------------------------------------------------------
+// The whole map, derived
+// ---------------------------------------------------------------------------
+
+/// The blockout derives, assembles and passes its own battery — and the battery
+/// says what it examined.
+///
+/// The binding assertions are the point of the test as much as the green is: a
+/// battery that examined nothing would pass too, and a green that rests on a
+/// zero binding is the first vacuity mode `CLAUDE.md` names.
+#[test]
+fn the_derived_whole_is_green_and_states_what_it_bound_to() {
+    let (b, _) = battery_under(Perturb::none());
+    assert!(
+        errors(&b).is_empty(),
+        "the unperturbed derivation must satisfy its own observer: {:?}\n{}",
+        errors(&b),
+        b.findings
+            .iter()
+            .map(|(_, d)| d.message.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let k = b.binding;
+    assert_eq!(k.seams, 7, "seven traversal connections are allocated");
+    assert_eq!(
+        k.walls, 6,
+        "seven seams over six walls — the stair and the fall pierce one wall, and \
+         the undercroft's own stair pierces the cell's floor"
+    );
+    assert_eq!(k.nodes, 7, "seven places are proven reached");
+    assert!(
+        k.standable > 500,
+        "the crossing check classified {} standable cell(s), which is not a map",
+        k.standable
+    );
+    assert_eq!(k.pairs, 21, "seven places make twenty-one unordered pairs");
+    assert_eq!(k.sightlines, 1);
+    assert_eq!(k.identities, 6);
+    assert_eq!(
+        k.identities_declared_only, 2,
+        "the two region-extent identities have no byte-side referent"
+    );
+    assert_eq!(k.legs, 3, "the critical path has three legs");
+}
+
+/// The derivation itself binds, and its output is mass rather than a promise.
+#[test]
+fn the_derivation_states_what_it_massed() {
+    let c = campaign();
+    let reg = prefabs();
+    let plan = Plan::build(&c, &reg).expect("the blockout fixture plans");
+    let b = plan
+        .blockout
+        .as_ref()
+        .expect("a site plan derives a blockout");
+    let k = b.binding;
+    assert_eq!(k.boxes, 7);
+    assert_eq!(k.seams, 7);
+    assert_eq!(
+        k.stairs, 2,
+        "two connections are built out of treads — one across a wall, one down \
+         through a punched floor"
+    );
+    assert_eq!(k.barred, 1, "one way is sealed at world load");
+    assert_eq!(k.volumes, 2);
+    assert!(
+        k.cells > 10_000,
+        "a whole map is more than {} cells",
+        k.cells
+    );
+    // Every write is inside what the game will accept, because a `fill` the
+    // server refuses fails in a function nobody reads.
+    let area = plan
+        .areas
+        .iter()
+        .find(|a| a.area_id == delvewright_dsl::SITE_AREA)
+        .expect("the site plan places one area");
+    assert!(!area.mass.is_empty());
+    for m in &area.mass {
+        let n: u64 = (0..3)
+            .map(|i| (i64::from(m.to[i]) - i64::from(m.from[i]) + 1).unsigned_abs())
+            .product();
+        assert!(
+            n <= blockout::MAX_FILL_CELLS,
+            "a {n}-cell fill is more than vanilla will write in one command"
+        );
+    }
+    assert!(
+        area.pieces.iter().all(|p| p.templates.is_empty()),
+        "a derived piece carries no structure template — its blocks are the mass"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The perturbations (spec-0049 §13.8)
+// ---------------------------------------------------------------------------
+
+/// `DW0836`: the derivation cuts every hole one cell over, and the observer
+/// catches it from both directions.
+#[test]
+fn a_slid_opening_reddens_dw0836() {
+    let (clean, _) = battery_under(Perturb::none());
+    assert!(
+        !errors(&clean).contains(&"DW0836".to_string()),
+        "the unperturbed derivation builds the openings the plan allocated"
+    );
+    let (b, _) = battery_under(Perturb {
+        slide_openings: 1,
+        ..Perturb::none()
+    });
+    assert!(
+        errors(&b).contains(&"DW0836".to_string()),
+        "a hole cut one cell over is a hole the plan did not allocate: {:?}",
+        errors(&b)
+    );
+    let m = message_for(&b, "DW0836");
+    assert!(
+        m.contains("still solid") || m.contains("allocated no seam for"),
+        "the refusal must say which way it disagrees: {m}"
+    );
+    assert_eq!(
+        b.binding.seams, 7,
+        "the binding is stated even when the check refuses"
+    );
+}
+
+/// `DW0836`'s other half: the mass is laid at a height the plan did not choose,
+/// and nothing at stage 4 could ever have seen it.
+#[test]
+fn a_sunk_place_reddens_dw0836_on_the_realized_rise() {
+    let (b, _) = battery_under(Perturb {
+        sink: Some("node/loft".to_string()),
+        ..Perturb::none()
+    });
+    let m = message_for(&b, "DW0836");
+    assert!(
+        m.contains("spans a climb of"),
+        "the realized rise must be the thing that disagreed: {m}"
+    );
+    // The same defect moves a datum, so the identity's SECOND call site — the
+    // one that exists precisely because a plan-time green cannot see this —
+    // refuses as well.
+    assert!(
+        errors(&b).contains(&"DW0833".to_string()),
+        "the brief's loft datum is measured off the bytes: {:?}",
+        errors(&b)
+    );
+    assert!(
+        message_for(&b, "DW0833").contains("BUILT world"),
+        "the second call site must say which world it measured"
+    );
+}
+
+/// `DW0837`: a place whose interior the derivation never cleared.
+#[test]
+fn a_bricked_up_place_reddens_dw0837() {
+    let (clean, _) = battery_under(Perturb::none());
+    assert!(!errors(&clean).contains(&"DW0837".to_string()));
+    let (b, _) = battery_under(Perturb {
+        brick_up: Some("node/exit".to_string()),
+        ..Perturb::none()
+    });
+    assert!(
+        errors(&b).contains(&"DW0837".to_string()),
+        "a place with nowhere to stand is a place nobody reaches: {:?}",
+        errors(&b)
+    );
+    let m = message_for(&b, "DW0837");
+    assert!(
+        m.contains("node/exit") && m.contains("standable cell(s)"),
+        "the refusal names the place and what it offered: {m}"
+    );
+    assert_eq!(b.binding.nodes, 7, "all seven places were examined");
+}
+
+/// `DW0838`: walls one course tall, so a body hops between two places somewhere
+/// the plan allocated nothing.
+///
+/// This is also the test that demonstrates why the check is made over PATHS
+/// rather than over steps: the crossing is three moves long — floor, wall top,
+/// the next floor — and no single one of them joins two owned cells, because the
+/// plan's own `DW0828` puts exactly one cell between any two boxes.
+#[test]
+fn a_low_wall_reddens_dw0838() {
+    let (clean, _) = battery_under(Perturb::none());
+    assert!(
+        !errors(&clean).contains(&"DW0838".to_string()),
+        "with the walls built, the only ways between places are the allocated ones"
+    );
+    let (b, _) = battery_under(Perturb {
+        short_walls: true,
+        ..Perturb::none()
+    });
+    assert!(
+        errors(&b).contains(&"DW0838".to_string()),
+        "a wall a body can climb is a seam that was discovered: {:?}",
+        errors(&b)
+    );
+    let m = message_for(&b, "DW0838");
+    assert!(
+        m.contains("allocated no seam for") && m.contains("can still walk to"),
+        "the refusal names both places and a witness cell: {m}"
+    );
+    assert_eq!(b.binding.pairs, 21);
+}
+
+// ---------------------------------------------------------------------------
+// The headroom measure, and the run a stair really has
+// ---------------------------------------------------------------------------
+
+/// The derived world of the unperturbed fixture, for tests that read blocks
+/// rather than findings.
+fn derived_world() -> (Vec<PlacedBox>, delvewright_compiler::nav::World) {
+    let c = campaign();
+    let reg = prefabs();
+    let plan = Plan::build(&c, &reg).expect("the blockout fixture plans");
+    let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let world = delvewright_compiler::nav::World::from_plan(&plan, &structures);
+    let boxes = plan
+        .blockout
+        .as_ref()
+        .expect("a site plan derives a blockout")
+        .boxes
+        .clone();
+    (boxes, world)
+}
+
+fn box_of<'a>(boxes: &'a [PlacedBox], node: &str) -> &'a PlacedBox {
+    boxes
+        .iter()
+        .find(|b| b.node.0 == node)
+        .unwrap_or_else(|| panic!("`{node}` is a place this fixture has"))
+}
+
+fn cell(c: [i64; 3]) -> [i32; 3] {
+    [c[0] as i32, c[1] as i32, c[2] as i32]
+}
+
+/// **`DW0833`'s headroom is a PLACE, not one column of it.**
+///
+/// The condition is asserted rather than assumed, and that is the whole
+/// discipline of this test: the hall's own centre column carries the derived
+/// stair's treads, because a stair arrives at its seam and walks back through
+/// the middle of the room. Counting upward from `centre()` therefore answered
+/// **0** for a room whose ceiling is exactly where the plan put it. If the
+/// fixture's stair ever moves off the middle this assertion fails rather than
+/// the test quietly becoming vacuous.
+#[test]
+fn the_headroom_measure_reads_the_place_and_not_its_centre_column() {
+    let (boxes, world) = derived_world();
+    let hall = box_of(&boxes, "node/hall");
+    assert!(
+        !world.is_clear(cell(hall.centre())),
+        "the hall's centre column carries the stair's treads — without that this \
+         test proves nothing about which column was read"
+    );
+    let (b, _) = battery_under(Perturb::none());
+    assert!(
+        !errors(&b).contains(&"DW0833".to_string()),
+        "a place whose ceiling is where the plan put it keeps its height \
+         identity, whatever the plan hosts on its floor: {:?}",
+        errors(&b)
+    );
+    assert_eq!(
+        b.binding.identities, 6,
+        "and the height identities were examined rather than skipped"
+    );
+}
+
+/// `DW0833`: a ceiling closed one course into the play space, and nothing else
+/// moved.
+///
+/// The perturbation is chosen so that only the check under test can see it. The
+/// floor stays where the plan put it, so `DW0836`'s realized rise is unmoved;
+/// the place stays walkable, so `DW0837` is unmoved; the openings are untouched,
+/// so `DW0836`'s seam half is unmoved. A headroom check that reddened every box
+/// would pass a test like this by accident, which is why the assertion below is
+/// over the WHOLE error list and not over one code.
+#[test]
+fn a_low_ceiling_reddens_dw0833_on_the_headroom() {
+    let (clean, _) = battery_under(Perturb::none());
+    assert!(
+        !errors(&clean).contains(&"DW0833".to_string()),
+        "the unperturbed derivation keeps the brief's numbers"
+    );
+    let (b, _) = battery_under(Perturb {
+        low_ceiling: Some("node/landing".to_string()),
+        ..Perturb::none()
+    });
+    assert_eq!(
+        errors(&b),
+        vec!["DW0833".to_string()],
+        "a course of ceiling is a height defect and nothing else"
+    );
+    let m = message_for(&b, "DW0833");
+    assert!(
+        m.contains("fact/landing-height") && m.contains("measured 3"),
+        "the refusal names the fact and the figure it measured: {m}"
+    );
+    assert!(
+        m.contains("the PLAN may have given this place something to hold"),
+        "and it names BOTH ways the mass can disagree, not only the derivation: {m}"
+    );
+    assert_eq!(
+        b.binding.identities, 6,
+        "the binding is stated even when the check refuses"
+    );
+}
+
+/// **A stair down through a punched floor is a whole run, and a body walks it
+/// to the floor.**
+///
+/// The run of such a stair starts at the hole and leaves along one side of it,
+/// so what it has is the room on that side plus the hole's own width — never the
+/// host's whole extent. Chosen against the extent, the gentle 1:2 standard
+/// "fit" a run the undercroft does not have and the courses that fell off the
+/// far wall were dropped in silence: the ladder lost its bottom two treads, the
+/// body could climb IN from above and stand on the stair, and the battery stayed
+/// green over a room whose floor nobody could reach — because a place counts as
+/// reached the moment a body stands anywhere inside it.
+///
+/// Both halves are asserted, and the first is the one that was silently false:
+/// every course of the climb exists, and the walk plane itself is reachable from
+/// the place above.
+#[test]
+fn a_stair_down_through_a_punched_floor_is_a_whole_run() {
+    let (boxes, world) = derived_world();
+    let under = box_of(&boxes, "node/undercroft");
+    let cellar_above = box_of(&boxes, "node/cell");
+    let (lo, hi) = under.space();
+
+    // Every course of the climb is there: for each block of rise between the
+    // walk plane and the floor the hole is cut in, some cell of the place is
+    // standable at that height. A dropped course is a gap in this ladder.
+    for h in 1..=i64::from(under.clearance) {
+        let y = under.floor + h;
+        let found =
+            (lo[2]..=hi[2]).any(|z| (lo[0]..=hi[0]).any(|x| world.is_standable(cell([x, y, z]))));
+        assert!(
+            found,
+            "no tread stands {h} block(s) over `node/undercroft`'s walk plane — \
+             the run was laid short"
+        );
+    }
+
+    // And the walk plane is reachable from the floor of the place above, which
+    // is what the climb is for.
+    let (alo, ahi) = cellar_above.space();
+    let seeds: Vec<[i32; 3]> = (alo[2]..=ahi[2])
+        .flat_map(|z| (alo[0]..=ahi[0]).map(move |x| [x, alo[1], z]))
+        .map(cell)
+        .filter(|c| world.is_standable(*c))
+        .collect();
+    assert!(
+        !seeds.is_empty(),
+        "the place above offers somewhere to start"
+    );
+    let reached = world.reachable_walkable(&seeds);
+    let landed = (lo[2]..=hi[2])
+        .flat_map(|z| (lo[0]..=hi[0]).map(move |x| [x, under.floor, z]))
+        .any(|c| reached.contains(&cell(c)));
+    assert!(
+        landed,
+        "no body standing on `node/cell`'s floor can reach `node/undercroft`'s \
+         own walk plane over the step rule"
+    );
+}
+
+/// The stair across a VERTICAL face is untouched, and the assertion is over the
+/// blocks rather than over a hash so a reader can see which stair and where.
+///
+/// Such a run starts against the wall the seam is in and walks the whole
+/// footprint, so the span its pitch is chosen against IS the host's extent —
+/// which is what it always was. The hall's climb of five is still the gentle
+/// 1:2 standard, ten courses back from the east wall at x 24, and the eleventh
+/// cell is still room.
+#[test]
+fn the_stair_across_a_wall_still_spends_the_whole_footprint() {
+    let (boxes, world) = derived_world();
+    let hall = box_of(&boxes, "node/hall");
+    assert!(
+        !world.is_clear(cell([15, hall.floor, 10])),
+        "the tenth course of the hall's ramp stands at x 15"
+    );
+    assert!(
+        world.is_standable(cell([14, hall.floor, 10])),
+        "and the cell beyond it is floor: a ten-course run, not eleven"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The advisories
+// ---------------------------------------------------------------------------
+
+/// `DW0821`: the vista does not read in the blockout, and the walk sheet is told
+/// every cell that stops it — not the first.
+#[test]
+fn dw0821_warns_and_names_every_blocking_cell() {
+    let (b, codes) = battery_under(Perturb::none());
+    assert!(codes.contains(&"DW0821".to_string()));
+    let (_, d) = b
+        .findings
+        .iter()
+        .find(|(_, d)| d.code == "DW0821")
+        .expect("the fixture's sightline crosses a shell");
+    assert_eq!(
+        d.severity,
+        Severity::Warning,
+        "an error here would force hand-shaped massing ahead of the walk evidence \
+         spec-0049 §5.1 reserves it for"
+    );
+    // Three cells of one wall, all of them named.
+    assert!(
+        d.message
+            .contains("[23, 68, 11], [24, 68, 11], [25, 68, 11]"),
+        "every blocking cell is named: {}",
+        d.message
+    );
+}
+
+/// `DW0822`'s second call site: the route the built map really is, beside the
+/// projection the graph made of it.
+#[test]
+fn dw0822_measures_the_built_route_at_the_second_call_site() {
+    let (b, _) = battery_under(Perturb::none());
+    let (_, d) = b
+        .findings
+        .iter()
+        .find(|(_, d)| d.code == "DW0822")
+        .expect("a critical path with legs is measured");
+    assert_eq!(
+        d.severity,
+        Severity::Warning,
+        "the figure carries no threshold"
+    );
+    assert!(
+        d.message.contains("MEASURES") && d.message.contains("3 leg(s)"),
+        "the measurement states its own binding: {}",
+        d.message
+    );
+    assert!(
+        !d.message.contains("could not route"),
+        "every leg of the fixture's critical path routes over the built blockout: {}",
+        d.message
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Determinism (spec-0049 §13.4)
+// ---------------------------------------------------------------------------
+
+/// The same plan derives the same mass twice, and **the seed reaches none of
+/// it**.
+///
+/// The second half is the one worth stating: `world.seed` is what makes a pool
+/// area's layout what it is, and a blockout has no draw to make — so a campaign
+/// whose map is a site plan reproduces without the seed mattering at all.
+#[test]
+fn the_derivation_is_deterministic_and_seedless() {
+    let mass_of = |seed: u64| -> Vec<String> {
+        let mut c = campaign();
+        c.world.content.seed = seed;
+        let reg = prefabs();
+        let plan = Plan::build(&c, &reg).expect("the blockout fixture plans");
+        plan.areas
+            .iter()
+            .find(|a| a.area_id == delvewright_dsl::SITE_AREA)
+            .expect("one site area")
+            .mass
+            .iter()
+            .map(|m| format!("{:?}..{:?} {}", m.from, m.to, m.block))
+            .collect()
+    };
+    let a = mass_of(20260821);
+    let b = mass_of(20260821);
+    assert_eq!(a, b, "two derivations of one plan are the same mass");
+    let c = mass_of(1);
+    assert_eq!(
+        a, c,
+        "changing the seed changes no blockout byte — the derivation never draws"
+    );
+    assert!(!a.is_empty());
+}
+
+/// The production path is never perturbed.
+///
+/// The one thing [`Perturb`] could cost, asserted directly: `Plan::build` — the
+/// constructor every build that is not a `--perturb` demonstration goes through
+/// — asks for no defect, and a build made through it is byte-identical to one
+/// made by naming [`Perturb::none`] explicitly.
+#[test]
+fn blockout_derivation_is_never_perturbed_in_production() {
+    assert!(Perturb::none().is_none());
+    assert!(Perturb::default().is_none());
+    let c = campaign();
+    let reg = prefabs();
+    let via_build = Plan::build(&c, &reg).expect("plans");
+    let via_none = Plan::build_with(&c, &reg, Perturb::none()).expect("plans");
+    let mass = |p: &Plan| -> Vec<String> {
+        p.areas
+            .iter()
+            .flat_map(|a| a.mass.iter())
+            .map(|m| format!("{:?}..{:?} {}", m.from, m.to, m.block))
+            .collect()
+    };
+    assert_eq!(mass(&via_build), mass(&via_none));
+}
+
+/// **The flag is the only way in**, asserted over the sources rather than
+/// remembered.
+///
+/// `Plan::build_with` is the parameterised constructor; every other build in
+/// this engine reaches the derivation through `Plan::build`, which passes
+/// `Perturb::none()` as a literal. The test above proves the two agree; this one
+/// proves nothing else calls the parameterised one. Without it, a second caller
+/// could acquire a perturbation quietly and every assertion about the shipped
+/// derivation would still be green — a claim about a smaller world than the
+/// engine has.
+///
+/// It is a source scan because the property is about CALLERS, and a caller that
+/// exists is invisible to any amount of behavioural testing of the callee. The
+/// population is stated so a zero cannot pass for a pass.
+#[test]
+fn the_parameterised_derivation_has_exactly_one_production_caller() {
+    let root = common::repo_root();
+    let mut files = Vec::new();
+    for crate_dir in std::fs::read_dir(root.join("crates")).expect("crates/ is readable") {
+        let src = crate_dir.expect("a crate entry").path().join("src");
+        if src.is_dir() {
+            collect_rs(&src, &mut files);
+        }
+    }
+    // Directory order is the filesystem's; the assertion below is over a list.
+    files.sort();
+    assert!(
+        files.len() > 20,
+        "the scan found {} source file(s), which is not this workspace",
+        files.len()
+    );
+
+    // Every line that CALLS the parameterised constructor: `build_with_warnings`
+    // is a different function and is excluded by name, and a `fn` line is the
+    // definition rather than a call.
+    let mut callers: Vec<(String, String)> = Vec::new();
+    let mut named_perturb: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for path in &files {
+        let text = std::fs::read_to_string(path).expect("a source file is readable");
+        let name = path
+            .strip_prefix(&root)
+            .expect("every scanned file is under the repo root")
+            .to_string_lossy()
+            .into_owned();
+        for line in text.lines() {
+            let t = line.trim();
+            // Doc and ordinary comments describe the facility all over this
+            // crate; the property is about code.
+            if t.starts_with("//") {
+                continue;
+            }
+            if t.contains("Perturb") {
+                named_perturb.insert(name.clone());
+            }
+            if t.contains("build_with(") && !t.starts_with("pub fn") && !t.starts_with("fn") {
+                callers.push((name.clone(), t.to_string()));
+            }
+        }
+    }
+
+    // `plan.rs` calls it from `Plan::build` with the literal that asks for
+    // nothing; the binary's `main.rs` calls it from the `--perturb` arm.
+    // Nothing else may.
+    let sites: Vec<&str> = callers.iter().map(|(f, _)| f.as_str()).collect();
+    assert_eq!(
+        sites,
+        vec!["crates/compiler/src/plan.rs", "crates/delvec/src/main.rs"],
+        "the parameterised derivation acquired a caller: {callers:#?}"
+    );
+    assert!(
+        callers[0].1.contains("Perturb::none()"),
+        "`Plan::build` must pass the literal that asks for nothing: {}",
+        callers[0].1
+    );
+
+    // And the facility is not NAMED anywhere else either — a file that mentions
+    // `Perturb` in code is a file that could grow the second caller next.
+    assert_eq!(
+        named_perturb.iter().map(String::as_str).collect::<Vec<_>>(),
+        vec![
+            "crates/compiler/src/blockout.rs",
+            "crates/compiler/src/plan.rs",
+            "crates/delvec/src/main.rs",
+        ],
+        "binding: {} source file(s) scanned, {} call site(s) found",
+        files.len(),
+        callers.len()
+    );
+}
+
+/// Recursively collect `*.rs` under `dir`.
+fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    for e in std::fs::read_dir(dir).expect("a source directory is readable") {
+        let p = e.expect("a directory entry").path();
+        if p.is_dir() {
+            collect_rs(&p, out);
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            out.push(p);
+        }
+    }
+}
+
+/// **Every field of [`Perturb`] is reachable from the command line**, checked by
+/// the compiler rather than by a reader.
+///
+/// The destructuring below names all six fields with no `..` rest pattern, so a
+/// seventh defect added to `Perturb` and not given a [`Knob`] does not compile
+/// this test — which is the strongest form available for "the enumeration is
+/// complete", and the one `CLAUDE.md` asks for over a hand-written list. The
+/// assertions then say each field is actually MOVED by its knob, so an arm that
+/// exists and does nothing is a red rather than a pass.
+#[test]
+fn every_perturb_field_has_a_knob() {
+    use delvewright_compiler::blockout::Knob;
+
+    let place = "node/exit";
+    let mut seen = 0;
+    let (mut slid, mut sunk, mut short, mut bricked, mut low, mut walled) =
+        (false, false, false, false, false, false);
+    for knob in Knob::ALL {
+        let p = knob
+            .perturb(knob.takes_place().then_some(place))
+            .expect("a knob's own `takes_place` answer satisfies its own constructor");
+        assert!(
+            !p.is_none(),
+            "`{}` produced the unperturbed derivation, so it demonstrates nothing",
+            knob.name()
+        );
+        // Exhaustive: no `..`. Adding a field to `Perturb` breaks the build here.
+        let Perturb {
+            slide_openings,
+            sink,
+            short_walls,
+            brick_up,
+            low_ceiling,
+            wall_contacts,
+        } = p;
+        slid |= slide_openings != 0;
+        sunk |= sink.is_some();
+        short |= short_walls;
+        bricked |= brick_up.is_some();
+        low |= low_ceiling.is_some();
+        walled |= wall_contacts;
+        seen += 1;
+        assert!(
+            knob.perturb(knob.takes_place().then_some("")).is_some(),
+            "a knob's constructor must accept the arity its own `takes_place` states"
+        );
+        assert!(
+            knob.perturb((!knob.takes_place()).then_some(place))
+                .is_none(),
+            "`{}` must refuse the arity its own `takes_place` denies, rather than \
+             silently deriving a clean map",
+            knob.name()
+        );
+    }
+    assert_eq!(seen, Knob::ALL.len());
+    assert!(
+        slid && sunk && short && bricked && low && walled,
+        "one of the six fields is never set by any knob: slid={slid} sunk={sunk} \
+         short={short} bricked={bricked} low={low} walled={walled}"
+    );
+    // The spellings a creator types are unique and kebab-case, since the value
+    // set is resolved by name.
+    let names: std::collections::BTreeSet<&str> = Knob::ALL.iter().map(|k| k.name()).collect();
+    assert_eq!(names.len(), Knob::ALL.len(), "two knobs share a spelling");
+    for k in Knob::ALL {
+        assert!(
+            k.name().chars().all(|c| c.is_ascii_lowercase() || c == '-'),
+            "`{}` is not a kebab-case value",
+            k.name()
+        );
+        assert!(
+            k.documented_code().starts_with("DW08"),
+            "`{}` names `{}`, which is not a blockout-battery code",
+            k.name(),
+            k.documented_code()
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The synthesized vocabulary (spec-0049 §5.2)
+// ---------------------------------------------------------------------------
+
+/// The quest, gate and shortcut machinery lands on massing nobody authored, and
+/// does not know the difference.
+///
+/// Each assertion below is a piece of the existing engine reaching into a world
+/// with no prefab in it: the campaign's spawn, an NPC's stand, a `reach-anchor`
+/// objective's target, and an `open-gate`'s region — all resolved through
+/// `plan.anchors`, which is the one map every consumer already goes through.
+#[test]
+fn the_synthesized_vocabulary_carries_the_unchanged_quest_layer() {
+    let c = campaign();
+    let reg = prefabs();
+    let plan = Plan::build(&c, &reg).expect("plans");
+    let area = delvewright_dsl::SITE_AREA.to_string();
+
+    // The entry, resolved through the compiler's ONE resolver rather than by
+    // this module spelling a name.
+    let entry = plan
+        .anchors
+        .entry_anchor(&area)
+        .expect("the entry place carries the campaign's spawn");
+    let delvewright_compiler::plan::ResolvedAnchor::Point { pos, .. } = entry else {
+        panic!("an entry is a place to stand, not a region");
+    };
+    assert_eq!(*pos, [7, 64, 11], "the entry stands on the landing's floor");
+
+    // ...and on a DERIVED map it resolves by the declared role (spec-0046), not
+    // by the spelling. This pair belongs to neither change on its own: the
+    // derivation named its entry `spawn` precisely because the role did not
+    // exist yet, and a spelling nobody resolves through is the state that has
+    // to be asserted rather than assumed — deleting the role would leave this
+    // test green on the fallback and silently reinstate the folklore.
+    assert_eq!(
+        plan.anchors
+            .role_name(&area, delvewright_compiler::plan::AnchorRole::Entry),
+        Some(delvewright_dsl::ENTRY_ANCHOR),
+        "the derivation declares what its entry anchor is FOR"
+    );
+
+    // One anchor per place, one gate region per barred way, one unlock anchor
+    // for the way that opens from one side only.
+    for name in [
+        "anchor/node-landing",
+        "anchor/node-hall",
+        "anchor/node-loft",
+        "anchor/node-cell",
+        "anchor/node-exit",
+        "anchor/seam-hall-cell",
+        "anchor/unlock-hall-cell",
+    ] {
+        assert!(
+            plan.anchors.contains_key(&(area.clone(), name.to_string())),
+            "the derivation synthesizes `{name}`"
+        );
+    }
+    // The barred seam's region is a GATE, so the world-load seal model measures
+    // it exactly as it measures a prefab-authored one.
+    let gate = plan
+        .anchors
+        .get(&(area.clone(), "anchor/seam-hall-cell".to_string()))
+        .expect("the barred seam is a gate region");
+    assert!(matches!(
+        gate,
+        delvewright_compiler::plan::ResolvedAnchor::Gate { .. }
+    ));
+
+    // And the DSL's own answer about which anchors exist agrees with what the
+    // derivation placed — one authority, two readers.
+    let declared = delvewright_dsl::synthesized_anchors(&c);
+    let placed: std::collections::BTreeSet<String> = plan
+        .anchors
+        .keys()
+        .filter(|(a, _)| a == &area)
+        .map(|(_, n)| n.clone())
+        .collect();
+    assert_eq!(
+        declared, placed,
+        "validation resolves a campaign's anchors against exactly what the derivation places"
+    );
+}
+
+/// **What every place owes, plus the gate regions no place owes, is exactly the
+/// synthesized set** (spec-0050 §6).
+///
+/// `dsl::siteplan::synthesized_anchors` is the one authority for which names a
+/// site-plan campaign provides, and `owed_anchors` says which of them a given
+/// place must re-bind when a piece stands in it. Two functions reading two
+/// documents is exactly the drift the one-authority note exists to remove, so
+/// this asserts they PARTITION rather than merely overlap.
+///
+/// Both directions matter and each catches a different defect. A name owed by
+/// nobody is a name the campaign resolves and no piece is ever asked for — a
+/// quest pointing at a building that does not answer. A name owed by two places
+/// is two pieces claiming one anchor, which resolution cannot arbitrate.
+#[test]
+fn the_owed_anchors_partition_the_synthesized_set() {
+    let c = campaign();
+    let all = delvewright_dsl::synthesized_anchors(&c);
+    assert!(!all.is_empty(), "the fixture provides anchors at all");
+
+    let graph = c.layout_graph.as_ref().map(|g| &g.content).unwrap();
+    let mut owed_by: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for n in &graph.nodes {
+        for name in delvewright_dsl::owed_anchors(&c, &n.id) {
+            owed_by.entry(name).or_default().push(n.id.0.clone());
+        }
+    }
+    for (name, places) in &owed_by {
+        assert_eq!(
+            places.len(),
+            1,
+            "`{name}` is owed by {places:?} — two pieces claiming one anchor"
+        );
+    }
+
+    // The gate regions are the one family no place owes: they stand in a party
+    // plane the whole owns, not inside any piece.
+    let gates: std::collections::BTreeSet<String> = all
+        .iter()
+        .filter(|n| n.starts_with("anchor/seam-"))
+        .cloned()
+        .collect();
+    assert!(
+        !gates.is_empty(),
+        "the fixture has a barred way, or this binds nothing"
+    );
+    let owed: std::collections::BTreeSet<String> = owed_by.keys().cloned().collect();
+    assert!(
+        owed.is_disjoint(&gates),
+        "a gate region is never owed by a place"
+    );
+    let union: std::collections::BTreeSet<String> = owed.union(&gates).cloned().collect();
+    assert_eq!(
+        union, all,
+        "every synthesized name is either owed by exactly one place or a gate \
+         region the whole keeps — there is no third kind, and a name in neither \
+         is one no piece is ever asked for"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A place that is a route, and a hand-off that is not a door (spec-0053)
+// ---------------------------------------------------------------------------
+
+/// **The way builds.** `node/tunnel` is a `corridor`: four cells across and
+/// eight long, which no rung of the size ladder admits. It derives, assembles
+/// and passes the whole battery beside the size-classed places, through the
+/// SAME derivation and the same observer — no branch was added for it below the
+/// classification itself.
+#[test]
+fn a_way_classed_box_builds_and_walks_like_any_other_place() {
+    let (b, _) = battery_under(Perturb::none());
+    assert!(
+        errors(&b).is_empty(),
+        "the fixture with a way and a contact in it builds clean: {:?}",
+        errors(&b)
+    );
+    assert_eq!(
+        b.binding.nodes, 7,
+        "every place is proven reached, the way among them"
+    );
+
+    // The way is read off the graph rather than asserted: if the fixture stopped
+    // declaring one, this says so instead of passing over a campaign that no
+    // longer exercises the surface.
+    let c = campaign();
+    let graph = c.layout_graph.as_ref().expect("the fixture has a graph");
+    let ways: Vec<&str> = graph
+        .content
+        .nodes
+        .iter()
+        .filter(|n| n.way_class.is_some())
+        .map(|n| n.id.0.as_str())
+        .collect();
+    assert_eq!(
+        ways,
+        vec!["node/tunnel"],
+        "the fixture declares exactly one way, and the battery above proved it"
+    );
+}
+
+/// **The contact leaves exactly the span open** (spec-0053 acceptance criterion
+/// 6): no solid cell inside the span, and wall everywhere outside it on the same
+/// shared face at the heights the span occupies.
+///
+/// Read off the assembled bytes, not off the plan — the plan is what the claim
+/// is ABOUT. The two halves are asserted separately because they fail in
+/// opposite directions: a derivation that forgot the carve leaves the span
+/// solid, and one that carved the whole wall leaves nothing outside it.
+#[test]
+fn a_contact_leaves_exactly_its_span_open_on_the_shared_wall() {
+    use delvewright_dsl::siteplan::Crossing;
+
+    let c = campaign();
+    let reg = prefabs();
+    let plan = Plan::build_with(&c, &reg, Perturb::none()).expect("the fixture plans");
+    let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let bo = plan
+        .blockout
+        .as_ref()
+        .expect("a site-plan campaign has a blockout");
+
+    let contacts: Vec<_> = bo
+        .seams
+        .iter()
+        .filter(|s| s.crossing == Crossing::Contact)
+        .collect();
+    assert_eq!(contacts.len(), 1, "the fixture allocates one contact");
+    let s = contacts[0];
+    let (lo, hi) = s.opening;
+
+    let solid_at = |c: [i64; 3]| {
+        blocks
+            .get(&[c[0] as i32, c[1] as i32, c[2] as i32])
+            .is_some_and(|b| b != "minecraft:air")
+    };
+    let inside = |c: [i64; 3]| (0..3).all(|a| c[a] >= lo[a] && c[a] <= hi[a]);
+
+    // Half one: nothing solid inside the span.
+    let mut span_cells = 0usize;
+    for x in lo[0]..=hi[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                span_cells += 1;
+                assert!(
+                    !solid_at([x, y, z]),
+                    "the span is where the derivation writes NO wall, and [{x},{y},{z}] is solid"
+                );
+            }
+        }
+    }
+    assert!(
+        span_cells > 0,
+        "the span is not empty, or this binds nothing"
+    );
+
+    // Half two: wall everywhere else on the same shared face.
+    let (smin, smax) = s.shared;
+    let mut outside = 0usize;
+    for u in smin[0]..=smax[0] {
+        for v in smin[1]..=smax[1] {
+            for w in smin[2]..=smax[2] {
+                let cell = [u, v, w];
+                if inside(cell) {
+                    continue;
+                }
+                outside += 1;
+                assert!(
+                    solid_at(cell),
+                    "wall as ever OUTSIDE the span, and [{u},{v},{w}] is open"
+                );
+            }
+        }
+    }
+    assert!(
+        outside > 0,
+        "the shared face is bigger than the span, or half two binds nothing"
+    );
+}
+
+/// `DW0877`: the massing walls the front the plan allocated, and the observer
+/// says nothing crosses it.
+///
+/// Produced by a **perturbed derivation**, never by hand-authored bytes — the
+/// manner spec-0049 §13.8 fixed and spec-0053 §6 asks for by name.
+///
+/// The knob is the only thing that can produce this red: a portal's cells are
+/// untouched, the wall it writes is inside the allocation, and closing a way can
+/// only remove crossings. What it can also reach is `DW0837`, and only where the
+/// front is the sole walked way into a place — a fact about the fixture, not
+/// about the knob. The assertions below are on `DW0877`'s own message, which no
+/// other check in this engine produces.
+#[test]
+fn a_walled_front_reddens_dw0877() {
+    let (clean, _) = battery_under(Perturb::none());
+    assert!(
+        !errors(&clean).contains(&"DW0877".to_string()),
+        "the unperturbed derivation leaves the front open: {:?}",
+        errors(&clean)
+    );
+    assert!(
+        clean.binding.contact_columns > 0,
+        "and it measures a non-zero crossing profile, or the red below proves nothing"
+    );
+
+    let (b, _) = battery_under(Perturb {
+        wall_contacts: true,
+        ..Perturb::none()
+    });
+    assert!(
+        errors(&b).contains(&"DW0877".to_string()),
+        "a walled front is a hand-off the graph declares and the world does not have: {:?}",
+        errors(&b)
+    );
+    let m = message_for(&b, "DW0877");
+    assert!(
+        m.contains("nothing crosses the contact"),
+        "the refusal names what it measured: {m}"
+    );
+    assert!(
+        m.contains("longest unbroken run"),
+        "and states the run against what a body needs: {m}"
+    );
+    assert_eq!(
+        b.binding.contacts, 1,
+        "the binding states the denominator even when the check refuses"
+    );
+    assert_eq!(
+        b.binding.contact_columns, 0,
+        "and the numerator, which is what went to zero"
+    );
+}

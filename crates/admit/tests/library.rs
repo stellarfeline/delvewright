@@ -1,6 +1,6 @@
 //! **The admission checks, re-run over the library that is already admitted.**
 //!
-//! `delve-admit audit` binds to the moment a piece *enters* the library, which
+//! `delvec prefab audit` binds to the moment a piece *enters* the library, which
 //! is exactly one moment per piece, forever. Everything that changes afterwards
 //! — a new check, a new pinned version, a rule nobody had written yet — reaches
 //! the pieces admitted after it and no others. That is the fourth vacuity mode
@@ -74,7 +74,7 @@ fn library() -> Vec<(String, Structure)> {
 /// **Every block state in the shipped library is judged against the pin, at the
 /// DataVersion its own file declares.**
 ///
-/// The verdict is `BlockRegistry::judge_at`, the same rule `delve-admit audit`
+/// The verdict is `BlockRegistry::judge_at`, the same rule `delvec prefab audit`
 /// applies at admission: a state the pin does not have is an error when the file
 /// claims the pin or later (`DW0733`, no datafix will run and the block loads as
 /// air), and a warning when the file pre-dates it (`DW0734`, load-time
@@ -207,7 +207,7 @@ fn every_shipped_prefab_written_at_the_pin_states_every_property() {
 /// refused by the allowlist in the same run in which the spelling rule passed
 /// it as a datafixable warning — one tool, two verdicts, on one block. That
 /// contradiction had never been measured over the library because no test ran
-/// the allowlist over the library at all: `delve-admit audit` binds at the
+/// the allowlist over the library at all: `delvec prefab audit` binds at the
 /// moment a piece enters it, which is one moment per piece, forever.
 ///
 /// So this is the allowlist's own sweep, bound to `cargo test`. It states its
@@ -265,7 +265,7 @@ fn every_shipped_prefab_is_allowlisted_as_the_game_will_load_it() {
 
 /// **The spatial contract's second door, opened on every shipped prefab.**
 ///
-/// `delve-admit audit` opens it at the moment a piece enters the library, which
+/// `delvec prefab audit` opens it at the moment a piece enters the library, which
 /// is one moment per piece, forever — so a document that loses its contract
 /// afterwards, to a hand edit or to a tool that models fewer fields than the
 /// document has, is never asked again. This sweep asks, on every `cargo test`.

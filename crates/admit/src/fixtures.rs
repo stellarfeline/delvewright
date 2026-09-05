@@ -1,6 +1,6 @@
 //! In-code structure fixtures for the audit/light/socket tests — built
 //! deterministically, no assets fetched from the network (mirrors the
-//! `delve-schem` / generator fixture style).
+//! `delvec schem` / generator fixture style).
 
 use std::collections::BTreeMap;
 

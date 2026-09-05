@@ -1,18 +1,20 @@
 [package]
 name = "delvewright-schem"
-version = "0.0.0"
-edition = "2024"
-publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Sponge schematic to vanilla structure-template conversion for the Delvewright prefab pipeline — mounted as `delvec schem`."
+readme = "README.md"
+exclude = ["tests/"]
 
-# `delve-schem` (spec-0007, M3 asset pipeline): convert Sponge schematics
+# `delvec schem` (spec-0007, M3 asset pipeline): convert Sponge schematics
 # (`.schem`, v2/v3) into vanilla structure `.nbt` templates for the prefab
 # admission pipeline. Unconditionally strips command/structure/jigsaw blocks and
 # NBT-bearing spawners (the community-contract code-injection audit hook) and
-# splits oversize schematics past the 48-cube vanilla structure cap.
-[[bin]]
-name = "delve-schem"
-path = "src/main.rs"
-
+# splits oversize schematics past the 48-cube vanilla structure cap. The
+# command line is `cli`, mounted by the `delvec` binary (ADR-0023 §3).
 [lib]
 path = "src/lib.rs"
 
@@ -22,7 +24,7 @@ path = "src/lib.rs"
 # `delvec` is published to crates.io and may only depend on published crates —
 # so that crate is the only one every reader of the document can reach, and a
 # second definition inside the compiler is exactly what this removes.
-delvewright-dsl = { path = "../dsl" }
+delvewright-dsl.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }

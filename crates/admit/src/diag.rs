@@ -1,4 +1,4 @@
-//! Diagnostics for `delve-admit`, mirroring the compiler / schem `DWxxxx`,
+//! Diagnostics for `delvec prefab`, mirroring the compiler / schem `DWxxxx`,
 //! one-JSON-object-per-line convention (spec-0002). spec-0007 owns the `DW07xx`
 //! range; schem holds `DW0700..DW0702` + `DW0710`, render holds `DW072x`, so the
 //! admission half takes **`DW073x..DW076x`**:
@@ -50,7 +50,7 @@ pub const DW_NO_PROVENANCE: &str = "DW0753";
 pub const DW_GALLERY: &str = "DW0760";
 /// A piece's declared spatial contract disagrees with its own blocks
 /// (spec-0036 §2). The second door onto the one checker; the first is
-/// `delve-grammar expand`.
+/// `delvec grammar expand`.
 pub const DW_CONTRACT: &str = "DW0782";
 /// **The second door did not judge these bytes**, with what it did not examine.
 ///

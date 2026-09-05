@@ -1,6 +1,6 @@
 //! The fidelity-gate fixture: an in-code structure packed with the **newest
 //! 1.21.11 blocks** (pale oak, crafter, copper family, tuff set, trial-chamber
-//! set, …). `delve-render fidelity-gate` renders it and fails if any block meshes
+//! set, …). `delvec render fidelity-gate` renders it and fails if any block meshes
 //! as the magenta missing-texture placeholder (a texture-resolution regression).
 //!
 //! `minecraft:heavy_core` is deliberately **excluded**: its bare

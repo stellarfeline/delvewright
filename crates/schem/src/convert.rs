@@ -23,7 +23,7 @@ pub const DATA_VERSION: i32 = 4671;
 /// Block names (namespace-stripped) removed unconditionally by the conversion
 /// strip: the three command blocks, structure/jigsaw blocks, and the spawner
 /// family. (This is the *raw-schematic* strip set; the admission audit,
-/// `delve-admit`, applies a narrower hard-forbid — jigsaw sockets are legitimate
+/// `delvec prefab`, applies a narrower hard-forbid — jigsaw sockets are legitimate
 /// on a library prefab — but reuses the shared [`forbidden_nbt`] scan.)
 const FORBIDDEN_BLOCKS: &[&str] = &[
     "command_block",
