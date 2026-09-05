@@ -8069,9 +8069,8 @@ fn emit_stake_functions(
         // The right-click. One advancement fires it, because there is one box to
         // click; the place is located once and then offered to every stake, so a
         // death that left three datums here gives all three back in one press.
-        let mut collect: Vec<String> = vec![format!(
-            "advancement revoke @s only {ns}:{STK_COLLECT_FN}"
-        )];
+        let mut collect: Vec<String> =
+            vec![format!("advancement revoke @s only {ns}:{STK_COLLECT_FN}")];
         for (axis, s) in [STK_X, STK_Y, STK_Z].iter().enumerate() {
             collect.push(format!(
                 "execute at @s store result score {s} dw.sys run data get entity @e[tag={tag},limit=1,sort=nearest] Pos[{axis}]"
@@ -17873,8 +17872,12 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         // Scoped to this dummy's own place: the marker tag is one class for the
         // whole campaign, so an unqualified `kill` would reach into every sibling
         // template's structure on the shared batch server.
-        t.push(format!("execute at {me} run kill @e[tag={tag},distance=..1]"));
-        t.push(format!("execute at {me} run kill @e[tag={hw},distance=..1]"));
+        t.push(format!(
+            "execute at {me} run kill @e[tag={tag},distance=..1]"
+        ));
+        t.push(format!(
+            "execute at {me} run kill @e[tag={hw},distance=..1]"
+        ));
         for (st, safe) in [(a, sa), (b, sb)] {
             for k in 0..st.max_live() {
                 t.push(format!(
@@ -17890,8 +17893,12 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         t.push(format!("scoreboard players set {me} {oa} 40"));
         t.push(format!("scoreboard players set {me} {ob} 40"));
         // One position, two drops — `on_death`'s own shape.
-        t.push(format!("execute as {me} at {me} run function {ns}:stk_drop_{sa}"));
-        t.push(format!("execute as {me} at {me} run function {ns}:stk_drop_{sb}"));
+        t.push(format!(
+            "execute as {me} at {me} run function {ns}:stk_drop_{sa}"
+        ));
+        t.push(format!(
+            "execute as {me} at {me} run function {ns}:stk_drop_{sb}"
+        ));
         // ONE box, not two. This is the assertion the whole template exists for:
         // `matches 1` and not `matches 1..`, because two is the defect.
         t.push(format!(
@@ -17913,7 +17920,9 @@ fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         t.push("assert score #stkpair_lost_b dw.sys matches ..39".to_string());
         // One press on the one place gives BOTH datums back.
-        t.push(format!("execute as {me} run function {ns}:{STK_COLLECT_FN}"));
+        t.push(format!(
+            "execute as {me} run function {ns}:{STK_COLLECT_FN}"
+        ));
         t.push(format!(
             "execute store result score #stkpair_back_a dw.sys run scoreboard players get {me} {oa}"
         ));

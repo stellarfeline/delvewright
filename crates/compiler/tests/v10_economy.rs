@@ -748,7 +748,10 @@ fn two_stake_source(second_marker: &str) -> String {
             r#"    "on_death": [ { "type": "drop-stake", "stake": "stake/embers" },
                    { "type": "drop-stake", "stake": "stake/relics" } ],"#,
         );
-    assert_ne!(src, PURSE_AND_STAKE, "the second stake really was spliced in");
+    assert_ne!(
+        src, PURSE_AND_STAKE,
+        "the second stake really was spliced in"
+    );
     src
 }
 
@@ -771,7 +774,10 @@ fn two_stake_source(second_marker: &str) -> String {
 /// second summon reintroduced anywhere reds — the emitter is the population.
 #[test]
 fn one_death_two_datums_leave_one_interaction_box() {
-    let out = build(&parse_hw(&quests_doc(&two_stake_source("minecraft:lantern"), "")));
+    let out = build(&parse_hw(&quests_doc(
+        &two_stake_source("minecraft:lantern"),
+        "",
+    )));
 
     let mut summons: Vec<String> = Vec::new();
     let mut examined = 0usize;
@@ -866,7 +872,10 @@ fn dw0880_refuses_two_faces_at_one_place() {
         "a place wears one face"
     );
 
-    let agreed = build(&parse_hw(&quests_doc(&two_stake_source("minecraft:lantern"), "")));
+    let agreed = build(&parse_hw(&quests_doc(
+        &two_stake_source("minecraft:lantern"),
+        "",
+    )));
     let place = fnc(&agreed, "stk_place");
     assert!(
         place.contains("item:{id:\"minecraft:lantern\",count:1}"),
