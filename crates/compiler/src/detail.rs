@@ -624,9 +624,14 @@ pub fn blockout_drift(c: &Campaign, record: Option<&str>) -> Option<Diagnostic> 
     if site_plan_sha256(c).as_deref() != Some(rec.site_plan_sha256.as_str()) {
         return None;
     }
-    if let Some(g) = layout_graph_sha256(c)
-        && g != rec.layout_graph_sha256
-    {
+    // An ABSENT graph is not an unchanged one. `DW0824` refuses the campaign for
+    // it, and reaching the text below through that hole makes the warning assert
+    // equality about a document that is not there — the same lie the clause
+    // exists to prevent, arriving by the arm that had no clause at all. Measured
+    // on the gallery's site-plan point with `layout-graph.json` removed: this
+    // printed "under an unchanged site plan and an unchanged layout graph"
+    // beside a binding line reading `1 of 2 freshness hash(es) compared`.
+    if layout_graph_sha256(c).as_deref() != Some(rec.layout_graph_sha256.as_str()) {
         return None;
     }
     Some(Diagnostic::warning(

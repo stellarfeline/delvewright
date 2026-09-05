@@ -186,3 +186,37 @@ impl Placement {
         !matches!(self, Self::SitePlan)
     }
 }
+
+/// **Whether this campaign's anchor vocabulary can be known at all** — asked
+/// before any rule refuses a name for not being in it.
+///
+/// A [`Placement::SitePlan`] campaign's anchor names are DERIVED: a `node-` per
+/// place, a `seam-` per barred way, an `unlock-` on the openable side of a
+/// one-sided one, `spawn` for the entry, and every `stations[]` name its nodes
+/// declare — all of them read off `layout-graph.json`. With that document absent
+/// the derived set is not EMPTY, it is **unknown**, and `DW0824` is the finding:
+/// the plan embeds a graph, and there is no graph to embed.
+///
+/// Refusing an anchor reference in that state is this module's own defect,
+/// committed against itself. [`Placement::anchor_remedy`]'s `SitePlan` sentence
+/// tells the author to write one of the derived names or to declare a station on
+/// the node it belongs to; with no graph there are no places, no ways and no
+/// nodes, so **neither half of the remedy can be taken** — the pair rule this
+/// module opens with, applied to the prescription it hands out. Measured on the
+/// gallery's site-plan point with `layout-graph.json` removed: `DW0824` (the
+/// finding, one line) followed by thirteen refusals of names that are all
+/// correct — ten `DW0142`, two `DW0371`, one `DW0343` — each printing that
+/// unreachable sentence, ahead of the one line the author was there to act on.
+///
+/// So every anchor rule asks here first and stays silent, exactly as it stays
+/// silent for a `prefab_pool` whose draw the compiler has not made yet: the
+/// answer is not known at this tier. Nothing is lost by the silence — the run
+/// stops at `DW0824` either way, and every one of those names is re-judged, with
+/// the same rules, the moment the graph exists.
+///
+/// False for a prefab campaign at every state of its documents: its vocabulary
+/// is prefab metadata, which does not come from the map pipeline.
+#[must_use]
+pub fn anchor_vocabulary_unknowable(c: &Campaign) -> bool {
+    matches!(Placement::of(c), Placement::SitePlan) && c.layout_graph.is_none()
+}

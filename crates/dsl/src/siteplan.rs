@@ -1673,7 +1673,11 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
             "this campaign carries a site plan and no `layout-graph.json`. A site plan is the \
              geometric embedding OF a layout graph: every box names a place and every seam \
              names a connection, so with no graph there is nothing being embedded and every \
-             name in this document resolves to nothing. Author the graph first — that ordering \
+             name in this document resolves to nothing. This is the only line this state \
+             raises: the map's anchor vocabulary is derived from the graph too, so every \
+             anchor a `npcs`, `quests` or effect document names is left unjudged here rather \
+             than refused against an empty set, and is judged the moment the graph exists. \
+             Author the graph first — that ordering \
              is what this refusal exists to make uncompilable rather than merely advised."
                 .to_string(),
         ));
