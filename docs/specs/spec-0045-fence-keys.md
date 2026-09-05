@@ -185,11 +185,11 @@ What binds each piece, and what happens to a rule added without it:
 3. A CI check enumerates every `DwCode::since` site and every `since` gate
    from source and reds when one lacks its below/at-fence test pair; the
    allowlist is minimal and justified per row.
-4. A CI check in the required campaign-builds job reds when (a) an exclusion
-   row's `expect_codes` name a code absent from `origin/main`'s code
-   inventory, or (b) a change touching `crates/` adds an exclusion row.
-   Applies to `.github/campaign-build-exclusions.toml` and
-   `.github/zone-audit-exclusions.json`.
+4. A CI check enumerates every row in `.github/zone-audit-exclusions.json` and
+   reds when (a) an exclusion row's `expect_codes` name a code absent from
+   `origin/main`'s code inventory, or (b) a change touching `crates/` adds an
+   exclusion row. Runs in the required `content-pin` job that runs the
+   zone-program audit.
 5. `DW0367` is constructed with `Since` at the per-area-datum version. A
    stage-1 fixture at 0.6.0 declaring `horizon: ocean`, over a library without
    the datum, builds exit 0 with the fence line naming `DW0367` as

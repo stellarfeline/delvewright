@@ -973,47 +973,40 @@ jobs:
       - name: every campaign storybook carries a TRUE engine-version marker
         run: python3 tools/check-storybook-version.py
 
-  # Every gate above this line builds a FIXTURE. Nothing in CI had ever built a
-  # real campaign, so the product could stop compiling with the whole board
-  # green: one change reached 10/10 while stopping the flagship released campaign
-  # `nobodys-cave-island` from building at all (26 × `DW0364` on standable cells
-  # at the ocean line). Fixtures exercise one verb each; a campaign is where the
-  # verbs meet a real prefab library, a real layout solve and a real translation
-  # sidecar, and that is the surface an engine change breaks.
+  # A released campaign is never edited and is built only by the engine
+  # revision it pins (spec-0039): the engine never builds old campaigns to
+  # prove compatibility, and no gate, exclusion list or migration exists for
+  # that. Compatibility between an engine change and content is the gallery's
+  # job — the engine's OWN campaign, built fresh by every engine revision in
+  # the `gallery` job below.
   #
-  # Campaigns are DISCOVERED in the pinned content checkout, never listed here,
-  # so a new campaign on content `main` is gated by the next re-pin with nobody
-  # remembering. A campaign that cannot build today is recorded in
-  # `.github/campaign-build-exclusions.toml`, which INVERTS the assertion instead
-  # of removing it — the campaign is still built and must still fail with exactly
-  # the codes recorded there, so neither a new break hiding behind an exclusion
-  # nor an exclusion that has expired can pass. Every run states its binding
-  # count (CLAUDE.md: a green gate that binds to nothing is VACUOUS).
+  # What this job DOES check, against the pinned content checkout: the pin
+  # itself is measured against what it names (has content `main` moved past
+  # it unnoticed), and every zone program in the pinned library still expands
+  # and judges green. Neither reads or builds a campaign's `world.json`.
   #
-  # Its own job, not a step in `rust`: a campaign build is minutes of layout
-  # solving, and burying it inside the fmt/clippy/test job would make one status
-  # answer two unrelated questions. On every push, not PR-only — a change that
-  # breaks a released campaign must not be able to sit on a green board for the
-  # window between push and PR.
-  campaign-builds:
-    # Name must stay exactly "campaign builds (every campaign in the content
-    # repo)" — it is a required status context in branch protection; renaming it
-    # deadlocks every PR (see .github/required-status-checks.txt).
-    name: campaign builds (every campaign in the content repo)
+  # Its own job, not a step in `rust`: the deepening fetch and the zone-program
+  # audit are content-repo concerns, and burying them inside the fmt/clippy/test
+  # job would make one status answer two unrelated questions. On every push,
+  # not PR-only — pin drift or a broken zone program must not be able to sit on
+  # a green board for the window between push and PR.
+  content-pin:
+    # Name must stay exactly "content pin (drift + zone-program audit)" — it is
+    # a required status context in branch protection; renaming it deadlocks
+    # every PR (see .github/required-status-checks.txt).
+    name: content pin (drift + zone-program audit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # LFS on (the default): a campaign build copies the prefab `.nbt` BODIES
-      # into the datapack, so pointers would fail here for a reason that has
-      # nothing to do with the engine change under test.
+      # LFS off: neither step below reads a prefab `.nbt` BODY — the pin check
+      # is git history, and the zone-program audit expands the IR geometrically
+      # (`crates/grammar`'s `expand`), never touching a file under
+      # `prefabs/`. Text-only gate, same reasoning as `campaign storybooks`.
       - uses: ./.github/actions/checkout-content
+        with:
+          lfs: "false"
       - uses: Swatinem/rust-cache@v2
-        with: { key: campaign-builds }
-      # Built once and handed to the driver, rather than a `cargo run` per
-      # campaign per language: the gate's subject is WHICH engine built the
-      # campaign, so the binary is named explicitly and the script never infers
-      # one. Dev profile — the workspace sets `opt-level = 1` for it, which is
-      # what makes a real layout solve affordable on every push.
+        with: { key: content-pin }
       # The pin's other half, judged where the pinned repository's history
       # already is. This job checks the content repo out for its own reasons, so
       # the drift measurement costs one deepening fetch and no new host: a
@@ -1032,17 +1025,11 @@ jobs:
             || git -C campaigns fetch origin main:refs/remotes/origin/main
       - name: the content pin is measured against what it names
         run: python3 tools/check-pins.py --online --checkout content-repo=campaigns
-      - name: build the engine under test
-        run: cargo build --locked -p delvec --bin delvec
-      - name: every campaign in the pinned content repo still builds
-        run: python3 tools/build-every-campaign.py --delvec target/debug/delvec
-      # A campaign's ZONE PROGRAMS are not reached by the step above: they are
-      # the grammar IR a zone's prefab is expanded from, they live under
-      # `design/programs/`, and a campaign that has them may carry no
-      # `world.json` at all yet (the drowned-bell remake is exactly that). So
-      # nothing ran a check against a zone program — the artifact ADR-0018 calls
-      # the record — until this step. It is bound to the same event as the
-      # campaign build: a content re-pin cannot land without it.
+      # A campaign's ZONE PROGRAMS are the grammar IR a zone's prefab is
+      # expanded from; they live under `design/programs/`, and a campaign that
+      # has them may carry no `world.json` at all yet (the drowned-bell remake
+      # is exactly that). This is bound to the same event as the pin-drift
+      # check above: a content re-pin cannot land without it.
       #
       # `--library` in the same call because the vocabulary and the zones that
       # compose it fail together, and one command means one thing to remember.
@@ -1055,12 +1042,12 @@ jobs:
             --exclusions .github/zone-audit-exclusions.json
 
   # ----------------------------------------------------------------- gallery --
-  # spec-0039: the engine's OWN campaign. The `campaign builds` job above proves
-  # that SHIPPED content still compiles under this change — real, and structurally
-  # unable to cover a surface this change just added, because the content pin lags
-  # the engine and those campaigns are approved artifacts no engine change may
-  # edit. The gallery is engine-owned and same-repo, so the element lands in the
-  # same pull request as the surface.
+  # spec-0039: the engine's OWN campaign, and its only test surface. A released
+  # campaign is never edited and is built only by the engine revision it pins —
+  # the engine never builds an old campaign to prove compatibility with a new
+  # one, and `content-pin` above does not try. The gallery is engine-owned and
+  # same-repo, so it is built fresh by every engine revision, and the element
+  # lands in the same pull request as the surface it covers.
   #
   # Needs no content checkout, deliberately (§6): its one piece and its two skins
   # are generated here by the engine's own generator, so the whole job runs from
@@ -1232,9 +1219,9 @@ jobs:
         run: bash validation/server-bootstrap-cache.sh
 
       - uses: Swatinem/rust-cache@v2
-      # Built ONCE and handed to the nine build steps below, the same shape the
-      # `campaign builds` job uses. Every one of those steps is named for a
-      # fixture, and a `cargo run` per step let any of them fail for a reason with
+      # Built ONCE and handed to the nine build steps below. Every one of those
+      # steps is named for a fixture, and a `cargo run` per step let any of them
+      # fail for a reason with
       # nothing to do with its fixture: a TLS error from cargo's dependency
       # resolution once reddened "build the hello-world delve output". Resolution is
       # now one step that says it is the compiler build, and `--locked` forbids it
