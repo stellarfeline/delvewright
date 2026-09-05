@@ -138,12 +138,14 @@ fn fixture_templates(out: &BuildOutput) -> Vec<(String, String)> {
 #[test]
 fn the_stake_marker_declares_itself_a_place() {
     let out = build("marker");
-    let fill = func(&out, "stk_fill_embers");
+    // The marker is made by ONE function for the campaign — it is a place, and a
+    // place is one object however many stakes leave a wager at it.
+    let fill = func(&out, "stk_place");
     for half in ["minecraft:interaction", "minecraft:item_display"] {
         let line = fill
             .lines()
             .find(|l| l.contains(&format!("summon {half} ")))
-            .unwrap_or_else(|| panic!("`stk_fill_embers` summons a {half}:\n{fill}"));
+            .unwrap_or_else(|| panic!("`stk_place` summons a {half}:\n{fill}"));
         assert!(
             line.contains("\"dw_fixture\""),
             "a stake marker is a PLACE — its position is what the ledger recorded, so a ride \
@@ -287,7 +289,13 @@ fn the_runtime_template_is_generated_and_not_one_directional() {
 /// with a stake and no teleport generates none either — the pair is the
 /// obligation. `crates/compiler/tests/v10_teleport.rs` and `economy` are those
 /// two campaigns, so this states the third case: the fixture that has both emits
-/// exactly the pairs it has.
+/// exactly one template per teleport.
+///
+/// **One per teleport, not one per (teleport, stake).** A marker is a place, and
+/// every stake summons the same two entities through the same `stk_place`, so a
+/// second template for a second stake would put the same object at the same
+/// position — four templates racing over one entity on a shared batch server,
+/// which is a collision rather than four proofs.
 #[test]
 fn the_template_binds_to_the_pair_and_not_to_either_half() {
     let out = build("pairs");
@@ -295,9 +303,21 @@ fn the_template_binds_to_the_pair_and_not_to_either_half() {
         .into_iter()
         .map(|(p, _)| p.rsplit('/').next().unwrap().to_string())
         .collect();
+    let teleports: Vec<String> = all_delve_functions(&out)
+        .lines()
+        .filter(|l| l.starts_with("tp @e[x="))
+        .map(|l| l.to_string())
+        .collect();
+    assert_eq!(
+        names.len(),
+        teleports.len(),
+        "one template per teleport, and the fixture's rides are the population: \
+         {names:?} against {} ride(s)",
+        teleports.len()
+    );
     assert!(
-        names.iter().all(|n| n.ends_with("_embers.mcfunction")),
-        "every template names the stake it is about: {names:?}"
+        names.iter().all(|n| n.starts_with("fixture_")),
+        "every template names the teleport it is about: {names:?}"
     );
 }
 
