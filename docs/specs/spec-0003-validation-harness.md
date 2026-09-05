@@ -163,9 +163,9 @@ All three profiles are driven by one compiler build output at
 >   both-sides, piece seam, one interior per room), each shot carrying a camera
 >   (pos + yaw/pitch) and a machine-generated `expect` checklist — rides the
 >   ADR-0006 double-build gate.
-> - *(built)* **Nucleation renderer** (`delve-render piece`/`batch`) + the 1.21.11
->   **fidelity gate** (`delve-render fidelity-gate`, newest-block fixture, magenta
->   placeholder → exit 4). Chunky scene emission (`delve-render scene`) from the
+> - *(built)* **Nucleation renderer** (`delvec render piece`/`batch`) + the 1.21.11
+>   **fidelity gate** (`delvec render fidelity-gate`, newest-block fixture, magenta
+>   placeholder → exit 4). Chunky scene emission (`delvec render scene`) from the
 >   render-plan.
 > - *(built)* **Player-POV tier** — the render plan carries first-person
 >   `pov` shots (camera at eye height 1.62 on every critical-path waypoint, oriented
@@ -173,7 +173,7 @@ All three profiles are driven by one compiler build output at
 >   composed from campaign data). The compiler proves every POV eye is clear over
 >   the assembled world (`DW0724`). POV shots render through the **Chunky** free
 >   camera (Nucleation is orbit-only and cannot place a free eye inside a room);
->   `delve-render index` emits (image ↔ expect) pairs and `validation/render-shots.sh`
+>   `delvec render index` emits (image ↔ expect) pairs and `validation/render-shots.sh`
 >   produces the scene set + index for the reviewer. Entity overlays (NPCs/props)
 >   are a recorded limitation — the geometry renders, not the actor.
 > - *(built)* Wired into `/new-delve`: the authoring agent renders the piece sets
@@ -238,7 +238,7 @@ criterion.
    which otherwise only ever measure green. *(Open: the harness names the
    failed step — `StepExecutionError` — and diagnostics are in place; the
    committed broken fixture + CI case is still owed, deferred to M2.)*
-6. **The render fidelity gate refuses what it cannot draw**: `delve-render
+6. **The render fidelity gate refuses what it cannot draw**: `delvec render
    fidelity-gate` exits 4 on an unknown-block magenta placeholder against the
    newest-block fixture *(built)*. *Vacuous if* run against a fixture with no
    current-version block — the fixture must contain blocks the renderer could

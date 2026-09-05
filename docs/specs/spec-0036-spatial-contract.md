@@ -103,15 +103,15 @@ passed, which voids the weaker kinds' role as discriminators.
 
 `spatial_contract` block in the metadata JSON: always the **resolved**
 contract of the expansion that produced the bytes. Hand-built and ingested
-pieces get the same block via `delve-admit space` / `delve-admit no-body` /
-`delve-admit edge`; their bytes never re-parameterise, so literal boxes are
+pieces get the same block via `delvec prefab space` / `delvec prefab no-body` /
+`delvec prefab edge`; their bytes never re-parameterise, so literal boxes are
 the natural form there. Every declared anchor gains a `resolves_to` field
 (§2.7). Absent block = legacy metadata.
 
 ### 1c. Checker
 
 One checker over (block grid, resolved contract), callable from
-`delve-grammar expand` (a red writes no `.nbt`) and from `delve-admit audit`.
+`delvec grammar expand` (a red writes no `.nbt`) and from `delvec prefab audit`.
 Same bytes + same resolved contract → same verdict, whichever door (AC6).
 Both invocations are bound to the events they guard.
 
@@ -241,7 +241,7 @@ Both invocations are bound to the events they guard.
    kind bypass (→ computed kinds), the transit-target hole (→ §2.5), and
    the taxonomy cost measurement (→ `facade`, AC14). Step 1 — the
    declaration surface, no obligations — is dispatched.
-2. IR surface + checker in-engine, fenced; export + `delve-admit` halves.
+2. IR surface + checker in-engine, fenced; export + `delvec prefab` halves.
 3. Docs and skill in the same PR (`grammar.md`, `prefab-procedure.md`
    §1/§3/§4, `tools.md`; `/new-delve` gains contract-before-rules).
 4. Bell adoption round (same milestone): contracts for the eight zone
@@ -277,7 +277,7 @@ Both invocations are bound to the events they guard.
    to refuse before bytes exist (both halves pinned — a refusal is the
    stronger channel, and the checker's silence over a non-artifact is
    correct).
-6. One checker, two doors: `delve-admit audit` agrees with `expand` for the
+6. One checker, two doors: `delvec prefab audit` agrees with `expand` for the
    same bytes and resolved contract; a re-parameterised expansion carries
    its own resolved boxes, never stale ones.
 7. Double-expand determinism over `spaces`/`no_body`/`edges`; wrapper

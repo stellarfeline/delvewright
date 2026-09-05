@@ -27,7 +27,7 @@ edit. Template at the bottom.
 | [0020](0020-map-design-pipeline.md) | The spatial contract — declared spaces and edges, checked against the emitted bytes | Superseded by ADR-0022 |
 | [0021](0021-creator-toolchain-rederived.md) | Creator toolchain re-derived: one distributed binary, registry Nucleation, off-the-shelf viewer core | Superseded by ADR-0023 |
 | [0022](0022-the-map-is-planned-before-it-is-built.md) | The map is planned before it is built — the whole-first pipeline | Accepted |
-| [0023](0023-creator-toolchain-as-decided.md) | The creator toolchain as decided: one `delvec` is the delve creator, archive-first acquisition, source-build floor, lazy-loaded externals | Proposed |
+| [0023](0023-creator-toolchain-as-decided.md) | The creator toolchain as decided: one `delvec` is the delve creator, archive-first acquisition, source-build floor, lazy-loaded externals | Accepted |
 
 ## Template
 

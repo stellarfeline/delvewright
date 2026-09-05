@@ -208,7 +208,7 @@ first consumes pieces. This is that stage:
 
 | Code | Rule |
 |---|---|
-| `DW0848` | **A piece's declared footprint class disagrees with its bytes.** Prefab metadata gains optional `footprint_class`, naming a metrics-table size class (`DW0812` refuses an unknown name, as for any document naming a table entry). A piece declaring one is refused when its structure size could serve no box of that class: horizontal extents off the class's range or off the kit grid (`q`), height under the class clearance plus the floor course. Raised at `delve-admit audit` — the admission event, where the library's integrity lives — and again when a `detail-plan` consumes the piece, so a pre-check-era piece cannot be consumed unjudged. The field stays optional for the library at large; a piece bound by a `details[]` row is checked whether or not it declares (frame equality in `DW0843` is the consumer's exact check; `DW0848`'s declared-class half binds only where declared). Binding: pieces declaring a class, stated against pieces examined. |
+| `DW0848` | **A piece's declared footprint class disagrees with its bytes.** Prefab metadata gains optional `footprint_class`, naming a metrics-table size class (`DW0812` refuses an unknown name, as for any document naming a table entry). A piece declaring one is refused when its structure size could serve no box of that class: horizontal extents off the class's range or off the kit grid (`q`), height under the class clearance plus the floor course. Raised at `delvec prefab audit` — the admission event, where the library's integrity lives — and again when a `detail-plan` consumes the piece, so a pre-check-era piece cannot be consumed unjudged. The field stays optional for the library at large; a piece bound by a `details[]` row is checked whether or not it declares (frame equality in `DW0843` is the consumer's exact check; `DW0848`'s declared-class half binds only where declared). Binding: pieces declaring a class, stated against pieces examined. |
 
 ## 6. The owed anchors: the campaign's names survive detailing
 
@@ -452,7 +452,7 @@ Machine-checkable; each names its verdict's instrument.
    the gallery domain or refusal-proven; the two `DW0841` probes and the
    `DW0843` probe are committed and red.
 3. Every code in DW0841–DW0845, DW0848 has at least one test asserting it
-   and a fixture the compiler (or `delve-admit`) refuses with it;
+   and a fixture the compiler (or `delvec prefab`) refuses with it;
    `tools/check-dw-codes.py` is green in both directions with zero new
    allowlist entries.
 4. On the blockout fixture with one place bound and a fresh passed record:
@@ -481,7 +481,7 @@ Machine-checkable; each names its verdict's instrument.
 9. With every node bound, a blocked sightline is exit-red; with one node
    unbound, the same world is a warning — `DW0821`'s promotion
    demonstrated in both directions.
-10. `delve-admit audit` refuses a piece whose `footprint_class` its bytes
+10. `delvec prefab audit` refuses a piece whose `footprint_class` its bytes
     contradict (`DW0848`); the same piece bound in a `detail-plan` is
     refused at validation.
 11. Every new check's output states a binding count with its denominator;

@@ -1,6 +1,6 @@
 # ADR-0023: The creator toolchain as decided — one `delvec` is the delve creator, archive-first acquisition, a source-build floor, lazy-loaded externals
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-05
 - **Source**: the settled acquisition rules for the creator toolchain, until now
   recorded only in ADR-0021's source note and in `CLAUDE.md` while ADR-0017/0018
@@ -124,7 +124,9 @@ capability.
 ### 5. Nucleation comes from the registry, and `crates/render` is a workspace member
 
 `crates/render` depends on `nucleation` by exact crates.io version
-(`versions.toml [render].nucleation_version`), not by git rev. The
+(`versions.toml [render].nucleation_version`), not by git rev, with
+`blake3`'s `pure` feature declared beside it so a `cargo check --target` needs
+no C cross-compiler. The
 separate-workspace quarantine and `tools/check-workspace-git-deps.py` existed to
 keep a git dependency's resolution-time clone out of every cargo command in the
 repository; a registry dependency has no such reach, so both are gone and the

@@ -182,7 +182,7 @@ honored).
 | `DW0197` | validation / 1 | Trap declaration invalid: `at` not an `anchor/trap` the bound prefab provides, bad `trigger`/`effect`/`lethality` enum, duplicate trap id, or `disarm.via`/`sets_flag` dangling. |
 | `DW0198` | validation / 1 | Trap payload item/entity id not in the pinned 1.21.11 registry (mirrors DW0143/DW0173). |
 | `DW0314` | analysis / **2** | A lethal trap's trigger cell lies on the forced critical path with **no discharge** — not avoidable, not proven survivable, not disarmable (player provably killed or soft-looped). Content-design mistake (move the trap off the path, make it survivable, or add a disarm), analysis-tier like DW0312. |
-| `DW0733` | delve-admit / DW07xx | Audit: a piece contains trap hardware (dispenser, wired plate/tripwire, trapped chest) **not** declared by an `anchor/trap` marker + trap metadata — an unmodeled mechanism. Refuse admission (the gravity-incident guard: no hardware the compiler cannot model reaches a shipped world). |
+| `DW0733` | delvec prefab / DW07xx | Audit: a piece contains trap hardware (dispenser, wired plate/tripwire, trapped chest) **not** declared by an `anchor/trap` marker + trap metadata — an unmodeled mechanism. Refuse admission (the gravity-incident guard: no hardware the compiler cannot model reaches a shipped world). |
 
 ## Acceptance criteria (machine-checkable)
 

@@ -267,7 +267,7 @@ second hatch is added to the gate it relaxes.
 
 1. Grammar: `way` surface, `barred` normalisation, three-part proof,
    reachability generalisation, fence — fixtures are §1.2's twins, distilled.
-2. Export + `delve-admit` halves (`edge` grows `way`; audit agrees with
+2. Export + `delvec prefab` halves (`edge` grows `way`; audit agrees with
    `expand` through both doors).
 3. Compiler: `open-way` (dsl `0.12.0`, reserved in the ledger for
    `OPEN_WAY_SINCE`; this step defines the constant and deletes the
