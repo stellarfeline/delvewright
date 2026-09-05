@@ -946,23 +946,47 @@ pub fn build_with_warnings(
                 },
             )?;
 
+            // Seat each wave mob on a validated standable cell near its anchor, in
+            // room only (DW0312 if the room lacks the footing) — or, for a
+            // `summon: aggro-edge` wave, on its perception ring (DW0387).
+            //
+            // **Before the proofs, because a wave's seats are posted places.** A
+            // seated mob is put where it is by declaration and not by walking,
+            // exactly like an NPC's anchor, so `lethal::check_respawn_seats` has
+            // to be able to see it — and the cells are a measurement of the
+            // assembled world (the footing the room really offers), which no
+            // reading of the plan alone can produce. Everything below is a
+            // consumer of this answer; nothing it needs is computed below it.
+            let (waves, rings) = plan_wave_spawns(plan, &world)?;
             let (moves, actor_moves) = if crate::nav::needs_world(plan) {
                 let m = crate::nav::plan_moves(plan, &world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
                 // unroutable. Planned alongside move-npc from the same occupancy model.
                 let am = crate::nav::plan_actor_moves(plan, &world)?;
                 crate::nav::check_cutscenes(plan, &world, &m, &am)?;
+                // spec-0031: the one lethal-volume obligation routing cannot see.
+                // A respawn SEAT inside a volume is reached by teleport and routes
+                // perfectly while killing the party on arrival, forever. The wave
+                // seating goes in with it: a mob put on a cell by the seating pass
+                // is put there by declaration too, and its body is not the walker
+                // the footing was proven for.
+                //
+                // **Before the route proofs, and that ordering is a judgement.** A
+                // volume that swallows a posted place usually closes the route to
+                // it as well, so the two findings arrive together — and `DW0510`
+                // then sends the author to "move the volume, or give the party a
+                // route around it" when what is actually wrong is that their
+                // Keeper is standing in the pit. The specific cause is the more
+                // actionable message, and the route closure is its symptom. This
+                // proof reads the plan and the seating, never the routes, so
+                // nothing is lost by asking it first.
+                let lethal_seats =
+                    crate::lethal::check_respawn_seats(plan, campaign_spawn(plan), &waves)?;
                 crate::nav::check_critical_path(plan, &world)?;
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
                 crate::nav::check_checkpoints(plan, &world)?;
-                // spec-0031: the one lethal-volume obligation routing cannot see.
-                // Every route proof already treats a volume's cells as impassable
-                // (`nav::World::with_lethal`), so `DW0510` fell out of DW0311
-                // above; a respawn SEAT inside a volume is reached by teleport and
-                // routes perfectly while killing the party on arrival, forever.
-                let lethal_seats = crate::lethal::check_respawn_seats(plan, campaign_spawn(plan))?;
                 if !plan.lethal_volumes.is_empty() {
                     lethal_gate = Some(crate::lethal::gate(
                         plan.campaign,
@@ -1195,10 +1219,6 @@ pub fn build_with_warnings(
                 )?;
             warnings.extend(traversal_warnings);
             traversal_gate = Some(gate);
-            // Seat each wave mob on a validated standable cell near its anchor, in
-            // room only (DW0312 if the room lacks the footing) — or, for a
-            // `summon: aggro-edge` wave, on its perception ring (DW0387).
-            let (waves, rings) = plan_wave_spawns(plan, &world)?;
             // …and prove the sun is not going to fight the party's battle for it
             // (DW0496). Runs HERE because it needs the seated cells:
             // the question is whether open sky stands within one aggro radius of

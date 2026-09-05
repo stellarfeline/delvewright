@@ -74,6 +74,11 @@ function attach(bot: FakeBot, env: Record<string, string | undefined> = {}): Min
 
 test("a death event records position + likely cause and stops the pathfinder", () => {
   const bot = new FakeBot();
+  // Deliberately a position where FLOOR and ROUND disagree on both horizontal
+  // axes. The block an entity is in is the floor of its position, and this is
+  // the position a live run measured: a body killed by the west pit died at
+  // x = 12.59, one cell east of a box whose face is at 12.0. Rounding put it in
+  // cell 13 — two cells out — and the death-loop credit rule reads this position.
   bot.entity.position = new FakeVec3(12.4, 65, -3.6);
   const executor = attach(bot);
   // The death message arrives in chat, then the death event fires.
@@ -3225,13 +3230,16 @@ class DrivableFakeBot extends FakeBot {
 /** The smallest plan the stage will walk: one volume, one `on_death`, no stake. */
 function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
-    format_version: 1,
+    format_version: 2,
     version: "0.19.0",
     campaign_id: "probe",
     lethal_volumes: [
       {
         id: "lethal/the-pit",
         region: { lo: [4, 65, 8], hi: [6, 65, 10] },
+        // The volume widened by a player's own half-width, as the compiler
+        // computes it: one cell out horizontally, `ceil(height)` down.
+        keep_out: { lo: [3, 64, 7], hi: [7, 65, 11] },
         message: "The floor gives way.",
         message_key: null,
         damage_type: "minecraft:fall",
@@ -3255,13 +3263,17 @@ function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
 /** The gallery's west pit, as `delvec` emits it — the volume this rule was measured on. */
 function westPitPlan(): ReturnType<typeof parseDeathPlan> {
   return parseDeathPlan({
-    format_version: 1,
+    format_version: 2,
     version: "0.19.0",
     campaign_id: "gallery",
     lethal_volumes: [
       {
         id: "lethal/west-pit",
         region: { lo: [1, 63, 2], hi: [3, 67, 4] },
+        // The compiler's own answer for this box, carried as `delvec` emits it:
+        // the volume widened by a player's half-width, one cell out
+        // horizontally and `ceil(height)` down.
+        keep_out: { lo: [0, 62, 1], hi: [4, 67, 5] },
         message: "The floor in the west corner is not a floor.",
         message_key: "lethal.west-pit.message",
         damage_type: "minecraft:fall",

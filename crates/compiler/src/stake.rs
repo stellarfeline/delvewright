@@ -165,6 +165,32 @@ pub struct DeathRegion {
     pub lethal: bool,
 }
 
+impl DeathRegion {
+    /// **The cells an anchor may not be chosen from** — the region itself, and,
+    /// for a lethal volume, the ring around it a player's own hitbox reaches
+    /// into (`delvewright_dsl::metrics::keep_out_box`).
+    ///
+    /// The two kinds of region differ here because the harm differs. A
+    /// runtime-mutable region rewrites BLOCKS, so the question is which cell the
+    /// marker occupies and the box is the box. A lethal volume kills BODIES, by
+    /// a selector vanilla adjudicates on hitbox intersection, so the near lip of
+    /// one — the cell this rule was written to choose — is a cell a player
+    /// standing on it can die in. That is not a hypothetical about the lip: the
+    /// bot's own approach to a stake anchor one cell from a volume's face is
+    /// what the widening exists for.
+    pub fn keep_out(&self) -> ([i32; 3], [i32; 3]) {
+        if self.lethal {
+            delvewright_dsl::metrics::keep_out_box(
+                delvewright_dsl::metrics::Body::PLAYER,
+                self.region.0,
+                self.region.1,
+            )
+        } else {
+            self.region
+        }
+    }
+}
+
 /// One row of the table: *a death in this region, with this seat in force, leaves
 /// its stake at this anchor.*
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -410,8 +436,14 @@ fn unsafe_footing(regions: &[LabelledBox]) -> BTreeSet<[i32; 3]> {
 }
 
 /// **The rule itself**, over already-computed sets: the cell reachable from a seat
-/// that minimises distance to a death region, excluding the region itself and any
-/// ground the runtime rewrites.
+/// that minimises distance to a death region, excluding the cells no body may
+/// stand in (`keep_out`) and any ground the runtime rewrites.
+///
+/// `keep_out` is [`DeathRegion::keep_out`] and is a separate argument from
+/// `region` because the two answer different questions: `region` is what
+/// distance is measured to — the thing the stake should be near — and `keep_out`
+/// is where a body may not be. They were one box while the model believed a body
+/// occupied exactly its cell, and a lethal volume is where they come apart.
 ///
 /// Split out from [`build`] so the rule can be exercised on stated inputs rather
 /// than only through a whole campaign — the two failure modes it distinguishes are
@@ -430,10 +462,11 @@ pub fn choose_anchor(
     reachable: &BTreeSet<[i32; 3]>,
     unsafe_cells: &BTreeSet<[i32; 3]>,
     region: ([i32; 3], [i32; 3]),
+    keep_out: ([i32; 3], [i32; 3]),
 ) -> Result<[i32; 3], DwCode> {
     let outside: Vec<[i32; 3]> = reachable
         .iter()
-        .filter(|c| !in_box(**c, region))
+        .filter(|c| !in_box(**c, keep_out))
         .copied()
         .collect();
     if outside.is_empty() {
@@ -589,7 +622,7 @@ pub fn build(
     for (si, seat) in seats.iter().enumerate() {
         for (ri, region) in regions.iter().enumerate() {
             // The rule, over the sets computed above.
-            let picked = choose_anchor(&reach[si], &unsafe_cells, region.region);
+            let picked = choose_anchor(&reach[si], &unsafe_cells, region.region, region.keep_out());
             let cell = match picked {
                 Ok(c) => c,
                 Err(code) => {
@@ -683,11 +716,68 @@ mod tests {
             .into_iter()
             .collect();
         assert_eq!(
-            choose_anchor(&reachable, &BTreeSet::new(), region).unwrap(),
+            choose_anchor(&reachable, &BTreeSet::new(), region, region).unwrap(),
             [0, 0, 2],
             "distance 2 either way, and [0,0,2] is lexicographically first — the tie \
              break is part of the contract (ADR-0006)"
         );
+    }
+
+    /// **The near lip of a lethal volume is not the cell beside its face.**
+    ///
+    /// A stake's anchor is the point a player walks BACK to, so it has to be a
+    /// point a player can stand at without dying. The rule used to exclude the
+    /// region's own cells and nothing else, and the gallery's two pits both got
+    /// an anchor one cell from a face: `[7, 65, 19]` against a box whose face is
+    /// at `z = 20`, and `[20, 65, 23]` against a face at `x = 21`. A body
+    /// standing anywhere in either cell is inside the volume.
+    #[test]
+    fn a_lethal_regions_lip_is_chosen_outside_the_ring_its_body_reaches() {
+        let region = ([7, 63, 20], [11, 67, 24]);
+        let lethal = DeathRegion {
+            label: "lethal volume `lethal/west-pit`".to_string(),
+            region,
+            lethal: true,
+        };
+        // The keep-out box is the volume widened by the player's own half-width,
+        // and downward by its height — not written down here, asked of the one
+        // authority.
+        assert_eq!(
+            lethal.keep_out(),
+            delvewright_dsl::metrics::keep_out_box(
+                delvewright_dsl::metrics::Body::PLAYER,
+                region.0,
+                region.1
+            )
+        );
+        let reachable: BTreeSet<[i32; 3]> = [[7, 65, 19], [7, 65, 18], [7, 65, 17]]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            choose_anchor(&reachable, &BTreeSet::new(), region, lethal.keep_out()).unwrap(),
+            [7, 65, 18],
+            "the nearest cell OUTSIDE the ring, not the nearest cell outside the box"
+        );
+        // The old reading, stated so the assertion above cannot pass for some
+        // other reason: measuring only against the declared box picks the cell
+        // that kills.
+        assert_eq!(
+            choose_anchor(&reachable, &BTreeSet::new(), region, region).unwrap(),
+            [7, 65, 19]
+        );
+    }
+
+    /// A runtime-mutable region is a question about BLOCKS, so its keep-out box
+    /// is the box: nothing about a lift car reaches out of its own cells.
+    #[test]
+    fn a_runtime_mutable_region_keeps_its_own_box() {
+        let region = ([0, 10, 0], [0, 10, 0]);
+        let ground = DeathRegion {
+            label: "the runtime-mutable ground of gate anchor `anchor/lift`".to_string(),
+            region,
+            lethal: false,
+        };
+        assert_eq!(ground.keep_out(), region);
     }
 
     /// `DW0525`: nothing outside the death region is reachable at all — the
@@ -697,7 +787,7 @@ mod tests {
         let region = ([0, 0, 0], [4, 4, 4]);
         let reachable: BTreeSet<[i32; 3]> = [[1, 1, 1], [2, 2, 2]].into_iter().collect();
         assert_eq!(
-            choose_anchor(&reachable, &BTreeSet::new(), region),
+            choose_anchor(&reachable, &BTreeSet::new(), region, region),
             Err(DW_STAKE_NO_ROUTE_BACK)
         );
     }
@@ -711,7 +801,7 @@ mod tests {
         let reachable: BTreeSet<[i32; 3]> = [[0, 0, 0], [3, 0, 0], [4, 0, 0]].into_iter().collect();
         let unsafe_cells: BTreeSet<[i32; 3]> = [[3, 0, 0], [4, 0, 0]].into_iter().collect();
         assert_eq!(
-            choose_anchor(&reachable, &unsafe_cells, region),
+            choose_anchor(&reachable, &unsafe_cells, region, region),
             Err(DW_STAKE_UNSAFE_ANCHOR),
             "the distinction matters: DW0525 says there is no way back, DW0526 says \
              the way back ends on ground that will not hold a marker"
@@ -719,7 +809,7 @@ mod tests {
         // …and with the same sets minus the unsafe marking, the same call succeeds,
         // so the test above is not passing for some other reason.
         assert_eq!(
-            choose_anchor(&reachable, &BTreeSet::new(), region).unwrap(),
+            choose_anchor(&reachable, &BTreeSet::new(), region, region).unwrap(),
             [3, 0, 0]
         );
     }

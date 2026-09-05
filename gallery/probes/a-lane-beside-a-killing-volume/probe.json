@@ -1,0 +1,23 @@
+{
+  "code": "DW0510",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/lethal_volumes/0/region/anchor",
+      "value": "anchor/case"
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/lethal_volumes/0/region/extent",
+      "value": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The west pit, moved onto `anchor/case` and shrunk to a single cell. That cell is a `minecraft:chest` — the generator's own container table asserts it, because a `collect` objective needs a cell that really is a container and 'a body stands in air and a chest is a block' — so the volume's own cells are cells no body could ever walk into, and the party still cannot reach the case. That is the whole demonstration, and it needs no second engine to read: a volume whose every cell is solid closes nothing at all under a reading in whole cells, because there was never a route through it to close. What closes the leg is the ring around it. A lethal volume kills through a box selector, the server adjudicates a box selector on hitbox INTERSECTION, and the cells a party approaches the case from — the eight around the chest at their own standing height — are cells a body reaches into the box from. The refusal names the leg to the case and the volume that shut it. It declares no unit: a lethal volume, its region and a `collect` objective on a container are each written by the gallery proper. What must not compile is an objective whose only footing is within a body's reach of something that kills."
+}

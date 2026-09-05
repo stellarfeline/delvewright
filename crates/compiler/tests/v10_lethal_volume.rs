@@ -179,12 +179,62 @@ fn text(out: &BuildOutput, path: &str) -> String {
     .unwrap()
 }
 
-/// A volume off to one side of the keep, touching nothing the party must walk.
+/// The drop at the road's edge — the one cell of `anchor/exit`. It is only
+/// harmless with [`SIDE_DOOR`] carved: **a body is as wide as its hitbox**, so
+/// the cells around a killing volume are cells no route may use, and this room
+/// was built with one 2-wide doorway that opens straight onto the drop's edge.
 const HARMLESS: &str = r#"{
   "id": "lethal/the-drop",
   "region": { "anchor": "anchor/exit", "extent": [0, 0, 0] },
   "message": "The undertow takes you.",
   "damage_type": "fall"
+}"#;
+
+/// A second way through the keep's dividing wall, at its west end.
+///
+/// `hello-room` has exactly one doorway, 2 cells wide, in the middle of the wall
+/// — and `anchor/exit` is three cells beyond it. A volume kills on hitbox
+/// intersection, so the cells that share a face with one are not footing, and a
+/// one-cell drop at the exit anchor therefore seals the only door. That is a true
+/// property of this room and not a defect in the rule, so the fixture gains the
+/// geometry it needs rather than the rule being narrowed to fit it.
+///
+/// **West** rather than east on purpose: an endpoint snap picks the nearest
+/// standable cell and breaks ties lexicographically, with no regard for whether
+/// anything can walk to it, so `[3, 65, 8]` wins the tie over `[7, 65, 8]`. A
+/// door on the east side leaves the route proof staring at a cell it cannot
+/// reach.
+const SIDE_DOOR: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/side-door",
+        "area": "area/keep",
+        "note": "a second way through the dividing wall, clear of the drop",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/side-door",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [2, 1, 6],
+              "max": [2, 2, 6]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/side-door",
+            "matching": ["minecraft:stone"],
+            "recipe": { "blocks": [{ "block": "minecraft:air", "weight": 1.0 }] }
+          }
+        ]
+      }
+    ]
+  }
 }"#;
 
 // --- emission -------------------------------------------------------------
@@ -194,14 +244,17 @@ const HARMLESS: &str = r#"{
 /// `/damage` minus the engine's own machinery.
 #[test]
 fn a_volume_emits_a_tick_driver_and_a_killing_body() {
-    // On the exit cell: clear of the corridor, clear of the Keeper's post, and
-    // reachable-by-radius, so this test is about emission alone.
-    let c = parse_hw(&quests_doc(
-        r#"{ "id": "lethal/pit",
+    // On the exit cell, with the west door carved so the party can still reach
+    // the objective past it ([`SIDE_DOOR`]): this test is about emission alone.
+    let c = parse_hw_with_edits(
+        &quests_doc(
+            r#"{ "id": "lethal/pit",
              "region": { "anchor": "anchor/exit", "extent": [0, 0, 0] },
              "message": "The pit takes you.", "damage_type": "fire" }"#,
-        "",
-    ));
+            "",
+        ),
+        Some(SIDE_DOOR),
+    );
     let out = build(&c);
     let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
     assert!(
@@ -349,7 +402,7 @@ fn a_volume_across_the_only_route_is_dw0510_under_edits() {
 /// asserted non-zero on the arm where it was zero.
 #[test]
 fn the_lethal_ledger_binds_on_the_edit_replay_arm() {
-    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(ONE_BATCH));
+    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR));
     let out = build(&c);
     let ledger: serde_json::Value =
         serde_json::from_str(&text(&out, "validation/lethal-gate.json")).unwrap();
@@ -362,11 +415,17 @@ fn the_lethal_ledger_binds_on_the_edit_replay_arm() {
 
 /// The same proof, one step earlier: an objective whose only footing lies inside a
 /// volume is a player killed by standing where the objective is.
+///
+/// The volume is sized to reach the exit and NOTHING the campaign posts a body
+/// on. A `[6, 6, 6]` box swallowed the entry spawn as well, and the seat proof —
+/// which now runs first, because a Keeper standing in a pit is a more actionable
+/// message than the route closure it causes — reported that instead. Two true
+/// findings, and the fixture has to state which one it is about.
 #[test]
 fn an_objective_buried_in_a_volume_is_dw0510() {
     let c = parse_hw(&quests_doc(
         r#"{ "id": "lethal/the-exit",
-             "region": { "anchor": "anchor/exit", "extent": [6, 6, 6] },
+             "region": { "anchor": "anchor/exit", "extent": [2, 2, 2] },
              "message": "Nothing here is survivable." }"#,
         "",
     ));
@@ -411,7 +470,7 @@ fn an_npc_posted_inside_a_volume_is_dw0511() {
 /// the volume killed it, so a template that bound to nothing cannot pass.
 #[test]
 fn each_volume_gets_a_packtest_that_binds() {
-    let c = parse_hw(&quests_doc(HARMLESS, ""));
+    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR));
     let out = build(&c);
     let t = text(
         &out,
@@ -467,7 +526,7 @@ fn each_volume_gets_a_packtest_that_binds() {
 /// re-deriving it from an empty diagnostics list.
 #[test]
 fn the_binding_ledger_states_its_counts() {
-    let c = parse_hw(&quests_doc(HARMLESS, ""));
+    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR));
     let out = build(&c);
     let gate: serde_json::Value =
         serde_json::from_str(&text(&out, "validation/lethal-gate.json")).unwrap();
@@ -492,7 +551,7 @@ fn the_binding_ledger_states_its_counts() {
 /// Determinism (ADR-0006): two builds of a lethal-volume campaign are byte-equal.
 #[test]
 fn a_lethal_volume_build_is_byte_identical_across_runs() {
-    let c = parse_hw(&quests_doc(HARMLESS, ""));
+    let c = parse_hw_with_edits(&quests_doc(HARMLESS, ""), Some(SIDE_DOOR));
     assert_eq!(build(&c), build(&c));
 }
 
