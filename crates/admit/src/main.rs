@@ -501,6 +501,19 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
         "min_light_daylight": probe.min_light_daylight,
         "darkest_cell": probe.darkest_cell,
         "dark_threshold": probe.dark_threshold,
+        // **The distribution, not the minimum alone.** One cell at light 0 in
+        // the lee of a pillar and a room where every cell is at light 0 report
+        // the same `measured_min_light`, and they are a detail and a room
+        // nobody can see in. `cells_by_light` counts the measured floor at each
+        // level below the threshold; `cells` and `fraction` say how much of the
+        // room that is.
+        "dark_cells": {
+            "cells_by_light": probe.dark_by_level.iter()
+                .map(|(level, count)| (level.to_string(), *count))
+                .collect::<BTreeMap<String, usize>>(),
+            "cells": probe.dark_cells(),
+            "fraction": probe.dark_fraction(),
+        },
         "assumed_sky": {
             "profile_taken_at": probe.sky_light,
             "daylight": probe.daylight_sky_light,
@@ -532,7 +545,7 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
     if probe.is_dark() {
         let cell = probe
             .darkest_cell
-            .map(|c| format!(" (darkest at {},{},{})", c[0], c[1], c[2]))
+            .map(|c| format!("; darkest at {},{},{}", c[0], c[1], c[2]))
             .unwrap_or_default();
         // "Lit by day" is a sentence about a piece the sky reaches. An enclosed
         // piece meets no sky at either end of the table, so the second figure is
@@ -558,14 +571,22 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
         } else {
             format!("with no sky ({})", probe.sky.why())
         };
+        // **The distribution, and the minimum only as the place to start.** One
+        // cell at light 0 behind a pillar and a room where every cell is at
+        // light 0 used to print the same sentence, and they are a detail and a
+        // room nobody can see in. The repair is to re-arrange the room or raise
+        // the density of what is already lighting it, and neither is a decision
+        // a reader can take from one number.
         Diagnostic::warning(
             DW_DARK,
             format!(
-                "dark interior {under}: \
-                 min light {} < {} over {} floor cell(s) a player can walk to{cell}{by_day}",
-                probe.measured_min_light.unwrap_or(0),
-                dark_threshold,
-                probe.measured_cells
+                "dark interior {under}: {dark} of {measured} floor cell(s) a player can walk to \
+                 ({pct:.1}%) are below light {threshold} — {distribution}{cell}{by_day}",
+                dark = probe.dark_cells(),
+                measured = probe.measured_cells,
+                pct = probe.dark_fraction() * 100.0,
+                threshold = dark_threshold,
+                distribution = probe.dark_distribution(),
             ),
         )
         .print(json);

@@ -421,12 +421,19 @@ way of saying where, so it is written on `--role`, removed on `--no-role`, and
 untouched when the edit mentions neither. `crates/admit/tests/metadata_preservation.rs` holds
 every step to this, path by path, on a real export carrying every field at risk.
 
-`lighting` measures the **minimum light over the floor a body can walk to from
-outside**, and its report states the binding it took that minimum over:
-`standable_cells` in the whole region box, of which `measured_cells` are
-reachable on foot from `entry_cells` at grade. The flood is the compiler's own
-(`delvewright_compiler::light`) — block light and sky light, the same model
-`DW0210`/`DW0211` measure the assembled world with.
+`lighting` measures the light over the **floor a body can walk to from outside**,
+and its report states the binding it measured: `standable_cells` in the whole
+region box, of which `measured_cells` are reachable on foot from `entry_cells` at
+grade. The flood is the compiler's own (`delvewright_compiler::light`) — block
+light and sky light, the same model `DW0210`/`DW0211` measure the assembled world
+with.
+
+**The verdict is a distribution, not a minimum.** `dark_cells` gives
+`cells_by_light` (how many measured cells sit at each level below
+`dark_threshold`), `cells` (their total) and `fraction` (of `measured_cells`),
+and `DW0751` says all three. `measured_min_light` and `darkest_cell` are still
+there and are still what the profile is taken from — they are where to start
+looking, not how much room is dark.
 
 **Which sky the piece stands under is the piece's own claim, read off its
 `spatial_contract`.** A piece that declares no contract, or one declaring any
