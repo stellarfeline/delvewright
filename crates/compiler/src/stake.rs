@@ -136,6 +136,100 @@ pub const DW_STAKE_NO_ROUTE_BACK: DwCode = DwCode::every_version("DW0525", ExitT
 /// opposite: there *is* a route back, and the ground it ends on is the problem.
 pub const DW_STAKE_UNSAFE_ANCHOR: DwCode = DwCode::every_version("DW0526", ExitTier::Build);
 
+/// `DW0880`: two stakes that can each leave a marker declare **different**
+/// `marker_item`s, so the place a death leaves would have to wear two faces.
+///
+/// A marker is a *place* — the spot a death left its wagers — and there is one
+/// marker at a place however many datums were forfeited there. That is forced
+/// rather than chosen: the placement table is keyed on (respawn seat, death
+/// region) and never on the stake, so every stake one death drops resolves to one
+/// anchor, and the rule's common branch leaves the stake at the death point, a
+/// position chosen at runtime that no compile-time separation can reach. One box
+/// per place is also what stops four coincident `1.0 × 2.0` interaction hitboxes
+/// being an exact ray-pick tie — the defect [`crate::eclipse::DW_AFFORDANCE_CONTEST`]
+/// refuses for authored affordances.
+///
+/// So the display standing at a place renders ONE item, and every stake that can
+/// leave a marker has to name that item. The alternative is the silent kind of
+/// wrong: whichever stake happened to fill the place first would decide its face,
+/// and the other declarations would be read, emitted nowhere, and disagree with
+/// what the player sees.
+///
+/// **Not restricted to stakes one death can drop together.** Two stakes whose
+/// `on_death` gates are mutually exclusive still land at the same places across
+/// different deaths, and a marker outlives the death that made it until somebody
+/// collects it — so a second death's drop finds the first's marker standing and
+/// reuses it. Co-droppability is not the question; sharing a place is, and every
+/// stake shares every place.
+pub const DW_STAKE_TWO_FACES: DwCode = DwCode::every_version("DW0880", ExitTier::Build);
+
+/// The stakes that can actually leave a marker — every stake but the
+/// `max_live: 0` no-death-cost configuration, which places nothing and therefore
+/// owns no part of the shared hardware.
+///
+/// The binding [`check_marker_faces`] states, and the set [`crate::emit`] reads
+/// when it emits the one `stk_place`: **one function, so the proof and the
+/// emission can never come to describe different sets.**
+pub fn marking_stakes(c: &Campaign) -> Vec<&delvewright_dsl::Stake> {
+    c.quests
+        .content
+        .stakes
+        .iter()
+        .filter(|s| s.max_live() > 0)
+        .collect()
+}
+
+/// Prove every place a death can leave wears one face (`DW0880`).
+///
+/// Build tier (exit 3), pure comparison over the declarations — no world, no
+/// geometry. Returns the binding: the stakes examined, which is a campaign's
+/// marker-leaving stakes and not its stakes, so a campaign whose every stake is
+/// `max_live: 0` reports zero and says so rather than passing for free.
+///
+/// # Errors
+///
+/// [`DW_STAKE_TWO_FACES`] naming the first two stakes that disagree, in
+/// declaration order, so the report is deterministic (ADR-0006).
+pub fn check_marker_faces(c: &Campaign) -> Result<usize, Failure> {
+    let marking = marking_stakes(c);
+    let Some(first) = marking.first() else {
+        return Ok(0);
+    };
+    for other in marking.iter().skip(1) {
+        if other.marker_item() != first.marker_item() {
+            return Err(Failure {
+                code: DW_STAKE_TWO_FACES,
+                message: format!(
+                    "stake `{}` renders its marker as `{}` and stake `{}` renders its marker as \
+                     `{}`, and both can leave one. A recovery stake's marker is a PLACE — the \
+                     spot a death left its wagers — and a place holds ONE marker however many \
+                     datums were forfeited there: the placement table is keyed on (respawn seat, \
+                     death region) and never on the stake, so every stake a death drops resolves \
+                     to one anchor, and a death on ordinary ground leaves its stake where the \
+                     player fell, which is one position for all of them. One box per place is \
+                     also what keeps the hitboxes out of an exact ray-pick tie (`DW0878`): \
+                     coincident `1.0 x 2.0` interaction entities are entered by any ray at the \
+                     same distance and the client resolves the tie by iteration order. So the \
+                     glowing display at a place shows one item, and two declarations cannot both \
+                     be it — whichever stake filled the place first would silently decide what \
+                     every other stake's marker looks like. Prescription: give every stake that \
+                     can leave a marker the same `marker_item`. This is not about ONE death: a \
+                     marker outlives the death that made it until it is collected, so a later \
+                     death's drop finds an earlier one's marker standing and reuses it, whatever \
+                     gates separate the two `on_death` bundles. A stake that must look different \
+                     is a stake that must land somewhere else, and the engine has one place per \
+                     death.",
+                    first.id,
+                    first.marker_item(),
+                    other.id,
+                    other.marker_item(),
+                ),
+            });
+        }
+    }
+    Ok(marking.len())
+}
+
 /// One respawn seat the table is keyed on: the value `#cp dw.sys` holds while it is
 /// in force, a human label, the standable cell, and the earliest critical-path step
 /// at which it can be in force.
@@ -231,6 +325,10 @@ pub struct StakeGate {
     /// Cells that are reachable from the entry but **not** from some seat — the
     /// one-way-drop set, which must be empty or `DW0525` fires.
     pub stranded_cells: usize,
+    /// Stakes that can actually leave a marker — the set `DW0880` compared and the
+    /// set the one `stk_place` is emitted for. Zero means every declared stake is
+    /// `max_live: 0`, so no place is ever made and the face proof examined nothing.
+    pub marking: usize,
 }
 
 impl StakeGate {
@@ -252,6 +350,7 @@ impl StakeGate {
             "distinct_anchors": self.anchors,
             "runtime_mutable_cells_excluded": self.mutable_cells,
             "stranded_cells": self.stranded_cells,
+            "marker_leaving_stakes": self.marking,
             "unbound": self.unbound(),
         })
     }
@@ -635,6 +734,7 @@ pub fn build(
         anchors: anchors.len(),
         mutable_cells: unsafe_cells.len(),
         stranded_cells,
+        marking: marking_stakes(plan.campaign).len(),
     };
     Ok(Some(StakeTable {
         seats,

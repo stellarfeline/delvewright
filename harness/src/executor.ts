@@ -73,16 +73,16 @@ import {
 import {
   bodyInVolume,
   entryCellOf,
-  markerAt,
+  markersAt,
   expectedForfeit,
   inBox,
   openLethalTrial,
   seatAtRespawn,
+  stakesDropped,
   tableAnchor,
   type Box,
   type DeathPlan,
   type LethalTrial,
-  type StakeRule,
 } from "./death-loop.ts";
 import { presentAndTrigger } from "./held-item.ts";
 import {
@@ -1096,6 +1096,45 @@ const LEDGER_SETTLE_MS = 5_000;
 const LEDGER_POLL_MS = 100;
 /** How long to wait for a scoreboard objective to start reporting after tracking it. */
 const SCORE_TRACK_TIMEOUT_MS = 5_000;
+
+/**
+ * The scoreboard display slots the harness may take, to READ a ledger.
+ *
+ * A vanilla server only tracks — and so only broadcasts — an objective occupying
+ * a display slot, and it tracks every occupied one, so the number of ledgers a
+ * run can read across one death is the number of slots it holds. Vanilla
+ * 1.21.11's `minecraft:scoreboard_slot` parser accepts `list`, `sidebar`,
+ * `below_name` and one `sidebar.team.<colour>` per chat colour; the team-coloured
+ * sidebars are the pool here because the plain `sidebar` is the slot the delve's
+ * own campaign readout uses and `list`/`below_name` change what a human watching
+ * the run sees.
+ *
+ * `sidebar` leads the list so a run that reads exactly one ledger takes exactly
+ * the slot it always did.
+ *
+ * Seventeen is a ceiling, not a promise: a campaign whose death forfeits more
+ * datums than this gets a refusal by name from `trackScore`, never a ledger read
+ * as unreported.
+ */
+const SCORE_DISPLAY_SLOTS: readonly string[] = [
+  "sidebar",
+  "sidebar.team.aqua",
+  "sidebar.team.black",
+  "sidebar.team.blue",
+  "sidebar.team.dark_aqua",
+  "sidebar.team.dark_blue",
+  "sidebar.team.dark_gray",
+  "sidebar.team.dark_green",
+  "sidebar.team.dark_purple",
+  "sidebar.team.dark_red",
+  "sidebar.team.gold",
+  "sidebar.team.gray",
+  "sidebar.team.green",
+  "sidebar.team.light_purple",
+  "sidebar.team.red",
+  "sidebar.team.white",
+  "sidebar.team.yellow",
+];
 /** How long to wait for the collected stake's hardware to be retired. */
 const MARKER_RETIRE_TIMEOUT_MS = 5_000;
 /** How far from the table's anchor the marker's own hardware is looked for. */
@@ -1286,8 +1325,8 @@ export class MineflayerExecutor implements StepExecutor {
    * written from here.
    */
   private readonly scores = new Map<string, Map<string, number>>();
-  /** The objective currently occupying the harness's display slot, if any. */
-  private trackedObjective: string | undefined;
+  /** Which display slot the harness put each tracked objective in. */
+  private readonly trackedSlots = new Map<string, string>();
   /**
    * The lethal volumes the build declares, as impassable boxes for the
    * PATHFINDER. The compiler already treats them as impassable in every route
@@ -2385,19 +2424,37 @@ export class MineflayerExecutor implements StepExecutor {
    * it is named in the run report, and no delve content can reach it. The shipped
    * image is untouched — the bot is opped by a compose environment variable.
    *
+   * **One slot per objective, out of {@link SCORE_DISPLAY_SLOTS}.** Swapping ONE
+   * slot between objectives stops the server tracking the one it left, so that
+   * ledger's cached values freeze at whatever they last were — and a frozen ledger
+   * read as a live one is exactly the shape of a currency assertion that passes
+   * over a forfeit that never happened. A death that forfeits four datums has to
+   * read four ledgers ACROSS the same death, so the slots cannot be taken in turn:
+   * with one, three of the four read as never-reported (measured on the gallery,
+   * whose death drops four stakes). Vanilla's scoreboard has more than one
+   * display slot and this uses them.
+   *
    * Returns false when the objective never starts reporting: the bot is not opped,
-   * or the objective does not exist. Either is a finding, never a silent pass.
+   * the objective does not exist, or the pool is exhausted. Each is a finding,
+   * never a silent pass.
    */
   private async trackScore(objective: string): Promise<boolean> {
     const bot = this.requireBot();
-    if (this.trackedObjective === objective && this.scores.has(objective)) return true;
-    // Swapping the slot STOPS the server tracking the previous objective, so its
-    // cached values freeze at whatever they last were — and a frozen ledger read as
-    // a live one is the exact shape of a currency assertion that passes over a
-    // forfeit that never happened. Drop it rather than keep it.
-    if (this.trackedObjective !== undefined) this.scores.delete(this.trackedObjective);
-    bot.chat(`/scoreboard objectives setdisplay sidebar ${objective}`);
-    this.trackedObjective = objective;
+    if (this.trackedSlots.has(objective) && this.scores.has(objective)) return true;
+    const taken = new Set(this.trackedSlots.values());
+    const slot = SCORE_DISPLAY_SLOTS.find((s) => !taken.has(s));
+    if (slot === undefined) {
+      process.stderr.write(
+        `[death-loop] every one of the ${SCORE_DISPLAY_SLOTS.length} scoreboard display slot(s) ` +
+          `is already holding a ledger, so '${objective}' cannot be read at all. A campaign whose ` +
+          `death forfeits more datums than vanilla has display slots is a finding about the ` +
+          `campaign; reading them in turn is not the repair, because an objective that leaves a ` +
+          `slot stops being reported and its last value freezes\n`,
+      );
+      return false;
+    }
+    bot.chat(`/scoreboard objectives setdisplay ${slot} ${objective}`);
+    this.trackedSlots.set(objective, slot);
     const ok = await this.waitFor(
       () => this.scores.get(objective) !== undefined,
       SCORE_TRACK_TIMEOUT_MS,
@@ -2405,25 +2462,28 @@ export class MineflayerExecutor implements StepExecutor {
     );
     if (!ok) {
       process.stderr.write(
-        `[death-loop] the server never reported objective '${objective}' after it was put on ` +
-          `the sidebar. Either the bot is not opped (compose sets DELVE_OPS_OFFLINE to the bot's ` +
-          `name — check it matches DELVEWRIGHT_BOT_USERNAME) or the delve declares no such ` +
-          `ledger. The currency assertions cannot be made\n`,
+        `[death-loop] the server never reported objective '${objective}' after it was put in ` +
+          `display slot '${slot}'. Either the bot is not opped (compose sets DELVE_OPS_OFFLINE to ` +
+          `the bot's name — check it matches DELVEWRIGHT_BOT_USERNAME), the delve declares no ` +
+          `such ledger, or the server refused that slot name. The currency assertions cannot be ` +
+          `made\n`,
       );
     }
     return ok;
   }
 
-  /** Release the harness's display slot. Idempotent; best effort. */
+  /** Release every display slot the harness took. Idempotent; best effort. */
   private clearScoreDisplay(): void {
-    if (this.trackedObjective === undefined) return;
-    try {
-      this.requireBot().chat("/scoreboard objectives setdisplay sidebar");
-    } catch {
-      // teardown must never mask the run's own verdict
+    if (this.trackedSlots.size === 0) return;
+    for (const [objective, slot] of this.trackedSlots) {
+      try {
+        this.requireBot().chat(`/scoreboard objectives setdisplay ${slot}`);
+      } catch {
+        // teardown must never mask the run's own verdict
+      }
+      this.scores.delete(objective);
     }
-    this.scores.delete(this.trackedObjective);
-    this.trackedObjective = undefined;
+    this.trackedSlots.clear();
   }
 
   /** The bot's own value in a tracked ledger, or `undefined` if it has none. */
@@ -2501,15 +2561,16 @@ export class MineflayerExecutor implements StepExecutor {
     }
     const here = this.feetCell() ?? [0, 0, 0];
     const entryCell = entryCellOf(volume.region, here, (c) => this.bodyCanOccupy(c));
-    // Which stake this death is supposed to leave. `on_death`'s own declaration
-    // decides — never "the first one declared" — so a campaign whose death drops
-    // one of three stakes is asserted against the one it named.
-    const stake: StakeRule | undefined = plan.stakes.find((s) => plan.dropsStake.includes(s.id));
+    // EVERY stake this death is supposed to leave. `on_death`'s own declaration
+    // decides which — never "the first one declared" — and all of them are
+    // asserted, because a death that forfeits four datums promises four things and
+    // leaves them at one place.
+    const stakes = stakesDropped(plan);
     if (entryCell === undefined) {
       // Every cell of the declared box is filled by a block. That is a finding
       // about the campaign — nothing can ever die in this volume — and it is
       // stated as one rather than by driving at a wall for ten seconds.
-      const trial = openLethalTrial(volume, volume.region.lo, stake);
+      const trial = openLethalTrial(volume, volume.region.lo, stakes);
       trial.abandoned =
         `no cell of the declared volume [${volume.region.lo.join(", ")}]..` +
         `[${volume.region.hi.join(", ")}] can hold a body: every one of them is filled by a ` +
@@ -2517,7 +2578,7 @@ export class MineflayerExecutor implements StepExecutor {
       this.lethalTrials.push(trial);
       return;
     }
-    const trial = openLethalTrial(volume, entryCell, stake);
+    const trial = openLethalTrial(volume, entryCell, stakes);
     this.lethalTrials.push(trial);
     // The near lip: the cell the placement table already proved is the reachable
     // point nearest this volume. Nothing new is computed — it is the anchor a
@@ -2528,16 +2589,22 @@ export class MineflayerExecutor implements StepExecutor {
       `[death-loop] ${volume.id}: standing at [${here.join(", ")}]; walking into ` +
         `[${entryCell.join(", ")}] to die there via the near lip ` +
         `${lip ? `[${lip.join(", ")}]` : "(none — the build declares no placement row)"}` +
-        `${stake ? `; expecting stake ${stake.id} on ledger ${stake.currency.objective}` : ""}\n`,
+        `${
+          trial.wagers.length > 0
+            ? `; expecting ${trial.wagers.length} wager(s): ${trial.wagers
+                .map((w) => `${w.stake} on ${w.objective}`)
+                .join(", ")}`
+            : ""
+        }\n`,
     );
 
-    // --- the ledger before -------------------------------------------------
-    if (stake) {
-      if (await this.trackScore(stake.currency.objective)) {
-        trial.balanceBefore = this.myScore(stake.currency.objective);
+    // --- the ledger before, for EVERY datum this death takes ----------------
+    for (const w of trial.wagers) {
+      if (await this.trackScore(w.objective)) {
+        w.balanceBefore = this.myScore(w.objective);
       }
-      if (trial.balanceBefore !== undefined) {
-        trial.expectedForfeit = expectedForfeit(stake.forfeit, trial.balanceBefore);
+      if (w.balanceBefore !== undefined) {
+        w.expectedForfeit = expectedForfeit(w.forfeit, w.balanceBefore);
       }
     }
 
@@ -2651,22 +2718,23 @@ export class MineflayerExecutor implements StepExecutor {
         `(${trial.respawnSeat ?? "NO declared seat"})\n`,
     );
 
-    if (stake === undefined) return;
-    const objective = stake.currency.objective;
+    if (trial.wagers.length === 0) return;
 
-    // --- the forfeit -------------------------------------------------------
-    if (trial.balanceBefore !== undefined) {
-      trial.balanceAfterDeath = await this.settledScore(
-        objective,
-        trial.balanceBefore - (trial.expectedForfeit ?? 0),
-      );
+    // --- the forfeit, for every datum ---------------------------------------
+    for (const w of trial.wagers) {
+      if (w.balanceBefore !== undefined) {
+        w.balanceAfterDeath = await this.settledScore(
+          w.objective,
+          w.balanceBefore - (w.expectedForfeit ?? 0),
+        );
+      }
     }
 
     // --- the walk back, and the stake at the end of it ----------------------
     const anchor = trial.expectedAnchor;
     if (anchor === undefined) return;
     try {
-      await this.walkTo(anchor, 1, `death-loop walk back to the ${stake.id} at the near lip`);
+      await this.walkTo(anchor, 1, `death-loop walk back to the place at the near lip`);
       trial.walkedBack = true;
     } catch (err) {
       process.stderr.write(
@@ -2676,9 +2744,20 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     await this.awaitEntitySettle();
-    const marker = this.stakeHardwareAt(anchor);
+    // Every marker standing at the anchor, not the nearest: a death leaves ONE
+    // place, and two coincident boxes have no nearest — the pick is an exact tie.
+    const markers = this.stakeHardwareAt(anchor);
+    trial.markersFound = markers.length;
+    const marker = markers[0];
     trial.markerPos = marker ? [marker.position.x, marker.position.y, marker.position.z] : undefined;
     if (!marker) return;
+    if (markers.length > 1) {
+      process.stderr.write(
+        `[death-loop] ${volume.id}: ${markers.length} recovery-stake markers stand at ` +
+          `[${anchor.join(", ")}] — one death leaves ONE place, and coincident interaction ` +
+          `boxes are a ray-pick tie the client resolves by iteration order\n`,
+      );
+    }
 
     // --- the collection, twice in one tick ---------------------------------
     // AC6 is *idempotent under a double right-click in one tick*, so the two
@@ -2716,19 +2795,23 @@ export class MineflayerExecutor implements StepExecutor {
       trial.collectClicks = clicks.length;
       await Promise.allSettled(clicks);
     }
-    trial.balanceAfterCollect =
-      trial.balanceBefore === undefined
-        ? this.myScore(objective)
-        : await this.settledScore(objective, trial.balanceBefore);
+    // EVERY datum comes back from the one press: the place is offered to every
+    // stake the death left a wager at.
+    for (const w of trial.wagers) {
+      w.balanceAfterCollect =
+        w.balanceBefore === undefined
+          ? this.myScore(w.objective)
+          : await this.settledScore(w.objective, w.balanceBefore);
+    }
     trial.markerRetired = await this.waitFor(
-      () => this.stakeHardwareAt(anchor) === undefined,
+      () => this.stakeHardwareAt(anchor).length === 0,
       MARKER_RETIRE_TIMEOUT_MS,
       LEDGER_POLL_MS,
     );
     process.stderr.write(
-      `[death-loop] ${volume.id}: collected — ledger ${trial.balanceAfterDeath ?? "?"} → ` +
-        `${trial.balanceAfterCollect ?? "?"}; marker ` +
-        `${trial.markerRetired ? "retired" : "STILL STANDING"}\n`,
+      `[death-loop] ${volume.id}: collected — ${trial.wagers
+        .map((w) => `${w.stake} ${w.balanceAfterDeath ?? "?"} → ${w.balanceAfterCollect ?? "?"}`)
+        .join("; ")}; marker ${trial.markerRetired ? "retired" : "STILL STANDING"}\n`,
     );
   }
 
@@ -2824,19 +2907,25 @@ export class MineflayerExecutor implements StepExecutor {
    * item display for the rendering, so an invisible hitbox is a stake no player
    * would ever find, not a stake that happens to render oddly.
    *
-   * WHICH of them is the stake is {@link markerAt}'s rule, not this method's — the
-   * executor supplies the observation and the pure module decides, so the reading
-   * can be put to a test without a server in front of it.
+   * WHICH of them is the stake is {@link markersAt}'s rule, not this method's —
+   * the executor supplies the observation and the pure module decides, so the
+   * reading can be put to a test without a server in front of it.
+   *
+   * **Every one of them, not the nearest.** A death leaves ONE place, so a second
+   * marker standing at the anchor is a defect the run has to be able to state; and
+   * a client cannot state it by acquiring the nearest, because coincident boxes
+   * have no nearest — the pick is an exact tie the server resolves by iteration
+   * order. Counting is the only observation available from this side.
    */
-  private stakeHardwareAt(anchor: Vec3Tuple): Hitbox | undefined {
+  private stakeHardwareAt(anchor: Vec3Tuple): Hitbox[] {
     const bot = this.bot;
-    if (!bot) return undefined;
+    if (!bot) return [];
     const displays = Object.values(bot.entities).flatMap((e) =>
       e?.position && e.name === "item_display"
         ? [{ name: "item_display", position: { x: e.position.x, y: e.position.y, z: e.position.z } }]
         : [],
     );
-    return markerAt(
+    return markersAt(
       this.hitboxesNear(anchor, MARKER_SEARCH_RADIUS),
       displays,
       anchor,

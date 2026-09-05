@@ -1,0 +1,13 @@
+{
+  "code": "DW0880",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/stakes/1/marker_item",
+      "value": "minecraft:soul_lantern"
+    }
+  ],
+  "units": [],
+  "why": "Two of the gallery's four recovery stakes render their marker as a different item. A marker is a PLACE — the spot a death left its wagers — and a place holds one marker however many datums were forfeited there, so its glowing display shows one item and two declarations cannot both be it. What makes it worth committing is what the engine did with the whole family before this refusal existed. The placement table is keyed on (respawn seat, death region) and never on the stake, and the rule's common branch leaves the stake at the death point itself — so every stake one death drops resolves to ONE position, and the marker was keyed to the stake. The gallery shipped four `minecraft:interaction` boxes, `1.0 x 2.0`, at each of eleven anchors: coincident hitboxes entered by any ray at the same distance, an exact tie the client resolves by iteration order. That is precisely what `DW0878` refuses between two authored affordances, and the compiler was producing it for its own hardware, green, on every build. The bot tier saw both faces of it without being able to name it — a collection that reported `the stake is still standing` (one box of four was taken) and one that reported `no stake stands here` (the box picked belonged to a stake with a zero forfeit). No placement rule could have repaired it, because the common branch's position is chosen at runtime; the marker had to belong to the place. It declares no unit: `marker_item` is written by every stake the gallery declares and the domain binds it; what the engine refuses is two stakes holding two answers to what one place looks like."
+}
