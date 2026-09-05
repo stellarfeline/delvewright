@@ -40,7 +40,9 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shutil
 import subprocess
+import tempfile
 
 import pytest
 
@@ -104,24 +106,58 @@ def test_refuses_under_tmpdir_env(tool_copy, tmp_path):
     assert not candidate.exists()
 
 
-def test_a_project_owned_directory_is_not_refused(tool_copy, tmp_path):
+def tmp_roots(env: dict[str, str]) -> list[pathlib.Path]:
+    """The same roots `worktree-new.sh` itself refuses, resolved the same way.
+
+    Unconditional `/tmp` and `/private/tmp`, plus `$TMPDIR` from the given
+    environment when it is set — mirrors `TMP_ROOTS` in the script so a test
+    can check its own precondition against the actual refusal surface rather
+    than against an assumption about the platform.
+    """
+    roots = [pathlib.Path("/tmp").resolve(), pathlib.Path("/private/tmp").resolve()]
+    tmpdir = env.get("TMPDIR")
+    if tmpdir:
+        roots.append(pathlib.Path(tmpdir.rstrip("/")).resolve())
+    return roots
+
+
+def assert_outside_tmp_roots(candidate: pathlib.Path, env: dict[str, str]) -> None:
+    resolved = candidate.resolve()
+    for root in tmp_roots(env):
+        if resolved == root or root in resolved.parents:
+            pytest.fail(
+                f"test precondition failed: candidate {resolved} is under "
+                f"tmp root {root} — this test would prove nothing on this "
+                "platform, not that the tool refused anything"
+            )
+
+
+def test_a_project_owned_directory_is_not_refused(tool_copy):
     # pytest's own `tmp_path` fixture is rooted at `tempfile.gettempdir()`,
-    # which on this machine (and in CI) IS `$TMPDIR` — so without overriding
-    # the environment, "a directory pytest made" and "a directory under
-    # $TMPDIR" are the same claim, and this test would prove nothing. Point
-    # $TMPDIR somewhere else so the only ambient roots left (/tmp,
-    # /private/tmp) are the ones the fixture directory is genuinely outside of.
-    candidate = tmp_path / "owned" / "wt"
-    p = run_refusal_probe(
-        tool_copy,
-        str(candidate),
-        env_overrides={"TMPDIR": str(tmp_path / "unrelated-tmpdir") + "/"},
-    )
-    assert "refused" not in p.stderr
-    assert "session-scoped" not in p.stderr
-    # It got past the refusal and reached a real `git` call, which fails on
-    # this copy's non-repository parent rather than on anything this test set
-    # up — proof the path was accepted rather than rejected by some other
-    # short-circuit that would also print neither of the two strings above.
-    assert "not a git repository" in p.stderr
-    assert not candidate.exists()
+    # which IS `$TMPDIR` on macOS and is `/tmp/...` on the Linux CI runner —
+    # under a refused root either way, so it cannot stand in for "a directory
+    # the project owns" here. `$HOME` is neither `/tmp`, `/private/tmp` nor
+    # (barring a perverse environment) `$TMPDIR`, on macOS, on the Linux CI
+    # runner and on the GitHub-hosted runner alike, so a directory made under
+    # it with `tempfile.mkdtemp` — removed again in `finally`, since nothing
+    # here cleans up a `$HOME` child the way pytest's `tmp_path` fixture would
+    # — is genuinely outside every root the tool refuses. Assert that
+    # precondition instead of trusting it: this test reds by that assertion,
+    # naming the offending root, if some environment ever makes it false,
+    # rather than passing or failing by accident of `tempfile.gettempdir()`.
+    env = dict(os.environ)
+    owned_root = tempfile.mkdtemp(dir=str(pathlib.Path.home()))
+    try:
+        candidate = pathlib.Path(owned_root) / "owned" / "wt"
+        assert_outside_tmp_roots(candidate, env)
+        p = run_refusal_probe(tool_copy, str(candidate))
+        assert "refused" not in p.stderr
+        assert "session-scoped" not in p.stderr
+        # It got past the refusal and reached a real `git` call, which fails on
+        # this copy's non-repository parent rather than on anything this test set
+        # up — proof the path was accepted rather than rejected by some other
+        # short-circuit that would also print neither of the two strings above.
+        assert "not a git repository" in p.stderr
+        assert not candidate.exists()
+    finally:
+        shutil.rmtree(owned_root, ignore_errors=True)
