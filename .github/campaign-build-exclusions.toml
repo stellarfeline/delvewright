@@ -29,3 +29,15 @@
 # same change that moves `versions.toml` `[content].sha` onto the content the fix
 # landed in. The job's own binding line is what states how many entries are live;
 # nothing here restates it.
+
+[[exclusion]]
+id = "nobodys-cave-island"
+task = "move the gangplank reach off the beach it also completes from"
+reason = """
+`obj/flee-back` and `obj/last-sand` both hang on `anchor/gangplank` at radius 3,
+and the cube that draws reaches two cells of beach at the anchor's own height
+that a body cannot walk to the gangplank's footing from without leaving it — so
+either objective completes for a party standing short of the boarding plank,
+which is `DW0881`.
+"""
+expect_codes = ["DW0881"]
