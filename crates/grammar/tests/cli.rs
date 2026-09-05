@@ -25,6 +25,7 @@ use delvewright_grammar::Program;
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::{Material, Node};
 use delvewright_grammar::library::store_room;
+use delvewright_grammar::{AnchorRole, Mark, MarkAt};
 
 const GRAMMAR: &str = env!("CARGO_BIN_EXE_delve-grammar");
 
@@ -394,4 +395,59 @@ fn every_expansion_prints_and_records_the_reachability_measurement() {
         ],
         "{ids:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// A `mark`'s role reaches the metadata through the BINARY (§2b)
+// ---------------------------------------------------------------------------
+
+/// **The pair this closes.** `grammar.md` §2b says a `mark` carries a `role` and
+/// that it is written through to the exported anchor's metadata; §7 used to say
+/// a rule could not declare the entry at all. Two authorities for one fact, and
+/// the one an author acted on was the wrong one — so this asserts the fact
+/// itself, along the path an author walks: a JSON program document, through
+/// `delve-grammar expand`, into the metadata file on disk.
+///
+/// The library test (`tests/marks.rs`) proves the exporter writes it. This
+/// proves the BINARY does, which is a different claim: `run_expand` builds the
+/// program, applies overrides and calls the exporter itself, and a step that
+/// dropped the role on the way through would leave that test green.
+#[test]
+fn a_marks_role_reaches_the_exported_metadata_through_the_binary() {
+    let dir = scratch("mark-role");
+    let program = Program::new("arrival", "root").rule(
+        "root",
+        Node::Mark {
+            mark: Mark::new("landing", MarkAt::FloorCenter).role(AnchorRole::Entry),
+            body: Box::new(Node::Fill {
+                material: Material::block("minecraft:stone_bricks".parse().unwrap()),
+            }),
+        },
+    );
+    let file = program_file(&dir, "arrival.json", &program);
+    let out_dir = dir.join("out");
+    let out = expand(&file, &out_dir, &[]);
+    assert!(
+        out.status.success(),
+        "the marked program expands: {}",
+        combined(&out)
+    );
+
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out_dir.join("arrival.json")).unwrap())
+            .unwrap();
+    let anchors = meta["anchors"].as_object().expect("the piece has anchors");
+    assert_eq!(
+        anchors["anchor/landing"]["role"],
+        serde_json::Value::from("entry"),
+        "a mark's role is written through to the exported anchor: {meta}"
+    );
+    // The KEY is untouched, which is the invariant the role exists to work
+    // around rather than to break: a mark still cannot name an anchor the DSL
+    // could not reference, so no export can ever spell a reserved name.
+    for key in anchors.keys() {
+        assert!(key.starts_with("anchor/"), "{key}");
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

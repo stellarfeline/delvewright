@@ -3215,13 +3215,15 @@ that page is the automatic part: nothing yet drives "expand N seed-varied
 candidates → `batch`-render them → sheet", so the sweep is assembled by hand
 today.
 
-`mark` declares point anchors only. Trap anchors (`dispenser`,
-`trigger_block`) and the entry names the engine treats specially (`spawn`,
-`entry`) are expressible in prefab metadata but not yet by a rule — each needs
-its own declaration, not a widened `mark`. A rule can name a *region* (§2d), and
-a `barred` edge's bar region is the cells a campaign's `shortcut` / `close-gate`
-/ `lift` addresses; what is missing is the export half, since a claimed region
-reaches the metadata's `spatial_contract` block and not its `anchors` map.
+`mark` declares point anchors, and what they are FOR (`role`, §2b — a marked
+program's `entry` reaches the exported metadata and is what makes a generated
+zone a place a party can arrive in). What it does not declare is a **trap**
+anchor's pre-wired hardware (`dispenser`, `trigger_block`), which is expressible
+in prefab metadata but not yet by a rule — that needs its own declaration, not a
+widened `mark`. A rule can name a *region* (§2d), and a `barred` edge's bar
+region is the cells a campaign's `shortcut` / `close-gate` / `lift` addresses;
+what is missing is the export half, since a claimed region reaches the metadata's
+`spatial_contract` block and not its `anchors` map.
 
 **Three pieces still spell out per-frame variants they no longer need to.**
 An orientation-dependent block is a palette role as of the local axis frame
