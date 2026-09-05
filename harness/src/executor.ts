@@ -1096,6 +1096,45 @@ const LEDGER_SETTLE_MS = 5_000;
 const LEDGER_POLL_MS = 100;
 /** How long to wait for a scoreboard objective to start reporting after tracking it. */
 const SCORE_TRACK_TIMEOUT_MS = 5_000;
+
+/**
+ * The scoreboard display slots the harness may take, to READ a ledger.
+ *
+ * A vanilla server only tracks — and so only broadcasts — an objective occupying
+ * a display slot, and it tracks every occupied one, so the number of ledgers a
+ * run can read across one death is the number of slots it holds. Vanilla
+ * 1.21.11's `minecraft:scoreboard_slot` parser accepts `list`, `sidebar`,
+ * `below_name` and one `sidebar.team.<colour>` per chat colour; the team-coloured
+ * sidebars are the pool here because the plain `sidebar` is the slot the delve's
+ * own campaign readout uses and `list`/`below_name` change what a human watching
+ * the run sees.
+ *
+ * `sidebar` leads the list so a run that reads exactly one ledger takes exactly
+ * the slot it always did.
+ *
+ * Seventeen is a ceiling, not a promise: a campaign whose death forfeits more
+ * datums than this gets a refusal by name from `trackScore`, never a ledger read
+ * as unreported.
+ */
+const SCORE_DISPLAY_SLOTS: readonly string[] = [
+  "sidebar",
+  "sidebar.team.aqua",
+  "sidebar.team.black",
+  "sidebar.team.blue",
+  "sidebar.team.dark_aqua",
+  "sidebar.team.dark_blue",
+  "sidebar.team.dark_gray",
+  "sidebar.team.dark_green",
+  "sidebar.team.dark_purple",
+  "sidebar.team.dark_red",
+  "sidebar.team.gold",
+  "sidebar.team.gray",
+  "sidebar.team.green",
+  "sidebar.team.light_purple",
+  "sidebar.team.red",
+  "sidebar.team.white",
+  "sidebar.team.yellow",
+];
 /** How long to wait for the collected stake's hardware to be retired. */
 const MARKER_RETIRE_TIMEOUT_MS = 5_000;
 /** How far from the table's anchor the marker's own hardware is looked for. */
@@ -1286,8 +1325,8 @@ export class MineflayerExecutor implements StepExecutor {
    * written from here.
    */
   private readonly scores = new Map<string, Map<string, number>>();
-  /** The objective currently occupying the harness's display slot, if any. */
-  private trackedObjective: string | undefined;
+  /** Which display slot the harness put each tracked objective in. */
+  private readonly trackedSlots = new Map<string, string>();
   /**
    * The lethal volumes the build declares, as impassable boxes for the
    * PATHFINDER. The compiler already treats them as impassable in every route
@@ -2385,19 +2424,37 @@ export class MineflayerExecutor implements StepExecutor {
    * it is named in the run report, and no delve content can reach it. The shipped
    * image is untouched — the bot is opped by a compose environment variable.
    *
+   * **One slot per objective, out of {@link SCORE_DISPLAY_SLOTS}.** Swapping ONE
+   * slot between objectives stops the server tracking the one it left, so that
+   * ledger's cached values freeze at whatever they last were — and a frozen ledger
+   * read as a live one is exactly the shape of a currency assertion that passes
+   * over a forfeit that never happened. A death that forfeits four datums has to
+   * read four ledgers ACROSS the same death, so the slots cannot be taken in turn:
+   * with one, three of the four read as never-reported (measured on the gallery,
+   * whose death drops four stakes). Vanilla's scoreboard has more than one
+   * display slot and this uses them.
+   *
    * Returns false when the objective never starts reporting: the bot is not opped,
-   * or the objective does not exist. Either is a finding, never a silent pass.
+   * the objective does not exist, or the pool is exhausted. Each is a finding,
+   * never a silent pass.
    */
   private async trackScore(objective: string): Promise<boolean> {
     const bot = this.requireBot();
-    if (this.trackedObjective === objective && this.scores.has(objective)) return true;
-    // Swapping the slot STOPS the server tracking the previous objective, so its
-    // cached values freeze at whatever they last were — and a frozen ledger read as
-    // a live one is the exact shape of a currency assertion that passes over a
-    // forfeit that never happened. Drop it rather than keep it.
-    if (this.trackedObjective !== undefined) this.scores.delete(this.trackedObjective);
-    bot.chat(`/scoreboard objectives setdisplay sidebar ${objective}`);
-    this.trackedObjective = objective;
+    if (this.trackedSlots.has(objective) && this.scores.has(objective)) return true;
+    const taken = new Set(this.trackedSlots.values());
+    const slot = SCORE_DISPLAY_SLOTS.find((s) => !taken.has(s));
+    if (slot === undefined) {
+      process.stderr.write(
+        `[death-loop] every one of the ${SCORE_DISPLAY_SLOTS.length} scoreboard display slot(s) ` +
+          `is already holding a ledger, so '${objective}' cannot be read at all. A campaign whose ` +
+          `death forfeits more datums than vanilla has display slots is a finding about the ` +
+          `campaign; reading them in turn is not the repair, because an objective that leaves a ` +
+          `slot stops being reported and its last value freezes\n`,
+      );
+      return false;
+    }
+    bot.chat(`/scoreboard objectives setdisplay ${slot} ${objective}`);
+    this.trackedSlots.set(objective, slot);
     const ok = await this.waitFor(
       () => this.scores.get(objective) !== undefined,
       SCORE_TRACK_TIMEOUT_MS,
@@ -2405,25 +2462,28 @@ export class MineflayerExecutor implements StepExecutor {
     );
     if (!ok) {
       process.stderr.write(
-        `[death-loop] the server never reported objective '${objective}' after it was put on ` +
-          `the sidebar. Either the bot is not opped (compose sets DELVE_OPS_OFFLINE to the bot's ` +
-          `name — check it matches DELVEWRIGHT_BOT_USERNAME) or the delve declares no such ` +
-          `ledger. The currency assertions cannot be made\n`,
+        `[death-loop] the server never reported objective '${objective}' after it was put in ` +
+          `display slot '${slot}'. Either the bot is not opped (compose sets DELVE_OPS_OFFLINE to ` +
+          `the bot's name — check it matches DELVEWRIGHT_BOT_USERNAME), the delve declares no ` +
+          `such ledger, or the server refused that slot name. The currency assertions cannot be ` +
+          `made\n`,
       );
     }
     return ok;
   }
 
-  /** Release the harness's display slot. Idempotent; best effort. */
+  /** Release every display slot the harness took. Idempotent; best effort. */
   private clearScoreDisplay(): void {
-    if (this.trackedObjective === undefined) return;
-    try {
-      this.requireBot().chat("/scoreboard objectives setdisplay sidebar");
-    } catch {
-      // teardown must never mask the run's own verdict
+    if (this.trackedSlots.size === 0) return;
+    for (const [objective, slot] of this.trackedSlots) {
+      try {
+        this.requireBot().chat(`/scoreboard objectives setdisplay ${slot}`);
+      } catch {
+        // teardown must never mask the run's own verdict
+      }
+      this.scores.delete(objective);
     }
-    this.scores.delete(this.trackedObjective);
-    this.trackedObjective = undefined;
+    this.trackedSlots.clear();
   }
 
   /** The bot's own value in a tracked ledger, or `undefined` if it has none. */
