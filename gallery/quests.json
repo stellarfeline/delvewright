@@ -2150,7 +2150,7 @@
           "percent": 50
         },
         "id": "stake/tokens",
-        "marker_item": "minecraft:soul_lantern",
+        "marker_item": "minecraft:lantern",
         "max_live": 2,
         "on_full": "keep",
         "state": "state/tokens"
@@ -2175,6 +2175,7 @@
           "kind": "fixed"
         },
         "id": "stake/toll",
+        "marker_item": "minecraft:lantern",
         "state": "state/toll"
       },
       {
@@ -2184,6 +2185,7 @@
           "kind": "none"
         },
         "id": "stake/keepsake",
+        "marker_item": "minecraft:lantern",
         "state": "state/keepsake"
       }
     ],
