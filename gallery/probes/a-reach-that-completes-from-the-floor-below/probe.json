@@ -1,0 +1,13 @@
+{
+  "code": "DW0881",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/objectives/3/radius",
+      "value": 2
+    }
+  ],
+  "units": [],
+  "why": "One edit: `obj/climb-the-loft`'s completion radius goes from 1 back to 2, which is what the gallery shipped before the defect was found by hand. `anchor/loft` sits on top of the mezzanine at [19, 68, 18], three courses over the far hall floor at y=65. At radius 2 the completion cube is [17, 66, 16]..=[21, 70, 20], and vanilla adjudicates that selector against a body's whole hitbox rather than against the cell its feet are in -- a standing body rises 1.8 blocks, so a party on the hall floor already reaches 66.8 and is inside. The objective therefore closes during the muster fight, for a party that never climbs the flight the beat before it exists to repair. It declares no unit: `reach-anchor` and `radius` are both written by the domain, and what the engine refuses is the RELATION between the volume and the floors under it. What makes it worth committing is which checks were green over it. `DW0311` routes to the anchor and `DW0314` finds every exported waypoint standable; `DW0850` asks whether the volume holds footing at all and it holds the mezzanine's own top; the completion selector the emitter writes and the `completion` the harness is handed are byte-identical, because they are formatted from one value. Four proofs about a beat that fires in the wrong room. The edit is a single number and drift in it fails LOUDLY rather than quietly: at radius 1 the cube stops one course above the hall and DW0881 has nothing to report, so a probe that lost its perturbation is a probe the engine accepts, which is what this gate refuses by name."
+}

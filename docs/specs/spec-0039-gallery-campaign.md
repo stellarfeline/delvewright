@@ -66,14 +66,12 @@ to demos would put coverage behind the content pin and a human queue, which is
 §3's same-PR property destroyed. A gallery element may seed a demo's design;
 it is never one.
 
-**Versus the content-repo campaign builds.** `tools/build-every-campaign.py`
-already builds every campaign at the **pinned** content SHA — real, and not
-this. What it proves is that shipped content still compiles under the changed
-engine. It structurally cannot cover a surface landed in the PR under review:
-the pin lags the engine by construction, and the campaigns behind it are
-approved creative artifacts no engine PR may edit (unrequested change is a
-rejection cause on its own). The gallery is engine-owned and same-repo, so the
-element lands **in the same PR** as the surface — which is the entire point:
+**Versus the content-repo campaigns.** A released campaign is never edited and
+is built only by the engine revision it pins; the engine never builds old
+campaigns to prove compatibility with a new one, and no gate, exclusion list
+or migration exists for that — a campaign is never the engine's test surface,
+the gallery is. The gallery is engine-owned and same-repo, so the element
+lands **in the same PR** as the surface — which is the entire point:
 generality and coverage are decided at the first site, not retrofitted at the
 second.
 

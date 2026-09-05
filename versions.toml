@@ -346,15 +346,6 @@ beet_version = "0.116.0"
 # collection or assertion behaviour moves a required check's verdict.
 # Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool).
 pytest_version = "9.1.1"
-# cargo-audit: the RustSec advisory check `tools/check-advisories.py --cargo`
-# drives over all ten cargo lockfiles this repository tracks. An instrument of a
-# required status check (`rust (fmt, clippy, test)`), so it is named literally
-# for the same reason `beet` and `pytest` are: an unpinned instrument can move a
-# gate's verdict with nothing in any diff to show what changed. `cargo install
-# --locked` builds it from the version resolved here, and Swatinem/rust-cache
-# caches `~/.cargo/bin`, so the compile is paid once per cache line.
-# Consumed by: .github/workflows/ci.yml.
-cargo_audit_version = "0.22.2"
 
 [skin]
 # skinpy-extended (MIT, ADR-0013 allowlist), the part/face-addressable composer

@@ -629,39 +629,6 @@ POLICY `immutable`, on the same published-artifact argument as `mecha`. A bump i
 an ordinary reviewed edit; what it may not be is silent.
 """
 
-[[pin]]
-id = "cargo-audit"
-value = "0.22.2"
-sites = [".github/workflows/ci.yml", "versions.toml"]
-policy = "immutable"
-bound_by = "validation/check-versions.sh"
-bound_key = "cargo_audit_version"
-why = """
-cargo-audit, the RustSec advisory check that `tools/check-advisories.py --cargo`
-drives over all ten cargo lockfiles this repository tracks. It runs as a step of
-`rust (fmt, clippy, test)`, a required status check, so it is an INSTRUMENT and
-is named literally for the same reason `beet` and `pytest` are: an unpinned
-instrument can move a required gate's verdict with nothing in any diff to show
-what moved.
-
-WHAT IT DOES NOT PIN, said plainly so nobody reads more into this entry than it
-holds: the advisory DATABASE is fetched live from RustSec on every run and is
-not pinned by anything here. That is the point of an advisory check — a frozen
-database would answer about the day it was frozen — and it is also the one live
-network reach this gate makes, which the step that makes it names.
-
-CHOSEN AS the version `cargo install cargo-audit --locked` resolves to, so
-pinning changed nothing that was running. At this version, over 1239 loaded
-advisories, all ten lockfiles are clean: zero vulnerabilities over 615 resolved
-crate dependencies, and two `unmaintained` warnings in `crates/render`
-(`bincode 1.3.3`, `paste 1.0.15`), which cargo-audit reports without failing and
-this gate prints by name rather than as a count.
-
-POLICY `immutable`, on the same published-artifact argument as `mecha`,
-`beet` and `pytest`. A bump is an ordinary reviewed edit; what it may not be is
-silent.
-"""
-
 # ---------------------------------------------------------------------------
 # The skin toolchain's one third-party dependency
 # ---------------------------------------------------------------------------

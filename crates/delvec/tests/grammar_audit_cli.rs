@@ -151,9 +151,9 @@ fn a_manifest_entry_with_no_file_is_a_finding() {
 
 /// **An audit that found nothing is a red.**
 ///
-/// A content checkout that silently landed empty — the shape
-/// `build-every-campaign.py` guards against for the same reason — would
-/// otherwise report a clean board having judged nought.
+/// A content checkout that silently landed empty would otherwise report a
+/// clean board having judged nought — the unbound vacuity mode every gate in
+/// this crate is written against.
 #[test]
 fn an_audit_that_finds_no_programs_is_a_finding() {
     let dir = scratch("empty");

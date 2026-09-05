@@ -65,7 +65,8 @@ use std::process::Command;
 use delvewright_compiler::nav::{SNAP_RADIUS, World};
 use delvewright_compiler::plan::{Plan, Step};
 use delvewright_compiler::reach::{
-    DW_REACH_UNCOMPLETABLE, ReachCompletion, judge_reach_completion, reach_completion, sites,
+    DW_REACH_OFF_FLOOR, DW_REACH_UNCOMPLETABLE, ReachCompletion, check_reach_footprint,
+    judge_reach_completion, reach_completion, sites,
 };
 use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::envelope::{self, is_v03};
@@ -449,6 +450,234 @@ fn dw0850_binds_at_every_declared_version() {
     assert!(
         versions.len() >= 14,
         "binding: {} declared dsl_version(s) examined",
+        versions.len()
+    );
+}
+
+// ================================================ 2b. the footprint (DW0881) ==
+
+/// A hall floor and a dais standing three courses over it, both wide enough to
+/// fill whatever completion volume is authored, with nothing joining the two.
+///
+/// The anchor's own cell is the dais top, so `DW0850` is satisfied by
+/// construction: the volume holds footing. The only question left is whether
+/// everything ELSE the volume reaches is that same floor.
+fn hall_and_dais(anchor: [i32; 3], half: i32) -> BTreeSet<[i32; 3]> {
+    let mut solid = BTreeSet::new();
+    for dx in -half..=half {
+        for dz in -half..=half {
+            // The hall floor: the block three courses under the dais top, so a
+            // body down there stands at `anchor[1] - 3`.
+            solid.insert([anchor[0] + dx, anchor[1] - 4, anchor[2] + dz]);
+        }
+    }
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            solid.insert([anchor[0] + dx, anchor[1] - 1, anchor[2] + dz]);
+        }
+    }
+    solid
+}
+
+/// Where the party comes in: a hall-floor cell four out from the dais, outside
+/// every volume these fixtures author and connected to the whole hall floor. The
+/// population `DW0881` draws its footprint from is walked from here, so handing it
+/// explicitly is what keeps these tests about the rule rather than about whatever
+/// `hello-world` happens to declare as its start.
+fn entry(anchor: [i32; 3]) -> [i32; 3] {
+    [anchor[0] + 4, anchor[1] - 3, anchor[2] + 4]
+}
+
+/// The same hall and dais with a flight climbing the dais's near face, every
+/// tread inside a radius-3 cube: standing cells at `y-2` on `dz = 3` and `y-1` on
+/// `dz = 2`, which is three one-block steps from the hall floor to the top.
+fn with_a_flight(anchor: [i32; 3], half: i32) -> BTreeSet<[i32; 3]> {
+    let mut solid = hall_and_dais(anchor, half);
+    for dx in -1..=1 {
+        solid.insert([anchor[0] + dx, anchor[1] - 3, anchor[2] + 3]);
+        solid.insert([anchor[0] + dx, anchor[1] - 2, anchor[2] + 2]);
+    }
+    solid
+}
+
+/// **Red — the gallery's own former defect, as a property.**
+///
+/// A `reach` on an anchor three courses over a hall floor, at a radius that
+/// reaches that floor, and nothing inside the volume joins the two levels. A
+/// party standing in the hall completes an objective whose whole content is
+/// *climb*. `DW0850` is green over the same world, which is the point: the volume
+/// holds footing, that footing is the dais, and the defect is everything else the
+/// volume also holds.
+#[test]
+fn a_raised_anchor_whose_volume_reaches_the_floor_below_is_refused() {
+    with_plan("0.6.0", 3, |plan| {
+        let (pos, obj) = only_site(plan);
+        let world = World::from_solid_and_flooded(hall_and_dais(pos, 5), BTreeSet::new());
+        // The premises, checked rather than assumed.
+        assert!(
+            world.is_standable(pos),
+            "the anchor's own cell is the dais top"
+        );
+        assert!(
+            world.is_standable([pos[0] + 3, pos[1] - 3, pos[2]]),
+            "and the hall floor three courses down is standable"
+        );
+        judge_reach_completion(plan, &world, &BTreeMap::new())
+            .expect("DW0850 is green here: the volume holds the dais");
+        assert!(
+            world.is_standable(entry(pos)),
+            "the fixture's premise: the party has somewhere to come in"
+        );
+
+        let (binding, verdict) = check_reach_footprint(plan, &world, Some(entry(pos)));
+        let err = verdict.expect_err(
+            "a completion volume that reaches the floor below its anchor must be refused",
+        );
+        assert_eq!(err.code, DW_REACH_OFF_FLOOR);
+        assert_eq!(binding.sites, 1, "binding: reach objectives examined");
+        assert!(
+            binding.off_floor > 0 && binding.off_floor < binding.cells,
+            "binding: {} of {} footprint cell(s) off the anchor's floor — all or none \
+             would mean the walk inside the volume is not being run",
+            binding.off_floor,
+            binding.cells
+        );
+        assert!(
+            err.message.contains(&obj) && err.message.contains("anchor/exit"),
+            "DW0881 names the objective and its anchor: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains(&format!("y={}", pos[1] - 3)),
+            "and the floor the offending cells stand on: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("7×7×7"),
+            "and the volume it is refusing, measured off the value: {}",
+            err.message
+        );
+    });
+}
+
+/// **Green, on the same geometry, with the one thing the rule is about moved.**
+///
+/// A flight of single-block steps *inside the volume* joins the hall to the dais.
+/// Every cell the volume reaches can now walk to the anchor's own footing without
+/// leaving it, and a body on the flight is arriving rather than standing in
+/// another room. A rule that only ever rewarded lowering the radius would refuse
+/// this too, and would be pointed one way.
+#[test]
+fn a_way_up_inside_the_volume_is_arriving_and_passes() {
+    with_plan("0.6.0", 3, |plan| {
+        let (pos, _) = only_site(plan);
+        let world = World::from_solid_and_flooded(with_a_flight(pos, 5), BTreeSet::new());
+        // The premise: the treads really are standable, and really are inside the
+        // cube the radius authors.
+        let vol = reach_completion(pos, 3, true);
+        for tread in [
+            [pos[0], pos[1] - 2, pos[2] + 3],
+            [pos[0], pos[1] - 1, pos[2] + 2],
+        ] {
+            assert!(
+                world.is_standable(tread),
+                "{tread:?} is a tread a body stands on"
+            );
+            assert!(
+                vol.certainly_completes_from(tread),
+                "{tread:?} is inside the completion volume, which is what makes the \
+                 flight a way up INSIDE it"
+            );
+        }
+
+        let (binding, verdict) = check_reach_footprint(plan, &world, Some(entry(pos)));
+        verdict.expect("a volume whose floors are joined inside it completes by arriving");
+        assert_eq!(binding.off_floor, 0);
+        assert!(
+            binding.cells > 0,
+            "binding: {} footprint cell(s) — a green over an empty footprint is the \
+             unbound vacuity mode, not a pass",
+            binding.cells
+        );
+    });
+}
+
+/// **The volume that fits its place is silent**, which is the instance fix: the
+/// same hall and the same dais, at a radius whose cube stops above the floor
+/// below. One number moved.
+#[test]
+fn a_volume_that_stops_above_the_lower_floor_is_silent() {
+    with_plan("0.6.0", 1, |plan| {
+        let (pos, _) = only_site(plan);
+        let world = World::from_solid_and_flooded(hall_and_dais(pos, 5), BTreeSet::new());
+        let (binding, verdict) = check_reach_footprint(plan, &world, Some(entry(pos)));
+        verdict.expect("at radius 1 the cube stops two courses above the hall floor");
+        assert_eq!(binding.off_floor, 0);
+        assert!(
+            binding.cells > 0,
+            "binding: {} footprint cell(s)",
+            binding.cells
+        );
+    });
+}
+
+/// **The arithmetic the rule turns on, isolated.** Vanilla adjudicates the
+/// selector against the whole body box, so a standing cell one course BELOW the
+/// volume's bottom layer completes and one two courses below does not. That one
+/// course is the entire gallery instance, and a reading that tested the feet cell
+/// instead would answer no to both.
+#[test]
+fn a_body_one_course_under_the_volume_still_reaches_into_it() {
+    let vol = reach_completion([0, 68, 0], 2, true);
+    let ReachCompletion::Cube { lo, .. } = vol else {
+        panic!("v0.3+ is a cube");
+    };
+    assert_eq!(lo[1], 66);
+    assert!(
+        vol.possibly_completes_from([0, 65, 0], 65.0),
+        "a body standing at 65 rises to 66.8 and is inside a cube whose floor is 66"
+    );
+    assert!(
+        !vol.possibly_completes_from([0, 64, 0], 64.0),
+        "a body standing at 64 rises to 65.8 and is not"
+    );
+    assert!(
+        !vol.certainly_completes_from([0, 65, 0]),
+        "and the conservative reading DW0850 takes says no to the same cell, which is \
+         why the two are named apart"
+    );
+}
+
+/// **The red demo is not inert.** `DW0881` judges assembled geometry rather than
+/// a surface a campaign opts into, so it is `every_version` and no per-stage fence
+/// can grandfather it away. Driven at every version the ledger declares, which
+/// exercises the pre-v0.3 sphere arm as well as the cube: the radius is 4 because
+/// a sphere has to be that wide before it reaches a floor three courses down.
+#[test]
+fn dw0881_binds_at_every_declared_version() {
+    let versions = envelope::SUPPORTED_DSL_VERSIONS;
+    let mut bound = 0usize;
+    for version in versions {
+        with_plan(version, 4, |plan| {
+            let (pos, _) = only_site(plan);
+            let world = World::from_solid_and_flooded(hall_and_dais(pos, 6), BTreeSet::new());
+            let (_, verdict) = check_reach_footprint(plan, &world, Some(entry(pos)));
+            let err = verdict.expect_err(
+                "DW0881 must bind at every declared version; a version-shaped hole here is \
+                 the `unfenced` vacuity mode",
+            );
+            assert_eq!(err.code, DW_REACH_OFF_FLOOR, "at quests {version}");
+            bound += 1;
+        });
+    }
+    assert_eq!(
+        bound,
+        versions.len(),
+        "binding: every declared dsl_version drove the red"
+    );
+    assert!(
+        versions.len() >= 14,
+        "binding: {} version(s)",
         versions.len()
     );
 }
