@@ -19,14 +19,15 @@ edit. Template at the bottom.
 | [0012](0012-product-form-claude-code-skill.md) | Product form: Claude Code skill front-end | Accepted |
 | [0013](0013-prefab-license-allowlist.md) | Expanded prefab license allowlist (+MIT/Apache/GPL) | Accepted |
 | [0014](0014-creator-distribution.md) | Creator distribution: plugin install, content repo as workdir | Accepted (M4) |
-| [0015](0015-schema-promotion-policy.md) | Schema promotion: composition first; native only via second-campaign or machine-proof gate | Accepted |
-| [0016](0016-three-layer-versioning.md) | Three-layer versioning: format, engine, skill | Accepted |
+| [0015](0015-schema-promotion-policy.md) | Schema promotion: composition first; native only via second-campaign or machine-proof gate | Accepted; the version-fence idiom clause superseded by ADR-0024 |
+| [0016](0016-three-layer-versioning.md) | Three-layer versioning: format, engine, skill | Accepted; §Decision item 1 (old formats always compile) superseded by ADR-0024 |
 | [0017](0017-toolchain-distribution.md) | Toolchain distribution: `cargo install delvec`, release shelf, CI-only publishing | Accepted |
 | [0018](0018-creator-toolchain-and-the-ir-hatch.md) | Creator toolchain: cargo as a prerequisite, one authoring crate, the escape hatch at the grammar IR | Accepted |
 | [0019](0019-java-edition-bedrock-shelved.md) | Java edition stays; a Bedrock backend is shelved | Accepted |
 | [0020](0020-map-design-pipeline.md) | The spatial contract — declared spaces and edges, checked against the emitted bytes | Superseded by ADR-0022 |
 | [0021](0021-creator-toolchain-rederived.md) | Creator toolchain re-derived: one distributed binary, registry Nucleation, off-the-shelf viewer core | Proposed |
 | [0022](0022-the-map-is-planned-before-it-is-built.md) | The map is planned before it is built — the whole-first pipeline | Accepted |
+| [0024](0024-one-dsl-version.md) | One `dsl_version` — the engine accepts exactly the number it implements | Accepted |
 
 ## Template
 
