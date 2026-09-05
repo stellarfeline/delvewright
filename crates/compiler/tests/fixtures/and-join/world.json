@@ -19,6 +19,6 @@
     "theme": "A keep whose inner shrine answers only to two hands at once.",
     "title": "The Two Levers"
   },
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "stage": "world"
 }

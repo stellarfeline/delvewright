@@ -26,7 +26,7 @@ fn build_fixture() -> BuildOutput {
 
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = common::fenced_diagnostics(&campaign, &items, &prefabs, &entities);
+    let diags = common::validation_diagnostics(&campaign, &items, &prefabs, &entities);
     assert!(
         diags.is_empty(),
         "souls-shortcut must validate clean: {diags:#?}"

@@ -12,7 +12,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 stage-5 quests document adding a checkpoint (with an `on_respawn` hook)
 /// and a stealth beat over the hello-world anchors.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -64,16 +64,5 @@ fn v06_verbs_validate_clean() {
     assert!(
         !diags.iter().any(|d| d.code == "DW0141"),
         "v0.6 checkpoint/stealth verbs must validate under 0.6.0 (no DW0141): {diags:#?}"
-    );
-}
-
-/// The same verbs under a pre-0.6 quests version are reserved → `DW0141`.
-#[test]
-fn v06_verbs_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "v0.6 checkpoint/stealth verbs must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }

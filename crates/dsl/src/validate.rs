@@ -6,10 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
-use crate::envelope::{
-    Campaign, OPTIONAL_QUESTS_SINCE, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
-    is_v07, is_v08, is_v09, is_v10, is_v11, is_v12, is_v13, is_v14, is_v15, is_v16, is_v17,
-};
+use crate::envelope::{Campaign, DSL_VERSION, Stage};
 use crate::ids::is_kebab;
 use crate::metrics::Metrics;
 use crate::registry::{
@@ -18,8 +15,8 @@ use crate::registry::{
     VendoredItemRegistry,
 };
 use crate::stages::{
-    EditFrame, EncounterTier, Locomotion, MorphOp, NarrateStyle, Objective, PlannedQuest,
-    QuestEffect, RegionShape, TriggerOn, WorldEdit, body_traversal_sites,
+    EditFrame, EncounterTier, Locomotion, MorphOp, Objective, PlannedQuest, QuestEffect,
+    RegionShape, TriggerOn, WorldEdit, body_traversal_sites,
 };
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
@@ -49,84 +46,74 @@ pub fn validate_campaign_with(
     dialogue(c, &mut d);
     plan(c, &mut d);
     after_ordering(c, &mut d);
-    reserved(c, &mut d);
-    // DSL v0.10 (spec-0031): the runtime-state surface. Unconditional — every
-    // loop inside is empty for a campaign that declares no datum and no
-    // comparison, and the version fence itself lives in `reserved_v10`.
+    press_answer_checks(c, &mut d);
+    press_obligation_checks(c, &mut d);
+    horizon_param_checks(c, &mut d);
+    world_checks(c, &mut d);
+    lighting_range_checks(c, &mut d);
+    // spec-0031: the runtime-state surface. Every loop inside is empty for a
+    // campaign that declares no datum and no comparison.
     state_checks(c, &mut d);
     // A gate that contradicts itself can never open (`DW0847`). Unconditional
     // and over the whole closed consumer set — an ungated site contributes no
     // terms and cannot contradict.
     gate_contradiction_checks(c, &mut d);
-    // DSL v0.10 (spec-0031): the status-effect verbs. Unconditional for the same
-    // reason `state_checks` is — every walk inside is empty for a campaign that
-    // declares neither verb, and the version fence lives in `reserved_v10`. The
-    // status-effect registry is the fixed vanilla list v0.4 already validates
-    // wave-mob effects against, so no injected registry is needed.
+    // spec-0031: the status-effect verbs. Every walk inside is empty for a
+    // campaign that declares neither verb. The status-effect registry is the
+    // fixed vanilla list wave-mob effects are validated against, so no injected
+    // registry is needed.
     status_effect_checks(c, &VendoredEffectRegistry::v1_21_11(), &mut d);
-    // DSL v0.10 (spec-0032): the trade and recovery-stake surface. Unconditional
-    // for the same reason — every loop inside is empty for a campaign that
-    // declares neither, and the version fence lives in `reserved_v10`.
+    // spec-0032: the trade and recovery-stake surface. Every loop inside is
+    // empty for a campaign that declares neither.
     economy_checks(c, &mut d);
-    // DSL v0.11 (spec-0034): the per-body traversal declaration. Unconditional
-    // for the same reason its neighbours are — the walk is empty for a campaign
-    // that declares none, and the version fence lives in `reserved_v11`.
+    // spec-0034: the per-body traversal declaration. The walk is empty for a
+    // campaign that declares none.
     body_traversal_checks(c, &mut d);
     prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
-    // `DW0849`: an item gate no class can bring. Unconditional, like its
-    // neighbours — the walk is empty for a campaign with no `requires_item`, and
-    // the rule judges a contradiction between two authored documents (a quest's
-    // item gate against the class kits), so it is `EveryVersion` and has no
-    // fence to live in. Bound HERE rather than to a step someone runs, because
-    // this is the function every `delvec` subcommand's validation stage calls.
+    // `DW0849`: an item gate no class can bring. The walk is empty for a
+    // campaign with no `requires_item`; the rule judges a contradiction between
+    // two authored documents (a quest's item gate against the class kits).
+    // Bound HERE rather than to a step someone runs, because this is the
+    // function every `delvec` subcommand's validation stage calls.
     item_gate_class_checks(c, &mut d);
-    // DSL v0.3: the new stage-5 verbs, waves and flags. Gated on the quests
-    // stage's version so a v0.2 campaign is unaffected (its uses of these verbs
-    // are still rejected as reserved by `reserved`, above).
-    if is_v03(c.quests.dsl_version.as_str()) {
-        v03_checks(c, items, anchors, entities, &mut d);
-    }
-    // DSL v0.4: props/set-block/narrate/triggers/skins/lifecycle/cutscene. The
+    // The stage-5 verbs, waves and flags.
+    v03_checks(c, items, anchors, entities, &mut d);
+    // Props/set-block/narrate/triggers/skins/lifecycle/cutscene. The
     // status-effect registry is a fixed vanilla list; the block registry derives
     // from the item registry (see [`ItemBackedBlockRegistry`]), so no new
-    // caller-supplied registry is needed. Gated on the quests stage version.
-    if is_v04(c.quests.dsl_version.as_str()) {
-        let blocks = ItemBackedBlockRegistry::new(items);
-        let effects_reg = VendoredEffectRegistry::v1_21_11();
-        v04_checks(c, anchors, &blocks, &effects_reg, &mut d);
-    }
-    // DSL v0.6: scripted actors + staging effects (spec-0014), traps (spec-0011)
-    // and wave-mob equipment. Actor entity ids validate against the
-    // injected entity registry and anchors against single-prefab area metadata;
-    // traps' dispense payloads and wave-mob equipment slots validate against the
-    // item registry (pool areas deferred to the compiler). Gated on the quests
-    // stage version.
-    if is_v06(c.quests.dsl_version.as_str()) {
-        v06_checks(c, items, anchors, entities, &mut d);
-        v06_trap_checks(c, items, entities, anchors, &mut d);
-        shortcut_checks(c, anchors, &mut d);
-        ambush_checks(c, &mut d);
-        timed_gate_checks(c, anchors, &mut d);
-        loot_checks(c, items, anchors, &mut d);
-        lane_checks(c, anchors, &mut d);
-        difficulty_checks(c, &mut d);
-    }
-    // DSL v0.6 stage 7 (spec-0017): the map-editor edit script. Structural
+    // caller-supplied registry is needed.
+    let blocks = ItemBackedBlockRegistry::new(items);
+    let effects_reg = VendoredEffectRegistry::v1_21_11();
+    v04_checks(c, anchors, &blocks, &effects_reg, &mut d);
+    // Scripted actors + staging effects (spec-0014), traps (spec-0011) and
+    // wave-mob equipment. Actor entity ids validate against the injected entity
+    // registry and anchors against single-prefab area metadata; traps' dispense
+    // payloads and wave-mob equipment slots validate against the item registry
+    // (pool areas deferred to the compiler).
+    v06_checks(c, items, anchors, entities, &mut d);
+    v06_trap_checks(c, items, entities, anchors, &mut d);
+    shortcut_checks(c, anchors, &mut d);
+    ambush_checks(c, &mut d);
+    timed_gate_checks(c, anchors, &mut d);
+    loot_checks(c, items, anchors, &mut d);
+    lane_checks(c, anchors, &mut d);
+    difficulty_checks(c, &mut d);
+    // Stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
     // solved layout (the compiler's `DW0323`).
     if c.world_edits.is_some() {
         let blocks = ItemBackedBlockRegistry::new(items);
         world_edits_checks(c, &blocks, &mut d);
     }
-    // spec-0049 (DSL v0.13): the map-pipeline documents. Bound to the EVENT it
-    // guards rather than to a step someone runs — a campaign directory holding a
+    // spec-0049: the map-pipeline documents. Bound to the EVENT it guards
+    // rather than to a step someone runs — a campaign directory holding a
     // `layout-graph.json` has no path to a verdict that does not come through
     // here, because this is the function every `delvec` subcommand's validation
-    // stage calls. The version fence is `reserved_v13`, below, and the reads
-    // ledger is what gives `DW0813` its document-side binding: every building
-    // metric these checks rest a verdict on records that it did.
+    // stage calls. The reads ledger is what gives `DW0813` its document-side
+    // binding: every building metric these checks rest a verdict on records
+    // that it did.
     if c.geometry_brief.is_some() || c.layout_graph.is_some() || c.site_plan.is_some() {
         // ONE run-scoped ledger across stages 2, 3 and 4. That is what closes
         // the residual `dsl::metrics` names in its own module docs: a check
@@ -148,37 +135,27 @@ pub fn validate_campaign_with(
             d.push(notice);
         }
     }
-    // DSL v0.8 (spec-0025): the declared story forks and the per-node
+    // spec-0025: the declared story forks and the per-node
     // `happening`. Structural only — the branch proofs themselves (`DW048x`) are
     // compiler-tier, because they need the branch/flag flow model.
-    if is_v08(c.quest_plan.dsl_version.as_str()) {
-        branch_point_checks(c, &mut d);
-    }
-    // DSL v0.8: a `collect` may adopt a prefab container, which puts a
+    branch_point_checks(c, &mut d);
+    // A `collect` may adopt a prefab container, which puts a
     // second positional filler on the same anchor a `loot` entry can name.
-    if is_v08(c.quests.dsl_version.as_str()) {
-        collect_container_claim_checks(c, &mut d);
-    }
-    if is_v08(c.quests.dsl_version.as_str()) || is_v08(c.dialogue.dsl_version.as_str()) {
-        happening_subject_checks(c, &mut d);
-    }
-    // DSL v0.8 (spec-0016 §1): what is really in the
-    // flask. The status-effect registry is the same fixed vanilla list v0.4 uses,
+    collect_container_claim_checks(c, &mut d);
+    happening_subject_checks(c, &mut d);
+    // spec-0016 §1: what is really in the
+    // flask. The status-effect registry is the same fixed vanilla list,
     // and the potion registry is complete in-crate, so no injected registry is
     // needed.
-    if is_v08(c.classes.dsl_version.as_str()) {
-        let effects_reg = VendoredEffectRegistry::v1_21_11();
-        kit_potion_checks(c, &effects_reg, &mut d);
-    }
-    // DSL v0.10 (spec-0031): the stage-5 lethal volumes. Structural only — the
+    let effects_reg = VendoredEffectRegistry::v1_21_11();
+    kit_potion_checks(c, &effects_reg, &mut d);
+    // spec-0031: the stage-5 lethal volumes. Structural only — the
     // completability half (`DW0510` the forced route, `DW0511` the respawn seat)
     // is compiler-tier, because it needs the solved layout.
-    if is_v10(c.quests.dsl_version.as_str()) {
-        lethal_volume_checks(c, anchors, &mut d);
-        // DSL v0.10 (spec-0032): a shop stands on a prefab anchor, and an anchor
-        // no bound prefab provides is the same defect a lethal volume's is.
-        shop_anchor_checks(c, anchors, &mut d);
-    }
+    lethal_volume_checks(c, anchors, &mut d);
+    // spec-0032: a shop stands on a prefab anchor, and an anchor
+    // no bound prefab provides is the same defect a lethal volume's is.
+    shop_anchor_checks(c, anchors, &mut d);
 
     d
 }
@@ -827,17 +804,16 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
-        if !is_supported_version(version) {
+        if version != DSL_VERSION {
             d.push(Diagnostic::error(
                 codes::DSL_VERSION,
                 expected.name(),
                 "/dsl_version",
                 format!(
-                    "unsupported dsl_version `{version}`, expected one of {:?}",
-                    // The ledger minus its reservations: a reserved number is IN
-                    // the ledger and refused, so listing it here would answer a
-                    // refusal with advice to try something refused again.
-                    crate::accepted_versions().collect::<Vec<_>>()
+                    "dsl_version `{version}` is not the one this engine accepts — set it to \
+                     `{DSL_VERSION}` and revise the document against that surface. An engine \
+                     accepts exactly the number it implements (ADR-0024); a document written \
+                     for another number is built by the engine that implements that number."
                 ),
             ));
         }
@@ -1475,53 +1451,10 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let plan = &c.quest_plan.content;
     let planned_ids: BTreeSet<&str> = plan.quests.iter().map(|q| q.id.as_str()).collect();
 
-    // Optional quests (spec-0051) are legal at `OPTIONAL_QUESTS_SINCE` and
-    // refused below it, byte-for-byte as they always were.
-    //
-    // The fence is a WELLFORMEDNESS rule, so `DW0133` stays `every_version`
-    // (see [`crate::diagnostic::Binds`]): it judges what the document says
-    // against the version that document declares, and its verdict is a function
-    // of the campaign alone. Fencing it as an obligation would do the opposite
-    // of what is wanted — it would stop rejecting `mandatory: false` in a 0.12
-    // campaign, which is the surface's whole reservation.
-    let optional_ok = is_v17(c.quest_plan.dsl_version.as_str());
-    if !optional_ok {
-        for (i, q) in plan.quests.iter().enumerate() {
-            if !q.mandatory {
-                d.push(Diagnostic::error(
-                    codes::NON_MANDATORY,
-                    "quest-plan",
-                    format!("/content/quests/{i}/mandatory"),
-                    format!(
-                        "quest `{}` sets `mandatory: false`, which requires dsl_version {} and \
-                         this stage declares `{}` — raise this stage's `dsl_version` to {}, or \
-                         set `mandatory: true` (below {} every quest is on the critical path)",
-                        q.id,
-                        OPTIONAL_QUESTS_SINCE,
-                        c.quest_plan.dsl_version,
-                        OPTIONAL_QUESTS_SINCE,
-                        OPTIONAL_QUESTS_SINCE,
-                    ),
-                ));
-            }
-        }
-    }
-
-    // The partition, once it is legal. `spine()` is the ONE authority on which
-    // quests the finale cannot fire without; `mandatory` is the author's claim
-    // about the same set. Below the fence the two coincide by refusal, so this
-    // is inert on every campaign that predates the surface.
-    // `optional()` is the ONE authority, exactly as `spine()` is for the other
-    // half. Below the fence the set is forced empty here rather than there,
-    // because the refusal above has already fired and reporting the same
-    // document twice — once as "you may not say this" and once as "and here is
-    // what saying it would mean" — prescribes two different repairs for one
-    // mistake.
-    let optional: BTreeSet<&str> = if optional_ok {
-        plan.optional()
-    } else {
-        BTreeSet::new()
-    };
+    // The partition (spec-0051). `spine()` is the ONE authority on which quests
+    // the finale cannot fire without; `mandatory` is the author's claim about
+    // the same set, and `optional()` is the ONE authority on the other half.
+    let optional: BTreeSet<&str> = plan.optional();
 
     // Dependency edges (only to existing quests; dangling handled elsewhere).
     let edges: BTreeMap<&str, Vec<&str>> = plan
@@ -1867,202 +1800,14 @@ fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // Rule group 5 — reserved values / fields
 // ---------------------------------------------------------------------------
 
-fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    // The v0.3 verbs (`kill`/`collect`/`interact`, `give-item`/`set-flag`/
-    // `spawn-wave`) are implemented under dsl_version 0.3.0 and reserved under
-    // 0.2.0.
-    let v03 = is_v03(c.quests.dsl_version.as_str());
-    for (i, q) in c.quests.content.quests.iter().enumerate() {
-        for (j, obj) in q.objectives.iter().enumerate() {
-            if let Some(name) = obj.v03_verb()
-                && !v03
-            {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("/content/quests/{i}/objectives/{j}/type"),
-                    format!(
-                        "objective type `{name}` requires dsl_version 0.3.0 — raise this stage's \
-                         `dsl_version` to at least 0.3.0, or remove the objective"
-                    ),
-                ));
-            }
-        }
-        for_each_effect(q, |path, eff| {
-            if let Some(name) = eff.v03_effect()
-                && !v03
-            {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("/content/quests/{i}/{path}/type"),
-                    format!(
-                        "effect `{name}` requires dsl_version 0.3.0 — raise this stage's \
-                         `dsl_version` to at least 0.3.0, or remove the effect"
-                    ),
-                ));
-            }
-        });
-    }
-
-    reserved_v04(c, d);
-    reserved_v05(c, d);
-    reserved_v06(c, d);
-    reserved_v07(c, d);
-    reserved_v08(c, d);
-    reserved_v09(c, d);
-    reserved_v10(c, d);
-    reserved_v11(c, d);
-    reserved_v12(c, d);
-    reserved_v13(c, d);
-    reserved_v14(c, d);
-    reserved_v15(c, d);
-    reserved_v16(c, d);
-    press_answer_checks(c, d);
-    press_obligation_checks(c, d);
-}
-
-/// DSL v0.12 reserved-feature gating (spec-0042): the **`open-way`** effect.
-///
-/// One verb and one stage — the effect is written in stage-5 bundles at every
-/// nesting depth, so the fence reads the `quests` document's own `dsl_version`
-/// and rides [`crate::stages::for_each_campaign_effect`], the closed effect
-/// enumeration. A hand-written walk over the roots this function's author
-/// happened to remember is how a fence comes to be narrower than the surface it
-/// fences; this one is exactly as total as the verb.
-///
-/// **No requirement half.** Nothing obliges a campaign to open a way, and a
-/// campaign that opens none emits what it always emitted — no fill, no region
-/// event, no ways ledger. The obligations this surface does carry belong to the
-/// *piece* and are raised by the compiler at every version (`DW0547`,
-/// `DW0548`, `DW0549`), because a campaign below 0.12.0 cannot reach them: it
-/// cannot stage an `open-way` at all, and a piece whose way nothing opens is
-/// content rather than a defect (spec-0042 §2.5).
-/// The spec-0049 map-pipeline documents exist only at `dsl_version` 0.13.0.
-///
-/// A whole DOCUMENT is fenced here rather than a field, which is the only shape
-/// the fence has for a stage that did not exist: an older campaign has no
-/// `layout-graph.json`, so there is nothing on it to grandfather and nothing it
-/// could have been judged against. The refusal is `DW0141` like every other
-/// surface used below the version that introduced it, and it names the document
-/// rather than a path inside it, because raising one field's version would not
-/// make the file legal.
-fn reserved_v13(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    for (stage, version) in [
-        (
-            Stage::GeometryBrief,
-            c.geometry_brief.as_ref().map(|e| e.dsl_version.as_str()),
-        ),
-        (
-            Stage::LayoutGraph,
-            c.layout_graph.as_ref().map(|e| e.dsl_version.as_str()),
-        ),
-    ] {
-        let Some(version) = version else { continue };
-        if is_v13(version) {
-            continue;
-        }
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            stage.name(),
-            "/dsl_version",
-            format!(
-                "a `{name}` document requires dsl_version 0.13.0 and this one declares \
-                 `{version}` — raise this document's own `dsl_version` to 0.13.0, or delete the \
-                 file. It is a document of the map pipeline, which states a campaign's space \
-                 before any coordinate exists; no earlier version has anywhere to put it.",
-                name = stage.name(),
-            ),
-        ));
-    }
-}
-
-/// The spec-0049 site plan exists only at `dsl_version` 0.14.0.
-///
-/// A whole DOCUMENT is fenced, on the same terms as its two siblings one version
-/// below: an older campaign has no `site-plan.json`, so there is nothing on it
-/// to grandfather and nothing it could have been judged against.
-fn reserved_v14(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let Some(version) = c.site_plan.as_ref().map(|e| e.dsl_version.as_str()) else {
-        return;
-    };
-    if is_v14(version) {
-        return;
-    }
-    d.push(Diagnostic::error(
-        codes::RESERVED,
-        Stage::SitePlan.name(),
-        "/dsl_version",
-        format!(
-            "a `site-plan` document requires dsl_version 0.14.0 and this one declares \
-             `{version}` — raise this document's own `dsl_version` to 0.14.0, or delete the \
-             file. It is the geometric embedding of the layout graph, and a campaign at 0.13.0 \
-             states its space as a graph and has nowhere to put the embedding: that is the \
-             ordering, and it is why the two are separate versions rather than one."
-        ),
-    ));
-}
-
-/// The spec-0050 detail plan exists only at `dsl_version` 0.15.0.
-///
-/// A whole DOCUMENT is fenced, on the same terms as the three map-pipeline
-/// documents below it: an older campaign has no `detail-plan.json`, so there is
-/// nothing on it to grandfather and nothing it could have been judged against.
-fn reserved_v15(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let Some(version) = c.detail_plan.as_ref().map(|e| e.dsl_version.as_str()) else {
-        return;
-    };
-    if is_v15(version) {
-        return;
-    }
-    d.push(Diagnostic::error(
-        codes::RESERVED,
-        Stage::DetailPlan.name(),
-        "/dsl_version",
-        format!(
-            "a `detail-plan` document requires dsl_version 0.15.0 and this one declares \
-             `{version}` — raise this document's own `dsl_version` to 0.15.0, or delete the \
-             file. It states which piece fills which of the site plan's places, and a campaign \
-             at 0.14.0 has the whole map and no way to detail a part of it: that is the \
-             ordering, and it is why the two are separate versions rather than one."
-        ),
-    ));
-}
-
-/// The spec-0026 **horizon library** exists only at `dsl_version` 0.16.0, and
-/// its params are range-checked here.
-///
-/// Unlike its four neighbours this fences a FIELD rather than a document, so
-/// the two halves are different questions. The fence asks whether the
-/// declaration needs the new surface at all — `"void"` and `"ocean"` predate it
-/// and stay writable at 0.6.0, byte-identical, which is what keeps every shipped
-/// campaign compiling. The param check asks whether what was written is
-/// buildable, and it runs only above the fence, because below it there is
-/// nothing to check.
-fn reserved_v16(c: &Campaign, d: &mut Vec<Diagnostic>) {
+/// The spec-0026 **horizon library**: a declared horizon's params are
+/// range-checked here, and a param that belongs to another base is refused.
+fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     use crate::stages::{HorizonBase, horizon_defaults};
 
     let Some(h) = c.world.content.horizon.as_ref() else {
         return;
     };
-    let version = c.world.dsl_version.as_str();
-    if !is_v16(version) {
-        if h.needs_horizon_library() {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "world",
-                "/content/horizon",
-                format!(
-                    "this `horizon` needs dsl_version 0.16.0 and the world stage declares \
-                     `{version}` — raise this stage's `dsl_version` to 0.16.0, or write \
-                     `\"void\"` or `\"ocean\"`, which are the two the older surface had. A \
-                     horizon below 0.16.0 is one of those two names and nothing else: there is \
-                     no object form and no base that builds terrain."
-                ),
-            ));
-        }
-        return;
-    }
 
     let r = h.resolved();
 
@@ -2165,138 +1910,6 @@ fn reserved_v16(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     horizon_defaults::RIM_HEIGHT_MAX,
                 ),
             ));
-        }
-    }
-}
-
-fn reserved_v12(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    if is_v12(c.quests.dsl_version.as_str()) {
-        return;
-    }
-    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-        let Some(verb) = eff.v12_effect() else {
-            return;
-        };
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            path.to_string(),
-            format!(
-                "the `{verb}` effect (DSL v0.12, spec-0042: a campaign opening a placed piece's \
-                 contingent way) requires dsl_version 0.12.0 — raise this stage's `dsl_version` \
-                 to 0.12.0, or remove the effect"
-            ),
-        ));
-    });
-}
-
-/// DSL v0.11 reserved-feature gating. **Two surfaces land in this version**, and
-/// this is the one fence for both:
-///
-/// * spec-0034's per-body `traversal` declaration — what a body can do when it
-///   moves — on the stage-2 NPC and the stage-5 actor;
-/// * the **press-answer lift** — a `narrate` `actionbar` style and a trigger's
-///   `audience: presser`.
-///
-/// **Fenced per stage, because the surface is per stage.** The stage-2 NPC's
-/// traversal declaration is gated on the `npcs` document's own `dsl_version` and
-/// the stage-5 actor's on the `quests` document's, so a campaign may adopt the
-/// surface one stage at a time — which is what keeps every 0.2–0.10 campaign
-/// compiling untouched. The press-answer lift is carried entirely by stage-5
-/// documents, so its fence reads the `quests` version alone.
-///
-/// The press-answer additions are one capability and share one fence: without
-/// the channel a press answer cannot be written where a player reads replies,
-/// and without the addressee it is broadcast to a party three quarters of whom
-/// are elsewhere. Together they are what makes `close-gate.sealed_hint`
-/// expressible as an ordinary trigger.
-///
-/// Declaring any of it below 0.11.0 is `DW0141`. **The version does have a
-/// requirement half**, and it is not this function's: at 0.11.0 and above a
-/// sealed body nothing answers is `DW0429`, raised unconditionally by
-/// [`press_obligation_checks`] and fenced by [`crate::fence`] off the code's own
-/// [`crate::Binds::Since`] 11. Nothing obliges a body to declare traversal, and
-/// nothing obliges a campaign to adopt either half of the lift — the obligation
-/// binds a campaign that has ALREADY declared a sealed body, once its quests
-/// stage reaches 0.11.0.
-fn reserved_v11(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    // spec-0034: the per-body `traversal` declaration, stage 2.
-    if !is_v11(c.npcs.dsl_version.as_str()) {
-        for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-            if npc.traversal.is_none() {
-                continue;
-            }
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "npcs",
-                format!("/content/npcs/{i}/traversal"),
-                format!(
-                    "a per-body `traversal` declaration (what npc `{}` can do when it moves) \
-                     requires dsl_version 0.11.0 — raise this stage's `dsl_version` to 0.11.0, or \
-                     remove the field",
-                    npc.id
-                ),
-            ));
-        }
-    }
-    if !is_v11(c.quests.dsl_version.as_str()) {
-        for (i, actor) in c.quests.content.actors.iter().enumerate() {
-            if actor.traversal.is_none() {
-                continue;
-            }
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "quests",
-                format!("/content/actors/{i}/traversal"),
-                format!(
-                    "a per-body `traversal` declaration (what actor `{}` can do when it moves) \
-                     requires dsl_version 0.11.0 — raise this stage's `dsl_version` to 0.11.0, or \
-                     remove the field",
-                    actor.id
-                ),
-            ));
-        }
-    }
-    // The press-answer lift, stage 5. Both halves ride the `quests` version, so
-    // one guard carries them — and it is a SEPARATE guard from the actor
-    // traversal one above rather than a shared `if`, because the two surfaces
-    // are fenced independently and a future stage move must not silently take
-    // the other with it.
-    if !is_v11(c.quests.dsl_version.as_str()) {
-        // The style rides `for_each_campaign_effect`, so a `narrate` nested
-        // inside a `sequence` step or an `on_arrive` bundle is fenced exactly
-        // like a top-level one — the fence is as total as the surface.
-        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-            if matches!(
-                eff,
-                QuestEffect::Narrate {
-                    style: Some(NarrateStyle::Actionbar),
-                    ..
-                }
-            ) {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("{path}/style"),
-                    "the `actionbar` narrate style (the reply strip above the hotbar) requires \
-                     dsl_version 0.11.0 — raise this stage's `dsl_version` to 0.11.0, or use \
-                     `chat`/`title`/`subtitle`"
-                        .to_string(),
-                ));
-            }
-        });
-        for (i, t) in c.quests.content.triggers.iter().enumerate() {
-            if t.addresses_presser() {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("/content/triggers/{i}/audience"),
-                    "a trigger `audience` of `presser` (the effects run as the one player who \
-                     clicked, instead of addressing the party) requires dsl_version 0.11.0 — \
-                     raise this stage's `dsl_version` to 0.11.0, or remove the field"
-                        .to_string(),
-                ));
-            }
         }
     }
 }
@@ -2687,160 +2300,6 @@ fn item_gate_class_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             ));
         }
     }
-}
-
-/// DSL v0.10 reserved-feature gating (spec-0031). **Two surfaces land in this
-/// version**, and this is the one fence for both:
-///
-/// * runtime state — the stage-5 `state[]` declaration, the
-///   `set-state`/`add-state`/`clear-state` verbs, and the `requires_state`
-///   comparison on every gate consumer;
-/// * the campaign-wide `on_death` bundle — effect root R7, the effects that run
-///   at the moment a player dies;
-/// * the stage-5 `lethal_volumes` declaration — a box that kills whatever enters
-///   it;
-/// * the status-effect pair `give-effect` / `clear-effect` and the region
-///   `teleport` — three more verbs reported by `v10_effect`, so they ride the
-///   same one walk rather than adding a fence of their own.
-/// * spec-0032's trade and recovery surface — the stage-5 `shops` and `stakes`
-///   declarations, the `drop-stake` verb, and a datum's player-visible `name`.
-///
-/// The same asymmetry every version ledger uses: *declaring* any of it below
-/// 0.10.0 is `DW0141`. There is no requirement half — nothing obliges a campaign
-/// to hold a datum, a death beat or a killing box, and one that declares none of
-/// them emits exactly
-/// what it emitted before (no scoreboard objective, no guard clause, no
-/// function, the whole `dw.death_seen` half of the death edge absent, and no
-/// lethal tick call), which is what keeps every 0.2–0.9 campaign's datapack
-/// byte-for-byte unchanged.
-///
-/// The `requires_state` half reads the gates from
-/// [`for_each_gate`](crate::gate::for_each_gate), the closed consumer
-/// enumeration, rather than from a list of the sites this function's author
-/// happened to remember: the fence is exactly as total as the surface.
-fn reserved_v10(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let quests_ok = is_v10(c.quests.dsl_version.as_str());
-    let dialogue_ok = is_v10(c.dialogue.dsl_version.as_str());
-    if quests_ok && dialogue_ok {
-        return;
-    }
-    if !quests_ok && !c.quests.content.on_death.is_empty() {
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            "/content/on_death".to_string(),
-            "the campaign-wide `on_death` bundle (the effects that run at the moment a player \
-             dies) requires dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or \
-             remove the section"
-                .to_string(),
-        ));
-    }
-    if !quests_ok && !c.quests.content.lethal_volumes.is_empty() {
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            "/content/lethal_volumes".to_string(),
-            "a `lethal_volumes` declaration (a box that kills whatever enters it) requires \
-             dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or remove the field"
-                .to_string(),
-        ));
-    }
-    if !quests_ok && !c.quests.content.shops.is_empty() {
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            "/content/shops".to_string(),
-            "the stage-5 `shops` declaration (an interaction point that opens a list of gated \
-             offers) requires dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or \
-             remove the section"
-                .to_string(),
-        ));
-    }
-    if !quests_ok && !c.quests.content.stakes.is_empty() {
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            "/content/stakes".to_string(),
-            "the stage-5 `stakes` declaration (what a death forfeits and how it comes back) \
-             requires dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or remove \
-             the section"
-                .to_string(),
-        ));
-    }
-    if !quests_ok
-        && let Some((i, s)) = c
-            .quests
-            .content
-            .state
-            .iter()
-            .enumerate()
-            .find(|(_, s)| s.name.is_some())
-    {
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            format!("/content/state/{i}/name"),
-            format!(
-                "a runtime datum's player-visible `name` (which makes `{}` a currency the player \
-                 reads on the action bar) requires dsl_version 0.10.0 — raise this stage's \
-                 `dsl_version` to 0.10.0, or remove the field",
-                s.id.as_str()
-            ),
-        ));
-    }
-    if !quests_ok && !c.quests.content.state.is_empty() {
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            "/content/state".to_string(),
-            "the stage-5 `state` declaration (named, scoped, integer-valued runtime data) \
-             requires dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or remove \
-             the section"
-                .to_string(),
-        ));
-    }
-    crate::gate::for_each_gate(c, &mut |site, gate| {
-        if gate.requires_state.is_empty() {
-            return;
-        }
-        let stage = site.consumer.stage();
-        let staged_ok = if stage == "dialogue" {
-            dialogue_ok
-        } else {
-            quests_ok
-        };
-        if staged_ok {
-            return;
-        }
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            stage,
-            format!("{}/requires_state", site.path),
-            format!(
-                "a `requires_state` numeric gate on a {} requires dsl_version 0.10.0 — raise \
-                 this stage's `dsl_version` to 0.10.0, or remove the comparison",
-                site.consumer.label()
-            ),
-        ));
-    });
-    if quests_ok {
-        return;
-    }
-    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-        let Some(verb) = eff.v10_effect() else {
-            return;
-        };
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            path.to_string(),
-            format!(
-                "the `{verb}` effect (DSL v0.10, spec-0031: runtime state, status effects and \
-                 the region teleport) requires dsl_version 0.10.0 — raise this stage's \
-                 `dsl_version` to 0.10.0, or remove the effect"
-            ),
-        ));
-    });
 }
 
 /// DSL v0.10 runtime-state checks (spec-0031): every reference resolves, every
@@ -3379,858 +2838,112 @@ fn check_player_state_not_scheduled(
     }
 }
 
-/// DSL v0.9 reserved-feature gating: the
-/// declared-drops surface — `drops[]` on a wave mob and on an actor, and the
-/// `collect` `dropped_by` that sources a quest item off a body instead of out of
-/// a box.
-///
-/// The same asymmetry every version ledger uses: *declaring* any of it below
-/// 0.9.0 is `DW0141`. There is no requirement half — a campaign that declares no
-/// drops keeps writing drop chance `0.0` on every slot, which is byte-for-byte
-/// what pre-0.9 emission wrote.
-fn reserved_v09(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    if is_v09(c.quests.dsl_version.as_str()) {
-        return;
-    }
-    for (i, w) in c.quests.content.waves.iter().enumerate() {
-        for (k, m) in w.mobs.iter().enumerate() {
-            if m.drops.is_empty() {
-                continue;
-            }
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "quests",
-                format!("/content/waves/{i}/mobs/{k}/drops"),
-                "a wave mob's `drops` (the declared subset an elite or boss leaves behind) \
-                 requires dsl_version 0.9.0 — raise this stage's `dsl_version` to 0.9.0, or \
-                 remove the field"
-                    .to_string(),
-            ));
-        }
-    }
-    for (i, a) in c.quests.content.actors.iter().enumerate() {
-        if a.drops.is_empty() {
-            continue;
-        }
+/// Stage-1 `horizon`/`boundary` validation (spec-0013), the party size
+/// (spec-0018) and the declared difficulty.
+fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // spec-0018: a delve is played by ONE party of 1–4, so a declared
+    // mandatory size outside that range can never be honoured.
+    if let Some(n) = c.world.content.min_players
+        && !(1..=4).contains(&n)
+    {
         d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            format!("/content/actors/{i}/drops"),
-            "an actor's `drops` (the declared subset an elite or boss leaves behind) requires \
-             dsl_version 0.9.0 — raise this stage's `dsl_version` to 0.9.0, or remove the field"
-                .to_string(),
-        ));
-    }
-    for (i, q) in c.quests.content.quests.iter().enumerate() {
-        for (j, o) in q.objectives.iter().enumerate() {
-            if o.collect_dropped_by().is_none() {
-                continue;
-            }
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "quests",
-                format!("/content/quests/{i}/objectives/{j}/dropped_by"),
-                "a `collect` `dropped_by` (the wave whose declared drop provides this item, in \
-                 place of a container) requires dsl_version 0.9.0 — raise this stage's \
-                 `dsl_version` to 0.9.0, or remove the field"
-                    .to_string(),
-            ));
-        }
-    }
-}
-
-/// DSL v0.7 reserved-feature gating (spec-0020): the per-quest `cast` ledger,
-/// plus the `interact.missing_item_hint` empty-hand narration.
-///
-/// Note the asymmetry with the deprecation window. *Declaring* a ledger below
-/// v0.7 is `DW0141` like any other newer construct — the version contract stays
-/// exact. What the window (`DW0465`, compiler tier) forgives is the **absence**
-/// of a ledger in a pre-0.7 campaign: those keep building, with a warning, for
-/// one version.
-fn reserved_v07(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    if is_v07(c.quests.dsl_version.as_str()) {
-        return;
-    }
-    for (i, w) in c.quests.content.waves.iter().enumerate() {
-        if w.tier.is_none() {
-            continue;
-        }
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            format!("/content/waves/{i}/tier"),
-            "a wave `tier` (`elite`/`boss` — what the validation ladder's floor gate holds the \
-             encounter to) requires dsl_version 0.7.0 — raise this stage's `dsl_version` to \
-             0.7.0, or remove the field"
-                .to_string(),
-        ));
-    }
-    for (i, q) in c.quests.content.quests.iter().enumerate() {
-        for (j, o) in q.objectives.iter().enumerate() {
-            if let Objective::Interact {
-                missing_item_hint: Some(_),
-                ..
-            } = o
-            {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("/content/quests/{i}/objectives/{j}/missing_item_hint"),
-                    "`interact.missing_item_hint` (the line narrated when a player clicks \
-                     without the required item in hand) requires dsl_version 0.7.0 — raise this \
-                     stage's `dsl_version` to 0.7.0, or remove the field"
-                        .to_string(),
-                ));
-            }
-        }
-        if q.cast.is_empty() {
-            continue;
-        }
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            format!("/content/quests/{i}/cast"),
-            "the per-quest `cast` ledger (where each NPC is, what they are doing, and what their \
-             right-click offers) requires dsl_version 0.7.0 — raise this stage's `dsl_version` to \
-             0.7.0"
-                .to_string(),
-        ));
-    }
-}
-
-/// DSL v0.6 reserved-feature gating + validation. Several independent,
-/// stage-gated feature groups land under `dsl_version 0.6.0`, each rejected with
-/// `DW0141` in a pre-0.6 campaign (all fields default to absent/empty, so a
-/// v0.5-or-earlier campaign that uses none is byte-identical):
-/// - **spec-0013 (stage 1)**: `horizon` + `boundary`. Under a v0.6 world,
-///   `horizon: "ocean"` requires a `boundary` (`DW0320`) and `boundary.margin`
-///   must lie in `0..=64` (`DW0321`).
-/// - **spec-0012 / spec-0014 (stages 5/6)**: the `set-checkpoint` effect, the
-///   `begin-stealth`/`end-stealth` verbs, the `play-sound` effect and the
-///   `narrate` `art` style. (Sound-id `DW0326` and art-glyph `DW0328` are
-///   compiler-side checks.)
-/// - **spec-0014 (stage 5)**: scripted `actors` + the staging effects
-///   (`spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`, `sequence`).
-/// - **stage 5**: the per-effect `requires_flags` flag gate on
-///   quest/trigger effects (see [`reserved_v06_effect_flags`]).
-fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    reserved_v06_world(c, d);
-    reserved_v06_effect_flags(c, d);
-}
-
-/// Per-effect `requires_flags` is a v0.6 quests-stage surface: any
-/// quest effect (`on_objective_complete` / `on_complete`) or environment-trigger
-/// effect that carries a non-empty `requires_flags` under a pre-0.6 quests stage
-/// is reserved (`DW0141`). `campaign-complete` cannot carry the field at all.
-///
-/// `forbids_flags` (the negative gate) is likewise a v0.6 surface **everywhere
-/// it is accepted** — objectives, environment triggers, quest/trigger effects,
-/// and dialogue options (the dialogue-stage form is gated on the dialogue
-/// stage's version, mirroring how dialogue `requires_flags` was v0.4-gated).
-fn reserved_v06_effect_flags(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    if !is_v06(c.dialogue.dsl_version.as_str()) {
-        for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
-            for (j, node) in t.nodes.iter().enumerate() {
-                for (k, opt) in node.options.iter().enumerate() {
-                    if !opt.forbids_flags.is_empty() {
-                        d.push(Diagnostic::error(
-                            codes::RESERVED,
-                            "dialogue",
-                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/forbids_flags"),
-                            "dialogue option `forbids_flags` (negative flag gating) requires \
-                             dsl_version 0.6.0 — raise this stage's `dsl_version` to 0.6.0, or \
-                             remove the field"
-                                .to_string(),
-                        ));
-                    }
-                }
-            }
-        }
-    }
-    if is_v06(c.quests.dsl_version.as_str()) {
-        return;
-    }
-    let req_msg = "effect `requires_flags` (per-effect flag gating) requires dsl_version 0.6.0 — \
-                   raise this stage's `dsl_version` to 0.6.0, or remove the field";
-    let fbd_msg = "`forbids_flags` (negative flag gating) requires dsl_version 0.6.0 — raise this \
-                   stage's `dsl_version` to 0.6.0, or remove the field";
-    for (i, q) in c.quests.content.quests.iter().enumerate() {
-        for (j, obj) in q.objectives.iter().enumerate() {
-            if !obj.forbids_flags().is_empty() {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("/content/quests/{i}/objectives/{j}/forbids_flags"),
-                    fbd_msg.to_string(),
-                ));
-            }
-        }
-        for_each_effect(q, |path, eff| {
-            if !eff.requires_flags().is_empty() {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("/content/quests/{i}/{path}/requires_flags"),
-                    req_msg.to_string(),
-                ));
-            }
-            if !eff.forbids_flags().is_empty() {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("/content/quests/{i}/{path}/forbids_flags"),
-                    fbd_msg.to_string(),
-                ));
-            }
-        });
-    }
-    for (i, t) in c.quests.content.triggers.iter().enumerate() {
-        // `strike-npc` (the body-targeting trigger form) is a v0.6 surface.
-        if matches!(t.on, crate::stages::TriggerOn::StrikeNpc { .. }) {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "quests",
-                format!("/content/triggers/{i}/on"),
-                "trigger `on: strike-npc` (targeting an NPC's body rather than a cell) requires \
-                 dsl_version 0.6.0 — raise this stage's `dsl_version` to 0.6.0, or use `strike` \
-                 at an anchor"
-                    .to_string(),
-            ));
-        }
-        if !t.forbids_flags.is_empty() {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "quests",
-                format!("/content/triggers/{i}/forbids_flags"),
-                fbd_msg.to_string(),
-            ));
-        }
-        for (m, eff) in t.effects.iter().enumerate() {
-            if !eff.requires_flags().is_empty() {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("/content/triggers/{i}/effects/{m}/requires_flags"),
-                    req_msg.to_string(),
-                ));
-            }
-            if !eff.forbids_flags().is_empty() {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("/content/triggers/{i}/effects/{m}/forbids_flags"),
-                    fbd_msg.to_string(),
-                ));
-            }
-        }
-    }
-}
-
-/// Stage-1 `horizon`/`boundary` gating + validation (spec-0013), plus the
-/// stage-5 v0.6 gating of `actors` and the effect verbs (spec-0012/0014:
-/// `set-checkpoint`, `begin-stealth`/`end-stealth`, `play-sound`, `narrate art`,
-/// and the actor staging verbs; gated on the quests stage). The per-effect
-/// `requires_flags` gate is handled separately in [`reserved_v06_effect_flags`].
-fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    // --- Stage 1: horizon / boundary (spec-0013), gated on the world stage ---
-    if !is_v06(c.world.dsl_version.as_str()) {
-        if c.world.content.horizon.is_some() {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "world",
-                "/content/horizon".to_string(),
-                "world `horizon` requires dsl_version 0.6.0 — raise this stage's `dsl_version` to \
-                 0.6.0, or remove the construct"
-                    .to_string(),
-            ));
-        }
-        if c.world.content.boundary.is_some() {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "world",
-                "/content/boundary".to_string(),
-                "world `boundary` requires dsl_version 0.6.0 — raise this stage's `dsl_version` to \
-                 0.6.0, or remove the construct"
-                    .to_string(),
-            ));
-        }
-        if c.world.content.min_players.is_some() {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "world",
-                "/content/min_players".to_string(),
-                "world `min_players` requires dsl_version 0.6.0 — raise this stage's \
-                 `dsl_version` to 0.6.0, or remove the construct"
-                    .to_string(),
-            ));
-        }
-        if c.world.content.difficulty.is_some() {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "world",
-                "/content/difficulty".to_string(),
-                "world `difficulty` requires dsl_version 0.6.0 — raise this stage's `dsl_version` \
-                 to 0.6.0, or remove the construct"
-                    .to_string(),
-            ));
-        }
-        for (i, a) in c.world.content.areas.iter().enumerate() {
-            if a.mitigation.is_some() {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "world",
-                    format!("/content/areas/{i}/mitigation"),
-                    "area `mitigation` requires dsl_version 0.6.0 — raise this stage's \
-                     `dsl_version` to 0.6.0, or remove the construct"
-                        .to_string(),
-                ));
-            }
-        }
-    } else {
-        // spec-0018: a delve is played by ONE party of 1–4, so a declared
-        // mandatory size outside that range can never be honoured.
-        if let Some(n) = c.world.content.min_players
-            && !(1..=4).contains(&n)
-        {
-            d.push(Diagnostic::error(
-                codes::PARTY_SIZE,
-                "world",
-                "/content/min_players".to_string(),
-                format!(
-                    "`min_players` = {n} is out of range — a delve is played by one party of 1–4, \
-                     so set it to a value in 1..=4 (absent = 1, a party of one)"
-                ),
-            ));
-        }
-        // Declared combat difficulty. `peaceful` is the
-        // one keyword the compiler refuses: on peaceful the server discards every
-        // hostile-category mob as it ticks it — summoned, `NoAI` and
-        // `PersistenceRequired` are all irrelevant — so a peaceful delve is one in
-        // which the entire cast of threats quietly does not exist.
-        if matches!(
-            c.world.content.difficulty,
-            Some(crate::stages::WorldDifficulty::Peaceful)
-        ) {
-            d.push(Diagnostic::error(
-                codes::DIFFICULTY_INVALID,
-                "world",
-                "/content/difficulty".to_string(),
-                "`difficulty: \"peaceful\"` is refused: on peaceful the server discards every \
-                 hostile-category mob as it ticks it — being `/summon`ed, `NoAI` or \
-                 `PersistenceRequired` does not save one — so every wave, hostile actor and \
-                 ambush in this campaign would silently cease to exist. Declare `easy`, `normal` \
-                 or `hard`; for a delve that is genuinely combat-free, simply omit `difficulty` \
-                 (a campaign with no waves already ships peaceful by derivation)"
-                    .to_string(),
-            ));
-        }
-        // A horizon whose ambient a body can ENTER needs a return rule. The
-        // question is the ambient's, never the base's name: an ocean is an
-        // infinite swimmable sea, and a valley's gap floor is walkable ground
-        // that runs to the foot of the rim. `void` is the only base a body
-        // cannot enter, because there is nothing out there to stand on.
-        let entered_base = match crate::stages::horizon_base(&c.world.content.horizon) {
-            crate::stages::HorizonBase::Void => None,
-            crate::stages::HorizonBase::Ocean => Some((
-                "ocean",
-                "an infinite swimmable sea with no return rule lets players wander off the map",
-            )),
-            crate::stages::HorizonBase::Valley => Some((
-                "valley",
-                "the gap floor between the map and the rim is walkable ground, and with no \
-                 return rule a player who steps off the map is simply outside it",
-            )),
-        };
-        if let Some((base, why)) = entered_base
-            && c.world.content.boundary.is_none()
-        {
-            d.push(Diagnostic::error(
-                codes::OCEAN_NO_BOUNDARY,
-                "world",
-                "/content/horizon".to_string(),
-                format!(
-                    "`horizon` base `{base}` needs a `boundary` — {why}. Add a `boundary` (a \
-                     bare `{{}}` uses the default margin), or set `horizon` to `void`"
-                ),
-            ));
-        }
-        // `margin` range check (0..=64).
-        if let Some(b) = &c.world.content.boundary
-            && !(0..=64).contains(&b.margin)
-        {
-            d.push(Diagnostic::error(
-                codes::BOUNDARY_MARGIN,
-                "world",
-                "/content/boundary/margin".to_string(),
-                format!(
-                    "`boundary.margin` = {} is out of range — set it to a value in 0..=64 (16 is \
-                     the default)",
-                    b.margin
-                ),
-            ));
-        }
-    }
-
-    // --- Stage 3: kit-item `carrier` (spec-0018), gated on the classes stage ---
-    if !is_v06(c.classes.dsl_version.as_str()) {
-        for (i, class) in c.classes.content.classes.iter().enumerate() {
-            for (k, item) in class.kit.iter().enumerate() {
-                if item.carrier.is_some() {
-                    d.push(Diagnostic::error(
-                        codes::RESERVED,
-                        "classes",
-                        format!("/content/classes/{i}/kit/{k}/carrier"),
-                        "kit item `carrier` requires dsl_version 0.6.0 — raise this stage's \
-                         `dsl_version` to 0.6.0, or remove the construct"
-                            .to_string(),
-                    ));
-                }
-            }
-        }
-    }
-
-    // --- Stage 5: scripted actors + quest / trigger effects (spec-0012 /
-    //     spec-0014), gated on the quests stage. `check` covers every v0.6 effect
-    //     verb (`set-checkpoint`, `begin-stealth`/`end-stealth`, `play-sound`,
-    //     `spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`, `sequence`
-    //     — via `v06_effect`) and the `narrate` `art` style. ---
-    if !is_v06(c.quests.dsl_version.as_str()) {
-        if !c.quests.content.actors.is_empty() {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "quests",
-                "/content/actors".to_string(),
-                "stage-5 `actors` require dsl_version 0.6.0 — raise this stage's `dsl_version` to \
-                 0.6.0, or remove the actors"
-                    .to_string(),
-            ));
-        }
-        let res = |d: &mut Vec<Diagnostic>, path: String, what: &str| {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "quests",
-                path,
-                format!(
-                    "{what} requires dsl_version 0.6.0 — raise the quests stage's `dsl_version` \
-                     to 0.6.0, or remove the construct"
-                ),
-            ));
-        };
-        let check = |d: &mut Vec<Diagnostic>, path_base: &str, eff: &QuestEffect| {
-            if let Some(name) = eff.v06_effect() {
-                res(d, format!("{path_base}/type"), &format!("effect `{name}`"));
-            }
-            if eff.narrate_art() {
-                res(d, format!("{path_base}/style"), "narrate `style: art`");
-            }
-            // `cutscene.look_at` and the multi-shot `cutscene.shots` list are
-            // additive v0.6 fields on the v0.4 `cutscene` verb — the verb itself
-            // stays v0.4, only the new fields are gated.
-            if eff.cutscene_look_at().is_some() {
-                res(d, format!("{path_base}/look_at"), "cutscene `look_at`");
-            }
-            if eff.cutscene_multi_shot() {
-                res(d, format!("{path_base}/shots"), "cutscene `shots`");
-            }
-            // `move-npc.on_arrive` is an additive v0.6 field on the v0.4
-            // `move-npc` verb, exactly like `cutscene.look_at` above.
-            if eff.move_npc_on_arrive().is_some() {
-                res(d, format!("{path_base}/on_arrive"), "move-npc `on_arrive`");
-            }
-            // `give-item.carrier` (spec-0018) is likewise an additive v0.6 field
-            // on the v0.3 `give-item` verb.
-            if eff.give_carrier().is_some() {
-                res(d, format!("{path_base}/carrier"), "give-item `carrier`");
-            }
-        };
-        for (i, q) in c.quests.content.quests.iter().enumerate() {
-            for (oid, effs) in &q.on_objective_complete {
-                for (m, eff) in effs.iter().enumerate() {
-                    check(
-                        d,
-                        &format!(
-                            "/content/quests/{i}/on_objective_complete/{}/{m}",
-                            oid.as_str()
-                        ),
-                        eff,
-                    );
-                }
-            }
-            for (m, eff) in q.on_complete.iter().enumerate() {
-                check(d, &format!("/content/quests/{i}/on_complete/{m}"), eff);
-            }
-        }
-        for (i, t) in c.quests.content.triggers.iter().enumerate() {
-            for (m, eff) in t.effects.iter().enumerate() {
-                check(d, &format!("/content/triggers/{i}/effects/{m}"), eff);
-            }
-        }
-        // Traps (spec-0011) are a v0.6 stage-5 surface: reserved before 0.6.0.
-        if !c.quests.content.traps.is_empty() {
-            res(d, "/content/traps".to_string(), "the `traps` section");
-        }
-        // Shortcut doors (spec-0016 §2) are a v0.6 stage-5 surface too.
-        if !c.quests.content.shortcuts.is_empty() {
-            res(
-                d,
-                "/content/shortcuts".to_string(),
-                "the `shortcuts` section",
-            );
-        }
-        // Ambushes (spec-0016 §3) likewise.
-        if !c.quests.content.ambushes.is_empty() {
-            res(d, "/content/ambushes".to_string(), "the `ambushes` section");
-        }
-        // Timed gates (spec-0016 §4) likewise.
-        if !c.quests.content.timed_gates.is_empty() {
-            res(
-                d,
-                "/content/timed_gates".to_string(),
-                "the `timed_gates` section",
-            );
-        }
-        // Container fills (spec-0021) are a v0.6 stage-5 surface.
-        if !c.quests.content.loot.is_empty() {
-            res(d, "/content/loot".to_string(), "the `loot` section");
-        }
-        // Actor `equipment` (spec-0021) likewise, and actor `attributes` — the
-        // same v0.4 shape a wave mob's takes, fenced on
-        // the stage the actors themselves are fenced on.
-        for (i, a) in c.quests.content.actors.iter().enumerate() {
-            if a.equipment.is_some() {
-                res(
-                    d,
-                    format!("/content/actors/{i}/equipment"),
-                    "actor `equipment`",
-                );
-            }
-            if a.attributes.is_some() {
-                res(
-                    d,
-                    format!("/content/actors/{i}/attributes"),
-                    "actor `attributes`",
-                );
-            }
-        }
-        // Wave-mob `equipment` is a v0.6 stage-5 surface: reserved
-        // before 0.6.0 (the field defaults to absent, so an earlier campaign
-        // that uses none is byte-identical).
-        for (i, w) in c.quests.content.waves.iter().enumerate() {
-            for (k, m) in w.mobs.iter().enumerate() {
-                if m.equipment.is_some() {
-                    res(
-                        d,
-                        format!("/content/waves/{i}/mobs/{k}/equipment"),
-                        "wave-mob `equipment`",
-                    );
-                }
-            }
-            // Bonfire re-seating (spec-0016 §1) is a v0.6 stage-5 surface.
-            if w.respawns_on_rest {
-                res(
-                    d,
-                    format!("/content/waves/{i}/respawns_on_rest"),
-                    "wave `respawns_on_rest`",
-                );
-            }
-            // TD lanes + aggro-edge summoning (spec-0016 §6) are v0.6 too.
-            if w.lane.is_some() {
-                res(d, format!("/content/waves/{i}/lane"), "wave `lane`");
-            }
-            if w.summon.is_some() {
-                res(d, format!("/content/waves/{i}/summon"), "wave `summon`");
-            }
-        }
-    }
-
-    // --- Stage 2: `deferred` NPC entrance, gated on the npcs stage. ---
-    if !is_v06(c.npcs.dsl_version.as_str()) {
-        for (i, n) in c.npcs.content.npcs.iter().enumerate() {
-            if n.deferred {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "npcs",
-                    format!("/content/npcs/{i}/deferred"),
-                    "npc `deferred` requires dsl_version 0.6.0 — raise this stage's \
-                     `dsl_version` to 0.6.0, or remove the field"
-                        .to_string(),
-                ));
-            }
-        }
-    }
-
-    // --- Stage 6: dialogue effects (spec-0012 `set-checkpoint`; play-sound / art
-    //     are quest/trigger-only), gated on the dialogue stage. ---
-    if !is_v06(c.dialogue.dsl_version.as_str()) {
-        for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
-            for (j, node) in t.nodes.iter().enumerate() {
-                for (k, opt) in node.options.iter().enumerate() {
-                    for (m, eff) in opt.effects.iter().enumerate() {
-                        if let Some(name) = eff.v06_effect() {
-                            d.push(Diagnostic::error(
-                                codes::RESERVED,
-                                "dialogue",
-                                format!(
-                                    "/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/type"
-                                ),
-                                format!(
-                                    "dialogue effect `{name}` requires dsl_version 0.6.0 — raise \
-                                     this stage's `dsl_version` to 0.6.0, or remove the construct"
-                                ),
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// DSL v0.5 reserved-feature gating (spec-0010): declared world `time`/`weather`
-/// and per-area `lighting` (stage 1), plus the `set-time`/`set-weather` effect
-/// verbs (stage 5 quests, stage 6 dialogue), are rejected with `DW0141` in a
-/// pre-0.5.0 campaign, gated on the stage that carries them. Additive fields
-/// default to empty, so a v0.4 campaign that uses none is byte-identical. When
-/// `lighting` is present under a v0.5 campaign, `min_light` is range-checked
-/// (1..=14, `DW0196`).
-fn reserved_v05(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let v05_world = is_v05(c.world.dsl_version.as_str());
-    let v05_quests = is_v05(c.quests.dsl_version.as_str());
-    let v05_dialogue = is_v05(c.dialogue.dsl_version.as_str());
-    let res = |d: &mut Vec<Diagnostic>, stage, path: String, what: &str| {
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            stage,
-            path,
+            codes::PARTY_SIZE,
+            "world",
+            "/content/min_players".to_string(),
             format!(
-                "{what} requires dsl_version 0.5.0 — raise this stage's `dsl_version` to 0.5.0, \
-                 or remove the construct"
+                "`min_players` = {n} is out of range — a delve is played by one party of 1–4, \
+                 so set it to a value in 1..=4 (absent = 1, a party of one)"
             ),
         ));
-    };
-
-    // Stage 1 — declared time / weather / per-area lighting.
-    if !v05_world {
-        if c.world.content.time.is_some() {
-            res(d, "world", "/content/time".to_string(), "world `time`");
-        }
-        if c.world.content.weather.is_some() {
-            res(
-                d,
-                "world",
-                "/content/weather".to_string(),
-                "world `weather`",
-            );
-        }
-        for (i, area) in c.world.content.areas.iter().enumerate() {
-            if area.lighting.is_some() {
-                res(
-                    d,
-                    "world",
-                    format!("/content/areas/{i}/lighting"),
-                    "area `lighting`",
-                );
-            }
-        }
-    } else {
-        // Range-check min_light (1..=14) where a lighting block is declared.
-        for (i, area) in c.world.content.areas.iter().enumerate() {
-            if let Some(lighting) = &area.lighting
-                && !(1..=14).contains(&lighting.min_light)
-            {
-                d.push(Diagnostic::error(
-                    codes::LIGHTING_RANGE,
-                    "world",
-                    format!("/content/areas/{i}/lighting/min_light"),
-                    format!(
-                        "area `{}` `lighting.min_light` = {} is out of range — set it to a value \
-                         in 1..=14 (7 is the default)",
-                        area.id, lighting.min_light
-                    ),
-                ));
-            }
-        }
     }
-
-    // Stage 5 — set-time / set-weather quest effects.
-    if !v05_quests {
-        for (i, q) in c.quests.content.quests.iter().enumerate() {
-            for_each_effect(q, |path, eff| {
-                if let Some(name) = eff.v05_effect() {
-                    res(
-                        d,
-                        "quests",
-                        format!("/content/quests/{i}/{path}/type"),
-                        &format!("effect `{name}`"),
-                    );
-                }
-            });
-        }
-    }
-
-    // Stage 6 — set-time / set-weather dialogue effects.
-    if !v05_dialogue {
-        for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
-            for (j, node) in t.nodes.iter().enumerate() {
-                for (k, opt) in node.options.iter().enumerate() {
-                    for (m, eff) in opt.effects.iter().enumerate() {
-                        if let Some(name) = eff.v05_effect() {
-                            res(
-                                d,
-                                "dialogue",
-                                format!(
-                                    "/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/type"
-                                ),
-                                &format!("dialogue effect `{name}`"),
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// DSL v0.4 reserved-feature gating: every v0.4 construct is rejected with
-/// `DW0141` in a pre-0.4.0 campaign, gated on the stage that carries it (mirroring
-/// the v0.3 verb gate above). Additive fields default to empty, so a v0.3
-/// campaign that uses none is byte-identical.
-fn reserved_v04(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let v04_npcs = is_v04(c.npcs.dsl_version.as_str());
-    let v04_quests = is_v04(c.quests.dsl_version.as_str());
-    let v04_dialogue = is_v04(c.dialogue.dsl_version.as_str());
-    let res = |d: &mut Vec<Diagnostic>, stage, path: String, what: &str| {
+    // Declared combat difficulty. `peaceful` is the
+    // one keyword the compiler refuses: on peaceful the server discards every
+    // hostile-category mob as it ticks it — summoned, `NoAI` and
+    // `PersistenceRequired` are all irrelevant — so a peaceful delve is one in
+    // which the entire cast of threats quietly does not exist.
+    if matches!(
+        c.world.content.difficulty,
+        Some(crate::stages::WorldDifficulty::Peaceful)
+    ) {
         d.push(Diagnostic::error(
-            codes::RESERVED,
-            stage,
-            path,
+            codes::DIFFICULTY_INVALID,
+            "world",
+            "/content/difficulty".to_string(),
+            "`difficulty: \"peaceful\"` is refused: on peaceful the server discards every \
+             hostile-category mob as it ticks it — being `/summon`ed, `NoAI` or \
+             `PersistenceRequired` does not save one — so every wave, hostile actor and \
+             ambush in this campaign would silently cease to exist. Declare `easy`, `normal` \
+             or `hard`; for a delve that is genuinely combat-free, simply omit `difficulty` \
+             (a campaign with no waves already ships peaceful by derivation)"
+                .to_string(),
+        ));
+    }
+    // A horizon whose ambient a body can ENTER needs a return rule. The
+    // question is the ambient's, never the base's name: an ocean is an
+    // infinite swimmable sea, and a valley's gap floor is walkable ground
+    // that runs to the foot of the rim. `void` is the only base a body
+    // cannot enter, because there is nothing out there to stand on.
+    let entered_base = match crate::stages::horizon_base(&c.world.content.horizon) {
+        crate::stages::HorizonBase::Void => None,
+        crate::stages::HorizonBase::Ocean => Some((
+            "ocean",
+            "an infinite swimmable sea with no return rule lets players wander off the map",
+        )),
+        crate::stages::HorizonBase::Valley => Some((
+            "valley",
+            "the gap floor between the map and the rim is walkable ground, and with no \
+             return rule a player who steps off the map is simply outside it",
+        )),
+    };
+    if let Some((base, why)) = entered_base
+        && c.world.content.boundary.is_none()
+    {
+        d.push(Diagnostic::error(
+            codes::OCEAN_NO_BOUNDARY,
+            "world",
+            "/content/horizon".to_string(),
             format!(
-                "{what} requires dsl_version 0.4.0 — raise this stage's `dsl_version` to at least \
-                 0.4.0, or remove the construct"
+                "`horizon` base `{base}` needs a `boundary` — {why}. Add a `boundary` (a \
+                 bare `{{}}` uses the default margin), or set `horizon` to `void`"
             ),
         ));
-    };
-
-    // Stage 2 — mannequin skins.
-    if !v04_npcs {
-        for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-            if npc.skin.is_some() {
-                res(d, "npcs", format!("/content/npcs/{i}/skin"), "npc `skin`");
-            }
-        }
     }
-
-    // Stage 5 — objective stealth/prop, wave attributes/effects, v0.4 effects,
-    // named give-item, environment triggers.
-    if !v04_quests {
-        for (i, q) in c.quests.content.quests.iter().enumerate() {
-            for (j, o) in q.objectives.iter().enumerate() {
-                if o.stealth() {
-                    res(
-                        d,
-                        "quests",
-                        format!("/content/quests/{i}/objectives/{j}/stealth"),
-                        "objective `stealth`",
-                    );
-                }
-                if o.prop().is_some() {
-                    res(
-                        d,
-                        "quests",
-                        format!("/content/quests/{i}/objectives/{j}/prop"),
-                        "objective `prop`",
-                    );
-                }
-            }
-            for_each_effect(q, |path, eff| {
-                if let Some(name) = eff.v04_effect() {
-                    res(
-                        d,
-                        "quests",
-                        format!("/content/quests/{i}/{path}/type"),
-                        &format!("effect `{name}`"),
-                    );
-                }
-                if eff.give_item_named() {
-                    res(
-                        d,
-                        "quests",
-                        format!("/content/quests/{i}/{path}/name"),
-                        "give-item `name`",
-                    );
-                }
-            });
-        }
-        for (i, w) in c.quests.content.waves.iter().enumerate() {
-            for (k, m) in w.mobs.iter().enumerate() {
-                if m.attributes.is_some() {
-                    res(
-                        d,
-                        "quests",
-                        format!("/content/waves/{i}/mobs/{k}/attributes"),
-                        "wave-mob `attributes`",
-                    );
-                }
-                if !m.effects.is_empty() {
-                    res(
-                        d,
-                        "quests",
-                        format!("/content/waves/{i}/mobs/{k}/effects"),
-                        "wave-mob `effects`",
-                    );
-                }
-            }
-        }
-        if !c.quests.content.triggers.is_empty() {
-            res(
-                d,
-                "quests",
-                "/content/triggers".to_string(),
-                "environment `triggers`",
-            );
-        }
-    }
-
-    // Stage 6 — dialogue requires_flags + set-flag effect.
-    if !v04_dialogue {
-        for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
-            for (j, node) in t.nodes.iter().enumerate() {
-                for (k, opt) in node.options.iter().enumerate() {
-                    if !opt.requires_flags.is_empty() {
-                        res(
-                            d,
-                            "dialogue",
-                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/requires_flags"),
-                            "dialogue option `requires_flags`",
-                        );
-                    }
-                    for (m, eff) in opt.effects.iter().enumerate() {
-                        if let Some(name) = eff.v04_effect() {
-                            res(
-                                d,
-                                "dialogue",
-                                format!(
-                                    "/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/type"
-                                ),
-                                &format!("dialogue effect `{name}`"),
-                            );
-                        }
-                    }
-                }
-            }
-        }
+    // `margin` range check (0..=64).
+    if let Some(b) = &c.world.content.boundary
+        && !(0..=64).contains(&b.margin)
+    {
+        d.push(Diagnostic::error(
+            codes::BOUNDARY_MARGIN,
+            "world",
+            "/content/boundary/margin".to_string(),
+            format!(
+                "`boundary.margin` = {} is out of range — set it to a value in 0..=64 (16 is \
+                 the default)",
+                b.margin
+            ),
+        ));
     }
 }
 
-/// Visit every quest effect with a relative path fragment.
-fn for_each_effect(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEffect)) {
-    for (key, effs) in &q.on_objective_complete {
-        for (m, eff) in effs.iter().enumerate() {
-            f(format!("on_objective_complete/{key}/{m}"), eff);
+/// Per-area `lighting` (spec-0010): `min_light` is range-checked (1..=14,
+/// `DW0196`).
+fn lighting_range_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // Range-check min_light (1..=14) where a lighting block is declared.
+    for (i, area) in c.world.content.areas.iter().enumerate() {
+        if let Some(lighting) = &area.lighting
+            && !(1..=14).contains(&lighting.min_light)
+        {
+            d.push(Diagnostic::error(
+                codes::LIGHTING_RANGE,
+                "world",
+                format!("/content/areas/{i}/lighting/min_light"),
+                format!(
+                    "area `{}` `lighting.min_light` = {} is out of range — set it to a value \
+                     in 1..=14 (7 is the default)",
+                    area.id, lighting.min_light
+                ),
+            ));
         }
-    }
-    for (m, eff) in q.on_complete.iter().enumerate() {
-        f(format!("on_complete/{m}"), eff);
     }
 }
 
@@ -7369,19 +6082,6 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
         return;
     };
     let stage = Stage::WorldEdits.name();
-    if is_supported_version(env.dsl_version.as_str()) && !is_v06(env.dsl_version.as_str()) {
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            stage,
-            "/dsl_version",
-            format!(
-                "the `world-edits` stage is DSL v0.6 surface (spec-0017) but this document \
-                 declares dsl_version `{}` — set it to `0.6.0` (the stage did not exist before \
-                 v0.6, so an earlier version cannot carry it)",
-                env.dsl_version
-            ),
-        ));
-    }
 
     let mut areas: BTreeSet<&str> = c
         .world
@@ -9451,241 +8151,6 @@ fn loot_checks(
 // DSL v0.8 — branch points, happenings, named endings (spec-0025);
 // the bonfire rest interaction + the class-kit flask (spec-0016 §1)
 // ---------------------------------------------------------------------------
-
-/// DSL v0.8 reserved-feature gating: spec-0025's stage-4 `branch_points`
-/// declaration, per-node `happening` and `campaign-complete` `ending`, plus
-/// spec-0016 §1's bonfire rest-dialog labels (stage 5), the class-kit `flask`
-/// (stage 3), spec-0023's actor `tier` (stage 5) and the `collect`
-/// container adoption (`container` / `item_name` / `fill_count`, stage 5).
-///
-/// Same asymmetry the v0.7 ledger established: *declaring* any of it below 0.8.0
-/// is `DW0141`, so the version contract stays exact and a 0.6/0.7 campaign's
-/// datapack cannot move by a byte. What fires only **at** 0.8.0 is the
-/// requirement side — `DW0481` (a story node with no `happening`) and `DW0480`
-/// (a fork nobody declared).
-fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    if !is_v08(c.quest_plan.dsl_version.as_str()) && !c.quest_plan.content.branch_points.is_empty()
-    {
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quest-plan",
-            "/content/branch_points".to_string(),
-            "the stage-4 `branch_points` declaration (which flags fork the story, where the fork \
-             opens, and what each branch runs to) requires dsl_version 0.8.0 — raise this stage's \
-             `dsl_version` to 0.8.0, or remove the section"
-                .to_string(),
-        ));
-    }
-    if !is_v08(c.quests.dsl_version.as_str()) {
-        // spec-0023: an actor's `tier` — the same `elite`/`boss`
-        // billing a wave declares, on the OTHER shape an elite takes.
-        for (i, a) in c.quests.content.actors.iter().enumerate() {
-            if a.tier.is_none() {
-                continue;
-            }
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "quests",
-                format!("/content/actors/{i}/tier"),
-                "an actor `tier` (`elite`/`boss` — what the validation ladder's floor gate holds \
-                 this fight to) requires dsl_version 0.8.0 — raise this stage's `dsl_version` to \
-                 0.8.0, or remove the field"
-                    .to_string(),
-            ));
-        }
-        for (i, q) in c.quests.content.quests.iter().enumerate() {
-            if q.happening.is_some() {
-                d.push(reserved_happening(
-                    "quests",
-                    format!("/content/quests/{i}/happening"),
-                ));
-            }
-            for (j, o) in q.objectives.iter().enumerate() {
-                if o.happening().is_some() {
-                    d.push(reserved_happening(
-                        "quests",
-                        format!("/content/quests/{i}/objectives/{j}/happening"),
-                    ));
-                }
-                // The `collect` container-adoption trio. Declaring any of it below
-                // 0.8.0 is `DW0141`, so a 0.6/0.7 campaign's chest, its unnamed
-                // item and its single stack cannot move by a byte.
-                if let Objective::Collect {
-                    container,
-                    item_name,
-                    fill_count,
-                    ..
-                } = o
-                {
-                    for (present, field, what) in [
-                        (
-                            container.is_some(),
-                            "container",
-                            "a `collect` `container` (the prefab-placed chest or barrel the \
-                             objective adopts instead of conjuring its own chest)",
-                        ),
-                        (
-                            item_name.is_some(),
-                            "item_name",
-                            "a `collect` `item_name` (the display name the collected item \
-                             carries as a `custom_name` component)",
-                        ),
-                        (
-                            *fill_count != 0,
-                            "fill_count",
-                            "a `collect` `fill_count` (the padding stacks that make the \
-                             container read full)",
-                        ),
-                    ] {
-                        if !present {
-                            continue;
-                        }
-                        d.push(Diagnostic::error(
-                            codes::RESERVED,
-                            "quests",
-                            format!("/content/quests/{i}/objectives/{j}/{field}"),
-                            format!(
-                                "{what} requires dsl_version 0.8.0 — raise this stage's \
-                                 `dsl_version` to 0.8.0, or remove the field"
-                            ),
-                        ));
-                    }
-                }
-            }
-        }
-        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-            if effect_happening(eff).is_some() {
-                d.push(reserved_happening("quests", format!("{path}/happening")));
-            }
-            if let QuestEffect::CampaignComplete {
-                ending: Some(_), ..
-            } = eff
-            {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("{path}/ending"),
-                    "a named `campaign-complete` `ending` requires dsl_version 0.8.0 — raise this \
-                     stage's `dsl_version` to 0.8.0, or remove the field"
-                        .to_string(),
-                ));
-            }
-        });
-    }
-    // spec-0016 §1: the class-kit `flask` a bonfire
-    // rest replenishes, and the bonfire's authorable rest-dialog labels.
-    if !is_v08(c.classes.dsl_version.as_str()) {
-        for (i, cl) in c.classes.content.classes.iter().enumerate() {
-            for (k, item) in cl.kit.iter().enumerate() {
-                if item.flask {
-                    d.push(Diagnostic::error(
-                        codes::RESERVED,
-                        "classes",
-                        format!("/content/classes/{i}/kit/{k}/flask"),
-                        "a class kit `flask` (the recovery item a bonfire rest replenishes) \
-                         requires dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, \
-                         or remove the field"
-                            .to_string(),
-                    ));
-                }
-                // What the bottle actually pours.
-                if item.contents.is_some() {
-                    d.push(Diagnostic::error(
-                        codes::RESERVED,
-                        "classes",
-                        format!("/content/classes/{i}/kit/{k}/contents"),
-                        "kit item potion `contents` (the vanilla `minecraft:potion_contents` \
-                         component — a named potion or a custom-effect list) requires \
-                         dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, or \
-                         remove the field"
-                            .to_string(),
-                    ));
-                }
-            }
-        }
-    }
-    if !is_v08(c.quests.dsl_version.as_str()) {
-        // The line a sealed gate answers a
-        // right-click with. A pre-0.8 campaign still gets the answer — the
-        // compiler's canonical English — it just cannot author the wording.
-        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-            if eff.close_gate_sealed_hint().is_some() {
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("{path}/sealed_hint"),
-                    "a `close-gate` `sealed_hint` (the line the sealed gate answers a right-click \
-                     with) requires dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, \
-                     or remove the field and take the compiler's canonical English"
-                        .to_string(),
-                ));
-            }
-        });
-        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-            let Some(l) = eff.bonfire_labels() else {
-                return;
-            };
-            for (present, field) in [
-                (l.prompt.is_some(), "prompt"),
-                (l.rest_label.is_some(), "rest_label"),
-                (l.save_label.is_some(), "save_label"),
-            ] {
-                if !present {
-                    continue;
-                }
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "quests",
-                    format!("{path}/{field}"),
-                    format!(
-                        "a `bonfire` `{field}` (an authored label on the two-option rest dialog) \
-                         requires dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, \
-                         or remove the field and take the compiler's canonical English"
-                    ),
-                ));
-            }
-        });
-    }
-    if !is_v08(c.dialogue.dsl_version.as_str()) {
-        for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
-            for (j, n) in t.nodes.iter().enumerate() {
-                for (k, o) in n.options.iter().enumerate() {
-                    if o.happening.is_some() {
-                        d.push(reserved_happening(
-                            "dialogue",
-                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/happening"),
-                        ));
-                    }
-                    // The button's hover tooltip — the full line the caption
-                    // stands for.
-                    if o.tooltip.is_some() {
-                        d.push(Diagnostic::error(
-                            codes::RESERVED,
-                            "dialogue",
-                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/tooltip"),
-                            "a dialogue option `tooltip` (the full line vanilla shows in a hover \
-                             box while the button keeps the caption) requires dsl_version 0.8.0 \
-                             — raise this stage's `dsl_version` to 0.8.0, or remove the field"
-                                .to_string(),
-                        ));
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn reserved_happening(stage: &str, path: String) -> Diagnostic {
-    Diagnostic::error(
-        codes::RESERVED,
-        stage,
-        path,
-        "a `happening` declaration (what this node does to the story, as a structured event verb \
-         plus one line of prose) requires dsl_version 0.8.0 — raise this stage's `dsl_version` to \
-         0.8.0, or remove the field"
-            .to_string(),
-    )
-}
 
 /// The `happening` of an effect, for the eleven story-node verbs that carry one.
 pub(crate) fn effect_happening(eff: &QuestEffect) -> Option<&crate::stages::Happening> {

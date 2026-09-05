@@ -23,7 +23,7 @@ fn quests_doc(loot: &str) -> String {
 fn quests_doc_with(loot: &str, actors: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

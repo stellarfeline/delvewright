@@ -83,9 +83,10 @@ fn prefabs_with_pools(tag: &str) -> PathBuf {
 }
 
 /// keep-crawl with its pool area rebound to `pool_id` at a fixed piece count, and
-/// its `open-gate` effect dropped so `anchor/objective` is the area's only
-/// campaign-referenced anchor (one terminal → the straight spine, whose filler
-/// draw is fully determined by the pool's connector membership).
+/// its `open-gate` effect dropped so `anchor/objective` (and the entry hall's own
+/// `anchor/exit`) are the area's only campaign-referenced anchors (one terminal →
+/// the straight spine, whose filler draw is fully determined by the pool's
+/// connector membership).
 fn campaign_on_pool(tag: &str, pool_id: &str, pieces: u32) -> PathBuf {
     campaign_on_pool_with(tag, pool_id, pieces, false)
 }
@@ -111,7 +112,7 @@ fn campaign_on_pool_with(
 
     let mut quests: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(base.join("quests.json")).unwrap()).unwrap();
-    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = serde_json::json!([]);
+    quests["content"]["quests"][1]["on_objective_complete"]["obj/arrive"] = serde_json::json!([]);
 
     let mut documents = serde_json::json!({ "world": world, "quests": quests });
     if use_ambiguous_anchor {

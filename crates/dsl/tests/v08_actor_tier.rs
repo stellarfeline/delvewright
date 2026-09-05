@@ -73,7 +73,7 @@ fn every_tier_keyword_validates_at_v08() {
     for tier in ["ordinary", "elite", "boss"] {
         let raw = raw_with_quests(quests_with_actor_tier(
             &format!(",\n         \"tier\": \"{tier}\""),
-            "0.8.0",
+            "0.19.0",
         ));
         let d = check_campaign(&raw);
         // `DW0469` is the fixture's own pre-existing advisory (a fighting actor
@@ -82,36 +82,6 @@ fn every_tier_keyword_validates_at_v08() {
         assert!(
             d.iter().all(|x| x.code == "DW0469"),
             "`{tier}` must validate clean: {d:#?}"
-        );
-    }
-}
-
-#[test]
-fn an_actor_tier_below_v08_is_dw0141() {
-    let raw = raw_with_quests(quests_with_actor_tier(
-        ",\n         \"tier\": \"elite\"",
-        "0.7.0",
-    ));
-    let d = check_campaign(&raw);
-    let hit = d
-        .iter()
-        .find(|x| x.code == "DW0141")
-        .expect("a pre-0.8 actor `tier` is reserved surface");
-    assert_eq!(hit.stage, "quests");
-    assert_eq!(hit.path, "/content/actors/0/tier");
-    assert!(hit.message.contains("0.8.0"), "{}", hit.message);
-}
-
-#[test]
-fn an_absent_actor_tier_is_clean_at_any_version() {
-    // The byte-identity argument: every campaign that already ships actors keeps
-    // validating exactly as it did, at every version that has actors at all.
-    for version in ["0.6.0", "0.7.0", "0.8.0"] {
-        let raw = raw_with_quests(quests_with_actor_tier("", version));
-        let d = check_campaign(&raw);
-        assert!(
-            d.iter().all(|x| x.code != "DW0141"),
-            "no tier means no reserved-surface finding at {version}: {d:#?}"
         );
     }
 }

@@ -56,7 +56,7 @@ fn world_with_difficulty(value: &str, version: &str) -> String {
 fn quests_with_actor(attrs: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -98,7 +98,7 @@ fn codes(raw: &RawCampaign) -> Vec<String> {
 #[test]
 fn easy_normal_hard_all_validate() {
     for value in ["easy", "normal", "hard"] {
-        let raw = raw_with(Some(&world_with_difficulty(value, "0.6.0")), None);
+        let raw = raw_with(Some(&world_with_difficulty(value, "0.19.0")), None);
         let d = check_campaign(&raw);
         assert!(d.is_empty(), "`{value}` must validate clean: {d:#?}");
     }
@@ -109,7 +109,7 @@ fn easy_normal_hard_all_validate() {
 /// than letting the schema emit "unknown variant".
 #[test]
 fn peaceful_is_rejected_with_its_rationale() {
-    let raw = raw_with(Some(&world_with_difficulty("peaceful", "0.6.0")), None);
+    let raw = raw_with(Some(&world_with_difficulty("peaceful", "0.19.0")), None);
     let d = check_campaign(&raw);
     let hit = d
         .iter()
@@ -130,21 +130,6 @@ fn peaceful_is_rejected_with_its_rationale() {
         "the diagnostic must prescribe the legal keywords: {}",
         hit.message
     );
-}
-
-/// The field is an additive v0.6 surface: declaring it on an older world stage
-/// is `DW0141`, exactly like `horizon` / `boundary` / `min_players`.
-#[test]
-fn difficulty_is_reserved_before_v06() {
-    for version in ["0.2.0", "0.5.0"] {
-        let raw = raw_with(Some(&world_with_difficulty("hard", version)), None);
-        let d = check_campaign(&raw);
-        let hit = d
-            .iter()
-            .find(|x| x.code == "DW0141" && x.path == "/content/difficulty")
-            .unwrap_or_else(|| panic!("difficulty under {version} must be reserved: {d:#?}"));
-        assert!(hit.message.contains("0.6.0"), "{}", hit.message);
-    }
 }
 
 /// A campaign that declares nothing is unchanged — no diagnostic, no field.
@@ -185,7 +170,7 @@ fn actors_without_waves_or_declared_difficulty_warn() {
 #[test]
 fn declared_difficulty_silences_the_actor_warning() {
     let raw = raw_with(
-        Some(&world_with_difficulty("normal", "0.6.0")),
+        Some(&world_with_difficulty("normal", "0.19.0")),
         Some(&quests_with_actor("")),
     );
     assert!(
@@ -208,26 +193,11 @@ fn actor_attributes_validate_under_v06() {
     let attrs =
         r#", "attributes": { "max_health": 200.0, "attack_damage": 12.0, "follow_range": 24.0 }"#;
     let raw = raw_with(
-        Some(&world_with_difficulty("hard", "0.6.0")),
+        Some(&world_with_difficulty("hard", "0.19.0")),
         Some(&quests_with_actor(attrs)),
     );
     let d = check_campaign(&raw);
     assert!(d.is_empty(), "actor attributes must validate clean: {d:#?}");
-}
-
-/// ...and are reserved (`DW0141`) on a pre-0.6 quests stage, like actor
-/// `equipment` — the surface they extend.
-#[test]
-fn actor_attributes_are_reserved_before_v06() {
-    let attrs = r#", "attributes": { "max_health": 200.0 }"#;
-    let quests = quests_with_actor(attrs).replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let raw = raw_with(None, Some(&quests));
-    let d = check_campaign(&raw);
-    assert!(
-        d.iter()
-            .any(|x| x.code == "DW0141" && x.path == "/content/actors/0/attributes"),
-        "actor attributes under 0.5 must be reserved: {d:#?}"
-    );
 }
 
 /// An unknown attribute name is a schema rejection, not a silently-ignored field
@@ -236,7 +206,7 @@ fn actor_attributes_are_reserved_before_v06() {
 fn unknown_actor_attribute_is_a_schema_error() {
     let attrs = r#", "attributes": { "armor_toughness": 8.0 }"#;
     let raw = raw_with(
-        Some(&world_with_difficulty("hard", "0.6.0")),
+        Some(&world_with_difficulty("hard", "0.19.0")),
         Some(&quests_with_actor(attrs)),
     );
     assert!(

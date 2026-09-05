@@ -225,7 +225,7 @@ fn setup(out: &BuildOutput) -> String {
 #[test]
 fn relight_and_timeweather_emit_byte_identically() {
     let mut c = hello_world();
-    c.world.dsl_version = "0.5.0".to_string();
+    c.world.dsl_version = "0.19.0".to_string();
     c.world.content.time = Some(WorldTime::Night);
     c.world.content.weather = Some(WorldWeather::Thunder);
     c.world.content.areas[0].lighting = Some(AreaLighting {
@@ -415,7 +415,7 @@ fn wall_candles() -> Vec<[i32; 3]> {
 #[test]
 fn crit5_dark_with_declared_night_vision_builds() {
     let mut c = hello_world();
-    c.world.dsl_version = "0.6.0".to_string();
+    c.world.dsl_version = "0.19.0".to_string();
     c.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
     // A dark box but the declared mitigation applies → no DW0210 (nav may still
     // object, but the lighting gate must pass).
@@ -489,7 +489,7 @@ fn renamed_potion_kit_item_no_longer_mitigates_dw0210() {
 #[test]
 fn crit7_unsatisfiable_build_fails_dw0211() {
     let mut c = hello_world();
-    c.world.dsl_version = "0.5.0".to_string();
+    c.world.dsl_version = "0.19.0".to_string();
     c.world.content.areas[0].lighting = Some(AreaLighting {
         fixture: Fixture::Torch,
         min_light: 14,
@@ -508,7 +508,7 @@ fn crit7_unsatisfiable_build_fails_dw0211() {
 #[test]
 fn dw0210_night_vision_verdict_is_language_independent() {
     let mut c = hello_world();
-    c.world.dsl_version = "0.6.0".to_string();
+    c.world.dsl_version = "0.19.0".to_string();
     c.world.content.languages = vec!["zh-cn".to_string()];
     c.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
     let dark = dark_box_nbt([11, 6, 11], &[]);
@@ -601,7 +601,7 @@ fn render_plan_lighting_stamp_follows_the_declarations() {
     // input bytes; determinism is same input → same output.)
     let dark = dark_box_nbt([11, 6, 11], &[]);
     let mut c1 = hello_world();
-    c1.world.dsl_version = "0.6.0".to_string();
+    c1.world.dsl_version = "0.19.0".to_string();
     c1.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
     let out1 = build_with_structure(&c1, dark.clone()).expect("declared-mitigation build succeeds");
     let shots1 = stamped_shots(&out1);
@@ -626,7 +626,7 @@ fn render_plan_lighting_stamp_follows_the_declarations() {
     // lighting + mitigation → lit profile, mitigation still recorded (fixtures
     // light the scene, so the render layer must not emulate).
     let mut c2 = hello_world();
-    c2.world.dsl_version = "0.6.0".to_string();
+    c2.world.dsl_version = "0.19.0".to_string();
     c2.world.content.areas[0].lighting = Some(AreaLighting {
         fixture: Fixture::Lantern,
         min_light: 7,
@@ -658,7 +658,7 @@ fn dusk_and_dawn_emit_the_vanilla_tick_form() {
     // make `dusk` a synonym of `night` instead of its own beat.
     for (time, ticks) in [(WorldTime::Dusk, 12000), (WorldTime::Dawn, 23000)] {
         let mut c = hello_world();
-        c.world.dsl_version = "0.5.0".to_string();
+        c.world.dsl_version = "0.19.0".to_string();
         c.world.content.time = Some(time);
         let out = build(&c).expect("a dusk/dawn campaign builds");
         let s = setup(&out);
@@ -703,7 +703,7 @@ fn the_vanilla_keywords_still_emit_keywords() {
         (WorldTime::Midnight, "midnight"),
     ] {
         let mut c = hello_world();
-        c.world.dsl_version = "0.5.0".to_string();
+        c.world.dsl_version = "0.19.0".to_string();
         c.world.content.time = Some(time);
         let s = setup(&build(&c).expect("builds"));
         assert!(

@@ -3,9 +3,24 @@
   "content": {
     "quests": [
       {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/hold-the-yard",
+          "verb": "learns"
+        },
         "id": "quest/hold-the-yard",
         "objectives": [
           {
+            "happening": {
+              "text": "the party completes obj/muster",
+              "verb": "learns"
+            },
             "id": "obj/muster",
             "npc": "npc/keeper",
             "type": "talk-to"
@@ -14,6 +29,10 @@
             "after": [
               "obj/muster"
             ],
+            "happening": {
+              "text": "the party completes obj/purge",
+              "verb": "survives"
+            },
             "hint": "Put the hollow garrison down where it stands.",
             "id": "obj/purge",
             "title": "Hold the Yard",
@@ -23,6 +42,10 @@
         ],
         "on_complete": [
           {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
             "type": "campaign-complete"
           }
         ],
@@ -30,9 +53,17 @@
           "obj/muster": [
             {
               "anchor": "anchor/door",
+              "happening": {
+                "text": "the gate at anchor/door opens",
+                "verb": "opens"
+              },
               "type": "open-gate"
             },
             {
+              "happening": {
+                "text": "wave/garrison arrives",
+                "verb": "arrives"
+              },
               "type": "spawn-wave",
               "wave": "wave/garrison"
             }
@@ -57,6 +88,6 @@
       }
     ]
   },
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "stage": "quests"
 }

@@ -32,7 +32,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_w
 fn quests_doc(mob: &str, actors: &str, collect: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.9.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -157,32 +157,6 @@ fn declared_slot_is_guaranteed_and_the_rest_stays_zero() {
     assert!(
         !spawn.contains("mainhand:1.0f"),
         "1.0f is not the guaranteed-drop value:\n{spawn}"
-    );
-}
-
-/// No `drops[]` → the pre-0.9 string, every slot at `0.0f`, and no loot table
-/// anywhere in the datapack.
-#[test]
-fn undeclared_drops_are_byte_identical_to_pre_0_9() {
-    let out = build_hw(
-        r#"{ "entity": "minecraft:zombie", "count": 1,
-             "equipment": { "head": "minecraft:iron_helmet", "main_hand": "minecraft:iron_sword" } }"#,
-        "",
-        "",
-    );
-    let spawn = spawn_fn(&out);
-    assert!(
-        spawn.contains("drop_chances:{mainhand:0.0f,head:0.0f}"),
-        "a wave that declares no drops must keep every chance at 0.0f:\n{spawn}"
-    );
-    assert!(
-        !spawn.contains("DeathLootTable"),
-        "a wave mob without a quest-item drop keeps vanilla's own table:\n{spawn}"
-    );
-    assert!(
-        out.keys().all(|k| !k.contains("/loot_table/")),
-        "no drop declared → no loot_table directory: {:?}",
-        out.keys().collect::<Vec<_>>()
     );
 }
 

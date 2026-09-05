@@ -71,26 +71,26 @@ use crate::stages::Objective;
 /// endpoint naming no place, a self-loop, an `entry` that is not a node. Its
 /// verdict is a function of the campaign alone, and there is no field below
 /// `dsl_version` 0.13.0 in which to write any of it.
-pub const DW_GRAPH_MALFORMED: DwCode = DwCode::every_version("DW0814", ExitTier::Build);
+pub const DW_GRAPH_MALFORMED: DwCode = DwCode::new("DW0814", ExitTier::Build);
 
 /// `DW0816`: a node the closure never reaches.
-pub const DW_NODE_UNREACHED: DwCode = DwCode::every_version("DW0816", ExitTier::Build);
+pub const DW_NODE_UNREACHED: DwCode = DwCode::new("DW0816", ExitTier::Build);
 
 /// `DW0817`: the authored critical path does not hold.
-pub const DW_CRITICAL_PATH: DwCode = DwCode::every_version("DW0817", ExitTier::Build);
+pub const DW_CRITICAL_PATH: DwCode = DwCode::new("DW0817", ExitTier::Build);
 
 /// `DW0818`: the graph names quest-side state that does not exist, or a
 /// place-bound beat has no place.
-pub const DW_GRAPH_MISSION: DwCode = DwCode::every_version("DW0818", ExitTier::Build);
+pub const DW_GRAPH_MISSION: DwCode = DwCode::new("DW0818", ExitTier::Build);
 
 /// `DW0819`: a one-way edge strands.
-pub const DW_ONE_WAY_STRANDS: DwCode = DwCode::every_version("DW0819", ExitTier::Build);
+pub const DW_ONE_WAY_STRANDS: DwCode = DwCode::new("DW0819", ExitTier::Build);
 
 /// `DW0820`: a shortcut closes no loop.
-pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::every_version("DW0820", ExitTier::Build);
+pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::new("DW0820", ExitTier::Build);
 
 /// `DW0822`: the pacing measurement — a projection, printed with no threshold.
-pub const DW_PACING: DwCode = DwCode::every_version("DW0822", ExitTier::Build);
+pub const DW_PACING: DwCode = DwCode::new("DW0822", ExitTier::Build);
 
 /// `DW0869`: a station takes a name in the engine's own namespace (spec-0052 §7.1).
 ///
@@ -98,17 +98,17 @@ pub const DW_PACING: DwCode = DwCode::every_version("DW0822", ExitTier::Build);
 /// document SAYS, and a graph below [`crate::STATIONS_SINCE`] has no `stations[]`
 /// to judge — the per-stage fence (`DW0141`) has already refused it — so there is
 /// no earlier campaign this rule could reach.
-pub const DW_STATION_RESERVED: DwCode = DwCode::every_version("DW0869", ExitTier::Build);
+pub const DW_STATION_RESERVED: DwCode = DwCode::new("DW0869", ExitTier::Build);
 
 /// `DW0870`: two stations claim one name (spec-0052 §7.2).
-pub const DW_STATION_DUPLICATE: DwCode = DwCode::every_version("DW0870", ExitTier::Build);
+pub const DW_STATION_DUPLICATE: DwCode = DwCode::new("DW0870", ExitTier::Build);
 
 /// `DW0871`: a reference demands a shape the station is not (spec-0052 §7.3).
 ///
 /// Judged at the reference site from the DECLARATION, with zero pieces bound.
 /// `every_version` for its siblings' reason: below [`crate::STATIONS_SINCE`] a
 /// graph carries no station whose kind could disagree with anything.
-pub const DW_STATION_KIND: DwCode = DwCode::every_version("DW0871", ExitTier::Build);
+pub const DW_STATION_KIND: DwCode = DwCode::new("DW0871", ExitTier::Build);
 
 /// `DW0875`: a place is classified twice, or not at all (spec-0053 §6).
 ///
@@ -124,7 +124,7 @@ pub const DW_STATION_KIND: DwCode = DwCode::every_version("DW0871", ExitTier::Bu
 /// this can reach in an older campaign is a node that classifies itself in no
 /// way at all, which no campaign that compiled has ever been (the field was
 /// required, so its absence was `DW0100`).
-pub const DW_PLACE_CLASS: DwCode = DwCode::every_version("DW0875", ExitTier::Build);
+pub const DW_PLACE_CLASS: DwCode = DwCode::new("DW0875", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // Stage 2 — the geometry brief's machine-readable facts (spec-0049 §4.2)
@@ -983,8 +983,8 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     let known: BTreeSet<&str> = graph.nodes.iter().map(|n| n.id.0.as_str()).collect();
     let malformed = wellformed(graph, &known, d);
     metric_names(graph, &table, d);
-    place_classes(c, graph, &table, d);
-    stations(c, graph, d);
+    place_classes(graph, &table, d);
+    stations(graph, d);
     if malformed {
         return;
     }
@@ -998,48 +998,13 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     d.extend(reachability(c));
 }
 
-/// **The three refusals a declared station owes** (spec-0052 §7.1, §7.2, and the
-/// per-stage fence).
+/// **The two refusals a declared station owes** (spec-0052 §7.1 and §7.2).
 ///
 /// Runs before the malformed-graph return, because a station's name is judged
 /// against the engine's namespace and against the other stations — neither of
 /// which needs the node ids to resolve. A campaign with a dangling edge still
 /// gets told its station name is taken.
-fn stations(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
-    // ---- The fence (§7.6). A WELLFORMEDNESS rule: it judges what the document
-    // says against the version that document declares, so it is checked here
-    // rather than fenced as an obligation. Below the version there is nothing
-    // else to say about a station, so every other refusal is skipped — telling
-    // an author "you may not write this" and "and here is what writing it would
-    // mean" prescribes two repairs for one mistake.
-    let version = c
-        .layout_graph
-        .as_ref()
-        .map_or("", |g| g.dsl_version.as_str());
-    if !crate::is_v18(version) {
-        for (i, n) in graph.nodes.iter().enumerate() {
-            if n.stations.is_empty() {
-                continue;
-            }
-            d.push(Diagnostic::error(
-                crate::codes::RESERVED,
-                "layout-graph",
-                format!("/content/nodes/{i}/stations"),
-                format!(
-                    "`{node}` declares {count} station(s), which requires dsl_version {since} \
-                     and this stage declares `{version}` — raise this stage's `dsl_version` to \
-                     {since}, or remove `stations` (below {since} a campaign names places at \
-                     node granularity, and `{node_anchor}` is the name this place already has).",
-                    node = n.id,
-                    count = n.stations.len(),
-                    since = crate::STATIONS_SINCE,
-                    node_anchor = crate::siteplan::node_anchor(&n.id),
-                ),
-            ));
-        }
-        return;
-    }
-
+fn stations(graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
     // ---- §7.1: a station in the engine's namespace.
     //
     // The PREFIX is the rule, not the collision: `anchor/seam-vestry-door` is
@@ -1308,55 +1273,13 @@ fn metric_names(graph: &LayoutGraphContent, table: &Metrics, d: &mut Vec<Diagnos
     }
 }
 
-/// **`DW0875` and the per-stage fence**: a place is classified exactly once
+/// **`DW0875`**: a place is classified exactly once
 /// (spec-0053 §6).
 ///
 /// Runs before the malformed-graph return for the reason [`stations`] does: the
 /// rule reads one node's own two fields and needs no id to resolve, so a graph
 /// with a dangling edge still gets told which of its places has no standard.
-fn place_classes(
-    c: &Campaign,
-    graph: &LayoutGraphContent,
-    table: &Metrics,
-    d: &mut Vec<Diagnostic>,
-) {
-    // ---- The fence. A WELLFORMEDNESS rule, judged against the version this
-    // document declares, so it is checked here rather than fenced as an
-    // obligation. Below the version a node has no way to be a route, and every
-    // other refusal is skipped — telling an author "you may not write this" and
-    // "and here is what writing it would have meant" prescribes two repairs for
-    // one mistake.
-    let version = c
-        .layout_graph
-        .as_ref()
-        .map_or("", |g| g.dsl_version.as_str());
-    if !crate::is_v19(version) {
-        let mut fenced = false;
-        for (i, n) in graph.nodes.iter().enumerate() {
-            let Some(way) = n.way_class.as_ref() else {
-                continue;
-            };
-            fenced = true;
-            d.push(Diagnostic::error(
-                crate::codes::RESERVED,
-                "layout-graph",
-                format!("/content/nodes/{i}/way_class"),
-                format!(
-                    "`{node}` declares `way_class: \"{way}\"`, which requires dsl_version \
-                     {since} and this stage declares `{version}` — raise this stage's \
-                     `dsl_version` to {since}, or give `{node}` a `size_class` instead \
-                     (below {since} every place is a box with a rung of the size ladder, \
-                     and a place the ladder cannot classify cannot be stated at all).",
-                    node = n.id,
-                    since = crate::WAY_AND_CONTACT_SINCE,
-                ),
-            ));
-        }
-        if fenced {
-            return;
-        }
-    }
-
+fn place_classes(graph: &LayoutGraphContent, table: &Metrics, d: &mut Vec<Diagnostic>) {
     let sizes = table.names_of(MetricKind::SizeClass).join(", ");
     let ways = table.names_of(MetricKind::WayClass).join(", ");
 

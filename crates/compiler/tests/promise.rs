@@ -26,7 +26,7 @@ fn hw(name: &str) -> String {
 }
 
 const NPCS: &str = r#"{
-  "dsl_version": "0.9.0", "campaign_id": "hello-world", "stage": "npcs",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [
     { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
       "area": "area/keep", "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
@@ -35,7 +35,7 @@ const NPCS: &str = r#"{
 }"#;
 
 const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.9.0", "campaign_id": "hello-world", "stage": "quest-plan",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
     { "id": "quest/one", "goal": "Speak with the Keeper.", "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
@@ -45,7 +45,7 @@ const QUEST_PLAN: &str = r#"{
 }"#;
 
 const DIALOGUE: &str = r#"{
-  "dsl_version": "0.9.0", "campaign_id": "hello-world", "stage": "dialogue",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "dialogue",
   "content": { "dialogues": [
     { "npc": "npc/keeper", "root": "dlg/greeting", "nodes": [
       { "id": "dlg/greeting", "text": "Halt.", "options": [
@@ -58,7 +58,7 @@ const DIALOGUE: &str = r#"{
 fn quests(second: &str, complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.9.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quests",
   "content": {{
     "waves": [ {{ "id": "wave/garrison", "anchor": "anchor/exit",
                   "mobs": [ {{ "entity": "minecraft:zombie", "count": 2 }} ] }} ],
@@ -386,95 +386,6 @@ fn a_stealth_beat_that_punishes_nothing_is_not_a_failure_clock() {
 }
 
 // --- the fence ------------------------------------------------------------
-
-/// Three of the four REQUIRE the campaign to have something, so they are fenced,
-/// and the fence is what lets a document declaring an old version keep compiling
-/// unchanged. This is not a claim about `promise::check` — which raises the
-/// finding either way — but about `Fenced::apply`, which is the only thing
-/// `delvec` derives a verdict from.
-///
-/// The two versions are not arbitrary: they are the ones the repository's own
-/// fixtures declare and that this branch's first run reddened —
-/// `keep-vertical` at `0.3.0` and `souls-td-lanes` at `0.6.0`, both carrying a
-/// `kill` objective from before the announcement surface existed.
-#[test]
-fn an_old_campaign_keeps_compiling_unchanged() {
-    use delvewright_dsl::Fenced;
-    let unsigned = r#"{ "type": "kill", "id": "obj/purge", "wave": "wave/garrison" }"#;
-
-    // Raised at every version...
-    let c = campaign(unsigned, DONE);
-    assert!(
-        codes(&c).iter().any(|x| x == "DW0863"),
-        "the check itself must fire regardless of version"
-    );
-
-    // ...and carried to a verdict only at or above PROMISE_SINCE.
-    for (version, reaches) in [("0.3.0", false), ("0.6.0", false), ("0.8.0", true)] {
-        let doc = quests(unsigned, DONE).replace(
-            r#""dsl_version": "0.9.0""#,
-            &format!(r#""dsl_version": "{version}""#),
-        );
-        assert!(
-            doc.contains(version),
-            "the version substitution must have matched"
-        );
-        let c = parse_campaign(&RawCampaign {
-            world: hw("world.json"),
-            npcs: NPCS.to_string(),
-            classes: hw("classes.json"),
-            quest_plan: QUEST_PLAN.to_string(),
-            quests: doc,
-            dialogue: DIALOGUE.to_string(),
-            world_edits: None,
-            geometry_brief: None,
-            layout_graph: None,
-            site_plan: None,
-            detail_plan: None,
-        })
-        .expect("fixture must parse");
-        let fenced = Fenced::apply(&c, promise::check(&c).0);
-        let got = fenced.reported().iter().any(|d| d.code == "DW0863");
-        assert_eq!(
-            got,
-            reaches,
-            "at dsl_version {version} DW0863 should {} reach a verdict",
-            if reaches { "" } else { "NOT" }
-        );
-    }
-}
-
-/// The contradiction rule is deliberately NOT fenced, and this pins the
-/// asymmetry rather than leaving it to the reading of two constants. A `hint`
-/// with no `title` was as broken at `0.3.0` as it is now, and fencing a
-/// wellformedness rule would stop rejecting bad documents in old campaigns.
-#[test]
-fn the_contradiction_rule_is_not_fenced() {
-    use delvewright_dsl::Fenced;
-    let obj = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
-        "radius": 2, "hint": "The gate stands open behind you." }"#;
-    let doc = quests(obj, DONE).replace(r#""dsl_version": "0.9.0""#, r#""dsl_version": "0.3.0""#);
-    let c = parse_campaign(&RawCampaign {
-        world: hw("world.json"),
-        npcs: NPCS.to_string(),
-        classes: hw("classes.json"),
-        quest_plan: QUEST_PLAN.to_string(),
-        quests: doc,
-        dialogue: DIALOGUE.to_string(),
-        world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
-    })
-    .expect("fixture must parse");
-    let fenced = Fenced::apply(&c, promise::check(&c).0);
-    assert!(
-        fenced.reported().iter().any(|d| d.code == "DW0862"),
-        "DW0862 must reach a verdict at 0.3.0: {:#?}",
-        fenced.reported()
-    );
-}
 
 // --- the binding is measured, never asserted as a constant -----------------
 

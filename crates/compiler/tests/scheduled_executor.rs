@@ -218,7 +218,7 @@ fn read_hw(name: &str) -> String {
 ///   (`at_ticks: 20`) step, so the timeline is reached through a scheduled
 ///   bundle — the nested-recursion case.
 const SCHEDULED_QUESTS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

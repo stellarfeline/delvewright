@@ -98,7 +98,7 @@ fn codes(c: &Campaign) -> Vec<String> {
 fn quests_doc(prelude: &str, exit_tail: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -146,7 +146,7 @@ const ALARM_FROM_TRIGGER: &str = r#""triggers": [
 /// `collect_flags` already applies to the identical bundle in the quests stage,
 /// and the one the `DW0203` message itself states.
 const ALARM_FROM_DIALOGUE_RESPAWN: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -257,7 +257,7 @@ fn a_dialogue_respawn_bundle_is_seen_but_still_never_a_producer() {
 /// player takes exactly ONE of the two options, so the finale can never complete
 /// — `DW0201`, and nothing else.
 const BRANCHED_PAYLOAD_QUESTS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -290,7 +290,7 @@ const BRANCHED_PAYLOAD_QUESTS: &str = r#"{
 }"#;
 
 const BRANCHED_PAYLOAD_DIALOGUE: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -343,7 +343,7 @@ fn a_payload_gate_splits_the_branch_worlds() {
 /// A campaign carrying one `requires_flags` gate at each of the five effect
 /// roots, each naming a flag after its root.
 const FIVE_ROOT_QUESTS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -385,7 +385,7 @@ const FIVE_ROOT_QUESTS: &str = r#"{
 }"#;
 
 const FIVE_ROOT_DIALOGUE: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {

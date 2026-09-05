@@ -48,11 +48,6 @@
 //!    bytes, not on the fact that both currently call one function, which is a
 //!    property of today's source.
 //!
-//! The version binding is taken from [`envelope::SUPPORTED_DSL_VERSIONS`] — the
-//! ledger itself, never a literal — so a new `dsl_version` enters these proofs
-//! the moment it lands. A test that has to be edited every time the thing it
-//! describes moves was asserting the literal, not the property.
-//!
 //! Sections 1–2 are unit-level; section 3 drives the real `delvec` binary, like
 //! `tests/cli.rs`.
 
@@ -68,7 +63,6 @@ use delvewright_compiler::reach::{
     DW_REACH_UNCOMPLETABLE, ReachCompletion, judge_reach_completion, reach_completion, sites,
 };
 use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::envelope::{self, is_v03};
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 // ============================================================ unit fixtures ==
@@ -168,7 +162,7 @@ fn reach_step(plan: &Plan, objective_id: &str) -> usize {
 /// second way.
 #[test]
 fn the_cube_honours_the_authored_radius() {
-    let v = reach_completion([10, 64, -3], 7, true);
+    let v = reach_completion([10, 64, -3], 7);
     assert_eq!(
         v,
         ReachCompletion::Cube {
@@ -186,7 +180,7 @@ fn the_cube_honours_the_authored_radius() {
     // standing on the anchor cell, and the answer to it must survive every radius
     // an author can write — including the degenerate one.
     assert_eq!(
-        reach_completion([10, 64, -3], 0, true),
+        reach_completion([10, 64, -3], 0),
         ReachCompletion::Cube {
             lo: [9, 63, -4],
             hi: [11, 65, -2]
@@ -200,51 +194,10 @@ fn the_cube_honours_the_authored_radius() {
 #[test]
 fn the_smallest_authorable_volume_is_still_the_cube_that_closed_hv01() {
     for r in 1..=8u32 {
-        let ReachCompletion::Cube { lo, hi } = reach_completion([10, 20, 30], r, true) else {
-            panic!("v0.3+ is a cube");
-        };
+        let ReachCompletion::Cube { lo, hi } = reach_completion([10, 20, 30], r);
         let half = (hi[0] - lo[0]) / 2;
         assert!(half >= 1, "radius {r} must never be tighter than ±1");
         assert_eq!(half, r as i32, "radius {r} means radius {r}");
-    }
-    assert!(matches!(
-        reach_completion([10, 20, 30], 4, false),
-        ReachCompletion::Sphere { radius: 4, .. }
-    ));
-}
-
-/// **The version binding is the ledger's, not a literal's.** Every declared
-/// `dsl_version` gets the arm its own fence chooses, and the v0.3+ arm honours the
-/// radius at every one of them. A rule keyed off a surface a fixture's version
-/// never reached would pass by accident; this cannot, and a new ledger row joins
-/// it without anybody editing this file.
-#[test]
-fn every_declared_version_gets_the_arm_its_fence_chooses() {
-    let versions = envelope::SUPPORTED_DSL_VERSIONS;
-    assert!(
-        versions.len() >= 14,
-        "binding: {} declared dsl_version(s) examined",
-        versions.len()
-    );
-    let (pos, radius) = ([10, 64, -3], 4u32);
-    for v in versions {
-        let vol = reach_completion(pos, radius, is_v03(v));
-        if is_v03(v) {
-            assert_eq!(
-                vol,
-                ReachCompletion::Cube {
-                    lo: [6, 60, -7],
-                    hi: [14, 68, 1]
-                },
-                "at dsl_version {v} the cube must honour the authored radius"
-            );
-        } else {
-            assert_eq!(
-                vol,
-                ReachCompletion::Sphere { pos, radius },
-                "at dsl_version {v} the pre-v0.3 sphere is emitted byte-identically"
-            );
-        }
     }
 }
 
@@ -254,7 +207,7 @@ fn every_declared_version_gets_the_arm_its_fence_chooses() {
 /// the completion volume and arriving completes.
 #[test]
 fn a_volume_with_footing_in_it_is_clean() {
-    with_plan("0.6.0", 2, |plan| {
+    with_plan("0.19.0", 2, |plan| {
         let (pos, _) = only_site(plan);
         let world = floor_at([pos[0], pos[1] - 1, pos[2]]);
         assert!(
@@ -272,7 +225,7 @@ fn a_volume_with_footing_in_it_is_clean() {
 /// occupy.
 #[test]
 fn a_volume_no_body_can_stand_in_is_refused() {
-    with_plan("0.6.0", 2, |plan| {
+    with_plan("0.19.0", 2, |plan| {
         let (pos, obj) = only_site(plan);
         let footing = [pos[0] + 4, pos[1], pos[2]];
         let world = floor_at([footing[0], footing[1] - 1, footing[2]]);
@@ -280,7 +233,7 @@ fn a_volume_no_body_can_stand_in_is_refused() {
         // radius now, so "four blocks away" is only outside it while the fixture
         // authors a radius below four.
         assert!(
-            !reach_completion(pos, 2, true).certainly_completes_from(footing),
+            !reach_completion(pos, 2).certainly_completes_from(footing),
             "the fixture's premise: the only footing lies outside the completion volume"
         );
         let err = judge_reach_completion(plan, &world, &BTreeMap::new())
@@ -317,7 +270,7 @@ fn a_volume_no_body_can_stand_in_is_refused() {
 /// other end of the same arithmetic.
 #[test]
 fn an_arrival_inside_the_snap_radius_but_outside_the_volume_is_refused() {
-    with_plan("0.6.0", 1, |plan| {
+    with_plan("0.19.0", 1, |plan| {
         let (pos, obj) = only_site(plan);
         let mut solid = BTreeSet::new();
         solid.insert([pos[0], pos[1] - 1, pos[2]]); // the volume is occupiable…
@@ -330,7 +283,7 @@ fn an_arrival_inside_the_snap_radius_but_outside_the_volume_is_refused() {
         );
         assert!(
             (arrival[0] - pos[0]) <= SNAP_RADIUS
-                && !reach_completion(pos, 1, true).certainly_completes_from(arrival),
+                && !reach_completion(pos, 1).certainly_completes_from(arrival),
             "the fixture's premise: the arrival is inside the snap radius and outside \
              the completion volume — the gap the rule is about"
         );
@@ -372,7 +325,7 @@ fn an_arrival_inside_the_snap_radius_but_outside_the_volume_is_refused() {
 fn the_delivered_into_half_cannot_fire_at_or_above_the_snap_radius() {
     let pos = [10, 64, -3];
     for radius in (SNAP_RADIUS as u32)..=8 {
-        let vol = reach_completion(pos, radius, true);
+        let vol = reach_completion(pos, radius);
         for dx in -SNAP_RADIUS..=SNAP_RADIUS {
             for dy in -SNAP_RADIUS..=SNAP_RADIUS {
                 for dz in -SNAP_RADIUS..=SNAP_RADIUS {
@@ -388,69 +341,23 @@ fn the_delivered_into_half_cannot_fire_at_or_above_the_snap_radius() {
     // …and below the snap radius the gap is real, which is why the fixture above
     // authors 1.
     assert!(
-        !reach_completion(pos, 2, true).certainly_completes_from([pos[0] + 3, pos[1], pos[2]]),
+        !reach_completion(pos, 2).certainly_completes_from([pos[0] + 3, pos[1], pos[2]]),
         "at radius 2 a snapped arrival can still land outside the volume"
     );
 }
 
-/// The reported instance itself, re-enacted. Under v0.2 the volume is a
-/// `distance=..radius` sphere about the anchor POINT, and a body standing on the
-/// cell is measured from its own feet — so `radius: 0` is the point sphere a
-/// human standing on the altar cell could not satisfy, and widening the radius
-/// is what closed it.
-#[test]
-fn the_v02_point_sphere_is_the_reported_instance() {
-    with_plan("0.2.0", 0, |plan| {
-        let (pos, _) = only_site(plan);
-        let world = floor_at([pos[0], pos[1] - 1, pos[2]]);
-        assert!(world.is_standable(pos));
-        let err = judge_reach_completion(plan, &world, &BTreeMap::new())
-            .expect_err("a point sphere no standing body satisfies must be refused");
-        assert_eq!(err.code, DW_REACH_UNCOMPLETABLE);
-        assert!(
-            err.message.contains("sphere of radius 0"),
-            "the message names the volume that is wrong: {}",
-            err.message
-        );
-    });
-
-    // The same anchor and the same world, with a radius a standing body fits in.
-    with_plan("0.2.0", 2, |plan| {
-        let (pos, _) = only_site(plan);
-        let world = floor_at([pos[0], pos[1] - 1, pos[2]]);
-        judge_reach_completion(plan, &world, &BTreeMap::new())
-            .expect("a sphere a standing body fits in completes");
-    });
-}
-
 /// **The red demo is not inert.** `DW0850` judges the geometry of the world a
-/// build assembles, not a surface a campaign opts into, so it is `every_version`
-/// and no per-stage fence can grandfather it away. The identical red is driven at
-/// **every** version the ledger declares — not at two literals that go stale the
-/// next time the ledger moves.
+/// build assembles, not a surface a campaign opts into, and the version the
+/// fixture declares is the engine's own constant, never a literal.
 #[test]
-fn dw0850_binds_at_every_declared_version() {
-    let versions = envelope::SUPPORTED_DSL_VERSIONS;
-    for version in versions {
-        with_plan(version, 2, |plan| {
-            let (pos, _) = only_site(plan);
-            let world = floor_at([pos[0] + 4, pos[1] - 1, pos[2]]);
-            let err = judge_reach_completion(plan, &world, &BTreeMap::new()).expect_err(
-                "DW0850 must bind at every declared version; a version-shaped hole here \
-                 is the `unfenced` vacuity mode",
-            );
-            assert_eq!(
-                err.code, DW_REACH_UNCOMPLETABLE,
-                "at quests {version}: {}",
-                err.message
-            );
-        });
-    }
-    assert!(
-        versions.len() >= 14,
-        "binding: {} declared dsl_version(s) examined",
-        versions.len()
-    );
+fn dw0850_binds_at_the_engines_version() {
+    with_plan(delvewright_dsl::DSL_VERSION, 2, |plan| {
+        let (pos, _) = only_site(plan);
+        let world = floor_at([pos[0] + 4, pos[1] - 1, pos[2]]);
+        let err =
+            judge_reach_completion(plan, &world, &BTreeMap::new()).expect_err("DW0850 must bind");
+        assert_eq!(err.code, DW_REACH_UNCOMPLETABLE, "{}", err.message);
+    });
 }
 
 // =============================================== 3. the agreement, on bytes ==
@@ -595,18 +502,6 @@ fn assert_agreement(fixture: &str, path: &serde_json::Value, ticks: &[String]) -
         );
     }
     steps.len()
-}
-
-/// v0.2 emission is untouched: the pre-v0.3 sphere, both in the artifact and in
-/// the line. `hello-world` / `keep-crawl` stay byte-identical.
-#[test]
-fn a_v02_campaign_keeps_the_pre_v03_sphere() {
-    let (path, ticks) = build("v06-edits", "reach-completion-v02");
-    let steps = reach_steps(&path);
-    assert_eq!(steps.len(), 1, "the fixture has one reach objective");
-    assert_eq!(steps[0]["completion"]["kind"], "sphere");
-    assert_eq!(steps[0]["completion"]["radius"], steps[0]["radius"]);
-    assert_eq!(assert_agreement("v06-edits", &path, &ticks), 1);
 }
 
 /// v0.3+ honours the authored radius. `v04-showcase` authors `radius: 2`, so the

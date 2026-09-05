@@ -187,7 +187,7 @@ fn terminal_dialogue_node_emits_notice() {
     );
     // A node that still has options remains a multi_action (control case).
     let greet: serde_json::Value = serde_json::from_slice(
-        out.get("datapack/data/keep-trial/dialog/keeper_greet.json")
+        out.get("datapack/data/keep-trial/dialog/keeper_greet__m1.json")
             .expect("keeper_greet dialog emitted"),
     )
     .unwrap();
@@ -349,7 +349,7 @@ fn critical_path_shape_and_commands() {
     let cp: serde_json::Value =
         serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
 
-    assert_eq!(cp["version"], "0.2.0");
+    assert_eq!(cp["version"], "0.19.0");
     assert_eq!(cp["campaign_id"], "hello-world");
     let steps = cp["steps"].as_array().unwrap();
     assert_eq!(steps.len(), 4);
@@ -537,7 +537,7 @@ fn completion_marker_channel_is_anchored_and_per_objective() {
         cp["format_version"],
         delvewright_compiler::plan::CRITICAL_PATH_FORMAT_VERSION
     );
-    assert_eq!(cp["version"], "0.2.0");
+    assert_eq!(cp["version"], "0.19.0");
 
     let steps = cp["steps"].as_array().unwrap();
     // Every objective-bearing step names its objective; the framing steps do not.
@@ -607,7 +607,7 @@ fn critical_path_waypoints_artifact_shape() {
     )
     .unwrap();
 
-    assert_eq!(wp["version"], "0.2.0");
+    assert_eq!(wp["version"], "0.19.0");
     assert_eq!(wp["campaign_id"], "hello-world");
     let legs = wp["legs"].as_array().expect("legs is an array");
     assert!(!legs.is_empty(), "hello-world has at least one walked leg");
@@ -1086,7 +1086,7 @@ fn dialog_buttons_run_the_trigger_commands() {
     // The keeper greeting dialog's "open the door" button runs the same command
     // the critical path records (set 2).
     let dlg: serde_json::Value = serde_json::from_slice(
-        out.get("datapack/data/hello-world/dialog/keeper_greeting.json")
+        out.get("datapack/data/hello-world/dialog/keeper_greeting__m1.json")
             .unwrap(),
     )
     .unwrap();

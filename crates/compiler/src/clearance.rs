@@ -106,13 +106,13 @@ use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0450`: a body volume overlaps solid block geometry — the entity is inside
 /// a wall, at its spawn anchor or at some tick of a walked leg.
-pub const DW_BODY_CLEARANCE: DwCode = DwCode::every_version("DW0450", ExitTier::Build);
+pub const DW_BODY_CLEARANCE: DwCode = DwCode::new("DW0450", ExitTier::Build);
 
 /// `DW0451`: a body volume is clear of solids but its rendered model overhangs
 /// into one ([`MODEL_MARGIN`]), or it contains a 1.5-tall fence/wall/gate cell.
 /// Advisory: both are measurements the compiler can state honestly and cannot
 /// adjudicate.
-pub const DW_BODY_CLEARANCE_ADVISORY: DwCode = DwCode::every_version("DW0451", ExitTier::Build);
+pub const DW_BODY_CLEARANCE_ADVISORY: DwCode = DwCode::new("DW0451", ExitTier::Build);
 
 /// How far past its collision box a vanilla mob model may visibly render, per
 /// horizontal side, in blocks.

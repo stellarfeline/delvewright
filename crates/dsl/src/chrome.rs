@@ -1034,7 +1034,7 @@ mod tests {
         content.insert(CLASS_TITLE.key.to_string(), "俺の職業".to_string());
         content.insert("npc.keeper.name".to_string(), "門番".to_string());
         let doc = L10nDoc {
-            dsl_version: "0.9.0".to_string(),
+            dsl_version: "0.19.0".to_string(),
             campaign_id: crate::ids::CampaignId("demo".to_string()),
             kind: crate::l10n::L10nKind::L10n,
             lang: "ja-jp".to_string(),

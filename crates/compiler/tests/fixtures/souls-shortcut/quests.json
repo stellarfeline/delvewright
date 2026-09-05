@@ -3,9 +3,24 @@
   "content": {
     "quests": [
       {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/open-the-door",
+          "verb": "learns"
+        },
         "id": "quest/open-the-door",
         "objectives": [
           {
+            "happening": {
+              "text": "the party completes obj/talk",
+              "verb": "learns"
+            },
             "id": "obj/talk",
             "npc": "npc/keeper",
             "type": "talk-to"
@@ -15,6 +30,10 @@
               "obj/talk"
             ],
             "anchor": "anchor/exit",
+            "happening": {
+              "text": "the party completes obj/exit",
+              "verb": "arrives"
+            },
             "id": "obj/exit",
             "radius": 2,
             "type": "reach-anchor"
@@ -22,6 +41,10 @@
         ],
         "on_complete": [
           {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
             "type": "campaign-complete"
           }
         ],
@@ -70,9 +93,25 @@
           "on": "strike"
         },
         "once": false
+      },
+      {
+        "at": "anchor/door",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The door is barred from the other side.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/inner-door-barred",
+        "on": {
+          "on": "use"
+        },
+        "once": false
       }
     ]
   },
-  "dsl_version": "0.9.0",
+  "dsl_version": "0.19.0",
   "stage": "quests"
 }

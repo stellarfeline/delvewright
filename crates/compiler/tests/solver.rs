@@ -128,9 +128,10 @@ fn keep_crawl_critical_path_crosses_pieces_and_areas() {
     let cp: serde_json::Value =
         serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
     let steps = cp["steps"].as_array().unwrap();
-    // select-class, talk-to, reach, assert-complete.
+    // select-class, talk-to, reach (the keep's hall), reach (the shrine), assert-complete.
     assert_eq!(steps[1]["action"], "talk-to");
     assert_eq!(steps[2]["action"], "reach");
+    assert_eq!(steps[3]["action"], "reach");
     let talk_x = steps[1]["pos"][0].as_i64().unwrap();
     let reach_x = steps[2]["pos"][0].as_i64().unwrap();
     // gatehouse is at x≈0, the keep at x≈256 — different areas.
@@ -139,14 +140,19 @@ fn keep_crawl_critical_path_crosses_pieces_and_areas() {
         "talk in gatehouse, reach in keep"
     );
 
-    // The talk objective's completion opens the gate and teleports into the keep.
+    // The talk objective's completion teleports into the keep; arriving there
+    // opens the gate.
     let complete_talk = text(
         &out,
         "datapack/data/keep-crawl/function/complete_o_talk.mcfunction",
     );
+    let complete_arrive = text(
+        &out,
+        "datapack/data/keep-crawl/function/complete_o_arrive.mcfunction",
+    );
     assert!(
-        complete_talk.contains("replace minecraft:iron_bars"),
-        "talk opens the gate"
+        complete_arrive.contains("replace minecraft:iron_bars"),
+        "arriving in the keep opens the gate"
     );
     assert!(
         complete_talk.contains("teleport @s 260 65 4"),
@@ -488,39 +494,6 @@ fn keep_trial_m2_presentation_fixes() {
         !tick.contains("distance=.."),
         "v0.3 reach no longer uses the distance sphere"
     );
-}
-
-/// The v0.3-gated fixes do NOT leak into v0.2 emission: hello-world keeps the
-/// legacy JSON-string CustomName and the point-radius reach sphere, and never
-/// gains announce/marker/fanfare machinery (its byte-identity is separately
-/// asserted in cli.rs).
-#[test]
-fn v02_emission_paths_are_untouched() {
-    let out = build_campaign(&common::hello_world_dir());
-    let setup = text(
-        &out,
-        "datapack/data/hello-world/function/setup_finish.mcfunction",
-    );
-    let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
-    assert!(
-        setup.contains("CustomName:'{\"text\":\"The Keeper\"}'"),
-        "v0.2 keeps the legacy JSON-string CustomName"
-    );
-    assert!(
-        tick.contains("distance=..") && !tick.contains("dx=2"),
-        "v0.2 keeps the point-radius reach sphere"
-    );
-    for (path, bytes) in &out {
-        if path.starts_with("datapack/") && path.ends_with(".mcfunction") {
-            let body = std::str::from_utf8(bytes).unwrap();
-            assert!(
-                !body.contains("playsound")
-                    && !body.contains("item_display")
-                    && !body.contains("dw.ann_"),
-                "no v0.3 feedback machinery leaked into v0.2 at {path}"
-            );
-        }
-    }
 }
 
 /// The socket seal strategy: a spine that ends at a through-room leaves an open

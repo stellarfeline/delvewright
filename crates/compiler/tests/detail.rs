@@ -272,7 +272,7 @@ fn write_detail_plan(dir: &Path, details: &[serde_json::Value]) {
             "palette": { "role/wall": "minecraft:stone_bricks", "role/floor": "minecraft:tuff" },
             "details": details,
         },
-        "dsl_version": "0.15.0",
+        "dsl_version": "0.19.0",
         "stage": "detail-plan",
     });
     std::fs::write(
@@ -1238,7 +1238,7 @@ fn dw0842_refuses_a_gate_station_bound_to_a_cell() {
     // Declare a gate station on the bound place and bind it to `seat0`, which
     // is a point: the piece has a cell where the campaign promised a volume.
     common::patch_file(&d.campaign.join("layout-graph.json"), |v| {
-        v["dsl_version"] = serde_json::json!("0.18.0");
+        v["dsl_version"] = serde_json::json!("0.19.0");
         for n in v["content"]["nodes"].as_array_mut().unwrap() {
             if n["id"] == "node/exit" {
                 n["stations"] = serde_json::json!([
@@ -1705,25 +1705,6 @@ fn a_detail_plan_cannot_state_a_coordinate() {
     }
 }
 
-/// The version fence, on the settled shape: a campaign below 0.15.0 cannot carry
-/// the document at all, so no older campaign moves by a byte.
-#[test]
-fn dw0141_fences_the_document_below_its_version() {
-    let tmp = tempdir("fence");
-    let d = detailed(&tmp, &["node/exit"]);
-    patch_detail_plan(&d, |v| {
-        v["dsl_version"] = serde_json::json!("0.14.0");
-    });
-    let loaded = delvewright_compiler::load::load_campaign_dir(&d.campaign).unwrap();
-    let c = delvewright_dsl::parse_campaign(&loaded.raw).expect("it still parses");
-    let diags = delvewright_dsl::validate_campaign(&c);
-    assert!(
-        diags.iter().any(|x| x.code == "DW0141"),
-        "{:?}",
-        codes(&diags)
-    );
-}
-
 // ---------------------------------------------------------------------------
 // The two verbs, at process level
 // ---------------------------------------------------------------------------
@@ -2076,36 +2057,6 @@ fn unlit_bound_place(tmp: &Path, node: &str) -> (std::process::Output, String) {
     let s =
         String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
     (out, s)
-}
-
-/// **The UNFENCED vacuity mode, closed at the type level.**
-///
-/// A check whose code declares `Binds::Since(n)` is dropped by
-/// `delvewright_dsl::fence` for any campaign whose stage declares less than `n`
-/// — which is how a general check comes to pass on a tree it never examined.
-/// Every stage-6 code binds at **every** version, and it is correct that they
-/// do: each is a rule about what a `detail-plan` SAYS, and a campaign with no
-/// such document reaches none of them, so there is nothing to grandfather.
-///
-/// Asserted rather than described, because the difference between the two is
-/// exactly what the fence's own module docs say costs a staging round.
-#[test]
-fn every_stage_six_code_binds_at_every_version() {
-    use delvewright_dsl::Binds;
-    for code in [
-        detail::DW_UNWALKED,
-        detail::DW_BINDING,
-        detail::DW_NOT_THE_FRAME,
-        detail::DW_FACES,
-        detail::DW_ANCHOR_STANDING,
-        delvewright_dsl::prefab::DW_FOOTPRINT_CLASS,
-    ] {
-        assert_eq!(
-            code.binds(),
-            Binds::EveryVersion,
-            "`{code}` is a rule about what a document says, so nothing may grandfather it"
-        );
-    }
 }
 
 /// **The red reaching a creator's exit code**, end to end and through the fence.

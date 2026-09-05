@@ -1705,7 +1705,7 @@ impl PlanError {
 
 /// `DW0300`: generic build/resolution failure (missing prefab metadata, unknown
 /// anchor, dependency cycle in the critical path).
-pub const DW_BUILD: DwCode = DwCode::every_version("DW0300", ExitTier::Build);
+pub const DW_BUILD: DwCode = DwCode::new("DW0300", ExitTier::Build);
 
 /// `DW0306`: gate-aware reachability deadlock (M2 fix 7). After the solver produces
 /// a layout, sealed gates are modelled as cut edges in the piece-connectivity
@@ -1713,7 +1713,7 @@ pub const DW_BUILD: DwCode = DwCode::every_version("DW0300", ExitTier::Build);
 /// earlier objective (in the quest/objective DAG order) has opened is a deadlock —
 /// the delve is unwinnable even though every anchor resolves. The canonical case:
 /// a key chest sealed behind the very gate its key opens.
-pub const DW_GATE_DEADLOCK: DwCode = DwCode::every_version("DW0306", ExitTier::Build);
+pub const DW_GATE_DEADLOCK: DwCode = DwCode::new("DW0306", ExitTier::Build);
 
 /// `DW0344`: an ocean-horizon world places a piece whose declared waterline does not
 /// land at sea level — the piece floats above the sea or is drowned by it.
@@ -1722,7 +1722,7 @@ pub const DW_GATE_DEADLOCK: DwCode = DwCode::every_version("DW0306", ExitTier::B
 /// that examined nothing has proved nothing, and the gate that examined nothing
 /// is this one, so it answers under its own name rather than under a second
 /// code. See [`WaterlineBinding::seal`].
-pub const DW_OCEAN_WATERLINE: DwCode = DwCode::every_version("DW0344", ExitTier::Build);
+pub const DW_OCEAN_WATERLINE: DwCode = DwCode::new("DW0344", ExitTier::Build);
 
 /// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
 /// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
@@ -1730,7 +1730,7 @@ pub const DW_OCEAN_WATERLINE: DwCode = DwCode::every_version("DW0344", ExitTier:
 /// world then falls back to the vanilla spawn search, which a dedicated server
 /// resolves to the surface but the integrated (singleplayer) server resolves to
 /// the build floor — inside solid stone. Silent before; a hard build error now.
-pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345", ExitTier::Build);
+pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::new("DW0345", ExitTier::Build);
 
 /// `DW0804`: two anchors in one area declare [`AnchorRole::Entry`].
 ///
@@ -1744,7 +1744,7 @@ pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345", ExitTier:
 /// `entry` in one area are the pre-role compatibility case and stay ordered by
 /// [`ENTRY_ANCHOR_NAMES`], because that ordering is what every shipped piece was
 /// admitted under and refusing it now would red a library nobody has touched.
-pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::every_version("DW0804", ExitTier::Build);
+pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::new("DW0804", ExitTier::Build);
 
 /// `DW0872`: **a crossing into an area with nowhere to arrive.** A leg of the
 /// party's forced route changes area, and the destination declares no entry
@@ -1763,7 +1763,7 @@ pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::every_version("DW0804", ExitTie
 /// all declares one*); this is the same rule over the one area a body must be
 /// put down in. The quantifiers differ and so do the remedies, which is why
 /// they are two codes.
-pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::every_version("DW0872", ExitTier::Build);
+pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::new("DW0872", ExitTier::Build);
 
 /// **Where the party begins the delve**: the area it starts in, and the cell it
 /// stands on — the first area in declaration order that resolves an entry point
@@ -1802,7 +1802,7 @@ pub fn resolve_campaign_start(
 /// no pair: such a campaign built clean, passed every game test, and stranded
 /// the party at the spawn with the harness reporting `No path to the goal!` and
 /// no diagnostic code at all.
-pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::every_version("DW0873", ExitTier::Build);
+pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::new("DW0873", ExitTier::Build);
 
 /// The prefab-metadata anchor names that mark a campaign's **entry point**, in
 /// resolution order — the **fallback**, not the mechanism (spec-0046).
@@ -4083,11 +4083,7 @@ fn build_critical_path(
                         anchor_id: anchor.as_str().to_string(),
                         pos,
                         radius: *radius,
-                        completion: reach_completion(
-                            pos,
-                            *radius,
-                            delvewright_dsl::is_v03(campaign.quests.dsl_version.as_str()),
-                        ),
+                        completion: reach_completion(pos, *radius),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }
@@ -4734,90 +4730,29 @@ impl PressAnswer {
     }
 }
 
-/// **What happens when the campaign leaves a pressable body silent.**
-///
-/// The policy is a property of the **body class**, not of this function, so
-/// extending the policy from one class to another is a changed arm in
-/// [`press_answer_sites`] rather than a re-architecture. The site that builds the
-/// answers is shared; only this decides who supplies the wording.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SilencePolicy {
-    /// **The campaign must author the wording** — every pressable body, from
-    /// `dsl_version` 0.11.0.
-    ///
-    /// The compiler still *lowers* an authored wording onto the general path: a
-    /// `close-gate`'s `sealed_hint` is an authored answer and is synthesized from
-    /// as it always was. What it may not do is **invent** one. A body with neither
-    /// an authored wording nor a `use` trigger is `DW0429`.
-    ///
-    /// The reasoning belongs in the code because it is the project's own rule
-    /// arriving at a new site. A baked default is the compiler making a **design
-    /// statement** — about tone, about what this specific thing is — on the
-    /// author's behalf, and then never telling them it did. An error makes the
-    /// author say it. Same rule as "no hacks at any layer": if content needs a
-    /// thing, the DSL exposes it and the author declares it, rather than a lower
-    /// layer inventing it.
-    ///
-    /// It is also the only end state where the docs, the code and the player
-    /// agree. `wrongside.rs` and the reference both claimed for two versions that
-    /// a shortcut door's wording "defaults", and no code defaulted anything: the
-    /// door said nothing. The honest repair was never to make the claimed default
-    /// real — it was to refuse to compile a body with no answer.
-    Authored,
-    /// **Grandfathered: a `close-gate` seal below 0.11.0.** The compiler falls
-    /// back to its own `delvewright.ui.gate.sealed` chrome, exactly as it has
-    /// since v0.8.
-    Defaulted,
-    /// **Grandfathered: a `shortcut` door below 0.11.0.** Nothing is emitted and
-    /// nothing is demanded — the door is silent, byte for byte what it emitted
-    /// before this version existed.
-    Silent,
-}
-
-impl SilencePolicy {
-    /// May the compiler word this body when the campaign has not?
-    ///
-    /// The two grandfathered arms differ from each other only because the two
-    /// classes *historically* differed — a seal defaulted since v0.8, a door was
-    /// silent — and preserving that is the whole point of a fence: **the same
-    /// declared `dsl_version` yields the same verdicts and the same
-    /// behaviour**. It is emphatically not a
-    /// policy split by object class. Above the fence there is exactly one rule for
-    /// every pressable body, which is what stops this from becoming the
-    /// "capability keyed to the verb" defect CLAUDE.md's worked example is about —
-    /// and this task IS that worked example.
-    fn compiler_may_word_it(self) -> bool {
-        matches!(self, SilencePolicy::Defaulted)
-    }
-}
-
-/// The pressable bodies a press answer can hang on, each with its silence policy
-/// — seals first, then shortcut doors, each in its own planner's order.
+/// The pressable bodies a press answer can hang on — seals first, then
+/// shortcut doors, each in its own planner's order.
 ///
 /// **This list is the class.** A third pressable object gets an answer by joining
-/// it, not by growing a field on the verb that owns it.
+/// it, not by growing a field on the verb that owns it. **The campaign authors
+/// the wording** for every body in it: the compiler lowers an authored wording
+/// onto the general path (a `close-gate`'s `sealed_hint` is an authored answer)
+/// and never invents one — a body with neither an authored wording nor a `use`
+/// trigger is `DW0429`. A baked default would be the compiler making a design
+/// statement on the author's behalf and never telling them it did; an error
+/// makes the author say it.
 fn press_answer_sites<'p>(
     seal_hints: &'p [SealHintPlan],
     shortcuts: &'p [ShortcutPlan],
-    authored_required: bool,
-) -> Vec<(PressAnswer, SilencePolicy)> {
-    let mut out: Vec<(PressAnswer, SilencePolicy)> = seal_hints
+) -> Vec<PressAnswer> {
+    let mut out: Vec<PressAnswer> = seal_hints
         .iter()
-        .map(|s| {
-            (
-                PressAnswer {
-                    anchor: s.anchor.clone(),
-                    trigger_id: press_answer_trigger_id("seal", local_of(&s.anchor)),
-                    owner: "close-gate seal",
-                    text: s.text.clone(),
-                    authored: s.authored,
-                },
-                if authored_required {
-                    SilencePolicy::Authored
-                } else {
-                    SilencePolicy::Defaulted
-                },
-            )
+        .map(|s| PressAnswer {
+            anchor: s.anchor.clone(),
+            trigger_id: press_answer_trigger_id("seal", local_of(&s.anchor)),
+            owner: "close-gate seal",
+            text: s.text.clone(),
+            authored: s.authored,
         })
         .collect();
     out.extend(shortcuts.iter().filter_map(|sc| {
@@ -4825,53 +4760,39 @@ fn press_answer_sites<'p>(
         // an answer on; `emit::check_shortcut_sides` (`DW0425`) fails the build
         // before this could matter.
         sc.sealed_side.as_ref()?;
-        Some((
-            PressAnswer {
-                anchor: sc.gate_anchor.clone(),
-                trigger_id: press_answer_trigger_id("door", local_of(&sc.id)),
-                owner: "shortcut door",
-                // A shortcut carries no wording field, so there is never an
-                // authored wording to lower: its answer is always a trigger.
-                text: delvewright_dsl::chrome::GATE_SEALED.tagged(),
-                authored: false,
-            },
-            if authored_required {
-                SilencePolicy::Authored
-            } else {
-                SilencePolicy::Silent
-            },
-        ))
+        Some(PressAnswer {
+            anchor: sc.gate_anchor.clone(),
+            trigger_id: press_answer_trigger_id("door", local_of(&sc.id)),
+            owner: "shortcut door",
+            // A shortcut carries no wording field, so there is never an
+            // authored wording to lower: its answer is always a trigger.
+            text: delvewright_dsl::chrome::GATE_SEALED.tagged(),
+            authored: false,
+        })
     }));
     out
 }
 
-/// **The silence-policy ledger**: every pressable body in the campaign, what owns
-/// it, and who supplies its wording when the campaign says nothing.
+/// **The pressable-body ledger**: every pressable body in the campaign and what
+/// owns it — the bodies `DW0429` and the press answers are read from.
 ///
-/// CLAUDE.md: every validation artifact states its binding count. Here the count
+/// CLAUDE.md: every validation artifact states its binding count. The count
 /// that matters is not how many answers the compiler produced — that is zero
-/// for a door, by design — but how many bodies
-/// were **examined** and under which policy. A reader can see at a glance that
-/// the door was considered and its wording withheld on purpose, rather than
-/// missed.
-pub fn press_answer_policies(plan: &Plan) -> Vec<(&'static str, String, SilencePolicy)> {
-    press_answer_sites(
-        &plan.seal_hints,
-        &plan.shortcuts,
-        delvewright_dsl::is_v11(plan.campaign.quests.dsl_version.as_str()),
-    )
-    .into_iter()
-    .map(|(a, p)| (a.owner, a.anchor, p))
-    .collect()
+/// by design — but how many bodies were **examined**.
+pub fn press_answer_bodies(plan: &Plan) -> Vec<(&'static str, String)> {
+    press_answer_sites(&plan.seal_hints, &plan.shortcuts)
+        .into_iter()
+        .map(|a| (a.owner, a.anchor))
+        .collect()
 }
 
-/// Collect the compiler's press answers: **one per pressable body whose class is
-/// `Defaulted` and which the campaign does not answer itself**.
+/// Collect the compiler's press answers: **one per pressable body with an
+/// authored wording which the campaign does not answer itself**.
 ///
 /// ## The rule, stated once
 ///
-/// > A sealed body the campaign never answers is answered by the compiler —
-/// > where, and only where, its class says the compiler may speak for it.
+/// > A sealed body is answered by the campaign — through a `use` trigger, or
+/// > an authored wording the compiler lowers onto that same path.
 ///
 /// "The campaign answers it" is `QuestsContent::answers_press_at`, the one
 /// predicate `DW0429` also reads, so the refusal and the synthesis can never
@@ -4882,15 +4803,13 @@ fn collect_press_answers(
     shortcuts: &[ShortcutPlan],
 ) -> Vec<PressAnswer> {
     let quests = &campaign.quests.content;
-    let authored_required = delvewright_dsl::is_v11(campaign.quests.dsl_version.as_str());
-    press_answer_sites(seal_hints, shortcuts, authored_required)
+    press_answer_sites(seal_hints, shortcuts)
         .into_iter()
         // The compiler lowers a wording it was GIVEN (an authored `sealed_hint`)
-        // at every version; it invents one only where its policy still lets it.
-        .filter(|(a, policy)| a.authored || policy.compiler_may_word_it())
+        // and never invents one.
+        .filter(|a| a.authored)
         // …and stands down entirely where the campaign answers the press itself.
-        .filter(|(a, _)| !quests.answers_press_at(&a.anchor))
-        .map(|(a, _)| a)
+        .filter(|a| !quests.answers_press_at(&a.anchor))
         .collect()
 }
 

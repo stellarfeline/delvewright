@@ -29,7 +29,7 @@ fn quests_doc(effects: &str) -> String {
 fn quests_doc_with(prelude: &str, effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -231,7 +231,7 @@ fn trap_prelude(effects: &str) -> String {
 fn respawn_dialogue(effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {{
@@ -402,7 +402,7 @@ fn typod_anchor_in_a_dialogue_respawn_bundle_is_dw0360() {
 fn worldless_campaign(volley_anchor: &str) -> Campaign {
     let quests = format!(
         r#"{{
-  "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quests",
   "content": {{
     "quests": [ {{
       "id": "quest/open-the-door",
@@ -422,7 +422,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
     );
     parse_campaign(&RawCampaign {
         world: r#"{
-  "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "world",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "world",
   "content": {
     "title": "The Keeper's Door",
     "theme": "A lonely keep at the edge of the moor.",
@@ -433,13 +433,13 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
 }"#
         .to_string(),
         npcs: r#"{
-  "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "npcs",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [] }
 }"#
         .to_string(),
         classes: read_hw("classes.json"),
         quest_plan: r#"{
-  "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "quest-plan",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": {
     "quests": [ { "id": "quest/open-the-door", "goal": "Leave the keep.",
       "area": "area/keep", "npcs": [], "depends_on": [], "mandatory": true, "act": 1 } ],
@@ -449,7 +449,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
         .to_string(),
         quests,
         dialogue: r#"{
-  "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "dialogue",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "dialogue",
   "content": { "dialogues": [] }
 }"#
         .to_string(),

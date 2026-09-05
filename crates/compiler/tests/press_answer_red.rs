@@ -15,7 +15,15 @@ use delvewright_dsl::{Campaign, EnvTrigger, parse_campaign, validate_campaign_wi
 fn fixture() -> Campaign {
     let dir = common::compiler_fixtures_dir().join("souls-shortcut");
     let loaded = load_campaign_dir(&dir).unwrap();
-    parse_campaign(&loaded.raw).expect("souls-shortcut parses")
+    let mut campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
+    // The fixture ships its door's press answer; this file is about the door
+    // with nothing to say, so the answer is withdrawn here.
+    campaign
+        .quests
+        .content
+        .triggers
+        .retain(|t| t.id.as_str() != "trigger/inner-door-barred");
+    campaign
 }
 
 fn diagnostics(c: &Campaign) -> Vec<delvewright_dsl::Diagnostic> {
@@ -56,7 +64,7 @@ const ANSWER: &str = r#"{ "id": "trigger/from-the-wrong-side", "at": "anchor/doo
 #[test]
 fn a_barred_door_with_nothing_to_say_is_refused() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.11.0".to_string();
+    c.quests.dsl_version = "0.19.0".to_string();
     let diags = diagnostics(&c);
     assert!(
         diags.iter().any(|d| d.code == "DW0429"),
@@ -79,7 +87,7 @@ fn a_barred_door_with_nothing_to_say_is_refused() {
 fn an_unauthored_seal_is_refused_by_the_same_rule() {
     let hw = |n: &str| std::fs::read_to_string(common::hello_world_dir().join(n)).unwrap();
     let quests = r#"{
-  "dsl_version": "0.11.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -139,7 +147,7 @@ fn the_campaign_can_write_a_wrong_side_answer() {
         panic!("a campaign CANNOT express a wrong-side press answer on the general verb: {e}")
     });
     let mut c = fixture();
-    c.quests.dsl_version = "0.11.0".to_string();
+    c.quests.dsl_version = "0.19.0".to_string();
     c.quests.content.triggers.push(t);
     let diags = diagnostics(&c);
     assert!(

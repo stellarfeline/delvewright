@@ -42,7 +42,7 @@ use serde_json::{Value, json};
 /// ```
 const GRAPH: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.13.0",
+  "dsl_version": "0.19.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -80,7 +80,7 @@ const GRAPH: &str = r#"{
 
 const BRIEF: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.13.0",
+  "dsl_version": "0.19.0",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -137,7 +137,7 @@ const BRIEF: &str = r#"{
 ///   `(33.5, 7.5)` which is at least the 24 the brief asks for, and grade is 64.
 const PLAN: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.14.0",
+  "dsl_version": "0.19.0",
   "stage": "site-plan",
   "content": {
     "region": { "min": [0, 48, 0], "extent": [64, 48, 64] },
@@ -407,15 +407,6 @@ fn the_binding_ledger_counts_what_the_plan_holds() {
 // ---------------------------------------------------------------------------
 // The version fence
 // ---------------------------------------------------------------------------
-
-/// A site plan exists only at 0.14.0, and the refusal names the document rather
-/// than a field inside it — raising one field's version would not make the file
-/// legal.
-#[test]
-fn a_site_plan_below_its_version_is_refused() {
-    let got = plan_with(|v| v["dsl_version"] = json!("0.13.0"));
-    assert!(has(&got, "DW0141"), "{got:?}");
-}
 
 // ---------------------------------------------------------------------------
 // THE ORDERING TOOTH (spec-0049 §7.1)
@@ -1040,7 +1031,7 @@ fn an_empty_identity_gate_is_a_stated_finding_not_a_silent_pass() {
 /// The other side of the same emptiness.
 #[test]
 fn an_empty_brief_is_named_as_the_empty_side() {
-    let empty_brief = r#"{"campaign_id":"hello-world","dsl_version":"0.13.0",
+    let empty_brief = r#"{"campaign_id":"hello-world","dsl_version":"0.19.0",
       "stage":"geometry-brief","content":{}}"#;
     let d = check_campaign(&campaign(
         Some(PLAN.to_string()),
@@ -1278,7 +1269,7 @@ fn no_stage_five_verb_calls_a_synthesized_anchor_an_invented_name() {
     // none of their checks were allowed to look at, and passed on the UNREPAIRED
     // tree. That is the constitution's `unfenced` vacuity mode exactly, and it
     // was caught only by red-demoing the repair it was written for.
-    quests["dsl_version"] = json!("0.14.0");
+    quests["dsl_version"] = json!("0.19.0");
     // The fixture is a 0.2.0 document, and the newer stage requires an
     // objective's player-facing `title`.
     quests["content"]["quests"][0]["objectives"][1]["title"] = json!("Leave by the vault");
@@ -1362,7 +1353,7 @@ fn a_shortcut_on_a_derived_world_resolves_its_gate_and_its_unlock() {
     let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
     // `shortcut_checks` is fenced at 0.6.0; below it the declaration is parsed
     // and never examined, which is a green that means nothing.
-    quests["dsl_version"] = json!("0.14.0");
+    quests["dsl_version"] = json!("0.19.0");
     quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
     quests["content"]["shortcuts"] = json!([{
         "id": "shortcut/vault-door",
@@ -1481,7 +1472,7 @@ fn no_refusal_on_a_derived_map_prescribes_a_prefab_document() {
     // 0.2.0, and adding a declaration a check is not allowed to look at is the
     // `unfenced` vacuity mode.
     let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
-    quests["dsl_version"] = json!("0.14.0");
+    quests["dsl_version"] = json!("0.19.0");
     quests["content"]["quests"][0]["objectives"][1]["title"] = json!("Leave by the vault");
     quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
     let c = &mut quests["content"];

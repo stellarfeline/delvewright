@@ -68,20 +68,10 @@ const VALID_TRAP: &str = r#"{
 /// A well-formed trap validates clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_trap_validates_clean() {
-    let diags = check_campaign(&campaign_with_traps("0.6.0", VALID_TRAP));
+    let diags = check_campaign(&campaign_with_traps("0.19.0", VALID_TRAP));
     assert!(
         diags.is_empty(),
         "a valid v0.6 trap must validate clean, got: {diags:#?}"
-    );
-}
-
-/// The `traps` section is reserved under a pre-0.6 quests version -> `DW0141`.
-#[test]
-fn v06_traps_reserved_before_0_6() {
-    let diags = check_campaign(&campaign_with_traps("0.5.0", VALID_TRAP));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "traps must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }
 
@@ -89,7 +79,7 @@ fn v06_traps_reserved_before_0_6() {
 #[test]
 fn v06_trap_bad_anchor_is_dw0340() {
     let trap = VALID_TRAP.replacen("anchor/exit", "anchor/nowhere", 1);
-    let diags = check_campaign(&campaign_with_traps("0.6.0", &trap));
+    let diags = check_campaign(&campaign_with_traps("0.19.0", &trap));
     assert!(
         diags.iter().any(|d| d.code == "DW0340"),
         "an `at` anchor no prefab provides must be DW0340: {diags:#?}"
@@ -107,7 +97,7 @@ fn v06_trap_disarm_collides_with_trigger_is_dw0340() {
       "lethality": "lethal",
       "disarm": { "via": "anchor/exit", "sets_flag": "flag/darts-off" }
     }"#;
-    let diags = check_campaign(&campaign_with_traps("0.6.0", trap));
+    let diags = check_campaign(&campaign_with_traps("0.19.0", trap));
     assert!(
         diags.iter().any(|d| d.code == "DW0340"),
         "a disarm.via equal to the trap's own anchor must be DW0340: {diags:#?}"
@@ -118,7 +108,7 @@ fn v06_trap_disarm_collides_with_trigger_is_dw0340() {
 #[test]
 fn v06_trap_unknown_payload_is_dw0341() {
     let trap = VALID_TRAP.replacen("minecraft:torch", "minecraft:definitely-not-an-item", 1);
-    let diags = check_campaign(&campaign_with_traps("0.6.0", &trap));
+    let diags = check_campaign(&campaign_with_traps("0.19.0", &trap));
     assert!(
         diags.iter().any(|d| d.code == "DW0341"),
         "an unknown dispense payload item must be DW0341: {diags:#?}"
@@ -136,7 +126,7 @@ fn v06_trap_tnt_effect_is_rejected() {
       "effect": { "tnt": { "power": 4 } },
       "lethality": "lethal"
     }"#;
-    let diags = check_campaign(&campaign_with_traps("0.6.0", trap));
+    let diags = check_campaign(&campaign_with_traps("0.19.0", trap));
     assert!(
         diags.iter().any(|d| d.code == "DW0100"),
         "a non-dispense trap effect (tnt) must be rejected as an unknown variant (DW0100): {diags:#?}"
@@ -152,7 +142,7 @@ fn v06_trap_unknown_forbids_flag_is_dw0172() {
         "\"lethality\": \"harmful\",\n  \"forbids_flags\": [\"flag/never-produced\"]",
         1,
     );
-    let diags = check_campaign(&campaign_with_traps("0.6.0", &trap));
+    let diags = check_campaign(&campaign_with_traps("0.19.0", &trap));
     assert!(
         diags
             .iter()
@@ -183,7 +173,7 @@ fn a_disarm_flag_can_gate_the_rest_of_the_campaign() {
     }"#;
     // The objective that waits on the disarm. Nothing else in the campaign sets
     // this flag — the trap is its only producer, which is the whole point.
-    let mut raw = campaign_with_traps("0.6.0", trap);
+    let mut raw = campaign_with_traps("0.19.0", trap);
     raw.quests = raw.quests.replace(
         r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }"#,
         r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/darts-off"] }"#,
@@ -195,7 +185,7 @@ fn a_disarm_flag_can_gate_the_rest_of_the_campaign() {
     );
     // The other direction, so this is not a check that simply stopped firing: a
     // flag nothing at all produces is still refused.
-    let mut unproduced = campaign_with_traps("0.6.0", trap);
+    let mut unproduced = campaign_with_traps("0.19.0", trap);
     unproduced.quests = unproduced.quests.replace(
         r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }"#,
         r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/never-set"] }"#,

@@ -76,7 +76,7 @@ fn good_trigger() -> String {
 /// The canonical form validates clean — no anchor, and none wanted.
 #[test]
 fn strike_npc_without_an_anchor_is_valid() {
-    let diags = check_campaign(&campaign_with(&quests_with("0.6.0", &good_trigger())));
+    let diags = check_campaign(&campaign_with(&quests_with("0.19.0", &good_trigger())));
     assert!(
         diags.is_empty(),
         "a `strike-npc` trigger naming a declared NPC must validate clean: {diags:#?}"
@@ -96,7 +96,7 @@ fn strike_npc_with_an_anchor_is_dw0194() {
       "effects": {NARRATE}
     }}"#
     );
-    let diags = check_campaign(&campaign_with(&quests_with("0.6.0", &trigger)));
+    let diags = check_campaign(&campaign_with(&quests_with("0.19.0", &trigger)));
     assert!(
         diags.iter().any(|d| d.code == "DW0194"),
         "an `at` on a `strike-npc` trigger must be DW0194: {diags:#?}"
@@ -113,7 +113,7 @@ fn strike_without_an_anchor_is_dw0194() {
       "effects": {NARRATE}
     }}"#
     );
-    let diags = check_campaign(&campaign_with(&quests_with("0.6.0", &trigger)));
+    let diags = check_campaign(&campaign_with(&quests_with("0.19.0", &trigger)));
     assert!(
         diags.iter().any(|d| d.code == "DW0194"),
         "a `strike` trigger with no `at` must be DW0194: {diags:#?}"
@@ -132,19 +132,9 @@ fn strike_npc_targeting_an_unknown_npc_is_dw0112() {
       "effects": {NARRATE}
     }}"#
     );
-    let diags = check_campaign(&campaign_with(&quests_with("0.6.0", &trigger)));
+    let diags = check_campaign(&campaign_with(&quests_with("0.19.0", &trigger)));
     assert!(
         diags.iter().any(|d| d.code == "DW0112"),
         "an unknown `strike-npc` target must be DW0112: {diags:#?}"
-    );
-}
-
-/// The whole form is a v0.6 surface.
-#[test]
-fn strike_npc_before_v06_is_dw0141() {
-    let diags = check_campaign(&campaign_with(&quests_with("0.4.0", &good_trigger())));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "`strike-npc` under a pre-0.6 quests stage must be DW0141: {diags:#?}"
     );
 }

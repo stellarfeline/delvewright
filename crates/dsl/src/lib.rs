@@ -23,7 +23,6 @@ pub mod detailplan;
 pub mod diagnostic;
 pub mod effects;
 pub mod envelope;
-pub mod fence;
 pub mod fmt;
 pub mod gate;
 pub mod ids;
@@ -43,20 +42,14 @@ pub mod validate;
 pub use canonical::to_canonical_string;
 pub use chrome::{Chrome, ChromeString, validate_chrome_namespace};
 pub use detailplan::{Detail, DetailPlanContent, FLOOR_COURSE, Frame, bound_places, is_bound};
-pub use diagnostic::{Binds, Diagnostic, DwCode, ExitTier, Group, Severity, Subject, codes};
+pub use diagnostic::{Diagnostic, DwCode, ExitTier, Group, Severity, Subject, codes};
 pub use effects::{
     EffectRootKind, EffectRootOwner, EffectRootSite, RootBinding, for_each_effect_root,
     for_each_effect_root_mut,
 };
 pub use envelope::{
-    Campaign, DETAIL_PLAN_SINCE, Envelope, HORIZON_LIBRARY_SINCE, LAYOUT_GRAPH_SINCE,
-    OPEN_WAY_SINCE, OPTIONAL_QUESTS_SINCE, RESERVED_DSL_VERSIONS, RawCampaign, SITE_PLAN_SINCE,
-    STATIONS_SINCE, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage, WAY_AND_CONTACT_SINCE,
-    accepted_versions, check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06,
-    is_v07, is_v08, is_v09, is_v10, is_v11, is_v12, is_v13, is_v14, is_v15, is_v16, is_v17, is_v18,
-    is_v19, minor_ordinal, parse_campaign, reserved_for,
+    Campaign, DSL_VERSION, Envelope, RawCampaign, Stage, check_campaign, parse_campaign,
 };
-pub use fence::Fenced;
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DatumId,

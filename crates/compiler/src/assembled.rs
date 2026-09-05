@@ -1135,7 +1135,7 @@ fn spread(solid: &BTreeSet<[i32; 3]>, sources: &BTreeSet<[i32; 3]>) -> BTreeSet<
 /// wave seat happens to cross it — so DW0311/DW0312 alone would let it ship green.
 /// This is the authoritative, direct gate: no DSL verb can intend a despawn, so it
 /// is always a prefab/generator defect.
-pub const DW_GRAVITY_DESPAWN: DwCode = DwCode::every_version("DW0313", ExitTier::Analysis);
+pub const DW_GRAVITY_DESPAWN: DwCode = DwCode::new("DW0313", ExitTier::Analysis);
 
 /// A placed piece's prefab id paired with its world AABB `(min, max)`, for
 /// attributing a despawned cell back to the piece that placed it.

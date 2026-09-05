@@ -59,7 +59,7 @@ fn parse(deferred: bool, quests: &str) -> Campaign {
 /// `obj/talk` completion bundle and the quest `on_complete` bundle.
 fn quests(talk_fx: &str, complete_fx: &str) -> String {
     r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

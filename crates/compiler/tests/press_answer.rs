@@ -75,9 +75,19 @@ use delvewright_dsl::{Campaign, EnvTrigger, parse_campaign};
 fn fixture() -> Campaign {
     let dir = common::compiler_fixtures_dir().join("souls-shortcut");
     let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
+    let mut campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
+    // The fixture ships its door's press answer; these tests are about the
+    // door with nothing to say, so the answer is withdrawn here.
+    campaign
+        .quests
+        .content
+        .triggers
+        .retain(|t| t.id.as_str() != "trigger/inner-door-barred");
     let d = diagnostics(&campaign);
-    assert!(d.is_empty(), "fixture must validate clean: {d:#?}");
+    assert!(
+        d.iter().all(|d| d.code == "DW0429"),
+        "the fixture, less its answer, owes nothing but the answer: {d:#?}"
+    );
     campaign
 }
 
@@ -91,7 +101,7 @@ fn fixture() -> Campaign {
 /// bump to 0.11.0 in order to observe — look like a broken fixture.
 fn diagnostics(c: &Campaign) -> Vec<delvewright_dsl::Diagnostic> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    common::fenced_diagnostics(
+    common::validation_diagnostics(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
@@ -255,7 +265,7 @@ fn the_answer_dies_with_the_door() {
 #[test]
 fn a_barred_door_with_nothing_to_say_is_dw0429() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.11.0".to_string();
+    c.quests.dsl_version = "0.19.0".to_string();
     let diags = diagnostics(&c);
     let d = diags
         .iter()
@@ -292,27 +302,6 @@ fn a_barred_door_with_nothing_to_say_is_dw0429() {
     );
 }
 
-/// **The fence.** `DW0429` is a tightening, so it cannot reach a campaign written
-/// before it existed. The `souls-shortcut` fixture is a 0.9.0 campaign whose door
-/// says nothing: it still validates, still builds, and still emits exactly what
-/// it emitted before this version — no answer at all.
-#[test]
-fn a_pre_0_11_campaign_with_a_silent_door_still_compiles() {
-    let c = fixture();
-    assert_eq!(c.quests.dsl_version, "0.9.0");
-    assert!(
-        diagnostics(&c).is_empty(),
-        "a pre-0.11 campaign is not held to the obligation: {:#?}",
-        diagnostics(&c)
-    );
-    let out = build(&c);
-    assert!(
-        !all_functions(&out).contains("dw_press_"),
-        "and the compiler invents nothing for it either: {}",
-        all_functions(&out)
-    );
-}
-
 /// Any `use` trigger on the gate discharges the obligation, whatever it does —
 /// the same predicate the synthesis reads (`QuestsContent::answers_press_at`), so
 /// the refusal and the synthesis can never disagree about what counts as an
@@ -321,7 +310,7 @@ fn a_pre_0_11_campaign_with_a_silent_door_still_compiles() {
 #[test]
 fn the_obligation_is_discharged_by_any_use_trigger_and_not_by_a_strike() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.11.0".to_string();
+    c.quests.dsl_version = "0.19.0".to_string();
     // The fixture already carries a `strike` answer on this very gate.
     assert!(
         diagnostics(&c).iter().any(|d| d.code == "DW0429"),
@@ -344,30 +333,6 @@ fn the_obligation_is_discharged_by_any_use_trigger_and_not_by_a_strike() {
 // Red 2 — the campaign could not say it either
 // ---------------------------------------------------------------------------
 
-/// **The authoring red.** A campaign that wants its own wrong-side line writes
-/// the general verb — a `use` trigger on the gate, answering the presser on the
-/// actionbar. Both halves of that sentence were inexpressible before v0.11:
-/// `narrate` had no `actionbar`, and a trigger could not address a presser.
-///
-/// Under a pre-0.11 `dsl_version` each is `DW0141`, which is the fence; the point
-/// of the test is the pair of paths that produce it.
-#[test]
-fn the_general_answer_is_reserved_before_v011() {
-    let mut c = fixture();
-    c.quests.content.triggers.push(authored_answer());
-    let diags = diagnostics(&c);
-    let reserved: Vec<&delvewright_dsl::Diagnostic> =
-        diags.iter().filter(|d| d.code == "DW0141").collect();
-    assert!(
-        reserved.iter().any(|d| d.path.ends_with("/style")),
-        "the `actionbar` channel is fenced: {diags:#?}"
-    );
-    assert!(
-        reserved.iter().any(|d| d.path.ends_with("/audience")),
-        "the presser addressee is fenced: {diags:#?}"
-    );
-}
-
 /// …and at 0.11.0 it compiles, and produces exactly the shape the compiler's own
 /// default produces — same advancement criterion, same `@s` actionbar command.
 /// That equality is the whole claim: there is one mechanism, and the engine's
@@ -375,7 +340,7 @@ fn the_general_answer_is_reserved_before_v011() {
 #[test]
 fn the_campaign_can_write_its_own_wrong_side_answer() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.11.0".to_string();
+    c.quests.dsl_version = "0.19.0".to_string();
     c.quests.content.triggers.push(authored_answer());
     assert!(
         diagnostics(&c).is_empty(),
@@ -402,7 +367,7 @@ fn the_campaign_can_write_its_own_wrong_side_answer() {
 /// 0.11 campaign that bars a door must have.
 fn answered_fixture() -> Campaign {
     let mut c = fixture();
-    c.quests.dsl_version = "0.11.0".to_string();
+    c.quests.dsl_version = "0.19.0".to_string();
     c.quests.content.triggers.push(authored_answer());
     assert!(
         diagnostics(&c).is_empty(),
@@ -435,7 +400,7 @@ fn authored_answer() -> EnvTrigger {
 #[test]
 fn a_presser_answer_on_a_left_click_is_dw0427() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.11.0".to_string();
+    c.quests.dsl_version = "0.19.0".to_string();
     let mut t = authored_answer();
     t.on = delvewright_dsl::TriggerOn::Strike;
     c.quests.content.triggers.push(t);
@@ -457,7 +422,7 @@ fn a_presser_answer_on_a_left_click_is_dw0427() {
 #[test]
 fn an_authored_trigger_in_the_reserved_namespace_is_dw0428() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.11.0".to_string();
+    c.quests.dsl_version = "0.19.0".to_string();
     let mut t = authored_answer();
     // The exact id `plan::press_answer_trigger_id` would mint for this door.
     t.id = delvewright_dsl::TriggerId("trigger/dw-press-door-inner-door".to_string());
@@ -501,40 +466,6 @@ fn the_press_answers_bind_to_the_pressable_class() {
         plan.press_answers.is_empty(),
         "a door's wording is the author's; the compiler supplies none: {:?}",
         plan.press_answers
-    );
-}
-
-/// **The policy is keyed to the VERSION, not to the verb.** Above the fence every
-/// pressable body carries the same obligation; the two grandfathered arms below
-/// it differ from each other only because the two classes historically did.
-///
-/// This assertion is the guard on the defect CLAUDE.md's worked example is about:
-/// if someone later gives a door and a seal different defaulting rules at one
-/// version, this fails.
-#[test]
-fn the_silence_policy_is_uniform_above_the_fence() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    use delvewright_compiler::plan::SilencePolicy;
-
-    let answered = answered_fixture();
-    let plan = Plan::build(&answered, &prefabs).expect("plan builds");
-    let above = delvewright_compiler::plan::press_answer_policies(&plan);
-    assert!(
-        !above.is_empty() && above.iter().all(|(.., p)| *p == SilencePolicy::Authored),
-        "at 0.11.0 nothing may be worded by the compiler: {above:?}"
-    );
-
-    let pre = fixture();
-    let plan = Plan::build(&pre, &prefabs).expect("plan builds");
-    let below = delvewright_compiler::plan::press_answer_policies(&plan);
-    assert_eq!(
-        below,
-        vec![(
-            "shortcut door",
-            "anchor/door".to_string(),
-            SilencePolicy::Silent
-        )],
-        "below it, a door keeps the silence it always had"
     );
 }
 

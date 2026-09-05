@@ -26,7 +26,7 @@ fn read_hw(name: &str) -> String {
 fn dialogue_doc(label: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.2.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {{
@@ -185,7 +185,7 @@ fn overlong_zh_label_translation_is_dw0331_naming_the_language() {
     let key = dialogue_option_labels(&c)[0].key.clone();
     assert_eq!(key, "dlg.keeper.greeting.opt.0.label");
     let doc: L10nDoc = serde_json::from_value(serde_json::json!({
-        "dsl_version": "0.6.0",
+        "dsl_version": "0.19.0",
         "campaign_id": "hello-world",
         "kind": "l10n",
         "lang": "zh-cn",
@@ -209,7 +209,7 @@ fn overlong_zh_label_translation_is_dw0331_naming_the_language() {
     // …and a translation that respects the budget is clean, so the check is not
     // simply rejecting Chinese.
     let short: L10nDoc = serde_json::from_value(serde_json::json!({
-        "dsl_version": "0.6.0",
+        "dsl_version": "0.19.0",
         "campaign_id": "hello-world",
         "kind": "l10n",
         "lang": "zh-cn",
@@ -231,7 +231,7 @@ fn undeclared_language_sidecar_is_ignored() {
     let c = parse_hw(&dialogue_doc("Another way out?"), None);
     let key = dialogue_option_labels(&c)[0].key.clone();
     let doc: L10nDoc = serde_json::from_value(serde_json::json!({
-        "dsl_version": "0.6.0",
+        "dsl_version": "0.19.0",
         "campaign_id": "hello-world",
         "kind": "l10n",
         "lang": "zh-cn",
@@ -298,7 +298,7 @@ fn every_engine_fixture_fits_its_buttons() {
 fn dialogue_doc_with_tooltip(label: &str, tooltip: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.8.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {{
@@ -387,7 +387,7 @@ fn a_long_tooltip_translation_is_not_dw0331() {
     assert_eq!(keys, vec!["dlg.keeper.greeting.opt.0.label".to_string()]);
 
     let doc: L10nDoc = serde_json::from_value(serde_json::json!({
-        "dsl_version": "0.6.0",
+        "dsl_version": "0.19.0",
         "campaign_id": "hello-world",
         "kind": "l10n",
         "lang": "zh-cn",

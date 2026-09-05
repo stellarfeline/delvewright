@@ -12,7 +12,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// Stage 2 with a deferred second NPC.
 const NPCS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "npcs",
   "content": {
@@ -56,7 +56,7 @@ const NPCS: &str = r#"{
 
 /// Stage 4: two quests, `quest/second` depending on `quest/open-the-door`.
 const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -86,7 +86,7 @@ const QUEST_PLAN: &str = r#"{
 
 /// Stage 6: a tree per NPC (`DW0152`), the latecomer's completing its `talk-to`.
 const DIALOGUE: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -123,7 +123,7 @@ const DIALOGUE: &str = r#"{
 
 /// Stage 5: quest 1 spawns the latecomer when the door opens; quest 2 talks to her.
 const QUESTS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -181,28 +181,6 @@ fn deferred_npc_with_spawn_validates_clean() {
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 deferred npc + spawn-npc, got: {diags:#?}"
-    );
-}
-
-/// `deferred` under a pre-0.6 npcs stage is reserved → `DW0141`.
-#[test]
-fn deferred_reserved_before_0_6() {
-    let pre = NPCS.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign(&pre, QUESTS, DIALOGUE));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "npc `deferred` must be reserved under 0.5.0 (DW0141): {diags:#?}"
-    );
-}
-
-/// `spawn-npc` under a pre-0.6 quests stage is reserved → `DW0141`.
-#[test]
-fn spawn_npc_effect_reserved_before_0_6() {
-    let pre = QUESTS.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign(NPCS, &pre, DIALOGUE));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "`spawn-npc` must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }
 
@@ -264,7 +242,7 @@ fn talk_to_before_spawn_in_dag_is_dw0198() {
     // the whole quest (including the talk-to) is done... to make the DAG order
     // unambiguous, put the talk-to in quest 1 and the spawn in quest 2.
     let swapped = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

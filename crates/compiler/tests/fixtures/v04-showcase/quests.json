@@ -3,9 +3,24 @@
   "content": {
     "quests": [
       {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greet",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/greet",
+          "verb": "learns"
+        },
         "id": "quest/greet",
         "objectives": [
           {
+            "happening": {
+              "text": "the party completes obj/talk",
+              "verb": "learns"
+            },
             "id": "obj/talk",
             "npc": "npc/keeper",
             "type": "talk-to"
@@ -16,9 +31,17 @@
           "obj/talk": [
             {
               "anchor": "anchor/gate",
+              "happening": {
+                "text": "the gate at anchor/gate opens",
+                "verb": "opens"
+              },
               "type": "open-gate"
             },
             {
+              "happening": {
+                "text": "wave/guards arrives",
+                "verb": "arrives"
+              },
               "type": "spawn-wave",
               "wave": "wave/guards"
             },
@@ -45,9 +68,24 @@
         }
       },
       {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greet",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/trial",
+          "verb": "learns"
+        },
         "id": "quest/trial",
         "objectives": [
           {
+            "happening": {
+              "text": "the party completes obj/slay",
+              "verb": "survives"
+            },
             "hint": "Cut down every guard the moor raised.",
             "id": "obj/slay",
             "requires_flags": [
@@ -63,6 +101,10 @@
             ],
             "anchor": "anchor/chest",
             "count": 1,
+            "happening": {
+              "text": "the party completes obj/key",
+              "verb": "gains"
+            },
             "hint": "The key sits in a chest off the hall.",
             "id": "obj/key",
             "item": "minecraft:tripwire_hook",
@@ -77,6 +119,10 @@
               "obj/key"
             ],
             "anchor": "anchor/door",
+            "happening": {
+              "text": "the party completes obj/door",
+              "verb": "opens"
+            },
             "hint": "Pull the lever on the barred door.",
             "id": "obj/door",
             "prop": {
@@ -91,6 +137,10 @@
               "obj/door"
             ],
             "anchor": "anchor/objective",
+            "happening": {
+              "text": "the party completes obj/shrine",
+              "verb": "arrives"
+            },
             "hint": "Slip past the gate to the shrine at the hall's end.",
             "id": "obj/shrine",
             "radius": 2,
@@ -109,10 +159,18 @@
             "type": "narrate"
           },
           {
+            "happening": {
+              "text": "npc/keeper departs",
+              "verb": "departs"
+            },
             "npc": "npc/keeper",
             "type": "despawn-npc"
           },
           {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
             "type": "campaign-complete"
           }
         ],
@@ -123,6 +181,10 @@
               "type": "set-flag"
             },
             {
+              "happening": {
+                "text": "wave/ambush arrives",
+                "verb": "arrives"
+              },
               "type": "spawn-wave",
               "wave": "wave/ambush"
             }
@@ -138,6 +200,10 @@
               "type": "set-block"
             },
             {
+              "happening": {
+                "text": "npc/keeper arrives at anchor/objective",
+                "verb": "arrives"
+              },
               "npc": "npc/keeper",
               "to_anchor": "anchor/objective",
               "type": "move-npc"
@@ -248,6 +314,6 @@
       }
     ]
   },
-  "dsl_version": "0.4.0",
+  "dsl_version": "0.19.0",
   "stage": "quests"
 }

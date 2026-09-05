@@ -56,7 +56,7 @@ fn payload_prefabs(name: &str, extra: &[(&str, serde_json::Value)]) -> PathBuf {
 
 fn world_v06() -> serde_json::Value {
     serde_json::json!({
-        "dsl_version": "0.6.0",
+        "dsl_version": "0.19.0",
         "campaign_id": "hello-world",
         "stage": "world",
         "content": {
@@ -72,7 +72,7 @@ fn world_v06() -> serde_json::Value {
 
 fn quests_v06(trap: serde_json::Value) -> serde_json::Value {
     serde_json::json!({
-        "dsl_version": "0.6.0",
+        "dsl_version": "0.19.0",
         "campaign_id": "hello-world",
         "stage": "quests",
         "content": {

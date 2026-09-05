@@ -23,7 +23,7 @@ use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign};
 /// A v0.6 stage-5 quests doc: the keeper walks to the exit; arrival sets
 /// `flag/arrived` (+ narrates), and the follow-up objective is gated on it.
 const QUESTS_ARRIVE: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -77,23 +77,6 @@ fn move_npc_on_arrive_validates_clean_and_produces_flags() {
     assert!(
         diags.is_empty(),
         "move-npc.on_arrive must validate clean (nested set-flag is a producer): {diags:#?}"
-    );
-}
-
-/// The additive `on_arrive` field on the v0.4 `move-npc` verb is reserved under
-/// a pre-0.6 quests stage (`DW0141`), like `cutscene.look_at`.
-#[test]
-fn move_npc_on_arrive_reserved_before_0_6() {
-    let pre = QUESTS_ARRIVE
-        .replacen("\"0.6.0\"", "\"0.4.0\"", 1)
-        // strip the v0.6-independent gate noise: keep only the on_arrive surface
-        .replace(", \"requires_flags\": [\"flag/arrived\"]", "");
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.code == "DW0141" && d.path.ends_with("/on_arrive")),
-        "move-npc.on_arrive must be reserved (DW0141) under 0.4.0: {diags:#?}"
     );
 }
 

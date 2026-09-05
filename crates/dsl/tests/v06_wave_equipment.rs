@@ -12,7 +12,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 quests document with a wave whose zombie wears boots and carries a
 /// sword (both in the vendored v0 item-registry subset the DSL tests use).
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -66,17 +66,6 @@ fn wave_equipment_validates_clean() {
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 wave-mob equipment, got: {diags:#?}"
-    );
-}
-
-/// `equipment` under a pre-0.6 quests version is reserved → `DW0141`.
-#[test]
-fn wave_equipment_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "wave-mob equipment must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }
 

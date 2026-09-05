@@ -1,6 +1,32 @@
 {
   "campaign_id": "hello-world",
   "content": {
+    "branch_points": [
+      {
+        "branches": [
+          {
+            "flags": [
+              "flag/wait"
+            ],
+            "id": "branch/hold",
+            "leads_to": "quest/hold"
+          },
+          {
+            "flags": [
+              "flag/flee"
+            ],
+            "id": "branch/bolt",
+            "leads_to": "quest/bolt"
+          }
+        ],
+        "forks_on": [
+          "flag/wait",
+          "flag/flee"
+        ],
+        "id": "branch-point/decide",
+        "opens_at": "quest/decide"
+      }
+    ],
     "finale": "quest/hold",
     "quests": [
       {
@@ -43,6 +69,6 @@
       }
     ]
   },
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "stage": "quest-plan"
 }

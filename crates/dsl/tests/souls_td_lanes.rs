@@ -12,7 +12,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// hello-world's quest stage at 0.6.0 with a raider lane and an aggro-edge wave.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -86,20 +86,6 @@ fn lane_and_aggro_edge_validate_clean() {
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 §6 surface, got: {diags:#?}"
     );
-}
-
-/// Both fields are v0.6 stage-5 surface: reserved under an earlier version, so a
-/// pre-0.6 campaign that declares one is rejected rather than silently ignored.
-#[test]
-fn lane_and_summon_are_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = diags_for(&pre);
-    for path in ["/content/waves/0/lane", "/content/waves/1/summon"] {
-        assert!(
-            diags.iter().any(|d| d.code == "DW0141" && d.path == path),
-            "{path} must be reserved under 0.5.0 (DW0141): {diags:#?}"
-        );
-    }
 }
 
 // --- DW0381: the declaration does not resolve / contradicts itself ---------

@@ -9,7 +9,7 @@ use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, parse_campaig
 
 /// A v0.8 quests document that seals `anchor/door` with an authored answer.
 const QUESTS_V08: &str = r#"{
-  "dsl_version": "0.8.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -61,21 +61,6 @@ fn sealed_hint_validates_clean_at_0_8() {
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.8 sealed_hint, got: {diags:#?}"
-    );
-}
-
-/// …and is reserved (`DW0141`) under an earlier quests version. A pre-0.8
-/// campaign still gets an answer — the compiler's canonical English — it just
-/// cannot author the wording.
-#[test]
-fn sealed_hint_reserved_before_0_8() {
-    let pre = QUESTS_V08.replacen("\"0.8.0\"", "\"0.6.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.code == "DW0141" && d.path.ends_with("/sealed_hint")),
-        "an authored sealed_hint must be reserved under 0.6.0 (DW0141): {diags:#?}"
     );
 }
 

@@ -47,7 +47,7 @@ fn codes(raw: &RawCampaign) -> Vec<String> {
 fn quests_doc(objective_terms: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.10.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -129,7 +129,7 @@ fn a_satisfiable_multi_term_gate_is_clean() {
 #[test]
 fn a_flag_required_and_forbidden_at_once_is_refused() {
     let quests = r#"{
-  "dsl_version": "0.7.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -169,7 +169,7 @@ fn a_flag_required_and_forbidden_at_once_is_refused() {
 #[test]
 fn a_contradictory_cast_placement_gate_is_refused() {
     let quests = r#"{
-  "dsl_version": "0.10.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

@@ -90,6 +90,10 @@ fn build_scheduled_hello_world() -> BuildOutput {
     }
     let search = r#"        "on_complete": [
           {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
             "type": "campaign-complete"
           }
         ]"#;
@@ -98,14 +102,14 @@ fn build_scheduled_hello_world() -> BuildOutput {
             "type": "sequence",
             "steps": [
               { "at_ticks": 0, "effects": [ { "type": "narrate", "style": "chat", "text": "The door swings wide." } ] },
-              { "at_ticks": 240, "effects": [ { "type": "campaign-complete" } ] }
+              { "at_ticks": 240, "effects": [ { "type": "campaign-complete",
+                  "happening": { "verb": "survives", "text": "the delve is complete" } } ] }
             ]
           }
         ]"#;
     let qp = dst.join("quests.json");
     let q = std::fs::read_to_string(&qp)
         .unwrap()
-        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
         .replace(search, replace);
     assert!(q.contains("at_ticks"), "quests.json patch applied");
     std::fs::write(&qp, q).unwrap();

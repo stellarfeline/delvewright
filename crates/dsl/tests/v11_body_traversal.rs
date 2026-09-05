@@ -79,52 +79,19 @@ fn codes(raw: &RawCampaign) -> Vec<String> {
 #[test]
 fn both_body_classes_accept_a_declaration_at_v11() {
     for locomotion in ["ground", "climber", "flier"] {
-        let r = raw(npcs("0.11.0", Some(locomotion)), quests("0.11.0", None));
+        let r = raw(npcs("0.19.0", Some(locomotion)), quests("0.19.0", None));
         assert!(
             !codes(&r).iter().any(|c| c == "DW0141" || c == "DW0455"),
             "npc `{locomotion}`: {:#?}",
             check_campaign(&r)
         );
-        let r = raw(npcs("0.11.0", None), quests("0.11.0", Some(locomotion)));
+        let r = raw(npcs("0.19.0", None), quests("0.19.0", Some(locomotion)));
         assert!(
             !codes(&r).iter().any(|c| c == "DW0141" || c == "DW0455"),
             "actor `{locomotion}`: {:#?}",
             check_campaign(&r)
         );
     }
-}
-
-/// …and the fence is **per stage**, which is the whole point of a per-stage
-/// fence: an npcs document may adopt the surface while the quests document stays
-/// where it was, and vice versa. Declaring it below 0.11.0 is `DW0141`.
-#[test]
-fn a_declaration_below_v11_is_dw0141_in_its_own_stage() {
-    let r = raw(npcs("0.10.0", Some("climber")), quests("0.11.0", None));
-    let d = check_campaign(&r);
-    let hit = d
-        .iter()
-        .find(|d| d.code == "DW0141")
-        .unwrap_or_else(|| panic!("expected DW0141 for the npcs stage: {d:#?}"));
-    assert_eq!(hit.stage, "npcs");
-    assert!(hit.path.contains("/content/npcs/0/traversal"), "{hit:?}");
-
-    let r = raw(npcs("0.11.0", None), quests("0.10.0", Some("climber")));
-    let d = check_campaign(&r);
-    let hit = d
-        .iter()
-        .find(|d| d.code == "DW0141")
-        .unwrap_or_else(|| panic!("expected DW0141 for the quests stage: {d:#?}"));
-    assert_eq!(hit.stage, "quests");
-    assert!(hit.path.contains("/content/actors/0/traversal"), "{hit:?}");
-
-    // …and the stage that DID adopt it raises nothing, or the fence would be a
-    // campaign-wide gate wearing a per-stage name.
-    let r = raw(npcs("0.11.0", Some("climber")), quests("0.10.0", None));
-    assert!(
-        !codes(&r).iter().any(|c| c == "DW0141"),
-        "{:#?}",
-        check_campaign(&r)
-    );
 }
 
 /// **A value the engine cannot hold a body to is refused, not ignored**
@@ -139,11 +106,11 @@ fn declaring_aquatic_is_dw0455_on_either_body_class() {
     for (label, r) in [
         (
             "npc",
-            raw(npcs("0.11.0", Some("aquatic")), quests("0.11.0", None)),
+            raw(npcs("0.19.0", Some("aquatic")), quests("0.19.0", None)),
         ),
         (
             "actor",
-            raw(npcs("0.11.0", None), quests("0.11.0", Some("aquatic"))),
+            raw(npcs("0.19.0", None), quests("0.19.0", Some("aquatic"))),
         ),
     ] {
         let d = check_campaign(&r);
@@ -175,9 +142,9 @@ fn an_unknown_locomotion_or_field_does_not_parse() {
     ] {
         let mut doc: serde_json::Value =
             serde_json::from_str(&common::read_valid("npcs.json")).unwrap();
-        doc["dsl_version"] = serde_json::json!("0.11.0");
+        doc["dsl_version"] = serde_json::json!("0.19.0");
         doc["content"]["npcs"][0]["traversal"] = bad.clone();
-        let r = raw(doc.to_string(), quests("0.11.0", None));
+        let r = raw(doc.to_string(), quests("0.19.0", None));
         assert!(
             codes(&r).iter().any(|c| c == "DW0100" || c == "DW0101"),
             "`{bad}` must be rejected by the schema, not accepted: {:#?}",
@@ -190,7 +157,7 @@ fn an_unknown_locomotion_or_field_does_not_parse() {
 /// additive-superset contract every version ledger entry carries.
 #[test]
 fn declaring_nothing_at_v11_raises_nothing() {
-    let r = raw(npcs("0.11.0", None), quests("0.11.0", None));
+    let r = raw(npcs("0.19.0", None), quests("0.19.0", None));
     let d = check_campaign(&r);
     assert!(
         !d.iter()

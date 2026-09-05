@@ -5,7 +5,7 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/keep",
+        "area": "area/gatehouse",
         "depends_on": [],
         "goal": "Convince the Keeper to unbar the keep's gate.",
         "id": "quest/greet-keeper",
@@ -27,6 +27,6 @@
       }
     ]
   },
-  "dsl_version": "0.2.0",
+  "dsl_version": "0.19.0",
   "stage": "quest-plan"
 }

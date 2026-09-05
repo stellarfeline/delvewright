@@ -1,6 +1,38 @@
 {
-  "description": "The finale quest is triggered only by its own completion (quest-complete of itself), so it can never become active and never completes. No static rule is violated — depends_on is acyclic and empty (DW0130), the plan converges (DW0132), the trigger reference resolves (DW0112), and the keeper's talk-to objective still has a reachable completing option (DW0123). Only the compiler's deep fixpoint sees the deadlock: exit 2 / DW0201 (plus DW0202). Proves analyze is not vacuous now that the dialogue-completion case is caught statically.",
+  "description": "The finale quest is triggered only by its own completion (quest-complete of itself), so it can never become active and never completes. No static rule is violated — depends_on is acyclic (DW0130), the plan converges on the finale (DW0132), the trigger reference resolves (DW0112), the keeper's talk-to objective in the first quest still has a reachable completing option (DW0123) and the finale casts no scene a talk-to depends on (DW0858). Only the compiler's deep fixpoint sees the deadlock: exit 2 / DW0201 (plus DW0202). Proves analyze is not vacuous now that the dialogue-completion case is caught statically.",
   "documents": {
+    "quest-plan": {
+      "campaign_id": "hello-world",
+      "content": {
+        "finale": "quest/leave",
+        "quests": [
+          {
+            "act": 1,
+            "area": "area/keep",
+            "depends_on": [],
+            "goal": "Ask the Keeper to open the door.",
+            "id": "quest/open-the-door",
+            "mandatory": true,
+            "npcs": [
+              "npc/keeper"
+            ]
+          },
+          {
+            "act": 1,
+            "area": "area/keep",
+            "depends_on": [
+              "quest/open-the-door"
+            ],
+            "goal": "Leave the keep.",
+            "id": "quest/leave",
+            "mandatory": true,
+            "npcs": []
+          }
+        ]
+      },
+      "dsl_version": "0.19.0",
+      "stage": "quest-plan"
+    },
     "quests": {
       "campaign_id": "hello-world",
       "content": {
@@ -12,11 +44,25 @@
                 "id": "obj/talk",
                 "npc": "npc/keeper",
                 "type": "talk-to"
-              },
+              }
+            ],
+            "on_complete": [],
+            "on_objective_complete": {
+              "obj/talk": [
+                {
+                  "anchor": "anchor/door",
+                  "type": "open-gate"
+                }
+              ]
+            },
+            "trigger": {
+              "type": "campaign-start"
+            }
+          },
+          {
+            "id": "quest/leave",
+            "objectives": [
               {
-                "after": [
-                  "obj/talk"
-                ],
                 "anchor": "anchor/exit",
                 "id": "obj/exit",
                 "radius": 2,
@@ -28,22 +74,15 @@
                 "type": "campaign-complete"
               }
             ],
-            "on_objective_complete": {
-              "obj/talk": [
-                {
-                  "anchor": "anchor/door",
-                  "type": "open-gate"
-                }
-              ]
-            },
+            "on_objective_complete": {},
             "trigger": {
-              "quest": "quest/open-the-door",
+              "quest": "quest/leave",
               "type": "quest-complete"
             }
           }
         ]
       },
-      "dsl_version": "0.2.0",
+      "dsl_version": "0.19.0",
       "stage": "quests"
     }
   },

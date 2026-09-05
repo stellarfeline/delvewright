@@ -15,7 +15,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 stage-5 quests document: one actor puppet, spawned then walked to the
 /// exit (despawn-on-arrive), then a two-step timeline unleashing and killing it.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -89,17 +89,6 @@ fn v06_actor_surface_validates_clean() {
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 actor surface, got: {diags:#?}"
-    );
-}
-
-/// The same surface under a pre-0.6 quests version is reserved → `DW0141`.
-#[test]
-fn v06_actor_surface_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "v0.6 actor surface must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }
 

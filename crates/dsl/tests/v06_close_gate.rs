@@ -10,24 +10,33 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 quests document that opens `anchor/door` then re-seals it with a
 /// `close-gate` after the exit is reached (on_complete — nothing left to walk).
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/open-the-door",
+        "happening": { "verb": "learns", "text": "the party asks the keeper" },
+        "cast": {
+          "npc/keeper": { "at": "anchor/keeper-stand", "doing": "keeping the door", "dialogue": "dlg/greeting" }
+        },
         "trigger": { "type": "campaign-start" },
         "objectives": [
-          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
-          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper",
+            "happening": { "verb": "learns", "text": "the keeper is asked" } },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"],
+            "happening": { "verb": "arrives", "text": "the party reaches the exit" } }
         ],
         "on_objective_complete": {
-          "obj/talk": [ { "type": "open-gate", "anchor": "anchor/door" } ]
+          "obj/talk": [ { "type": "open-gate", "anchor": "anchor/door",
+                          "happening": { "verb": "opens", "text": "the door opens" } } ]
         },
         "on_complete": [
-          { "type": "close-gate", "anchor": "anchor/door" },
-          { "type": "campaign-complete" }
+          { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "The bars are down for good.",
+            "happening": { "verb": "seals", "text": "the door seals behind the party" } },
+          { "type": "campaign-complete",
+            "happening": { "verb": "survives", "text": "the delve is complete" } }
         ]
       }
     ]
@@ -60,24 +69,13 @@ fn close_gate_validates_clean() {
     );
 }
 
-/// `close-gate` under a pre-0.6 quests version is reserved → `DW0141`.
-#[test]
-fn close_gate_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "close-gate must be reserved under 0.5.0 (DW0141): {diags:#?}"
-    );
-}
-
 /// A `close-gate` on an anchor the bound prefab does not provide is `DW0142`
 /// (same anchor-existence check as `open-gate`).
 #[test]
 fn close_gate_unresolved_anchor_is_dw0142() {
     let bad = QUESTS_V06.replace(
-        r#"{ "type": "close-gate", "anchor": "anchor/door" }"#,
-        r#"{ "type": "close-gate", "anchor": "anchor/nope" }"#,
+        r#"{ "type": "close-gate", "anchor": "anchor/door","#,
+        r#"{ "type": "close-gate", "anchor": "anchor/nope","#,
     );
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(

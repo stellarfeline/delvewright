@@ -48,38 +48,35 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{
     Campaign, CastAbsence, CastDialogue, CastDialogueKeyword, CastEntry, CastPlacement, Diagnostic,
-    is_v07,
 };
 
 use crate::continuity::{self, NpcWhere};
 use delvewright_dsl::{DwCode, ExitTier};
 
 /// A live NPC is unaccounted for in a quest's `cast` ledger (proof 1).
-pub const DW_CAST_UNACCOUNTED: DwCode = DwCode::every_version("DW0460", ExitTier::Build);
+pub const DW_CAST_UNACCOUNTED: DwCode = DwCode::new("DW0460", ExitTier::Build);
 /// A declared `at` contradicts the position the effect history produces (proof 2).
-pub const DW_CAST_PLACEMENT: DwCode = DwCode::every_version("DW0461", ExitTier::Build);
+pub const DW_CAST_PLACEMENT: DwCode = DwCode::new("DW0461", ExitTier::Build);
 /// A branch-divergent NPC carries a single flat declaration (proof 4).
-pub const DW_CAST_BRANCH: DwCode = DwCode::every_version("DW0462", ExitTier::Build);
+pub const DW_CAST_BRANCH: DwCode = DwCode::new("DW0462", ExitTier::Build);
 /// A cast placement omits the forcing-function fields, or declares them for a
 /// body that is not in the world.
-pub const DW_CAST_INCOMPLETE: DwCode = DwCode::every_version("DW0463", ExitTier::Build);
+pub const DW_CAST_INCOMPLETE: DwCode = DwCode::new("DW0463", ExitTier::Build);
 /// A cast entry names something that does not exist (unknown NPC, a dialogue root
 /// that is not a node of that NPC's tree, an empty bark pool).
-pub const DW_CAST_DANGLING: DwCode = DwCode::every_version("DW0464", ExitTier::Build);
-/// A pre-0.7 campaign declares no cast ledger — the deprecation window (warning).
-pub const DW_CAST_PRE_07: DwCode = DwCode::every_version("DW0465", ExitTier::Build);
+pub const DW_CAST_DANGLING: DwCode = DwCode::new("DW0464", ExitTier::Build);
 /// `"unchanged"` at an NPC's first appearance: nothing to carry forward.
-pub const DW_CAST_UNCHANGED_FIRST: DwCode = DwCode::every_version("DW0466", ExitTier::Build);
+pub const DW_CAST_UNCHANGED_FIRST: DwCode = DwCode::new("DW0466", ExitTier::Build);
 /// An NPC's dialogue never changes across the whole story (warning).
-pub const DW_CAST_STALE: DwCode = DwCode::every_version("DW0467", ExitTier::Build);
+pub const DW_CAST_STALE: DwCode = DwCode::new("DW0467", ExitTier::Build);
 /// A `talk-to` objective whose NPC opens nothing that can complete it, at any
 /// scene the ledger can present while that objective is live (see
 /// [`check_talk_answerable`]).
-pub const DW_CAST_UNANSWERABLE: DwCode = DwCode::every_version("DW0858", ExitTier::Build);
+pub const DW_CAST_UNANSWERABLE: DwCode = DwCode::new("DW0858", ExitTier::Build);
 /// A cast clause no runtime state can select: at every state satisfying its own
 /// gate, a later clause of the same quest also passes and overrides it, so its
 /// scene is unreachable by construction (see [`check_clause_liveness`]).
-pub const DW_CAST_DEAD_CLAUSE: DwCode = DwCode::every_version("DW0846", ExitTier::Build);
+pub const DW_CAST_DEAD_CLAUSE: DwCode = DwCode::new("DW0846", ExitTier::Build);
 
 /// What an NPC's right-click does during one scene.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -293,33 +290,6 @@ fn governing_placement(entry: &CastEntry) -> Option<&CastPlacement> {
 /// Run every cast-ledger proof over the campaign.
 pub fn check_cast(c: &Campaign) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
-    let v07 = is_v07(c.quests.dsl_version.as_str());
-    let declares_any = c.quests.content.quests.iter().any(|q| !q.cast.is_empty());
-
-    // The deprecation window (spec-0020 §4): a pre-0.7 campaign without a ledger
-    // keeps building, once, with a warning naming the migration.
-    if !v07 && !declares_any {
-        diags.push(Diagnostic::warning(
-            DW_CAST_PRE_07,
-            "quests",
-            "/dsl_version".to_string(),
-            format!(
-                "campaign is `dsl_version` `{}` and declares no `cast` ledger, so no quest says \
-                 where its NPCs are, what they are doing, or what their right-click offers — the \
-                 shape that let a crew member keep offering premise questions after the finale. \
-                 Add a `cast` block to every quest and raise `dsl_version` to 0.7.0. This warning \
-                 is the one-version deprecation window; the requirement hardens into an error \
-                 after it",
-                c.quests.dsl_version
-            ),
-        ));
-        return diags;
-    }
-    if !declares_any {
-        // A v0.7 campaign with no ledger at all: completeness reports it per
-        // quest below, which names the NPCs concretely.
-    }
-
     let timeline = continuity::replay(c);
     let order = quest_dag_order(c);
     let npc_ids: BTreeSet<String> = c
@@ -336,31 +306,29 @@ pub fn check_cast(c: &Campaign) -> Vec<Diagnostic> {
         let here = timeline.at_quest_start.get(qid);
 
         // --- proof 1: completeness -------------------------------------------
-        if v07 {
-            for npc in &npc_ids {
-                if q.cast.iter().any(|(k, _)| k.as_str() == npc.as_str()) {
-                    continue;
-                }
-                let live = match here.and_then(|m| m.get(npc)) {
-                    Some(NpcWhere::At(_)) | Some(NpcWhere::Indeterminate(_)) => true,
-                    Some(NpcWhere::Offstage) | None => false,
-                };
-                if !live {
-                    continue;
-                }
-                diags.push(Diagnostic::error(
-                    DW_CAST_UNACCOUNTED,
-                    "quests",
-                    format!("/content/quests/{qi}/cast"),
-                    format!(
-                        "npc `{npc}` is live during quest `{qid}` but is unaccounted for in its \
-                         `cast` — say where they are and what they are doing, or remove them from \
-                         the world (`despawn-npc`) and declare them `\"offstage\"`/`\"dead\"`. An \
-                         NPC nobody placed is how two crew members ended up standing forgotten in \
-                         the alcoves while the player escaped"
-                    ),
-                ));
+        for npc in &npc_ids {
+            if q.cast.iter().any(|(k, _)| k.as_str() == npc.as_str()) {
+                continue;
             }
+            let live = match here.and_then(|m| m.get(npc)) {
+                Some(NpcWhere::At(_)) | Some(NpcWhere::Indeterminate(_)) => true,
+                Some(NpcWhere::Offstage) | None => false,
+            };
+            if !live {
+                continue;
+            }
+            diags.push(Diagnostic::error(
+                DW_CAST_UNACCOUNTED,
+                "quests",
+                format!("/content/quests/{qi}/cast"),
+                format!(
+                    "npc `{npc}` is live during quest `{qid}` but is unaccounted for in its \
+                     `cast` — say where they are and what they are doing, or remove them from \
+                     the world (`despawn-npc`) and declare them `\"offstage\"`/`\"dead\"`. An \
+                     NPC nobody placed is how two crew members ended up standing forgotten in \
+                     the alcoves while the player escaped"
+                ),
+            ));
         }
 
         for (npc, entry) in &q.cast {

@@ -53,7 +53,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Build-tier (exit 3). The call compiles, the datapack loads, and the verb
 /// simply never happens — the failure shape that cost the island round 21 two of
 /// its three storm waves.
-pub const DW_DANGLING_FUNCTION_CALL: DwCode = DwCode::every_version("DW0497", ExitTier::Build);
+pub const DW_DANGLING_FUNCTION_CALL: DwCode = DwCode::new("DW0497", ExitTier::Build);
 
 /// Which emitted datapack a function belongs to. Determines what it may call:
 /// the shipped pack ships alone, the overlays ship beside it.

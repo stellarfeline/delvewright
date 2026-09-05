@@ -28,7 +28,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 fn quests_doc(traps: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -65,7 +65,7 @@ const TRAP_SEALS_THE_DOOR: &str = r#"{
 /// `Vec<QuestEffect>` and its `close-gate` is really lowered (into
 /// `cp_on_respawn_<i>`).
 const DIALOGUE_SEALS_THE_DOOR: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -184,7 +184,7 @@ fn a_dialogue_nested_close_gate_is_modelled() {
 #[test]
 fn a_later_open_gate_still_wins() {
     let quests = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

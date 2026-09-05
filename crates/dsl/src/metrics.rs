@@ -80,7 +80,7 @@ use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 /// cannot reach a campaign written before the surface existed, because there is
 /// no field below `dsl_version` 0.13.0 in which to write such a name and
 /// `DW0141` refuses one that tries.
-pub const DW_METRIC_UNKNOWN: DwCode = DwCode::every_version("DW0812", ExitTier::Build);
+pub const DW_METRIC_UNKNOWN: DwCode = DwCode::new("DW0812", ExitTier::Build);
 
 /// `DW0813`: a verdict rests on a standard the gym has not walked.
 ///
@@ -92,8 +92,7 @@ pub const DW_METRIC_UNKNOWN: DwCode = DwCode::every_version("DW0812", ExitTier::
 /// warning (exit 0) for the same reason: a provisional number is still a number,
 /// the check still refuses, and what the line adds is that the green rests on
 /// something nobody has walked.
-pub const DW_METRIC_PROVISIONAL: DwCode =
-    DwCode::every_version("DW0813", ExitTier::Build).about_the_engine();
+pub const DW_METRIC_PROVISIONAL: DwCode = DwCode::new("DW0813", ExitTier::Build).about_the_engine();
 
 // ---------------------------------------------------------------------------
 // The player half — the one definition of each constant in this workspace.

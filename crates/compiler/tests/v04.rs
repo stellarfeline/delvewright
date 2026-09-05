@@ -144,7 +144,13 @@ fn resource_pack_and_sha1_emitted() {
 fn critical_path_has_sneak_and_cutscene_seconds() {
     let out = build_showcase();
     let cp = std::str::from_utf8(&out["critical-path.json"]).unwrap();
-    assert!(cp.contains("\"version\": \"0.4.0\""), "version 0.4.0");
+    assert!(
+        cp.contains(&format!(
+            "\"version\": \"{}\"",
+            delvewright_dsl::DSL_VERSION
+        )),
+        "the critical path carries the one dsl_version"
+    );
     assert!(cp.contains("\"sneak\": true"), "sneak hint on stealth leg");
     assert!(
         cp.contains("\"cutscene_seconds\": 2"),

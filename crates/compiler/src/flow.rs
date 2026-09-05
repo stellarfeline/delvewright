@@ -124,13 +124,13 @@ use delvewright_dsl::{
 use delvewright_dsl::{DwCode, ExitTier};
 
 /// Objective-path incoherence (the replay check).
-pub const DW_PATH_INCOHERENT: DwCode = DwCode::every_version("DW0204", ExitTier::Analysis);
+pub const DW_PATH_INCOHERENT: DwCode = DwCode::new("DW0204", ExitTier::Analysis);
 
 /// Optional participation can skip a load-bearing mainline beat.
-pub const DW_OPTIONAL_GATES_MAINLINE: DwCode = DwCode::every_version("DW0205", ExitTier::Analysis);
+pub const DW_OPTIONAL_GATES_MAINLINE: DwCode = DwCode::new("DW0205", ExitTier::Analysis);
 
 /// A forced-path numeric gate the path itself has already made unsatisfiable.
-pub const DW_STATE_GATE_CLEARED: DwCode = DwCode::every_version("DW0879", ExitTier::Analysis);
+pub const DW_STATE_GATE_CLEARED: DwCode = DwCode::new("DW0879", ExitTier::Analysis);
 
 /// Upper bound on enumerated branch worlds. The product of the *flag-reading*
 /// choice groups' arities; groups past the bound stay **unconstrained** (all

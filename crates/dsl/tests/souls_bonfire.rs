@@ -15,7 +15,7 @@ use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, parse_campaig
 /// A v0.6 quests document with a bonfire (with an `on_rest` narrate) and a wave
 /// that re-seats on rest.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -55,7 +55,7 @@ const QUESTS_V06: &str = r#"{
 fn classes_with_flask() -> String {
     let mut v: serde_json::Value =
         serde_json::from_str(&common::read_valid("classes.json")).unwrap();
-    v["dsl_version"] = serde_json::json!("0.8.0");
+    v["dsl_version"] = serde_json::json!("0.19.0");
     for class in v["content"]["classes"].as_array_mut().unwrap() {
         class["kit"]
             .as_array_mut()
@@ -97,17 +97,6 @@ fn bonfire_and_rest_reseat_validate_clean() {
     );
 }
 
-/// `bonfire` under a pre-0.6 quests version is reserved → `DW0141`.
-#[test]
-fn bonfire_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "the bonfire verb must be reserved under 0.5.0 (DW0141): {diags:#?}"
-    );
-}
-
 /// A bonfire anchor no prefab exposes is `DW0142`, exactly like `set-checkpoint`
 /// — a rest point the compiler cannot place is never silently dropped.
 #[test]
@@ -136,19 +125,6 @@ fn respawns_on_rest_without_a_bonfire_is_dw0356() {
     assert!(
         diags.iter().any(|d| d.code == "DW0370"),
         "an unreachable respawns_on_rest must be DW0370: {diags:#?}"
-    );
-}
-
-/// `respawns_on_rest` under a pre-0.6 quests version is reserved → `DW0141`.
-#[test]
-fn respawns_on_rest_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.code == "DW0141" && d.path.ends_with("respawns_on_rest")),
-        "wave `respawns_on_rest` must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }
 
@@ -209,63 +185,6 @@ fn a_campaign_without_a_bonfire_needs_no_flask() {
     assert!(
         !diags.iter().any(|d| d.code == "DW0476"),
         "no bonfire, no flask obligation: {diags:#?}"
-    );
-}
-
-/// A kit `flask` under a pre-0.8 classes version is reserved → `DW0141`.
-#[test]
-fn kit_flask_reserved_before_0_8() {
-    let pre = classes_with_flask().replace("\"0.8.0\"", "\"0.7.0\"");
-    let diags = check_campaign(&campaign_with(QUESTS_V06, &pre));
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.code == "DW0141" && d.path.ends_with("/flask")),
-        "kit `flask` must be reserved under 0.7.0 (DW0141): {diags:#?}"
-    );
-}
-
-/// The bonfire's authored dialog strings are a v0.8 surface too — and, once
-/// authored, they enter the l10n inventory like every other player-visible line
-/// (the compiler bakes canonical English only when they are absent).
-#[test]
-fn authored_bonfire_labels_are_v08_and_translatable() {
-    let labelled = QUESTS_V06.replace(
-        "\"anchor\": \"anchor/keeper-stand\",\n              \"on_rest\"",
-        "\"anchor\": \"anchor/keeper-stand\",\n              \
-         \"prompt\": \"Shrine fire\", \"rest_label\": \"Rest and save\", \
-         \"save_label\": \"Save only\",\n              \"on_rest\"",
-    );
-    assert_ne!(labelled, QUESTS_V06, "the substitution must apply");
-
-    let pre = labelled.replacen("\"0.6.0\"", "\"0.7.0\"", 1);
-    let diags = check_campaign(&campaign_with(&pre, &classes_with_flask()));
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.code == "DW0141" && d.path.ends_with("/rest_label")),
-        "an authored bonfire label must be reserved under 0.7.0 (DW0141): {diags:#?}"
-    );
-
-    let ok = labelled.replacen("\"0.6.0\"", "\"0.8.0\"", 1);
-    let raw = campaign_with(&ok, &classes_with_flask());
-    assert!(
-        check_campaign(&raw).is_empty(),
-        "the same campaign at 0.8.0 validates clean: {:#?}",
-        check_campaign(&raw)
-    );
-    let inv = l10n_inventory(&parse_campaign(&raw).expect("parses"));
-    let keys: Vec<&String> = inv
-        .iter()
-        .filter(|(k, _)| {
-            k.ends_with(".rest_prompt") || k.ends_with(".rest_label") || k.ends_with(".save_label")
-        })
-        .map(|(k, _)| k)
-        .collect();
-    assert_eq!(
-        keys.len(),
-        3,
-        "all three authored strings are translatable: {inv:#?}"
     );
 }
 

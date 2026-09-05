@@ -66,7 +66,7 @@ fn hello_world_with_dialogue(
     let dpath = tmp.join("dialogue.json");
     let mut dlg: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&dpath).unwrap()).unwrap();
-    dlg["dsl_version"] = serde_json::json!("0.8.0");
+    dlg["dsl_version"] = serde_json::json!("0.19.0");
     mutate(&mut dlg);
     std::fs::write(&dpath, serde_json::to_string_pretty(&dlg).unwrap()).unwrap();
     tmp
@@ -74,7 +74,7 @@ fn hello_world_with_dialogue(
 
 fn greeting_dialog(out: &BuildOutput) -> serde_json::Value {
     serde_json::from_slice(
-        out.get("datapack/data/hello-world/dialog/keeper_greeting.json")
+        out.get("datapack/data/hello-world/dialog/keeper_greeting__m1.json")
             .expect("keeper_greeting dialog emitted"),
     )
     .unwrap()
@@ -122,7 +122,7 @@ fn no_tooltip_emits_no_key_at_all() {
     let dir = hello_world_with_dialogue("absent", |_| {});
     let bumped = build_campaign_dir(&dir);
     let baseline = build_campaign_dir(&common::hello_world_dir());
-    let key = "datapack/data/hello-world/dialog/keeper_greeting.json";
+    let key = "datapack/data/hello-world/dialog/keeper_greeting__m1.json";
     assert_eq!(
         bumped.get(key),
         baseline.get(key),

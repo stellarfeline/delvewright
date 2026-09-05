@@ -184,6 +184,7 @@ fn invalid_fixtures_exit_1_with_expected_code() {
         let stem = path.file_stem().unwrap().to_str().unwrap();
         let camp = tmp(&format!("inv-{stem}"));
         common::materialize(&patch, &camp);
+        common::declare_story_dir(&camp);
 
         let out = delvec(&[
             "validate",
@@ -361,6 +362,7 @@ fn pool_build_diagnostics_exit_3_with_dw03xx() {
         .unwrap();
         let camp = tmp(&format!("pool-{expect}"));
         common::materialize_from(&common::keep_crawl_dir(), &patch, &camp);
+        common::declare_story_dir(&camp);
 
         // validate + analyze pass (pool anchors are invisible to the DSL layer).
         let v = delvec(&[
@@ -407,6 +409,7 @@ fn gate_deadlock_exits_3_with_dw0305() {
     .unwrap();
     let camp = tmp("gate-deadlock");
     common::materialize_from(&common::keep_trial_dir(), &patch, &camp);
+    common::declare_story_dir(&camp);
     // This build-error fixture alters keep-trial's strings; it is not an i18n test,
     // so drop the language declaration + sidecar (would otherwise fail coverage).
     common::make_english_only(&camp);
@@ -468,6 +471,7 @@ fn unreachable_finale_exits_2_with_dw0201() {
     let pf = common::prefabs_dir();
     let camp = tmp("unreachable-finale");
     common::materialize(&patch, &camp);
+    common::declare_story_dir(&camp);
 
     // validate passes (no DSL rule violated) ...
     let v = delvec(&[
@@ -548,6 +552,13 @@ fn incoherent_critical_path_exits_2_with_dw0204() {
         &serde_json::json!({ "documents": { "quests": quests } }),
         &camp,
     );
+    // With no gate left there is no fork, so the declared branch point goes too.
+    common::patch_file(&camp.join("quest-plan.json"), |d| {
+        d["content"]
+            .as_object_mut()
+            .unwrap()
+            .remove("branch_points");
+    });
     let pf = common::prefabs_dir();
 
     let v = delvec(&[
@@ -599,6 +610,7 @@ fn self_flag_deadlock_exits_2_with_dw0203() {
     let pf = common::prefabs_dir();
     let camp = tmp("self-flag-deadlock");
     common::materialize(&patch, &camp);
+    common::declare_story_dir(&camp);
 
     // validate passes (DW0172 does not fire: flag/loop IS produced by a real
     // set-flag effect; the dialogue-level checks don't see the self-cycle either).
@@ -714,6 +726,7 @@ fn kill_less_dangling_spawn_wave_exits_3_with_dw0310() {
     let pf = common::prefabs_dir();
     let camp = tmp("dangling-spawn-wave");
     common::materialize(&patch, &camp);
+    common::declare_story_dir(&camp);
 
     let a = delvec(&[
         "analyze",
@@ -1179,11 +1192,12 @@ fn move_unroutable_exits_3_with_dw0307() {
     let camp = tmp("mv-cross-void");
     copy_dir(&common::keep_crawl_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.4.0");
-        common::objective_effects(d, 0, "obj/talk").push(serde_json::json!({
+        d["dsl_version"] = serde_json::json!("0.19.0");
+        common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
             "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/objective"
         }));
     });
+    common::declare_story_dir(&camp);
     let out = tmp("mv-cross-void-out");
     let b = delvec(&[
         "build",
@@ -1214,14 +1228,15 @@ fn move_actor_unroutable_exits_3_with_dw0325() {
     let camp = tmp("ma-cross-void");
     copy_dir(&common::keep_crawl_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.6.0");
-        common::objective_effects(d, 0, "obj/talk").push(serde_json::json!({
+        d["dsl_version"] = serde_json::json!("0.19.0");
+        common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
             "type": "move-actor", "actor": "actor/beast", "to_anchor": "anchor/objective"
         }));
         d["content"]["actors"] = serde_json::json!([
             { "id": "actor/beast", "entity": "minecraft:zombie", "anchor": "anchor/keeper-stand" }
         ]);
     });
+    common::declare_story_dir(&camp);
     let out = tmp("ma-cross-void-out");
     let b = delvec(&[
         "build",
@@ -1277,7 +1292,7 @@ fn cutscene_over_angular_budget_exits_3_with_dw0347() {
     // Halve the duration and add a `look_at` (v0.6 surface) the pan cannot
     // reach inside the budget.
     let camp = showcase_with_quests_patch("cs-spin", |d| {
-        d["dsl_version"] = serde_json::json!("0.6.0");
+        d["dsl_version"] = serde_json::json!("0.19.0");
         let cs = showcase_cutscene(d);
         cs["seconds"] = serde_json::json!(1);
         cs["look_at"] = serde_json::json!({ "anchor": "anchor/objective", "offset": [1, 2, 1] });
@@ -1372,7 +1387,7 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
     let camp = tmp("v06-ocean");
     copy_dir(&common::hello_world_dir(), &camp);
     let world = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -1523,7 +1538,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
     let camp = tmp("v06-actors");
     copy_dir(&common::hello_world_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.6.0");
+        d["dsl_version"] = serde_json::json!("0.19.0");
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
@@ -1547,6 +1562,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
               "anchor": "anchor/keeper-stand", "facing": "east" }
         ]);
     });
+    common::declare_story_dir(&camp);
     let out = tmp("v06-actors-out");
     let b = delvec(&[
         "build",
@@ -1627,7 +1643,7 @@ fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
             serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap())
                 .unwrap();
         if let Some(h) = horizon {
-            world["dsl_version"] = serde_json::json!("0.6.0");
+            world["dsl_version"] = serde_json::json!("0.19.0");
             let content = world["content"].as_object_mut().unwrap();
             content.insert("horizon".into(), serde_json::json!(h));
             content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -1685,7 +1701,7 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
             serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         f(&mut doc);
         if ocean {
-            doc["dsl_version"] = serde_json::json!("0.6.0");
+            doc["dsl_version"] = serde_json::json!("0.19.0");
         }
         std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
     };
@@ -1703,6 +1719,7 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
         d["content"]["npcs"][0]["anchor"] = serde_json::json!("anchor/crew-a");
     });
     edit("quests.json", &|d| {
+        d["content"]["quests"][0]["cast"]["npc/keeper"]["at"] = serde_json::json!("anchor/crew-a");
         d["content"]["quests"][0]["objectives"][1]["anchor"] =
             serde_json::json!("anchor/camp-fire");
         d["content"]["quests"][0]
@@ -1806,7 +1823,7 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     copy_dir(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.6.0");
+    world["dsl_version"] = serde_json::json!("0.19.0");
     let content = world["content"].as_object_mut().unwrap();
     content.insert("horizon".into(), serde_json::json!("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -1918,7 +1935,7 @@ fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(ocean_camp.join("world.json")).unwrap())
             .unwrap();
-    world["dsl_version"] = serde_json::json!("0.6.0");
+    world["dsl_version"] = serde_json::json!("0.19.0");
     let content = world["content"].as_object_mut().unwrap();
     content.insert("horizon".into(), serde_json::json!("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -2219,7 +2236,7 @@ fn dw0330_warning_reports_but_does_not_fail_the_build() {
     )
     .unwrap();
     // `narrate` is a v0.4 effect; the hello-world fixture is v0.3.
-    quests["dsl_version"] = serde_json::json!("0.6.0");
+    quests["dsl_version"] = serde_json::json!("0.19.0");
     // An on-screen title far wider than any screen renders.
     quests["content"]["quests"][0]["on_complete"]
         .as_array_mut()
@@ -2281,7 +2298,7 @@ fn a_missing_skin_png_is_dw0309() {
         &std::fs::read_to_string(common::hello_world_dir().join("npcs.json")).unwrap(),
     )
     .unwrap();
-    npcs["dsl_version"] = "0.4.0".into();
+    npcs["dsl_version"] = "0.19.0".into();
     npcs["content"]["npcs"][0]["skin"] =
         serde_json::json!({ "texture_id": "keeper", "model": "wide" });
     common::materialize_from(
@@ -2314,7 +2331,7 @@ fn actor_skin_campaign(name: &str) -> std::path::PathBuf {
     let camp = tmp(name);
     copy_dir(&common::hello_world_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.6.0");
+        d["dsl_version"] = serde_json::json!("0.19.0");
         common::objective_effects(d, 0, "obj/talk").push(serde_json::json!({
             "type": "spawn-actor", "actor": "actor/giant"
         }));
@@ -2324,6 +2341,7 @@ fn actor_skin_campaign(name: &str) -> std::path::PathBuf {
               "skin": { "texture_id": "giant-idle", "model": "wide" } }
         ]);
     });
+    common::declare_story_dir(&camp);
     camp
 }
 
@@ -2378,7 +2396,7 @@ fn every_declared_skin_is_baked_into_the_pack() {
     let camp = actor_skin_campaign("actor-skin-baked");
     // Give the stage-2 npc a skin too, so one build carries one of each class.
     common::patch_file(&camp.join("npcs.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.4.0");
+        d["dsl_version"] = serde_json::json!("0.19.0");
         d["content"]["npcs"][0]["skin"] =
             serde_json::json!({ "texture_id": "keeper", "model": "slim" });
     });
@@ -2691,82 +2709,6 @@ fn a_campaign_without_branches_emits_no_branch_path() {
         "{:?}",
         tree.keys().collect::<Vec<_>>()
     );
-}
-
-/// **The version fence, proven on bytes.** The v0.8 surface — `branch_points`,
-/// every `happening`, the named `ending` — is validation metadata with no
-/// emission of its own: stripping all of it and dropping the campaign back to
-/// `dsl_version 0.7.0` produces a **byte-identical `datapack/`**. That is the
-/// guarantee that a 0.6/0.7 campaign cannot move by one byte because spec-0025
-/// landed.
-#[test]
-fn the_v08_surface_changes_no_datapack_byte() {
-    let fx = common::compiler_fixtures_dir().join("branch-two-endings");
-    let pf = common::prefabs_dir();
-
-    let stripped = tmp("branch-stripped-src");
-    for f in common::STAGE_FILES {
-        let mut v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(fx.join(f)).unwrap()).unwrap();
-        if v["dsl_version"] == "0.8.0" {
-            v["dsl_version"] = serde_json::Value::from("0.7.0");
-        }
-        strip_v08(&mut v);
-        std::fs::write(stripped.join(f), serde_json::to_string_pretty(&v).unwrap()).unwrap();
-    }
-
-    let with = tmp("branch-with");
-    let without = tmp("branch-without");
-    for (src, out) in [(&fx, &with), (&stripped, &without)] {
-        let r = delvec(&[
-            "build",
-            src.to_str().unwrap(),
-            "-o",
-            out.to_str().unwrap(),
-            "--prefabs",
-            pf.to_str().unwrap(),
-        ]);
-        assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
-    }
-    let a = read_tree(&with);
-    let b = read_tree(&without);
-    let pack = |t: &BTreeMap<String, Vec<u8>>| -> BTreeMap<String, Vec<u8>> {
-        t.iter()
-            .filter(|(k, _)| k.starts_with("datapack/"))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect()
-    };
-    let (pa, pb) = (pack(&a), pack(&b));
-    assert!(!pa.is_empty());
-    assert_eq!(
-        pa.keys().collect::<Vec<_>>(),
-        pb.keys().collect::<Vec<_>>(),
-        "the v0.8 surface must not add or remove a datapack file"
-    );
-    for (path, bytes) in &pa {
-        assert_eq!(bytes, &pb[path], "the v0.8 surface moved bytes in {path}");
-    }
-    // …and the artifacts exist only on the declaring side.
-    assert!(a.contains_key("validation/branch-plan.json"));
-    assert!(!b.contains_key("validation/branch-plan.json"));
-}
-
-/// Recursively drop every DSL v0.8 field from a stage document.
-fn strip_v08(v: &mut serde_json::Value) {
-    match v {
-        serde_json::Value::Object(map) => {
-            map.remove("happening");
-            map.remove("branch_points");
-            if map.get("type").and_then(|t| t.as_str()) == Some("campaign-complete") {
-                map.remove("ending");
-            }
-            for (_, child) in map.iter_mut() {
-                strip_v08(child);
-            }
-        }
-        serde_json::Value::Array(items) => items.iter_mut().for_each(strip_v08),
-        _ => {}
-    }
 }
 
 // ---------------------------------------------------------------------------

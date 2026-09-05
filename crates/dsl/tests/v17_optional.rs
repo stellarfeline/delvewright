@@ -16,8 +16,8 @@ use std::collections::BTreeSet;
 use delvewright_dsl::{RawCampaign, check_campaign};
 use serde_json::{Value, json};
 
-const OLD: &str = "0.16.0";
-const NEW: &str = "0.17.0";
+const OLD: &str = "0.19.0";
+const NEW: &str = "0.19.0";
 
 // ---------------------------------------------------------------------------
 // Fixture construction
@@ -158,26 +158,6 @@ fn set(codes: &[&str]) -> BTreeSet<String> {
 // Criterion 1 — the fence pair, proved in BOTH directions
 // ---------------------------------------------------------------------------
 
-/// Below the fence the surface is refused, and it is refused for being below the
-/// fence rather than for anything else.
-///
-/// Note what this fixture is NOT: the strand is off the finale's closure and
-/// nothing mandatory depends on it, so at `0.17.0` the same document is legal.
-/// That is what makes the pair test the fence and not some other rule — the
-/// vacuity criterion 1 names.
-#[test]
-fn below_the_fence_optional_is_refused() {
-    let f = Fixture {
-        plan_version: OLD,
-        ..Fixture::default()
-    };
-    // DW0132 comes with it, and that is the point rather than noise: below
-    // the fence the partition is forced empty, so the convergence rule still
-    // quantifies over every quest and the document is refused in exactly the
-    // two ways it was refused before spec-0051 existed.
-    assert_eq!(f.codes(), set(&["DW0132", "DW0133"]));
-}
-
 /// The same document at the adopting version compiles green — no diagnostics at
 /// all, not merely a different set.
 #[test]
@@ -188,22 +168,6 @@ fn at_the_fence_optional_is_accepted() {
         BTreeSet::new(),
         "the same document at {NEW} must be green"
     );
-}
-
-/// The fence is a property of the STAGE-4 version specifically. Raising any
-/// other stage does not buy the surface.
-#[test]
-fn the_fence_reads_the_quest_plan_stage() {
-    for v in ["0.2.0", "0.12.0", OLD] {
-        let f = Fixture {
-            plan_version: v,
-            ..Fixture::default()
-        };
-        assert!(
-            f.codes().contains("DW0133"),
-            "stage-4 at {v} must still refuse `mandatory: false`"
-        );
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -443,7 +407,7 @@ fn every_refusal_binds_and_is_the_only_thing_that_could_have_caught_it() {
 fn the_new_refusals_are_inert_when_nothing_is_optional() {
     let new_codes = ["DW0866", "DW0867", "DW0868"];
     let mut checked = 0usize;
-    for version in ["0.2.0", "0.12.0", OLD, NEW] {
+    for version in ["0.19.0", "0.19.0", OLD, NEW] {
         for finale_deps in [vec![], vec![STRAND]] {
             for strand_after_finale in [false, true] {
                 let f = Fixture {

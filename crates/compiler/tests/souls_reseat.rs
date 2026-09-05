@@ -59,7 +59,7 @@ fn fixture_dir() -> std::path::PathBuf {
 fn fixture_campaign(with_unleash: bool) -> Campaign {
     let loaded = load_campaign_dir(&fixture_dir()).unwrap();
     let mut c = parse_campaign(&loaded.raw).expect("souls-bonfire parses");
-    c.quests.dsl_version = "0.7.0".to_string();
+    c.quests.dsl_version = "0.19.0".to_string();
     for a in [ELITE, SCENERY] {
         c.quests.content.actors.push(
             serde_json::from_value(serde_json::json!({

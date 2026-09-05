@@ -64,7 +64,7 @@ fn load(ns: &str) -> LoadedCampaign {
 fn campaign(loaded: &LoadedCampaign, with_on_death: bool) -> Campaign {
     let mut c = parse_campaign(&loaded.raw).expect("fixture parses");
     if with_on_death {
-        c.quests.dsl_version = "0.10.0".to_string();
+        c.quests.dsl_version = "0.19.0".to_string();
         c.quests.content.on_death = on_death_bundle();
     }
     c
@@ -72,7 +72,7 @@ fn campaign(loaded: &LoadedCampaign, with_on_death: bool) -> Campaign {
 
 fn build(loaded: &LoadedCampaign, c: &Campaign) -> BuildOutput {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = common::fenced_diagnostics(
+    let diags = common::validation_diagnostics(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
@@ -340,30 +340,6 @@ fn removing_the_beat_restores_the_whole_tree() {
 // ---------------------------------------------------------------------------
 // 3. the version fence
 // ---------------------------------------------------------------------------
-
-/// Declaring a death beat below 0.10.0 is `DW0141`, like every other newer
-/// construct — the version contract stays exact, so an older campaign cannot
-/// acquire the surface by accident.
-#[test]
-fn a_death_beat_below_0_10_is_reserved() {
-    let loaded = load(CP);
-    let mut c = parse_campaign(&loaded.raw).expect("fixture parses");
-    c.quests.content.on_death = on_death_bundle();
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let codes: Vec<String> = validate_campaign_with(
-        &c,
-        &FullItemRegistry::v1_21_11(),
-        &prefabs,
-        &FullEntityRegistry::v1_21_11(),
-    )
-    .into_iter()
-    .map(|d| d.code)
-    .collect();
-    assert!(
-        codes.contains(&"DW0141".to_string()),
-        "an `on_death` on a pre-0.10 stage is reserved: {codes:?}"
-    );
-}
 
 /// …and the control: the identical campaign at 0.10.0 validates clean, so the
 /// test above is measuring the fence and not a malformed bundle.

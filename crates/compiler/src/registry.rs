@@ -18,7 +18,7 @@ use serde::Deserialize;
 ///
 /// A key this delvec does not model is deliberately **not** one of these: it is
 /// kept and reported as [`DW_PREFAB_META_UNKNOWN_KEY`].
-pub const DW_PREFAB_META_INVALID: DwCode = DwCode::every_version("DW0346", ExitTier::Build);
+pub const DW_PREFAB_META_INVALID: DwCode = DwCode::new("DW0346", ExitTier::Build);
 
 /// `DW0543`: a prefab metadata file carries a key this delvec does not model.
 ///
@@ -30,7 +30,7 @@ pub const DW_PREFAB_META_INVALID: DwCode = DwCode::every_version("DW0346", ExitT
 /// the key is wrong in the other direction, because the same observation is also
 /// what a misspelled key looks like. So the piece loads, the key survives a
 /// rewrite ([`delvewright_dsl::prefab`]), and the reader says what it saw.
-pub const DW_PREFAB_META_UNKNOWN_KEY: DwCode = DwCode::every_version("DW0543", ExitTier::Build);
+pub const DW_PREFAB_META_UNKNOWN_KEY: DwCode = DwCode::new("DW0543", ExitTier::Build);
 
 /// The complete 1.21.11 item registry (1505 ids) plus each item's
 /// `minecraft:max_stack_size`, vendored under `data/`.

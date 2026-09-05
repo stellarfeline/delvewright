@@ -3,10 +3,18 @@
   "content": {
     "quests": [
       {
+        "happening": {
+          "text": "the party takes on quest/hold-the-keep",
+          "verb": "learns"
+        },
         "id": "quest/hold-the-keep",
         "objectives": [
           {
             "anchor": "anchor/keeper-stand",
+            "happening": {
+              "text": "the party completes obj/take-post",
+              "verb": "arrives"
+            },
             "id": "obj/take-post",
             "radius": 3,
             "type": "reach-anchor"
@@ -15,7 +23,13 @@
             "after": [
               "obj/take-post"
             ],
+            "happening": {
+              "text": "the party completes obj/break-warband",
+              "verb": "survives"
+            },
+            "hint": "The wave wave/warband comes to you here.",
             "id": "obj/break-warband",
+            "title": "Fight: break-warband",
             "type": "kill",
             "wave": "wave/warband"
           },
@@ -23,23 +37,41 @@
             "after": [
               "obj/take-post"
             ],
+            "happening": {
+              "text": "the party completes obj/break-drowned",
+              "verb": "survives"
+            },
+            "hint": "The wave wave/drowned comes to you here.",
             "id": "obj/break-drowned",
+            "title": "Fight: break-drowned",
             "type": "kill",
             "wave": "wave/drowned"
           }
         ],
         "on_complete": [
           {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
             "type": "campaign-complete"
           }
         ],
         "on_objective_complete": {
           "obj/take-post": [
             {
+              "happening": {
+                "text": "wave/warband arrives",
+                "verb": "arrives"
+              },
               "type": "spawn-wave",
               "wave": "wave/warband"
             },
             {
+              "happening": {
+                "text": "wave/drowned arrives",
+                "verb": "arrives"
+              },
               "type": "spawn-wave",
               "wave": "wave/drowned"
             }
@@ -89,6 +121,6 @@
       }
     ]
   },
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "stage": "quests"
 }

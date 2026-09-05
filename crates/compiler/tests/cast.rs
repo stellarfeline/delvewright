@@ -22,7 +22,7 @@ fn hw(name: &str) -> String {
 
 /// Two NPCs: the keeper at his stand, a scout at the exit.
 const NPCS: &str = r#"{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "npcs",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [
     { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
       "area": "area/keep", "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
@@ -34,7 +34,7 @@ const NPCS: &str = r#"{
 }"#;
 
 const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "quest-plan",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
     { "id": "quest/one", "goal": "Speak with the Keeper.", "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
@@ -44,7 +44,7 @@ const QUEST_PLAN: &str = r#"{
 }"#;
 
 const DIALOGUE: &str = r#"{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "dialogue",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "dialogue",
   "content": { "dialogues": [
     { "npc": "npc/keeper", "root": "dlg/greeting", "nodes": [
       { "id": "dlg/greeting", "text": "Halt.", "options": [
@@ -60,7 +60,7 @@ const DIALOGUE: &str = r#"{
 fn quests(cast_one: &str, cast_two: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quests",
   "content": {{ "quests": [
     {{ "id": "quest/one", "trigger": {{ "type": "campaign-start" }},
        "objectives": [ {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }} ],
@@ -454,33 +454,6 @@ fn unknown_npc_in_cast_is_dw0464() {
 }
 
 // --- DW0465: the deprecation window ---------------------------------------
-
-/// A pre-0.7 campaign with no ledger keeps building, with one warning.
-#[test]
-fn pre_07_campaign_without_a_ledger_warns_dw0465() {
-    let c = parse_campaign(&RawCampaign {
-        world: hw("world.json"),
-        npcs: hw("npcs.json"),
-        classes: hw("classes.json"),
-        quest_plan: hw("quest-plan.json"),
-        quests: hw("quests.json"),
-        dialogue: hw("dialogue.json"),
-        world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
-    })
-    .unwrap();
-    let diags = cast::check_cast(&c);
-    assert_eq!(diags.len(), 1, "{diags:#?}");
-    assert_eq!(diags[0].code, "DW0465");
-    assert_eq!(
-        diags[0].severity,
-        delvewright_dsl::Severity::Warning,
-        "the window must warn, never fail the build"
-    );
-}
 
 // --- DW0466 / DW0467: the `"unchanged"` sugar and the staleness lint -------
 

@@ -9,10 +9,8 @@
 //! numbers decide whether arriving works, and until this module nothing ever
 //! compared them:
 //!
-//! * the **completion volume** the datapack tests — from v0.3 an axis-aligned
-//!   block region about the anchor cell ([`ReachCompletion::Cube`]); at v0.2 a
-//!   `distance=..radius` sphere about the anchor point
-//!   ([`ReachCompletion::Sphere`]);
+//! * the **completion volume** the datapack tests — an axis-aligned block
+//!   region about the anchor cell ([`ReachCompletion::Cube`]);
 //! * the **walk goal** `critical-path.json` hands the harness, which used to be
 //!   derived from the authored `radius` on the bot's side;
 //! * the **footing** the world actually offers near that anchor, which is what
@@ -67,7 +65,7 @@ use crate::failure::Failure;
 use crate::nav::{LegRoute, World};
 use crate::plan::{Plan, ResolvedAnchor, Step};
 use delvewright_dsl::stages::Objective;
-use delvewright_dsl::{DwCode, ExitTier, envelope::is_v03};
+use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0850`: **a `reach` the party can arrive at without completing.**
 ///
@@ -78,7 +76,7 @@ use delvewright_dsl::{DwCode, ExitTier, envelope::is_v03};
 /// remedy is the same: move the anchor onto the footing, or give the footing to
 /// the anchor. Nudging the waypoint is never the fix; the waypoint is where the
 /// world put it.
-pub const DW_REACH_UNCOMPLETABLE: DwCode = DwCode::every_version("DW0850", ExitTier::Build);
+pub const DW_REACH_UNCOMPLETABLE: DwCode = DwCode::new("DW0850", ExitTier::Build);
 
 /// The volume a body has to be in for a `reach` objective to complete.
 ///
@@ -89,16 +87,7 @@ pub const DW_REACH_UNCOMPLETABLE: DwCode = DwCode::every_version("DW0850", ExitT
 /// below — three readers of one value, none of them re-deriving it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReachCompletion {
-    /// Pre-v0.3: `distance=..radius` about the anchor's block corner. Kept
-    /// because v0.2 campaigns emit it and must stay byte-identical, and because
-    /// the instance behind `DW0850` happened inside exactly this arm.
-    Sphere {
-        /// The anchor point the distance is measured from.
-        pos: [i32; 3],
-        /// The authored completion radius, in blocks.
-        radius: u32,
-    },
-    /// v0.3+: an axis-aligned block region about the anchor cell, inclusive
+    /// An axis-aligned block region about the anchor cell, inclusive
     /// corners. Emitted as `x=<lo.x>,dx=<hi.x-lo.x>,…`, and vanilla's `dx=n`
     /// spans `n + 1` block columns, so the two agree by construction.
     Cube {
@@ -109,15 +98,11 @@ pub enum ReachCompletion {
     },
 }
 
-/// The completion volume for one `reach-anchor`, given the resolved anchor cell,
-/// the authored radius, and whether the campaign's quests stage is (`v03`) at or
-/// above 0.3.0.
+/// The completion volume for one `reach-anchor`, given the resolved anchor cell
+/// and the authored radius.
 ///
 /// **The one place this rule is written.**
-pub fn reach_completion(pos: [i32; 3], radius: u32, v03: bool) -> ReachCompletion {
-    if !v03 {
-        return ReachCompletion::Sphere { pos, radius };
-    }
+pub fn reach_completion(pos: [i32; 3], radius: u32) -> ReachCompletion {
     // The FLOOR, not a replacement: never tighter than the ±1 that closed the
     // "too tight for a standing body" instance, never narrower than what the
     // author asked for.
@@ -132,9 +117,6 @@ impl ReachCompletion {
     /// The `@s[...]` selector arguments the tick line adjudicates with.
     pub fn selector_args(&self) -> String {
         match self {
-            ReachCompletion::Sphere { pos, radius } => {
-                format!("x={},y={},z={},distance=..{radius}", pos[0], pos[1], pos[2])
-            }
             ReachCompletion::Cube { lo, hi } => format!(
                 "x={},dx={},y={},dy={},z={},dz={}",
                 lo[0],
@@ -151,9 +133,6 @@ impl ReachCompletion {
     /// into the region the server is testing rather than into its own idea of one.
     pub fn to_json(&self) -> serde_json::Value {
         match self {
-            ReachCompletion::Sphere { pos, radius } => {
-                serde_json::json!({ "kind": "sphere", "pos": pos, "radius": radius })
-            }
             ReachCompletion::Cube { lo, hi } => {
                 serde_json::json!({ "kind": "cube", "lo": lo, "hi": hi })
             }
@@ -171,31 +150,13 @@ impl ReachCompletion {
     pub fn certainly_completes_from(&self, c: [i32; 3]) -> bool {
         match *self {
             ReachCompletion::Cube { lo, hi } => (0..3).all(|i| c[i] >= lo[i] && c[i] <= hi[i]),
-            ReachCompletion::Sphere { pos, radius } => {
-                // A body standing in cell `c` has its feet at the cell's centre
-                // column, at the cell's own floor height — the position vanilla
-                // measures `distance` from. The anchor point is the raw
-                // coordinate triple the selector carries.
-                let dx = (c[0] as f64 + 0.5) - pos[0] as f64;
-                let dy = c[1] as f64 - pos[1] as f64;
-                let dz = (c[2] as f64 + 0.5) - pos[2] as f64;
-                (dx * dx + dy * dy + dz * dz).sqrt() <= radius as f64
-            }
         }
     }
 
-    /// Every cell a body could stand in and certainly complete. Bounded: the
-    /// sphere arm is enumerated over its own integer bounding box.
+    /// Every cell a body could stand in and certainly complete.
     pub fn cells(&self) -> Vec<[i32; 3]> {
         let (min, max) = match *self {
             ReachCompletion::Cube { lo, hi } => (lo, hi),
-            ReachCompletion::Sphere { pos, radius } => {
-                let r = radius as i32 + 1;
-                (
-                    [pos[0] - r, pos[1] - r, pos[2] - r],
-                    [pos[0] + r, pos[1] + r, pos[2] + r],
-                )
-            }
         };
         let mut out = Vec::new();
         for x in min[0]..=max[0] {
@@ -220,9 +181,6 @@ impl ReachCompletion {
             ReachCompletion::Cube { lo, hi } => {
                 let span = hi[0] - lo[0] + 1;
                 format!("the {span}×{span}×{span} cube {lo:?}..={hi:?}")
-            }
-            ReachCompletion::Sphere { pos, radius } => {
-                format!("the sphere of radius {radius} about {pos:?}")
             }
         }
     }
@@ -288,12 +246,6 @@ pub fn sites(plan: &Plan) -> Vec<ReachSite> {
     out
 }
 
-/// Whether this campaign emits the v0.3+ cube form. Reads the quests stage, the
-/// same gate `emit::campaign_is_v03` reads, because it is the same decision.
-fn is_cube_campaign(plan: &Plan) -> bool {
-    is_v03(plan.campaign.quests.dsl_version.as_str())
-}
-
 /// `DW0850`: **the volume that completes a `reach`, and the footing a body can
 /// reach it from, are the same place.**
 ///
@@ -339,9 +291,8 @@ pub fn judge_reach_completion(
     world: &World,
     arrivals: &BTreeMap<usize, [i32; 3]>,
 ) -> Result<(), Failure> {
-    let v03 = is_cube_campaign(plan);
     for site in sites(plan) {
-        let vol = reach_completion(site.pos, site.radius, v03);
+        let vol = reach_completion(site.pos, site.radius);
 
         let standable: Vec<[i32; 3]> = vol
             .cells()

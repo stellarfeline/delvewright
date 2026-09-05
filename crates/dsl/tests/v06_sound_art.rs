@@ -62,25 +62,9 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// `play-sound` + `narrate style: art` validate clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(&quests_doc("0.6.0")));
+    let diags = check_campaign(&campaign_with_quests(&quests_doc("0.19.0")));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 surface, got: {diags:#?}"
-    );
-}
-
-/// The same surface under a pre-0.6 quests version is reserved → `DW0141`, for
-/// both the `play-sound` effect and the `narrate` `art` style.
-#[test]
-fn v06_surface_reserved_before_0_6() {
-    let diags = check_campaign(&campaign_with_quests(&quests_doc("0.5.0")));
-    let reserved: Vec<_> = diags.iter().filter(|d| d.code == "DW0141").collect();
-    assert!(
-        reserved.iter().any(|d| d.path.ends_with("/type")),
-        "play-sound effect must be reserved under 0.5.0 (DW0141): {diags:#?}"
-    );
-    assert!(
-        reserved.iter().any(|d| d.path.ends_with("/style")),
-        "narrate `style: art` must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }

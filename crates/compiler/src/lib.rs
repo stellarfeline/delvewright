@@ -162,4 +162,4 @@ pub const PACK_FORMAT: [u32; 2] = [94, 1];
 pub const DATA_VERSION: i32 = 4671;
 
 /// The DSL version this compiler implements (re-exported from the DSL crate).
-pub const DSL_VERSION: &str = delvewright_dsl::SUPPORTED_DSL_VERSION;
+pub const DSL_VERSION: &str = delvewright_dsl::DSL_VERSION;

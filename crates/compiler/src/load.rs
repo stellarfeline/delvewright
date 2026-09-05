@@ -28,7 +28,7 @@ use delvewright_dsl::{Diagnostic, DwCode, ExitTier, RawCampaign};
 /// which is the fence for a finding that exists **before a campaign has parsed** —
 /// there is no declared `dsl_version` to grandfather against, which is also why
 /// the code binds every version.
-pub const DW_STAGE_DOCUMENT_MISSING: DwCode = DwCode::every_version("DW0874", ExitTier::Build);
+pub const DW_STAGE_DOCUMENT_MISSING: DwCode = DwCode::new("DW0874", ExitTier::Build);
 
 /// The six stage filenames a campaign directory must contain.
 pub const STAGE_FILES: [&str; 6] = [

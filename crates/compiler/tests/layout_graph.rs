@@ -30,7 +30,7 @@ mod common;
 /// hand; the fault is stated in the comment above it, not computed.
 const STRANDED: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.13.0",
+  "dsl_version": "0.19.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [

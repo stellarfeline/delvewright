@@ -101,7 +101,7 @@ fn fn_body(out: &BuildOutput, name: &str) -> String {
 /// (spec-0008 §4 live threat), and it is exactly the shape that lost its
 /// machinery.
 const SEQ_WAVE_QUESTS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

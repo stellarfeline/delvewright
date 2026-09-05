@@ -52,7 +52,7 @@ use delvewright_dsl::{DwCode, ExitTier};
 ///   is deleted on the first tick, the delve loses its speaker, and every static
 ///   proof stays green. Found while writing this feature's own CI fixture, which
 ///   is exactly the shape the rule now refuses.
-pub const DW_LETHAL_RESPAWN_SEAT: DwCode = DwCode::every_version("DW0511", ExitTier::Build);
+pub const DW_LETHAL_RESPAWN_SEAT: DwCode = DwCode::new("DW0511", ExitTier::Build);
 
 /// The binding ledger for the lethal-volume proofs.
 #[derive(Clone, Debug, Default)]

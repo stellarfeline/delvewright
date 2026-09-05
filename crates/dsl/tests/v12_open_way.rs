@@ -76,30 +76,11 @@ fn codes(quests: String) -> Vec<String> {
 const OPEN_WAY: &str = r#"{ "type": "open-way",
      "piece": "prefab/hello-room", "way": "broken-flight" }"#;
 
-/// **The fence, and it is the fence rather than serde** (spec-0042 §5): the same
-/// document is clean at 0.12.0 and `DW0141` at 0.11.0, with the verb named.
+/// The effect validates clean.
 #[test]
-fn open_way_validates_at_012_and_is_reserved_below_it() {
-    let at_012 = codes(quests_doc("0.12.0", OPEN_WAY));
-    assert!(
-        !at_012.iter().any(|c| c == "DW0141"),
-        "0.12.0 must accept the verb it introduces: {at_012:?}"
-    );
-    let at_011 = check_campaign(&raw(quests_doc("0.11.0", OPEN_WAY)));
-    let fenced: Vec<_> = at_011.iter().filter(|d| d.code == "DW0141").collect();
-    assert_eq!(fenced.len(), 1, "{at_011:?}");
-    // The refusal names the construct and the version an author must raise to —
-    // a `DW0141` that says only "reserved" sends nobody anywhere.
-    assert!(
-        fenced[0].message.contains("open-way"),
-        "{}",
-        fenced[0].message
-    );
-    assert!(
-        fenced[0].message.contains("0.12.0"),
-        "{}",
-        fenced[0].message
-    );
+fn open_way_validates() {
+    let d = codes(quests_doc(delvewright_dsl::DSL_VERSION, OPEN_WAY));
+    assert!(d.is_empty(), "an open-way validates clean: {d:?}");
 }
 
 /// The verb carries the one gate every gate consumer carries — all three fields,
@@ -110,7 +91,7 @@ fn open_way_carries_the_whole_gate() {
        "requires_flags": ["flag/keeper-spoke"],
        "forbids_flags": ["flag/keeper-spoke"],
        "requires_state": [] }"#;
-    let c = parse_campaign(&raw(quests_doc("0.12.0", gated))).expect("it parses");
+    let c = parse_campaign(&raw(quests_doc("0.19.0", gated))).expect("it parses");
     let effects = &c.quests.content.quests[0]
         .on_objective_complete
         .iter()
@@ -142,7 +123,7 @@ fn an_open_way_has_no_region_no_block_and_no_direction() {
         let effect = format!(
             r#"{{ "type": "open-way", "piece": "prefab/hello-room", "way": "w", {extra} }}"#
         );
-        let found = codes(quests_doc("0.12.0", &effect));
+        let found = codes(quests_doc("0.19.0", &effect));
         assert!(
             found.iter().any(|c| c == "DW0100"),
             "`{extra}` was accepted or dropped rather than refused: {found:?}"

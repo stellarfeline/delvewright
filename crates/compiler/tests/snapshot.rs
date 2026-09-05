@@ -387,6 +387,7 @@ fn snapshot_needs_only_placement_not_emission() {
     )
     .unwrap();
     common::materialize(&patch, &campaign);
+    common::declare_story_dir(&campaign);
     let pf = common::prefabs_dir();
 
     let analyzed = delvec(&[

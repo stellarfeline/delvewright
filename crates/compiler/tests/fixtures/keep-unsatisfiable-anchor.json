@@ -16,12 +16,7 @@
             ],
             "on_complete": [],
             "on_objective_complete": {
-              "obj/talk": [
-                {
-                  "anchor": "anchor/gate",
-                  "type": "open-gate"
-                }
-              ]
+              "obj/talk": []
             },
             "trigger": {
               "type": "campaign-start"
@@ -31,6 +26,15 @@
             "id": "quest/reach-shrine",
             "objectives": [
               {
+                "anchor": "anchor/exit",
+                "id": "obj/arrive",
+                "radius": 2,
+                "type": "reach-anchor"
+              },
+              {
+                "after": [
+                  "obj/arrive"
+                ],
                 "anchor": "anchor/nonexistent",
                 "id": "obj/reach",
                 "radius": 2,
@@ -42,6 +46,14 @@
                 "type": "campaign-complete"
               }
             ],
+            "on_objective_complete": {
+              "obj/arrive": [
+                {
+                  "anchor": "anchor/gate",
+                  "type": "open-gate"
+                }
+              ]
+            },
             "trigger": {
               "quest": "quest/greet-keeper",
               "type": "quest-complete"
@@ -49,7 +61,7 @@
           }
         ]
       },
-      "dsl_version": "0.2.0",
+      "dsl_version": "0.19.0",
       "stage": "quests"
     }
   },

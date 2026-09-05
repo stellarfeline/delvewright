@@ -97,75 +97,15 @@ fn quests_doc(version: &str) -> String {
 /// The whole v0.10 surface validates clean at `0.10.0`.
 #[test]
 fn runtime_state_validates_clean() {
-    let raw = campaign_with(&quests_doc("0.10.0"), None);
+    let raw = campaign_with(&quests_doc("0.19.0"), None);
     let d = check_campaign(&raw);
     assert!(d.is_empty(), "expected clean, got: {d:#?}");
-}
-
-/// Every part of the surface is reserved below `0.10.0`: the declaration, the
-/// three verbs, and the comparison at each gate consumer. `DW0141` at each site.
-#[test]
-fn the_whole_surface_is_reserved_below_v10() {
-    let raw = campaign_with(&quests_doc("0.9.0"), None);
-    let d = check_campaign(&raw);
-    let reserved: Vec<&delvewright_dsl::Diagnostic> =
-        d.iter().filter(|x| x.code == "DW0141").collect();
-    assert!(
-        reserved.iter().any(|x| x.path == "/content/state"),
-        "the declaration must be reserved: {d:#?}"
-    );
-    for verb in ["set-state", "add-state", "clear-state"] {
-        assert!(
-            reserved.iter().any(|x| x.message.contains(verb)),
-            "`{verb}` must be reserved: {d:#?}"
-        );
-    }
-    for consumer in ["objective", "effect", "trigger"] {
-        assert!(
-            reserved
-                .iter()
-                .any(|x| x.message.contains(&format!("on a {consumer} requires"))),
-            "a comparison on a {consumer} must be reserved: {d:#?}"
-        );
-    }
-}
-
-/// A `requires_state` on a dialogue option is reserved off the **dialogue**
-/// stage's own version, not the quests stage's — the per-stage fence.
-#[test]
-fn a_dialogue_comparison_is_fenced_by_the_dialogue_stage() {
-    let dialogue = r#"{
-  "dsl_version": "0.9.0",
-  "campaign_id": "hello-world",
-  "stage": "dialogue",
-  "content": {
-    "dialogues": [
-      { "npc": "npc/keeper", "root": "dlg/root", "nodes": [
-        { "id": "dlg/root", "text": "Well?", "options": [
-          { "label": "Pay the toll.",
-            "requires_state": [ { "state": "state/toll", "op": "at-least", "value": 1 } ],
-            "effects": [ { "type": "complete-objective", "objective": "obj/talk" } ] },
-          { "label": "Nothing.",
-            "effects": [ { "type": "complete-objective", "objective": "obj/talk" } ] }
-        ] }
-      ] }
-    ]
-  }
-}"#;
-    let raw = campaign_with(&quests_doc("0.10.0"), Some(dialogue));
-    let d = check_campaign(&raw);
-    assert!(
-        d.iter().any(|x| x.code == "DW0141"
-            && x.stage == "dialogue"
-            && x.message.contains("on a dialogue option requires")),
-        "the dialogue stage's own version fences its comparison: {d:#?}"
-    );
 }
 
 /// `DW0500`: a comparison, and a verb, naming a datum nobody declared.
 #[test]
 fn an_undeclared_datum_is_rejected() {
-    let doc = quests_doc("0.10.0").replace(
+    let doc = quests_doc("0.19.0").replace(
         r#""state": "state/ride", "value": 1"#,
         r#""state": "state/purse", "value": 1"#,
     );
@@ -176,7 +116,7 @@ fn an_undeclared_datum_is_rejected() {
         check_campaign(&raw)
     );
 
-    let doc = quests_doc("0.10.0").replace(
+    let doc = quests_doc("0.19.0").replace(
         r#"{ "state": "state/toll", "op": "at-most", "value": 0 }"#,
         r#"{ "state": "state/purse", "op": "at-most", "value": 0 }"#,
     );
@@ -194,7 +134,7 @@ fn an_undeclared_datum_is_rejected() {
 fn a_datum_read_but_never_written_is_rejected() {
     // Drop both writes of `state/toll`, leaving the objective gate and the
     // trigger gate reading a datum frozen at its initial.
-    let doc = quests_doc("0.10.0")
+    let doc = quests_doc("0.19.0")
         .replace(
             r#"{ "type": "add-state", "state": "state/toll", "amount": -1 },
 "#,
@@ -218,7 +158,7 @@ fn a_datum_read_but_never_written_is_rejected() {
 #[test]
 fn a_datum_never_read_is_rejected() {
     // (a) written, never read: drop the objective gate that reads `state/toll`.
-    let doc = quests_doc("0.10.0")
+    let doc = quests_doc("0.19.0")
         .replace(
             r#",
             "requires_state": [ { "state": "state/toll", "op": "at-most", "value": 0 } ] }"#,
@@ -236,7 +176,7 @@ fn a_datum_never_read_is_rejected() {
     );
 
     // (b) declared and never touched at all.
-    let doc = quests_doc("0.10.0").replace(
+    let doc = quests_doc("0.19.0").replace(
         r#"{ "id": "state/ride", "scope": "party" }"#,
         r#"{ "id": "state/ride", "scope": "party" },
       { "id": "state/dust", "scope": "party" }"#,
@@ -254,7 +194,7 @@ fn a_datum_never_read_is_rejected() {
 /// scheduler-only `sequence` step.
 #[test]
 fn a_player_scoped_datum_needs_an_acting_player() {
-    let doc = quests_doc("0.10.0").replace(
+    let doc = quests_doc("0.19.0").replace(
         r#"{ "id": "state/toll", "scope": "party", "initial": 3,"#,
         r#"{ "id": "state/toll", "scope": "player", "initial": 3,"#,
     );
@@ -269,7 +209,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
     // per-player datum read or written there has no subject either. Three of the
     // seven roots are like this (R3, R4, R6) and four are not — the answer is
     // `EffectRootKind::runs_with_acting_player`'s, not this check's.
-    let doc = quests_doc("0.10.0")
+    let doc = quests_doc("0.19.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -290,7 +230,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 
     // Root R6: a shortcut's `on_unlock` is emitted `Audience::Scheduled` too, and
     // the READ side fails the same way as the write side.
-    let doc = quests_doc("0.10.0")
+    let doc = quests_doc("0.19.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -316,7 +256,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 
     // …and the four roots that DO have one are clean: `on_death` is the dying
     // player's own beat, so a per-player write there is exactly right.
-    let doc = quests_doc("0.10.0")
+    let doc = quests_doc("0.19.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -334,7 +274,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 
     // The scheduler seam: a `sequence` step writes a per-player datum with no
     // player to write it to — the same seam `DW0357` polices for `carrier: one`.
-    let doc = quests_doc("0.10.0")
+    let doc = quests_doc("0.19.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -356,7 +296,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 /// is a declared id like every other, and its scope has to be a single fact.
 #[test]
 fn datum_ids_follow_the_ordinary_id_rules() {
-    let doc = quests_doc("0.10.0").replace(
+    let doc = quests_doc("0.19.0").replace(
         r#"{ "id": "state/ride", "scope": "party" }"#,
         r#"{ "id": "state/ride", "scope": "party" },
       { "id": "state/ride", "scope": "player" }"#,
@@ -366,7 +306,7 @@ fn datum_ids_follow_the_ordinary_id_rules() {
         "a datum declared twice is DW0111"
     );
 
-    let doc = quests_doc("0.10.0").replace(r#""id": "state/ride""#, r#""id": "state/Ride""#);
+    let doc = quests_doc("0.19.0").replace(r#""id": "state/ride""#, r#""id": "state/Ride""#);
     assert!(
         codes(&campaign_with(&doc, None)).contains(&"DW0110".to_string()),
         "a malformed datum id is DW0110"
@@ -423,7 +363,7 @@ fn the_numeric_gate_is_part_of_an_effects_content_key() {
 #[test]
 fn a_gate_inside_the_newest_effect_roots_is_still_walked() {
     // R7 — the campaign-wide `on_death` bundle.
-    let doc = quests_doc("0.10.0").replace(
+    let doc = quests_doc("0.19.0").replace(
         r#"    "quests": ["#,
         r#"    "on_death": [
       { "type": "narrate", "text": "The toll goes back to the mud.",
@@ -439,7 +379,7 @@ fn a_gate_inside_the_newest_effect_roots_is_still_walked() {
     );
 
     // R6 — a shortcut's `on_unlock` bundle.
-    let doc = quests_doc("0.10.0").replace(
+    let doc = quests_doc("0.19.0").replace(
         r#"    "quests": ["#,
         r#"    "shortcuts": [
       { "id": "shortcut/back-way", "gate": "anchor/door", "unlock": "anchor/exit",

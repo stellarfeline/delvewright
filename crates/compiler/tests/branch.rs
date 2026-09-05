@@ -21,7 +21,7 @@
 mod common;
 
 use delvewright_compiler::branch;
-use delvewright_dsl::{Campaign, Fenced, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 use serde_json::Value;
 
 fn fixture_dir() -> std::path::PathBuf {
@@ -552,68 +552,6 @@ fn departs_then_arrives_then_acts_is_clean() {
 }
 
 // --- the version fence -----------------------------------------------------
-
-/// Below 0.8.0 nothing in this module fires — which is what keeps every 0.6/0.7
-/// campaign's datapack byte-identical.
-#[test]
-fn pre_08_campaign_raises_no_branch_diagnostics() {
-    let hw = common::hello_world_dir();
-    let c = parse_campaign(&RawCampaign {
-        world: std::fs::read_to_string(hw.join("world.json")).unwrap(),
-        npcs: std::fs::read_to_string(hw.join("npcs.json")).unwrap(),
-        classes: std::fs::read_to_string(hw.join("classes.json")).unwrap(),
-        quest_plan: std::fs::read_to_string(hw.join("quest-plan.json")).unwrap(),
-        quests: std::fs::read_to_string(hw.join("quests.json")).unwrap(),
-        dialogue: std::fs::read_to_string(hw.join("dialogue.json")).unwrap(),
-        world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
-    })
-    .expect("hello-world parses");
-    // The version scope now lives on the codes, so it is the FENCE that must be
-    // shown to carry it — and shown to carry it non-vacuously. `check_branches`
-    // itself runs unconditionally and reports what it finds; the fence is what a
-    // verdict is read off.
-    let raised = branch::check_branches(&c);
-    let fenced = Fenced::apply(&c, raised.clone());
-    assert!(
-        fenced.reported().is_empty(),
-        "a pre-0.8 campaign is answerable for no spec-0025 finding: {:?}",
-        fenced
-            .reported()
-            .iter()
-            .map(|d| &d.code)
-            .collect::<Vec<_>>()
-    );
-    // The binding count. A fence that dropped nothing would pass the assertion
-    // above by being unbound, which is a vacuous green, not a pass (CLAUDE.md).
-    // hello-world is a 0.2.0 campaign whose every quest and objective lacks a
-    // `happening`, so the grandfathered set is exactly what the obligation would
-    // have demanded of it.
-    assert!(
-        !fenced.grandfathered().is_empty(),
-        "the fence must have something to grandfather here, or this test proves nothing"
-    );
-    assert!(
-        fenced
-            .grandfathered()
-            .iter()
-            .all(|d| d.code == branch::DW_HAPPENING_MISSING),
-        "expected the 0.8 `happening` obligation, got {:?}",
-        fenced
-            .grandfathered()
-            .iter()
-            .map(|d| &d.code)
-            .collect::<Vec<_>>()
-    );
-    assert_eq!(raised.len(), fenced.grandfathered().len());
-    assert!(
-        branch::artifacts(&c).is_empty(),
-        "a pre-0.8 campaign emits no branch artifacts"
-    );
-}
 
 // --- artifacts -------------------------------------------------------------
 

@@ -27,7 +27,7 @@ use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
 use delvewright_dsl::{
     CompareOp, EquipItem, Gate, MobEquipment, Objective, QuestEffect, StateCompare, StateId,
-    StateScope, Trigger, is_v03, is_v04, is_v06,
+    StateScope, Trigger,
 };
 use delvewright_dsl::{DwCode, ExitTier};
 
@@ -57,7 +57,7 @@ pub enum BuildFailure {
 /// letting mobs pile into blocks or spill across a socket seam. Analysis-tier
 /// (exit 2, like reachability `DW02xx`): the fix is a content-design capacity
 /// choice — shrink the wave or use a larger room — not a compiler/geometry defect.
-pub const DW_WAVE_NO_ROOM: DwCode = DwCode::every_version("DW0312", ExitTier::Analysis);
+pub const DW_WAVE_NO_ROOM: DwCode = DwCode::new("DW0312", ExitTier::Analysis);
 
 /// `DW0310`: a `spawn-wave` references a wave whose spawn anchor resolves in no
 /// assembled area, so the emitted `function <ns>:spawn_<wave>` call would dangle
@@ -66,7 +66,7 @@ pub const DW_WAVE_NO_ROOM: DwCode = DwCode::every_version("DW0312", ExitTier::An
 /// It was the workspace's last bare `"DWxxxx"` string literal in a code position
 /// — every other code already went through a named constant — and typing the
 /// codes is what turned that from a style difference into a compile error.
-pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::every_version("DW0310", ExitTier::Build);
+pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::new("DW0310", ExitTier::Build);
 
 /// `DW0387`: a `summon: aggro-edge` wave (spec-0016 §6) whose perception ring
 /// offers too few valid cells. The ring is the standable, walk-reachable,
@@ -76,7 +76,7 @@ pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::every_version("DW0310", Exi
 /// round-1 lesson was a "kill" objective whose wave never fully appeared, so the
 /// countdown could never reach zero and the delve soft-locked with every other
 /// proof green.
-pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::every_version("DW0387", ExitTier::Build);
+pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::new("DW0387", ExitTier::Build);
 
 /// `DW0494`: completing ONE objective would cross into two different areas —
 /// one destination on the exported path, another on a branch.
@@ -88,7 +88,7 @@ pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::every_version("DW0387", ExitTi
 /// the exported path's crossing is unconditional by construction. The content
 /// fix is to split the objective — one crossing objective per branch, each
 /// gated by that branch's own flags.
-pub const DW_BRANCH_TRANSPORT_DIVERGES: DwCode = DwCode::every_version("DW0494", ExitTier::Build);
+pub const DW_BRANCH_TRANSPORT_DIVERGES: DwCode = DwCode::new("DW0494", ExitTier::Build);
 
 impl From<Failure> for BuildFailure {
     fn from(e: Failure) -> Self {
@@ -200,7 +200,7 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
 /// prefab has the same exposure and had the same silence.
 ///
 /// Build tier: the world would be wrong, so it is not built.
-pub const DW_TEMPLATE_EXTENT: DwCode = DwCode::every_version("DW0803", ExitTier::Build);
+pub const DW_TEMPLATE_EXTENT: DwCode = DwCode::new("DW0803", ExitTier::Build);
 
 /// How much of the world [`check_template_extents`] actually examined.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2098,54 +2098,10 @@ fn is_vanilla_function(path: &str) -> bool {
 // mcfunction emission
 // ---------------------------------------------------------------------------
 
-/// The environment-sealing baseline (spec-0002 "Environment sealing").
-///
-/// **1.21.11 gamerule syntax — verified live against a pinned 1.21.11 server
-/// (delvewright-base / itzg VANILLA), 2026-07-30.** 1.21.11 replaced the legacy
-/// camelCase gamerule identifiers with a registry of snake_case names, several of
-/// them renamed outright; the old spellings are rejected with "Incorrect argument
-/// for command". The confirmed successors used here:
-///
-/// | Legacy (spec text)   | 1.21.11 accepted                       |
-/// |----------------------|----------------------------------------|
-/// | `doMobSpawning`      | `spawn_mobs` (umbrella natural-spawn)   |
-/// | `doDaylightCycle`    | `advance_time`                          |
-/// | `doWeatherCycle`     | `advance_weather`                       |
-/// | `doFireTick`         | `fire_spread_radius_around_player` (int)|
-/// | `mobGriefing`        | `mob_griefing`                          |
-/// | `spawnRadius`        | `respawn_radius` (spawn scatter, int)   |
-///
-/// `doFireTick` has **no boolean successor**; 1.21.11 models fire spread as an
-/// integer radius around players, so `0` disables it (the sealing intent: no
-/// spreading fire). Time is pinned to the declared world `time` (DSL v0.5,
-/// spec-0010; default noon = daytime 6000, the v0 default — so a campaign that
-/// declares nothing is byte-identical). With `advance_time`/`advance_weather`
-/// frozen, the set states persist for the whole delve. A `weather` command is
-/// emitted only when the campaign declares one (clear is the vanilla default, so
-/// omitting it keeps pre-v0.5 output byte-identical). Names may optionally be
-/// `minecraft:`-prefixed on the server, but the bare form is accepted and matches
-/// the vendored command tree (`data/commands-1.21.11.json`), so it is what we
-/// emit and validate.
-/// The campaign's **declared** combat difficulty (`world.difficulty`, v0.6), or
-/// `None` when it declares none and the compiler's historical derivation applies.
-///
-/// Gated on the world stage's `dsl_version` exactly as the rest of the v0.6 world
-/// surface is: validation already rejects the field on an older stage
-/// (`DW0141`), and honouring the gate here too means no build path can
-/// accidentally read a field the campaign is not entitled to declare.
-fn declared_difficulty(c: &delvewright_dsl::Campaign) -> Option<delvewright_dsl::WorldDifficulty> {
-    if is_v06(c.world.dsl_version.as_str()) {
-        c.world.content.difficulty
-    } else {
-        None
-    }
-}
-
 fn sealing_commands(
     time: delvewright_dsl::WorldTime,
     weather: Option<delvewright_dsl::WorldWeather>,
     difficulty: Option<delvewright_dsl::WorldDifficulty>,
-    v06: bool,
 ) -> Vec<String> {
     let mut cmds = vec![
         "gamerule spawn_mobs false".to_string(),
@@ -2185,11 +2141,8 @@ fn sealing_commands(
     // explosion *block* damage from *entity* damage, so a TNT trap would deform the
     // sealed jigsaw world and poison every downstream proof. `tnt_explodes false` is
     // the defense-in-depth seal against a stray primed-TNT source (e.g. a dispenser
-    // loaded with TNT the schema forbids anyway). Gated on the v0.6 world stage so
-    // pre-0.6 fixtures stay byte-identical.
-    if v06 {
-        cmds.push("gamerule tnt_explodes false".to_string());
-    }
+    // loaded with TNT the schema forbids anyway).
+    cmds.push("gamerule tnt_explodes false".to_string());
     // Weather is emitted only when explicitly declared (spec-0010): clear is the
     // vanilla default, so a campaign that declares no weather emits no `weather`
     // command and stays byte-identical to pre-v0.5 output.
@@ -2218,22 +2171,6 @@ pub(crate) fn facing_yaw(facing: Option<&str>) -> i32 {
         Some("west") => 90,
         _ => 0, // south / default
     }
-}
-
-/// Whether this campaign compiles under DSL v0.3 (gate for every M2
-/// presentation fix). The gate is the quests-stage version (all v0.3 surface
-/// lives in stage 5) — matching [`crate::registry`]/validation. v0.2 campaigns
-/// (hello-world / keep-crawl) take the untouched pre-v0.3 emission path, keeping
-/// their output byte-identical.
-fn campaign_is_v03(plan: &Plan) -> bool {
-    is_v03(plan.campaign.quests.dsl_version.as_str())
-}
-
-/// True for DSL v0.4+ campaigns. Gates the dialogue objective-state display axis
-/// (a `completes` option is hidden until its objective is active) so pre-v0.4
-/// campaigns stay byte-identical.
-fn campaign_is_v04(plan: &Plan) -> bool {
-    is_v04(plan.campaign.quests.dsl_version.as_str())
 }
 
 /// Escape a player-facing string as a double-quoted SNBT string. On 1.21.11
@@ -2287,7 +2224,7 @@ fn snbt_text_component(s: &str) -> String {
 /// emitter, including ones not yet written. This is the invariant that replaces
 /// "we enumerated every emission site once" with "the compiler re-proves it on
 /// every build" (spec-0029 Risks).
-pub const DW_UNTRANSLATED_LITERAL: DwCode = DwCode::every_version("DW0185", ExitTier::Build);
+pub const DW_UNTRANSLATED_LITERAL: DwCode = DwCode::new("DW0185", ExitTier::Build);
 
 /// Lower an authored player-visible string into a JSON **text component**
 /// (spec-0029 §1): a translation-tagged string becomes
@@ -2720,7 +2657,6 @@ fn emit_functions(
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
-    let v03 = campaign_is_v03(plan);
     // spec-0020: every NPC's cast ledger resolved into the scenes right-click
     // swaps between. Empty for a campaign that declares no `cast`.
     let casts = crate::cast::npc_casts(c);
@@ -2747,8 +2683,7 @@ fn emit_functions(
     setup.extend(sealing_commands(
         c.world.content.time.unwrap_or_default(),
         c.world.content.weather,
-        declared_difficulty(c),
-        is_v06(c.world.dsl_version.as_str()),
+        c.world.content.difficulty,
     ));
     setup.push("scoreboard objectives add dw.class trigger".to_string());
     setup.push("scoreboard objectives add dw.classed dummy".to_string());
@@ -2868,15 +2803,13 @@ fn emit_functions(
     // v0.3 objective-activation feedback (M2 fix 4): one "announced" flag per
     // titled objective. Empty for a v0.2 campaign, so hello-world / keep-crawl
     // setup stays byte-identical.
-    if v03 {
-        for q in &c.quests.content.quests {
-            for o in &q.objectives {
-                if o.title().is_some() {
-                    setup.push(format!(
-                        "scoreboard objectives add {} dummy",
-                        announce_score(o.id().as_str())
-                    ));
-                }
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            if o.title().is_some() {
+                setup.push(format!(
+                    "scoreboard objectives add {} dummy",
+                    announce_score(o.id().as_str())
+                ));
             }
         }
     }
@@ -2884,7 +2817,7 @@ fn emit_functions(
     // item" completion check stores each player's held count here before comparing
     // it to the required count. Declared only when a `collect` objective exists, so
     // a v0.2 campaign (and any v0.3 campaign without collect) stays byte-identical.
-    if v03 && has_collect_objective(c) {
+    if has_collect_objective(c) {
         setup.push(format!("scoreboard objectives add {COLLECT_HOLD} dummy"));
     }
     // v0.6 checkpoints (spec-0012): the active-checkpoint marker + the vanilla
@@ -3157,7 +3090,7 @@ fn emit_functions(
         if npc_is_deferred(c, &npc.npc_id) {
             continue;
         }
-        setup.extend(npc_summon_commands(c, plan, npc, v03));
+        setup.extend(npc_summon_commands(c, plan, npc));
     }
     // v0.3 collect chests, interact hitboxes/markers and reach markers are NOT
     // placed here. They are placed/summoned when their objective ACTIVATES (see the
@@ -3367,19 +3300,17 @@ fn emit_functions(
     // spec-0018: the whole predicate is party state now — the guard and the
     // announce-once latch both read `#party` — so the driver needs no player
     // context at all and the announce reaches the party exactly once.
-    if v03 {
-        for q in &c.quests.content.quests {
-            let qa = quest_active_score(q.id.as_str());
-            for o in &q.objectives {
-                if o.title().is_some() {
-                    tick.push(format!(
-                        "execute{} unless score {} {} matches 1 run function {ns}:announce_{}",
-                        pending_guard(plan, o, &qa),
-                        plan::PARTY,
-                        announce_score(o.id().as_str()),
-                        safe_obj_fn(o.id().as_str())
-                    ));
-                }
+    for q in &c.quests.content.quests {
+        let qa = quest_active_score(q.id.as_str());
+        for o in &q.objectives {
+            if o.title().is_some() {
+                tick.push(format!(
+                    "execute{} unless score {} {} matches 1 run function {ns}:announce_{}",
+                    pending_guard(plan, o, &qa),
+                    plan::PARTY,
+                    announce_score(o.id().as_str()),
+                    safe_obj_fn(o.id().as_str())
+                ));
             }
         }
     }
@@ -3389,21 +3320,19 @@ fn emit_functions(
     // are neither visible nor lootable early. Global-once per objective, guarded by
     // a `#act_<obj>` sentinel on dw.sys, so a second player activating does not
     // re-place an already-looted chest. Empty for v0.2.
-    if v03 {
-        for q in &c.quests.content.quests {
-            let area = plan.quest_area(q.id.as_str()).unwrap_or("");
-            let qa = quest_active_score(q.id.as_str());
-            for o in &q.objectives {
-                if activation_commands(plan, area, o).is_empty() {
-                    continue;
-                }
-                tick.push(format!(
-                    "execute{} unless score {} dw.sys matches 1 run function {ns}:activate_{}",
-                    pending_guard(plan, o, &qa),
-                    activation_flag(o.id().as_str()),
-                    safe_obj_fn(o.id().as_str())
-                ));
+    for q in &c.quests.content.quests {
+        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
+        let qa = quest_active_score(q.id.as_str());
+        for o in &q.objectives {
+            if activation_commands(plan, area, o).is_empty() {
+                continue;
             }
+            tick.push(format!(
+                "execute{} unless score {} dw.sys matches 1 run function {ns}:activate_{}",
+                pending_guard(plan, o, &qa),
+                activation_flag(o.id().as_str()),
+                safe_obj_fn(o.id().as_str())
+            ));
         }
     }
     // Per-tick objective completion checks. `reach-anchor` (proximity) is
@@ -3471,7 +3400,7 @@ fn emit_functions(
                     tick.push(format!(
                         "execute as @a{} if entity @s[{}] run function {ns}:complete_{}",
                         pending_guard(plan, o, &qa),
-                        crate::reach::reach_completion(pos, *radius, v03).selector_args(),
+                        crate::reach::reach_completion(pos, *radius).selector_args(),
                         safe_obj_fn(id.as_str())
                     ));
                 }
@@ -3537,7 +3466,7 @@ fn emit_functions(
                 }
                 Objective::Collect {
                     id, item, count, ..
-                } if v03 => {
+                } => {
                     // Complete for a player already holding the item (gap 13): a
                     // `collect` normally completes via an `inventory_changed`
                     // advancement whose reward revokes-to-re-arm, and that will NOT
@@ -3558,7 +3487,7 @@ fn emit_functions(
                         safe_obj_fn(id.as_str())
                     ));
                 }
-                Objective::TalkTo { .. } | Objective::Collect { .. } => {}
+                Objective::TalkTo { .. } => {}
             }
         }
     }
@@ -3907,21 +3836,19 @@ fn emit_functions(
             // v0.3 activation function (gap 13): run once when the objective
             // activates (driven from `tick`) — set the global once-flag, then place
             // the objective's prop(s). Emitted only for objectives with a prop.
-            if v03 {
-                let cmds = activation_commands(plan, q_area, o);
-                if !cmds.is_empty() {
-                    let mut act = vec![format!(
-                        "scoreboard players set {} dw.sys 1",
-                        activation_flag(oid)
-                    )];
-                    act.extend(cmds);
-                    fns.push((format!("activate_{}", safe_obj_fn(oid)), lines(&act)));
-                }
+            let cmds = activation_commands(plan, q_area, o);
+            if !cmds.is_empty() {
+                let mut act = vec![format!(
+                    "scoreboard players set {} dw.sys 1",
+                    activation_flag(oid)
+                )];
+                act.extend(cmds);
+                fns.push((format!("activate_{}", safe_obj_fn(oid)), lines(&act)));
             }
             // v0.3 objective-activation feedback (M2 fix 4): the announce function
             // shows the title + hint once and plays a subtle sound. Emitted only
             // for titled objectives (v0.3); nothing for v0.2.
-            if v03 && let Some(title) = o.title() {
+            if let Some(title) = o.title() {
                 // spec-0018: the objective is the PARTY's, so its title, hint and
                 // cue address `@a` and the once-latch lives on the party holder —
                 // one announcement per objective, heard by everyone, never a
@@ -3992,7 +3919,7 @@ fn emit_functions(
             ));
             // v0.3 objective-completion feedback (M2 fix 4): a confirmation line +
             // sound so progress is legible. Titled objectives only; v0.2 unchanged.
-            if v03 && let Some(title) = o.title() {
+            if let Some(title) = o.title() {
                 body.push(format!(
                     "tellraw @a {}",
                     tr_with(
@@ -4018,9 +3945,9 @@ fn emit_functions(
             // later NPCs. Prop BLOCKS (spec-0008 interact prop, collect chest) are
             // the affordance itself — real world blocks, intended scenery — so they
             // persist; only summoned entities are removed. Gated identically to the
-            // summon (v03 + a non-empty activation) so v0.2 campaigns and objectives
-            // with no summon stay byte-identical.
-            if v03 && !activation_commands(plan, q_area, o).is_empty() {
+            // summon (a non-empty activation) so objectives with no summon emit
+            // nothing here.
+            if !activation_commands(plan, q_area, o).is_empty() {
                 body.extend(completion_cleanup(o));
             }
             // `complete_<obj>` is dispatched `as @a` from `tick`, so this bundle
@@ -4166,20 +4093,18 @@ fn emit_functions(
     // v0.3 finale fanfare (M2 fix 4): the owner finished the finale and got no
     // feedback. Show a proper title banner + play a fanfare. Gated on v0.3 so the
     // shared `campaign_complete` stays byte-identical for hello-world / keep-crawl.
-    if v03 {
-        cc.push(format!(
-            "title @a title {}",
-            tr_with(
-                &chrome.get(delvewright_dsl::chrome::CAMPAIGN_BANNER),
-                &[("color", json!("gold")), ("bold", json!(true))],
-            )
-        ));
-        cc.push(format!(
-            "title @a subtitle {}",
-            tr_with(title, &[("color", json!("yellow"))])
-        ));
-        cc.push("playsound minecraft:ui.toast.challenge_complete player @a".to_string());
-    }
+    cc.push(format!(
+        "title @a title {}",
+        tr_with(
+            &chrome.get(delvewright_dsl::chrome::CAMPAIGN_BANNER),
+            &[("color", json!("gold")), ("bold", json!(true))],
+        )
+    ));
+    cc.push(format!(
+        "title @a subtitle {}",
+        tr_with(title, &[("color", json!("yellow"))])
+    ));
+    cc.push("playsound minecraft:ui.toast.challenge_complete player @a".to_string());
     // Machine-readable completion marker for the validation bot. The bot reads
     // `dw.campaign` from the sidebar per the amended contract, BUT mineflayer
     // 4.37.x cannot parse 1.21.11 scoreboard score packets (verified live: no
@@ -4854,7 +4779,7 @@ fn campaign_outro(c: &delvewright_dsl::Campaign) -> String {
 
 /// `DW0362`: a dialogue node declares more conditionally-visible options than the
 /// variant-dialog encoding can carry. Validation-tier content-shape limit.
-pub const DW_DIALOGUE_VARIANT_CAP: DwCode = DwCode::every_version("DW0362", ExitTier::Build);
+pub const DW_DIALOGUE_VARIANT_CAP: DwCode = DwCode::new("DW0362", ExitTier::Build);
 
 /// The most gated options one dialogue node may declare.
 ///
@@ -4877,14 +4802,13 @@ pub const MAX_GATED_DIALOGUE_OPTIONS: usize = 10;
 /// (`DW0362`). Runs before any variant emission so the `1u32 << n` shifts in
 /// `gated_node_choosers` / `emit_dialogs` are unreachable past the cap.
 fn check_dialogue_variant_cap(plan: &Plan) -> Result<(), BuildFailure> {
-    let v04 = campaign_is_v04(plan);
     for npc in &plan.npcs {
         let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
         for opt in &npc.options {
             if !seen.insert(opt.node_id.as_str()) {
                 continue;
             }
-            let n = node_gated_options(npc, &opt.node_id, v04).len();
+            let n = node_gated_options(npc, &opt.node_id).len();
             if n > MAX_GATED_DIALOGUE_OPTIONS {
                 return Err(BuildFailure::Diagnostic {
                     code: DW_DIALOGUE_VARIANT_CAP,
@@ -4907,7 +4831,7 @@ fn check_dialogue_variant_cap(plan: &Plan) -> Result<(), BuildFailure> {
 
 /// `DW0361`: two distinct generated artifacts sanitize to the same name, so one
 /// would silently overwrite the other in the emitted pack.
-pub const DW_NAME_COLLISION: DwCode = DwCode::every_version("DW0361", ExitTier::Build);
+pub const DW_NAME_COLLISION: DwCode = DwCode::new("DW0361", ExitTier::Build);
 
 /// Insert an emitted artifact, refusing to let one silently overwrite another
 /// (`DW0361`).
@@ -4963,7 +4887,7 @@ fn json_bytes(value: &Value) -> Vec<u8> {
 /// to no world position in the assembled build. Validation-tier content mistake
 /// (a typo'd or unassembled anchor), reported as a build diagnostic because only
 /// the assembled world knows which anchors actually exist.
-pub const DW_EFFECT_ANCHOR_UNRESOLVED: DwCode = DwCode::every_version("DW0360", ExitTier::Build);
+pub const DW_EFFECT_ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0360", ExitTier::Build);
 
 /// Whether [`build`] assembles the voxel world — and therefore whether every
 /// proof that needs it actually runs, including [`plan_payload_verbs`] and its
@@ -8352,8 +8276,7 @@ fn emit_lethal_functions(plan: &Plan) -> Vec<(String, String)> {
 /// examine zero, find nothing, and pass — the truncated-input vacuity mode, where
 /// the number is neither zero nor wrong but is about a smaller world than the one
 /// the check claims to cover.
-pub const DW_STEALTH_JUDGE_NOT_POSITIONAL: DwCode =
-    DwCode::every_version("DW0852", ExitTier::Build);
+pub const DW_STEALTH_JUDGE_NOT_POSITIONAL: DwCode = DwCode::new("DW0852", ExitTier::Build);
 
 /// The selector arguments a stealth judge's per-player test may use: the box, and
 /// nothing else. Sorted, and an allowlist rather than a denylist — see
@@ -8639,7 +8562,6 @@ fn npc_summon_commands(
     c: &delvewright_dsl::Campaign,
     plan: &Plan,
     npc: &plan::NpcPlan,
-    v03: bool,
 ) -> Vec<String> {
     let area = plan.npc_area(&npc.npc_id).unwrap_or("");
     let dsl_npc = c
@@ -8678,16 +8600,9 @@ fn npc_summon_commands(
             snbt_text_component(name), npc.tag
         ));
     } else {
-        // CustomName is a 1.21.11 text component. v0.3+ emits a plain SNBT
-        // string (renders correctly, incl. death messages — M2 fix 1); v0.2
-        // keeps the legacy `'{"text":…}'` form so hello-world / keep-crawl stay
-        // byte-identical.
-        let cname_field = if v03 {
-            snbt_component(name)
-        } else {
-            let cname = tr(name).to_string().replace('\'', "\\'");
-            format!("'{cname}'")
-        };
+        // CustomName is a 1.21.11 text component, emitted as a plain SNBT string
+        // (renders correctly, incl. death messages).
+        let cname_field = snbt_component(name);
         let pose = mannequin_pose_nbt(base);
         out.push(format!(
             "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
@@ -8868,14 +8783,13 @@ fn spawn_npc_sites(c: &delvewright_dsl::Campaign) -> BTreeSet<String> {
 /// lines would let the body's own summon suppress the hitbox.
 fn spawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
     let c = plan.campaign;
-    let v03 = campaign_is_v03(plan);
     let sites = spawn_npc_sites(c);
     let mut out = Vec::new();
     for npc in &plan.npcs {
         if !npc_is_deferred(c, &npc.npc_id) && !sites.contains(npc.npc_id.as_str()) {
             continue;
         }
-        let cmds = npc_summon_commands(c, plan, npc, v03);
+        let cmds = npc_summon_commands(c, plan, npc);
         let body: Vec<String> = cmds
             .iter()
             .map(|cmd| {
@@ -10573,7 +10487,7 @@ fn press_dispatch_fn(plan: &Plan, t: &delvewright_dsl::EnvTrigger, id: &str) -> 
 /// `DW0363`: a trap declares a flag gate (`requires_flags` / `forbids_flags`) but
 /// its trigger hardware cannot be removed and put back exactly as authored, so the
 /// compiler refuses to pretend the gate works.
-pub const DW_TRAP_GATE_UNSUPPORTED: DwCode = DwCode::every_version("DW0363", ExitTier::Build);
+pub const DW_TRAP_GATE_UNSUPPORTED: DwCode = DwCode::new("DW0363", ExitTier::Build);
 
 /// Trap flag-gating hardware: for every trap that declares a flag gate, the
 /// trigger block its `anchor/trap` prefab metadata declares — the thing the gate
@@ -10957,7 +10871,7 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
 
 /// `DW0447`: a trap-payload verb centres its volume on an anchor no placed
 /// prefab piece provides, so the kill zone / collapse region cannot be resolved.
-pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::every_version("DW0447", ExitTier::Build);
+pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0447", ExitTier::Build);
 
 /// A planned `volley`: the proven per-cell geometry plus its authored cadence.
 struct VolleyEmit {
@@ -12085,26 +11999,22 @@ fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
 /// v0.4 nothing is display-gated, so v0.2/v0.3 nodes stay byte-identical.
 /// `requires_flags` is itself a v0.4 verb (`forbids_flags` v0.6), so the whole
 /// predicate collapses to `false` pre-v0.4.
-fn option_display_gated(opt: &plan::OptionPlan, v04: bool) -> bool {
-    v04 && (!opt.requires_flags.is_empty()
+fn option_display_gated(opt: &plan::OptionPlan) -> bool {
+    !opt.requires_flags.is_empty()
         || !opt.forbids_flags.is_empty()
         // v0.10 (spec-0031): a numeric gate hides the option exactly as a flag
         // gate does — an option the player cannot pick must not be drawn.
         || !opt.requires_state.is_empty()
-        || !opt.completes.is_empty())
+        || !opt.completes.is_empty()
 }
 
 /// The display-gated options of `node_id`, in declared order — the bit order of
 /// the node's per-player availability mask (`dw.dmask`). Empty for an ungated
 /// node (v0.2/v0.3, or a v0.4 node whose every option is unconditional).
-fn node_gated_options<'a>(
-    npc: &'a plan::NpcPlan,
-    node_id: &str,
-    v04: bool,
-) -> Vec<&'a plan::OptionPlan> {
+fn node_gated_options<'a>(npc: &'a plan::NpcPlan, node_id: &str) -> Vec<&'a plan::OptionPlan> {
     npc.options
         .iter()
-        .filter(|o| o.node_id == node_id && option_display_gated(o, v04))
+        .filter(|o| o.node_id == node_id && option_display_gated(o))
         .collect()
 }
 
@@ -12153,9 +12063,8 @@ fn option_display_conditions(
 /// variant matching the player's satisfied flags + active objectives).
 fn show_node_cmd(plan: &Plan, npc: &plan::NpcPlan, node_id: &str) -> String {
     let ns = &plan.namespace;
-    let v04 = campaign_is_v04(plan);
     let node_safe = plan::safe_local(node_id);
-    if node_gated_options(npc, node_id, v04).is_empty() {
+    if node_gated_options(npc, node_id).is_empty() {
         format!("dialog show @s {ns}:{}_{}", npc.safe, node_safe)
     } else {
         format!("function {ns}:show_{}_{}", npc.safe, node_safe)
@@ -12175,14 +12084,13 @@ fn show_node_cmd(plan: &Plan, npc: &plan::NpcPlan, node_id: &str) -> String {
 fn gated_node_choosers(plan: &Plan, npc: &plan::NpcPlan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
-    let v04 = campaign_is_v04(plan);
     let mut out = Vec::new();
     let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for opt in &npc.options {
         if !seen.insert(opt.node_id.as_str()) {
             continue;
         }
-        let gated = node_gated_options(npc, &opt.node_id, v04);
+        let gated = node_gated_options(npc, &opt.node_id);
         if gated.is_empty() {
             continue;
         }
@@ -12214,20 +12122,19 @@ fn gated_node_choosers(plan: &Plan, npc: &plan::NpcPlan) -> Vec<(String, String)
 /// declaration): a v0.4+ option that requires flags or completes an objective.
 fn has_gated_dialogue(c: &delvewright_dsl::Campaign) -> bool {
     use delvewright_dsl::DialogueEffect;
-    is_v04(c.quests.dsl_version.as_str())
-        && c.dialogue
-            .content
-            .dialogues
-            .iter()
-            .flat_map(|t| &t.nodes)
-            .flat_map(|n| &n.options)
-            .any(|o| {
-                !o.requires_flags.is_empty()
-                    || !o.forbids_flags.is_empty()
-                    || o.effects
-                        .iter()
-                        .any(|e| matches!(e, DialogueEffect::CompleteObjective { .. }))
-            })
+    c.dialogue
+        .content
+        .dialogues
+        .iter()
+        .flat_map(|t| &t.nodes)
+        .flat_map(|n| &n.options)
+        .any(|o| {
+            !o.requires_flags.is_empty()
+                || !o.forbids_flags.is_empty()
+                || o.effects
+                    .iter()
+                    .any(|e| matches!(e, DialogueEffect::CompleteObjective { .. }))
+        })
 }
 
 /// The per-player scene selector the cast ledger dispatches on (spec-0020).
@@ -12388,7 +12295,6 @@ fn cast_bark_fns(
 
 fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, Value)> {
     let c = plan.campaign;
-    let v04 = campaign_is_v04(plan);
     let mut dialogs = Vec::new();
 
     // class selection
@@ -12501,7 +12407,7 @@ fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, V
                 .filter(|o| o.node_id == node.id.as_str())
                 .collect();
             let node_safe = plan::safe_local(node.id.as_str());
-            let gated = node_gated_options(npc, node.id.as_str(), v04);
+            let gated = node_gated_options(npc, node.id.as_str());
             if gated.is_empty() {
                 // Ungated node → a single dialog (byte-identical to v0.2/v0.3, or a
                 // v0.4 node whose every option is unconditional).
@@ -12528,7 +12434,7 @@ fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, V
                         .iter()
                         .copied()
                         .filter(|o| {
-                            if option_display_gated(o, v04) {
+                            if option_display_gated(o) {
                                 let bit = gi;
                                 gi += 1;
                                 mask & (1u32 << bit) != 0
@@ -13118,7 +13024,7 @@ fn emit_packtest(
     // profile's shared world-settings entrypoint) and the `/difficulty` in
     // `setup` must agree with the declaration, so a regression in EITHER fails
     // here. Emitted only for a campaign that declares a difficulty.
-    if let Some(diff) = declared_difficulty(c) {
+    if let Some(diff) = c.world.content.difficulty {
         let mut df: Vec<String> = Vec::new();
         df.push(format!(
             "#> {}: the world runs at the declared difficulty `{}`",
@@ -16034,9 +15940,6 @@ fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
 fn emit_objective_activation_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    if !campaign_is_v03(plan) {
-        return;
-    }
     for q in &plan.campaign.quests.content.quests {
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         for o in &q.objectives {
@@ -18155,9 +18058,6 @@ fn emit_v06_actor_packtests(
 fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::MovePlan]) {
     let ns = &plan.namespace;
     let c = plan.campaign;
-    if !campaign_is_v03(plan) {
-        return;
-    }
     let mut write = |name: &str, body: Vec<String>| {
         out.insert(
             format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
@@ -18579,14 +18479,13 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
     // and its `curator_what` on a FORBIDDEN flag, an axis the single-node walk
     // could not even select, because it looked only for an option that completes
     // something. Registered as a claim (`dialogue_mask_watch_claim`).
-    let v04 = campaign_is_v04(plan);
     for npc in &plan.npcs {
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for probe in &npc.options {
             if !seen.insert(probe.node_id.as_str()) {
                 continue;
             }
-            let gated = node_gated_options(npc, &probe.node_id, v04);
+            let gated = node_gated_options(npc, &probe.node_id);
             if gated.is_empty() {
                 continue;
             }
@@ -19643,7 +19542,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     // at the same absolute coords, then run `setup_finish` once (it summons at the
     // chunks `setup` force-loads; no templates needed). v0.3-gated so v0.2
     // campaigns (hello-world has an NPC) keep byte-identical packtest output.
-    if campaign_is_v03(plan) && !plan.npcs.is_empty() {
+    if !plan.npcs.is_empty() {
         let mut b = packtest_header(&format!(
             "{}: every NPC summon resolves to exactly one entity",
             artifact_title(c)
@@ -19860,7 +19759,11 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // campaigns stay `peaceful` (hello-world / keep-crawl unchanged). Natural
     // spawning is off either way (`spawn-monsters=false` + gamerule `spawn_mobs
     // false`); only the compiler's own summons exist.
-    let difficulty = declared_difficulty(plan.campaign)
+    let difficulty = plan
+        .campaign
+        .world
+        .content
+        .difficulty
         .map(|d| d.token())
         .unwrap_or_else(|| {
             if plan.campaign.quests.content.waves.is_empty() {

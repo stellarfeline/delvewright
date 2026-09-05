@@ -127,7 +127,7 @@ fn build_actor_hello_world() -> BuildOutput {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.6.0");
+        d["dsl_version"] = serde_json::json!("0.19.0");
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
@@ -162,11 +162,11 @@ fn build_handoff_hello_world() -> BuildOutput {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
     common::patch_file(&dst.join("npcs.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.6.0");
+        d["dsl_version"] = serde_json::json!("0.19.0");
         d["content"]["npcs"][0]["deferred"] = serde_json::json!(true);
     });
     common::patch_file(&dst.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.6.0");
+        d["dsl_version"] = serde_json::json!("0.19.0");
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
@@ -399,6 +399,10 @@ fn build_scheduled_hello_world() -> BuildOutput {
     }
     let search = r#"        "on_complete": [
           {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
             "type": "campaign-complete"
           }
         ]"#;
@@ -406,14 +410,14 @@ fn build_scheduled_hello_world() -> BuildOutput {
           {
             "type": "sequence",
             "steps": [
-              { "at_ticks": 240, "effects": [ { "type": "campaign-complete" } ] }
+              { "at_ticks": 240, "effects": [ { "type": "campaign-complete",
+                  "happening": { "verb": "survives", "text": "the delve is complete" } } ] }
             ]
           }
         ]"#;
     let qp = dst.join("quests.json");
     let q = std::fs::read_to_string(&qp)
         .unwrap()
-        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
         .replace(search, replace);
     assert!(q.contains("at_ticks"), "quests.json patch applied");
     std::fs::write(&qp, q).unwrap();

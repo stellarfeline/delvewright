@@ -75,19 +75,19 @@ use crate::metrics::{
 use crate::stages::AreaLighting;
 
 /// `DW0824`: the graph and the plan do not agree exactly.
-pub const DW_PLAN_AGREEMENT: DwCode = DwCode::every_version("DW0824", ExitTier::Build);
+pub const DW_PLAN_AGREEMENT: DwCode = DwCode::new("DW0824", ExitTier::Build);
 
 /// `DW0825`: a box leaves the kit grid.
-pub const DW_BOX_OFF_GRID: DwCode = DwCode::every_version("DW0825", ExitTier::Build);
+pub const DW_BOX_OFF_GRID: DwCode = DwCode::new("DW0825", ExitTier::Build);
 
 /// `DW0826`: a box leaves the region.
-pub const DW_BOX_LEAVES_REGION: DwCode = DwCode::every_version("DW0826", ExitTier::Build);
+pub const DW_BOX_LEAVES_REGION: DwCode = DwCode::new("DW0826", ExitTier::Build);
 
 /// `DW0827`: two boxes overlap.
-pub const DW_BOXES_OVERLAP: DwCode = DwCode::every_version("DW0827", ExitTier::Build);
+pub const DW_BOXES_OVERLAP: DwCode = DwCode::new("DW0827", ExitTier::Build);
 
 /// `DW0828`: a seam is not on a shared face.
-pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::every_version("DW0828", ExitTier::Build);
+pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::new("DW0828", ExitTier::Build);
 
 /// **How many cells stand between two connected boxes: the wall they share.**
 ///
@@ -106,13 +106,13 @@ pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::every_version("DW0828", ExitTier:
 pub const SHARED_FACE_GAP_CELLS: i64 = 1;
 
 /// `DW0829`: a seam's opening is not a standard, or does not fit.
-pub const DW_SEAM_OPENING: DwCode = DwCode::every_version("DW0829", ExitTier::Build);
+pub const DW_SEAM_OPENING: DwCode = DwCode::new("DW0829", ExitTier::Build);
 
 /// `DW0830`: a stair seam cannot be built at standard pitch.
-pub const DW_STAIR_PITCH: DwCode = DwCode::every_version("DW0830", ExitTier::Build);
+pub const DW_STAIR_PITCH: DwCode = DwCode::new("DW0830", ExitTier::Build);
 
 /// `DW0831`: a drop seam falls outside the drop policy.
-pub const DW_DROP_POLICY: DwCode = DwCode::every_version("DW0831", ExitTier::Build);
+pub const DW_DROP_POLICY: DwCode = DwCode::new("DW0831", ExitTier::Build);
 
 /// `DW0876`: a seam does not declare a connection this engine builds
 /// (spec-0053 §6).
@@ -142,19 +142,19 @@ pub const DW_DROP_POLICY: DwCode = DwCode::every_version("DW0831", ExitTier::Bui
 /// `every_version` for the reason its siblings are: the rule judges what the
 /// document SAYS, and a plan below [`crate::WAY_AND_CONTACT_SINCE`] has no
 /// `contact` to judge — the per-stage fence has already refused one.
-pub const DW_CONTACT: DwCode = DwCode::every_version("DW0876", ExitTier::Build);
+pub const DW_CONTACT: DwCode = DwCode::new("DW0876", ExitTier::Build);
 
 /// `DW0832`: a box violates its node's size class.
-pub const DW_SIZE_CLASS: DwCode = DwCode::every_version("DW0832", ExitTier::Build);
+pub const DW_SIZE_CLASS: DwCode = DwCode::new("DW0832", ExitTier::Build);
 
 /// `DW0833`: a brief identity does not hold.
-pub const DW_IDENTITY_FALSE: DwCode = DwCode::every_version("DW0833", ExitTier::Build);
+pub const DW_IDENTITY_FALSE: DwCode = DwCode::new("DW0833", ExitTier::Build);
 
 /// `DW0834`: the identity gate binds nothing. Warning — see [`identities`].
-pub const DW_IDENTITY_EMPTY: DwCode = DwCode::every_version("DW0834", ExitTier::Build);
+pub const DW_IDENTITY_EMPTY: DwCode = DwCode::new("DW0834", ExitTier::Build);
 
 /// `DW0835`: a whole-owned volume enters a box.
-pub const DW_VOLUME_IN_BOX: DwCode = DwCode::every_version("DW0835", ExitTier::Build);
+pub const DW_VOLUME_IN_BOX: DwCode = DwCode::new("DW0835", ExitTier::Build);
 
 /// `DW0839`: two placement authorities in one campaign.
 ///
@@ -162,7 +162,7 @@ pub const DW_VOLUME_IN_BOX: DwCode = DwCode::every_version("DW0835", ExitTier::B
 /// campaign SAYS — that a `site-plan.json` and a non-empty `areas[]` are both
 /// present — and a document below `dsl_version` 0.14.0 has no site plan to be
 /// the second authority, so there is no earlier campaign the rule could reach.
-pub const DW_TWO_AUTHORITIES: DwCode = DwCode::every_version("DW0839", ExitTier::Build);
+pub const DW_TWO_AUTHORITIES: DwCode = DwCode::new("DW0839", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // The vocabulary the derivation synthesizes (spec-0049 §5.2)
@@ -1686,10 +1686,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     grid(&placed, &table, reads, d);
     region(plan, &placed, d);
     disjoint(&placed, d);
-    // The SITE PLAN stage's own declared version — what the contact fence is
-    // judged against, exactly as the graph stage's is what the way fence reads.
-    let version = c.site_plan.as_ref().map_or("", |p| p.dsl_version.as_str());
-    seams(plan, graph, &placed, &table, version, reads, d);
+    seams(plan, graph, &placed, &table, reads, d);
     size_classes(&placed, d);
     volumes_outside_boxes(plan, &placed, d);
     identities(c, plan, &placed, d);
@@ -2843,9 +2840,6 @@ struct SeamCtx<'a> {
     a: &'a Placed<'a>,
     b: &'a Placed<'a>,
     face: SharedFace,
-    /// The `dsl_version` the SITE PLAN stage declares — what the contact fence
-    /// is judged against.
-    version: &'a str,
 }
 
 /// `DW0828`–`DW0831`: every seam sits on a face its two boxes share, at cells
@@ -2856,7 +2850,6 @@ fn seams(
     graph: &LayoutGraphContent,
     placed: &[Placed<'_>],
     table: &Metrics,
-    version: &str,
     reads: &mut Reads,
     d: &mut Vec<Diagnostic>,
 ) {
@@ -2893,7 +2886,6 @@ fn seams(
             a,
             b,
             face,
-            version,
         };
 
         // `DW0876`, first: a seam that does not state exactly one kind of
@@ -3015,7 +3007,7 @@ fn not_shared(
     )
 }
 
-/// **`DW0876` and the per-stage fence**: this seam states exactly one kind of
+/// **`DW0876`**: this seam states exactly one kind of
 /// connection, and if it is a contact, one this engine builds (spec-0053 §4).
 ///
 /// Returns `false` when the seam has no usable crossing, in which case the
@@ -3072,26 +3064,6 @@ fn contact_declaration(
         }
         (Some(_), None) => return true,
         (None, Some(_)) => {}
-    }
-
-    // ---- The fence. A WELLFORMEDNESS rule, judged against the version this
-    // document declares. Below it there is nothing else to say about a contact.
-    if !crate::is_v19(ctx.version) {
-        d.push(Diagnostic::error(
-            crate::codes::RESERVED,
-            "site-plan",
-            format!("/content/seams/{i}/contact"),
-            format!(
-                "the seam for `{edge}` declares a `contact`, which requires dsl_version \
-                 {since} and this stage declares `{version}` — raise this stage's \
-                 `dsl_version` to {since}, or give the seam a standard `opening` instead \
-                 (below {since} two places meet only through a doorway a table names).",
-                edge = s.edge,
-                since = crate::WAY_AND_CONTACT_SINCE,
-                version = ctx.version,
-            ),
-        ));
-        return false;
     }
 
     // ---- Shape 4: the classes a contact may carry.

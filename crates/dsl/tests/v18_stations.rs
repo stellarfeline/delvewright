@@ -33,7 +33,7 @@ use serde_json::{Value, json};
 /// is a fact read off this text and not one the checker computed for itself.
 const GRAPH: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.18.0",
+  "dsl_version": "0.19.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -79,7 +79,7 @@ const GRAPH: &str = r#"{
 
 const BRIEF: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.13.0",
+  "dsl_version": "0.19.0",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -93,7 +93,7 @@ const BRIEF: &str = r#"{
 /// what puts the derived vocabulary in front of the checks.
 const PLAN: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.14.0",
+  "dsl_version": "0.19.0",
   "stage": "site-plan",
   "content": {
     "region": { "min": [0, 60, 0], "extent": [64, 24, 64] },
@@ -407,44 +407,6 @@ fn dw0871s_remedy_is_reachable() {
 // ---------------------------------------------------------------------------
 // §7.6 — the per-stage fence
 // ---------------------------------------------------------------------------
-
-/// A graph declaring `stations[]` below `STATIONS_SINCE` is refused, and the
-/// refusal names the version to raise it to.
-#[test]
-fn the_fence_refuses_stations_below_the_version() {
-    let d = graph_with(|v| {
-        v["dsl_version"] = json!("0.17.0");
-    });
-    let hit = d.iter().find(|x| x.code == "DW0141");
-    assert!(hit.is_some(), "expected the fence: {:?}", codes(&d));
-    assert!(
-        hit.unwrap()
-            .message
-            .contains(delvewright_dsl::STATIONS_SINCE),
-        "the fence must name the version to raise to: {}",
-        hit.unwrap().message
-    );
-}
-
-/// The other direction, and the half that makes the fence a fence rather than a
-/// blanket refusal: **a graph below the version that declares no station is
-/// untouched**.
-#[test]
-fn the_fence_leaves_a_graph_with_no_station_alone() {
-    let d = graph_with(|v| {
-        v["dsl_version"] = json!("0.13.0");
-        for i in 0..6 {
-            if let Some(o) = v["content"]["nodes"][i].as_object_mut() {
-                o.remove("stations");
-            }
-        }
-    });
-    assert!(
-        !codes(&d).contains(&"DW0141"),
-        "a graph declaring no station must not meet the fence: {:?}",
-        codes(&d)
-    );
-}
 
 // ---------------------------------------------------------------------------
 // The perturbations: is each rule's SAFETY what the green depends on?

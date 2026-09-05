@@ -83,7 +83,7 @@ fn fn_body(out: &BuildOutput, needle: &str) -> String {
 /// npc `npc/x` → `spawn_npc_x`. `safe_local` drops the `<kind>/` prefix and folds
 /// `-` to `_`, so the two ids collide even though nothing about them looks alike.
 const COLLIDING_QUESTS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -135,7 +135,7 @@ fn npcs_with_deferred_x() -> String {
     extra["anchor"] = "anchor/exit".into();
     extra["deferred"] = true.into();
     npcs.push(extra);
-    v["dsl_version"] = "0.6.0".into();
+    v["dsl_version"] = "0.19.0".into();
     serde_json::to_string(&v).unwrap()
 }
 
@@ -187,7 +187,7 @@ fn non_colliding_names_build_and_emit_both() {
 /// encoding (and so the cap) only exists for v0.4+ campaigns.
 fn quests_v04() -> String {
     let mut v: serde_json::Value = serde_json::from_str(&read_hw("quests.json")).unwrap();
-    v["dsl_version"] = "0.4.0".into();
+    v["dsl_version"] = "0.19.0".into();
     serde_json::to_string(&v).unwrap()
 }
 
@@ -197,7 +197,7 @@ fn quests_v04() -> String {
 /// which panics outright at 32 options.
 fn dialogue_with_gated_options(n: usize) -> String {
     let mut v: serde_json::Value = serde_json::from_str(&read_hw("dialogue.json")).unwrap();
-    v["dsl_version"] = "0.4.0".into();
+    v["dsl_version"] = "0.19.0".into();
     let opts = v["content"]["dialogues"][0]["nodes"][0]["options"]
         .as_array_mut()
         .unwrap();
@@ -284,7 +284,7 @@ fn completion_advancement_description_is_campaign_derived() {
 #[test]
 fn authored_world_outro_is_used() {
     let mut world: serde_json::Value = serde_json::from_str(&read_hw("world.json")).unwrap();
-    world["dsl_version"] = "0.6.0".into();
+    world["dsl_version"] = "0.19.0".into();
     world["content"]["outro"] = "The moor keeps its silence.".into();
     let out = build_ok(&parse_hw_with(&[(
         "world.json",

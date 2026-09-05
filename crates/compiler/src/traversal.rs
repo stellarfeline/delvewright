@@ -242,12 +242,12 @@ use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0452`: a walked leg's route contains a move the body cannot make — today,
 /// passing through a closed fence gate with no capability to open one.
-pub const DW_TRAVERSAL_IMPOSSIBLE: DwCode = DwCode::every_version("DW0452", ExitTier::Build);
+pub const DW_TRAVERSAL_IMPOSSIBLE: DwCode = DwCode::new("DW0452", ExitTier::Build);
 
 /// `DW0453`: a walked leg's route goes **over** a barrier line by stepping onto a
 /// full-cube course of it. Advisory: the step is physically legal, and whether
 /// the course is a kerb or an enclosure is a content judgement.
-pub const DW_BARRIER_SURMOUNTED: DwCode = DwCode::every_version("DW0453", ExitTier::Build);
+pub const DW_BARRIER_SURMOUNTED: DwCode = DwCode::new("DW0453", ExitTier::Build);
 
 /// `DW0454`: a body's `traversal` declaration is **inert** — it changed no
 /// rule's verdict, so nothing in this build holds the body to it (spec-0034).
@@ -257,7 +257,7 @@ pub const DW_BARRIER_SURMOUNTED: DwCode = DwCode::every_version("DW0453", ExitTi
 /// own declaration set against the world the author built — so there is nothing
 /// to grandfather. The surface that carries the declaration is fenced per stage
 /// at 0.11 by `DW0141`, so a campaign below 0.11 cannot raise this code at all.
-pub const DW_TRAVERSAL_DECLARATION_INERT: DwCode = DwCode::every_version("DW0454", ExitTier::Build);
+pub const DW_TRAVERSAL_DECLARATION_INERT: DwCode = DwCode::new("DW0454", ExitTier::Build);
 
 /// How many route steps after a rise still count as "and came down the other
 /// side". Four: the island's crossing takes one step up, at most two along the

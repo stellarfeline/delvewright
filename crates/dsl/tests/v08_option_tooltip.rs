@@ -90,43 +90,18 @@ fn with_tooltip(version: &str) -> RawCampaign {
 
 #[test]
 fn an_option_tooltip_validates_clean_at_v08() {
-    let d = check_campaign(&with_tooltip("0.8.0"));
+    let d = check_campaign(&with_tooltip("0.19.0"));
     assert!(
         d.is_empty(),
         "an authored tooltip must validate clean: {d:#?}"
     );
 }
 
-#[test]
-fn an_option_tooltip_below_v08_is_dw0141() {
-    for version in ["0.2.0", "0.6.0", "0.7.0"] {
-        let d = check_campaign(&with_tooltip(version));
-        let hit = d.iter().find(|x| x.code == "DW0141").unwrap_or_else(|| {
-            panic!("a pre-0.8 option `tooltip` is reserved surface at {version}: {d:#?}")
-        });
-        assert_eq!(hit.stage, "dialogue");
-        assert_eq!(hit.path, "/content/dialogues/0/nodes/0/options/0/tooltip");
-        assert!(hit.message.contains("0.8.0"), "{}", hit.message);
-    }
-}
-
-#[test]
-fn an_absent_tooltip_is_clean_at_every_version() {
-    // The byte-identity argument: nothing changes for a campaign that authors none.
-    for version in ["0.2.0", "0.6.0", "0.7.0", "0.8.0"] {
-        let d = check_campaign(&raw_with_dialogue(dialogue_with_tooltip("", version)));
-        assert!(
-            d.is_empty(),
-            "no tooltip means nothing new to say at {version}: {d:#?}"
-        );
-    }
-}
-
 /// A tooltip is read by the player exactly as the caption is, so it is inventoried
 /// and translated exactly as the caption is — under its own key, beside the label's.
 #[test]
 fn an_option_tooltip_enters_the_l10n_inventory() {
-    let c = parse_campaign(&with_tooltip("0.8.0")).expect("parses");
+    let c = parse_campaign(&with_tooltip("0.19.0")).expect("parses");
     let inv = l10n::inventory(&c);
     assert_eq!(
         inv.get("dlg.keeper.greeting.opt.0.tooltip")
@@ -168,7 +143,8 @@ fn an_option_tooltip_enters_the_l10n_inventory() {
 /// start demanding translations for a string nobody authored.
 #[test]
 fn an_absent_tooltip_contributes_no_key() {
-    let c = parse_campaign(&raw_with_dialogue(dialogue_with_tooltip("", "0.8.0"))).expect("parses");
+    let c =
+        parse_campaign(&raw_with_dialogue(dialogue_with_tooltip("", "0.19.0"))).expect("parses");
     assert!(
         l10n::inventory(&c).keys().all(|k| !k.ends_with(".tooltip")),
         "an unauthored tooltip must be absent from the inventory"
