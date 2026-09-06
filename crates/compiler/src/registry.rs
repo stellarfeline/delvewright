@@ -542,6 +542,18 @@ impl PrefabRegistry {
         })
     }
 
+    /// **Whether one piece declares `anchor_name` at all**, asked of the ONE
+    /// authority so no caller reads `PrefabMeta::anchors` for itself. Unlike
+    /// [`PrefabRegistry::gate_anchor_in`] this asks nothing about what the
+    /// anchor is FOR — a point, a gate region, a marker all answer yes — because
+    /// the question "does this building answer to this name" is about the name.
+    /// A piece the registry does not hold declares nothing.
+    pub fn declares_anchor(&self, prefab_id: &str, anchor_name: &str) -> bool {
+        self.by_id
+            .get(prefab_id)
+            .is_some_and(|meta| meta.anchors.contains_key(anchor_name))
+    }
+
     /// The prefab ids in `pool_id` that declare `anchor_name` in their metadata.
     pub fn pool_prefabs_with_anchor(&self, pool_id: &str, anchor_name: &str) -> Vec<String> {
         let Some(members) = self.pool_members.get(pool_id) else {
