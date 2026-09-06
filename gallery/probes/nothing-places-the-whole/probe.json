@@ -2,11 +2,11 @@
   "code": "DW0883",
   "patch": [
     {
-      "doc": "site-plan.json",
+      "doc": "overlays/site-plan/site-plan.json",
       "op": "remove",
       "path": "/content/boxes/0/min"
     }
   ],
   "units": [],
-  "why": "The primary's graph embedded relationally (spec-0059) — every box stating only its extent, floor and ceiling, every seam which face of `a` it sits on and where along it — with the one edit that deletes the entry box's pinned `min`. Nothing then places the whole: a box stands where a pin puts it or where a seam hangs it off a box that already stands, and this component has no pin to start from. The refusal names every box in the component and prescribes pinning one. It declares no unit: an omitted `min` is the ordinary case this surface exists for, and what must not compile is a component no pin seeds."
+  "why": "The site-plan overlay's own plan, brought in over the primary, with the one edit that deletes the entry box's pinned `min`. Every box in it states only its extent, floor and ceiling and every seam which face of `a` it sits on and where along it (spec-0059), so nothing then places the whole: a box stands where a pin puts it or where a seam hangs it off a box that already stands, and this component has no pin to start from. The refusal names every box in the component and prescribes pinning one. It declares no unit: an omitted `min` is the ordinary case this surface exists for, and what must not compile is a component no pin seeds."
 }

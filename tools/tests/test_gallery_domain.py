@@ -371,3 +371,30 @@ def test_every_committed_probe_is_the_primary_plus_its_declared_edit():
         f"{len(probes)} probe(s) examined and not one perturbs anything — every probe would "
         "then be the primary, and the refusal half of the coverage gate binds to nothing"
     )
+
+
+def test_a_probe_may_edit_an_overlay_document_named_by_its_path(tmp_path):
+    """The primary plus an overlay's document plus one declared edit — no copy shipped."""
+    p = tmp_path / "an-overlay-edit"
+    p.mkdir()
+    (p / "probe.json").write_text(json.dumps({
+        "code": "DW0883",
+        "patch": [{"doc": "overlays/site-plan/site-plan.json", "op": "remove", "path": "/content/boxes/0/min"}],
+    }))
+    dest = tmp_path / "out"
+    gallery_domain.materialise(dest, p)
+    doc = json.loads((dest / "site-plan.json").read_text())
+    assert "min" not in doc["content"]["boxes"][0], "the edit applied to the overlay's document"
+    assert not (dest / "overlays").exists(), "the overlay tree itself is not campaign"
+    # The copy shape is refused: naming the overlay document AND shipping one.
+    (p / "site-plan.json").write_text("{}")
+    with pytest.raises(gallery_domain.PatchError, match="also ships"):
+        gallery_domain.materialise(dest, p)
+    # And a path under `overlays/` that no overlay holds is a refusal, not a silent primary edit.
+    (p / "site-plan.json").unlink()
+    (p / "probe.json").write_text(json.dumps({
+        "code": "DW0883",
+        "patch": [{"doc": "overlays/no-such-overlay/site-plan.json", "op": "remove", "path": "/x"}],
+    }))
+    with pytest.raises(gallery_domain.PatchError, match="no overlay holds"):
+        gallery_domain.materialise(dest, p)

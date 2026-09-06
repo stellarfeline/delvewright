@@ -135,7 +135,12 @@ A probe may ship a whole document, and four of them do: `site-plan.json`,
 `detail-plan.json` and `walk-record.json` are documents the primary cannot carry
 at all — `DW0839` refuses a campaign holding both `areas[]` and a site plan — so
 there is nothing for them to be a copy of. A file that shadows a primary
-document is refused.
+document is refused. A probe may instead declare its edit against an
+**overlay's** document, naming it by its path (`overlays/site-plan/site-plan.json`):
+that document is brought into the point as the campaign's own and the edit is
+applied to it, so the probe is the primary plus that document plus one edit and
+ships no copy — a probe that both names an overlay document and ships a file of
+the same name is refused.
 
 A probe is an OVERLAY, not a campaign, so `delvec validate` pointed at a probe
 directory refuses the directory (`DW0874`) rather than the document. Materialise
