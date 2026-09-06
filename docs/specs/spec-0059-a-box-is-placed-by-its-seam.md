@@ -1,18 +1,18 @@
 # spec-0059: A box is placed by its seam, and the grid is derived
 
 - **Status**: Proposed
-- **Ground**: engine `66906e39`. Amends spec-0049 §4.1 (the site-plan
-  document); the departure is recorded in spec-0049 §9 the way §4.4's is.
-  Every count below was measured at that revision with
+- **Ground**: written against engine `66906e39`, implemented on top of
+  ADR-0023 and ADR-0024 (`e2f251c6`) and finalised against what was built.
+  Amends spec-0049 §4.1 (the site-plan document); the departure is recorded
+  in spec-0049 §9 the way §4.4's is. Every count below was measured with
   `tools/site-plan-scalars.py`, committed beside this spec, on the gallery's
   site-plan point (`gallery/overlays/site-plan/`). The 24-place plan the
   finding was first measured on no longer exists in any tree, so its numbers
   (236 typed scalars, 117 of them procedural) are quoted from the finding and
   not re-measured; the gallery is the acceptance object.
 - **DSL**: `dsl_version` **0.20.0** (a format change is a minor step; the
-  `delvewright-dsl` crate version follows the same number). Implementation is
-  held behind the one-`dsl_version` decision (ADR-0024) landing on `main`:
-  this spec's form has one arm, no fence and no shim.
+  `delvewright-dsl` crate version is the same number, ADR-0024). One arm, no
+  fence, no shim.
 - **Diagnostics**: **DW0883** is allocated to this spec, for the one refusal
   that has no name (§5). Every other refusal reuses a code whose meaning is
   unchanged.
@@ -192,22 +192,28 @@ coordinates against a box that moved is the residue §10 records.
 
 ## 8. The gallery, the fixtures, the gym, the baseline
 
-- The gallery's site-plan point adopts this form and its **baseline does not
-  move**: the packing reproduces today's grid exactly, with the entry box
-  pinned at `[21, 4]` and the 29 offsets §4 counts pinned where the hand-laid
-  grid is off-centre. Verified at implementation by the emitted bytes and by
-  the count tool's `--form new` run over the adopted plan. The site plan is
-  hand-written in the overlay (the gallery generator emits prefabs, not the
-  plan), so the adoption is an edit of that document.
+- The gallery's site-plan point adopts this form and its **grid does not
+  move**: the packing reproduces the hand-typed corners exactly — `[21, 4]`,
+  `[21, 21]`, `[4, 13]`, `[40, 12]`, `[24, 16]`, `[24, 38]`, `[36, 38]` —
+  with the entry box pinned and the 29 offsets §4 counts pinned where the
+  hand-laid grid is off-centre, and the blockout's sha256 is the one the walk
+  record already carried. What the baseline records as moved is the number:
+  every point's `dsl_version` header, every stamped envelope in `inputs`,
+  and the JSON outputs that carry the version string (11 of 529 per
+  `areas[]` point, 4 of 280 on the site-plan point); the other 3 454 emitted
+  paths are byte-identical. The site plan is hand-written in the overlay (the
+  gallery generator emits prefabs, not the plan), so the adoption is an edit
+  of that document.
 - Coverage: `PlanBox.min` stays bound (the pin); `Seam.at` stays bound;
-  `Seam.meets` is bound by the same seams. `DW0883` gets a committed probe —
-  the primary plus one declared edit that deletes the entry box's `min` — the
-  engine refuses with `DW0883`. Coverage stays at every unit bound or
-  refusal-proven, none in neither.
+  `Seam.meets` is bound by the same seams — 959 units, 955 bound, 4
+  refusal-proven, none in neither. `DW0883`'s probe
+  (`gallery/probes/nothing-places-the-whole`) is the primary's graph embedded
+  relationally plus one declared edit that deletes the entry box's `min`; the
+  engine refuses it with `DW0883`.
 - `crates/delvec/tests/fixtures/blockout/` and every inline plan in
   `crates/dsl/tests/` and `crates/delvec/tests/` adopt. The metrics gym's
-  generator (`compiler::gym`) emits the relational form: the spine's seams at
-  `at: 1, meets: 1` as they stand today, the first bay pinned.
+  generator (`compiler::gym`) emits the relational form: the first bay
+  pinned, the spine's seams at `at: 1, meets: 1` — the cells they stood at.
 - The three walk records (`gallery/overlays/site-plan/`, two probes) are
   regenerated from the adopted plans' canonical hashes, by the tool, in the
   same change.
@@ -297,22 +303,21 @@ Machine-checkable; each names its instrument.
    gallery/overlays/site-plan/site-plan.json` reports **procedural 0** and
    **typed 137**; the tool refuses a new-form plan that types a procedural
    scalar and refuses a field it does not classify.
-3. `python3 tools/gallery-baseline.py --verify` (or the equivalent the
-   baseline gate runs) is green over the adopted gallery: no emitted byte of
-   the site-plan point moves.
-4. Determinism: two builds of the blockout fixture are byte-identical, and a
-   test perturbs `seams[]` order in a plan with a loop and asserts the packed
-   corners are unchanged when the scan order still places every box from the
-   same pins, or refused with `DW0828` when it does not — never a silently
-   different grid.
+3. `python3 tools/gallery-baseline.py` (the verify arm) is green over the
+   adopted gallery, and the site-plan point's blockout sha256 is unchanged;
+   the only emitted paths that move are the ones carrying the version
+   string, enumerated in the baseline's commit.
+4. Determinism: two builds of the blockout fixture are byte-identical
+   (spec-0049 §13.4, unchanged), and a test reverses `seams[]` in a plan with
+   a loop and asserts every packed corner is unchanged.
 5. `DW0883` has a test asserting each shape (an unpinned component; a pin the
    packing contradicts) and a committed gallery probe; `tools/check-dw-codes.py`
    is green with zero new allowlist entries. The three new `DW0828` shapes
-   each have a red test.
-6. Regeneration: a test edits one box's `extent` by one quantum in the
-   blockout fixture and asserts every diagnostic names that box or one of its
-   seams — with the region residue exercised as its own case naming the box
-   that left.
+   each have a red test (`crates/dsl/tests/v14_site_plan.rs`).
+6. Regeneration: a test widens one box by one quantum and asserts every new
+   diagnostic names that box or one of its seams, with §7's sightline residue
+   asserted as exactly one `DW0824` at the sightline; the region case is its
+   own test naming the box that left and how it was placed.
 7. `delvec fmt` rewrites `dsl_version` to `0.20.0` on every envelope it
    formats; `tools/check-json-canonical.py` is green over the tree.
 8. `docs/reference/compiler.md` carries the amended site-plan surface table,
@@ -321,7 +326,11 @@ Machine-checkable; each names its instrument.
    and the docs job are green.
 9. The gym generator emits the relational form and `cargo test -p delvec
    --test gym` is green.
-10. A row for this mechanic is queued in `docs/demo-levels.md`.
+11. `delvec validate` on a site-plan campaign prints one placing line per box
+    with its corner and provenance, and the binding line carries the pinned /
+    derived / component counts.
+10. A row for this mechanic is queued in `docs/demo-levels.md` (**The Hung
+    Hall**).
 
 ## 13. Not settled here
 

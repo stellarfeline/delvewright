@@ -3917,9 +3917,10 @@ fn sill(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec<Diagnos
                 "the seam for `{id}` has its sill at y {sill}, {rise} blocks over the floor of \
                  `{name}` at y {floor}, and a body reaches at most {max_rise} block(s) by \
                  jumping ({j}/16 of vanilla's apex). A body entering from `{name}` cannot get \
-                 into the opening at all, so the connection the graph declares is not one. Drop \
-                 the sill, or declare the connection a `stair` and let the treads carry the \
-                 climb. (The opening is {w}x{h}.)",
+                 into the opening at all, so the connection the graph declares is not one. The \
+                 sill is the higher of the two floors: bring the floors within a step of each \
+                 other, or declare the connection a `stair` and let the treads carry the climb. \
+                 (The opening is {w}x{h}.)",
                 id = s.edge,
                 sill = ctx.at[1],
                 j = MAX_JUMP_RISE_16,
