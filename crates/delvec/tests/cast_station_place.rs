@@ -95,9 +95,17 @@ fn fixture_playable(tag: &str, annex_provides: bool) -> std::path::PathBuf {
             json!({
                 "id": "quest/arrive",
                 "trigger": { "type": "campaign-start" },
+                "happening": { "verb": "arrives", "text": "the party reaches the Keeper's door" },
+                "cast": { "npc/keeper": {
+                    "at": NAME,
+                    "dialogue": "dlg/greeting",
+                    "doing": "barring the inner door with his body",
+                } },
                 "objectives": [
                     { "id": "obj/arrive", "type": "reach-anchor",
-                      "anchor": NAME, "radius": 2 }
+                      "anchor": NAME, "radius": 2,
+                      "happening": { "verb": "arrives",
+                                     "text": "the party comes within hail of the door" } }
                 ],
                 "on_objective_complete": {},
                 "on_complete": [],
@@ -255,4 +263,73 @@ fn one_provider_still_crosses_and_the_two_authorities_agree() {
         summons[0]
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------------
+// `DW0884` — the same finding refused where the row is entered.
+// ---------------------------------------------------------------------------
+
+/// **The refusal at validation.** `DW0461`'s place arm above needs the seated
+/// pieces, so it can only speak once a cell exists. `DW0884` asks the cheaper
+/// question at the row itself: do the beat's area and the npc's own area BOTH
+/// answer to this name? Two buildings, and the row picked one of them by a rule
+/// its author cannot see.
+///
+/// Driven through the real `delvec validate`, because that is the funnel every
+/// subcommand's validation goes through — `build` included — so a campaign
+/// cannot reach a datapack by skipping it.
+#[test]
+fn a_cast_row_two_areas_answer_to_is_dw0884() {
+    let dir = fixture_playable("dw0884", true);
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .arg("--prefabs")
+        .arg(common::prefabs_dir())
+        .arg("validate")
+        .arg(&dir)
+        .output()
+        .expect("`delvec validate` runs");
+    let text = String::from_utf8(out.stdout).expect("stdout is utf-8");
+    let line = text
+        .lines()
+        .find(|l| l.starts_with("DW0884"))
+        .unwrap_or_else(|| panic!("no DW0884 in:\n{text}"));
+    // Both candidates, named — the whole finding is that one name meant two.
+    for expected in ["area/annex", "area/keep", NAME, "npc/keeper", "quest/ask"] {
+        assert!(
+            line.contains(expected),
+            "the refusal must name both areas, the anchor, the body and the beat \
+             (missing `{expected}`): {line}"
+        );
+    }
+    // The remedy is one the author owns. Never an edit to the prefab library.
+    assert!(
+        line.contains("`world.areas[]`") && line.contains("you cannot reach it from here"),
+        "the refusal must lead with the binding the campaign owns and say plainly that \
+         renaming lives in the library: {line}"
+    );
+    // The exit status is deliberately NOT asserted: this fixture also carries
+    // `DW0857`, the same finding keyed to the `open-gate` verb on `anchor/door`
+    // (a second name both pieces answer to), and a run's status is the highest
+    // tier among everything it found. What this test binds is the code and its
+    // words, against a control that differs by one prefab binding.
+
+    // **The control, and it is the perturbation that binds this test**: the same
+    // tree with `area/annex` bound to a piece that does not declare the name is
+    // NOT refused for this reason. Without it a `DW0884` that fired on every
+    // two-area campaign would pass the assertions above.
+    let clean = fixture_playable("dw0884-control", false);
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .arg("--prefabs")
+        .arg(common::prefabs_dir())
+        .arg("validate")
+        .arg(&clean)
+        .output()
+        .expect("`delvec validate` runs");
+    let text = String::from_utf8(out.stdout).expect("stdout is utf-8");
+    assert!(
+        !text.contains("DW0884"),
+        "one provider is unambiguous — the row means the one building that answers: {text}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&clean);
 }

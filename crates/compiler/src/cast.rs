@@ -73,6 +73,9 @@ pub const DW_CAST_STALE: DwCode = DwCode::new("DW0467", ExitTier::Build);
 /// scene the ledger can present while that objective is live (see
 /// [`check_talk_answerable`]).
 pub const DW_CAST_UNANSWERABLE: DwCode = DwCode::new("DW0858", ExitTier::Build);
+/// A cast row names an anchor that BOTH the beat's area and the NPC's own area
+/// answer to, so the name alone does not say which building the body is in.
+pub const DW_CAST_ANCHOR_SHARED: DwCode = DwCode::new("DW0884", ExitTier::Build);
 /// A cast clause no runtime state can select: at every state satisfying its own
 /// gate, a later clause of the same quest also passes and overrides it, so its
 /// scene is unreachable by construction (see [`check_clause_liveness`]).
@@ -1053,6 +1056,118 @@ fn placement_contradiction(qid: &str, npc: &str, declared: &str, actual: &str) -
          does not teleport anybody: add a `move-npc` to `{declared}` before this quest, or \
          declare them where they actually stand (`{actual}`)"
     )
+}
+
+/// **`DW0884`: a cast row whose anchor name two buildings answer to.**
+///
+/// A cast row says *in this quest, this body stands here*. "Here" is resolved in
+/// the beat's own area first and the NPC's own area second — and where BOTH
+/// declare the name, those are two different buildings and the row picked one of
+/// them by a rule its author cannot see. That is the constitution's own case: a
+/// resolve-by-name over a scope where names are not unique yields a candidate,
+/// not a match.
+///
+/// It is refused rather than resolved, and the reason is `DW0461`: the beat's
+/// area may win the NAME, but a declaration does not teleport anybody, so it may
+/// not win a BODY. Where the row's answer and the effect history's answer are
+/// two places, one of them is where the datapack summons the body and the other
+/// is where the critical path sends the party — measured at 256 blocks apart on
+/// a two-area perturbation of `talkto-cast-pos`, compiling clean. `DW0461`'s
+/// place arm catches that at the build tier, from the seated pieces; this is the
+/// same finding refused **where it is entered**, at the row, before a cell is
+/// ever computed.
+///
+/// **Scope.** Only areas that CERTAINLY answer to the name
+/// ([`crate::gates::certain_anchor_providers`]) — a bare `prefab` that declares
+/// it, or a `prefab_pool` every member of which does. A pool the solver may seat
+/// either way is left to the build tier rather than refused on a coin-flip, and
+/// that is deliberate: this gate must not be the reason a campaign's validity
+/// depends on a seed.
+///
+/// **The remedy is one the author owns.** The name belongs to the piece, not to
+/// this campaign, so renaming it is a prefab-library change these documents
+/// cannot make — [`crate::gates::anchor_ambiguity_remedy`] is the one writer for
+/// that sentence, and it leads with the binding in `world.areas[]`, which is the
+/// line the author can actually edit.
+pub fn check_shared_cast_anchor(
+    c: &Campaign,
+    prefabs: &crate::registry::PrefabRegistry,
+) -> Vec<Diagnostic> {
+    let mut diags = Vec::new();
+    let home: BTreeMap<&str, &str> = c
+        .npcs
+        .content
+        .npcs
+        .iter()
+        .map(|n| (n.id.as_str(), n.area.as_str()))
+        .collect();
+    let quest_area: BTreeMap<&str, &str> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .collect();
+
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        let qid = q.id.as_str();
+        let Some(beat) = quest_area.get(qid).copied() else {
+            continue;
+        };
+        for (npc, entry) in &q.cast {
+            let npc_s = npc.as_str();
+            let Some(home_area) = home.get(npc_s).copied() else {
+                continue;
+            };
+            // One area cannot disagree with itself.
+            if beat == home_area {
+                continue;
+            }
+            let placements = entry.placements();
+            for (i, p) in placements.iter().enumerate() {
+                let Some(anchor) = p.at.anchor() else {
+                    continue;
+                };
+                let providers = crate::gates::certain_anchor_providers(c, prefabs, anchor.as_str());
+                if !(providers.contains_key(beat) && providers.contains_key(home_area)) {
+                    continue;
+                }
+                let ppath = if placements.len() > 1 {
+                    format!("/content/quests/{qi}/cast/{npc_s}/{i}/at")
+                } else {
+                    format!("/content/quests/{qi}/cast/{npc_s}/at")
+                };
+                // The two candidates, and only the two: a third area answering
+                // to the name settles nothing here and is `DW0859`'s finding.
+                let named: BTreeMap<String, BTreeSet<String>> = [beat, home_area]
+                    .iter()
+                    .filter_map(|a| providers.get_key_value(*a))
+                    .map(|(a, p)| (a.clone(), p.clone()))
+                    .collect();
+                diags.push(Diagnostic::error(
+                    DW_CAST_ANCHOR_SHARED,
+                    "quests",
+                    ppath,
+                    format!(
+                        "quest `{qid}` casts npc `{npc_s}` at `{anchor}`, and BOTH the area this \
+                         beat plays in (`{beat}`) and the npc's own area (`{home_area}`) answer \
+                         to that name — two buildings, and nothing an author can see says which \
+                         one this body is standing in. The compiler resolves a cast row in the \
+                         beat's area first, so this row means `{beat}`; the npc is declared in \
+                         `{home_area}` and, unless something walks them across, that is where \
+                         the datapack summons the body. Those are not the same place, and a \
+                         delve that ships both is one where the party is sent to an empty cell. \
+                         Say which you meant: to station this body in `{beat}`, walk it there \
+                         (`move-npc` to `{anchor}` in a beat before this quest) — declaring an \
+                         anchor does not teleport anybody (`DW0461`); to leave it at its post in \
+                         `{home_area}`, the name has to stop meaning two things. {remedy}",
+                        remedy = crate::gates::anchor_ambiguity_remedy(&named),
+                    ),
+                ));
+            }
+        }
+    }
+    diags
 }
 
 /// **`DW0461`, the place arm: the body the party is sent to and the body the
