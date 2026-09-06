@@ -13,6 +13,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod detail;
+
 use clap::{Parser, Subcommand};
 use delvewright_compiler::analyze::analyze_campaign;
 use delvewright_compiler::blockout::{Knob, Perturb};
@@ -34,7 +36,7 @@ use delvewright_dsl::{
 const DW_SKIN_PNG_MISSING: DwCode = DwCode::new("DW0309", ExitTier::Build);
 
 /// Internal-error exit code (spec-0002: ≥10).
-const EXIT_INTERNAL: u8 = 10;
+pub(crate) const EXIT_INTERNAL: u8 = 10;
 
 #[derive(Parser)]
 #[command(
@@ -245,6 +247,31 @@ enum Command {
         #[arg(long)]
         all: bool,
     },
+    /// Detail a place inside the allocation the whole handed it (spec-0058):
+    /// read the allocation, bind it into the place's program
+    /// (`programs/<place stem>.json` in the campaign, under the `handed/`
+    /// parameter prefix), expand at the frame, run every gate — the grammar's
+    /// contract gates, `DW0843`–`DW0845`/`DW0848`, the admission audit, the
+    /// light probe — before any file is written, then freeze the piece into
+    /// the prefab directory (`--prefabs`) with its gate report beside it and
+    /// write the `details[]` row. The run ends by building the whole in
+    /// memory, so traversal equivalence against the blockout is proved by the
+    /// same observers `build` runs.
+    ///
+    /// Every input but the place is derived: the frame, the datum, the seams,
+    /// the owed names, the palette, the piece id, the seed and the row are the
+    /// tool's. Refuses without a passed, fresh walk record (`DW0841`), as
+    /// `allocation` does.
+    Detail {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+        /// The place — a layout-graph node id (`node/<kebab>`).
+        place: Option<String>,
+        /// Every place that has a program, in site-plan order, stopping at the
+        /// first refusal with the place named.
+        #[arg(long)]
+        all: bool,
+    },
     /// Convert a harvested `rehearsal-report.json` (spec-0019) into per-shot
     /// `anchor + offset` DSL patches. Reads only the report and the creator
     /// overlay's `layout.json` — no campaign, no build, no world assembly.
@@ -353,6 +380,18 @@ fn main() -> ExitCode {
             place,
             all,
         } => run_allocation(campaign_dir, place.as_deref(), *all, cli.json),
+        Command::Detail {
+            campaign_dir,
+            place,
+            all,
+        } => detail::run_detail(
+            campaign_dir,
+            place.as_deref(),
+            *all,
+            &cli.prefabs,
+            &cli.lang,
+            cli.json,
+        ),
         Command::Metrics { gym } => run_metrics(cli.json, gym.as_deref()),
         Command::Snapshot {
             campaign_dir,
@@ -588,13 +627,13 @@ fn run_calibrate(report_path: &Path, layout_path: &Path, out: &str, json: bool) 
 /// The parsed campaign plus everything the CLI commands share: prefab metadata,
 /// the loaded campaign directory (stage bytes + l10n sidecars), the parsed l10n
 /// sidecars, and the accumulated diagnostics (schema + referential + l10n).
-struct Validated {
-    campaign: delvewright_dsl::Campaign,
-    prefabs: PrefabRegistry,
-    loaded: delvewright_compiler::load::LoadedCampaign,
-    sidecars: BTreeMap<String, delvewright_dsl::L10nDoc>,
+pub(crate) struct Validated {
+    pub(crate) campaign: delvewright_dsl::Campaign,
+    pub(crate) prefabs: PrefabRegistry,
+    pub(crate) loaded: delvewright_compiler::load::LoadedCampaign,
+    pub(crate) sidecars: BTreeMap<String, delvewright_dsl::L10nDoc>,
     /// The accumulated diagnostics — the list a verdict is read off.
-    diags: Vec<Diagnostic>,
+    pub(crate) diags: Vec<Diagnostic>,
 }
 
 /// Parse an `l10n/<code>.json` sidecar map (raw bytes) into typed [`L10nDoc`]s.
@@ -641,7 +680,7 @@ fn parse_sidecars(
 /// The order matters and is deliberate. The missing-document question is asked
 /// only **after** the load has failed, so a directory that loads is never
 /// probed and no verb pays for a check on its success path.
-fn load_or_refuse(campaign_dir: &Path, json: bool) -> Result<LoadedCampaign, u8> {
+pub(crate) fn load_or_refuse(campaign_dir: &Path, json: bool) -> Result<LoadedCampaign, u8> {
     match load_campaign_dir(campaign_dir) {
         Ok(l) => Ok(l),
         Err(e) => match missing_stage_documents_diagnostic(campaign_dir) {
@@ -660,7 +699,11 @@ fn load_or_refuse(campaign_dir: &Path, json: bool) -> Result<LoadedCampaign, u8>
 /// Validate and return the parsed campaign + shared context (prefabs, loaded dir,
 /// l10n sidecars) + diagnostics; prints diagnostics. Returns `Err(exit)` on
 /// internal error.
-fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result<Validated, u8> {
+pub(crate) fn validate_stage(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+) -> Result<Validated, u8> {
     let loaded = load_or_refuse(campaign_dir, json)?;
     validate_loaded(loaded, prefabs_dir, json)
 }
@@ -859,7 +902,7 @@ fn validate_loaded(
 /// decide with certainty (e.g. `DW0330`, where the true limit depends on the
 /// player's window size and GUI scale), so failing on them would dress a judgement
 /// call as a fact. Every `Severity::Error` still exits non-zero exactly as before.
-fn has_error(diags: &[Diagnostic]) -> bool {
+pub(crate) fn has_error(diags: &[Diagnostic]) -> bool {
     diags
         .iter()
         .any(|d| d.severity == delvewright_dsl::Severity::Error)
@@ -1237,7 +1280,7 @@ fn load_for_view(
 
 /// Read the `.nbt` bytes of every structure the plan places. Shared by `build`
 /// and the spec-0015 view commands so all three see the same world.
-fn read_structures(
+pub(crate) fn read_structures(
     plan: &Plan,
     prefabs: &PrefabRegistry,
     prefabs_dir: &Path,
@@ -1972,7 +2015,7 @@ fn resolve_build_kind<'a>(
 ///
 /// One texture is read once however many bodies name it — a character and the
 /// puppet that plays it are one face.
-fn read_skins(
+pub(crate) fn read_skins(
     campaign_dir: &Path,
     campaign: &delvewright_dsl::Campaign,
     json: bool,
@@ -2478,7 +2521,7 @@ fn first_differing_line(a: &str, b: &str) -> usize {
     a.lines().count().min(b.lines().count()) + 1
 }
 
-fn print_one_diag(d: &Diagnostic, json: bool) {
+pub(crate) fn print_one_diag(d: &Diagnostic, json: bool) {
     if json {
         println!(
             "{}",
@@ -2761,7 +2804,7 @@ const EXIT_INTERNAL_PREFIX: &str = "internal error:";
 
 /// Print a `DW03xx` build/solver diagnostic (exit 3), honoring `--json`. Mirrors
 /// the spec-0002 one-object-per-line JSON shape used for validation diagnostics.
-fn print_build_error(code: DwCode, message: &str, json: bool) {
+pub(crate) fn print_build_error(code: DwCode, message: &str, json: bool) {
     if json {
         let d = serde_json::json!({
             "code": code,
@@ -2892,7 +2935,7 @@ fn layout_binding_lines(campaign: &delvewright_dsl::Campaign, out: &mut Vec<Stri
 ///
 /// Headings are human-output only: `--json` is one JSON object per line and
 /// stays that way (spec-0002).
-fn print_diags(diags: &[Diagnostic], json: bool) {
+pub(crate) fn print_diags(diags: &[Diagnostic], json: bool) {
     let mut ordered: Vec<&delvewright_dsl::Diagnostic> = diags.iter().collect();
     ordered.sort_by_key(|d| d.group());
 

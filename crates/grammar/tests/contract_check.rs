@@ -1096,6 +1096,51 @@ fn the_exterior_face_contract_binds_to_declared_ways_out() {
     assert_eq!(g.bound, 1, "one declared way out, not 47 standable cells");
 }
 
+/// **A declared via is a face on the plane it lies in** — a way cut at a
+/// piece's corner has cells on two outer planes and is one door, not two.
+///
+/// The motivating shape is a four-wide passage whose cells run from `z = 0`:
+/// read as "every plane a cell touches", its corner column exported a second,
+/// north-facing way the site plan never allocated, and assembly refused the
+/// piece for a connection it discovered. A via that is one column at a corner
+/// still lies in two planes and exports both.
+#[test]
+fn a_via_at_a_corner_is_one_face_on_the_plane_it_lies_in() {
+    // A 4x4x4 frame: floor and ceiling courses, air between; the room is the
+    // three columns east of the way, the way is the west plane's z 0..2.
+    let mut b = Build::new([4, 4, 4]);
+    b.stone([0, 0, 0], [3, 0, 3]).stone([0, 3, 0], [3, 3, 3]);
+    let mut c = contract("room");
+    c.spaces.insert(
+        "room".to_string(),
+        space("enclosed", vec![region([1, 1, 0], [3, 2, 3])]),
+    );
+    c.edges.push(with_via(
+        edge("room", "exterior", "walk"),
+        "way",
+        vec![region([0, 1, 0], [0, 2, 2])],
+    ));
+    let faces = exterior_faces(&b.model, &c);
+    assert_eq!(faces.len(), 1, "{faces:?}");
+    assert_eq!(faces[0].dir.as_str(), "west");
+    assert_eq!(faces[0].cells.len(), 6, "three columns, two courses");
+
+    // The one column at the corner lies in both planes, and is two faces.
+    let mut column = contract("room");
+    column.spaces.insert(
+        "room".to_string(),
+        space("enclosed", vec![region([1, 1, 0], [3, 2, 3])]),
+    );
+    column.edges.push(with_via(
+        edge("room", "exterior", "walk"),
+        "way",
+        vec![region([0, 1, 0], [0, 2, 0])],
+    ));
+    let faces = exterior_faces(&b.model, &column);
+    let dirs: Vec<&str> = faces.iter().map(|f| f.dir.as_str()).collect();
+    assert_eq!(dirs, ["west", "north"], "{faces:?}");
+}
+
 /// **A zero binding is red on the three obligations that carry the weight**
 /// (spec-0036 §2.9).
 #[test]

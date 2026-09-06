@@ -9,6 +9,13 @@
         },
         "piece": "prefab/gallery-yard",
         "place": "node/exit"
+      },
+      {
+        "anchors": {
+          "anchor/node-annex": "anchor/node-annex"
+        },
+        "piece": "prefab/gallery-annex",
+        "place": "node/annex"
       }
     ],
     "palette": {

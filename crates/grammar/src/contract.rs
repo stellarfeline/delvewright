@@ -2341,6 +2341,17 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
             Some(via) => cells(&via.boxes),
             None => cells(&space.boxes),
         };
+        // **A declared via is a face on the plane it LIES IN.** A way cut at
+        // the corner of a piece — a four-wide passage whose cells run from
+        // `z = 0` — has cells on two outer planes, and reading every plane a
+        // cell touches exported a second, north-facing "way" nothing allocated,
+        // which the assembly refused as a connection discovered (`DW0844`). So
+        // with a via the face is the plane every cell of the via sits on; a via
+        // that lies in no plane exports nothing and `contract-exterior-faces`
+        // says so. A via that is one column at a corner lies in two planes and
+        // exports both, as before. The space-derived opening keeps the older
+        // reading, because a space spans the box and lies in no plane.
+        let whole_via = edge.via.is_some();
         for (axis, dir) in [
             (0, [1, 0, 0]),
             (0, [-1, 0, 0]),
@@ -2354,6 +2365,9 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
             } else {
                 min[axis]
             };
+            if whole_via && !opening.iter().all(|c| c[axis] == plane) {
+                continue;
+            }
             let on_face: BTreeSet<[i32; 3]> = opening
                 .iter()
                 .filter(|c| c[axis] == plane && nav::passable(model, **c))

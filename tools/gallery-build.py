@@ -197,9 +197,9 @@ def main() -> int:
     prefabs = Path(args.prefabs)
     if not prefabs.is_dir():
         die(
-            f"no prefab directory at `{prefabs}`. The gallery's piece is GENERATED and never "
-            "committed: `cargo run --manifest-path prefabs/gallery-generator/Cargo.toml -- "
-            "<dir> --skins gallery/skins`."
+            f"no prefab directory at `{prefabs}`. The gallery's pieces are GENERATED and never "
+            "committed: `python3 tools/gallery-prefabs.py --out <dir>` runs the generator and "
+            "`delvec detail --all` over the site-plan point (spec-0058)."
         )
 
     point = args.point

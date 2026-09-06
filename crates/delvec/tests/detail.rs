@@ -42,9 +42,7 @@ fn blockout_dir() -> PathBuf {
 }
 
 fn campaign_at(dir: &Path) -> Campaign {
-    let loaded =
-        delvewright_compiler::load::load_campaign_dir(dir).expect("the campaign is readable");
-    delvewright_dsl::parse_campaign(&loaded.raw).expect("the campaign parses")
+    common::campaign_at(dir)
 }
 
 fn walk_record_at(dir: &Path) -> Option<String> {
@@ -284,21 +282,7 @@ fn write_detail_plan(dir: &Path, details: &[serde_json::Value]) {
 
 /// Write the record a passed walk of THIS plan would have produced.
 fn rerecord_walk(dir: &Path) {
-    let c = campaign_at(dir);
-    let h = detail::Hashes::of(&c).expect("a site-plan campaign hashes");
-    let rec = serde_json::json!({
-        "site_plan_sha256": h.site_plan,
-        "layout_graph_sha256": h.layout_graph,
-        "blockout_sha256": h.blockout,
-        "engine_revision": detail::engine_revision(),
-        "verdict": "passed",
-        "findings": [],
-    });
-    std::fs::write(
-        dir.join("walk-record.json"),
-        delvewright_dsl::to_canonical_string(&rec).unwrap(),
-    )
-    .unwrap();
+    common::record_walk(dir);
 }
 
 /// Run the validation-tier detail checks over a materialised campaign.

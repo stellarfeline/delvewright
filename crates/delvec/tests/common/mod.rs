@@ -721,3 +721,31 @@ pub fn campaign_bound_to(dst: &Path, id: &str) -> PathBuf {
     });
     dst.to_path_buf()
 }
+
+/// The parsed campaign at `dir`.
+pub fn campaign_at(dir: &Path) -> delvewright_dsl::Campaign {
+    let loaded =
+        delvewright_compiler::load::load_campaign_dir(dir).expect("the campaign is readable");
+    delvewright_dsl::parse_campaign(&loaded.raw).expect("the campaign parses")
+}
+
+/// Write the record a passed walk of THIS plan would have produced — the two
+/// freshness hashes and the blockout hash taken off the campaign as it stands.
+pub fn record_walk(dir: &Path) {
+    use delvewright_compiler::detail;
+    let c = campaign_at(dir);
+    let h = detail::Hashes::of(&c).expect("a site-plan campaign hashes");
+    let rec = serde_json::json!({
+        "site_plan_sha256": h.site_plan,
+        "layout_graph_sha256": h.layout_graph,
+        "blockout_sha256": h.blockout,
+        "engine_revision": detail::engine_revision(),
+        "verdict": "passed",
+        "findings": [],
+    });
+    std::fs::write(
+        dir.join("walk-record.json"),
+        delvewright_dsl::to_canonical_string(&rec).unwrap(),
+    )
+    .unwrap();
+}
