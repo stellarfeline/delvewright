@@ -89,7 +89,7 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// Warning tier. The suite still loads and every template in it still passes —
 /// that is the failure mode, not a mitigation.
-pub const DW_UNWATCHED_SIBLING: DwCode = DwCode::every_version("DW0810", ExitTier::Build);
+pub const DW_UNWATCHED_SIBLING: DwCode = DwCode::new("DW0810", ExitTier::Build);
 
 /// One declared object whose own body no template drives.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -455,7 +455,7 @@ pub fn finding(
 /// list, and the shipped suite drives only some of the bodies it wrote for that
 /// list. Refusal tier — the emitter's own claim is the proof obligation, and a
 /// strict subset does not discharge it.
-pub const DW_CLAIM_NOT_DISCHARGED: DwCode = DwCode::every_version("DW0811", ExitTier::Build);
+pub const DW_CLAIM_NOT_DISCHARGED: DwCode = DwCode::new("DW0811", ExitTier::Build);
 
 /// One suite emitter's claim that it proves a declared list **per object**.
 ///

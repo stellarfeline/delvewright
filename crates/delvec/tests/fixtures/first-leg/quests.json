@@ -3,10 +3,18 @@
   "content": {
     "quests": [
       {
+        "happening": {
+          "text": "the party takes on quest/hall",
+          "verb": "learns"
+        },
         "id": "quest/hall",
         "objectives": [
           {
             "anchor": "anchor/keeper-stand",
+            "happening": {
+              "text": "the party completes obj/bell",
+              "verb": "arrives"
+            },
             "id": "obj/bell",
             "radius": 2,
             "type": "reach-anchor"
@@ -19,10 +27,18 @@
         }
       },
       {
+        "happening": {
+          "text": "the party takes on quest/vault",
+          "verb": "learns"
+        },
         "id": "quest/vault",
         "objectives": [
           {
             "anchor": "anchor/npc-stand",
+            "happening": {
+              "text": "the party completes obj/take",
+              "verb": "arrives"
+            },
             "id": "obj/take",
             "radius": 2,
             "type": "reach-anchor"
@@ -32,6 +48,10 @@
         "on_objective_complete": {
           "obj/take": [
             {
+              "happening": {
+                "text": "the delve is complete",
+                "verb": "survives"
+              },
               "type": "campaign-complete"
             }
           ]
@@ -43,6 +63,6 @@
       }
     ]
   },
-  "dsl_version": "0.2.0",
+  "dsl_version": "0.19.0",
   "stage": "quests"
 }

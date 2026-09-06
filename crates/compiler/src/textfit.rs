@@ -91,12 +91,12 @@ use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0330`: an on-screen `narrate` string (`title` / `subtitle` / `art`), in the
 /// English source or a sidecar translation, is wider than the screen renders.
-pub const DW_TEXT_OVERRUNS_SCREEN: DwCode = DwCode::every_version("DW0330", ExitTier::Build);
+pub const DW_TEXT_OVERRUNS_SCREEN: DwCode = DwCode::new("DW0330", ExitTier::Build);
 
 /// `DW0331`: a dialogue option label, in the English source or a sidecar
 /// translation, is wider than the dialog button vanilla draws it on, so the caption
 /// scrolls instead of sitting still.
-pub const DW_OPTION_LABEL_SCROLLS: DwCode = DwCode::every_version("DW0331", ExitTier::Build);
+pub const DW_OPTION_LABEL_SCROLLS: DwCode = DwCode::new("DW0331", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // Screen geometry

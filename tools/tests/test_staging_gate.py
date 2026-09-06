@@ -241,35 +241,6 @@ def test_a_zero_precondition_is_labelled_inapplicable_and_still_red(gate, tmp_pa
     assert r["verdict"] in gate.RED_VERDICTS
 
 
-def test_a_campaign_below_the_checks_dsl_version_is_red(gate, tmp_path):
-    """The island's four branch proofs were physically impossible before round
-    19 declared `branch_points`, and read green throughout."""
-    row = dict(
-        BOUND_ROW, id="fence", requires={"file": "quests.json", "min_dsl_version": "0.10.0"}
-    )
-    r = run(gate, tmp_path, row, dsl_version="0.8.0")
-    assert r["verdict"] == "UNFENCED"
-    assert "0.8.0" in r["detail"]
-
-
-def test_and_it_binds_once_the_campaign_adopts_that_version(gate, tmp_path):
-    row = dict(
-        BOUND_ROW, id="fence", requires={"file": "quests.json", "min_dsl_version": "0.10.0"}
-    )
-    assert run(gate, tmp_path, row, dsl_version="0.10.0")["verdict"] == "BOUND"
-
-
-def test_the_fence_is_checked_before_the_binding_count(gate, tmp_path):
-    """An unfenced campaign's zero is EXPLAINED by the fence. Reporting it as
-    UNBOUND would send a reader hunting for objects that could not have been
-    declared at that version."""
-    row = dict(
-        BOUND_ROW, id="fence", requires={"file": "quests.json", "min_dsl_version": "0.10.0"}
-    )
-    r = run(gate, tmp_path, row, objectives=[{"type": "narrate"}], dsl_version="0.8.0")
-    assert r["verdict"] == "UNFENCED"
-
-
 # ---------------------------------------------------------------------------
 # The blockout: a pre-detail site-plan subject (spec-0049)
 #
@@ -583,18 +554,12 @@ def test_an_unemitted_artifact_without_a_probe_is_still_missing_check(gate, tmp_
 
 
 def test_a_blockout_buys_nothing_for_the_other_reds(gate, tmp_path):
-    """NO-GENERAL-FORM and UNFENCED are about the ledger and the engine, not
-    about this build's content; the stage cannot touch them."""
+    """NO-GENERAL-FORM is about the ledger and the engine, not about this
+    build's content; the stage cannot touch it."""
     camp = make_blockout_campaign(tmp_path)
     build = make_blockout_build(tmp_path)
     ngf = {"id": "ngf", "finding": "f", "carrier": None}
     assert adjudicate_on(gate, camp, build, ngf)["verdict"] == "NO-GENERAL-FORM"
-    fenced = dict(
-        IDENTITY_ZERO_ROW,
-        id="fence",
-        requires={"file": "quests.json", "min_dsl_version": "99.0.0"},
-    )
-    assert adjudicate_on(gate, camp, build, fenced)["verdict"] == "UNFENCED"
 
 
 def test_a_row_may_not_declare_its_own_binding_as_its_precondition(gate, tmp_path):

@@ -2,9 +2,9 @@
 
 ## The defect this exists to end
 
-Two gates diff the checkout against `origin/main` (`check-numbered-doc-uniqueness`,
-`check-version-ledger-uniqueness`). Neither fetches — that is CI's job — so each
-had to tell an operator how to get the ref, and each printed the line CI runs:
+A gate that diffs the checkout against `origin/main`
+(`check-numbered-doc-uniqueness`) does not fetch — that is CI's job — so it has to
+tell an operator how to get the ref, and it printed the line CI runs:
 
     git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
 

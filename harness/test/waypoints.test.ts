@@ -127,9 +127,9 @@ test("nextLegWaypoints does not consume on a sub-walk to an unrelated position",
   assert.equal(m.cursor, 1);
 });
 
-test("an unknown version is rejected", () => {
+test("an empty version is rejected", () => {
   assert.throws(
-    () => parseWaypoints({ ...VALID, version: "9.9.9" }),
+    () => parseWaypoints({ ...VALID, version: "" }),
     (err: unknown) => err instanceof WaypointsParseError && /version/.test(err.message),
   );
 });

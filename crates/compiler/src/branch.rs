@@ -47,16 +47,6 @@
 //!
 //! Everything here is validation metadata: nothing this module computes reaches
 //! the shipped datapack.
-//!
-//! ## Version scope
-//!
-//! All six proofs are **obligations at `dsl_version` 0.8.0** — each requires the
-//! campaign to HAVE something a pre-0.8 campaign was never asked for. That is
-//! declared once, on the codes themselves (`DwCode::since(…, 8)`), and enforced
-//! by the obligation fence (`delvewright_dsl::fence`); this module holds no
-//! `is_v08` guard of its own. A 0.6/0.7 campaign therefore sees none of these
-//! findings and its bytes cannot move, exactly as before — but now because a
-//! rule states its own scope, rather than because an early return remembered to.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -68,26 +58,22 @@ use delvewright_dsl::{
 use crate::flow::{Flow, JournalStep, PathStep};
 use delvewright_dsl::{DwCode, ExitTier};
 
-// spec-0025's six proofs are **obligations**, not wellformedness rules: each one
-// requires the campaign to HAVE something (a declared branch point, a
-// `happening`, a per-branch cast placement) that a pre-0.8 campaign was never
-// asked for. So each declares `Binds::Since(8)` and the obligation fence
-// (`delvewright_dsl::fence`) carries them — the module no longer holds a
-// hand-written `is_v08` guard of its own, because a rule with two fences is a
-// rule whose two fences can disagree.
+// spec-0025's six proofs are **obligations**: each one requires the campaign
+// to HAVE something — a declared branch point, a `happening`, a per-branch
+// cast placement.
 
 /// A flag forks casts / staging / structure but belongs to no declared branch point.
-pub const DW_FORK_UNDECLARED: DwCode = DwCode::since("DW0480", 8, ExitTier::Build);
+pub const DW_FORK_UNDECLARED: DwCode = DwCode::new("DW0480", ExitTier::Build);
 /// A story node carries no `happening` declaration (DSL v0.8+).
-pub const DW_HAPPENING_MISSING: DwCode = DwCode::since("DW0481", 8, ExitTier::Build);
+pub const DW_HAPPENING_MISSING: DwCode = DwCode::new("DW0481", ExitTier::Build);
 /// A declared branch reaches no ending — or not the one it declares.
-pub const DW_BRANCH_TERMINAL: DwCode = DwCode::since("DW0482", 8, ExitTier::Build);
+pub const DW_BRANCH_TERMINAL: DwCode = DwCode::new("DW0482", ExitTier::Build);
 /// A quest's cast selector does not resolve to exactly one placement on a branch.
-pub const DW_BRANCH_CAST: DwCode = DwCode::since("DW0483", 8, ExitTier::Build);
+pub const DW_BRANCH_CAST: DwCode = DwCode::new("DW0483", ExitTier::Build);
 /// Branch-exclusive content is reachable under a sibling branch's assignment.
-pub const DW_BRANCH_LEAKAGE: DwCode = DwCode::since("DW0484", 8, ExitTier::Build);
+pub const DW_BRANCH_LEAKAGE: DwCode = DwCode::new("DW0484", ExitTier::Build);
 /// Two chronicle lines on one branch contradict each other.
-pub const DW_BRANCH_CONTRADICTION: DwCode = DwCode::since("DW0485", 8, ExitTier::Build);
+pub const DW_BRANCH_CONTRADICTION: DwCode = DwCode::new("DW0485", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // enumeration
@@ -599,12 +585,6 @@ fn is_story_node(eff: &QuestEffect) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Run every spec-0025 static proof.
-///
-/// **There is no version guard here on purpose.** Every code this module raises
-/// declares `Binds::Since(8)`, so the obligation fence drops each finding against
-/// any stage that declares less than 0.8.0 — the module's proofs and its version
-/// scope are one statement in one place, checked by the type system, instead of
-/// an `is_v08` early return that a seventh proof could be added below.
 pub fn check_branches(c: &Campaign) -> Vec<Diagnostic> {
     let mut d = Vec::new();
     check_happenings(c, &mut d);

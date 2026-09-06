@@ -60,11 +60,6 @@ fn func(out: &BuildOutput, name: &str) -> String {
     text(out, &format!("datapack/data/cast-ledger/function/{name}"))
 }
 
-/// A function from hello-world's namespace (the no-ledger control).
-fn hw_func(out: &BuildOutput, name: &str) -> String {
-    text(out, &format!("datapack/data/hello-world/function/{name}"))
-}
-
 /// The retirement mechanism: right-click resolves through the scene selector, and
 /// each beat's declared root is the one that beat shows.
 #[test]
@@ -146,28 +141,12 @@ fn cast_objective_is_declared_only_when_a_ledger_exists() {
         func(&ledger(), "setup.mcfunction").contains("scoreboard objectives add dw.cast dummy"),
         "a campaign with a ledger must declare the selector"
     );
+    // The control is a campaign with no NPC, which is the one shape that
+    // carries no ledger: every live NPC owes a cast entry (`DW0460`).
+    let lift = build(&common::compiler_fixtures_dir().join("lift"));
     assert!(
-        !hw_func(&build(&common::hello_world_dir()), "setup.mcfunction").contains("dw.cast"),
+        !text(&lift, "datapack/data/lift/function/setup.mcfunction").contains("dw.cast"),
         "a campaign with no ledger must not declare the selector"
-    );
-}
-
-/// A campaign that declares no `cast` emits exactly what it always did: the
-/// single-line root show, with no selector and no bark machinery.
-#[test]
-fn no_ledger_means_byte_identical_talk_functions() {
-    let out = build(&common::hello_world_dir());
-    let talk = hw_func(&out, "talk_keeper.mcfunction");
-    assert_eq!(
-        talk.trim(),
-        "advancement revoke @s only hello-world:keeper_interact\n\
-         dialog show @s hello-world:keeper_greeting",
-        "pre-0.7 emission must be unchanged"
-    );
-    assert!(
-        !out.keys()
-            .any(|k| k.contains("/cast_") || k.contains("/bark_")),
-        "no ledger must emit no ledger artifacts"
     );
 }
 
@@ -190,8 +169,7 @@ fn no_ledger_means_byte_identical_talk_functions() {
 /// for one without.
 #[test]
 fn the_talk_template_claims_a_cast_dispatch_only_where_one_is_emitted() {
-    // No ledger: the template still proves the body loads and re-arms, and makes
-    // no claim about a dispatch that does not exist.
+    // Every NPC's template proves the body loads and re-arms.
     let hw = build(&common::hello_world_dir());
     let t = std::str::from_utf8(
         &hw["packtest-datapack/data/hello-world/test/npc_talk_keeper.mcfunction"],
@@ -203,11 +181,7 @@ fn the_talk_template_claims_a_cast_dispatch_only_where_one_is_emitted() {
     );
     assert!(
         t.contains("assert score #tlk_keeper dw.sys matches 1"),
-        "the re-arm claim survives without a ledger:\n{t}"
-    );
-    assert!(
-        !t.contains("dw.cast"),
-        "a campaign with no ledger must carry no dispatch claim:\n{t}"
+        "the re-arm claim:\n{t}"
     );
 
     // With a ledger: the dispatch claim is present, and reads `dw.cast` after

@@ -81,7 +81,7 @@ fn quests_doc(prelude: &str, exit_tail: &str) -> String {
 /// `on_objective_complete` bundle (leading comma included) — where a fixture puts
 /// a producer at whatever nesting depth it wants to test.
 fn quests_doc_with(prelude: &str, exit_tail: &str, talk_tail: &str) -> String {
-    quests_doc_versioned("0.6.0", prelude, exit_tail, talk_tail, "")
+    quests_doc_versioned("0.19.0", prelude, exit_tail, talk_tail, "")
 }
 
 /// As [`quests_doc_with`], with the stage's `dsl_version` and a trailing
@@ -189,7 +189,7 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
 #[test]
 fn a_campaign_using_every_root_binds_every_root() {
     let c = parse_hw(
-        &quests_doc_versioned("0.10.0", ALL_ROOTS_PRELUDE, "", "", ON_DEATH_TAIL),
+        &quests_doc_versioned("0.19.0", ALL_ROOTS_PRELUDE, "", "", ON_DEATH_TAIL),
         Some(RESPAWN_DIALOGUE),
     );
     let binding = delvewright_dsl::for_each_effect_root(&c, &mut |_, _| {});
@@ -209,7 +209,7 @@ fn a_campaign_using_every_root_binds_every_root() {
 #[test]
 fn an_empty_on_death_binds_nothing() {
     let c = parse_hw(
-        &quests_doc_versioned("0.10.0", "", "", "", r#", "on_death": []"#),
+        &quests_doc_versioned("0.19.0", "", "", "", r#", "on_death": []"#),
         None,
     );
     let binding = delvewright_dsl::for_each_effect_root(&c, &mut |_, _| {});
@@ -249,7 +249,7 @@ const ON_DEATH_TAIL: &str = r#",
 /// A dialogue whose option sets a checkpoint carrying an `on_respawn` bundle —
 /// effect root 5, the one that hangs off the dialogue stage.
 const RESPAWN_DIALOGUE: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {

@@ -1,0 +1,13 @@
+{
+  "code": "DW0102",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/dsl_version",
+      "value": "0.18.0"
+    }
+  ],
+  "units": [],
+  "why": "The engine accepts exactly one dsl_version (ADR-0024). A world document declaring another number — here 0.18.0, the number this surface was written against a change ago — is refused at the envelope, and the refusal names the one number to write. It declares no unit:  is written by every document of the primary, so the field is bound; what this probe demonstrates is that the number is judged, not merely present."
+}

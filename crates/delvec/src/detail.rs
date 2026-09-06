@@ -37,8 +37,7 @@ use delvewright_dsl::detailplan::{Detail, DetailPlanContent};
 use delvewright_dsl::prefab::PrefabMeta;
 use delvewright_dsl::split::TilePart;
 use delvewright_dsl::{
-    Campaign, Diagnostic, DwCode, Envelope, ExitTier, Fenced, NodeId, PrefabId, Stage,
-    parse_campaign,
+    Campaign, Diagnostic, DwCode, Envelope, ExitTier, NodeId, PrefabId, Stage, parse_campaign,
 };
 use delvewright_grammar::cli::{composition_to_stderr, report_to_stderr};
 use delvewright_grammar::ir::Paint;
@@ -58,7 +57,7 @@ use crate::{
 /// `detail`, before the program is expanded — naming the parameter and every
 /// name the allocation hands this place, so the repair is a rename in the
 /// program and never a number.
-const DW_NOT_HANDED: DwCode = DwCode::every_version("DW0882", ExitTier::Build);
+const DW_NOT_HANDED: DwCode = DwCode::new("DW0882", ExitTier::Build);
 
 /// Where a campaign keeps its detail programs: `<campaign>/programs/<place
 /// stem>.json`. The address is derived from the place, as the piece id is; the
@@ -101,7 +100,7 @@ fn run(
     let campaign = match parse_campaign(&loaded.raw) {
         Ok(c) => c,
         Err(diags) => {
-            print_diags(&Fenced::structural(diags), json);
+            print_diags(&diags, json);
             return Err(1);
         }
     };
@@ -747,8 +746,8 @@ fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> R
         eprintln!("detail: the campaign does not validate with the piece(s) this run wrote.");
         return Err(1);
     }
-    let adiags = Fenced::apply(&v.campaign, analyze_campaign(&v.campaign, &v.prefabs));
-    if !adiags.reported().is_empty() {
+    let adiags = analyze_campaign(&v.campaign, &v.prefabs);
+    if !adiags.is_empty() {
         print_diags(&adiags, json);
         return Err(2);
     }
@@ -759,7 +758,7 @@ fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> R
     let plan = match Plan::build(&campaign, &v.prefabs) {
         Ok(p) => p,
         Err(e) => {
-            print_diags(&Fenced::apply(&campaign, e.warnings), json);
+            print_diags(&e.warnings, json);
             print_build_error(e.failure.code, &e.failure.message, json);
             return Err(3);
         }
@@ -777,7 +776,7 @@ fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> R
         &skins,
     ) {
         Ok((_, warnings)) => {
-            print_diags(&Fenced::apply(&campaign, warnings), json);
+            print_diags(&warnings, json);
             eprintln!("detail: the whole builds with the piece(s) this run wrote.");
             Ok(())
         }

@@ -20,7 +20,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_w
 fn quests_doc(mob: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

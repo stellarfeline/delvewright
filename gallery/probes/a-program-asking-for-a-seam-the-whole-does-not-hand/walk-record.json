@@ -2,7 +2,7 @@
   "blockout_sha256": "36828f9bf3f22dfa6eacc5d1120ceb202b2e7f9e6fff14ebfb59675a930bac12",
   "engine_revision": "unstamped",
   "findings": [],
-  "layout_graph_sha256": "bbee3d9f71e784b01376d40244daa437c9c1986b10d277791b66fed2d5151c16",
-  "site_plan_sha256": "566730e5aa99c0f0f76c6e68cb2b9d480c8e5db710895a3ee0136a8fc84787b5",
+  "layout_graph_sha256": "dbae37e954fa7d7beb5e91ebd7dbf0e7b4eef472b4a26ce629c7b65702b5a8dd",
+  "site_plan_sha256": "1229995e14c5913e481dfbd6bb5fe585cb5571c663a089d683fa0dfed66249e6",
   "verdict": "passed"
 }

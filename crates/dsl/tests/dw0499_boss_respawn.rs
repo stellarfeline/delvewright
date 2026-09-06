@@ -25,7 +25,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.7 quests document with a bonfire and a wave that re-seats on rest,
 /// billed `tier`. `{TIER}` is substituted per test.
 const QUESTS_V07_TEMPLATE: &str = r#"{
-  "dsl_version": "0.7.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -77,7 +77,7 @@ fn quests_with_tier(tier: Option<&str>) -> String {
 fn classes_with_flask() -> String {
     let mut v: serde_json::Value =
         serde_json::from_str(&common::read_valid("classes.json")).unwrap();
-    v["dsl_version"] = serde_json::json!("0.8.0");
+    v["dsl_version"] = serde_json::json!("0.19.0");
     for class in v["content"]["classes"].as_array_mut().unwrap() {
         class["kit"]
             .as_array_mut()

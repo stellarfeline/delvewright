@@ -56,7 +56,7 @@ fn tmp(name: &str) -> PathBuf {
 }
 
 const WORLD: &str = r#"{
-  "dsl_version": "0.10.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "cast-ledger",
   "stage": "world",
   "content": {
@@ -71,7 +71,7 @@ const WORLD: &str = r#"{
 }"#;
 
 const DIALOGUE: &str = r#"{
-  "dsl_version": "0.10.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "cast-ledger",
   "stage": "dialogue",
   "content": {
@@ -106,7 +106,7 @@ const DIALOGUE: &str = r#"{
 fn quests(teleport_extent: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.10.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "cast-ledger",
   "stage": "quests",
   "content": {{

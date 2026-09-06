@@ -66,7 +66,7 @@ use serde_json::{Value, json};
 /// the walk cannot settle however carefully it is walked. Zero unreached entries
 /// is the end state and the line does not print — which is a real end state and
 /// not a vacuity, because the count is taken against every entry in the table.
-pub const DW_GYM_UNWALKED: DwCode = DwCode::every_version("DW0840", ExitTier::Build);
+pub const DW_GYM_UNWALKED: DwCode = DwCode::new("DW0840", ExitTier::Build);
 
 /// The plane the gym opens on.
 const GRADE_Y: i64 = 64;
@@ -76,15 +76,9 @@ fn landing_y(table: &Metrics, reads: &mut Reads) -> i64 {
     GRADE_Y + i64::from(table.max_designed_drop_blocks(reads).unwrap_or(5))
 }
 
-/// The `dsl_version` every document this generator writes declares.
-///
-/// **The fence constant of the newest surface the gym uses, never a typed
-/// number.** The gym's bays include a way (spec-0053 §3), so its layout graph
-/// cannot be read below [`delvewright_dsl::WAY_AND_CONTACT_SINCE`] — and a
-/// literal here would be true on the day it was typed and false the next time
-/// the gym reached for something new, in a generated campaign nobody reads
-/// before running.
-const GYM_DSL_VERSION: &str = delvewright_dsl::WAY_AND_CONTACT_SINCE;
+/// The `dsl_version` every document this generator writes declares: the one
+/// number the engine accepts, never a typed literal.
+const GYM_DSL_VERSION: &str = delvewright_dsl::DSL_VERSION;
 
 /// One bay of the spine: a rung of the size ladder at one of its bounds, or a
 /// **way** at one of its instantiable widths (spec-0053 §3).

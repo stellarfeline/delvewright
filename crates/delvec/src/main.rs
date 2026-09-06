@@ -27,14 +27,13 @@ use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 use delvewright_dsl::{
-    Diagnostic, DwCode, ExitTier, Fenced, Stage, parse_campaign, stage_schema,
-    validate_campaign_with,
+    Diagnostic, DwCode, ExitTier, Stage, parse_campaign, stage_schema, validate_campaign_with,
 };
 
 /// `DW0309`: a staged **body** — a stage-2 npc or a stage-5 actor alike —
 /// declares a `skin.texture_id` for which the campaign ships no
 /// `skins/<texture_id>.png`. Build-tier (exit 3).
-const DW_SKIN_PNG_MISSING: DwCode = DwCode::every_version("DW0309", ExitTier::Build);
+const DW_SKIN_PNG_MISSING: DwCode = DwCode::new("DW0309", ExitTier::Build);
 
 /// Internal-error exit code (spec-0002: ≥10).
 pub(crate) const EXIT_INTERNAL: u8 = 10;
@@ -633,10 +632,8 @@ pub(crate) struct Validated {
     pub(crate) prefabs: PrefabRegistry,
     pub(crate) loaded: delvewright_compiler::load::LoadedCampaign,
     pub(crate) sidecars: BTreeMap<String, delvewright_dsl::L10nDoc>,
-    /// The accumulated diagnostics, **after the obligation fence**
-    /// ([`delvewright_dsl::fence`]): a campaign is judged at the `dsl_version` it
-    /// declares, so this is the list a verdict may be read off.
-    pub(crate) diags: Fenced,
+    /// The accumulated diagnostics — the list a verdict is read off.
+    pub(crate) diags: Vec<Diagnostic>,
 }
 
 /// Parse an `l10n/<code>.json` sidecar map (raw bytes) into typed [`L10nDoc`]s.
@@ -688,7 +685,7 @@ pub(crate) fn load_or_refuse(campaign_dir: &Path, json: bool) -> Result<LoadedCa
         Ok(l) => Ok(l),
         Err(e) => match missing_stage_documents_diagnostic(campaign_dir) {
             Some(d) => {
-                print_diags(&Fenced::structural(vec![d]), json);
+                print_diags(&[d], json);
                 Err(1)
             }
             None => {
@@ -823,15 +820,15 @@ fn validate_loaded(
             // The NPC scene ledger (DW0460–DW0467, spec-0020): every quest must
             // say where each live NPC is, what they are doing, and what their
             // right-click offers, and the declaration is checked against the
-            // effect history. Error tier, except the pre-0.7 deprecation window
-            // (DW0465) and the staleness lint (DW0467), which warn.
+            // effect history. Error tier, except the staleness lint (DW0467),
+            // which warns.
             diags.extend(delvewright_compiler::cast::check_cast(&campaign));
             // An objective keeps the promise its prompt makes (DW0860-DW0863):
             // a failure clock armed before its own prompt could be read, an
             // adopted container nothing distinguishes from the scenery beside
             // it, a hint the emitter will never show, and a fight the party is
             // given no way to find. Error tier throughout - each judges what the
-            // document says, so the fence has nothing to grandfather. The
+            // document says. The
             // binding line states what it examined, including the zeroes.
             {
                 let (pd, pbind) = delvewright_compiler::promise::check(&campaign);
@@ -883,14 +880,7 @@ fn validate_loaded(
                 examined.push(sbind.line());
                 diags.extend(sd);
             }
-            // THE OBLIGATION FENCE. Every check above ran; this is where a
-            // campaign's own declared `dsl_version` decides which of their
-            // findings it is answerable for. Nothing
-            // downstream can un-fence it: `print_diags` and `Validated::diags`
-            // both hold `Fenced`, which has no constructor from a bare list.
-            let diags = Fenced::apply(&campaign, diags);
             print_diags(&diags, json);
-            report_grandfathered(&diags);
             report_binding_notes(&campaign, &examined);
             Ok(Validated {
                 campaign,
@@ -901,10 +891,7 @@ fn validate_loaded(
             })
         }
         Err(diags) => {
-            // No campaign parsed, so no declared version to grandfather against —
-            // and `structural` is the constructor that says so and refuses to
-            // carry anything version-scoped.
-            print_diags(&Fenced::structural(diags), json);
+            print_diags(&diags, json);
             Err(1)
         }
     }
@@ -915,8 +902,10 @@ fn validate_loaded(
 /// decide with certainty (e.g. `DW0330`, where the true limit depends on the
 /// player's window size and GUI scale), so failing on them would dress a judgement
 /// call as a fact. Every `Severity::Error` still exits non-zero exactly as before.
-pub(crate) fn has_error(diags: &Fenced) -> bool {
-    diags.has_error()
+pub(crate) fn has_error(diags: &[Diagnostic]) -> bool {
+    diags
+        .iter()
+        .any(|d| d.severity == delvewright_dsl::Severity::Error)
 }
 
 fn run_validate(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
@@ -935,9 +924,9 @@ fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode 
     if has_error(&v.diags) {
         return ExitCode::from(1);
     }
-    let adiags = Fenced::apply(&v.campaign, analyze_campaign(&v.campaign, &v.prefabs));
+    let adiags = analyze_campaign(&v.campaign, &v.prefabs);
     print_diags(&adiags, json);
-    if adiags.reported().is_empty() {
+    if adiags.is_empty() {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(2)
@@ -993,7 +982,7 @@ fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
     let campaign = match parse_campaign(&loaded.raw) {
         Ok(c) => c,
         Err(diags) => {
-            print_diags(&Fenced::structural(diags), json);
+            print_diags(&diags, json);
             return ExitCode::from(1);
         }
     };
@@ -1106,7 +1095,7 @@ fn run_snapshot(
             // Advisories raised before the failure and explaining it (`DW0498`:
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
-            print_diags(&Fenced::apply(&campaign, e.warnings), json);
+            print_diags(&e.warnings, json);
             print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
@@ -1115,7 +1104,7 @@ fn run_snapshot(
     // through `emit::build_with_warnings`; the view commands never emit, so they
     // report them here — a draw that repeats an anchored piece is exactly what a
     // reviewer is looking at in a snapshot.
-    print_diags(&Fenced::apply(&campaign, plan.warnings.clone()), json);
+    print_diags(&plan.warnings.clone(), json);
     let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
@@ -1600,7 +1589,7 @@ fn run_blocking_chart(
             // Advisories raised before the failure and explaining it (`DW0498`:
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
-            print_diags(&Fenced::apply(&campaign, e.warnings), json);
+            print_diags(&e.warnings, json);
             print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
@@ -1609,7 +1598,7 @@ fn run_blocking_chart(
     // through `emit::build_with_warnings`; the view commands never emit, so they
     // report them here — a draw that repeats an anchored piece is exactly what a
     // reviewer is looking at in a snapshot.
-    print_diags(&Fenced::apply(&campaign, plan.warnings.clone()), json);
+    print_diags(&plan.warnings.clone(), json);
     let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
@@ -1750,8 +1739,8 @@ fn run_build(
         sidecars,
         ..
     } = v;
-    let adiags = Fenced::apply(&campaign, analyze_campaign(&campaign, &prefabs));
-    if !adiags.reported().is_empty() {
+    let adiags = analyze_campaign(&campaign, &prefabs);
+    if !adiags.is_empty() {
         print_diags(&adiags, json);
         return ExitCode::from(2);
     }
@@ -1843,7 +1832,7 @@ fn run_build(
             // Advisories raised before the failure and explaining it (`DW0498`:
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
-            print_diags(&Fenced::apply(&campaign, e.warnings), json);
+            print_diags(&e.warnings, json);
             print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
@@ -1874,7 +1863,7 @@ fn run_build(
             // Advisory build-tier findings (stage-7 edit replay: DW0353/DW0354).
             // Printed exactly like the validation-tier warnings, and like them
             // they never change the exit code.
-            print_diags(&Fenced::apply(&campaign, warnings), json);
+            print_diags(&warnings, json);
             o
         }
         Err(emit::BuildFailure::Validation(errors)) => {
@@ -2162,7 +2151,7 @@ fn run_edit(
                         .unwrap_or("")
                         .to_string();
                     delvewright_dsl::Envelope {
-                        dsl_version: delvewright_dsl::SUPPORTED_DSL_VERSION.to_string(),
+                        dsl_version: delvewright_dsl::DSL_VERSION.to_string(),
                         campaign_id: delvewright_dsl::CampaignId(cid),
                         stage: Stage::WorldEdits,
                         content: delvewright_dsl::WorldEditsContent {
@@ -2199,7 +2188,7 @@ fn run_edit(
             // Advisories raised before the failure and explaining it (`DW0498`:
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
-            print_diags(&Fenced::apply(&v.campaign, e.warnings), json);
+            print_diags(&e.warnings, json);
             print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
@@ -2300,8 +2289,8 @@ fn run_edit(
     // DW0314/DW0724, entry anchor DW0345, and the emitted-command validator).
     // Output is discarded — this run exists purely so `edit` can never accept a
     // script `build` would reject.
-    let adiags = Fenced::apply(&v.campaign, analyze_campaign(&v.campaign, &v.prefabs));
-    if !adiags.reported().is_empty() {
+    let adiags = analyze_campaign(&v.campaign, &v.prefabs);
+    if !adiags.is_empty() {
         print_diags(&adiags, json);
         return ExitCode::from(2);
     }
@@ -2319,7 +2308,7 @@ fn run_edit(
         None,
         &skins,
     ) {
-        Ok((_, warnings)) => print_diags(&Fenced::apply(&v.campaign, warnings), json),
+        Ok((_, warnings)) => print_diags(&warnings, json),
         Err(emit::BuildFailure::Validation(errors)) => {
             eprintln!(
                 "build failure: {} emitted command(s) failed validation:",
@@ -2580,7 +2569,7 @@ fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: boo
     let campaign = match parse_campaign(&loaded.raw) {
         Ok(c) => c,
         Err(diags) => {
-            print_diags(&Fenced::structural(diags), json);
+            print_diags(&diags, json);
             return ExitCode::from(1);
         }
     };
@@ -2927,44 +2916,7 @@ fn layout_binding_lines(campaign: &delvewright_dsl::Campaign, out: &mut Vec<Stri
     }
 }
 
-/// State the obligation fence's **binding count** on stderr: how many findings
-/// this campaign's declared `dsl_version` excused it from, and which rules they
-/// belonged to.
-///
-/// A fence nobody can see is indistinguishable from a check nobody wrote
-/// (CLAUDE.md: a green gate that binds to nothing is vacuous, not a pass). This
-/// is the line that turns "the campaign is green" into "the campaign is green,
-/// and here is what it is not yet answerable for" — the input to the adoption
-/// round its next `dsl_version` bump owes.
-///
-/// stderr, not stdout: `--json` reserves stdout for one diagnostic object per
-/// line, and this is not a diagnostic — nothing here is wrong.
-fn report_grandfathered(diags: &Fenced) {
-    let held = diags.grandfathered();
-    if held.is_empty() {
-        return;
-    }
-    let mut by_code: BTreeMap<&str, usize> = BTreeMap::new();
-    for d in held {
-        *by_code.entry(d.code.as_str()).or_default() += 1;
-    }
-    let summary: Vec<String> = by_code.iter().map(|(c, n)| format!("{c} x{n}")).collect();
-    eprintln!(
-        "obligation fence: {} finding(s) grandfathered by this campaign's declared dsl_version \
-         ({}). They become live when the stage that owns them adopts the version that introduced \
-         them.",
-        held.len(),
-        summary.join(", ")
-    );
-}
-
-/// Print a fenced diagnostic list, honoring `--json`.
-///
-/// It takes a [`Fenced`], not a `Vec<Diagnostic>`, and that is the point: the
-/// obligation fence is not a step somebody has to remember to run before
-/// reporting, it is the only way to obtain a value this function accepts
-/// (`delvewright_dsl::fence`).
-/// **Author-actionable first.**
+/// Print a diagnostic list, honoring `--json`. **Author-actionable first.**
 ///
 /// A run's diagnostics reached the terminal in the order the passes happened to
 /// produce them, which put four to six paragraphs of advisory ahead of the one
@@ -2983,8 +2935,8 @@ fn report_grandfathered(diags: &Fenced) {
 ///
 /// Headings are human-output only: `--json` is one JSON object per line and
 /// stays that way (spec-0002).
-pub(crate) fn print_diags(diags: &Fenced, json: bool) {
-    let mut ordered: Vec<&delvewright_dsl::Diagnostic> = diags.reported().iter().collect();
+pub(crate) fn print_diags(diags: &[Diagnostic], json: bool) {
+    let mut ordered: Vec<&delvewright_dsl::Diagnostic> = diags.iter().collect();
     ordered.sort_by_key(|d| d.group());
 
     let mut heading: Option<delvewright_dsl::Group> = None;

@@ -119,7 +119,7 @@ fn setup(out: &BuildOutput) -> &str {
 /// A v0.6 quests doc that spawns a wave — the case whose derived difficulty is
 /// `easy`, so a declaration must be seen to *override* it, not merely fill a gap.
 const WAVE_QUESTS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -152,7 +152,7 @@ const WAVE_QUESTS: &str = r#"{
 fn actor_quests(extra: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
