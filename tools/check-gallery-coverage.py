@@ -198,10 +198,10 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
     # scratch copy of the prefab directory so a probe that is NOT refused
     # cannot write into the directory every other point builds from.
     if (campaign / "programs").is_dir():
-        scratch = Path(tempfile.mkdtemp(prefix="gallery-probe-prefabs-"))
+        scratch = Path(tempfile.mkdtemp(prefix="gallery-probe-prefabs-")) / "prefabs"
         try:
-            shutil.rmtree(scratch)
-            shutil.copytree(prefabs, scratch)
+            if gallery_domain.probe_prefabs(prefabs, scratch) == 0:
+                die(f"the prefab directory `{prefabs}` copied for the probe holds no file")
             d = subprocess.run(
                 [str(delvec), "--prefabs", str(scratch), "detail", str(campaign), "--all", "--json"],
                 capture_output=True,
@@ -210,7 +210,7 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
             if d.returncode != 0:
                 return d.returncode, _codes(d), "detail"
         finally:
-            shutil.rmtree(scratch, ignore_errors=True)
+            shutil.rmtree(scratch.parent, ignore_errors=True)
     v = subprocess.run(
         [str(delvec), "validate", str(campaign), "--prefabs", str(prefabs), "--json"],
         capture_output=True,

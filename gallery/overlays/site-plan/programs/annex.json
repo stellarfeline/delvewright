@@ -1,7 +1,34 @@
 {
-  "version": "1.8.0",
+  "contract": {
+    "edges": [
+      {
+        "a": "exterior",
+        "b": "hall",
+        "class": "walk",
+        "via": "arch-way"
+      },
+      {
+        "a": "hall",
+        "b": "exterior",
+        "class": "walk",
+        "via": "chute-way"
+      }
+    ],
+    "entry": "hall",
+    "no_body": {},
+    "spaces": {
+      "hall": {
+        "envelope": "enclosed"
+      }
+    }
+  },
   "name": "gallery-annex",
-  "start": "annex",
+  "palette": {
+    "floor": "minecraft:stone_bricks",
+    "furniture": "minecraft:chiseled_stone_bricks",
+    "lamp": "minecraft:sea_lantern",
+    "wall": "minecraft:stone_bricks"
+  },
   "params": {
     "handed/datum-y": 1,
     "handed/seam/annex-arch/y0": 1,
@@ -14,556 +41,72 @@
     "handed/seam/annex-chute/z1": 10,
     "lamp_period": 4
   },
-  "palette": {
-    "floor": "minecraft:stone_bricks",
-    "wall": "minecraft:stone_bricks",
-    "furniture": "minecraft:chiseled_stone_bricks",
-    "lamp": "minecraft:sea_lantern"
-  },
   "rules": {
     "annex": [
       {
-        "weight": 1,
         "body": {
-          "op": "split",
           "axis": "y",
-          "sizes": [
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              }
-            },
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            }
-          ],
           "children": [
             {
-              "op": "fill",
               "material": {
                 "role": "floor"
-              }
+              },
+              "op": "fill"
             },
             {
               "op": "call",
               "symbol": "body"
             }
-          ]
-        }
-      }
-    ],
-    "body": [
-      {
-        "weight": 1,
-        "body": {
+          ],
           "op": "split",
-          "axis": "x",
           "sizes": [
             {
-              "size": "absolute",
               "blocks": {
                 "expr": "int",
                 "value": 1
-              }
-            },
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            },
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              }
-            }
-          ],
-          "children": [
-            {
-              "op": "fill",
-              "material": {
-                "role": "wall"
-              }
-            },
-            {
-              "op": "call",
-              "symbol": "mid"
-            },
-            {
-              "op": "call",
-              "symbol": "east_wall"
-            }
-          ]
-        }
-      }
-    ],
-    "mid": [
-      {
-        "weight": 1,
-        "body": {
-          "op": "split",
-          "axis": "z",
-          "sizes": [
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              }
-            },
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            },
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              }
-            }
-          ],
-          "children": [
-            {
-              "op": "fill",
-              "material": {
-                "role": "wall"
-              }
-            },
-            {
-              "op": "call",
-              "symbol": "core"
-            },
-            {
-              "op": "fill",
-              "material": {
-                "role": "wall"
-              }
-            }
-          ]
-        }
-      }
-    ],
-    "core": [
-      {
-        "weight": 1,
-        "body": {
-          "op": "split",
-          "axis": "y",
-          "sizes": [
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "int",
-                "value": 3
-              }
-            },
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            }
-          ],
-          "children": [
-            {
-              "op": "call",
-              "symbol": "room"
-            },
-            {
-              "op": "call",
-              "symbol": "ceiling"
-            }
-          ]
-        }
-      }
-    ],
-    "room": [
-      {
-        "weight": 1,
-        "body": {
-          "op": "claim",
-          "region": "hall",
-          "body": {
-            "op": "mark",
-            "mark": {
-              "anchor": "node-annex",
-              "at": "offset",
-              "x": {
-                "expr": "int",
-                "value": 2
               },
-              "y": {
-                "expr": "int",
-                "value": 0
-              },
-              "z": {
-                "expr": "int",
-                "value": 6
-              },
-              "facing": "east"
-            },
-            "body": {
-              "op": "split",
-              "axis": "x",
-              "sizes": [
-                {
-                  "size": "relative",
-                  "weight": {
-                    "expr": "int",
-                    "value": 1
-                  }
-                },
-                {
-                  "size": "absolute",
-                  "blocks": {
-                    "expr": "int",
-                    "value": 2
-                  }
-                },
-                {
-                  "size": "relative",
-                  "weight": {
-                    "expr": "int",
-                    "value": 1
-                  }
-                }
-              ],
-              "children": [
-                {
-                  "op": "void"
-                },
-                {
-                  "op": "call",
-                  "symbol": "plinth_row"
-                },
-                {
-                  "op": "void"
-                }
-              ]
-            }
-          }
-        }
-      }
-    ],
-    "plinth_row": [
-      {
-        "weight": 1,
-        "body": {
-          "op": "split",
-          "axis": "z",
-          "sizes": [
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            },
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "int",
-                "value": 2
-              }
+              "size": "absolute"
             },
             {
               "size": "relative",
               "weight": {
                 "expr": "int",
                 "value": 1
-              }
-            }
-          ],
-          "children": [
-            {
-              "op": "void"
-            },
-            {
-              "op": "call",
-              "symbol": "plinth"
-            },
-            {
-              "op": "void"
-            }
-          ]
-        }
-      }
-    ],
-    "plinth": [
-      {
-        "weight": 1,
-        "body": {
-          "op": "split",
-          "axis": "y",
-          "sizes": [
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              }
-            },
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            }
-          ],
-          "children": [
-            {
-              "op": "fill",
-              "material": {
-                "role": "furniture"
-              }
-            },
-            {
-              "op": "void"
-            }
-          ]
-        }
-      }
-    ],
-    "ceiling": [
-      {
-        "weight": 1,
-        "body": {
-          "op": "split",
-          "axis": "x",
-          "sizes": [
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              }
-            },
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "arith",
-                "lhs": {
-                  "expr": "param",
-                  "name": "lamp_period"
-                },
-                "op": "sub",
-                "rhs": {
-                  "expr": "int",
-                  "value": 1
-                }
-              }
-            }
-          ],
-          "children": [
-            {
-              "op": "call",
-              "symbol": "lamp_row"
-            },
-            {
-              "op": "fill",
-              "material": {
-                "role": "wall"
-              }
-            }
-          ],
-          "repeat": true
-        }
-      }
-    ],
-    "lamp_row": [
-      {
-        "weight": 1,
-        "body": {
-          "op": "split",
-          "axis": "z",
-          "sizes": [
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              }
-            },
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "arith",
-                "lhs": {
-                  "expr": "param",
-                  "name": "lamp_period"
-                },
-                "op": "sub",
-                "rhs": {
-                  "expr": "int",
-                  "value": 1
-                }
-              }
-            }
-          ],
-          "children": [
-            {
-              "op": "fill",
-              "material": {
-                "role": "lamp"
-              }
-            },
-            {
-              "op": "fill",
-              "material": {
-                "role": "wall"
-              }
-            }
-          ],
-          "repeat": true
-        }
-      }
-    ],
-    "east_wall": [
-      {
-        "weight": 1,
-        "body": {
-          "op": "split",
-          "axis": "z",
-          "sizes": [
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "param",
-                "name": "handed/seam/annex-arch/z0"
-              }
-            },
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "arith",
-                "lhs": {
-                  "expr": "arith",
-                  "lhs": {
-                    "expr": "param",
-                    "name": "handed/seam/annex-arch/z1"
-                  },
-                  "op": "sub",
-                  "rhs": {
-                    "expr": "param",
-                    "name": "handed/seam/annex-arch/z0"
-                  }
-                },
-                "op": "add",
-                "rhs": {
-                  "expr": "int",
-                  "value": 1
-                }
-              }
-            },
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "arith",
-                "lhs": {
-                  "expr": "arith",
-                  "lhs": {
-                    "expr": "param",
-                    "name": "handed/seam/annex-chute/z0"
-                  },
-                  "op": "sub",
-                  "rhs": {
-                    "expr": "param",
-                    "name": "handed/seam/annex-arch/z1"
-                  }
-                },
-                "op": "sub",
-                "rhs": {
-                  "expr": "int",
-                  "value": 1
-                }
-              }
-            },
-            {
-              "size": "absolute",
-              "blocks": {
-                "expr": "arith",
-                "lhs": {
-                  "expr": "arith",
-                  "lhs": {
-                    "expr": "param",
-                    "name": "handed/seam/annex-chute/z1"
-                  },
-                  "op": "sub",
-                  "rhs": {
-                    "expr": "param",
-                    "name": "handed/seam/annex-chute/z0"
-                  }
-                },
-                "op": "add",
-                "rhs": {
-                  "expr": "int",
-                  "value": 1
-                }
-              }
-            },
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            }
-          ],
-          "children": [
-            {
-              "op": "fill",
-              "material": {
-                "role": "wall"
-              }
-            },
-            {
-              "op": "call",
-              "symbol": "arch"
-            },
-            {
-              "op": "fill",
-              "material": {
-                "role": "wall"
-              }
-            },
-            {
-              "op": "call",
-              "symbol": "chute"
-            },
-            {
-              "op": "fill",
-              "material": {
-                "role": "wall"
               }
             }
           ]
-        }
+        },
+        "weight": 1
       }
     ],
     "arch": [
       {
-        "weight": 1,
         "body": {
-          "op": "split",
           "axis": "y",
+          "children": [
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "body": {
+                "op": "void"
+              },
+              "op": "claim",
+              "region": "arch-way"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
           "sizes": [
             {
-              "size": "absolute",
               "blocks": {
                 "expr": "arith",
                 "lhs": {
@@ -575,10 +118,10 @@
                   "expr": "param",
                   "name": "handed/datum-y"
                 }
-              }
+              },
+              "size": "absolute"
             },
             {
-              "size": "absolute",
               "blocks": {
                 "expr": "arith",
                 "lhs": {
@@ -598,7 +141,8 @@
                   "expr": "int",
                   "value": 1
                 }
-              }
+              },
+              "size": "absolute"
             },
             {
               "size": "relative",
@@ -607,40 +151,133 @@
                 "value": 1
               }
             }
-          ],
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "body": [
+      {
+        "body": {
+          "axis": "x",
           "children": [
             {
-              "op": "fill",
               "material": {
                 "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "mid"
+            },
+            {
+              "op": "call",
+              "symbol": "east_wall"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
               }
             },
             {
-              "op": "claim",
-              "region": "arch-way",
-              "body": {
-                "op": "void"
-              }
-            },
-            {
-              "op": "fill",
-              "material": {
-                "role": "wall"
-              }
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
             }
           ]
-        }
+        },
+        "weight": 1
+      }
+    ],
+    "ceiling": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "lamp_row"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "repeat": true,
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "arith",
+                "lhs": {
+                  "expr": "param",
+                  "name": "lamp_period"
+                },
+                "op": "sub",
+                "rhs": {
+                  "expr": "int",
+                  "value": 1
+                }
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
       }
     ],
     "chute": [
       {
-        "weight": 1,
         "body": {
-          "op": "split",
           "axis": "y",
+          "children": [
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "body": {
+                "op": "void"
+              },
+              "op": "claim",
+              "region": "chute-way"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
           "sizes": [
             {
-              "size": "absolute",
               "blocks": {
                 "expr": "arith",
                 "lhs": {
@@ -652,10 +289,10 @@
                   "expr": "param",
                   "name": "handed/datum-y"
                 }
-              }
+              },
+              "size": "absolute"
             },
             {
-              "size": "absolute",
               "blocks": {
                 "expr": "arith",
                 "lhs": {
@@ -675,7 +312,8 @@
                   "expr": "int",
                   "value": 1
                 }
-              }
+              },
+              "size": "absolute"
             },
             {
               "size": "relative",
@@ -684,53 +322,415 @@
                 "value": 1
               }
             }
-          ],
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "core": [
+      {
+        "body": {
+          "axis": "y",
           "children": [
             {
-              "op": "fill",
-              "material": {
-                "role": "wall"
-              }
+              "op": "call",
+              "symbol": "room"
             },
             {
-              "op": "claim",
-              "region": "chute-way",
-              "body": {
-                "op": "void"
-              }
+              "op": "call",
+              "symbol": "ceiling"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
             },
             {
-              "op": "fill",
-              "material": {
-                "role": "wall"
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
               }
             }
           ]
-        }
+        },
+        "weight": 1
+      }
+    ],
+    "east_wall": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "arch"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "chute"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/seam/annex-arch/z0"
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "arith",
+                "lhs": {
+                  "expr": "arith",
+                  "lhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-arch/z1"
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-arch/z0"
+                  }
+                },
+                "op": "add",
+                "rhs": {
+                  "expr": "int",
+                  "value": 1
+                }
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "arith",
+                "lhs": {
+                  "expr": "arith",
+                  "lhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-chute/z0"
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-arch/z1"
+                  }
+                },
+                "op": "sub",
+                "rhs": {
+                  "expr": "int",
+                  "value": 1
+                }
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "arith",
+                "lhs": {
+                  "expr": "arith",
+                  "lhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-chute/z1"
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-chute/z0"
+                  }
+                },
+                "op": "add",
+                "rhs": {
+                  "expr": "int",
+                  "value": 1
+                }
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "lamp_row": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "material": {
+                "role": "lamp"
+              },
+              "op": "fill"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "repeat": true,
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "arith",
+                "lhs": {
+                  "expr": "param",
+                  "name": "lamp_period"
+                },
+                "op": "sub",
+                "rhs": {
+                  "expr": "int",
+                  "value": 1
+                }
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "mid": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "core"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "plinth": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "material": {
+                "role": "furniture"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "plinth_row": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "op": "call",
+              "symbol": "plinth"
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 2
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "room": [
+      {
+        "body": {
+          "body": {
+            "body": {
+              "axis": "x",
+              "children": [
+                {
+                  "op": "void"
+                },
+                {
+                  "op": "call",
+                  "symbol": "plinth_row"
+                },
+                {
+                  "op": "void"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 2
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            "mark": {
+              "anchor": "node-annex",
+              "at": "offset",
+              "facing": "east",
+              "x": {
+                "expr": "int",
+                "value": 2
+              },
+              "y": {
+                "expr": "int",
+                "value": 0
+              },
+              "z": {
+                "expr": "int",
+                "value": 6
+              }
+            },
+            "op": "mark"
+          },
+          "op": "claim",
+          "region": "hall"
+        },
+        "weight": 1
       }
     ]
   },
-  "contract": {
-    "entry": "hall",
-    "spaces": {
-      "hall": {
-        "envelope": "enclosed"
-      }
-    },
-    "no_body": {},
-    "edges": [
-      {
-        "a": "exterior",
-        "b": "hall",
-        "class": "walk",
-        "via": "arch-way"
-      },
-      {
-        "a": "hall",
-        "b": "exterior",
-        "class": "walk",
-        "via": "chute-way"
-      }
-    ]
-  }
+  "start": "annex",
+  "version": "1.8.0"
 }
