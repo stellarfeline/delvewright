@@ -445,7 +445,7 @@ fn light_probe_writes_estimate_method_into_metadata() {
     );
 }
 
-/// **`delve-admit` must be able to read what the generators write.**
+/// **`delvec prefab` must be able to read what the generators write.**
 ///
 /// The grammar back end (spec-0027 §2) exports `{"profile": "unmeasured"}` and
 /// no measurement, because a piece that has not been probed carries no probe

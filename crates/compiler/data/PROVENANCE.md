@@ -66,7 +66,7 @@ not third-party reconstructions.
   `minecraft:iron_chain` in 1.21.11 and kept being emitted; a structure template
   loads an unknown block as AIR, so the piece ships with the feature silently
   missing. Consumed by `delvewright_schem::blocks` (the grammar export and
-  `delve-admit audit`'s `DW0733`) and by `prefabs/invariants.rs` +
+  `delvec prefab audit`'s `DW0733`) and by `prefabs/invariants.rs` +
   `prefabs/connections.rs` (every `prefabs/*-generator` workspace,
   source-included).
   **Note on the nearest existing check**: `DW0193` validates DSL-authored block
@@ -99,7 +99,7 @@ not third-party reconstructions.
   cross-checks every derived property against `blocks-1.21.11.json` — a
   selector naming a property the registry does not define is a refusal.
   Consumed by `delvewright_schem::blocks` (`shape_carrying` /
-  `omitted_shape_carrying`), which serves `delve-admit audit` and the grammar
+  `omitted_shape_carrying`), which serves `delvec prefab audit` and the grammar
   back end's `shape-complete` gate + export refusal, and by
   `prefabs/connections.rs`, which fills the properties this table names from the
   piece's own neighbours before a generator writes its bytes.
@@ -133,7 +133,7 @@ not third-party reconstructions.
   **Why it exists**: the registry answers *does the pin have this id*, and every
   check that judges a NAME — the palette allowlist, a palette screen, a render
   surface — needs the different question *what will the pin HOLD*. Judging a
-  pre-pin template's palette as written made `delve-admit audit` contradict
+  pre-pin template's palette as written made `delvec prefab audit` contradict
   itself inside one run: `DW0734` passed `minecraft:chain` at DataVersion 2975
   because the fixer migrates it, and `DW0730` refused the identical cell in the
   next breath because `minecraft:chain` is not a name at the pin.
@@ -155,7 +155,7 @@ not third-party reconstructions.
   refuses the id and a reviewer sees a name the pin does not have. Inventing the
   pairing is the invented vanilla data the section below refuses.
   Consumed by `delvewright_dsl::blocks::BlockRegistry::loaded_id_at`, and through
-  it by `delve-admit audit`'s allowlist (`DW0730`) and pre-pin warning
+  it by `delvec prefab audit`'s allowlist (`DW0730`) and pre-pin warning
   (`DW0734`).
   **Reproduce it**: `python3 tools/extract-block-renames.py
   crates/dsl/data/block-renames-1.21.11.json`. The script reads the same mcmeta

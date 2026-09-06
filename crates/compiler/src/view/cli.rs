@@ -1,11 +1,10 @@
 //! The CPU render arms as `delvec` subcommands (ADR-0021 §1).
 //!
-//! `viewer`, `scene`, `panorama`, `contact-sheet`, `index` and `palette` used to
-//! be a second binary a creator had to obtain separately. They are here because
-//! the surface a creator installs is ONE binary — not because rendering is a
-//! compiler concern. The drivers below are the same code that ran behind
-//! `delve-render`, reading the same modules under [`crate::view`]; what changed
-//! is which executable carries them.
+//! `viewer`, `scene`, `panorama`, `contact-sheet`, `index` and `palette` are
+//! declared here and flattened into the top level of the one binary — not
+//! because rendering is a compiler concern, but because the surface a creator
+//! installs is ONE binary. The drivers below read the modules under
+//! [`crate::view`].
 //!
 //! **No cargo feature gates any of this.** A feature would ship a
 //! same-name-different-capability binary — an artifact whose name promises a
@@ -15,10 +14,7 @@
 //!
 //! The three arms that are NOT here — `piece`, `batch`, `fidelity-gate` — are
 //! the ones that mesh and rasterise through `nucleation`/`wgpu`. They live in
-//! `crates/render` and are built from a checkout (ADR-0021 §3). Keeping them out
-//! is a distribution decision and takes no capability away: the source build is
-//! the guarantee, and the skill's `Init` section builds that crate at the step
-//! that needs it.
+//! `crates/render` and mount as `delvec render …` (ADR-0023 §3).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -36,7 +32,7 @@ use crate::view::scene::{self, SceneOptions};
 use crate::view::sheet::{self, ScoreSet, SheetOptions};
 use crate::view::{cache, index, nbt, viewer};
 
-/// The options every render arm shares. On `delve-render` these were three
+/// The options every render arm shares. On `delvec render` these were three
 /// global flags; here they are declared by the arms that read them, so that
 /// `delvec build --help` does not grow a `--textures` it has no use for.
 pub struct ViewOpts {
@@ -49,7 +45,7 @@ pub struct ViewOpts {
     pub size: u32,
 }
 
-/// The default frame dimension, unchanged from `delve-render`.
+/// The default frame dimension, unchanged from `delvec render`.
 pub const DEFAULT_SIZE: u32 = 1024;
 
 #[derive(Subcommand)]
@@ -94,7 +90,7 @@ pub enum ViewCommand {
     /// ORDERS the page — it never removes a candidate (spec-0028 §3).
     ContactSheet {
         /// Directory of candidates: one subdirectory of renders per candidate
-        /// (`delve-render batch` output), or a flat directory of `.png` renders.
+        /// (`delvec render batch` output), or a flat directory of `.png` renders.
         dir: PathBuf,
         /// Output PNG. The manifest naming every cell is always written beside
         /// it as `<stem>.json` — a sheet whose ranks cannot be resolved back to
@@ -706,7 +702,7 @@ fn report_page(stats: &viewer::BuildStats, models: usize, json: bool) {
                  The pinned asset source has no definition for it. Whether a pinned \
                  SERVER loads the block is a separate question, decided by the \
                  template's own DataVersion — a pre-pin file is datafixed on load — \
-                 and `delve-admit audit` is what answers it",
+                 and `delvec prefab audit` is what answers it",
                 u.state, u.reason, u.detail, u.cells
             ),
         )

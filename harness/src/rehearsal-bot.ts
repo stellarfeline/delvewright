@@ -7,7 +7,7 @@
 //        → `/trigger dw.done` (stamp the whole proposal) → disconnect.
 //
 // Every verb mutates `dw:rehearsal` storage only; `dw.done` stamps one
-// `[DelveShot]` line per shot into the server log, which `delve-harvest` turns
+// `[DelveShot]` line per shot into the server log, which `delvec harvest` turns
 // into `rehearsal-report.json` (see validation/rehearsal-flow.sh). This bot
 // contains NO campaign knowledge — it fires fixed triggers on shot 1 and reports
 // the cell it marked so the flow script can assert the harvest matches it.

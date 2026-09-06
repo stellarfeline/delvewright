@@ -114,7 +114,7 @@ echo "==> capturing the server log"
 docker logs "$CID" > "$LOG" 2>&1
 
 echo "==> harvesting the log into $REPORT"
-cargo run -q -p delvewright-orchestrator --bin delve-harvest -- \
+cargo run -q -p delvec --bin delvec -- harvest \
   "$LOG" "$OUT/creator-datapack/layout.json" \
   -o validation/playtest-report.json --rehearsal-out "$REPORT"
 

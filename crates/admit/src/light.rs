@@ -117,7 +117,7 @@ pub const DEFAULT_DARK_THRESHOLD: i32 = 3;
 /// under the whole's roof. Probed as if it stood in open air, an emitterless
 /// detail piece measures the night sky floor at every cell and is written `lit` —
 /// a profile true of no world it will ever be placed in, which is the vacuity
-/// mode `CLAUDE.md` names, and the reason `delve-admit lighting` and `DW0210`
+/// mode `CLAUDE.md` names, and the reason `delvec prefab lighting` and `DW0210`
 /// could disagree about one piece.
 ///
 /// The piece already answers the question, and the mechanism is spec-0036's: a

@@ -188,7 +188,7 @@ rules. Silhouette complexity stays a measurement, never a gate.
 
 **What makes it impossible to skip.** Bound to events, not to a checklist,
 and the guarded event's entry points are enumerated, not the one someone
-pointed at. *The map is judged*: `delve-grammar audit --campaign-root` (run
+pointed at. *The map is judged*: `delvec grammar audit --campaign-root` (run
 by both repos' CI on every PR and push) expands every manifest entry, and
 both paths that read a program file — `--file` on every command, and the
 audit's manifest sweep — go through the one loader, so a composed document
@@ -567,7 +567,7 @@ program's restated-plan cost and are wanted, not prerequisite.
 ## 7. Acceptance criteria
 
 1. A campaign whose `zones.json` names a map program in an ordinary entry
-   has it expanded and judged by `delve-grammar audit` at the entry's region
+   has it expanded and judged by `delvec grammar audit` at the entry's region
    and seed, every composed document judged inside it; a program file no
    entry names and no document composes is an audit red naming the file;
    an unknown key in `zones.json` is a refusal naming the key. Asserted by
@@ -603,7 +603,7 @@ program's restated-plan cost and are wanted, not prerequisite.
    prefix by prefix, with the count, and `audit --campaign-root` totals it
    over the campaign corpus, stating a zero by name rather than omitting
    the line; a fixture campaign with a composing program asserts a non-zero
-   total. Not `delve-grammar coverage`: its corpus is the Rust-built
+   total. Not `delvec grammar coverage`: its corpus is the Rust-built
    library, where a document include structurally cannot occur, and
    counting campaign programs there would turn a gap into a green.
 8b. Contract adoption red demos, each half required: (a) an included

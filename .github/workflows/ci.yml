@@ -61,15 +61,7 @@ jobs:
       - uses: ./.github/actions/checkout-content
       # rust-toolchain.toml pins the channel + clippy/rustfmt components,
       # which rustup on the runner installs automatically.
-      #
-      # Two workspaces since `crates/render` was excluded from the root one
-      # (/Cargo.toml): each needs its own target dir cached, or the render steps
-      # below recompile wgpu from scratch on every run.
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            crates/render
       # THE SAME SCRIPT A PERSON RUNS. `cargo fmt --all` at the root reaches the
       # root workspace and nothing else, so the obvious local command reported
       # clean while a generator was unformatted and this job reddened the pull
@@ -80,11 +72,10 @@ jobs:
       # replaces named nine of the tree's ten. `bash tools/fmt-workspaces.sh`
       # (no flag) fixes everything this reports.
       #
-      # Still FIRST, and still before the render workspace's one named fetch:
-      # measured with an empty `CARGO_HOME` and `CARGO_NET_OFFLINE=true`, the
-      # whole sweep — the git-dependency workspace included — exits 0 and leaves
-      # that `CARGO_HOME` empty. `cargo fmt` resolves nothing, so a formatting
-      # error reds without waiting on a network reach.
+      # Still FIRST: measured with an empty `CARGO_HOME` and
+      # `CARGO_NET_OFFLINE=true`, the whole sweep exits 0 and leaves that
+      # `CARGO_HOME` empty. `cargo fmt` resolves nothing, so a formatting error
+      # reds without waiting on a network reach.
       - name: cargo fmt --check (every workspace in the tree)
         run: bash tools/fmt-workspaces.sh --check
       - name: cargo clippy -D warnings
@@ -116,36 +107,8 @@ jobs:
       # above went red.
       - name: grammar demonstration coverage (no IR construct is undemonstrated)
         if: always()
-        run: cargo run --locked -q -p delvewright-grammar --bin delve-grammar -- coverage
+        run: cargo run --locked -q -p delvec --bin delvec -- grammar coverage
 
-      # `crates/render` is its own workspace so that its git dependency stops
-      # being a precondition for every cargo command in the repo (/Cargo.toml).
-      # Excluding it from `--workspace` would have taken its coverage with it, so
-      # the same three checks run against its manifest — this is the ONLY place in
-      # CI that builds the render crate, and the only place that needs its
-      # dependency. Its `fmt` is not here: it is one of the nine workspaces the
-      # sweep above covers, which still puts it before the fetch below, and still
-      # for the reason this comment gave — rustfmt resolves nothing, so a
-      # formatting error reds without waiting on a network reach.
-      # The one git fetch in this repo's CI, in a step that says so. Nucleation is
-      # pinned by rev, so a warm rust-cache satisfies this without touching the
-      # network at all (measured: 0.47s and zero `Updating git repository` lines
-      # against a populated db); a cold cache clones 227 MB. Either way it happens
-      # HERE, named, and never inside a step named for clippy or for a test —
-      # which is what a docs-only PR hit as a raw TLS error in a step called
-      # "build the hello-world delve output".
-      - name: fetch — the render workspace's pinned git dependency
-        run: cargo fetch --locked --manifest-path crates/render/Cargo.toml
-      # BINDING (CLAUDE.md: a green gate that binds to nothing is VACUOUS).
-      # `--offline` is what makes the fetch step above load-bearing: if it did not
-      # populate the cache, these red immediately instead of quietly re-fetching
-      # and leaving the job as exposed as it was while green.
-      - name: cargo clippy -D warnings (render workspace)
-        run: |
-          cargo clippy --locked --offline --manifest-path crates/render/Cargo.toml \
-            --all-targets -- -D warnings
-      - name: cargo test (render workspace)
-        run: cargo test --locked --offline --manifest-path crates/render/Cargo.toml
       # The viewer's interactive layer is JavaScript, so `cargo test` cannot run
       # it — and for as long as that was the whole story the camera had NO
       # executable coverage at all. A and D shipped swapped; the mapping was
@@ -302,7 +265,7 @@ jobs:
             determinism-macos.txt
 
   # ADR-0017: the release shelf must stay buildable as the repo grows, and the
-  # way it silently stops is a new dependency that does not compile for musl,
+  # way it silently stops is a new dependency that does not compile for gnu,
   # msvc or darwin. Without this, that breaks at RELEASE time — after the tag is
   # pushed — which is the worst possible moment to find out. `cargo check`
   # (rather than a full link) so ONE runner covers all five targets: rustup ships
@@ -495,13 +458,12 @@ jobs:
         run: python3 tools/check-dw-codes.py
       # The step above proves a diagnostic's CODE exists, is documented, is
       # unique and is asserted by a test. Nothing proved anything about the
-      # SENTENCE, and `delve-grammar expand` refused an author's export with "…
+      # SENTENCE, and `delvec grammar expand` refused an author's export with "…
       # would put a  on disk …" — a dropped noun, sitting across a `\`-newline
       # continuation so no line of the file contained the gap. It survived every
       # required status check, because the message is the one part of a
       # diagnostic nothing ever read. This renders every message the source can
-      # produce — including `crates/render`, a workspace of its own that no
-      # `cargo test` here builds — and refuses a gap in one. It states its
+      # produce, across every crate, and refuses a gap in one. It states its
       # binding count and names every expression it could not render, so a
       # message out of reach is a line in the log, never a silent pass.
       # Deterministic, offline, stdlib-only python3.
@@ -724,21 +686,6 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: a change that adds author-facing surface adds its demo row
         run: python3 tools/check-demo-levels.py
-      # A required status check answers for the uptime of every host it reaches,
-      # and a git dependency is the reach nothing in cargo's surface lets a job
-      # decline: it is cloned during RESOLUTION of the workspace that declares it,
-      # a workspace resolves all its members, and neither `-p <crate>` nor
-      # `--locked` nor `optional` narrows that (all three measured). So one git
-      # dependency put `cargo run -p delvec` — five required jobs, none of which
-      # build the crate that declared it — behind 227 MB of clone from two
-      # repositories, and a transient TLS failure there reddened `tier 2` on a
-      # docs-only PR. Same class as this job's own `lychee --offline` and as the
-      # server-bootstrap overlay's single Mojang fetch, held as a gate rather
-      # than as three separate lessons. States its binding count; an allowlisted
-      # lock that has stopped carrying one is a finding too. Deterministic,
-      # offline, stdlib-only python3.
-      - name: no workspace resolves a git dependency it does not quarantine
-        run: python3 tools/check-workspace-git-deps.py
       # Isolation by construction (validation/README.md): container
       # names and host ports are Docker-GLOBAL — the only two things `docker
       # compose -p <project>` does not isolate — so validation/compose.yaml
@@ -758,7 +705,7 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: no early-exit consumer on the right of a pipe (SIGPIPE + pipefail)
         run: python3 tools/check-shell-pipe-shortcircuit.py
-      # A command whose response nobody reads cannot fail. `delve-admit`'s gallery
+      # A command whose response nobody reads cannot fail. `delvec prefab`'s gallery
       # emitted four legacy camelCase gamerules and a `text_opacity:255b`; 1.21.11
       # refused `admit:load` and `admit:finish` outright, so the gallery world came
       # up with no objectives, nothing forceloaded and nothing placed — and every
@@ -979,8 +926,8 @@ jobs:
       # see its header for why that is not a skip.
       - name: every zone program expands and judges green
         run: |
-          cargo run --locked -q -p delvewright-grammar --bin delve-grammar -- \
-            audit --library --campaign-root campaigns \
+          cargo run --locked -q -p delvec --bin delvec -- \
+            grammar audit --library --campaign-root campaigns \
             --exclusions .github/zone-audit-exclusions.json
 
   # ----------------------------------------------------------------- gallery --
@@ -1293,7 +1240,7 @@ jobs:
       - name: build the cast-ledger delve output (spec-0020)
         run: |
           target/debug/delvec \
-            build crates/compiler/tests/fixtures/cast-ledger \
+            build crates/delvec/tests/fixtures/cast-ledger \
             -o validation/delve-output-cast --prefabs campaigns/prefabs
 
       - name: PackTest suite — cast ledger (per-clause ladder, bark delivery, explicit none)
@@ -1313,7 +1260,7 @@ jobs:
       - name: build the cast-state-ladder delve output (state-only siblings)
         run: |
           target/debug/delvec \
-            build crates/compiler/tests/fixtures/cast-state-ladder \
+            build crates/delvec/tests/fixtures/cast-state-ladder \
             -o validation/delve-output-caststate --prefabs campaigns/prefabs
 
       - name: PackTest suite — cast ladder distinguishes state-only siblings
@@ -1377,7 +1324,7 @@ jobs:
       - name: build the souls-bonfire delve output (spec-0016 §1)
         run: |
           target/debug/delvec \
-            build crates/compiler/tests/fixtures/souls-bonfire \
+            build crates/delvec/tests/fixtures/souls-bonfire \
             -o validation/delve-output-bonfire --prefabs campaigns/prefabs
 
       - name: PackTest suite — souls-bonfire (rest, re-seat, stationed re-seat)
@@ -1397,7 +1344,7 @@ jobs:
       - name: build the souls-td-lanes delve output (spec-0016 §6)
         run: |
           target/debug/delvec \
-            build crates/compiler/tests/fixtures/souls-td-lanes \
+            build crates/delvec/tests/fixtures/souls-td-lanes \
             -o validation/delve-output-lanes --prefabs campaigns/prefabs
 
       - name: PackTest suite — souls-td-lanes (patrol NBT, march, release, re-seat)
@@ -1433,7 +1380,7 @@ jobs:
       - name: build the lethal-volume delve output (spec-0031)
         run: |
           target/debug/delvec \
-            build crates/compiler/tests/fixtures/lethal-volume \
+            build crates/delvec/tests/fixtures/lethal-volume \
             -o validation/delve-output-lethal --prefabs campaigns/prefabs
 
       - name: PackTest suite — lethal-volume (a body enters the box and dies)
@@ -1458,7 +1405,7 @@ jobs:
       - name: build the teleport-volume delve output (spec-0031)
         run: |
           target/debug/delvec \
-            build crates/compiler/tests/fixtures/teleport-volume \
+            build crates/delvec/tests/fixtures/teleport-volume \
             -o validation/delve-output-teleport --prefabs campaigns/prefabs
 
       - name: PackTest suite — teleport-volume (everything in the box moves)
@@ -1480,7 +1427,7 @@ jobs:
       - name: build the economy delve output (spec-0032)
         run: |
           target/debug/delvec \
-            build crates/compiler/tests/fixtures/economy \
+            build crates/delvec/tests/fixtures/economy \
             -o validation/delve-output-economy --prefabs campaigns/prefabs
 
       - name: PackTest suite — economy (a purchase debits; a stake gives back)
@@ -1524,7 +1471,7 @@ jobs:
       - name: build the lift delve output (spec-0031 AC9)
         run: |
           target/debug/delvec \
-            build crates/compiler/tests/fixtures/lift \
+            build crates/delvec/tests/fixtures/lift \
             -o validation/delve-output-lift --prefabs campaigns/prefabs
 
       - name: PackTest suite — lift (both rides move everything in the car)
@@ -1560,7 +1507,7 @@ jobs:
       - name: build the lift-stake delve output
         run: |
           cargo run -p delvec --bin delvec -- \
-            build crates/compiler/tests/fixtures/lift-stake \
+            build crates/delvec/tests/fixtures/lift-stake \
             -o validation/delve-output-lift-stake --prefabs campaigns/prefabs
 
       - name: PackTest suite — lift-stake (the ride leaves the wager standing)
@@ -1571,7 +1518,7 @@ jobs:
       - name: build the souls-timed-gate-disarm delve output
         run: |
           target/debug/delvec \
-            build crates/compiler/tests/fixtures/souls-timed-gate-disarm \
+            build crates/delvec/tests/fixtures/souls-timed-gate-disarm \
             -o validation/delve-output-tgdisarm --prefabs campaigns/prefabs
 
       - name: PackTest suite — souls-timed-gate-disarm (jam, then no re-seal)

@@ -759,7 +759,7 @@ fn sturdy_for_connection(
 /// — `DW0735`, at the emitter rather than at admission.
 ///
 /// The rule already exists at two later gates, and both of them bind to one
-/// moment: `delve-admit audit` judges a piece as it *enters* the library, and
+/// moment: `delvec prefab audit` judges a piece as it *enters* the library, and
 /// the library sweep re-judges what is already in it. Neither reaches a piece
 /// between the two, which is a generator's entire output. This is the same
 /// verdict where the bytes are produced, so a new placement path cannot ship a

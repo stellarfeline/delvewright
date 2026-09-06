@@ -25,7 +25,7 @@
 //!
 //! # The contract, taken from the merged lift rather than invented
 //!
-//! `crates/compiler/tests/fixtures/lift` is the shipped lift, and every cell it
+//! `crates/delvec/tests/fixtures/lift` is the shipped lift, and every cell it
 //! needs is read off **one anchor per floor**, four ways: `fill-region {anchor,
 //! extent [1,0,1]}` builds the car's deck, `clear-region` on the same box takes
 //! the old one away, `teleport {to: anchor}` puts the riders on it, and

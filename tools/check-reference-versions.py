@@ -29,8 +29,9 @@ reference doc's.
 Every claim below is bound by EQUALITY, not by "at least" — a claim may be
 neither stale-older nor prematurely-newer:
 
-- `delvec <X>`  == `crates/compiler/Cargo.toml` `[package] version`
-  (the same constant the skill gate calls the engine version)
+- `delvec <X>`  == the root `Cargo.toml` `[workspace.package] version`, which
+  every engine crate inherits (the same constant the skill gate calls the
+  engine version)
 - `dsl <Y>`     == `crates/dsl/src/envelope.rs` `SUPPORTED_DSL_VERSION`
 - `mc <Z>`      == `versions.toml` `[minecraft] version`
 - the bold supported-`dsl_version` list == `crates/dsl/src/envelope.rs`
@@ -114,7 +115,7 @@ from versions import PinError, minecraft_version  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOC = REPO_ROOT / "docs" / "reference" / "compiler.md"
-COMPILER_CARGO_TOML = REPO_ROOT / "crates" / "compiler" / "Cargo.toml"
+ROOT_CARGO_TOML = REPO_ROOT / "Cargo.toml"
 ENVELOPE_RS = REPO_ROOT / "crates" / "dsl" / "src" / "envelope.rs"
 VERSIONS_TOML = REPO_ROOT / "versions.toml"
 
@@ -132,6 +133,8 @@ DOC_SUPPORTED_RE = re.compile(
 
 # `[package]` ... `version = "1.1.0"` — first `version =` at line start wins,
 # which is the package version in both crate manifests here.
+# The engine version, under `[workspace.package]` — the ONLY `version =` line
+# the root manifest carries at column zero.
 CARGO_VERSION_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"')
 
 RS_SUPPORTED_ONE_RE = re.compile(
@@ -370,7 +373,7 @@ def check_published_pages(
 
 
 def main() -> int:
-    for p in (DOC, COMPILER_CARGO_TOML, ENVELOPE_RS, VERSIONS_TOML):
+    for p in (DOC, ROOT_CARGO_TOML, ENVELOPE_RS, VERSIONS_TOML):
         if not p.is_file():
             sys.stderr.write(f"error: {p} not found (run from the repo root)\n")
             return 2
@@ -396,9 +399,9 @@ def main() -> int:
         )
     doc_supported = BACKTICKED_RE.findall(m.group(1))
 
-    m = CARGO_VERSION_RE.search(COMPILER_CARGO_TOML.read_text(encoding="utf-8"))
+    m = CARGO_VERSION_RE.search(ROOT_CARGO_TOML.read_text(encoding="utf-8"))
     if m is None:
-        return fail_shape("a `version = \"…\"` line", COMPILER_CARGO_TOML,
+        return fail_shape("a `version = \"…\"` line", ROOT_CARGO_TOML,
                           "CARGO_VERSION_RE")
     real_delvec = m.group(1)
 
@@ -435,7 +438,7 @@ def main() -> int:
 
     problems: list[str] = []
     for label, claimed, real, source in (
-        ("delvec", doc_delvec, real_delvec, "crates/compiler/Cargo.toml [package] version"),
+        ("delvec", doc_delvec, real_delvec, "Cargo.toml [workspace.package] version"),
         ("dsl", doc_dsl, real_dsl, "crates/dsl/src/envelope.rs SUPPORTED_DSL_VERSION"),
         ("mc", doc_mc, real_mc, "versions.toml [minecraft] version"),
     ):

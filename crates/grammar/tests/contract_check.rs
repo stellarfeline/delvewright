@@ -9,7 +9,7 @@
 //!
 //! The models are built cell by cell rather than derived from grammar programs.
 //! That is deliberate: the checker's input is (block grid, resolved contract),
-//! the same pair `delve-admit` hands it for a piece nobody generated, so the
+//! the same pair `delvec prefab` hands it for a piece nobody generated, so the
 //! fixtures are written in that vocabulary and not in the one door's. The
 //! corpus example goes through the other door end to end in `tests/contract.rs`
 //! and through the CLI in `tests/cli.rs`.

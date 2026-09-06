@@ -7,7 +7,7 @@ one of those gates is satisfied by a rule whose message reads
 
     ... so freezing it would put a  on disk whose metadata describes ...
 
-which is what `delve-grammar expand` printed at the moment it refused an author's
+which is what `delvec grammar expand` printed at the moment it refused an author's
 export. The dropped noun and the doubled space it left behind survived review,
 `cargo test`, `clippy` and twelve required status checks, because the only thing
 anyone ever compared was `DW`+four digits.
@@ -20,9 +20,7 @@ the same way the code is checked next door.
 ## hole in the gate, not a message that is fine)
 
 Message text reaches a reader through three site shapes, and they are found by
-walking `crates/*/src/**/*.rs` as source — which is also how `crates/render`
-stays covered, it being a workspace of its own that no `cargo test` at the repo
-root ever builds:
+walking `crates/*/src/**/*.rs` as source, every crate of the workspace alike:
 
 1. the last argument of `Diagnostic::error(...)` / `Diagnostic::warning(...)` —
    the compiler's 4-arg form and the schem/admit/render 2-arg form both end with
@@ -37,8 +35,8 @@ root ever builds:
 4. the print family (`eprintln!` / `println!` / `eprint!` / `print!`). A CLI's
    refusal is the message an author reads at the moment their run stops, whether it
    travelled through a `Diagnostic` or straight to stderr, and it is the ONLY way
-   `delve-orchestrator` refuses anything — key the gate to the `Diagnostic` type
-   and that binary sits at a binding count of zero while the gate reports a pass.
+   `delvec harvest` refuses anything — key the gate to the `Diagnostic` type
+   and that surface sits at a binding count of zero while the gate reports a pass.
 
 Each site's message expression is reduced to its **format template(s)**: the
 literal of a `format!` / `write!` / `writeln!`, or a bare literal argument. Two
@@ -642,7 +640,7 @@ def sites(
 
     # 4. The print family. A CLI's refusal is the message an author reads at the
     #    moment their run stops, whether it travelled through a `Diagnostic` or
-    #    straight to stderr — `delve-orchestrator` refuses ONLY this way, and
+    #    straight to stderr — `delvec harvest` refuses ONLY this way, and
     #    keying the gate to the `Diagnostic` type would have left that binary at a
     #    binding count of zero while reporting a pass.
     for m in PRINT_MACRO_RE.finditer(src.masked):
