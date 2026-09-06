@@ -8585,8 +8585,16 @@ fn npc_summon_commands(
         .iter()
         .find(|n| n.id.as_str() == npc.npc_id);
     let anchor = dsl_npc.map(|n| n.anchor.as_str()).unwrap_or("");
-    let (pos, facing) = match plan.anchors.get(&(area.to_string(), anchor.to_string())) {
-        Some(ResolvedAnchor::Point { pos, facing }) => (*pos, facing.as_deref()),
+    // **The one authority answers this**, as `BodyScope::Declared` — the same
+    // function the cast ledger's per-beat station and `DW0461` ask. A private
+    // `(area, name)` lookup here is how the world-init summon and the plan came
+    // to describe two buildings 256 blocks apart in one build.
+    let station = plan::body_station(&plan.anchors, plan::BodyScope::Declared { area }, anchor);
+    let (pos, facing) = match &station {
+        plan::BodyStation::At {
+            anchor: ResolvedAnchor::Point { pos, facing },
+            ..
+        } => (*pos, facing.as_deref()),
         _ => ([0, plan::BASE_Y, 0], None),
     };
     let name = dsl_npc.map(|n| n.name.as_str()).unwrap_or("NPC");

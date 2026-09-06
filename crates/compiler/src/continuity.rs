@@ -57,12 +57,27 @@ pub const DW_NPC_CONTINUITY: DwCode = DwCode::new("DW0351", ExitTier::Build);
 struct NpcState {
     /// The stage-2 declared anchor — where every `spawn-npc` places the body.
     declared_anchor: String,
-    /// `Some(anchor)` while the NPC is on stage (in the world) at that anchor.
-    on_stage: Option<String>,
+    /// The stage-2 declared area — the scope [`NpcState::declared_anchor`] is an
+    /// identity in, and the one a `spawn-npc` re-materializes into.
+    home_area: String,
+    /// `Some(place)` while the NPC is on stage (in the world) there.
+    on_stage: Option<Staged>,
     /// Where the NPC last stood when it left the stage (despawn), if ever.
     last_staged: Option<String>,
     /// Whether the NPC has ever been on stage (init or a previous spawn).
     ever_staged: bool,
+}
+
+/// One staged position: the anchor name **and the area that name is an identity
+/// in**. An anchor name alone names a place only where no second area declares
+/// it, so the replay records the scope it set the name in and hands it on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Staged {
+    /// The anchor name the effect history last set.
+    pub anchor: String,
+    /// The area that name was set in: the NPC's own area at world init and for
+    /// a `spawn-npc`, the beat's area for a `move-npc`.
+    pub area: String,
 }
 
 /// Where the replayed effect history leaves an NPC at some point on the
@@ -71,8 +86,8 @@ struct NpcState {
 /// names, and `Indeterminate` rather than a guess.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NpcWhere {
-    /// On stage at this anchor.
-    At(String),
+    /// On stage at this place — the anchor name **and the area it names it in**.
+    At(Staged),
     /// Not in the world (despawned, or deferred and not yet spawned).
     Offstage,
     /// The history does not determine it: this NPC's lifecycle is driven from a
@@ -80,6 +95,18 @@ pub enum NpcWhere {
     /// static position at all (an environment trigger, a reaction bundle). The
     /// payload names the reason, for the diagnostic that reports it.
     Indeterminate(&'static str),
+}
+
+impl std::fmt::Display for Staged {
+    /// `anchor/x` in one area, `anchor/x` (in `area/y`) where the area is known.
+    /// A refusal that prints only the name is the refusal that could not tell
+    /// two buildings apart, so the area travels with it into every message.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.area.is_empty() {
+            return f.write_str(&self.anchor);
+        }
+        write!(f, "{}` in area `{}", self.anchor, self.area)
+    }
 }
 
 /// One full replay of the campaign timeline: the `DW0351` findings, plus a
@@ -113,12 +140,28 @@ pub fn replay(c: &Campaign) -> Timeline {
             n.id.as_str().to_string(),
             NpcState {
                 declared_anchor: n.anchor.as_str().to_string(),
-                on_stage: (!n.deferred).then(|| n.anchor.as_str().to_string()),
+                home_area: n.area.as_str().to_string(),
+                on_stage: (!n.deferred).then(|| Staged {
+                    anchor: n.anchor.as_str().to_string(),
+                    area: n.area.as_str().to_string(),
+                }),
                 last_staged: None,
                 ever_staged: !n.deferred,
             },
         );
     }
+
+    // The area each quest plays in: the scope a `move-npc` inside it stations a
+    // body in, exactly as the cast ledger's own station resolves. Read once,
+    // from the quest plan, so the replay and `plan::body_station` cannot
+    // disagree about which building an effect put somebody in.
+    let quest_area: BTreeMap<&str, &str> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .collect();
 
     // Replay the quest-DAG linearization.
     for q in quests_in_dag_order(c) {
@@ -132,7 +175,7 @@ pub fn replay(c: &Campaign) -> Timeline {
                     let w = match excluded.get(npc.as_str()) {
                         Some(reason) => NpcWhere::Indeterminate(reason),
                         None => match &st.on_stage {
-                            Some(a) => NpcWhere::At(a.clone()),
+                            Some(place) => NpcWhere::At(place.clone()),
                             None => NpcWhere::Offstage,
                         },
                     };
@@ -147,6 +190,7 @@ pub fn replay(c: &Campaign) -> Timeline {
             .iter()
             .position(|x| x.id.as_str() == q.id.as_str())
             .unwrap_or(0);
+        let here_area = quest_area.get(q.id.as_str()).copied().unwrap_or("");
         let objectives = objectives_in_after_order(&q.objectives);
         let mut last_scene: Option<String> = None;
         for obj in &objectives {
@@ -161,6 +205,7 @@ pub fn replay(c: &Campaign) -> Timeline {
                     &path,
                     scene.as_deref(),
                     None,
+                    here_area,
                     &excluded,
                     &mut state,
                     &mut diags,
@@ -175,6 +220,7 @@ pub fn replay(c: &Campaign) -> Timeline {
             &format!("/content/quests/{qi}/on_complete"),
             last_scene.as_deref(),
             None,
+            here_area,
             &excluded,
             &mut state,
             &mut diags,
@@ -203,6 +249,7 @@ fn walk_bundle(
     path: &str,
     scene: Option<&str>,
     covered_by_arrival_at: Option<&str>,
+    here_area: &str,
     excluded: &BTreeMap<String, &'static str>,
     state: &mut BTreeMap<String, NpcState>,
     diags: &mut Vec<Diagnostic>,
@@ -217,6 +264,7 @@ fn walk_bundle(
                         &format!("{epath}/steps/{s}/effects"),
                         scene,
                         None,
+                        here_area,
                         excluded,
                         state,
                         diags,
@@ -233,6 +281,7 @@ fn walk_bundle(
                     &format!("{epath}/on_arrive"),
                     Some(to_anchor.as_str()),
                     Some(to_anchor.as_str()),
+                    here_area,
                     excluded,
                     state,
                     diags,
@@ -248,13 +297,17 @@ fn walk_bundle(
                     && let Some(st) = state.get_mut(npc.as_str())
                     && st.on_stage.is_some()
                 {
-                    st.on_stage = Some(to_anchor.as_str().to_string());
+                    st.on_stage = Some(Staged {
+                        anchor: to_anchor.as_str().to_string(),
+                        area: here_area.to_string(),
+                    });
                 }
                 walk_bundle(
                     on_arrive,
                     &format!("{epath}/on_arrive"),
                     Some(to_anchor.as_str()),
                     Some(to_anchor.as_str()),
+                    here_area,
                     excluded,
                     state,
                     diags,
@@ -271,7 +324,7 @@ fn walk_bundle(
                     continue; // already off stage — an idempotent cleanup
                 };
                 if let Some(scene) = scene
-                    && scene != loc
+                    && scene != loc.anchor
                 {
                     diags.push(Diagnostic::warning(
                         DW_NPC_CONTINUITY,
@@ -283,11 +336,12 @@ fn walk_bundle(
                              `{scene}` while its body vanishes, unseen, at `{loc}`. Walk it into \
                              the scene first (`move-npc` to `{scene}` before this beat), despawn \
                              it from a beat staged at `{loc}`, or accept the off-screen exit with \
-                             explicit narrative cover"
+                             explicit narrative cover",
+                            loc = loc.anchor
                         ),
                     ));
                 }
-                st.last_staged = Some(loc);
+                st.last_staged = Some(loc.anchor);
             }
             QuestEffect::SpawnNpc { npc, .. } => {
                 if excluded.contains_key(npc.as_str()) {
@@ -333,7 +387,10 @@ fn walk_bundle(
                         ),
                     ));
                 }
-                st.on_stage = Some(anchor);
+                st.on_stage = Some(Staged {
+                    area: st.home_area.clone(),
+                    anchor,
+                });
                 st.ever_staged = true;
             }
             // Reaction bundles fire at unknowable times — do not descend; any NPC
@@ -498,7 +555,10 @@ fn scene_anchor(obj: &Objective, state: &BTreeMap<String, NpcState>) -> Option<S
         | Objective::Collect { anchor, .. }
         | Objective::Interact { anchor, .. } => Some(anchor.as_str().to_string()),
         Objective::Kill { .. } => None, // wave anchors resolve per campaign; keep symbolic
-        Objective::TalkTo { npc, .. } => state.get(npc.as_str()).and_then(|s| s.on_stage.clone()),
+        Objective::TalkTo { npc, .. } => state
+            .get(npc.as_str())
+            .and_then(|s| s.on_stage.as_ref())
+            .map(|p| p.anchor.clone()),
     }
 }
 

@@ -45,7 +45,10 @@ const NAME: &str = "anchor/keeper-stand";
 /// declares [`NAME`]; `prefab/keep-room-small-a` does not. So the perturbed tree
 /// has TWO areas providing it and the control has one — and nothing else about
 /// the two trees differs.
-fn fixture(tag: &str, annex_provides_the_name: bool) -> std::path::PathBuf {
+/// `beat_in_annex: false` leaves the beat in `area/keep` — the area the Keeper
+/// is declared in and stands in — so the two areas can both provide the name
+/// without the ledger row claiming a body that is somewhere else.
+fn fixture(tag: &str, annex_provides_the_name: bool, beat_in_annex: bool) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("dw-anchor-scope-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(
@@ -101,7 +104,9 @@ fn fixture(tag: &str, annex_provides_the_name: bool) -> std::path::PathBuf {
         let quests = p["content"]["quests"].as_array_mut().expect("quests[]");
         for q in quests.iter_mut() {
             if q["id"] == "quest/ask" {
-                q["area"] = json!("area/annex");
+                if beat_in_annex {
+                    q["area"] = json!("area/annex");
+                }
                 q["depends_on"] = json!(["quest/arrive"]);
             }
         }
@@ -120,7 +125,17 @@ fn fixture(tag: &str, annex_provides_the_name: bool) -> std::path::PathBuf {
 /// Build the fixture's plan and hand it to `f`. A closure because `Plan` borrows
 /// the campaign it was planned from.
 fn with_plan<T>(tag: &str, annex_provides: bool, f: impl FnOnce(&Plan) -> T) -> T {
-    let dir = fixture(tag, annex_provides);
+    with_plan_at(tag, annex_provides, true, f)
+}
+
+/// [`with_plan`] with control over which area the beat plays in.
+fn with_plan_at<T>(
+    tag: &str,
+    annex_provides: bool,
+    beat_in_annex: bool,
+    f: impl FnOnce(&Plan) -> T,
+) -> T {
+    let dir = fixture(tag, annex_provides, beat_in_annex);
     let loaded = load_campaign_dir(&dir).expect("fixture campaign loads");
     let campaign = parse_campaign(&loaded.raw).expect("fixture campaign parses");
     let reg = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("library loads");
@@ -156,28 +171,36 @@ fn talk_pos(plan: &Plan) -> [i32; 3] {
         .expect("the ask beat is a talk-to step")
 }
 
-/// **The repair.** Two areas provide the name. The beat is planned in
-/// `area/annex`, so that is the building it means — not `area/keep`, which is
-/// merely where the NPC was declared and merely what sorts first.
+/// **The repair, on a beat the body is actually at.** Two areas provide the
+/// name and the beat plays in `area/keep` — where `npc/keeper` is declared and
+/// where the effect history leaves him. The row therefore resolves in the
+/// beat's own area rather than by whichever area id sorts first, and the
+/// assertion is against that area's own cell rather than against *not the other
+/// one*, because a compiler that resolved to nothing would satisfy the weaker
+/// form.
 ///
-/// Asserted against the annex's own cell rather than against *not the keep cell*,
-/// because a compiler that resolved to nothing would satisfy the weaker form.
+/// The beat used to be planned in `area/annex` here, which made this the
+/// assertion that a cast row may move a body the story never moves. It may not:
+/// that configuration is `DW0461` (`cast_station_place.rs`), because the
+/// datapack summons the body in one building while the row stations it in
+/// another. What the beat's area still wins is the NAME.
 #[test]
 fn a_cast_beat_resolves_in_the_area_the_beat_plays_in() {
-    with_plan("both", true, |plan| {
+    with_plan_at("both", true, false, |plan| {
         let annex = at(plan, "area/annex").expect("the annex provides the name when perturbed");
         let keep = at(plan, "area/keep").expect("the keep declares it too");
         // Non-vacuity, in the test that depends on it: if the two areas answered
-        // alike, the assertion below would pass on the unrepaired compiler.
+        // alike, the assertion below would pass on a compiler that had thrown
+        // the area away.
         assert_ne!(
             annex, keep,
             "the fixture is only a test of scope if the two areas resolve differently"
         );
         assert_eq!(
             talk_pos(plan),
-            annex,
-            "the beat plays in `area/annex` and that area provides the name, so the body \
-             stands there — not in the NPC's home area, and not in whichever id sorts first"
+            keep,
+            "the beat plays in `area/keep` and that area provides the name, so the body stands \
+             there — not in `area/annex`, which provides the name too"
         );
     });
 }
@@ -311,8 +334,10 @@ fn a_reference_no_scope_settles_is_dw0859() {
 /// never asked; a constant here would be the vacuity the count exists to expose.
 #[test]
 fn the_provider_count_is_measured_not_asserted() {
-    let two = with_plan("count-two", true, |plan| plan.anchors.providers(NAME).len());
-    let one = with_plan("count-one", false, |plan| {
+    let two = with_plan_at("count-two", true, false, |plan| {
+        plan.anchors.providers(NAME).len()
+    });
+    let one = with_plan_at("count-one", false, false, |plan| {
         plan.anchors.providers(NAME).len()
     });
     assert_eq!(
