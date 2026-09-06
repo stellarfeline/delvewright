@@ -97,17 +97,17 @@ impl std::fmt::Display for ParseError {
 }
 
 /// `DW0770`: authored JSON that is not valid JSON (`delvec fmt`).
-pub const DW_FMT_PARSE: DwCode = DwCode::every_version("DW0770", ExitTier::Build);
+pub const DW_FMT_PARSE: DwCode = DwCode::new("DW0770", ExitTier::Build);
 /// `DW0771`: a duplicate object key in authored JSON (`delvec fmt`).
-pub const DW_FMT_DUPLICATE_KEY: DwCode = DwCode::every_version("DW0771", ExitTier::Build);
+pub const DW_FMT_DUPLICATE_KEY: DwCode = DwCode::new("DW0771", ExitTier::Build);
 /// `DW0772`: the formatter's own output is not equivalent to its input —
 /// internal error, nothing is written (`delvec fmt`).
-pub const DW_FMT_NOT_EQUIVALENT: DwCode = DwCode::every_version("DW0772", ExitTier::Build);
+pub const DW_FMT_NOT_EQUIVALENT: DwCode = DwCode::new("DW0772", ExitTier::Build);
 /// `DW0773`: a file is not in canonical form (`delvec fmt --check`).
-pub const DW_FMT_UNFORMATTED: DwCode = DwCode::every_version("DW0773", ExitTier::Build);
+pub const DW_FMT_UNFORMATTED: DwCode = DwCode::new("DW0773", ExitTier::Build);
 /// `DW0774`: `delvec fmt` matched no files — a formatter or a check that binds
 /// to nothing is vacuous, not a pass (CLAUDE.md).
-pub const DW_FMT_NO_BINDING: DwCode = DwCode::every_version("DW0774", ExitTier::Build);
+pub const DW_FMT_NO_BINDING: DwCode = DwCode::new("DW0774", ExitTier::Build);
 
 // ---------------------------------------------------------------- parsing --
 

@@ -45,7 +45,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 fn quests_doc(traps: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -82,7 +82,7 @@ const TRAP_SEALS_THEN_WALKS: &str = r#"{
   "trigger": "trapped-chest",
   "lethality": "harmful",
   "payload": [
-    { "type": "close-gate", "anchor": "anchor/door" },
+    { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
     { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" }
   ]
 }"#;
@@ -98,7 +98,7 @@ const TRAP_WALKS_THEN_SEALS: &str = r#"{
   "lethality": "harmful",
   "payload": [
     { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
-    { "type": "close-gate", "anchor": "anchor/door" }
+    { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." }
   ]
 }"#;
 
@@ -108,7 +108,7 @@ const TRAP_WALKS_THEN_SEALS: &str = r#"{
 /// but the bundle is a plain `Vec<QuestEffect>` and is really lowered, into
 /// `cp_on_respawn_<i>`.
 const DIALOGUE_SEALS_THEN_WALKS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -122,7 +122,7 @@ const DIALOGUE_SEALS_THEN_WALKS: &str = r#"{
                 { "type": "complete-objective", "objective": "obj/talk" },
                 { "type": "set-checkpoint", "anchor": "anchor/exit",
                   "on_respawn": [
-                    { "type": "close-gate", "anchor": "anchor/door" },
+                    { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
                     { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" }
                   ] }
               ] }
@@ -142,9 +142,9 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: quests.to_string(),
+        quests: common::declared_quests_doc(quests, &common::hello_world_dir()),
         dialogue: dialogue
-            .map(str::to_string)
+            .map(common::declared_dialogue_doc)
             .unwrap_or_else(|| read_hw("dialogue.json")),
         world_edits: None,
         geometry_brief: None,
@@ -164,7 +164,7 @@ fn prefabs() -> PrefabRegistry {
 fn assert_validates(c: &Campaign) {
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let d = common::fenced_diagnostics(c, &items, &prefabs(), &entities);
+    let d = common::validation_diagnostics(c, &items, &prefabs(), &entities);
     assert!(d.is_empty(), "fixture must validate cleanly: {d:#?}");
 }
 
@@ -292,7 +292,7 @@ fn a_trap_payload_walk_is_planned_and_emitted() {
 /// whose text names its root, so the walk's own output states which roots it
 /// reached.
 const FIVE_ROOT_QUESTS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -329,7 +329,7 @@ const FIVE_ROOT_QUESTS: &str = r#"{
 }"#;
 
 const FIVE_ROOT_DIALOGUE: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {

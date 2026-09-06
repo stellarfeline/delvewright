@@ -19,7 +19,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 fn quests_doc(on_complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -53,7 +53,7 @@ fn parse_hw(quests: &str) -> Campaign {
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: quests.to_string(),
+        quests: common::declared_quests_doc(quests, &common::hello_world_dir()),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,
@@ -109,7 +109,7 @@ fn all_functions(out: &BuildOutput) -> String {
 #[test]
 fn close_gate_with_declared_block_validates_clean() {
     let c = parse_hw(&quests_doc(
-        r#"{ "type": "close-gate", "anchor": "anchor/door" },
+        r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
            { "type": "campaign-complete" }"#,
     ));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -139,7 +139,7 @@ fn close_gate_on_blockless_gate_is_dw0343() {
     std::fs::write(&hello, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
 
     let c = parse_hw(&quests_doc(
-        r#"{ "type": "close-gate", "anchor": "anchor/door" },
+        r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
            { "type": "campaign-complete" }"#,
     ));
     let prefabs = PrefabRegistry::load_dir(&tmp).unwrap();
@@ -158,14 +158,14 @@ fn close_gate_on_blockless_gate_is_dw0343() {
 #[test]
 fn close_gate_emits_fill_with_declared_block() {
     let c = parse_hw(&quests_doc(
-        r#"{ "type": "close-gate", "anchor": "anchor/door" },
+        r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
            { "type": "campaign-complete" }"#,
     ));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     // Validation-tier gate-block check passes (anchor/door declares iron_bars).
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let mut diags = common::fenced_diagnostics(&c, &items, &prefabs, &entities);
+    let mut diags = common::validation_diagnostics(&c, &items, &prefabs, &entities);
     diags.extend(gates::check_close_gates(&c, &prefabs));
     assert!(
         diags.is_empty(),
@@ -198,7 +198,7 @@ fn close_gate_emits_fill_with_declared_block() {
 fn nested_sequence_gate_effects_are_collected() {
     let c = parse_hw(&quests_doc(
         r#"{ "type": "sequence", "steps": [
-              { "at_ticks": 0, "effects": [ { "type": "close-gate", "anchor": "anchor/door" } ] },
+              { "at_ticks": 0, "effects": [ { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." } ] },
               { "at_ticks": 40, "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ] }
            ] },
            { "type": "campaign-complete" }"#,

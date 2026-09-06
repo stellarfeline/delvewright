@@ -25,7 +25,7 @@ use delvewright_dsl::{Diagnostic, RawCampaign, check_campaign};
 fn world_with(prefab: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.3.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {{
@@ -47,7 +47,7 @@ fn world_with(prefab: &str) -> String {
 fn quests_collecting_at(anchor: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.3.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

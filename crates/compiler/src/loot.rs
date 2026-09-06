@@ -20,11 +20,11 @@ use crate::failure::Failure;
 use crate::plan::{CollectFillPlan, LootPlan};
 use delvewright_dsl::{DwCode, ExitTier};
 
-const DW_LOOT_NOT_A_CONTAINER: DwCode = DwCode::every_version("DW0431", ExitTier::Build);
+const DW_LOOT_NOT_A_CONTAINER: DwCode = DwCode::new("DW0431", ExitTier::Build);
 
 /// A `collect` objective adopts a container the assembled world does not have —
 /// or one too small for its fill (DSL v0.8).
-const DW_COLLECT_NOT_A_CONTAINER: DwCode = DwCode::every_version("DW0438", ExitTier::Build);
+const DW_COLLECT_NOT_A_CONTAINER: DwCode = DwCode::new("DW0438", ExitTier::Build);
 
 /// The container blocks a `loot` fill accepts, with their slot counts.
 ///

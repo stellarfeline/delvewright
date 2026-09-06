@@ -23,7 +23,7 @@
     "wave.guards.mob.0.name": "要塞哨卫",
     "world.title": "要塞的试炼"
   },
-  "dsl_version": "0.3.0",
+  "dsl_version": "0.19.0",
   "kind": "l10n",
   "lang": "zh-cn",
   "source": {

@@ -281,10 +281,10 @@ got_name, got_ver = dsl["package"]["name"], dsl["package"]["version"]
 # declare a format no published crate carries.
 import re as _re0
 env_src = (root / "crates/dsl/src/envelope.rs").read_text(encoding="utf-8")
-m0 = _re0.search(r'pub\s+const\s+SUPPORTED_DSL_VERSION\s*:\s*&str\s*=\s*"([^"]+)"', env_src)
+m0 = _re0.search(r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*"([^"]+)"', env_src)
 supported = m0.group(1) if m0 else "<not found>"
 (ok if supported == e["dsl_crate_version"] else bad)(
-    f"envelope SUPPORTED_DSL_VERSION {supported!r} == dsl crate version (manifest: {e['dsl_crate_version']!r})")
+    f"envelope DSL_VERSION {supported!r} == dsl crate version (manifest: {e['dsl_crate_version']!r})")
 
 # 2. The one binary: the `delvec` package carries exactly one `[[bin]]` named
 #    `delvec`, and no other member carries any (ADR-0023 §3).

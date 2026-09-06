@@ -73,36 +73,9 @@ fn every_tier_keyword_validates_at_v07() {
     for tier in ["ordinary", "elite", "boss"] {
         let raw = raw_with_quests(quests_with_tier(
             &format!(",\n         \"tier\": \"{tier}\""),
-            "0.7.0",
+            "0.19.0",
         ));
         let d = check_campaign(&raw);
         assert!(d.is_empty(), "`{tier}` must validate clean: {d:#?}");
-    }
-}
-
-#[test]
-fn a_tier_below_v07_is_dw0141() {
-    let raw = raw_with_quests(quests_with_tier(",\n         \"tier\": \"boss\"", "0.6.0"));
-    let d = check_campaign(&raw);
-    let hit = d
-        .iter()
-        .find(|x| x.code == "DW0141")
-        .expect("a pre-0.7 `tier` is reserved surface");
-    assert_eq!(hit.stage, "quests");
-    assert_eq!(hit.path, "/content/waves/0/tier");
-    assert!(hit.message.contains("0.7.0"), "{}", hit.message);
-}
-
-#[test]
-fn an_absent_tier_is_clean_at_any_version() {
-    // The whole byte-identity argument: every campaign written before this field
-    // existed keeps validating exactly as it did.
-    for version in ["0.3.0", "0.6.0", "0.7.0"] {
-        let raw = raw_with_quests(quests_with_tier("", version));
-        let d = check_campaign(&raw);
-        assert!(
-            d.iter().all(|x| x.code != "DW0141"),
-            "no tier means no reserved-surface finding at {version}: {d:#?}"
-        );
     }
 }

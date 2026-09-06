@@ -67,30 +67,30 @@ use crate::registry::{DamageTypeRegistry, ItemCombatRegistry};
 use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0470`: a hostile the party is *required* to kill can never be damaged.
-pub const DW_UNDAMAGEABLE: DwCode = DwCode::every_version("DW0470", ExitTier::Build);
+pub const DW_UNDAMAGEABLE: DwCode = DwCode::new("DW0470", ExitTier::Build);
 
 /// `DW0471`: a hostile the party is required to kill has no cell to be fought
 /// from — its body is walled in.
-pub const DW_UNREACHABLE: DwCode = DwCode::every_version("DW0471", ExitTier::Build);
+pub const DW_UNREACHABLE: DwCode = DwCode::new("DW0471", ExitTier::Build);
 
 /// `DW0472`: a mandatory encounter's declared health outlasts the best kit the
 /// party can field, by the [`TTK_BUDGET_HITS`] sanity bound.
-pub const DW_TTK_OVER_BUDGET: DwCode = DwCode::every_version("DW0472", ExitTier::Build);
+pub const DW_TTK_OVER_BUDGET: DwCode = DwCode::new("DW0472", ExitTier::Build);
 
 /// `DW0473`: an unavoidable scripted hit on the critical path kills a
 /// full-health player outright.
-pub const DW_UNAVOIDABLE_LETHAL: DwCode = DwCode::every_version("DW0473", ExitTier::Build);
+pub const DW_UNAVOIDABLE_LETHAL: DwCode = DwCode::new("DW0473", ExitTier::Build);
 
 /// `DW0474`: a campaign with mandatory combat hands the party no sustain at all.
-pub const DW_NO_SUSTAIN: DwCode = DwCode::every_version("DW0474", ExitTier::Build);
+pub const DW_NO_SUSTAIN: DwCode = DwCode::new("DW0474", ExitTier::Build);
 
 /// `DW0475`: (warning) the numeric time-to-kill bound could not be computed.
-pub const DW_TTK_UNPROVEN: DwCode = DwCode::every_version("DW0475", ExitTier::Build);
+pub const DW_TTK_UNPROVEN: DwCode = DwCode::new("DW0475", ExitTier::Build);
 
 /// `DW0477`: (warning) something the content bills `elite`/`boss` is one the
 /// inverted floor gate cannot measure — so its silence in the run report means
 /// "never fought", not "passed".
-pub const DW_FLOOR_UNCOVERED: DwCode = DwCode::every_version("DW0477", ExitTier::Build);
+pub const DW_FLOOR_UNCOVERED: DwCode = DwCode::new("DW0477", ExitTier::Build);
 
 /// The vanilla player's `minecraft:max_health` base value. The DSL exposes no
 /// player-attribute surface at all, so this is not a default — it is the only

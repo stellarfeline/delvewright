@@ -48,10 +48,6 @@ would be the fourth way.
   The bot's combat floor gate examined zero enemies for nineteen island rounds
   because `floor_gate.covered`, `.not_covered` and `actors[]` were all empty at
   once and nothing counted them.
-- `UNFENCED` — the check exists and would bind, but the campaign's declared
-  `dsl_version` never reached the surface it keys off, so the proof is inert.
-  The island's four branch proofs were physically impossible before round 19
-  declared `branch_points`, and were reported green throughout.
 
 Plus one the ledger's own shape can produce:
 
@@ -165,7 +161,6 @@ RED_VERDICTS = (
     "NO-SOURCE",
     "NO-GENERAL-FORM",
     "MISSING-CHECK",
-    "UNFENCED",
     "UNBOUND",
     "INAPPLICABLE",
 )
@@ -378,11 +373,6 @@ class Subject:
 
     def artifact_exists(self, rel: str) -> bool:
         return (self.build / "validation" / rel).is_file()
-
-
-def parse_version(text: str) -> tuple[int, ...]:
-    parts = re.findall(r"\d+", text or "0")
-    return tuple(int(p) for p in parts[:3]) or (0,)
 
 
 # ---------------------------------------------------------------------------
@@ -768,29 +758,6 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
         out["verdict"] = "MISSING-CHECK"
         out["detail"] = why
         return out
-
-    # Version fence BEFORE the binding count: an unfenced campaign's zero is
-    # explained by the fence, and reporting it as UNBOUND would send a reader
-    # hunting for objects that could not have been declared.
-    req = row.get("requires")
-    if req:
-        f = req["file"]
-        need = req["min_dsl_version"]
-        have = subj.stage_versions.get(f)
-        if have is None:
-            out["verdict"] = "UNFENCED"
-            out["detail"] = (
-                f"`{f}` declares no dsl_version; the check keys off a surface "
-                f"introduced at {need}"
-            )
-            return out
-        if parse_version(have) < parse_version(need):
-            out["verdict"] = "UNFENCED"
-            out["detail"] = (
-                f"`{f}` declares dsl_version {have}; the surface this check keys "
-                f"off arrived at {need} — the proof is inert on this campaign"
-            )
-            return out
 
     binding = row["binding"]
     count, detail = probe(binding, subj)

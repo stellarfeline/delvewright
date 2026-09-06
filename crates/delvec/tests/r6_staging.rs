@@ -26,7 +26,7 @@ fn read_hw(name: &str) -> String {
 /// effect and two objectives carry `forbids_flags`, and an approach trigger is
 /// armed by `flag/arrived` but stood down by `flag/blocked`.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

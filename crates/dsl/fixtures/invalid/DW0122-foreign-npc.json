@@ -58,7 +58,7 @@
           }
         ]
       },
-      "dsl_version": "0.2.0",
+      "dsl_version": "0.19.0",
       "stage": "dialogue"
     },
     "npcs": {
@@ -93,7 +93,7 @@
           }
         ]
       },
-      "dsl_version": "0.2.0",
+      "dsl_version": "0.19.0",
       "stage": "npcs"
     },
     "quests": {
@@ -142,7 +142,7 @@
           }
         ]
       },
-      "dsl_version": "0.2.0",
+      "dsl_version": "0.19.0",
       "stage": "quests"
     }
   },
