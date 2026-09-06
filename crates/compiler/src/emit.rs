@@ -13,6 +13,7 @@
 //! from or what happens to sit above that directory.
 
 use crate::failure::Failure;
+use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
@@ -4985,7 +4986,7 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
             for (suffix, anchor, _kind) in eff.anchor_refs() {
                 refs.push((
                     format!("{path}/{suffix}"),
-                    eff.verb(),
+                    eff.verb.tag(),
                     anchor.as_str().to_string(),
                 ));
             }
@@ -5397,8 +5398,8 @@ const AIR: &str = "minecraft:air";
 fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut Vec<String>) {
     let ns = &plan.namespace;
     let who = aud.selector();
-    match eff {
-        QuestEffect::OpenGate { anchor, .. } => {
+    match &eff.verb {
+        Verb::OpenGate { anchor, .. } => {
             // Find the gate anchor across areas (first match).
             for ((_, name), resolved) in &plan.anchors {
                 if name == anchor.as_str()
@@ -5418,7 +5419,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 }
             }
         }
-        QuestEffect::CloseGate { anchor, .. } => {
+        Verb::CloseGate { anchor, .. } => {
             // The physical dual of `open-gate`: fill the gate region with the block
             // the anchor declares (basalt boulder, iron bars, …), sealing it back
             // into a wall. A blockless gate anchor is rejected at validate-time
@@ -5444,10 +5445,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 }
             }
         }
-        QuestEffect::CampaignComplete { .. } => {
+        Verb::CampaignComplete { .. } => {
             body.push(format!("function {ns}:campaign_complete"));
         }
-        QuestEffect::GiveItem {
+        Verb::GiveItem {
             item, count, name, ..
         } => {
             let comp = match name {
@@ -5467,7 +5468,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             };
             body.push(format!("give {target} {item}{comp} {count}"));
         }
-        QuestEffect::SetFlag { flag, .. } => {
+        Verb::SetFlag { flag, .. } => {
             // Party state (spec-0018): one holder, so any player's action sets the
             // story flag for everyone — and a scheduled bundle can set it too (the
             // AUDIT-P0 `@s`-in-a-schedule class of bug is structurally gone).
@@ -5483,14 +5484,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // than `reset`ting the score: a reset score is *absent*, and an absent
         // score makes `unless … matches` true — so a cleared datum would silently
         // satisfy a `not-equals` comparison against its own initial value.
-        QuestEffect::SetState { state, value, .. } => {
+        Verb::SetState { state, value, .. } => {
             body.push(format!(
                 "scoreboard players set {} {} {value}",
                 state_holder(plan, state),
                 plan::state_score(state.as_str())
             ));
         }
-        QuestEffect::AddState { state, amount, .. } => {
+        Verb::AddState { state, amount, .. } => {
             // `add` / `remove` rather than one signed `add`: vanilla's `add` takes
             // an unsigned operand and `remove` is its documented dual.
             let holder = state_holder(plan, state);
@@ -5504,7 +5505,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 body.push(format!("scoreboard players add {holder} {obj} {amount}"));
             }
         }
-        QuestEffect::ClearState { state, .. } => {
+        Verb::ClearState { state, .. } => {
             body.push(format!(
                 "scoreboard players set {} {} {}",
                 state_holder(plan, state),
@@ -5517,25 +5518,25 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // compile-time placement table, the marker — is shared between every site
         // that can leave one, and a bundle inlined at each site would be that
         // chain copied per firing.
-        QuestEffect::DropStake { stake, .. } => {
+        Verb::DropStake { stake, .. } => {
             body.push(format!(
                 "function {ns}:stk_drop_{}",
                 plan::safe_local(stake.as_str())
             ));
         }
-        QuestEffect::SpawnWave { wave, .. } => {
+        Verb::SpawnWave { wave, .. } => {
             body.push(format!(
                 "function {ns}:spawn_{}",
                 plan::safe_local(wave.as_str())
             ));
         }
         // --- DSL v0.4 effects ---
-        QuestEffect::Narrate {
+        Verb::Narrate {
             text, style, sound, ..
         } => {
             emit_narrate(text, *style, sound.as_deref(), who, body);
         }
-        QuestEffect::SetBlock { anchor, block, .. } => {
+        Verb::SetBlock { anchor, block, .. } => {
             if let Some(pos) = anchor_point_any(plan, anchor.as_str()) {
                 body.push(format!("setblock {} {} {} {block}", pos[0], pos[1], pos[2]));
             }
@@ -5545,7 +5546,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // anchor's box, through the same one command builder. An unresolvable box
         // emits nothing — a dangling `region/anchor` is `DW0142`/`DW0355` at
         // validation, not a silently mis-aimed fill here.
-        QuestEffect::FillRegion { .. } | QuestEffect::ClearRegion { .. } => {
+        Verb::FillRegion { .. } | Verb::ClearRegion { .. } => {
             if let Some((zone, block)) = eff.region_write()
                 && let Some(region) = plan.zone_box(zone)
             {
@@ -5559,7 +5560,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // direction, because the effect carries none of the three: an
         // unresolvable reference is `DW0547` long before emission, so a way that
         // reaches here has exactly one staged answer.
-        QuestEffect::OpenWay { .. } => {
+        Verb::OpenWay { .. } => {
             if let Some((piece, name)) = eff.way_write()
                 && let Ok(way) = plan.ways.resolve(piece.as_str(), name)
             {
@@ -5572,7 +5573,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 }
             }
         }
-        QuestEffect::DespawnNpc { npc, .. } => {
+        Verb::DespawnNpc { npc, .. } => {
             // Removes both the body and the interaction hitbox — both carry the
             // per-npc id tag (spec-0008 §5).
             body.push(format!(
@@ -5580,13 +5581,13 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 plan::safe_local(npc.as_str())
             ));
         }
-        QuestEffect::MoveNpc { npc, to_anchor, .. } => {
+        Verb::MoveNpc { npc, to_anchor, .. } => {
             body.push(format!(
                 "function {ns}:{}",
                 movenpc_fn(npc.as_str(), to_anchor.as_str(), &crate::nav::gate_key(eff),)
             ));
         }
-        QuestEffect::Cutscene { .. } => {
+        Verb::Cutscene { .. } => {
             // Shape is policed at validation (`DW0199`); an unshaped cutscene
             // resolves to no shots and emits no call rather than a dangling one.
             if let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) {
@@ -5598,14 +5599,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // environment sealing (`advance_time`/`advance_weather false`), so the set
         // state persists until the next cut. No selector: `/time set` and
         // `/weather` act on the whole dimension.
-        QuestEffect::SetTime { time, .. } => {
+        Verb::SetTime { time, .. } => {
             body.push(format!("time set {}", time.token()));
         }
-        QuestEffect::SetWeather { weather, .. } => {
+        Verb::SetWeather { weather, .. } => {
             body.push(format!("weather {}", weather.token()));
         }
         // --- DSL v0.6 effects (spec-0012 checkpoints, spec-0014 stealth + sound) ---
-        QuestEffect::PlaySound {
+        Verb::PlaySound {
             sound,
             at,
             volume,
@@ -5614,7 +5615,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         } => {
             emit_play_sound(plan, sound, at.as_ref(), *volume, *pitch, who, body);
         }
-        QuestEffect::DamagePlayers {
+        Verb::DamagePlayers {
             amount,
             within,
             damage_type,
@@ -5622,10 +5623,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         } => {
             emit_damage_players(plan, *amount, within.as_ref(), *damage_type, who, body);
         }
-        QuestEffect::SetCheckpoint { anchor, on_respawn } => {
+        Verb::SetCheckpoint { anchor, on_respawn } => {
             emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
         }
-        QuestEffect::Bonfire {
+        Verb::Bonfire {
             anchor, on_rest, ..
         } => {
             // Arm the rest affordance (spec-0016 §1): summon the interaction
@@ -5652,33 +5653,33 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 ));
             }
         }
-        QuestEffect::BeginStealth {
+        Verb::BeginStealth {
             zones, grace_ticks, ..
         } => {
             if let Some(beat) = plan.stealth_for(zones, *grace_ticks) {
                 body.push(format!("function {ns}:stealth_begin_{}", beat.index));
             }
         }
-        QuestEffect::EndStealth => {
+        Verb::EndStealth => {
             body.push("scoreboard players set #stealth dw.sys 0".to_string());
         }
         // spec-0022 trap-payload verbs. Both lower to a call into a generated
         // function whose body is the PROVEN geometry (per-cell velocity vectors
         // / settled debris), so the effect site itself carries no coordinates.
-        QuestEffect::Volley { .. } => {
+        Verb::Volley { .. } => {
             body.push(format!("function {ns}:{}", volley_fn(eff)));
         }
-        QuestEffect::Collapse { .. } => {
+        Verb::Collapse { .. } => {
             body.push(format!("function {ns}:{}", collapse_fn(eff)));
         }
         // --- DSL v0.6 actor staging effects (spec-0014) ---
-        QuestEffect::SpawnActor { actor, .. } => {
+        Verb::SpawnActor { actor, .. } => {
             body.push(format!(
                 "function {ns}:spawn_actor_{}",
                 plan::safe_local(actor.as_str())
             ));
         }
-        QuestEffect::DespawnActor { actor, style, .. } => {
+        Verb::DespawnActor { actor, style, .. } => {
             let declares_drops = plan
                 .campaign
                 .quests
@@ -5688,7 +5689,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 .any(|a| a.id.as_str() == actor.as_str() && !a.drops.is_empty());
             emit_despawn_actor(actor.as_str(), *style, declares_drops, body);
         }
-        QuestEffect::MoveActor {
+        Verb::MoveActor {
             actor, to_anchor, ..
         } => {
             body.push(format!(
@@ -5700,16 +5701,16 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 )
             ));
         }
-        QuestEffect::UnleashActor { actor, .. } => {
+        Verb::UnleashActor { actor, .. } => {
             body.push(format!(
                 "function {ns}:unleash_{}",
                 plan::safe_local(actor.as_str())
             ));
         }
-        QuestEffect::Sequence { steps } => {
-            body.push(format!("function {ns}:{}", sequence_fn(steps)));
+        Verb::Sequence { .. } => {
+            body.push(format!("function {ns}:{}", sequence_fn(plan, eff)));
         }
-        QuestEffect::SpawnNpc { npc, .. } => {
+        Verb::SpawnNpc { npc, .. } => {
             body.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
         }
         // --- DSL v0.10 status effects (spec-0031) -----------------------------
@@ -5723,7 +5724,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // pre-existing region-scoped grant has never carried one. Where an author
         // wants a beat to spare an observer, the `in` filter and the effect gate
         // both say so explicitly.
-        QuestEffect::GiveEffect { .. } => {
+        Verb::GiveEffect { .. } => {
             if let Some((effect, seconds, amplifier, hide, within)) = eff.give_effect() {
                 let Some(sel) = effect_selector(plan, who, within) else {
                     return;
@@ -5731,7 +5732,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 body.push(effect_give_command(&sel, effect, seconds, amplifier, hide));
             }
         }
-        QuestEffect::ClearEffect { .. } => {
+        Verb::ClearEffect { .. } => {
             if let Some((effect, within)) = eff.clear_effect() {
                 let Some(sel) = effect_selector(plan, who, within) else {
                     return;
@@ -5751,11 +5752,11 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // entity selector in this engine carries — `tag=!dw_fixture`, and no
         // `type=`, no `limit=`, no `sort=`. That is what makes the selection
         // total over BODIES, and `crates/compiler/tests/v10_teleport.rs` asserts
-        // exactly that against the emitted string. See `QuestEffect::Teleport`
+        // exactly that against the emitted string. See `Verb::Teleport`
         // for why a machinery-TYPE exemption (which `lethal_volumes[]` must
         // carry) would be wrong here, and `crate::affordance` for the class that
         // stands in its place.
-        QuestEffect::Teleport { .. } => {
+        Verb::Teleport { .. } => {
             // A call into the generated function, exactly as `volley` and
             // `collapse` do: the body is proven geometry, and a body that only
             // ever exists inline is a body no runtime test can call.
@@ -9054,8 +9055,8 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
         // matching the planner's dedup order (mirrors `actor_fns`).
         let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
             .into_iter()
-            .find_map(|e| match e {
-                QuestEffect::MoveNpc {
+            .find_map(|e| match &e.verb {
+                Verb::MoveNpc {
                     npc,
                     to_anchor,
                     on_arrive,
@@ -9387,7 +9388,7 @@ fn trigger_unleashes(t: &delvewright_dsl::EnvTrigger) -> bool {
         push_effect_deep(e, &mut all);
     }
     all.iter()
-        .any(|e| matches!(e, QuestEffect::UnleashActor { .. }))
+        .any(|e| matches!(&e.verb, Verb::UnleashActor { .. }))
 }
 
 /// Whether any click trigger in the campaign captures a striker — i.e. whether
@@ -9467,30 +9468,87 @@ fn moveactor_bare(actor: &str, to_anchor: &str, gate_key: &str) -> String {
         .to_string()
 }
 
-/// A deterministic content key for a `sequence` (spec-0014) — FNV-1a over the steps'
-/// stable `Debug` rendering, so identical timelines share one function and different
-/// ones do not collide. No wall-clock / hash-order input (ADR-0006).
-fn sequence_key(steps: &[delvewright_dsl::SequenceStep]) -> String {
-    let s = format!("{steps:?}");
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in s.bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{h:016x}")
+/// **Every `sequence` in the campaign, with the function name it is emitted
+/// under** — `seq_<root>_<n>`, where `<root>` is the effect root's own key with
+/// its `fx.` prefix dropped (so an `on_objective_complete` bundle reads
+/// `rescue_oc_find_the_bell`) and `<n>` is the sequence's index within that
+/// root's deep walk.
+///
+/// Positional rather than content-addressed. A name derived from a hash of the
+/// steps told a reader of the emitted pack nothing about where the timeline came
+/// from, and it made the `Debug` rendering of every effect part of the pack's
+/// bytes — a field added to any verb moved function names that had nothing to do
+/// with it. A position is stable under exactly the edits a reader expects it to
+/// be: it moves when the bundle it sits in is re-ordered, and not otherwise.
+///
+/// This is **one** enumeration, read by both consumers — `sequence_fns`, which
+/// generates the functions, and [`sequence_fn`], which emits the call — so the
+/// generator and the caller cannot disagree about a name. It is built from
+/// `plan::for_each_effect_root`, the single root walk, so a sequence in any root
+/// (a `shortcuts[].on_unlock`, a dialogue `on_respawn`) is named by the same rule.
+///
+/// Determinism (ADR-0006): the root walk's order is contractual and the deep walk
+/// is declaration order; no hashing, no address, no wall clock.
+fn sequence_sites(c: &delvewright_dsl::Campaign) -> Vec<(&QuestEffect, String)> {
+    let mut out: Vec<(&QuestEffect, String)> = Vec::new();
+    plan::for_each_effect_root(c, &mut |site, effs| {
+        let root = fn_safe(site.key.strip_prefix("fx.").unwrap_or(&site.key));
+        let mut n = 0usize;
+        let mut here: Vec<&QuestEffect> = Vec::new();
+        for e in effs {
+            push_effect_deep(e, &mut here);
+        }
+        for e in here {
+            if matches!(e.verb, delvewright_dsl::Verb::Sequence { .. }) {
+                out.push((e, format!("seq_{root}_{n}")));
+                n += 1;
+            }
+        }
+    });
+    let mut names: Vec<&str> = out.iter().map(|(_, n)| n.as_str()).collect();
+    names.sort_unstable();
+    let before = names.len();
+    names.dedup();
+    assert_eq!(
+        names.len(),
+        before,
+        "two sequences were given one function name — a positional name must be unique"
+    );
+    out
 }
 
-/// The generated start-function name for a `sequence` effect (content key).
-fn sequence_fn(steps: &[delvewright_dsl::SequenceStep]) -> String {
-    format!("seq_{}", sequence_key(steps))
+/// A campaign id fragment as a datapack function-name segment: ids are
+/// `[a-z0-9]+(-[a-z0-9]+)*` and a root key joins them with `.`, so both
+/// separators become `_` and nothing else can appear.
+fn fn_safe(s: &str) -> String {
+    s.replace(['-', '.', '/'], "_")
+}
+
+/// The generated start-function name for one `sequence` effect: its positional
+/// name from [`sequence_sites`].
+///
+/// # Panics
+///
+/// If `eff` is a `sequence` the campaign does not own. Emission synthesizes
+/// effects (the scheduled-probe `set-flag`, a chrome `narrate`) but never a
+/// timeline, and a synthesized one would emit a call to a function
+/// `sequence_fns` never generated — which is the failure this asserts rather
+/// than ships.
+fn sequence_fn(plan: &Plan, eff: &QuestEffect) -> String {
+    sequence_sites(plan.campaign)
+        .into_iter()
+        .find(|(e, _)| std::ptr::eq(*e, eff))
+        .map(|(_, name)| name)
+        .expect("every `sequence` emission lowers is one the campaign declares")
 }
 
 /// The content key naming a spec-0022 trap-payload verb's generated function.
-/// FNV-1a over the effect's stable `Debug` rendering — the same scheme
-/// [`sequence_key`] uses, so two identical `volley`s share one function and a
-/// campaign's output is a pure function of its content (ADR-0006).
+/// FNV-1a over the **verb's** `Debug` rendering, so two identical `volley`s share
+/// one function body. The guard is not part of it: emission wraps the call, never
+/// the body, so a gated and an ungated `volley` of the same shape are one body
+/// (ADR-0006 — no wall-clock / hash-order input).
 fn payload_verb_key(eff: &QuestEffect) -> String {
-    let s = format!("{eff:?}");
+    let s = format!("{:?}", eff.verb);
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in s.bytes() {
         h ^= b as u64;
@@ -9671,8 +9729,8 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
         // matching the planner's dedup order.
         let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
             .into_iter()
-            .find_map(|e| match e {
-                QuestEffect::MoveActor {
+            .find_map(|e| match &e.verb {
+                Verb::MoveActor {
                     actor,
                     to_anchor,
                     on_arrive,
@@ -9757,20 +9815,16 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
 
 /// `sequence` timeline functions (spec-0014): one start function that schedules each
 /// step's effect-group at its exact `at_ticks` offset, plus one function per step.
-/// Deduped by content key. Empty for a campaign with no sequences (byte-identical).
+/// Named by position ([`sequence_sites`]) — one function per declared timeline, so
+/// a reader of the pack can see which bundle each came from. Empty for a campaign
+/// with no sequences.
 fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
-    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for eff in all_campaign_effects(plan.campaign) {
-        let QuestEffect::Sequence { steps } = eff else {
-            continue;
+    for (eff, base) in sequence_sites(plan.campaign) {
+        let Verb::Sequence { steps } = &eff.verb else {
+            unreachable!("sequence_sites yields only `sequence` effects");
         };
-        let key = sequence_key(steps);
-        if !seen.insert(key.clone()) {
-            continue;
-        }
-        let base = format!("seq_{key}");
         let mut start: Vec<String> = Vec::new();
         for (i, step) in steps.iter().enumerate() {
             if step.at_ticks == 0 {
@@ -9788,7 +9842,7 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
             // ones: a timeline whose `at_ticks: 0` step behaved differently from
             // its `at_ticks: 20` step would be a trap, and the start function is
             // itself reachable from a scheduled bundle (a `sequence` nested in an
-            // `on_arrive`). Uniformity is what makes `seq_<key>` a *global*
+            // `on_arrive`). Uniformity is what makes a `seq_…` a *global*
             // effect everywhere (see `effect_is_player_scoped`): its per-player
             // beats address the party, never one acting player.
             let b = emit_effect_bundle(plan, &step.effects, Audience::Scheduled);
@@ -13397,15 +13451,15 @@ fn campaign_complete_tail(
     actor_moves: &[crate::nav::ActorMovePlan],
 ) -> Option<u32> {
     effs.iter()
-        .filter_map(|e| match e {
-            QuestEffect::CampaignComplete { .. } => Some(0),
-            QuestEffect::Sequence { steps } => steps
+        .filter_map(|e| match &e.verb {
+            Verb::CampaignComplete { .. } => Some(0),
+            Verb::Sequence { steps } => steps
                 .iter()
                 .filter_map(|s| {
                     campaign_complete_tail(&s.effects, moves, actor_moves).map(|t| s.at_ticks + t)
                 })
                 .max(),
-            QuestEffect::MoveNpc {
+            Verb::MoveNpc {
                 npc,
                 to_anchor,
                 on_arrive,
@@ -13417,7 +13471,7 @@ fn campaign_complete_tail(
                     .map(|m| m.ticks() as u32)
                     .unwrap_or(0)
             }),
-            QuestEffect::MoveActor {
+            Verb::MoveActor {
                 actor,
                 to_anchor,
                 on_arrive,
@@ -13694,12 +13748,11 @@ fn emit_scheduled_executor_packtests(
     // OF that seam, not a restatement of it.
     let probe = emit_effect_bundle(
         plan,
-        &[delvewright_dsl::QuestEffect::SetFlag {
-            flag: delvewright_dsl::FlagId(SCHEDULED_PROBE_FLAG.to_string()),
-            requires_flags: Vec::new(),
-            forbids_flags: Vec::new(),
-            requires_state: Vec::new(),
-        }],
+        &[delvewright_dsl::QuestEffect::from(
+            delvewright_dsl::Verb::SetFlag {
+                flag: delvewright_dsl::FlagId(SCHEDULED_PROBE_FLAG.to_string()),
+            },
+        )],
         Audience::Scheduled,
     );
     out.insert(
@@ -13737,16 +13790,16 @@ fn emit_scheduled_executor_packtests(
     let arrival = moves.iter().find_map(|m| {
         all_campaign_effects(plan.campaign)
             .into_iter()
-            .find_map(|e| match e {
-                QuestEffect::MoveNpc {
+            .find_map(|e| match &e.verb {
+                Verb::MoveNpc {
                     npc,
                     to_anchor,
                     on_arrive,
                     ..
                 } if npc.as_str() == m.npc && to_anchor.as_str() == m.to_anchor => on_arrive
                     .iter()
-                    .find_map(|a| match a {
-                        QuestEffect::SetFlag { flag, .. } => Some(flag.as_str().to_string()),
+                    .find_map(|a| match &a.verb {
+                        Verb::SetFlag { flag, .. } => Some(flag.as_str().to_string()),
                         _ => None,
                     })
                     .map(|flag| (m, flag)),
@@ -17755,11 +17808,11 @@ fn first_damage_players(
         if found.is_none() {
             eff.visit_deep(&mut |e| {
                 if found.is_none()
-                    && let QuestEffect::DamagePlayers {
+                    && let Verb::DamagePlayers {
                         amount,
                         damage_type,
                         ..
-                    } = e
+                    } = &e.verb
                 {
                     found = Some((*amount, damage_type.unwrap_or(DamageKind::Generic)));
                 }
@@ -17981,21 +18034,23 @@ fn emit_v06_actor_packtests(
     // re-opened afterwards (fill air replace <block>), so the template leaves
     // no block residue for a sibling (batch model).
     let handoff = actor_moves.iter().find_map(|m| {
-        all_campaign_effects(c).into_iter().find_map(|e| match e {
-            QuestEffect::MoveActor {
-                actor,
-                to_anchor,
-                on_arrive,
-                ..
-            } if actor.as_str() == m.actor && to_anchor.as_str() == m.to_anchor => on_arrive
-                .iter()
-                .find_map(|a| match a {
-                    QuestEffect::SpawnNpc { npc, .. } => Some(npc.as_str().to_string()),
-                    _ => None,
-                })
-                .map(|npc| (m, npc)),
-            _ => None,
-        })
+        all_campaign_effects(c)
+            .into_iter()
+            .find_map(|e| match &e.verb {
+                Verb::MoveActor {
+                    actor,
+                    to_anchor,
+                    on_arrive,
+                    ..
+                } if actor.as_str() == m.actor && to_anchor.as_str() == m.to_anchor => on_arrive
+                    .iter()
+                    .find_map(|a| match &a.verb {
+                        Verb::SpawnNpc { npc, .. } => Some(npc.as_str().to_string()),
+                        _ => None,
+                    })
+                    .map(|npc| (m, npc)),
+                _ => None,
+            })
     });
     if let Some((m, npc_id)) = handoff
         && let Some(npc_tag) = plan
@@ -18012,7 +18067,7 @@ fn emit_v06_actor_packtests(
         let mut sealed: Vec<(&[i32; 3], &[i32; 3], &String)> = Vec::new();
         let mut seen: Vec<&str> = Vec::new();
         for e in all_campaign_effects(c) {
-            if let QuestEffect::CloseGate { anchor, .. } = e
+            if let Verb::CloseGate { anchor, .. } = &e.verb
                 && !seen.contains(&anchor.as_str())
             {
                 seen.push(anchor.as_str());
@@ -20634,31 +20689,6 @@ mod tests {
             spawn.starts_with("execute unless entity @e[tag=dw_actor_giant] run summon "),
             "re-cage is idempotent and works from nothing: {spawn}"
         );
-    }
-
-    #[test]
-    fn sequence_key_is_deterministic_and_content_addressed() {
-        let step = |t: u32| delvewright_dsl::SequenceStep {
-            at_ticks: t,
-            effects: vec![delvewright_dsl::QuestEffect::UnleashActor {
-                actor: delvewright_dsl::ActorId("actor/giant".to_string()),
-                happening: None,
-            }],
-        };
-        let a = vec![step(0), step(40)];
-        let b = vec![step(0), step(40)];
-        let c = vec![step(0), step(41)];
-        assert_eq!(
-            sequence_key(&a),
-            sequence_key(&b),
-            "same content → same key"
-        );
-        assert_ne!(
-            sequence_key(&a),
-            sequence_key(&c),
-            "different content → different key"
-        );
-        assert_eq!(sequence_fn(&a), format!("seq_{}", sequence_key(&a)));
     }
 }
 

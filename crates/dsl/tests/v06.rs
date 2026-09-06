@@ -351,8 +351,8 @@ fn v06_sequence_narrate_is_inventoried_and_localized() {
         .iter()
         .flat_map(|e| e.nested_effect_lists())
         .flatten()
-        .filter_map(|e| match e {
-            delvewright_dsl::QuestEffect::Narrate { text, .. } => Some(text.as_str()),
+        .filter_map(|e| match &e.verb {
+            delvewright_dsl::Verb::Narrate { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect();

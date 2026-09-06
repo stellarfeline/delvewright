@@ -72,6 +72,7 @@
 //! `open-gate` needs no special case — it just clears any seal this timeline had
 //! established.
 
+use delvewright_dsl::Verb;
 use std::collections::BTreeMap;
 
 use delvewright_dsl::{Campaign, QuestEffect};
@@ -147,8 +148,8 @@ fn walk_children<'a>(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     out: &mut Vec<(&'a QuestEffect, GateState)>,
 ) {
-    match e {
-        QuestEffect::Sequence { steps } => {
+    match &e.verb {
+        Verb::Sequence { steps } => {
             // A sequence's steps fire at real tick offsets, so their causal order
             // is `(at_ticks, declaration index)` — NOT declaration order. This is
             // the ordering the island defect turned on: the `close-gate` sits at
@@ -171,7 +172,7 @@ fn walk_children<'a>(
                 walk_list(&step.effects, &prefix[i], anchors, out);
             }
         }
-        QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+        Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
             // Fires when the walk lands: inherits the state at the move, and its
             // own gate effects stay inside (they are not ordered against the
             // enclosing bundle's later siblings).

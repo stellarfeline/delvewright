@@ -146,7 +146,7 @@ fn a_region_write_carries_the_whole_gate() {
          "requires_state": [ { "state": "state/floor", "op": "equals", "value": 1 } ] }"#;
     let c = parse_campaign(&raw(quests_doc("0.19.0", body))).expect("campaign parses");
     let eff = &talk_effects(&c)[1];
-    assert_eq!(eff.verb(), "fill-region");
+    assert_eq!(eff.verb.tag(), "fill-region");
     assert_eq!(eff.requires_flags().len(), 1);
     assert_eq!(eff.forbids_flags().len(), 1);
     assert_eq!(eff.requires_state().len(), 1);

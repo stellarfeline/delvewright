@@ -313,36 +313,38 @@ fn datum_ids_follow_the_ordinary_id_rules() {
     );
 }
 
-/// Two effects that differ **only** in their numeric gate are different effects,
-/// so they must render differently — the `Debug` rendering names generated
-/// `seq_<hash>` functions, and a collision there would silently give two
-/// sequences one function.
+/// **One guard, round-tripped.** A gate authored on a verb is one `when` object
+/// on the effect, whatever the verb is — parsed into [`Guard`], read back through
+/// the three accessors, and serialized to the same JSON it came from.
 #[test]
-fn the_numeric_gate_is_part_of_an_effects_content_key() {
-    use delvewright_dsl::{CompareOp, FlagId, QuestEffect, StateCompare, StateId};
-    let bare = QuestEffect::SetFlag {
-        flag: FlagId("flag/lit".to_string()),
-        requires_flags: Vec::new(),
-        forbids_flags: Vec::new(),
-        requires_state: Vec::new(),
-    };
-    let gated = QuestEffect::SetFlag {
-        flag: FlagId("flag/lit".to_string()),
-        requires_flags: Vec::new(),
-        forbids_flags: Vec::new(),
-        requires_state: vec![StateCompare {
-            state: StateId("state/toll".to_string()),
-            op: CompareOp::AtLeast,
-            value: 1,
-        }],
-    };
-    // An UNGATED effect renders exactly as it did before v0.10 existed: that is
-    // what keeps every existing campaign's `seq_<hash>` names where they are.
+fn a_guard_on_one_verb_round_trips_through_the_one_guard() {
+    use delvewright_dsl::{CompareOp, QuestEffect};
+    let json = r#"{"when":{"requires_flags":["flag/lit"],"forbids_flags":["flag/dark"],"requires_state":[{"state":"state/toll","op":"at-least","value":1}]},"type":"set-flag","flag":"flag/rung"}"#;
+    let eff: QuestEffect = serde_json::from_str(json).expect("the guard parses on `set-flag`");
+    assert_eq!(eff.requires_flags().len(), 1);
+    assert_eq!(eff.forbids_flags().len(), 1);
+    assert_eq!(eff.requires_state().len(), 1);
+    assert_eq!(eff.requires_state()[0].op, CompareOp::AtLeast);
     assert_eq!(
-        format!("{bare:?}"),
-        r#"SetFlag { flag: FlagId("flag/lit"), requires_flags: [] }"#
+        serde_json::to_string(&eff).expect("an effect serializes"),
+        json,
+        "the guard survives the round trip as one object"
     );
-    assert_ne!(format!("{gated:?}"), format!("{bare:?}"));
+
+    // The same guard on a verb that could not be gated at all while the fields
+    // lived on the variants — the hole `check-capability-ownership.py` recorded.
+    let staged: QuestEffect = serde_json::from_str(
+        r#"{"when":{"requires_flags":["flag/lit"]},"type":"unleash-actor","actor":"actor/hound"}"#,
+    )
+    .expect("a staging verb takes the same guard");
+    assert_eq!(staged.requires_flags().len(), 1);
+
+    // `deny_unknown_fields` survives the flatten: a typo in a verb's own field is
+    // still refused where it is written.
+    assert!(
+        serde_json::from_str::<QuestEffect>(r#"{"type":"set-flag","flagg":"flag/rung"}"#).is_err(),
+        "an unknown field on the flattened verb is still refused"
+    );
 }
 
 /// **The gate walk inherits every effect root, including the two `on_death`

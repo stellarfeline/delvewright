@@ -34,6 +34,7 @@
 //! that binds to nothing says so in the file, so a green run over an empty contract
 //! can never read as a proven death loop.
 
+use delvewright_dsl::Verb;
 use delvewright_dsl::{Campaign, QuestEffect};
 use serde_json::{Value, json};
 
@@ -224,8 +225,8 @@ pub fn build(
     let deep = deep_effects(on_death);
     let mut drops: Vec<&str> = deep
         .iter()
-        .filter_map(|e| match e {
-            QuestEffect::DropStake { stake, .. } => Some(stake.as_str()),
+        .filter_map(|e| match &e.verb {
+            Verb::DropStake { stake, .. } => Some(stake.as_str()),
             _ => None,
         })
         .collect();
@@ -397,7 +398,7 @@ mod tests {
         assert_eq!(deep.len(), 3, "narrate + sequence + the nested drop-stake");
         assert!(
             deep.iter()
-                .any(|e| matches!(e, QuestEffect::DropStake { .. })),
+                .any(|e| matches!(&e.verb, Verb::DropStake { .. })),
             "a nested drop-stake must be reachable — a hand-rolled walk over the top \
              level would report this campaign as promising nothing on death"
         );

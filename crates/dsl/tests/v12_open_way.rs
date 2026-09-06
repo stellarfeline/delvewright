@@ -99,7 +99,7 @@ fn open_way_carries_the_whole_gate() {
         .expect("the fixture declares an obj/talk bundle")
         .1;
     let open = &effects[1];
-    assert_eq!(open.verb(), "open-way");
+    assert_eq!(open.verb.tag(), "open-way");
     assert_eq!(open.requires_flags().len(), 1);
     assert_eq!(open.forbids_flags().len(), 1);
     assert!(open.requires_state().is_empty());

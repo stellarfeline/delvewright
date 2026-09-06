@@ -27,6 +27,7 @@
 //! fixed — same DSL + seed → identical waypoints.
 
 use crate::failure::Failure;
+use delvewright_dsl::Verb;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
@@ -242,7 +243,7 @@ pub const DW_LANE_GEOMETRY: DwCode = DwCode::new("DW0386", ExitTier::Build);
 ///
 /// **The object class is the respawn point, not the verb that places it.** A
 /// `bonfire` and a `set-checkpoint` are siblings of one sum type — the DSL says
-/// so in as many words ("the sibling of [`QuestEffect::SetCheckpoint`]"), they
+/// so in as many words ("the sibling of [`Verb::SetCheckpoint`]"), they
 /// resolve to one [`crate::plan::CheckpointPlan`] distinguished only by `rest`,
 /// and vanilla returns a dead player to either by the identical `spawnpoint`
 /// mechanism. Binding this proof to `rest == true` therefore made it a hook on
@@ -2559,12 +2560,12 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
         BTreeMap::new();
     let mut cache = SealCache::default();
     for (eff, seal) in crate::timeline::walk(plan) {
-        let QuestEffect::MoveNpc {
+        let Verb::MoveNpc {
             npc,
             to_anchor,
             speed,
             ..
-        } = eff
+        } = &eff.verb
         else {
             continue;
         };
@@ -3000,12 +3001,12 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         BTreeMap::new();
     let mut cache = SealCache::default();
     for (eff, seal) in crate::timeline::walk(plan) {
-        let QuestEffect::MoveActor {
+        let Verb::MoveActor {
             actor,
             to_anchor,
             speed,
             ..
-        } = eff
+        } = &eff.verb
         else {
             continue;
         };
@@ -3466,8 +3467,8 @@ fn all_effects<'a>(plan: &'a Plan) -> Vec<&'a QuestEffect> {
 pub fn needs_world(plan: &Plan) -> bool {
     all_effects(plan).iter().any(|e| {
         matches!(
-            e,
-            QuestEffect::MoveNpc { .. } | QuestEffect::Cutscene { .. } | QuestEffect::MoveActor { .. }
+            &e.verb,
+            Verb::MoveNpc { .. } | Verb::Cutscene { .. } | Verb::MoveActor { .. }
         )
     })
     // The critical-path walkability check (DW0311) also needs the occupancy model.
@@ -5852,7 +5853,7 @@ fn actor_fights(c: &delvewright_dsl::Campaign, a: &delvewright_dsl::Actor) -> bo
     }
     let mut unleashed = false;
     delvewright_dsl::for_each_campaign_effect(c, &mut |_, _, eff| {
-        if let QuestEffect::UnleashActor { actor, .. } = eff
+        if let Verb::UnleashActor { actor, .. } = &eff.verb
             && actor.as_str() == a.id.as_str()
         {
             unleashed = true;
@@ -11285,26 +11286,26 @@ mod tests {
             end_step: None,
         };
         assert!(
-            !beat(vec![QuestEffect::Narrate {
-                text: "Spotted!".to_string(),
-                style: None,
-                sound: None,
-                requires_flags: Vec::new(),
-                forbids_flags: Vec::new(),
-                requires_state: Vec::new(),
-            }])
+            !beat(vec![
+                Verb::Narrate {
+                    text: "Spotted!".to_string(),
+                    style: None,
+                    sound: None,
+                }
+                .into(),
+            ])
             .is_punishing(),
             "a narrate-only on_caught carries no timing obligation"
         );
         assert!(
-            beat(vec![QuestEffect::DamagePlayers {
-                amount: 40,
-                within: None,
-                damage_type: None,
-                requires_flags: Vec::new(),
-                forbids_flags: Vec::new(),
-                requires_state: Vec::new(),
-            }])
+            beat(vec![
+                Verb::DamagePlayers {
+                    amount: 40,
+                    within: None,
+                    damage_type: None,
+                }
+                .into(),
+            ])
             .is_punishing(),
             "damage-players makes the beat punishing"
         );

@@ -112,7 +112,7 @@ fn ambush_desugars_to_a_one_shot_trigger() {
     assert!(trig.once, "an ambush springs once");
     assert_eq!(trig.at_anchor(), Some("anchor/exit"));
     assert!(matches!(trig.on, TriggerOn::Approach { range: 3 }));
-    let verbs: Vec<&str> = trig.effects.iter().map(|e| e.verb()).collect();
+    let verbs: Vec<&str> = trig.effects.iter().map(|e| e.verb.tag()).collect();
     assert_eq!(
         verbs,
         vec!["narrate", "spawn-actor", "unleash-actor"],

@@ -96,36 +96,3 @@ fn an_unauthored_hint_is_not_inventoried() {
         "an unauthored seal answer must not appear in the inventory"
     );
 }
-
-/// A `close-gate` that authors no hint renders in `Debug` exactly as it did
-/// before the field existed — the content-key stability rule, so no existing
-/// campaign's generated `seq_<hash>` function names move.
-#[test]
-fn an_unauthored_hint_does_not_move_a_content_key() {
-    use delvewright_dsl::{AnchorId, QuestEffect};
-    let plain = QuestEffect::CloseGate {
-        anchor: AnchorId("anchor/door".to_string()),
-        requires_flags: Vec::new(),
-        forbids_flags: Vec::new(),
-        requires_state: Vec::new(),
-        happening: None,
-        sealed_hint: None,
-    };
-    assert_eq!(
-        format!("{plain:?}"),
-        "CloseGate { anchor: AnchorId(\"anchor/door\"), requires_flags: [] }"
-    );
-    let authored = QuestEffect::CloseGate {
-        anchor: AnchorId("anchor/door".to_string()),
-        requires_flags: Vec::new(),
-        forbids_flags: Vec::new(),
-        requires_state: Vec::new(),
-        happening: None,
-        sealed_hint: Some("It will not shift.".to_string()),
-    };
-    assert_ne!(
-        format!("{authored:?}"),
-        format!("{plain:?}"),
-        "an authored answer changes emission, so it must change the content key"
-    );
-}

@@ -64,6 +64,7 @@
 //! decimals ([`round3`]) and threshold comparisons round first, so a borderline
 //! shot cannot flip a diagnostic across platforms on a libm ulp (ADR-0006).
 
+use delvewright_dsl::Verb;
 use delvewright_dsl::{CameraShot, CameraSubject, ShotStyle};
 
 use crate::nav::{ActorMovePlan, MovePlan};
@@ -889,14 +890,14 @@ pub fn cutscene_units(
     use delvewright_dsl::QuestEffect;
     fn list_moves(list: &[QuestEffect], delta: i32, out: &mut Vec<MoveCtx>) {
         for e in list {
-            match e {
-                QuestEffect::MoveNpc { npc, to_anchor, .. } => out.push(MoveCtx {
+            match &e.verb {
+                Verb::MoveNpc { npc, to_anchor, .. } => out.push(MoveCtx {
                     is_actor: false,
                     id: npc.to_string(),
                     to_anchor: to_anchor.to_string(),
                     delta,
                 }),
-                QuestEffect::MoveActor {
+                Verb::MoveActor {
                     actor, to_anchor, ..
                 } => out.push(MoveCtx {
                     is_actor: true,
@@ -916,9 +917,9 @@ pub fn cutscene_units(
         let mut local = scope.to_vec();
         list_moves(list, 0, &mut local);
         for e in list {
-            match e {
-                QuestEffect::Cutscene { .. } => out.push((e, local.clone())),
-                QuestEffect::Sequence { steps } => {
+            match &e.verb {
+                Verb::Cutscene { .. } => out.push((e, local.clone())),
+                Verb::Sequence { steps } => {
                     // Timeline moves as (step start tick, move) pairs.
                     let mut timed: Vec<(i32, MoveCtx)> = Vec::new();
                     for st in steps {
@@ -947,8 +948,8 @@ pub fn cutscene_units(
                             });
                         }
                         for e2 in &st.effects {
-                            match e2 {
-                                QuestEffect::Cutscene { .. } => out.push((e2, step_scope.clone())),
+                            match &e2.verb {
+                                Verb::Cutscene { .. } => out.push((e2, step_scope.clone())),
                                 _ => {
                                     for inner in e2.nested_effect_lists() {
                                         scan(inner, &[], out);

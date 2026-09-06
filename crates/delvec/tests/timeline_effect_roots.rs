@@ -363,8 +363,8 @@ fn the_walk_reaches_all_five_roots_in_the_fixed_order() {
     let plan = Plan::build(&c, &prefabs()).expect("plan builds");
     let roots: Vec<&str> = delvewright_compiler::timeline::walk(&plan)
         .into_iter()
-        .filter_map(|(e, _)| match e {
-            delvewright_dsl::QuestEffect::Narrate { text, .. } => text.strip_prefix("root: "),
+        .filter_map(|(e, _)| match &e.verb {
+            delvewright_dsl::Verb::Narrate { text, .. } => text.strip_prefix("root: "),
             _ => None,
         })
         .collect();

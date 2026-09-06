@@ -14,6 +14,7 @@
 
 mod common;
 
+use delvewright_dsl::Verb;
 use std::collections::BTreeMap;
 
 use delvewright_compiler::commands::CommandTree;
@@ -22,7 +23,7 @@ use delvewright_compiler::nav;
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_compiler::timeline;
-use delvewright_dsl::{Campaign, QuestEffect, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc carrying a stage-5 actor plus a caller-supplied
 /// `on_complete` body (raw JSON array contents, no surrounding brackets).
@@ -328,12 +329,12 @@ fn seal_flags(c: &Campaign) -> Vec<(String, bool)> {
     timeline::walk(&plan)
         .into_iter()
         .map(|(e, state)| {
-            let name = match e {
-                QuestEffect::CloseGate { .. } => "close-gate",
-                QuestEffect::OpenGate { .. } => "open-gate",
-                QuestEffect::MoveActor { .. } => "move-actor",
-                QuestEffect::Sequence { .. } => "sequence",
-                QuestEffect::CampaignComplete { .. } => "campaign-complete",
+            let name = match &e.verb {
+                Verb::CloseGate { .. } => "close-gate",
+                Verb::OpenGate { .. } => "open-gate",
+                Verb::MoveActor { .. } => "move-actor",
+                Verb::Sequence { .. } => "sequence",
+                Verb::CampaignComplete { .. } => "campaign-complete",
                 _ => "other",
             };
             (name.to_string(), !state.is_empty())
