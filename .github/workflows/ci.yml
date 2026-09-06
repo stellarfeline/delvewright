@@ -966,12 +966,16 @@ jobs:
       # The piece and the skins, generated — never committed (§6). Doing this
       # before anything else means a generator that stopped producing a piece
       # fails in a step named for the generator, not inside one named for a gate.
-      - name: generate the gallery's piece and skins
+      # The gallery's prefab directory is made by TWO committed acts: the
+      # generator for the hand-built pieces and the skins, and `delvec detail
+      # --all` over the site-plan point for the program-detailed place
+      # (spec-0058). `tools/gallery-prefabs.py` runs both and asserts the row
+      # the verb writes is the row the overlay commits, so a hand-edited row
+      # cannot stand where the program's own output belongs.
+      - name: generate the gallery's pieces and skins
         run: |
-          mkdir -p gallery-prefabs
-          cargo run --locked --release \
-            --manifest-path prefabs/gallery-generator/Cargo.toml \
-            -- gallery-prefabs --skins gallery/skins
+          python3 tools/gallery-prefabs.py \
+            --delvec target/debug/delvec --out gallery-prefabs
       # `analyze` is the reachability half of the ladder (spec-0039 §4.2) and
       # `build --lang en` is the tree the coverage gate reads its binding ledgers
       # from. Every OTHER language, and every overlay, is built by the baseline

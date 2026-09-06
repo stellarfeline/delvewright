@@ -93,7 +93,10 @@ fn rule(body: Value) -> Value {
 
 /// `handed/seam/<edge stem>/<k>`.
 fn seam_param(edge: &str, k: &str) -> String {
-    format!("handed/seam/{}/{k}", edge.strip_prefix("edge/").unwrap_or(edge))
+    format!(
+        "handed/seam/{}/{k}",
+        edge.strip_prefix("edge/").unwrap_or(edge)
+    )
 }
 
 /// A piece of the room: claimed as the space, its floor row carrying the
@@ -138,8 +141,10 @@ fn carve(
         _ => 2,
     };
     // Group by the range on this axis, ordered by its low end.
-    let mut groups: Vec<((i64, i64), Vec<&delvewright_compiler::detail::AllocatedSeam>)> =
-        Vec::new();
+    let mut groups: Vec<(
+        (i64, i64),
+        Vec<&delvewright_compiler::detail::AllocatedSeam>,
+    )> = Vec::new();
     for s in seams {
         let key = (s.cells[0][idx], s.cells[1][idx]);
         match groups.iter_mut().find(|(k, _)| *k == key) {
@@ -255,7 +260,11 @@ fn program_for(a: &Allocation, shift: Option<(&str, i64)>, marks: bool) -> Value
     let mut rules = serde_json::Map::new();
     rules.insert(
         "piece".into(),
-        rule(split("y", vec![abs(int(1)), rel()], vec![fill("floor"), call("room")])),
+        rule(split(
+            "y",
+            vec![abs(int(1)), rel()],
+            vec![fill("floor"), call("room")],
+        )),
     );
     rules.insert("room".into(), rule(carved));
     // The lamp grid's period is clamped to the strip it is laid in, so a piece
@@ -374,11 +383,24 @@ fn one_verb_writes_the_piece_the_report_and_the_row() {
     let out = delvec(&["--prefabs", ps, "detail", cs, "node/exit"]);
     assert_eq!(code(&out), 0, "{}", text(&out));
     let t = text(&out);
-    assert!(t.contains("node/exit: `prefab/blockout-exit` written from `programs/exit.json`"), "{t}");
-    assert!(t.contains("1 declared face(s) answering 1 allocated seam(s)"), "{t}");
+    assert!(
+        t.contains("node/exit: `prefab/blockout-exit` written from `programs/exit.json`"),
+        "{t}"
+    );
+    assert!(
+        t.contains("1 declared face(s) answering 1 allocated seam(s)"),
+        "{t}"
+    );
     assert!(t.contains("1 of 1 owed name(s) bound"), "{t}");
-    assert!(t.contains("the whole builds with the piece(s) this run wrote"), "{t}");
-    for f in ["blockout-exit.nbt", "blockout-exit.json", "blockout-exit.report.json"] {
+    assert!(
+        t.contains("the whole builds with the piece(s) this run wrote"),
+        "{t}"
+    );
+    for f in [
+        "blockout-exit.nbt",
+        "blockout-exit.json",
+        "blockout-exit.report.json",
+    ] {
         assert!(prefabs.join(f).is_file(), "{f} written");
     }
     let plan = detail_plan(&campaign);
@@ -396,7 +418,10 @@ fn one_verb_writes_the_piece_the_report_and_the_row() {
     assert_eq!(meta["structure"]["size"], json!([8, 5, 8]));
     assert_eq!(meta["footprint_class"], "alcove");
     assert_eq!(meta["lighting"]["profile"], "lit");
-    assert_eq!(meta["license"]["generated_by"]["params"]["handed/seam/cell-exit/z0"], 2);
+    assert_eq!(
+        meta["license"]["generated_by"]["params"]["handed/seam/cell-exit/z0"],
+        2
+    );
 
     // Determinism (ADR-0006): the second run moves no byte.
     let before = (snapshot(&prefabs), snapshot(&campaign));
@@ -405,7 +430,14 @@ fn one_verb_writes_the_piece_the_report_and_the_row() {
     assert_eq!(before, (snapshot(&prefabs), snapshot(&campaign)));
 
     // And the compiler's own verdict, from disk.
-    let built = delvec(&["--prefabs", ps, "build", cs, "-o", tmp.join("out").to_str().unwrap()]);
+    let built = delvec(&[
+        "--prefabs",
+        ps,
+        "build",
+        cs,
+        "-o",
+        tmp.join("out").to_str().unwrap(),
+    ]);
     assert_eq!(code(&built), 0, "{}", text(&built));
 }
 
@@ -421,7 +453,9 @@ fn detail_all_details_every_program_in_plan_order_with_one_command() {
     let ps = prefabs.to_str().unwrap();
     let c = common::campaign_at(&campaign);
     for p in &places {
-        assert!(answerable(&detail::allocation(&c, &NodeId((*p).to_string())).unwrap()));
+        assert!(answerable(
+            &detail::allocation(&c, &NodeId((*p).to_string())).unwrap()
+        ));
     }
 
     let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
@@ -473,10 +507,19 @@ fn detail_refuses_without_a_walk_before_opening_the_program() {
     let t = refused(
         &campaign,
         &prefabs,
-        &["--prefabs", prefabs.to_str().unwrap(), "detail", campaign.to_str().unwrap(), "node/exit"],
+        &[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ],
     );
     assert!(t.contains("DW0841"), "{t}");
-    assert!(!t.contains("programs/exit.json"), "the program was opened: {t}");
+    assert!(
+        !t.contains("programs/exit.json"),
+        "the program was opened: {t}"
+    );
 }
 
 #[test]
@@ -491,11 +534,20 @@ fn detail_refuses_a_handed_name_the_whole_does_not_hand() {
     let t = refused(
         &campaign,
         &prefabs,
-        &["--prefabs", prefabs.to_str().unwrap(), "detail", campaign.to_str().unwrap(), "node/exit"],
+        &[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ],
     );
     assert!(t.contains("DW0882"), "{t}");
     assert!(t.contains("`handed/seam/no-such-edge/x0`"), "{t}");
-    assert!(t.contains("`handed/seam/cell-exit/z0`"), "names what IS handed: {t}");
+    assert!(
+        t.contains("`handed/seam/cell-exit/z0`"),
+        "names what IS handed: {t}"
+    );
 }
 
 #[test]
@@ -505,11 +557,21 @@ fn detail_refuses_a_seam_the_program_does_not_answer_naming_the_face() {
     let c = common::campaign_at(&campaign);
     let a = detail::allocation(&c, &NodeId("node/exit".into())).unwrap();
     // The opening one cell along the wall from where the plan cut the seam.
-    write_program(&campaign, "node/exit", &program_for(&a, Some(("edge/cell-exit", 1)), true));
+    write_program(
+        &campaign,
+        "node/exit",
+        &program_for(&a, Some(("edge/cell-exit", 1)), true),
+    );
     let t = refused(
         &campaign,
         &prefabs,
-        &["--prefabs", prefabs.to_str().unwrap(), "detail", campaign.to_str().unwrap(), "node/exit"],
+        &[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ],
     );
     assert!(t.contains("DW0844"), "{t}");
     assert!(t.contains("east side"), "names the face: {t}");
@@ -526,7 +588,13 @@ fn detail_refuses_an_owed_name_no_mark_answers() {
     let t = refused(
         &campaign,
         &prefabs,
-        &["--prefabs", prefabs.to_str().unwrap(), "detail", campaign.to_str().unwrap(), "node/exit"],
+        &[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/exit",
+        ],
     );
     assert!(t.contains("DW0845"), "{t}");
     assert!(t.contains("`anchor/node-exit`"), "{t}");
@@ -540,10 +608,19 @@ fn detail_all_refuses_a_program_naming_no_place_by_name() {
     let t = refused(
         &campaign,
         &prefabs,
-        &["--prefabs", prefabs.to_str().unwrap(), "detail", campaign.to_str().unwrap(), "--all"],
+        &[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "--all",
+        ],
     );
     assert!(t.contains("`nowhere.json`"), "{t}");
-    assert!(t.contains("name no place the site plan allocates a box to"), "{t}");
+    assert!(
+        t.contains("name no place the site plan allocates a box to"),
+        "{t}"
+    );
 }
 
 #[test]
@@ -553,7 +630,13 @@ fn detail_all_over_no_program_is_a_zero_binding() {
     let t = refused(
         &campaign,
         &prefabs,
-        &["--prefabs", prefabs.to_str().unwrap(), "detail", campaign.to_str().unwrap(), "--all"],
+        &[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "--all",
+        ],
     );
     assert!(t.contains("ZERO programs"), "{t}");
 }
@@ -565,9 +648,18 @@ fn detail_refuses_a_place_with_no_box_in_the_allocations_words() {
     let t = refused(
         &campaign,
         &prefabs,
-        &["--prefabs", prefabs.to_str().unwrap(), "detail", campaign.to_str().unwrap(), "node/nowhere"],
+        &[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            campaign.to_str().unwrap(),
+            "node/nowhere",
+        ],
     );
-    assert!(t.contains("the plan allocates no box to `node/nowhere`"), "{t}");
+    assert!(
+        t.contains("the plan allocates no box to `node/nowhere`"),
+        "{t}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -619,13 +711,22 @@ fn after_a_graph_edit_a_program_that_no_longer_fits_is_refused_by_name() {
 
     // The connection is renamed in the graph and the plan, the whole re-walked:
     // the program's handed names now name a seam this place no longer has.
-    for doc in ["layout-graph.json", "site-plan.json", "quests.json", "quest-plan.json"] {
+    for doc in [
+        "layout-graph.json",
+        "site-plan.json",
+        "quests.json",
+        "quest-plan.json",
+    ] {
         let p = campaign.join(doc);
         let t = std::fs::read_to_string(&p).unwrap();
         std::fs::write(&p, t.replace("edge/cell-exit", "edge/cell-gate")).unwrap();
     }
     common::record_walk(&campaign);
-    let t = refused(&campaign, &prefabs, &["--prefabs", ps, "detail", cs, "--all"]);
+    let t = refused(
+        &campaign,
+        &prefabs,
+        &["--prefabs", ps, "detail", cs, "--all"],
+    );
     assert!(t.contains("DW0882"), "{t}");
     assert!(t.contains("`handed/seam/cell-exit/"), "{t}");
     assert!(t.contains("`handed/seam/cell-gate/z0`"), "{t}");
@@ -654,13 +755,20 @@ fn the_gym_is_detailed_by_one_command() {
             places.push(a.place.clone());
         }
     }
-    assert!(places.len() >= 8, "the gym offers {} plain-walk place(s): {places:?}", places.len());
+    assert!(
+        places.len() >= 8,
+        "the gym offers {} plain-walk place(s): {places:?}",
+        places.len()
+    );
 
     let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
     assert_eq!(code(&out), 0, "{}", text(&out));
     let t = text(&out);
     assert!(
-        t.contains(&format!("detail: {n} place(s) detailed of {n} named", n = places.len())),
+        t.contains(&format!(
+            "detail: {n} place(s) detailed of {n} named",
+            n = places.len()
+        )),
         "{t}"
     );
     let rows = detail_plan(&campaign)["content"]["details"]
@@ -685,7 +793,11 @@ fn a_gate_report_beside_a_piece_is_skipped_by_name_and_a_malformed_metadata_file
     let prefabs = tmp.join("prefabs");
     common::copy_dir_all(&common::prefabs_dir(), &prefabs);
     let campaign = common::hello_world_dir();
-    std::fs::write(prefabs.join("stray.report.json"), "{\"verdict\": \"pass\"}\n").unwrap();
+    std::fs::write(
+        prefabs.join("stray.report.json"),
+        "{\"verdict\": \"pass\"}\n",
+    )
+    .unwrap();
     let out = delvec(&[
         "--prefabs",
         prefabs.to_str().unwrap(),

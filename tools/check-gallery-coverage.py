@@ -173,7 +173,8 @@ def _codes(r: subprocess.CompletedProcess) -> list[str]:
 def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[str], str]:
     """Put a probe through the engine and report how it was refused.
 
-    **`validate` first, then `build`** — and the second half is not an
+    **`detail` first where the probe carries a program, then `validate`, then
+    `build`** — and the last half is not an
     optimisation, it is what makes the probe mechanism able to express a whole
     class of rule at all. A probe naming a code the DOCUMENT-level phase cannot
     reach — every geometry and emission refusal, which needs resolved anchor
@@ -187,6 +188,29 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
     fifteen probes that predate this pay nothing. The phase that produced the
     refusal is returned with it, so the index says which one looked.
     """
+    # **A probe that ships a program is refused where the program is entered.**
+    # `delvec detail` is the event that begins detail work for a program
+    # (spec-0058): it binds the handing, expands and judges before any file is
+    # written, and its refusals — a handed name nothing hands, an opening off
+    # its seam, an owed name no mark answers — fire on the program, ahead of
+    # any verdict `validate` would give the campaign around it. So where the
+    # materialised point carries `programs/`, `detail --all` runs first, over a
+    # scratch copy of the prefab directory so a probe that is NOT refused
+    # cannot write into the directory every other point builds from.
+    if (campaign / "programs").is_dir():
+        scratch = Path(tempfile.mkdtemp(prefix="gallery-probe-prefabs-"))
+        try:
+            shutil.rmtree(scratch)
+            shutil.copytree(prefabs, scratch)
+            d = subprocess.run(
+                [str(delvec), "--prefabs", str(scratch), "detail", str(campaign), "--all", "--json"],
+                capture_output=True,
+                text=True,
+            )
+            if d.returncode != 0:
+                return d.returncode, _codes(d), "detail"
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
     v = subprocess.run(
         [str(delvec), "validate", str(campaign), "--prefabs", str(prefabs), "--json"],
         capture_output=True,
@@ -317,7 +341,7 @@ def assert_refused(
     if rc == 0:
         die(
             f"probe `{name}` was ACCEPTED by `delvec validate` AND by "
-            f"`delvec build`. A probe is a "
+            f"`delvec build` (and by `delvec detail`, where it carries a program). A probe is a "
             "refusal's whole proof: it must be refused. "
             + (
                 "An accepted exemption probe proves its units are writable — "
@@ -393,10 +417,10 @@ def main() -> int:
     prefabs = Path(args.prefabs)
     if not prefabs.is_dir():
         die(
-            f"--prefabs `{prefabs}` is not a directory. The gallery's piece is "
+            f"--prefabs `{prefabs}` is not a directory. The gallery's pieces are "
             "GENERATED (spec-0039 §6) — run "
-            "`cargo run --release --manifest-path prefabs/gallery-generator/Cargo.toml "
-            "-- <dir> --skins gallery/skins` first."
+            "`python3 tools/gallery-prefabs.py --out <dir>` first: it runs the generator "
+            "and `delvec detail --all` over the site-plan point (spec-0058)."
         )
 
     export = schema_export(delvec)

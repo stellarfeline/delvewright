@@ -702,7 +702,11 @@ pub(crate) fn load_or_refuse(campaign_dir: &Path, json: bool) -> Result<LoadedCa
 /// Validate and return the parsed campaign + shared context (prefabs, loaded dir,
 /// l10n sidecars) + diagnostics; prints diagnostics. Returns `Err(exit)` on
 /// internal error.
-pub(crate) fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result<Validated, u8> {
+pub(crate) fn validate_stage(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+) -> Result<Validated, u8> {
     let loaded = load_or_refuse(campaign_dir, json)?;
     validate_loaded(loaded, prefabs_dir, json)
 }

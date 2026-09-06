@@ -1,0 +1,16 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "details": [
+      {
+        "anchors": {
+          "anchor/node-annex": "anchor/node-annex"
+        },
+        "piece": "prefab/gallery-annex",
+        "place": "node/annex"
+      }
+    ]
+  },
+  "dsl_version": "0.15.0",
+  "stage": "detail-plan"
+}

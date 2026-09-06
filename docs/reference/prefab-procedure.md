@@ -95,7 +95,12 @@ exactly the handed extent — `DW0843` refuses undersize exactly as oversize.
 The output is derived from the site plan on every invocation and is an input
 to nothing; ask again whenever it is wanted. It refuses without a passed,
 fresh `walk-record.json` (`DW0841`), so the whole is walked before this step
-can begin.
+can begin. The program that answers it is written at `programs/<place
+stem>.json` inside the campaign, reading the handed values through
+parameters under the `handed/` prefix, and is expanded, judged, frozen and
+bound by **one verb**, `delvec detail <campaign-dir> <place>` (spec-0058;
+[`tools.md`](tools.md) §1) — nothing of the allocation is re-typed into an
+`expand` flag or a `details[]` row.
 
 ## 2. Choose the palette by MEASUREMENT — screen, measure the mix, then LOOK
 

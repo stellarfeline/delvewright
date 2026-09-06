@@ -42,7 +42,9 @@ use delvewright_dsl::{
 };
 use delvewright_grammar::cli::{composition_to_stderr, report_to_stderr};
 use delvewright_grammar::ir::Paint;
-use delvewright_grammar::{BlockState, Box3, ExpandOptions, Overrides, document, expand, export, gates};
+use delvewright_grammar::{
+    BlockState, Box3, ExpandOptions, Overrides, document, expand, export, gates,
+};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -543,7 +545,11 @@ fn detail_one(
         write(prefabs_dir, &part.file, bytes)?;
         files.push(part.file.clone());
     }
-    write(prefabs_dir, exported.metadata_file(), meta.to_json().as_bytes())?;
+    write(
+        prefabs_dir,
+        exported.metadata_file(),
+        meta.to_json().as_bytes(),
+    )?;
     files.push(exported.metadata_file().to_string());
     let report_file = format!("{id}{REPORT_SUFFIX}");
     write(prefabs_dir, &report_file, report.to_json().as_bytes())?;
@@ -551,10 +557,7 @@ fn detail_one(
     write_row(campaign_dir, campaign, &row)?;
 
     // ---- what was done, with every count beside its denominator ----
-    let faces = meta
-        .spatial_contract
-        .as_ref()
-        .map_or(0, |c| c.faces.len());
+    let faces = meta.spatial_contract.as_ref().map_or(0, |c| c.faces.len());
     eprintln!(
         "{place}: `{}` written from `{}` — frame {}x{}x{}, seed {seed}; {} of {} handed name(s) \
          bound; {} declared face(s) answering {} allocated seam(s); {} of {} owed name(s) bound; \
@@ -688,7 +691,10 @@ fn write_row(campaign_dir: &Path, campaign: &Campaign, row: &Detail) -> Result<(
             EXIT_INTERNAL
         })?;
         serde_json::from_str(&text).map_err(|e| {
-            eprintln!("error: {} does not parse as a detail plan: {e}", path.display());
+            eprintln!(
+                "error: {} does not parse as a detail plan: {e}",
+                path.display()
+            );
             1u8
         })?
     } else {
@@ -702,7 +708,12 @@ fn write_row(campaign_dir: &Path, campaign: &Campaign, row: &Detail) -> Result<(
             },
         }
     };
-    match env.content.details.iter().position(|d| d.place == row.place) {
+    match env
+        .content
+        .details
+        .iter()
+        .position(|d| d.place == row.place)
+    {
         Some(i) => env.content.details[i] = row.clone(),
         None => env.content.details.push(row.clone()),
     }
@@ -715,7 +726,10 @@ fn write_row(campaign_dir: &Path, campaign: &Campaign, row: &Detail) -> Result<(
 
 fn write(dir: &Path, file: &str, bytes: &[u8]) -> Result<(), u8> {
     std::fs::write(dir.join(file), bytes).map_err(|e| {
-        eprintln!("internal error: cannot write {}: {e}", dir.join(file).display());
+        eprintln!(
+            "internal error: cannot write {}: {e}",
+            dir.join(file).display()
+        );
         EXIT_INTERNAL
     })
 }
