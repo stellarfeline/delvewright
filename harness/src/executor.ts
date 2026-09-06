@@ -868,17 +868,6 @@ const REACH_POLL_MS = 250;
 const KILL_TIMEOUT_MS = 90_000;
 /** Attack cadence (ms) — roughly the vanilla sword cooldown. */
 const ATTACK_INTERVAL_MS = 400;
-/**
- * How long (ms) the bot may spend getting back to full health before the one
- * unassisted attempt the inverted floor gate measures.
- *
- * The ceiling is what natural regeneration costs, not a guess: vanilla heals one
- * half-heart every four seconds at full hunger, so twenty of them is eighty
- * seconds, and the bot eats its own kit on the way. Reaching it is normal; the
- * deadline exists so a bot that cannot heal (no food, a hostile in its face)
- * still takes the attempt, with the health it opened at on the record.
- */
-const FLOOR_HEALTH_SETTLE_MS = 90_000;
 
 /**
  * How far from its anchor cell an actor's unleashed body may be and still be
@@ -4174,54 +4163,57 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * **Bring the body to the state the floor measurement is specified at.**
+   * **The floor measurement never opens over an unrecovered death.**
    *
-   * The unassisted attempt is the one sample the inverted floor gate takes, and
-   * it was being taken from whatever the die-retry stage left behind: on the
-   * gallery, three runs of one tree opened it at 10.4, 11.6 and 12.4 health and
-   * produced one win and two losses. Health is the variable the HARNESS owns, so
-   * it is the one the harness has to state — a party arrives at an elite from a
-   * bonfire, and a bot that arrives on four hearts is measuring its own last
-   * fight, not this one.
+   * The die-retry stage runs first and dies on purpose, so the bot can arrive at
+   * this line still on the death screen. Opened there, the attempt is charged a
+   * `died` it did not take — the gallery produced exactly that: `opened at
+   * 0.0/20 health, 0 bodies engaged, 0 down`, which is a verdict about a delve
+   * written by the harness leaving its own bot dead. The same rule the death
+   * loop's trials already keep.
    *
-   * Nothing is given to the bot: it eats its own kit and lets vanilla's natural
-   * regeneration run, which is what a player does. Bounded, and the deadline is
-   * not a failure — the attempt opens anyway and the outcome records the health
-   * it opened at, so a run that could not get there says so in a number instead
-   * of silently sampling a different experiment.
+   * Health is NOT settled first, and that is a measurement rather than an
+   * omission. Standing next to a live elite waiting to regenerate is not
+   * something a player does and not something the bot survives: made to try it,
+   * the gallery run above was beaten to death during the wait, since
+   * `eatDecision` correctly refuses to eat with a hostile in reach. And full
+   * health does not decide the fight anyway — two gallery runs opened at
+   * `20.0/20` and both ended `died`. So the health is RECORDED, which is what
+   * makes two samples comparable, and not manufactured.
    */
-  private async settleForFloorMeasurement(step: KillStep): Promise<number> {
-    const bot = this.requireBot();
-    const deadline = Date.now() + FLOOR_HEALTH_SETTLE_MS;
-    while (Date.now() < deadline && bot.health < PLAYER_MAX_HEALTH) {
-      if (this.death) break;
-      await this.maybeEat(`floor measurement ${step.wave}`);
-      await delay(REACH_POLL_MS);
+  private async openFloorMeasurement(step: KillStep): Promise<number | undefined> {
+    if (this.death !== undefined) {
+      process.stderr.write(
+        `[floor] ${step.wave}: the bot was still dead when the unassisted attempt opened — ` +
+          `recovering first, because a corpse measures nothing\n`,
+      );
+      await this.recoverFromDeath();
     }
-    return bot.health;
+    if (this.death !== undefined) return undefined;
+    return this.requireBot().health;
   }
 
-  /**
-   * One honest, unassisted attempt at a billed encounter, as an OBSERVATION.
-   *
-   * A death or a timeout is a normal outcome, not a failed run — the bot losing a
-   * souls fight is the DESIGN, and spec-0023 downgraded bot melee competence from
-   * gate-critical to telemetry precisely so it could be. What is NOT a normal
-   * outcome is the two of them being indistinguishable: a timeout with zero
-   * bodies engaged means nobody swung at anything, and reporting it as the same
-   * silence a lost fight reports is how an unmeasured floor reads as a measured
-   * one.
-   */
   private async attemptUnassisted(step: KillStep, enc: Encounter): Promise<UnassistedOutcome> {
-    const healthAtStart = await this.settleForFloorMeasurement(step);
-    process.stderr.write(
-      `[floor] ${step.wave} is billed \`${enc.tier}\` — one unassisted attempt first, ` +
-        `opening at ${healthAtStart.toFixed(1)}/${PLAYER_MAX_HEALTH} health\n`,
-    );
     const seen = (): { engaged: number; killed: number } => {
       const e = this.engagements.get(step.wave);
       return { engaged: e?.engaged.size ?? 0, killed: e?.killed ?? 0 };
     };
+    const opened = await this.openFloorMeasurement(step);
+    if (opened === undefined) {
+      return {
+        result: "not-attempted",
+        healthAtStart: 0,
+        maxHealth: PLAYER_MAX_HEALTH,
+        engaged: 0,
+        killed: 0,
+        detail: "the bot was dead when the attempt opened and could not be recovered",
+      };
+    }
+    const healthAtStart = opened;
+    process.stderr.write(
+      `[floor] ${step.wave} is billed \`${enc.tier}\` — one unassisted attempt first, ` +
+        `opening at ${healthAtStart.toFixed(1)}/${PLAYER_MAX_HEALTH} health\n`,
+    );
     try {
       await this.fightWave(step);
       return { result: "won", healthAtStart, maxHealth: PLAYER_MAX_HEALTH, ...seen() };
