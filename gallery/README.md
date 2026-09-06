@@ -48,7 +48,7 @@ order a player would:
 | `world-edits.json` | four batches that dress the floor, lay the hearth, thin the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
 | `layout-graph.json` | the same hall stated as six places and twelve connections, before any coordinate — three barred doors through the wall because the hall really has three, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
-| `overlays/site-plan/` | those same six places given geometry, and then a whole map DERIVED from it: a region, a box each, a seam per connection on a face the two boxes share, the rock and the sky the whole owns, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to |
+| `overlays/site-plan/` | the same places given geometry, and then a whole map DERIVED from it: a region, a box each stating only its extent and plane, ONE pinned corner, a seam per connection stating which face of its `a` box it sits on and where along it (the compiler derives every other corner and every sill — spec-0059; `delvec validate` prints the corners), the rock and the sky the whole owns, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to |
 | `l10n/zh-cn.json` | the second language, so the sidecar surface is real rather than declared |
 | `render-plan.json` | the view set the gallery declares, so a shot that vanishes is a red |
 | `area/annex` (in `world.json`) | a three-tile chain assembled from `pool/gallery-annex` — what binds the piece verbs |
@@ -135,7 +135,12 @@ A probe may ship a whole document, and four of them do: `site-plan.json`,
 `detail-plan.json` and `walk-record.json` are documents the primary cannot carry
 at all — `DW0839` refuses a campaign holding both `areas[]` and a site plan — so
 there is nothing for them to be a copy of. A file that shadows a primary
-document is refused.
+document is refused. A probe may instead declare its edit against an
+**overlay's** document, naming it by its path (`overlays/site-plan/site-plan.json`):
+that document is brought into the point as the campaign's own and the edit is
+applied to it, so the probe is the primary plus that document plus one edit and
+ships no copy — a probe that both names an overlay document and ships a file of
+the same name is refused.
 
 A probe is an OVERLAY, not a campaign, so `delvec validate` pointed at a probe
 directory refuses the directory (`DW0874`) rather than the document. Materialise

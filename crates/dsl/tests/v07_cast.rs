@@ -56,7 +56,7 @@ fn campaign_with(quests: String) -> RawCampaign {
 /// A `cast` ledger validates clean under `dsl_version 0.7.0`.
 #[test]
 fn cast_validates_clean_under_v07() {
-    let diags = check_campaign(&campaign_with(quests("0.19.0")));
+    let diags = check_campaign(&campaign_with(quests("0.20.0")));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.7 cast ledger, got: {diags:#?}"
@@ -73,7 +73,7 @@ fn a_ledger_root_is_a_dialogue_entry_point() {
         r#""nodes": [
           { "id": "dlg/farewell", "text": "The road is yours.", "options": [] },"#,
     );
-    let with_root = quests("0.19.0").replace(
+    let with_root = quests("0.20.0").replace(
         r#""dialogue": "dlg/greeting""#,
         r#""dialogue": "dlg/farewell""#,
     );
@@ -86,7 +86,7 @@ fn a_ledger_root_is_a_dialogue_entry_point() {
     );
 
     // Control: the same orphan node with NO ledger reference is still DW0120.
-    let mut orphan = campaign_with(quests("0.19.0"));
+    let mut orphan = campaign_with(quests("0.20.0"));
     orphan.dialogue = dialogue;
     assert!(
         check_campaign(&orphan).iter().any(|d| d.code == "DW0120"),
@@ -98,7 +98,7 @@ fn a_ledger_root_is_a_dialogue_entry_point() {
 /// speaking NPC); `doing` is authoring context and deliberately stays out.
 #[test]
 fn bark_lines_enter_the_l10n_inventory() {
-    let barks = quests("0.19.0").replace(
+    let barks = quests("0.20.0").replace(
         r#""dialogue": "dlg/greeting""#,
         r#""dialogue": { "barks": ["Mind the step.", "Cold tonight."] }"#,
     );

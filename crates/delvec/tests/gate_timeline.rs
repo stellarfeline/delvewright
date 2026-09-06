@@ -34,7 +34,7 @@ use delvewright_dsl::{Campaign, QuestEffect, RawCampaign, parse_campaign};
 fn quests_doc(on_complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.20.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -272,7 +272,7 @@ fn conditional_close_gate_seals_nothing() {
 #[test]
 fn close_gate_in_another_bundle_does_not_seal_this_timeline() {
     let quests = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.20.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

@@ -66,7 +66,7 @@ fn hello_world_with_dialogue(
     let dpath = tmp.join("dialogue.json");
     let mut dlg: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&dpath).unwrap()).unwrap();
-    dlg["dsl_version"] = serde_json::json!("0.19.0");
+    dlg["dsl_version"] = serde_json::json!("0.20.0");
     mutate(&mut dlg);
     std::fs::write(&dpath, serde_json::to_string_pretty(&dlg).unwrap()).unwrap();
     tmp

@@ -448,14 +448,21 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
             field: b.class,
         })
     };
+    // The plan is relational (spec-0059): the first bay is pinned and every
+    // other box is placed by its seam. `Bay::min` stays the generator's own
+    // arithmetic for the region and the identities, never written to the plan.
+    let entry_min = bays[0].min;
     let box_entry = |b: &Bay, floor: i64| {
-        json!({
+        let mut v = json!({
             "node": b.node,
-            "min": [b.min[0], b.min[1]],
             "extent": [b.extent[0], b.extent[1]],
             "floor": { "y": floor },
             "ceiling": { "clearance": b.clearance },
-        })
+        });
+        if b.min == entry_min && b.node == bays[0].node {
+            v["min"] = json!([b.min[0], b.min[1]]);
+        }
+        v
     };
 
     for (i, b) in bays.iter().enumerate() {
@@ -501,8 +508,10 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
             .expect("the smallest standard opening fits the smallest rung");
         let id = format!("edge/{}-to-{}", slug(&a.node), slug(&b.node));
         edges.push(json!({ "id": id, "a": a.node, "b": b.node, "class": "walk" }));
+        // One cell in from each bay's low corner along the shared wall — the
+        // same cells as ever, stated from each box's own corner.
         seams.push(json!({
-            "edge": id, "face": "east", "at": [z0 + 1, GRADE_Y], "opening": name,
+            "edge": id, "face": "east", "at": 1, "meets": 1, "opening": name,
         }));
         let _ = i;
     }
@@ -528,7 +537,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         let id = format!("edge/{}-climb", slug(&top.node));
         edges.push(json!({ "id": id, "a": h.node, "b": top.node, "class": "stair" }));
         seams.push(json!({
-            "edge": id, "face": "south", "at": [h.min[0] + 1, landing],
+            "edge": id, "face": "south", "at": 1, "meets": 1,
             "opening": gate, "stair_in": h.node,
         }));
     }
@@ -548,15 +557,13 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         "class": "drop", "falls": "a-to-b",
     }));
     seams.push(json!({
-        "edge": "edge/the-fall", "face": "south",
-        "at": [gentle_top.min[0] + 1, landing], "opening": "arch",
+        "edge": "edge/the-fall", "face": "south", "at": 1, "meets": 1, "opening": "arch",
     }));
     edges.push(json!({
         "id": "edge/out-of-the-pit", "a": pit.node, "b": gentle_top.node, "class": "stair",
     }));
     seams.push(json!({
-        "edge": "edge/out-of-the-pit", "face": "north",
-        "at": [gentle_top.min[0] + 8, landing], "opening": "arch",
+        "edge": "edge/out-of-the-pit", "face": "north", "at": 8, "meets": 8, "opening": "arch",
         "stair_in": pit.node,
     }));
 
@@ -566,14 +573,15 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     // computed from the ladder because the ladder is the brief here — the gym's
     // written design IS "one place per rung at each bound" — and the identities
     // below hold the plan to that.
-    let far_x = boxes
+    let all: Vec<&Bay> = bays.iter().chain([&steep_top, &gentle_top, &pit]).collect();
+    let far_x = all
         .iter()
-        .map(|b| b["min"][0].as_i64().unwrap_or(0) + b["extent"][0].as_i64().unwrap_or(0))
+        .map(|b| b.min[0] + b.extent[0])
         .max()
         .unwrap_or(0);
-    let far_z = boxes
+    let far_z = all
         .iter()
-        .map(|b| b["min"][1].as_i64().unwrap_or(0) + b["extent"][1].as_i64().unwrap_or(0))
+        .map(|b| b.min[1] + b.extent[1])
         .max()
         .unwrap_or(0);
     let top_y = landing + gentle_top.clearance;

@@ -2840,6 +2840,9 @@ fn layout_binding_lines(campaign: &delvewright_dsl::Campaign, out: &mut Vec<Stri
     out.push(b.line());
     if campaign.site_plan.is_some() {
         out.push(b.plan_line());
+        // The derivation, handed back: every box's corner and how it was
+        // obtained, so a creator reads a corner here rather than typing one.
+        out.extend(delvewright_dsl::placements(campaign));
         if b.plan.views == 0 {
             out.push(
                 "site-plan binding 0: this plan names no view, so the walk has no declared \

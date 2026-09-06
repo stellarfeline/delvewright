@@ -34,7 +34,7 @@ use serde_json::{Value, json};
 ///   exercised side by side in one document rather than in two.
 const GRAPH: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.20.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -65,7 +65,7 @@ const GRAPH: &str = r#"{
 
 const BRIEF: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.20.0",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -83,7 +83,7 @@ const BRIEF: &str = r#"{
 /// portal, so both kinds are resolved, derived and measured in one plan.
 const PLAN: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.20.0",
   "stage": "site-plan",
   "content": {
     "region": { "min": [0, 56, 0], "extent": [128, 32, 128] },
@@ -103,11 +103,11 @@ const PLAN: &str = r#"{
         "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 8 } }
     ],
     "seams": [
-      { "edge": "edge/porch-road", "face": "east", "at": [1, 64], "opening": "arch" },
-      { "edge": "edge/road-hall", "face": "east", "at": [1, 64], "opening": "arch" },
-      { "edge": "edge/hall-duct", "face": "east", "at": [1, 64], "opening": "arch" },
-      { "edge": "edge/duct-vault", "face": "east", "at": [1, 64], "opening": "arch" },
-      { "edge": "edge/court-hall", "face": "north", "at": [14, 64], "contact": {} }
+      { "edge": "edge/porch-road", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
+      { "edge": "edge/road-hall", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
+      { "edge": "edge/hall-duct", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
+      { "edge": "edge/duct-vault", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
+      { "edge": "edge/court-hall", "face": "north", "contact": {} }
     ]
   }
 }"#;
@@ -563,11 +563,9 @@ fn a_drop_contact_is_legal() {
     let mut p: Value = serde_json::from_str(PLAN).expect("parse");
     // The court stands three blocks over the hall, so the fall is real and
     // inside `drop.max-designed-rise`. Raising it raises the SHARED FACE with
-    // it — two boxes share only the y span they have in common — so the span's
-    // anchor moves to the new face's low corner, which is the number both
-    // `DW0876` and `DW0828` print in their refusals.
+    // it — two boxes share only the y span they have in common — and the sill
+    // follows, being the higher floor: nothing on the seam is retyped.
     boxx(&mut p, 5)["floor"] = json!({ "y": 67 });
-    seam(&mut p, 4)["at"] = json!([14, 67]);
     let d = check_campaign(&campaign(
         serde_json::to_string(&g).expect("re-serialize"),
         serde_json::to_string(&p).expect("re-serialize"),
@@ -588,12 +586,13 @@ fn a_drop_contact_is_legal() {
 /// working.
 #[test]
 fn no_door_check_applies_to_a_contact() {
-    // A sill four blocks over the floor: unreachable by jumping, and DW0829's.
+    // A sill three blocks over the hall's floor — the court's, being the higher
+    // of the two: unreachable by jumping, and DW0829's.
     let as_portal = plan_with(|v| {
+        boxx(v, 5)["floor"] = json!({ "y": 67 });
         let s = seam(v, 4);
         s.as_object_mut().expect("seam").remove("contact");
         s["opening"] = json!("gateway");
-        s["at"] = json!([14, 68]);
     });
     assert!(
         !with_code(&as_portal, "DW0829").is_empty(),
@@ -601,8 +600,8 @@ fn no_door_check_applies_to_a_contact() {
         codes(&as_portal)
     );
 
-    // The same anchor, as a contact: no door check reaches it.
-    let as_contact = plan_with(|v| seam(v, 4)["at"] = json!([14, 68]));
+    // The same floors, as a contact: no door check reaches it.
+    let as_contact = plan_with(|v| boxx(v, 5)["floor"] = json!({ "y": 67 }));
     assert!(
         with_code(&as_contact, "DW0829").is_empty(),
         "a contact has no opening name to resolve and no single sill: {:?}",

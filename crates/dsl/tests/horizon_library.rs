@@ -60,7 +60,7 @@ fn codes(version: &str, horizon: &str) -> Vec<String> {
 /// states an extent.
 #[test]
 fn a_terrain_base_without_a_declared_region_is_dw0855() {
-    let c = codes("0.19.0", r#"{ "base": "valley" }"#);
+    let c = codes("0.20.0", r#"{ "base": "valley" }"#);
     assert!(c.contains(&"DW0855".to_string()), "codes: {c:?}");
 }
 
@@ -70,7 +70,7 @@ fn a_terrain_base_without_a_declared_region_is_dw0855() {
 #[test]
 fn a_generator_base_needs_no_map() {
     for horizon in [r#""void""#, r#""ocean""#, r#"{ "base": "ocean" }"#] {
-        let c = codes("0.19.0", horizon);
+        let c = codes("0.20.0", horizon);
         assert!(
             !c.contains(&"DW0855".to_string()),
             "{horizon} must not need a region; codes: {c:?}"
@@ -88,7 +88,7 @@ fn a_param_out_of_range_is_dw0853() {
         r#"{ "base": "valley", "rim_height": 4 }"#,
         r#"{ "base": "valley", "rim_height": 512 }"#,
     ] {
-        let c = codes("0.19.0", horizon);
+        let c = codes("0.20.0", horizon);
         assert!(
             c.contains(&"DW0853".to_string()),
             "{horizon} must be out of range; codes: {c:?}"
@@ -106,7 +106,7 @@ fn a_param_foreign_to_its_base_is_dw0853() {
         r#"{ "base": "ocean", "rim_height": 40 }"#,
         r#"{ "base": "void", "ratio": 2.5 }"#,
     ] {
-        let c = codes("0.19.0", horizon);
+        let c = codes("0.20.0", horizon);
         assert!(
             c.contains(&"DW0853".to_string()),
             "{horizon} must be foreign; codes: {c:?}"
@@ -119,7 +119,7 @@ fn a_param_foreign_to_its_base_is_dw0853() {
 #[test]
 fn params_inside_their_range_are_accepted() {
     let c = codes(
-        "0.19.0",
+        "0.20.0",
         r#"{ "base": "valley", "ratio": 2.5, "rim_height": 48 }"#,
     );
     assert!(!c.contains(&"DW0853".to_string()), "codes: {c:?}");
@@ -131,7 +131,7 @@ fn params_inside_their_range_are_accepted() {
 /// the base that happened to be first is a rule the second base escapes.
 #[test]
 fn a_horizon_a_body_can_enter_needs_a_boundary() {
-    let no_boundary = world("0.19.0", r#"{ "base": "valley" }"#).replace(
+    let no_boundary = world("0.20.0", r#"{ "base": "valley" }"#).replace(
         r#"    "boundary": { "margin": 16 },
 "#,
         "",
