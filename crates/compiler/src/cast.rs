@@ -1014,19 +1014,12 @@ fn check_placement_position(
         return;
     };
     match (&p.at.anchor(), actual) {
-        (Some(declared), NpcWhere::At(real)) if declared.as_str() != real => {
+        (Some(declared), NpcWhere::At(real)) if declared.as_str() != real.anchor => {
             diags.push(Diagnostic::error(
                 DW_CAST_PLACEMENT,
                 "quests",
                 path.to_string(),
-                format!(
-                    "quest `{qid}` declares npc `{npc}` at `{}`, but the effect history leaves \
-                     them at `{real}` when this quest opens — nothing walks them across. \
-                     Declaring an anchor does not teleport anybody: add a `move-npc` to `{}` \
-                     before this quest, or declare them where they actually stand (`{real}`)",
-                    declared.as_str(),
-                    declared.as_str()
-                ),
+                placement_contradiction(qid, npc, declared.as_str(), &real.anchor),
             ));
         }
         (Some(declared), NpcWhere::Offstage) => {
@@ -1044,6 +1037,74 @@ fn check_placement_position(
         }
         _ => {}
     }
+}
+
+/// **The place two authorities must agree on, in the words `DW0461` prints.**
+///
+/// One writer for both arms of the proof — the document arm below, which asks
+/// whether the ledger names the anchor the history set, and the place arm
+/// ([`check_stations`]), which asks whether the two names denote the same cell
+/// of the same building. A second copy of this sentence is how one code starts
+/// saying two things.
+fn placement_contradiction(qid: &str, npc: &str, declared: &str, actual: &str) -> String {
+    format!(
+        "quest `{qid}` declares npc `{npc}` at `{declared}`, but the effect history leaves them \
+         at `{actual}` when this quest opens — nothing walks them across. Declaring an anchor \
+         does not teleport anybody: add a `move-npc` to `{declared}` before this quest, or \
+         declare them where they actually stand (`{actual}`)"
+    )
+}
+
+/// **`DW0461`, the place arm: the body the party is sent to and the body the
+/// datapack summons must be the same body.**
+///
+/// The words, from the one writer; the comparison is made at the single site
+/// that consumes a cast station — the `talk-to` step in
+/// [`crate::plan::build_critical_path`], which is the only thing in the compiler
+/// that reads a ledger row's POSITION. Binding it there rather than sweeping
+/// every ledger row is deliberate: a row whose station no beat consumes states
+/// nothing the world can contradict, and refusing one would be a refusal about
+/// a place nobody stands.
+///
+/// The document arm above cannot see this defect, and the reason is the
+/// constitution's rule about resolving by name: **an anchor name is an identity
+/// within an area and nowhere wider.** Where two areas both declare
+/// `anchor/keeper-stand` the ledger's `at` and the effect history's anchor are
+/// the same *string* and name two buildings 256 blocks apart, so the document
+/// arm compares them, finds them equal, and reports nothing.
+///
+/// Measured on a two-area perturbation of the `talkto-cast-pos` fixture whose
+/// only difference is which prefab the second area binds: the datapack summoned
+/// the body and its interaction hitbox at `5.5 65.0 4.5` in `area/keep` while
+/// the critical path sent the party to `[261, 65, 4]` in `area/annex`. The
+/// campaign compiled clean and the bot would have walked to an empty cell in
+/// another building with nobody to click.
+pub fn station_split(
+    qid: &str,
+    npc: &str,
+    declared: &str,
+    actual: &str,
+    ledger: (&str, [i32; 3]),
+    history: (&str, [i32; 3]),
+) -> String {
+    format!(
+        "{}. The two names are equal and the two places are not: the ledger row resolves to \
+         {lp:?} in area `{la}` and the effect history to {hp:?} in area `{ha}`. An anchor name is \
+         an identity within an AREA and nowhere wider, so a name both buildings declare is not \
+         one place — the datapack summons the body at one of these cells and the critical path \
+         sends the party to the other, and nothing the bot does can reach it. {}",
+        placement_contradiction(qid, npc, declared, actual),
+        crate::gates::anchor_ambiguity_remedy(
+            &[ledger.0, history.0]
+                .iter()
+                .map(|a| ((*a).to_string(), BTreeSet::new()))
+                .collect()
+        ),
+        la = ledger.0,
+        lp = ledger.1,
+        ha = history.0,
+        hp = history.1,
+    )
 }
 
 /// `DW0461` for the absence forms: `"offstage"`/`"dead"` must match a despawn.

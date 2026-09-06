@@ -19,6 +19,7 @@
 //! `dw.o_<obj>`, `dw.q_<quest>`, `dw.qa_<quest>` (quest active), `dw.dlg_<npc>`,
 //! tag `dw_npc_<npc>`, function `class_apply_<class>`, dialog `<npc>_<node>`.
 
+use crate::continuity::NpcWhere;
 use crate::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -3831,6 +3832,12 @@ fn build_critical_path(
     // (objective id, physical area, step index) in critical-path order, for the
     // transport map and the per-step transport marker.
     let mut obj_areas: Vec<(String, String, usize)> = Vec::new();
+    // Where the effect history leaves each body as each quest opens — the same
+    // replay `cast::check_cast` reads, so the ledger's document arm and the
+    // place arm below cannot disagree about where somebody is standing. Its
+    // `At` now carries the AREA the anchor was set in, which is what makes the
+    // place comparison possible at all.
+    let history = crate::continuity::replay(campaign);
 
     // select-class: first declared class.
     if let Some(first) = campaign.classes.content.classes.first() {
@@ -3960,14 +3967,66 @@ fn build_critical_path(
                         flags_at.get(si).unwrap_or(&BTreeSet::new()),
                     ) {
                         Some(crate::cast::Station::At(anchor)) => {
-                            match cast_point(anchors, area, home_area, anchor) {
-                                CastStation::At(a, pos) => (a, pos),
+                            match body_station(
+                                anchors,
+                                BodyScope::Beat {
+                                    beat: area,
+                                    home: home_area,
+                                },
+                                anchor,
+                            ) {
+                                station @ BodyStation::At { .. } => {
+                                    let (a, pos) = station
+                                        .place()
+                                        .map(|(a, p)| (a.to_string(), p))
+                                        .expect("an `At` station has a place");
+                                    // `DW0461`, the place arm. This is the ONE
+                                    // site in the compiler that reads a ledger
+                                    // row's position, so it is where the row is
+                                    // checked against the world: the effect
+                                    // history's own anchor, resolved in the area
+                                    // the effect set it in, must be this same
+                                    // cell of this same building. Comparing the
+                                    // two NAMES cannot see it — where two areas
+                                    // declare one name the strings are equal and
+                                    // the places are 256 blocks apart, which is
+                                    // how a body was summoned in one building
+                                    // while the party was sent to another.
+                                    if let Some(NpcWhere::At(staged)) = history
+                                        .at_quest_start
+                                        .get(qid)
+                                        .and_then(|m| m.get(npc.as_str()))
+                                        && let Some((ha, hp)) = body_station(
+                                            anchors,
+                                            BodyScope::Beat {
+                                                beat: staged.area.as_str(),
+                                                home: home_area,
+                                            },
+                                            staged.anchor.as_str(),
+                                        )
+                                        .place()
+                                        && (ha, hp) != (a.as_str(), pos)
+                                    {
+                                        return Err(PlanError::new(
+                                            crate::cast::DW_CAST_PLACEMENT,
+                                            crate::cast::station_split(
+                                                qid,
+                                                npc.as_str(),
+                                                anchor,
+                                                staged.anchor.as_str(),
+                                                (a.as_str(), pos),
+                                                (ha, hp),
+                                            ),
+                                        ));
+                                    }
+                                    (a, pos)
+                                }
                                 // Not a compiler bug: the campaign named a place
                                 // whose name more than one building answers to,
                                 // and neither the beat's area nor the NPC's home
                                 // is one of them. Picking would settle it by
                                 // whichever area id sorts first.
-                                CastStation::Ambiguous(areas) => {
+                                BodyStation::Ambiguous(areas) => {
                                     return Err(PlanError::new(
                                         crate::gates::DW_ANCHOR_AMBIGUOUS,
                                         format!(
@@ -4007,7 +4066,7 @@ fn build_critical_path(
                                         ),
                                     ));
                                 }
-                                CastStation::Missing => {
+                                BodyStation::Missing => {
                                     return Err(PlanError::new(
                                         DW_BUILD,
                                         format!(
@@ -4300,66 +4359,131 @@ fn build_critical_path(
     })
 }
 
-/// Where a cast-ledger anchor put a body.
-enum CastStation {
-    /// The area it resolved in, and the cell.
-    At(String, [i32; 3]),
-    /// More than one area provides the name and neither the beat's area nor the
-    /// NPC's home settles it. The areas, for the diagnostic.
+/// **The scope a body's anchor reference resolves in.**
+///
+/// Two modes because there are two questions about one object, and
+/// [`body_station`] answers both so that no consumer keeps a private copy of
+/// either rule. The consumers used to hold one each — the emitter's world-init
+/// summon read `(npc.area, npc.anchor)` strictly, the cast ledger read the
+/// beat's area first — and where one anchor name was provided by both areas the
+/// two answered about buildings 256 blocks apart, in the same build, with
+/// nothing comparing them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodyScope<'a> {
+    /// **Where an NPC is declared to stand**: its stage-2 `area` and `anchor`.
+    /// Strict — the declaration IS the statement of which building the body is
+    /// in, so there is nothing for a wider search to add.
+    Declared {
+        /// The NPC's own `area`.
+        area: &'a str,
+    },
+    /// **Where a cast ledger stations a body for one beat.** The beat's own area
+    /// owns the name, then the NPC's home, then an unambiguous crossing.
+    Beat {
+        /// The area the beat plays in (the quest plan's `area`).
+        beat: &'a str,
+        /// The NPC's own `area`.
+        home: &'a str,
+    },
+}
+
+/// Where a body stands, as [`body_station`] resolved it.
+pub enum BodyStation<'a> {
+    /// The area it resolved in, and the anchor itself (cell and facing).
+    At {
+        /// The area the name resolved in.
+        area: String,
+        /// The resolved anchor.
+        anchor: &'a ResolvedAnchor,
+    },
+    /// More than one area provides the name and the scope does not settle it.
+    /// The areas, in `BTreeMap` order, for the diagnostic.
     Ambiguous(Vec<String>),
     /// No placed piece provides the name.
     Missing,
 }
 
-/// Resolve a **cast-ledger** anchor to `(area, cell)`: **the area the beat
-/// happens in** first, then the NPC's declared home, then an unambiguous
-/// crossing.
-///
-/// A cast row says *in this quest, this body stands here*, and the quest has an
-/// area — so that is the scope the name is an identity in, exactly as the
-/// `reach-anchor` beside it resolves through [`point_of`]. Reading the NPC's
-/// home area first instead is what made a station a fact about the NPC rather
-/// than about the beat: measured on a campaign of eight zones, one NPC is
-/// declared at `anchor/lampman` in his home zone and cast at `anchor/lampman` in
-/// seven others, and **two** zones provide that name. Every beat resolved to the
-/// home cell, so the escort's destination was the cell he already stood on and
-/// the one zone that has its own station for him was never used.
-///
-/// Home stays as the second step rather than being dropped, and that is the
-/// half that keeps this from being a widening: a `move-npc` may station a body
-/// in an area the NPC was never declared in, and the ledger is allowed to say
-/// so. A beat whose own area does not provide the name still finds the home
-/// station exactly as before, so only the beat whose area **does** provide it
-/// moves — which is the beat that was answering about the wrong building.
-///
-/// Returning the area the anchor actually resolved in — not the NPC's home area
-/// — is what keeps the inter-area transport map coherent with the position the
-/// step now carries.
-fn cast_point(
-    anchors: &AnchorTable,
-    beat_area: &str,
-    home_area: &str,
-    anchor: &str,
-) -> CastStation {
-    let cell = |r: &ResolvedAnchor| match r {
-        ResolvedAnchor::Point { pos, .. } => *pos,
-        ResolvedAnchor::Gate { from, .. } => *from,
-    };
-    // The beat's own area owns the name; the NPC's home is the declared
-    // fallback. Both are strict `(area, name)` lookups — no guessing here.
-    for area in [beat_area, home_area] {
-        if let Some(r) = anchors.get(&(area.to_string(), anchor.to_string())) {
-            return CastStation::At(area.to_string(), cell(r));
+impl BodyStation<'_> {
+    /// The cell, for a caller that only wants a position.
+    pub fn pos(&self) -> Option<[i32; 3]> {
+        match self {
+            BodyStation::At { anchor, .. } => Some(match anchor {
+                ResolvedAnchor::Point { pos, .. } => *pos,
+                ResolvedAnchor::Gate { from, .. } => *from,
+            }),
+            _ => None,
         }
     }
-    // Neither scope provides it: a genuine crossing, allowed while it is
-    // unambiguous, through the one authority.
-    match anchors.resolve(AnchorScope::Global, anchor) {
-        AnchorHit::Found { area, anchor: r } => CastStation::At(area.to_string(), cell(r)),
-        AnchorHit::Ambiguous(areas) => {
-            CastStation::Ambiguous(areas.into_iter().map(str::to_string).collect())
+
+    /// `(area, cell)` — the pair that identifies a place in the world. Two names
+    /// being equal says nothing; this pair being equal is what "the same place"
+    /// means, and it is what `DW0461` compares.
+    pub fn place(&self) -> Option<(&str, [i32; 3])> {
+        match self {
+            BodyStation::At { area, .. } => self.pos().map(|p| (area.as_str(), p)),
+            _ => None,
         }
-        AnchorHit::Missing => CastStation::Missing,
+    }
+}
+
+/// **The one authority for where a body stands.**
+///
+/// Asked by the emitter's world-init summon ([`BodyScope::Declared`]), by the
+/// cast ledger's per-beat station ([`BodyScope::Beat`]) and by `DW0461`, which
+/// compares the two. A name is an identity within an area and nowhere wider, so
+/// every answer carries the area it resolved in — the half a by-name lookup
+/// throws away.
+///
+/// [`BodyScope::Beat`]'s order — beat's area, then home, then an unambiguous
+/// crossing — is not a widening of the declared scope but the ledger's own rule:
+/// a cast row says *in this quest, this body stands here*, and the quest has an
+/// area. Measured on a campaign of eight zones, one NPC is declared at
+/// `anchor/lampman` in his home zone and cast at `anchor/lampman` in seven
+/// others, and **two** zones provide that name; reading home first made every
+/// beat resolve to the home cell, so the escort's destination was the cell he
+/// already stood on. Home stays as the second step because a `move-npc` may
+/// station a body in an area the NPC was never declared in.
+///
+/// Where the beat's area and the home area BOTH provide the name they are
+/// different places, and choosing between them is not this function's to make
+/// silently: the choice stands only while the body is already there. `DW0461`'s
+/// place arm compares this answer against the area the effect history left the
+/// body in and refuses the pair that disagrees, so a row can win the NAME but
+/// never move a BODY.
+pub fn body_station<'a>(
+    anchors: &'a AnchorTable,
+    scope: BodyScope<'_>,
+    anchor: &str,
+) -> BodyStation<'a> {
+    let strict = |area: &str| -> Option<BodyStation<'a>> {
+        anchors
+            .get(&(area.to_string(), anchor.to_string()))
+            .map(|r| BodyStation::At {
+                area: area.to_string(),
+                anchor: r,
+            })
+    };
+    match scope {
+        BodyScope::Declared { area } => strict(area).unwrap_or(BodyStation::Missing),
+        BodyScope::Beat { beat, home } => {
+            for area in [beat, home] {
+                if let Some(hit) = strict(area) {
+                    return hit;
+                }
+            }
+            // Neither scope provides it: a genuine crossing, allowed while it is
+            // unambiguous, through the anchor table's own authority.
+            match anchors.resolve(AnchorScope::Global, anchor) {
+                AnchorHit::Found { area, anchor: r } => BodyStation::At {
+                    area: area.to_string(),
+                    anchor: r,
+                },
+                AnchorHit::Ambiguous(areas) => {
+                    BodyStation::Ambiguous(areas.into_iter().map(str::to_string).collect())
+                }
+                AnchorHit::Missing => BodyStation::Missing,
+            }
+        }
     }
 }
 
