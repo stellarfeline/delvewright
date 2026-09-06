@@ -373,22 +373,22 @@ impl SolveError {
 }
 
 /// `DW0301`: a pool declares no `entry`-role piece (nothing to seed the layout).
-pub const DW_NO_ENTRY: DwCode = DwCode::every_version("DW0301", ExitTier::Build);
+pub const DW_NO_ENTRY: DwCode = DwCode::new("DW0301", ExitTier::Build);
 /// `DW0302`: a campaign-referenced anchor is provided by no member of the pool
 /// (unsatisfiable required anchor).
-pub const DW_UNSATISFIABLE_ANCHOR: DwCode = DwCode::every_version("DW0302", ExitTier::Build);
+pub const DW_UNSATISFIABLE_ANCHOR: DwCode = DwCode::new("DW0302", ExitTier::Build);
 /// `DW0303`: the `pieces {min,max}` range is too small to fit the entry plus the
 /// required anchor-bearing pieces.
-pub const DW_RANGE_TOO_SMALL: DwCode = DwCode::every_version("DW0303", ExitTier::Build);
+pub const DW_RANGE_TOO_SMALL: DwCode = DwCode::new("DW0303", ExitTier::Build);
 /// `DW0304`: the solver could not place a required piece without an overlap, or a
 /// branching layout has no branch piece (tee/cross) to fork its terminals
 /// (layout infeasible for this pool / seed).
-pub const DW_INFEASIBLE: DwCode = DwCode::every_version("DW0304", ExitTier::Build);
+pub const DW_INFEASIBLE: DwCode = DwCode::new("DW0304", ExitTier::Build);
 /// `DW0305`: a campaign-referenced anchor is defined by **more than one** placed
 /// piece, so resolving it would be silent + arbitrary (ambiguous anchor). Also the
 /// role-aware failure when the only carrier of a required anchor is the entry
 /// piece and the entry does not already provide it.
-pub const DW_AMBIGUOUS_ANCHOR: DwCode = DwCode::every_version("DW0305", ExitTier::Build);
+pub const DW_AMBIGUOUS_ANCHOR: DwCode = DwCode::new("DW0305", ExitTier::Build);
 
 /// The maximum number of deterministically-reordered branching attempts before a
 /// layout is declared infeasible (item 2: large-terminal placement robustness).

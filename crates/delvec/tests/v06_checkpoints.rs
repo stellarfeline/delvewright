@@ -370,9 +370,9 @@ fn stealth_beat_emits_per_tick_judge() {
     );
     assert!(
         eval.contains(&format!(
-            "execute if score @s dw.st_grace matches 20.. run function {NS}:stealth_caught_1"
+            "execute if score @s dw.st_grace matches 60.. run function {NS}:stealth_caught_1"
         )),
-        "grace of 20 ticks before on_caught"
+        "grace of 60 ticks before on_caught"
     );
     let caught = fn_body(&out, "stealth_caught_1");
     assert!(

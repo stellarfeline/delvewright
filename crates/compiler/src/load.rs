@@ -24,11 +24,8 @@ use delvewright_dsl::{Diagnostic, DwCode, ExitTier, RawCampaign};
 /// up, asserted by a test, or told apart from a crash.
 ///
 /// Validation tier (exit 1), because that is what it is: the campaign is refused,
-/// the compiler is fine. Raised through [`delvewright_dsl::Fenced::structural`],
-/// which is the fence for a finding that exists **before a campaign has parsed** —
-/// there is no declared `dsl_version` to grandfather against, which is also why
-/// the code binds every version.
-pub const DW_STAGE_DOCUMENT_MISSING: DwCode = DwCode::every_version("DW0874", ExitTier::Build);
+/// the compiler is fine. Raised **before a campaign has parsed**.
+pub const DW_STAGE_DOCUMENT_MISSING: DwCode = DwCode::new("DW0874", ExitTier::Build);
 
 /// The six stage filenames a campaign directory must contain.
 pub const STAGE_FILES: [&str; 6] = [

@@ -28,7 +28,7 @@ fn hw(name: &str) -> String {
 /// hello-world's world and cast, with `quest/side-trip` added to the plan so
 /// there are two planned quests and the count below is not one.
 const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "quest-plan",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
     { "id": "quest/open-the-door", "goal": "Get the Keeper to open the door.", "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
@@ -39,7 +39,7 @@ const QUEST_PLAN: &str = r#"{
 
 /// Stage 5 exactly as `DW0874`'s stubbing recipe would have it.
 const EMPTY_STAGE_FIVE: &str = r#"{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quests",
   "content": { "quests": [] }
 }"#;
 
@@ -47,7 +47,7 @@ const EMPTY_STAGE_FIVE: &str = r#"{
 /// way out: one quest per planned quest, carrying **only** what the schema
 /// requires — `id`, `trigger`, `objectives`, `on_complete`.
 const MINIMAL_STAGE_FIVE: &str = r#"{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quests",
   "content": { "quests": [
     { "id": "quest/open-the-door", "trigger": { "type": "campaign-start" },
       "objectives": [], "on_complete": [] },

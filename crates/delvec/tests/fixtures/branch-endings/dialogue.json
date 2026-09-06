@@ -22,6 +22,10 @@
                     "type": "complete-objective"
                   }
                 ],
+                "happening": {
+                  "text": "the party answers: We hold. I stand the watch.",
+                  "verb": "believes"
+                },
                 "label": "We hold. I stand the watch."
               },
               {
@@ -35,6 +39,10 @@
                     "type": "complete-objective"
                   }
                 ],
+                "happening": {
+                  "text": "the party answers: I run. Keep your road.",
+                  "verb": "believes"
+                },
                 "label": "I run. Keep your road."
               },
               {
@@ -78,6 +86,6 @@
       }
     ]
   },
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "stage": "dialogue"
 }

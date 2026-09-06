@@ -22,7 +22,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { SUPPORTED_DSL_VERSIONS, type Vec3Tuple } from "./critical-path.ts";
+import type { Vec3Tuple } from "./critical-path.ts";
 import type { CensusMob, CensusSummary } from "./markers.ts";
 
 /** Where the combat plan sits relative to `critical-path.json`. */
@@ -260,8 +260,8 @@ function requirePos(v: unknown, pointer: string): Vec3Tuple {
 export function parseCombatPlan(raw: unknown): CombatPlan {
   if (!isRecord(raw)) throw new CombatPlanParseError("", "expected an object");
   const version = raw["version"];
-  if (typeof version !== "string" || !SUPPORTED_DSL_VERSIONS.includes(version as never)) {
-    throw new CombatPlanParseError("/version", `unsupported dsl_version ${String(version)}`);
+  if (typeof version !== "string" || version.length === 0) {
+    throw new CombatPlanParseError("/version", "must name the dsl_version the campaign was built at");
   }
   const campaignId = raw["campaign_id"];
   if (typeof campaignId !== "string" || campaignId.length === 0) {

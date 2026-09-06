@@ -22,7 +22,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_w
 fn quests_doc(fields: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.8.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -47,7 +47,7 @@ fn quests_doc(fields: &str) -> String {
 /// A stage-7 batch that stands a barrel on the collect's anchor cell — the
 /// prefab furniture the objective adopts.
 const BARREL_EDITS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {

@@ -43,7 +43,7 @@ fn fixture() -> Campaign {
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = common::fenced_diagnostics(
+    let diags = common::validation_diagnostics(
         &campaign,
         &FullItemRegistry::v1_21_11(),
         &prefabs,

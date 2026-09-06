@@ -74,7 +74,7 @@ fn assert_code(classes: &str, code: &str) {
 #[test]
 fn a_named_potion_validates_clean() {
     let c = classes_with(
-        "0.8.0",
+        "0.19.0",
         json!("minecraft:potion"),
         json!({ "potion": "minecraft:strong_healing" }),
     );
@@ -90,7 +90,7 @@ fn a_named_potion_validates_clean() {
 #[test]
 fn custom_effects_validate_clean() {
     let c = classes_with(
-        "0.8.0",
+        "0.19.0",
         json!("minecraft:splash_potion"),
         json!({
             "effects": [
@@ -107,19 +107,6 @@ fn custom_effects_validate_clean() {
     );
 }
 
-/// Version fence: `contents` is v0.8 surface, and declaring it earlier is
-/// `DW0141` — the same asymmetry the whole version ledger uses, so no pre-0.8
-/// campaign's datapack can move by a byte.
-#[test]
-fn contents_reserved_before_0_8() {
-    let c = classes_with(
-        "0.7.0",
-        json!("minecraft:potion"),
-        json!({ "potion": "minecraft:healing" }),
-    );
-    assert_code(&c, "DW0141");
-}
-
 // ---------------------------------------------------------------------------
 // DW0487 — the placeholder flask
 // ---------------------------------------------------------------------------
@@ -127,7 +114,7 @@ fn contents_reserved_before_0_8() {
 /// The directive itself: a potion with nothing in it is a build error at 0.8.0.
 #[test]
 fn a_contents_less_potion_is_dw0487() {
-    let c = classes_with("0.8.0", json!("minecraft:potion"), Value::Null);
+    let c = classes_with("0.19.0", json!("minecraft:potion"), Value::Null);
     assert_code(&c, "DW0487");
 }
 
@@ -140,29 +127,16 @@ fn every_potion_bearing_item_owes_contents() {
         "minecraft:lingering_potion",
         "minecraft:tipped_arrow",
     ] {
-        let c = classes_with("0.8.0", json!(item), Value::Null);
+        let c = classes_with("0.19.0", json!(item), Value::Null);
         assert_code(&c, "DW0487");
     }
-}
-
-/// The **requirement** side fires only at 0.8.0. A 0.7 campaign carrying a bare
-/// potion keeps validating exactly as it did — it has no way to declare contents,
-/// so demanding them would be a version break rather than a check.
-#[test]
-fn a_pre_0_8_potion_kit_item_is_untouched() {
-    let c = classes_with("0.7.0", json!("minecraft:potion"), Value::Null);
-    let codes = codes_for(&c);
-    assert!(
-        !codes.iter().any(|c| c == "DW0487"),
-        "the placeholder requirement must not reach a 0.7 campaign: {codes:?}"
-    );
 }
 
 /// An ordinary item owes nothing: only the four items that actually carry the
 /// component are asked for contents.
 #[test]
 fn a_non_potion_kit_item_owes_no_contents() {
-    let c = classes_with("0.8.0", json!("minecraft:bread"), Value::Null);
+    let c = classes_with("0.19.0", json!("minecraft:bread"), Value::Null);
     assert!(
         codes_for(&c).is_empty(),
         "bread is not a potion: {:#?}",
@@ -180,7 +154,7 @@ fn a_non_potion_kit_item_owes_no_contents() {
 #[test]
 fn contents_on_a_non_potion_item_is_dw0486() {
     let c = classes_with(
-        "0.8.0",
+        "0.19.0",
         json!("minecraft:bread"),
         json!({ "potion": "minecraft:healing" }),
     );
@@ -190,7 +164,7 @@ fn contents_on_a_non_potion_item_is_dw0486() {
 /// Contents that declare neither a potion nor an effect still pour nothing.
 #[test]
 fn empty_contents_is_dw0486() {
-    let c = classes_with("0.8.0", json!("minecraft:potion"), json!({}));
+    let c = classes_with("0.19.0", json!("minecraft:potion"), json!({}));
     assert_code(&c, "DW0486");
 }
 
@@ -204,7 +178,11 @@ fn an_unknown_potion_id_is_dw0486() {
         "minecraft:estus",
         "minecraft:strong",
     ] {
-        let c = classes_with("0.8.0", json!("minecraft:potion"), json!({ "potion": bad }));
+        let c = classes_with(
+            "0.19.0",
+            json!("minecraft:potion"),
+            json!({ "potion": bad }),
+        );
         assert_code(&c, "DW0486");
     }
 }
@@ -213,7 +191,7 @@ fn an_unknown_potion_id_is_dw0486() {
 #[test]
 fn an_unknown_effect_id_is_dw0486() {
     let c = classes_with(
-        "0.8.0",
+        "0.19.0",
         json!("minecraft:potion"),
         json!({ "effects": [{ "effect": "minecraft:estus", "duration": 20 }] }),
     );
@@ -224,7 +202,7 @@ fn an_unknown_effect_id_is_dw0486() {
 #[test]
 fn an_out_of_range_amplifier_is_dw0486() {
     let c = classes_with(
-        "0.8.0",
+        "0.19.0",
         json!("minecraft:potion"),
         json!({ "effects": [{ "effect": "minecraft:instant_health", "amplifier": 256 }] }),
     );
@@ -237,7 +215,7 @@ fn an_out_of_range_amplifier_is_dw0486() {
 fn an_out_of_range_duration_is_dw0486() {
     for dur in [0u64, 1_000_001] {
         let c = classes_with(
-            "0.8.0",
+            "0.19.0",
             json!("minecraft:potion"),
             json!({ "effects": [{ "effect": "minecraft:regeneration", "duration": dur }] }),
         );
@@ -250,7 +228,7 @@ fn an_out_of_range_duration_is_dw0486() {
 #[test]
 fn a_lasting_effect_without_a_duration_is_dw0486() {
     let c = classes_with(
-        "0.8.0",
+        "0.19.0",
         json!("minecraft:potion"),
         json!({ "effects": [{ "effect": "minecraft:regeneration" }] }),
     );
@@ -264,7 +242,7 @@ fn a_lasting_effect_without_a_duration_is_dw0486() {
 fn a_duration_on_an_instant_effect_is_dw0486() {
     for eff in ["minecraft:instant_health", "minecraft:instant_damage"] {
         let c = classes_with(
-            "0.8.0",
+            "0.19.0",
             json!("minecraft:potion"),
             json!({ "effects": [{ "effect": eff, "duration": 600 }] }),
         );
@@ -277,7 +255,7 @@ fn a_duration_on_an_instant_effect_is_dw0486() {
 fn a_malformed_color_is_dw0486() {
     for bad in ["ff9c30", "#ff9c3", "#gggggg", "orange"] {
         let c = classes_with(
-            "0.8.0",
+            "0.19.0",
             json!("minecraft:potion"),
             json!({ "potion": "minecraft:healing", "color": bad }),
         );
@@ -292,7 +270,7 @@ fn a_malformed_color_is_dw0486() {
 #[test]
 fn the_effect_registry_covers_every_1_21_11_effect() {
     let c = classes_with(
-        "0.8.0",
+        "0.19.0",
         json!("minecraft:potion"),
         json!({ "effects": [{ "effect": "minecraft:breath_of_the_nautilus", "duration": 200 }] }),
     );

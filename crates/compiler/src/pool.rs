@@ -52,7 +52,7 @@ use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0498`: the assembled draw seats one anchor-bearing prefab more than once,
 /// so every anchor that prefab declares has more than one carrier. Advisory.
-pub const DW_POOL_DOUBLE_DRAW: DwCode = DwCode::every_version("DW0498", ExitTier::Build);
+pub const DW_POOL_DOUBLE_DRAW: DwCode = DwCode::new("DW0498", ExitTier::Build);
 
 /// One prefab the draw seated more than once, with every anchor it declares.
 #[derive(Debug, Clone, PartialEq, Eq)]

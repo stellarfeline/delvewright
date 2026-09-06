@@ -223,8 +223,7 @@ pub struct SpatialContract {
 }
 
 /// `DW0848`: a piece's declared footprint class disagrees with its bytes.
-pub const DW_FOOTPRINT_CLASS: crate::DwCode =
-    crate::DwCode::every_version("DW0848", crate::ExitTier::Build);
+pub const DW_FOOTPRINT_CLASS: crate::DwCode = crate::DwCode::new("DW0848", crate::ExitTier::Build);
 
 /// **Judge a piece's declared `footprint_class` against its own structure
 /// size.**
