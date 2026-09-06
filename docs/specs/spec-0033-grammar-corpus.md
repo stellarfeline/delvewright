@@ -108,7 +108,7 @@ exercises. This was measured by hand once; unmeasured next time is dark again.
 1. `grammar.md` documents each idiom in §3A with a program that runs as
    written, and `prefab-procedure.md` §3 sends an author to the idiom index
    before the corpus.
-2. `delve-grammar` reports, over the library, a binding count per IR
+2. `delvec grammar` reports, over the library, a binding count per IR
    construct: every `Node` variant, every `Cond` variant, each palette paint
    kind. A construct at zero is printed as a **finding**, in the shape the
    expansion gates already use.
@@ -143,7 +143,7 @@ exercises. This was measured by hand once; unmeasured next time is dark again.
    grow by different rules.** The index (§3A) is a curated set of *techniques*
    and grows only by a failed trial, per §4.6. The corpus is the
    *demonstration* set, and every IR construct owes it at least one example
-   reachable from `delve-grammar list`. A minimal program showing what a
+   reachable from `delvec grammar list`. A minimal program showing what a
    construct looks like is **not** a claim that it is a technique — `Cond::NoneOf`
    is negation of guards, a language feature and not a way of building
    anything, and it earns a corpus example without earning an index entry.

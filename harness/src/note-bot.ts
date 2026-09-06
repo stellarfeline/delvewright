@@ -4,7 +4,7 @@
 //   join → `/trigger dw.note` (the mark) → chat a fixture note → disconnect.
 //
 // The overlay stamps a `[DelveNote] …` line into the server log on the trigger and
-// the chat line is logged as normal player chat; `delve-harvest` pairs them after
+// the chat line is logged as normal player chat; `delvec harvest` pairs them after
 // the session (see validation/playtest-note-flow.sh). This bot contains NO campaign
 // knowledge — it only fires the fixed `dw.note` trigger and speaks a fixture string.
 //

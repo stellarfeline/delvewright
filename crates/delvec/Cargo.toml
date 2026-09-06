@@ -1,0 +1,51 @@
+[package]
+# `delvec` — the delve creator: the ONE binary the engine ships (ADR-0023 §3).
+# This crate is the executable and nothing else: `src/main.rs` is the clap root
+# that mounts every library crate's command line as a subcommand, and `tests/`
+# is where every test that runs the binary lives (`CARGO_BIN_EXE_delvec` is set
+# only for this package's own integration tests).
+#
+# The PACKAGE is `delvec` because `cargo install` resolves by CRATE name, never
+# by binary name. ADR-0016 names the engine `delvec`; this makes the registry
+# agree with the ADR.
+name = "delvec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The delve creator for Minecraft Java Edition adventure maps: one binary that compiles staged campaign documents into a datapack, proves the map completable, authors and admits prefabs, and renders what it built."
+readme = "README.md"
+keywords = ["minecraft", "datapack", "compiler", "adventure"]
+categories = ["command-line-utilities", "game-development"]
+# `cargo package` ships everything git tracks unless excluded. `tests/` is
+# megabytes of fixtures that a `cargo install delvec` never compiles.
+exclude = ["tests/"]
+
+[[bin]]
+name = "delvec"
+path = "src/main.rs"
+
+[dependencies]
+# Every library crate the binary is assembled from, each on the engine version
+# line through `[workspace.dependencies]` (`=` requirements, ADR-0023 §6).
+delvewright-compiler.workspace = true
+delvewright-dsl.workspace = true
+delvewright-grammar.workspace = true
+delvewright-schem.workspace = true
+delvewright-admit.workspace = true
+delvewright-orchestrator.workspace = true
+delvewright-render.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+# Integration tests synthesize structure `.nbt` bytes (gzip-framed NBT) to drive
+# the assembled-world / gravity-despawn checks against a real plan.
+fastnbt = "2"
+flate2 = "1"
+sha2 = "0.10"
+# The contact-sheet tests read the composited page back. Same version and
+# feature set the compiler library links.
+image = { version = "0.24", default-features = false, features = ["png"] }

@@ -1,45 +1,18 @@
-# Its OWN workspace, excluded from the repo root's (see the note beside
-# `exclude` in /Cargo.toml). This crate is the only one in the repo with a git
-# dependency, a git dependency is cloned during RESOLUTION rather than during the
-# build of whatever uses it, and a workspace resolves all of its members — so as a
-# member of the root workspace this crate's 227 MB Nucleation clone was a
-# precondition for every `cargo` command in the repo, including the `cargo run -p
-# delvec` steps of four required CI jobs that never build it. It is quarantined
-# here so that reach belongs to the one crate that needs it.
-#
-# Nothing about the crate's own build changes: `cargo … --manifest-path
-# crates/render/Cargo.toml` fmt/clippy/tests it exactly as `--workspace` did, and
-# the `rust` CI job runs all three.
-[workspace]
-
-# The root workspace's rationale for this profile applies verbatim (see
-# /Cargo.toml): a separate workspace does not inherit it, and an `opt-level = 0`
-# `delve-render` reads as a hang rather than as a wrong profile.
-#
-# `debug` is here on the same argument and on its own measurement, because a
-# separate workspace does not inherit that either: cold `cargo test --offline
-# --manifest-path crates/render/Cargo.toml --no-run` costs 731.0s CPU at cargo's
-# default full DWARF and 597.4s here (-18.3%), with `target/` 3.10 -> 2.16 GiB.
-# Two jobs build this crate under a dev profile — the `rust` job's render steps
-# and `gpu-probe` — and both are where that lands.
-[profile.dev]
-opt-level = 1
-debug = "line-tables-only"
-
 [package]
 name = "delvewright-render"
-version = "0.0.0"
-edition = "2024"
-publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The GPU render arms of Delvewright: per-prefab shot sets and the missing-texture fidelity gate through Nucleation and wgpu — mounted as `delvec render`."
+readme = "README.md"
+exclude = ["tests/"]
 
-# `delve-render` (spec-0007 rendering infra / spec-0003 visual tier, M3): the
-# deterministic render layer. Per-prefab multi-angle sets + the newest-block
-# fidelity gate via Nucleation (headless wgpu), and Chunky scene emission from the
-# compiler's render-plan.json. Productionizes the spike-render-fidelity spike.
-[[bin]]
-name = "delve-render"
-path = "src/main.rs"
-
+# `delvec render` (spec-0007 rendering infra / spec-0003 visual tier, M3): the
+# GPU half of the deterministic render layer. Per-prefab multi-angle sets + the
+# newest-block fidelity gate via Nucleation (headless wgpu). The command line is
+# `cli`, mounted by the `delvec` binary (ADR-0023 §3).
 [lib]
 path = "src/lib.rs"
 
@@ -61,7 +34,7 @@ flate2 = "1"
 # rather than a private copy of the shape, which is the whole reason the
 # definition lives in the crate that owns tiling. Adds no new external
 # dependency: schem's are a subset of the ones above.
-delvewright-schem = { path = "../schem" }
+delvewright-schem.workspace = true
 
 # The metrics standard (spec-0049 §2) — one definition of the player's own
 # geometry for the whole workspace. This crate's eye height used to be a literal
@@ -71,15 +44,13 @@ delvewright-schem = { path = "../schem" }
 # for would be photographing a body nobody plays, and nothing anywhere could have
 # gone red about it. Adds no new external dependency and no new resolution reach
 # — `delvewright-dsl` is already under both `delvewright-schem` and `delvec`.
-delvewright-dsl = { path = "../dsl" }
+delvewright-dsl.workspace = true
 
-# The CPU render surface lives in `delvec` (ADR-0021 §1): the structure reader,
-# the prefab-metadata projection and the shared `DW072x`/`DW079x` catalog are
-# ONE definition, and this crate names it rather than keeping a second copy on
-# the far side of the shelf split. The edge points this way and never back —
-# `delvec` must stay free of `nucleation`, whose C build script would red the
-# static-musl shelf targets, so nothing here is ever a dependency of that.
-delvec = { path = "../compiler" }
+# The CPU render surface lives in the compiler library (ADR-0021 §1): the
+# structure reader, the prefab-metadata projection and the shared
+# `DW072x`/`DW079x` catalog are ONE definition, and this crate names it rather
+# than keeping a second copy.
+delvewright-compiler.workspace = true
 
 # Save/compare rendered frames (fidelity color-key scan, double-render stability),
 # and decode block textures for the derived colour table. MIT/Apache-2.0.
@@ -96,13 +67,22 @@ image = "0.24"
 # plain deflate. MIT.
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
-# Nucleation (MIT) — headless mesher + wgpu GPU renderer. Pinned by git REV
-# because crates.io tops out at 0.8.0 which lacks the `rendering` feature; the
-# `GpuRenderer` / `ResourcePackSource` API this crate uses lives on master (0.9.1).
-# The rev is recorded in versions.toml `[render]` (checked by check-versions.sh).
-# `pollster` blocks on the renderer's async init. Both MIT/Apache-2.0.
-nucleation = { git = "https://github.com/Schem-at/Nucleation", rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf", features = ["rendering"] }
+# Nucleation (MIT) — headless mesher + wgpu GPU renderer, from crates.io at
+# the exact version `versions.toml [render].nucleation_version` records
+# (checked by check-versions.sh). `pollster` blocks on the renderer's async
+# init. Both MIT/Apache-2.0.
+nucleation = { version = "=0.10.14", features = ["rendering"] }
 pollster = "0.4"
+
+# `blake3` is a non-optional dependency of Nucleation, and its build script
+# compiles C or assembly for the host — which a `cargo check --target` from a
+# machine without that target's C compiler cannot do, so the cross-build shelf
+# gate (`tools/build-release-binaries.sh --check-only`) would red on every
+# target but the host's own. `pure` turns every C and assembly path off and
+# leaves the Rust implementation; nothing here hashes enough for the speed to
+# matter. Declared here, not in nucleation's manifest, because a feature is
+# unioned across the graph and this is the crate that needs it. MIT/Apache-2.0.
+blake3 = { version = "1", features = ["pure"] }
 
 [dev-dependencies]
 # The contact-sheet tests build their own candidate renders (no GPU, no client

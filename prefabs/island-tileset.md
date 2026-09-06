@@ -166,7 +166,7 @@ spruce / oak / dark-oak planks · spruce / stripped-spruce logs · spruce stairs
 trapdoors / buttons · white / black wool (sail + eye) · lantern · barrel ·
 decorated pot · water. The merged `island-beach-camp` therefore draws from both
 lists (the galley palette is stamped into it, plus spruce planks / oak fence for
-the gangplank). Every id is on the `delve-admit` building allowlist (DW0730); no
+the gangplank). Every id is on the `delvec prefab` building allowlist (DW0730); no
 command/structure blocks, no NBT-bearing block entities — re-audited after the
 merge on both regenerated pieces.
 
@@ -186,7 +186,7 @@ reuses only Delvewright's own cave-generator primitives.
 
 ## Render-critique loop
 
-Rendered with `delve-render piece` on the pinned 1.21.11 client jar. The galley's
+Rendered with `delvec render piece` on the pinned 1.21.11 client jar. The galley's
 square sail was moved off the mast plane (one cell forward) so the mast reads
 behind it instead of bisecting it into a cross; the beach tents were raised from a
 2-tall wool pile to a clear 3-tall A-frame with an open front gable. Renders are

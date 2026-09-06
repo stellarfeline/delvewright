@@ -8,9 +8,9 @@ id is not an exception, it is a hole. This is what keeps it honest.
 **The enumeration is the point.** An existence check that only looks where
 somebody pointed is how the UNRUN shape survives review, so every surface that
 could put a campaign in front of a player is named here: release-candidate
-discovery, the shipped-campaign build sweep, and the staging gate. When a fourth
-appears, it belongs in `SHIPPING_SURFACES` — and the last test in this file is
-what notices that the list stopped covering the tree.
+discovery and the staging gate. When a third appears, it belongs in
+`SHIPPING_SURFACES` — and the last test in this file is what notices that the
+list stopped covering the tree.
 """
 
 from __future__ import annotations
@@ -28,7 +28,6 @@ SHIPPING_SURFACES = [
     ".github/workflows/release.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/infra-images.yml",
-    "tools/build-every-campaign.py",
     "tools/staging-gate.py",
 ]
 
@@ -61,24 +60,6 @@ def test_no_shipping_surface_names_the_gallery():
             )
         examined += 1
     assert examined == len(SHIPPING_SURFACES), "this gate examined fewer files than it lists"
-
-
-def test_shipped_campaign_discovery_cannot_reach_the_gallery():
-    """`build-every-campaign.py` enumerates the CONTENT repo, never this tree.
-
-    The discovery rule is `<content>/campaigns/*/world.json`, and the gallery
-    lives at `<repo>/gallery/`. Those cannot coincide: the content root is a
-    separate checkout, and even pointed at this repo the gallery is not under a
-    `campaigns/` directory.
-    """
-    text = _read("tools/build-every-campaign.py")
-    assert 'args.content / "campaigns"' in text, (
-        "campaign discovery no longer reads `<content>/campaigns` — re-derive "
-        "whether the gallery can now be reached by it"
-    )
-    assert not (REPO / "campaigns" / "campaigns" / GALLERY_ID).exists(), (
-        "a directory named `gallery` appeared in the content repo's campaign set"
-    )
 
 
 def test_the_gallery_is_where_the_spec_puts_it():

@@ -369,9 +369,8 @@ fn a_derived_facing_follows_the_reflection() {
             &program,
             Box3::at_origin([3, 3, 3]),
             &ExpandOptions {
-                seed: 0,
-                limits: Default::default(),
                 orientation: orient,
+                ..ExpandOptions::seeded(0)
             },
         )
         .expect("expands")

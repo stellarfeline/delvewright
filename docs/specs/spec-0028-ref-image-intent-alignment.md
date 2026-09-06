@@ -85,7 +85,7 @@ actually in the tree, measured, and is updated whenever that changes.
   dependency is an error naming the install line — never a silent fall back to
   the stub. Licenses verified from the upstream `LICENSE` files and recorded in
   `docs/ACKNOWLEDGEMENTS.md`.
-- `delve-render contact-sheet` lays the candidates out as one page ordered by
+- `delvec render contact-sheet` lays the candidates out as one page ordered by
   that score, always writing the manifest that resolves a cell number back to a
   prefab id, and always stating its binding count.
 - **Rank-only is enforced, not documented.** The ordering is a seam whose result

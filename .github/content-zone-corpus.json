@@ -51,7 +51,7 @@
     "here unchallenged. `validation/check-versions.sh` does not read `off_pin`",
     "either; it only compares `content_sha` against `versions.toml`."
   ],
-  "content_sha": "42ee707db69b83d27534608b2758d8697ad2c46e",
+  "content_sha": "a8c3f98831735aa370908a43d37db85d09fae25c",
   "off_pin": [],
   "on_pin": [
     {

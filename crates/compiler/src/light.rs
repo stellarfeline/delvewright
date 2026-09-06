@@ -601,7 +601,7 @@ impl LightModel {
     /// may itself be opaque (a glowstone/shroomlight block) — it still lights its
     /// passing neighbours.
     ///
-    /// Public because it is the compiler's ONE light flood, and `delve-admit`'s
+    /// Public because it is the compiler's ONE light flood, and `delvec prefab`'s
     /// per-piece probe asks the same question of a single prefab. A second copy
     /// of it is what shipped a probe with no sky term at all.
     ///

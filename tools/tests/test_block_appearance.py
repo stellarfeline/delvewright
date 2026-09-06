@@ -1331,7 +1331,7 @@ def test_a_missing_registry_is_a_named_refusal_not_a_traceback(monkeypatch, tmp_
     message = str(excinfo.value)
     assert "no block registry at" in message
     # The refusal must name the fallback, or it turns a mandatory step optional.
-    assert "delve-grammar" in message
+    assert "delvec grammar" in message
     assert "not optional" in message
 
 

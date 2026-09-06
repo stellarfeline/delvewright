@@ -45,7 +45,7 @@
 //! per *technique* of the IR — repetition, priority, shape, erosion, graded
 //! erosion, surface detail, symmetry, `skip`, light — plus
 //! one composition demonstration. They build nothing anyone wants, and they are
-//! in the library because `delve-grammar list` / `show` is the only way an
+//! in the library because `delvec grammar list` / `show` is the only way an
 //! author reaches the corpus, and the corpus is where technique is learned.
 //!
 //! **The zone programs.** [`bell`] is the layer above: the drowned-bell
@@ -371,7 +371,7 @@ fn alt_else(body: Node) -> Alternative {
 /// unexpressible: a new program cannot reach `PROGRAMS` without saying where it
 /// is judged, and the sweeps iterate `PROGRAMS`.
 pub struct LibraryProgram {
-    /// The stable id `delve-grammar list` prints and `--program` takes.
+    /// The stable id `delvec grammar list` prints and `--program` takes.
     pub id: &'static str,
     /// Build the program.
     pub build: fn() -> Program,
@@ -472,7 +472,7 @@ const fn entry(
 ///
 /// A registry rather than a `match`, for the reason a tool exists at all: a
 /// creator has to be able to *discover* what the back end can build without
-/// reading Rust. `delve-grammar list` enumerates this, so a rule added to the
+/// reading Rust. `delvec grammar list` enumerates this, so a rule added to the
 /// library reaches the tool without the tool being edited.
 ///
 /// The `bell::` zone programs are deliberately absent: a zone is one campaign's
@@ -586,7 +586,7 @@ pub const PROGRAMS: &[LibraryProgram] = &[
         NO_CLAIM,
     ),
     // The idiom index (`idioms`): one minimal program per technique, plus one
-    // composition demonstration. They are here because `delve-grammar list` and
+    // composition demonstration. They are here because `delvec grammar list` and
     // `show` are the only way an author reaches the corpus at all. Their
     // regions, seeds and route claims are the ones `grammar.md` §2c documents.
     entry(
@@ -686,7 +686,7 @@ pub const PROGRAMS: &[LibraryProgram] = &[
         NO_CLAIM,
     ),
     // A corpus example rather than an idiom-index entry (spec-0033 §4.8):
-    // every IR construct owes `delve-grammar list` one example, and `none_of`
+    // every IR construct owes `delvec grammar list` one example, and `none_of`
     // is a language feature rather than a technique. Its region is the one
     // `tests/idioms.rs` demonstrates the guard holding at.
     entry(

@@ -8,7 +8,7 @@
 //! structure template read off disk, a zone reassembled from tiles. It had been
 //! answered privately seven times over, each copy keyed to the type
 //! that happened to need it first, so a fix to one reached none of the others
-//! and the light probe in `delve-admit` could not use the walk that
+//! and the light probe in `delvec prefab` could not use the walk that
 //! `delvewright-grammar` had already written.
 //!
 //! A capability belongs to the object class it acts on (CLAUDE.md), and the

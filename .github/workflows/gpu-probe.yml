@@ -5,7 +5,7 @@ name: GPU arm probe (manual)
 #
 # It is a ONE-TIME question whose answer moves only where frames come from, never
 # what the engine can do (§7) — so it does not belong in a per-pull-request job.
-# Putting it there would buy a permanent 227 MB `nucleation` fetch on every run to
+# Putting it there would spend a software-adapter install on every run to
 # re-answer something that changes about as often as the runner image does. Hence
 # `workflow_dispatch`: zero cost until somebody asks, and the instrument exists
 # rather than the measurement being promised.
@@ -57,15 +57,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with: { key: gpu-probe }
 
-      # Named as its own step so a network failure on the pinned git dependency
-      # reds HERE and not inside a step named for the renderer.
-      - name: fetch — the render workspace's pinned git dependency
-        run: cargo fetch --locked --manifest-path crates/render/Cargo.toml
-
-      - name: build delve-render
-        run: |
-          cargo build --locked --offline \
-            --manifest-path crates/render/Cargo.toml --bin delve-render
+      # The GPU arms are `delvec render …` (ADR-0023 §3): one binary, no second
+      # workspace, no git dependency to fetch.
+      - name: build delvec
+        run: cargo build --locked -p delvec --bin delvec
 
       # `fidelity-gate` is the arm that needs an adapter and needs no campaign.
       # It also wants the client jar for textures, which this runner does not
@@ -82,7 +77,7 @@ jobs:
           # `bash -e`, so the line that records the code could only run when
           # there was no code worth recording — the recorder firing exactly
           # when there is nothing to record.
-          crates/render/target/debug/delve-render fidelity-gate -o /tmp/fid \
+          target/debug/delvec render fidelity-gate -o /tmp/fid \
             > /tmp/probe.out 2>&1
           code=$?
           echo "exit=$code"

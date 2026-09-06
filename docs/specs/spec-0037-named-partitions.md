@@ -7,7 +7,7 @@
   claim below is measured against the
   eight approved *Drowned Bell* concept images
   (`campaigns/the-drowned-bell-r2/design/concept/`, branch `campaign/bell-r2`)
-  and against runs of `delve-grammar`; probe programs and commands in §5.
+  and against runs of `delvec grammar`; probe programs and commands in §5.
 - **Specs**: 0027 (the back end), 0033 (corpus/idiom discipline — §4.6 and
   §4.8 govern what this spec may and may not add), 0036 (spatial contract:
   *detects* spatial defects after expansion; this spec *removes* one class of
@@ -201,7 +201,7 @@ added. Probes are in §5.
 
 ## 5. The probes — every red and green, reproducible
 
-Programs in `docs/specs/spec-0037-probes/`; run with `delve-grammar` from
+Programs in `docs/specs/spec-0037-probes/`; run with `delvec grammar` from
 this tree. All expansions seed 1; all programs deterministic (guard-only),
 so the seed is recorded, not load-bearing.
 
@@ -238,8 +238,8 @@ never stated anywhere a checker could read.
    has no second site to edit.
 4. `compose::include` prefixes `splits` and rewrites `use`, and the include
    seam's byte-identity test covers a splits-carrying source.
-5. `delve-grammar coverage` counts named-partition use as a construct with a
-   binding count, and a corpus program reachable from `delve-grammar list`
+5. `delvec grammar coverage` counts named-partition use as a construct with a
+   binding count, and a corpus program reachable from `delvec grammar list`
    demonstrates it (spec-0033 §4.8: a corpus example, not an idiom entry).
 6. The `splits` field is refused by a loader that does not know its
    `Program` version, per ADR-0018 §7; it does not land before the required
@@ -249,7 +249,7 @@ never stated anywhere a checker could read.
    cells as that one*" is re-scoped to what remains true after this spec —
    alignment across **unequal** extents and across axes is still the
    author's arithmetic.
-8. The P1 probe program enters the corpus (`delve-grammar list`), closing
+8. The P1 probe program enters the corpus (`delvec grammar list`), closing
    §3.1's documentation finding; its entry states the guard-selected-step
    technique and cites this spec. No idiom-index entry is added by this
    spec (spec-0033 §4.6).

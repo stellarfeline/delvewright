@@ -66,7 +66,7 @@ fn block_registry() -> &'static BTreeMap<String, BTreeMap<String, Vec<String>>> 
 /// block id loads it as **air**. So this defect costs the whole feature — eight
 /// cells of bell-rope in `tk-bell-tower.nbt` — while the generator exits 0, the
 /// `.nbt` round-trips, the byte-identity check passes, and nothing anywhere
-/// says a word. It is the exact shape of the `delve-admit` finding CLAUDE.md
+/// says a word. It is the exact shape of the `delvec prefab` finding CLAUDE.md
 /// records: *a command whose response nobody reads cannot fail*, one layer
 /// down, on blocks instead of commands.
 ///
@@ -154,7 +154,7 @@ pub struct FluidBinding {
 /// it as still water.
 ///
 /// The block knowledge is not restated here — [`fluid`] is the same module
-/// `delve-admit audit` reads for `DW0800`, so the emitter and the auditor share
+/// `delvec prefab audit` reads for `DW0800`, so the emitter and the auditor share
 /// one rule instead of two that agree until they do not. What is local is the
 /// walk over this generator's own cells, because the grid type is.
 ///

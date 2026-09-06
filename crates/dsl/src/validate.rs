@@ -213,7 +213,12 @@ pub(crate) struct AnchorProviders {
     kinds: BTreeMap<String, crate::layout::StationKind>,
     /// The union of every known area's set.
     union: BTreeSet<String>,
-    /// Some area binds a pool, so the compiler resolves its anchors later.
+    /// **This campaign's answer is not knowable at this tier**, so no name is
+    /// refused for being outside the set. Two causes, one consequence: some area
+    /// binds a pool whose draw the compiler makes later, or the campaign hands
+    /// its space to a site plan whose `layout-graph.json` is absent — see
+    /// [`crate::placement::anchor_vocabulary_unknowable`], which is where that
+    /// second question is asked and the only place it is answered.
     deferred: bool,
     /// Every area contributed a set — the union is the whole truth.
     all_areas_known: bool,
@@ -236,11 +241,21 @@ impl AnchorProviders {
         let mut kinds: BTreeMap<String, crate::layout::StationKind> = BTreeMap::new();
         if c.site_plan.is_some() {
             declared_areas += 1;
-            kinds = crate::siteplan::synthesized_anchor_kinds(c);
-            per_area.insert(
-                crate::siteplan::SITE_AREA.to_string(),
-                kinds.keys().cloned().collect(),
-            );
+            // A derivation with no graph to read names NOTHING, and an empty set
+            // here would make every anchor reference in the campaign a refusal —
+            // of names that are correct, with a remedy that cannot be taken. The
+            // set is unknown, not empty, and that is exactly the pool area's
+            // situation, so it takes the pool area's path: contribute no set and
+            // let the whole campaign defer.
+            if crate::placement::anchor_vocabulary_unknowable(c) {
+                deferred = true;
+            } else {
+                kinds = crate::siteplan::synthesized_anchor_kinds(c);
+                per_area.insert(
+                    crate::siteplan::SITE_AREA.to_string(),
+                    kinds.keys().cloned().collect(),
+                );
+            }
         }
         for a in &c.world.content.areas {
             if let Some(prefab) = &a.prefab {
@@ -4843,11 +4858,13 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
     flags
 }
 
-/// DSL v0.6 trap validation (spec-0011). Each trap binds to an `anchor/trap`
-/// marker and gives the mute prefab hardware meaning. Structural failures are
-/// `DW0340` (a malformed/duplicate id, an `at`/`disarm.via` no area's prefab
-/// provides, or a `disarm.via` colliding with the trap's own trigger anchor); a
-/// dispense payload item unknown to the pinned registry is `DW0341`. A trap's
+/// DSL v0.6 trap validation (spec-0011). Each trap binds to a **point anchor**
+/// an area's prefab provides — any anchor, whatever it is called; a spec-0022
+/// command `payload` needs that cell and nothing else of the piece, because the
+/// compiler emits the detection. Structural failures are `DW0340` (a
+/// malformed/duplicate id, an `at`/`disarm.via` no area's prefab provides, or a
+/// `disarm.via` colliding with the trap's own trigger anchor); a dispense
+/// payload item unknown to the pinned registry is `DW0341`. A trap's
 /// `requires_flags` resolves against the declared-flag set like a trigger's
 /// (`DW0172`). The completability obligation for a *lethal* trap is discharged
 /// later by the compiler nav proof (`DW0342`).
@@ -4914,8 +4931,12 @@ fn v06_trap_checks(
                     "trap `at` anchor `{}` is not provided by any area's prefab — {}",
                     t.at,
                     providers.anchor_remedy(
-                        "bind the trap to an `anchor/trap` marker some area's prefab exposes \
-                         (anchor names come from prefab metadata; do NOT invent one)"
+                        "bind the trap to a point anchor some area's prefab exposes, whatever \
+                         that anchor is called (names come from prefab metadata; do NOT invent \
+                         one). A `payload` trap needs nothing of the piece but that one cell — \
+                         the compiler emits the detection; only a legacy `dispense` effect \
+                         needs the anchor's `dispenser` socket, and only a flag-gated trap \
+                         needs its `trigger_block`"
                     ),
                 ),
             ));

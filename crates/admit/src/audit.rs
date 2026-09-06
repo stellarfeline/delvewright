@@ -7,7 +7,7 @@
 //!    task/spec name — **command blocks**, **structure blocks**, and
 //!    **NBT-bearing spawners**, plus any block entity carrying an embedded
 //!    `Command`. The recursive `Command` / spawn-NBT scan is the **exact** one the
-//!    `delve-schem` conversion strip uses (reused from that crate, no drift).
+//!    `delvec schem` conversion strip uses (reused from that crate, no drift).
 //! 2. **Palette allowlist** (`DW0730`, an error): every palette block name must be
 //!    in the (configurable) allowlist, so a reviewer sees any surprising block.
 //!

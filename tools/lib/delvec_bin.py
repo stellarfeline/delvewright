@@ -32,11 +32,10 @@ answer be about a tree that no longer exists, in the reassuring direction.
 
 The staleness key is the newest mtime among the compiler's own tracked sources —
 `git ls-files` over `crates/`, plus the workspace manifest and lockfile.
-`git ls-files` rather than a directory walk because `crates/render` carries its
-own `target/`, whose freshly-written artifacts would make every run refuse
-forever; and tracked-files-only is git's ignore rule rather than a hand-written
-exclusion list, which `CLAUDE.md` refuses ("never add an ignore list to make an
-audit green"). Where git cannot answer, the walk is used and skips directories
+`git ls-files` rather than a directory walk because tracked-files-only is git's
+ignore rule rather than a hand-written exclusion list, which `CLAUDE.md` refuses
+("never add an ignore list to make an audit green") — a build artifact under a
+crate would otherwise make every run refuse forever. Where git cannot answer, the walk is used and skips directories
 named `target`, and the printed line says which method decided.
 
 There is deliberately **no override**. An opt-out here would be secured by

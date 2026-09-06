@@ -323,3 +323,16 @@ pub fn check_campaign(raw: &RawCampaign) -> Vec<Diagnostic> {
         Err(diags) => diags,
     }
 }
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+
+    /// **The crate's version is the format's number** (ADR-0024). `DSL_VERSION`
+    /// is stated as a literal because gates read it textually; this is what
+    /// keeps the literal and `Cargo.toml`'s `version` from drifting apart.
+    #[test]
+    fn the_accepted_dsl_version_is_the_crate_version() {
+        assert_eq!(DSL_VERSION, env!("CARGO_PKG_VERSION"));
+    }
+}

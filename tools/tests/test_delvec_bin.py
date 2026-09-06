@@ -143,8 +143,8 @@ def test_nothing_found_is_a_refusal_naming_both_places(delvec_bin, tmp_path):
 
 
 def test_a_required_caller_is_never_handed_an_inferred_engine(delvec_bin, tmp_path):
-    """`build-every-campaign` asks WHICH engine built a campaign; inferring one
-    would answer a question nobody asked."""
+    """A required caller asks WHICH engine did something; inferring one would
+    answer a question nobody asked."""
     repo = fake_repo(tmp_path)
     fake_delvec(repo)  # present, and still not used
     sink = Sink()
@@ -197,8 +197,8 @@ def test_without_git_the_walk_skips_target_and_says_which_method_decided(
 def test_every_tool_that_runs_an_engine_uses_the_one_resolver():
     """The extraction is only worth anything if nothing kept its private copy.
 
-    Binding: the six `tools/*.py` that take a `--delvec` PATH and run it. The
-    population is stated so a seventh tool added beside them is visibly absent
+    Binding: the five `tools/*.py` that take a `--delvec` PATH and run it. The
+    population is stated so a sixth tool added beside them is visibly absent
     from this list rather than silently uncovered.
     """
     users = [
@@ -207,9 +207,8 @@ def test_every_tool_that_runs_an_engine_uses_the_one_resolver():
         "check-whole-map-render.py",
         "gallery-baseline.py",
         "gallery-build.py",
-        "build-every-campaign.py",
     ]
-    assert len(users) == 6
+    assert len(users) == 5
     for name in users:
         src = (REPO / "tools" / name).read_text(encoding="utf-8")
         assert "from delvec_bin import resolve" in src, name

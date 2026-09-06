@@ -1,18 +1,14 @@
 [package]
 name = "delvewright-dsl"
-# DELIBERATELY NOT the engine version (ADR-0017 §2). This crate has to exist on
-# crates.io because `delvec` depends on it, but it is not on ADR-0016's engine
-# line. Locking the two together would set a trap: crates.io versions can never
-# be reused, so a publish that half-succeeds (dsl lands, delvec fails) burns this
-# version permanently — and under lockstep the retry would have to move `delvec`
-# too, putting the engine out of step with the git tag ADR-0016 pins it to. With
-# an independent line a burned version costs a dsl bump and nothing else.
-#
-# `0.x` is also the honest semver: this is the format the engine speaks, not a
-# library anyone should depend on directly. Bound to `[engine] dsl_crate_version`
-# in versions.toml by validation/check-versions.sh, together with the `=`
-# requirement `delvec` declares on it.
-version = "0.1.0"
+# This crate DEFINES the campaign format, so its package number IS the format's
+# number: the `dsl_version` every document declares and `delvec fmt` writes.
+# A format change bumps the minor; a Rust-API-only change bumps the patch.
+# `DSL_VERSION` (src/envelope.rs) states the same number as a literal — gates
+# read that literal textually — and a unit test beside it holds
+# the two equal; validation/check-versions.sh binds both to `[engine]
+# dsl_crate_version` in versions.toml, together with the `=` requirement every
+# engine crate declares on it.
+version = "0.19.0"
 edition = "2024"
 # The toolchain this repo actually builds and tests on (rust-toolchain.toml).
 # Asserted equal to that pin by check-versions.sh: a `rust-version` looser than

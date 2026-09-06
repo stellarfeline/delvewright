@@ -3,7 +3,7 @@
 //!
 //! # Why this exists
 //!
-//! CLAUDE.md, on the `delve-admit` finding: *an EMITTED command is
+//! CLAUDE.md, on the `delvec prefab` finding: *an EMITTED command is
 //! checked against the pinned command tree by the emitter, not by a test, because
 //! the operator running the tool does not run `cargo test`.* Blocks had no such
 //! rule. The consequence is measured, not hypothetical: 1.21.11 renamed
@@ -14,7 +14,7 @@
 //! `.nbt` is well-formed, the byte-identity gate passes, the tower simply has no
 //! ropes, and nothing anywhere says so. The same class is in the shipped
 //! library: `hero-temple-ruin-arch.nbt` carries `minecraft:chain` at `[4, 9, 13]`
-//! (1 of 36 prefabs, measured 2026-08-11 with `delve-admit audit`).
+//! (1 of 36 prefabs, measured 2026-08-11 with `delvec prefab audit`).
 //!
 //! So this module is the block half of the command rule. It lives here, beside
 //! the other pinned registries, because the registry is a fact about the pinned
@@ -84,7 +84,7 @@ const DEFAULTS_JSON: &str = include_str!("../data/block-defaults-1.21.11.json");
 /// it twice with two different answers. The registry says *whether the pin has
 /// this id*; it cannot say *what the pin will hold instead* — and a check that
 /// judges a pre-pin template's id AS WRITTEN is judging a name in the wrong
-/// vocabulary. `delve-admit audit` did exactly that: the spelling rule passed
+/// vocabulary. `delvec prefab audit` did exactly that: the spelling rule passed
 /// `minecraft:chain` in a DataVersion-2975 template because the fixer migrates
 /// it, and the palette allowlist refused the same cell in the next breath
 /// because `minecraft:chain` is not a name at the pin.

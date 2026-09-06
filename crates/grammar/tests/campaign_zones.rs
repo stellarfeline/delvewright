@@ -89,7 +89,7 @@ fn record() -> Record {
 
 /// `versions.toml` `[content].sha` — the commit CI checks the content repo out
 /// at. A plain line scan of the one key we need, the same way the compiler reads
-/// it for `manifest.json` (`crates/compiler/src/main.rs`): no TOML dependency,
+/// it for `manifest.json` (`crates/delvec/src/main.rs`): no TOML dependency,
 /// and the value read is the one pinned in the repo rather than live git state.
 fn pinned_content_sha() -> String {
     let path = repo_root().join("versions.toml");
@@ -479,7 +479,7 @@ fn every_declared_zone_is_structurally_valid() {
 /// seed, byte-identical model.**
 ///
 /// The second of the two methods this is proved by, and deliberately a different
-/// code path from the first. The first runs `delve-grammar expand` twice as
+/// code path from the first. The first runs `delvec grammar expand` twice as
 /// separate processes and compares the CONTENT hash of every file each wrote —
 /// the `.nbt` through the gzip writer, the metadata, the gate report. This one
 /// stays in process and compares `VoxelModel::canonical_bytes`, so it touches no
@@ -530,7 +530,7 @@ fn every_declared_zone_expands_byte_identically_twice() {
 /// The direction that rots is the second: a zone program dropped into
 /// `design/programs/` with no manifest entry is a program nothing expands and
 /// nothing checks, and it looks exactly like a program that is fine. The CLI
-/// reds on it too (`delve-grammar audit`); this is the same claim inside
+/// reds on it too (`delvec grammar audit`); this is the same claim inside
 /// `cargo test`, because the two run in different jobs.
 #[test]
 fn every_program_file_is_declared_and_every_declaration_has_a_file() {

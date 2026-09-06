@@ -7,7 +7,7 @@
 //! Chunky scenes; the generation-time vision agent reviews each render against its
 //! `expect` strings (findings are DSL-addressable, same shape as playtest notes).
 //!
-//! ## Camera convention (shared with `delve-render`)
+//! ## Camera convention (shared with `delvec render`)
 //!
 //! `pos`/`look_at` are world coordinates (block-centre floats). `yaw`/`pitch` are
 //! **degrees**, aimed from `pos` at `look_at`:
@@ -76,7 +76,7 @@
 //! the chunks its layout occupies — the sea around the island is the level
 //! generator's, and a renderer loading that save sees void past the shoreline.
 //! The plan therefore states the generator fact ([`horizon_fact`]:
-//! `{"kind": "ocean", "sea_level": 62}`) so `delve-render` can raise Chunky's
+//! `{"kind": "ocean", "sea_level": 62}`) so `delvec render` can raise Chunky's
 //! ambient water plane at exactly the compiler's datum. `horizon: void` (the
 //! default) emits no key, keeping every existing plan byte-identical.
 //!
@@ -958,7 +958,7 @@ pub fn render_plan(
 /// plane under the frame — at exactly the compiler's sea-level datum, or the
 /// plane and the authored block water meet in a visible two-tone seam. That is a
 /// *fact of the campaign*, so the compiler states it (`{"kind": "ocean",
-/// "sea_level": 62}`) rather than leaving `delve-render` to infer it from
+/// "sea_level": 62}`) rather than leaving `delvec render` to infer it from
 /// blocks.
 ///
 /// A void horizon emits **no key at all** (not `null`), so every campaign that

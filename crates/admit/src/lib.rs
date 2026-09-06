@@ -1,5 +1,5 @@
-//! `delve-admit` — the prefab **admission** half of the spec-0007 asset pipeline
-//! (M3). Turns an approved, `delve-schem`-converted `.nbt` candidate into a
+//! `delvec prefab` — the prefab **admission** half of the spec-0007 asset pipeline
+//! (M3). Turns an approved, `delvec schem`-converted `.nbt` candidate into a
 //! library-grade prefab, and gates community contributions.
 //!
 //! Modules:
@@ -27,11 +27,12 @@ pub mod gallery;
 pub mod jigsaw;
 pub mod light;
 pub mod meta;
+pub mod run;
 pub mod settling;
 pub mod socket;
 pub mod spatial;
 pub mod structure;
 
-/// The deterministic NBT value type (re-exported from `delve-schem`) for callers
+/// The deterministic NBT value type (re-exported from `delvec schem`) for callers
 /// and tests that build block-entity payloads.
 pub use delvewright_schem::nbt::Nbt;

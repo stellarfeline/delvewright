@@ -80,7 +80,7 @@
 id = "rust-toolchain"
 value = "1.97.1"
 sites = [
-    "crates/compiler/Cargo.toml",
+    "Cargo.toml",
     "crates/dsl/Cargo.toml",
     "rust-toolchain.toml",
     "versions.toml",
@@ -92,9 +92,10 @@ why = """
 The Rust toolchain every artifact this project ships is built with. The channel
 in rust-toolchain.toml is the copy rustup obeys — it binds inside git worktrees
 too, and no workflow overrides it, so CI and a creator's own clone build on the
-same compiler. versions.toml restates it and both published manifests carry it as
-their `rust-version` floor; validation/check-versions.sh holds those four equal,
-and tools/check-reference-versions.py holds the two crate READMEs' "Rust 1.97.1
+same compiler. versions.toml restates it, the root manifest's `[workspace.package]` carries it
+as the `rust-version` floor every engine crate inherits, and the DSL crate's
+manifest carries its own; validation/check-versions.sh holds those four equal,
+and tools/check-reference-versions.py holds every crate README's "Rust 1.97.1
 or newer" line equal to them in turn.
 
 HELD FOR one instrument, constant across time and machines. ADR-0006's
@@ -149,12 +150,12 @@ facts and then that the value stands as a whole token at every site.
 
 [[pin]]
 id = "content-repo"
-value = "42ee707db69b83d27534608b2758d8697ad2c46e"
+value = "a8c3f98831735aa370908a43d37db85d09fae25c"
 sites = ["versions.toml"]
 repo = "stellarfeline/delvewright-campaigns"
 policy = "track"
 judged_by = ".github/workflows/ci.yml"
-reviewed = "42ee707db69b83d27534608b2758d8697ad2c46e"
+reviewed = "a8c3f98831735aa370908a43d37db85d09fae25c"
 builds = []
 why = """
 The content commit every reproducible build resolves the prefab library and
@@ -171,18 +172,18 @@ enforced separately by validation/check-versions.sh and
 # ---------------------------------------------------------------------------
 
 [[pin]]
-id = "nucleation-rev"
-value = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf"
+id = "nucleation-version"
+value = "0.10.14"
 sites = ["crates/render/Cargo.toml", "versions.toml"]
 policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "nucleation_version"
 why = """
-Nucleation (MIT), the per-prefab headless renderer, pinned by git rev because no
-crates.io release carries its `rendering` feature (versions.toml [render]). Its
-currency is deliberately NOT checked here: judging it would mean a full clone of
-a third-party repository inside a required job, which is the reach
-tools/check-workspace-git-deps.py exists to keep out of required jobs. It
-renders validation artifacts and decides no verdict, so its drift changes no
-gate's answer.
+Nucleation (MIT), the per-prefab headless renderer, from crates.io at exactly
+this version (versions.toml [render], ADR-0023 §5). It renders validation
+artifacts and decides no verdict, so its drift changes no gate's answer; a bump
+is an ordinary reviewed edit that re-runs the render crate's tests, the GPU
+ones included.
 """
 
 [[pin]]
@@ -626,39 +627,6 @@ independently, from the release index. Pinning changed nothing that was running.
 
 POLICY `immutable`, on the same published-artifact argument as `mecha`. A bump is
 an ordinary reviewed edit; what it may not be is silent.
-"""
-
-[[pin]]
-id = "cargo-audit"
-value = "0.22.2"
-sites = [".github/workflows/ci.yml", "versions.toml"]
-policy = "immutable"
-bound_by = "validation/check-versions.sh"
-bound_key = "cargo_audit_version"
-why = """
-cargo-audit, the RustSec advisory check that `tools/check-advisories.py --cargo`
-drives over all ten cargo lockfiles this repository tracks. It runs as a step of
-`rust (fmt, clippy, test)`, a required status check, so it is an INSTRUMENT and
-is named literally for the same reason `beet` and `pytest` are: an unpinned
-instrument can move a required gate's verdict with nothing in any diff to show
-what moved.
-
-WHAT IT DOES NOT PIN, said plainly so nobody reads more into this entry than it
-holds: the advisory DATABASE is fetched live from RustSec on every run and is
-not pinned by anything here. That is the point of an advisory check — a frozen
-database would answer about the day it was frozen — and it is also the one live
-network reach this gate makes, which the step that makes it names.
-
-CHOSEN AS the version `cargo install cargo-audit --locked` resolves to, so
-pinning changed nothing that was running. At this version, over 1239 loaded
-advisories, all ten lockfiles are clean: zero vulnerabilities over 615 resolved
-crate dependencies, and two `unmaintained` warnings in `crates/render`
-(`bincode 1.3.3`, `paste 1.0.15`), which cargo-audit reports without failing and
-this gate prints by name rather than as a count.
-
-POLICY `immutable`, on the same published-artifact argument as `mecha`,
-`beet` and `pytest`. A bump is an ordinary reviewed edit; what it may not be is
-silent.
 """
 
 # ---------------------------------------------------------------------------

@@ -69,8 +69,37 @@ impl Default for Limits {
     }
 }
 
+/// **What a caller changed about the program before it was expanded.**
+///
+/// A `--param` or a `--role` is applied by mutating the
+/// [`Program`](crate::ir::Program), so it reaches the bytes through the
+/// program's own hash and leaves no other trace. That is enough for the hash to
+/// be honest and not enough for the provenance record to be: the record names a
+/// source document and a hash, and without these two maps the pair does not
+/// agree for anybody who tries to reproduce it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Overrides {
+    /// Integer parameters set on the way in, by name.
+    pub params: BTreeMap<String, i64>,
+    /// Palette roles rebound on the way in, by name, each the block state as
+    /// the caller wrote it.
+    pub roles: BTreeMap<String, String>,
+}
+
+impl Overrides {
+    /// Nothing was overridden — the program was expanded as its document reads.
+    pub fn none() -> Overrides {
+        Overrides::default()
+    }
+
+    /// True when the program was expanded exactly as its document reads.
+    pub fn is_empty(&self) -> bool {
+        self.params.is_empty() && self.roles.is_empty()
+    }
+}
+
 /// Everything an expansion needs beyond the program and the box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpandOptions {
     /// The one seed every random choice derives from.
     pub seed: u64,
@@ -78,16 +107,28 @@ pub struct ExpandOptions {
     pub limits: Limits,
     /// The orientation the start rule is expanded under.
     pub orientation: Orientation,
+    /// What the caller changed about the program before handing it over. It
+    /// changes nothing about the expansion — the program already carries the
+    /// values — and everything about what the export can honestly record.
+    pub overrides: Overrides,
 }
 
 impl ExpandOptions {
-    /// Default limits and identity orientation, with the given seed.
+    /// Default limits and identity orientation, with the given seed, over the
+    /// program exactly as written.
     pub fn seeded(seed: u64) -> ExpandOptions {
         ExpandOptions {
             seed,
             limits: Limits::default(),
             orientation: Orientation::IDENTITY,
+            overrides: Overrides::none(),
         }
+    }
+
+    /// Declare what the caller overrode on the program before expanding it.
+    pub fn with_overrides(mut self, overrides: Overrides) -> ExpandOptions {
+        self.overrides = overrides;
+        self
     }
 }
 

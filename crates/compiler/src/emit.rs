@@ -373,18 +373,18 @@ pub fn build_with_warnings(
             message: format!(
                 "the assembled world resolves no entry anchor — no area places a \
                  piece whose prefab metadata declares an anchor with \
-                 `\"role\": \"{role}\"`, and none carries the fallback spelling \
-                 {names:?} either. The compiler then has no cell to call the \
+                 `\"role\": \"{role}\"`. The compiler then has no cell to call the \
                  campaign's start: no `setworldspawn`, no class-apply teleport, no \
-                 first-join placement. Fix it where the anchors are declared: give \
-                 the piece the party arrives in an anchor at that cell and put \
+                 first-join placement. An anchor's NAME is never consulted for this, \
+                 so no spelling supplies it. Fix it where the anchors are declared: \
+                 give the piece the party arrives in an anchor at that cell and put \
                  `\"role\": \"{role}\"` on it (in a pool, that is the prefab the \
                  layout is seeded from), or bind the area to a prefab that already \
-                 has one. The two names are a compatibility path for pieces \
-                 admitted before the role existed — a piece written today declares \
-                 the role rather than being renamed to match a spelling.",
+                 has one. Every producer can write it: `delvec prefab anchor <nbt> \
+                 --name <anchor> --pos <x,y,z> --role {role}` for a hand-built or \
+                 ingested piece, `\"role\": \"{role}\"` on the `mark` for a grammar \
+                 program.",
                 role = plan::AnchorRole::Entry,
-                names = plan::ENTRY_ANCHOR_NAMES,
             ),
         });
     }
@@ -1068,6 +1068,20 @@ pub fn build_with_warnings(
                 // the completion cube reaches one, so a route can be proven,
                 // exported and walked to a cell that never fires the objective.
                 crate::reach::check_reach_completion(plan, &world, &routes)?;
+                // `DW0881`: the other direction of the same sentence. `DW0850`
+                // asks whether the party can complete this at all; this asks
+                // whether anybody can complete it WITHOUT arriving. The volume is
+                // centred on the anchor in all three axes and vanilla tests it
+                // against the whole body box, so a raised anchor whose radius
+                // reaches the floor below completes from that floor and the party
+                // never climbs. Bound here, to the same event and the same final
+                // world, and its binding line is printed whether it found
+                // anything or not — a count only says something when the run that
+                // found nothing prints it too.
+                let (reach_footprint, off_floor) =
+                    crate::reach::check_reach_footprint(plan, &world, campaign_spawn(plan));
+                eprintln!("{}", reach_footprint.line());
+                off_floor?;
                 // Stair-orientation proof (DW0430). Nav models a stair
                 // as a full cube, so a reversed stair reads as a legal one-block
                 // jump and every existing proof passes — the delve ships with a
@@ -1487,7 +1501,7 @@ pub fn build_with_warnings(
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
     // Deterministic camera + expect-checklist shot list for the visual tier;
-    // consumed by `delve-render`. Emitted before the manifest so its hash is
+    // consumed by `delvec render`. Emitted before the manifest so its hash is
     // recorded there like every other output.
     //
     // `render_plan` is the only way to a render-plan value, and it takes the

@@ -223,7 +223,7 @@ Each states what would make it vacuous.
    refused naming field and version; a corpus program upgraded to `1.6.0`
    without them is byte-identical across the fence, and double-expand
    determinism extends over qualified region names.
-8. **One checker, two doors**: `delve-admit audit` agrees with `expand` on a
+8. **One checker, two doors**: `delvec prefab audit` agrees with `expand` on a
    piece whose metadata carries a `face`-aimed exterior edge and an exterior
    stair — same bytes, same resolved contract, same verdict. Vacuous if the
    admit-side fixture omits the new fields.
@@ -248,7 +248,7 @@ Each states what would make it vacuous.
 1. IR + `validate` (node, fields, cycle refusal, effective-name integrity);
    fence rows; `expand`'s prefix frame.
 2. Checker: rise arms, exterior transit proof, face filter + ambiguity
-   refusal; `delve-admit` metadata halves of the same fields.
+   refusal; `delvec prefab` metadata halves of the same fields.
 3. Docs and corpus in the same PR: `grammar.md` §2d, an `idiom`-adjacent
    corpus program per construct (spec-0033), `prefab-procedure.md` §1.
 4. Bell adoption round, same milestone: Z0/Z3/Z7 contracts on the new

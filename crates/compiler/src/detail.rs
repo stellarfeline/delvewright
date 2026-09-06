@@ -27,7 +27,7 @@
 //! |---|---|
 //! | `DW0841`–`DW0845` ([`check`]) | `validate_loaded` in `delvec`'s `main` — the one funnel every subcommand's validation goes through, `build` included |
 //! | `DW0841` again ([`check_walk`]) | `delvec allocation`, before it prints a single number |
-//! | `DW0848` | `delve-admit audit`, and [`check`] wherever a row consumes the piece |
+//! | `DW0848` | `delvec prefab audit`, and [`check`] wherever a row consumes the piece |
 //! | the frame, and the piece's bytes | [`place`], inside `Plan::build` |
 //! | the hash line, and the blockout-drift advisory | `emit::build_with_warnings`, the one function that turns a `Plan` into a datapack |
 //!
@@ -624,9 +624,14 @@ pub fn blockout_drift(c: &Campaign, record: Option<&str>) -> Option<Diagnostic> 
     if site_plan_sha256(c).as_deref() != Some(rec.site_plan_sha256.as_str()) {
         return None;
     }
-    if let Some(g) = layout_graph_sha256(c)
-        && g != rec.layout_graph_sha256
-    {
+    // An ABSENT graph is not an unchanged one. `DW0824` refuses the campaign for
+    // it, and reaching the text below through that hole makes the warning assert
+    // equality about a document that is not there — the same lie the clause
+    // exists to prevent, arriving by the arm that had no clause at all. Measured
+    // on the gallery's site-plan point with `layout-graph.json` removed: this
+    // printed "under an unchanged site plan and an unchanged layout graph"
+    // beside a binding line reading `1 of 2 freshness hash(es) compared`.
+    if layout_graph_sha256(c).as_deref() != Some(rec.layout_graph_sha256.as_str()) {
         return None;
     }
     Some(Diagnostic::warning(
@@ -1388,7 +1393,7 @@ pub fn check(
                      beside the map's; a piece with no contract gives the equivalence instrument \
                      nothing to read, and a place detailed with one would be a hole in the proof \
                      rather than a finding in it. Re-export the piece with its contract, or admit \
-                     it through `delve-admit`, which resolves one.",
+                     it through `delvec prefab`, which resolves one.",
                     piece = row.piece,
                 ),
             ));

@@ -67,6 +67,25 @@ shipping, and the constitution now rules the promise it served out of scope.
    string it records and never judges. The artifact format the bot depends on is
    carried by each artifact's own `format_version`, which is unchanged.
 
+## The crate version is the format's number
+
+The `delvewright-dsl` crate defines the format, so its package number **is**
+the `dsl_version`: `DSL_VERSION` in `crates/dsl/src/envelope.rs` states the
+same number as `crates/dsl/Cargo.toml` `[package] version`, held equal by a
+unit test beside the constant and by `validation/check-versions.sh`, which
+binds both to `versions.toml` `[engine] dsl_crate_version`.
+
+- A format change bumps the **minor**; a Rust-API-only change bumps the
+  **patch**.
+- Documents declare the **full** number, and `delvec fmt` writes the current
+  one.
+- The engine accepts exactly that one number. A patch bump is therefore a new
+  accepted number too: a document declaring `0.19.0` is refused by an engine
+  whose crate is `0.19.1`, and every document this repository holds moves with
+  the bump exactly as it does for a minor (Decision 4). What the two halves of
+  the number say is what changed — the format, or only the API — never whether
+  an older document still compiles.
+
 ## What this supersedes, by section
 
 - **ADR-0016 §Decision item 1** ("`dsl_version` (format) — unchanged: versioned
