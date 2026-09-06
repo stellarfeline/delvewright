@@ -10,7 +10,7 @@ mod common;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -55,19 +55,6 @@ fn timed_gate_validates_clean() {
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 timed gate, got: {diags:#?}"
-    );
-}
-
-/// The section under a pre-0.6 quests version is reserved → `DW0141`.
-#[test]
-fn timed_gates_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.code == "DW0141" && d.path == "/content/timed_gates"),
-        "the timed_gates section must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }
 
@@ -153,7 +140,7 @@ fn malformed_timed_gate_id_is_dw0377() {
 /// The v0.6 gate with a jam lever on a real anchor. `anchor/keeper-stand` is a
 /// second anchor `prefab/hello-room` exposes, so it resolves.
 const QUESTS_DISARM: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

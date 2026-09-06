@@ -29,7 +29,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_w
 fn quests_doc(opener: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -57,7 +57,7 @@ fn quests_doc(opener: &str) -> String {
 /// has already been reached.
 fn quests_doc_opened_too_late() -> String {
     r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -84,7 +84,7 @@ fn quests_doc_opened_too_late() -> String {
 /// made to do.
 fn quests_doc_opened_only_on_death() -> String {
     r#"{
-  "dsl_version": "0.10.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

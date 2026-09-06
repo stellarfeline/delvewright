@@ -10,9 +10,17 @@
             "doing": "barring the inner door with his body"
           }
         },
+        "happening": {
+          "text": "the party takes on quest/ask",
+          "verb": "learns"
+        },
         "id": "quest/ask",
         "objectives": [
           {
+            "happening": {
+              "text": "the party completes obj/ask",
+              "verb": "learns"
+            },
             "id": "obj/ask",
             "npc": "npc/keeper",
             "type": "talk-to"
@@ -23,9 +31,17 @@
           "obj/ask": [
             {
               "anchor": "anchor/door",
+              "happening": {
+                "text": "the gate at anchor/door opens",
+                "verb": "opens"
+              },
               "type": "open-gate"
             },
             {
+              "happening": {
+                "text": "npc/keeper arrives at anchor/exit",
+                "verb": "arrives"
+              },
               "npc": "npc/keeper",
               "to_anchor": "anchor/exit",
               "type": "move-npc"
@@ -44,9 +60,17 @@
             "doing": "waiting on the far side of the lifted gate, holding the road open"
           }
         },
+        "happening": {
+          "text": "the party takes on quest/farewell",
+          "verb": "learns"
+        },
         "id": "quest/farewell",
         "objectives": [
           {
+            "happening": {
+              "text": "the party completes obj/farewell",
+              "verb": "learns"
+            },
             "id": "obj/farewell",
             "npc": "npc/keeper",
             "type": "talk-to"
@@ -54,6 +78,10 @@
         ],
         "on_complete": [
           {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
             "type": "campaign-complete"
           }
         ],
@@ -64,6 +92,6 @@
       }
     ]
   },
-  "dsl_version": "0.7.0",
+  "dsl_version": "0.19.0",
   "stage": "quests"
 }

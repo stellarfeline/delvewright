@@ -31,7 +31,7 @@ fn hw(name: &str) -> String {
 /// Two NPCs in the hello-room: the keeper on his stand, a scout at the exit
 /// (`anchor/keeper-stand` is local `[5, 1, 4]`, `anchor/exit` is `[5, 1, 8]`).
 const NPCS: &str = r#"{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "npcs",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [
     { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
       "area": "area/keep", "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
@@ -43,7 +43,7 @@ const NPCS: &str = r#"{
 }"#;
 
 const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "quest-plan",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
     { "id": "quest/one", "goal": "Speak with the Keeper.", "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
@@ -53,7 +53,7 @@ const QUEST_PLAN: &str = r#"{
 }"#;
 
 const DIALOGUE: &str = r#"{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "dialogue",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "dialogue",
   "content": { "dialogues": [
     { "npc": "npc/keeper", "root": "dlg/greeting", "nodes": [
       { "id": "dlg/greeting", "text": "Halt.", "options": [
@@ -77,7 +77,7 @@ const DIALOGUE: &str = r#"{
 fn quests(scout_to: &str, cast_two: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.7.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quests",
   "content": {{ "quests": [
     {{ "id": "quest/one", "trigger": {{ "type": "campaign-start" }},
        "objectives": [ {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }} ],

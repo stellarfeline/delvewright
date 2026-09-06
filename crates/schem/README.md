@@ -26,7 +26,7 @@ use delvewright_schem::{ConvertOutput, convert};
 ## Compatibility
 
 - **Minecraft**: Java Edition 1.21.11.
-- **Campaign format**: `dsl_version` `0.2.0` through `0.19.0`.
+- **Campaign format**: `dsl_version` `0.19.0`, the one number this engine accepts.
 - **Rust**: 1.97.1 or newer.
 
 ## Documentation

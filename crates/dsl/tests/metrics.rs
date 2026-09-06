@@ -8,7 +8,7 @@ use delvewright_dsl::metrics::{
 
 /// The exported table's canonical bytes at [`METRICS_VERSION`].
 ///
-/// A metrics version is not a fence — nothing grandfathers against it and no
+/// A metrics version gates no surface — no
 /// document declares one — so `tools/check-version-ledger-uniqueness.py` has
 /// nothing to compare and is deliberately not extended to cover it. What a
 /// consumer that pins the version is actually pinning is the VALUES, and this is

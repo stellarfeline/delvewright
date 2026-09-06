@@ -67,7 +67,7 @@ fn edits_copy(name: &str) -> PathBuf {
 /// Overwrite the copy's `world-edits.json` content with the given batches.
 fn set_batches(dir: &Path, batches: serde_json::Value) {
     let doc = serde_json::json!({
-        "dsl_version": "0.6.0",
+        "dsl_version": "0.19.0",
         "campaign_id": "hello-world",
         "stage": "world-edits",
         "content": { "batches": batches }
@@ -266,7 +266,7 @@ fn edit_breaching_the_outer_wall_is_dw0322() {
 /// unfenced" is a claim about a constant rather than a measurement (CLAUDE.md's
 /// *unfenced* vacuity mode). Only this stage moves: raising every stage to
 /// `0.14.0` makes the fixture red on five `DW0481` obligations before the build
-/// tier is reached, which would demonstrate the version fence and nothing else.
+/// tier is reached.
 fn set_ocean_horizon_at(dir: &Path, dsl_version: &str) {
     let path = dir.join("world.json");
     let mut doc: serde_json::Value =
@@ -279,9 +279,9 @@ fn set_ocean_horizon_at(dir: &Path, dsl_version: &str) {
 }
 
 /// The world-stage version floor for `horizon` (spec-0013) and the current
-/// `SUPPORTED_DSL_VERSION` — the two ends every `horizon: ocean` proof is driven
+/// `DSL_VERSION` — the two ends every `horizon: ocean` proof is driven
 /// at.
-const OCEAN_VERSIONS: [&str; 2] = ["0.6.0", "0.14.0"];
+const OCEAN_VERSIONS: [&str; 2] = ["0.19.0", "0.19.0"];
 
 fn set_ocean_horizon(dir: &Path) {
     set_ocean_horizon_at(dir, OCEAN_VERSIONS[0]);
@@ -352,7 +352,7 @@ fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
 /// — so nothing is lost by this fixture telling the truth about itself.
 ///
 /// Driven at both ends of the range `horizon` has existed over (`OCEAN_VERSIONS`):
-/// the code is `every_version`, and this is what makes that a measurement.
+/// and this is what makes that a measurement.
 #[test]
 fn edit_ocean_breach_lets_the_sea_into_the_walk_region_dw0851() {
     for version in OCEAN_VERSIONS {
@@ -977,12 +977,13 @@ fn set_quests_v06(dir: &Path, content: serde_json::Value) {
         let path = dir.join(file);
         let mut v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        v["dsl_version"] = serde_json::json!("0.6.0");
+        v["dsl_version"] = serde_json::json!("0.19.0");
         if doc == "quests" {
             v["content"] = content.clone();
         }
         std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap()).unwrap();
     }
+    common::declare_story_dir(dir);
 }
 
 /// The fixture's base quest content, with `extra` merged into `content`.
@@ -1301,7 +1302,7 @@ fn edit_inside_a_close_gate_region_warns_dw0353() {
         &dir,
         quests_with(serde_json::json!({
             "on_complete": [
-                { "type": "close-gate", "anchor": "anchor/door" },
+                { "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed." },
                 { "type": "campaign-complete" }
             ]
         })),

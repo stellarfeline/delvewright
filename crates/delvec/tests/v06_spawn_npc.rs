@@ -36,7 +36,7 @@ fn npcs_doc(deferred: bool) -> String {
 /// the keeper's entrance — the natural staging shape (walk in, the NPC appears).
 fn quests_doc() -> String {
     r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

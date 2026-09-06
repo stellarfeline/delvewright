@@ -18,6 +18,6 @@
     "theme": "A guarded keep, and a stone far enough from the guard to come back to.",
     "title": "The Keeper's Trial"
   },
-  "dsl_version": "0.4.0",
+  "dsl_version": "0.19.0",
   "stage": "world"
 }

@@ -7,7 +7,6 @@ import {
   parseCriticalPath,
   parseCriticalPathJson,
   reachGoal,
-  SUPPORTED_DSL_VERSIONS,
 } from "../src/critical-path.ts";
 import type { ReachCompletion } from "../src/critical-path.ts";
 
@@ -55,7 +54,7 @@ function validRaw(): Record<string, unknown> {
 
 test("parses the canonical spec-0002 critical path", () => {
   const path = parseCriticalPath(validRaw());
-  assert.ok((SUPPORTED_DSL_VERSIONS as readonly string[]).includes(path.version));
+  assert.equal(path.version, validRaw()["version"]);
   assert.equal(path.campaignId, "hello-world");
   assert.equal(path.steps.length, 4);
 
@@ -150,15 +149,15 @@ test("rejects a non-object root", () => {
   );
 });
 
-test("rejects an unsupported version", () => {
+test("rejects an empty version", () => {
   const raw = validRaw();
-  raw["version"] = "9.9.9";
+  raw["version"] = "";
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/version" &&
-      /unsupported version/.test(err.message),
+      /non-empty/.test(err.message),
   );
 });
 
@@ -414,30 +413,11 @@ test("a plain step carries neither sneak nor cutsceneSeconds (byte-identical sha
   assert.ok(!("cutsceneSeconds" in path.steps[2]!));
 });
 
-test("accepts the 0.4.0 dsl version", () => {
-  const raw = validRaw();
-  raw["version"] = "0.4.0";
-  assert.equal(parseCriticalPath(raw).version, "0.4.0");
-});
-
-test("accepts the 0.5.0 and 0.6.0 dsl versions (additive; same path contract)", () => {
-  for (const v of ["0.5.0", "0.6.0"]) {
-    const raw = validRaw();
-    raw["version"] = v;
-    assert.equal(parseCriticalPath(raw).version, v);
-  }
-});
-
-test("accepts the 0.7.0 … 0.10.0 dsl versions (additive; same path contract)", () => {
-  // v0.9 (spec-0026) adds the stage-1 horizon-library surface (object-form
-  // `horizon`, new base/shorthand names) — world-generation input the compiler
-  // consumes to build the map, not a change to the critical-path step contract
-  // the bot walks. An allowlist that lags the compiler's dsl_version ceiling
-  // refuses every 0.9.0 campaign at the gate before the bot takes a single step.
-  // v0.10 (spec-0031) adds the campaign-wide `on_death` effect root — a beat
-  // that fires on a death the bot may never take. It exports no new step and
-  // reorders none.
-  for (const v of ["0.7.0", "0.8.0", "0.9.0", "0.10.0"]) {
+test("the version is carried as provenance, whatever the number", () => {
+  // The engine accepts exactly one dsl_version (ADR-0024) and refuses every
+  // other before a critical path exists, so the harness records the number
+  // and does not keep a second list of them.
+  for (const v of ["0.19.0", "0.20.0", "1.0.0"]) {
     const raw = validRaw();
     raw["version"] = v;
     assert.equal(parseCriticalPath(raw).version, v);

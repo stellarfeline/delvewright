@@ -277,27 +277,233 @@ pub fn objective_effects<'a>(
         .unwrap_or_else(|| panic!("quests[{quest}].on_objective_complete[{objective}] is an array"))
 }
 
-/// Validation diagnostics a campaign is **answerable for**: `validate_campaign_with`
-/// put through the obligation fence, which is the list `delvec` prints and derives
-/// its exit code from (`compiler::main`).
-///
-/// Fixtures are written at the `dsl_version` their feature landed at, and a
-/// `Binds::Since` rule raised against a stage below its version is grandfathered
-/// — so a helper that asserted the RAW list would hold a 0.6 fixture to an
-/// obligation the engine never applies to it, and would red on a rule that in
-/// fact never reaches it. One helper rather than a fence rewritten at each call
-/// site: a rule that lives inside one caller is a rule the next caller has
-/// nothing to reuse of.
-pub fn fenced_diagnostics(
+/// Every validation diagnostic `validate_campaign_with` raises — the list `delvec`
+/// prints and derives its exit code from (`compiler::main`).
+pub fn validation_diagnostics(
     c: &delvewright_dsl::Campaign,
     items: &delvewright_compiler::registry::FullItemRegistry,
     prefabs: &delvewright_compiler::registry::PrefabRegistry,
     entities: &delvewright_compiler::registry::FullEntityRegistry,
 ) -> Vec<delvewright_dsl::Diagnostic> {
-    let raised = delvewright_dsl::validate_campaign_with(c, items, prefabs, entities);
-    delvewright_dsl::Fenced::apply(c, raised)
-        .reported()
-        .to_vec()
+    delvewright_dsl::validate_campaign_with(c, items, prefabs, entities)
+}
+
+// ---------------------------------------------------------------------------
+// The declarations every campaign owes
+// ---------------------------------------------------------------------------
+
+/// The eleven story-node effect verbs `DW0481` demands a `happening` on, with the
+/// verb their placeholder beat states.
+const STORY_VERBS: [(&str, &str); 11] = [
+    ("open-gate", "opens"),
+    ("close-gate", "seals"),
+    ("campaign-complete", "survives"),
+    ("spawn-wave", "arrives"),
+    ("despawn-npc", "departs"),
+    ("move-npc", "arrives"),
+    ("spawn-npc", "arrives"),
+    ("spawn-actor", "arrives"),
+    ("despawn-actor", "departs"),
+    ("move-actor", "arrives"),
+    ("unleash-actor", "arrives"),
+];
+
+fn happening(verb: &str, text: String) -> serde_json::Value {
+    serde_json::json!({ "verb": verb, "text": text })
+}
+
+fn declare_effects(node: &mut serde_json::Value) {
+    match node {
+        serde_json::Value::Object(map) => {
+            let verb = map
+                .get("type")
+                .and_then(|t| t.as_str())
+                .and_then(|t| STORY_VERBS.iter().find(|(v, _)| *v == t).map(|(_, h)| *h));
+            if let Some(h) = verb
+                && !map.contains_key("happening")
+            {
+                let t = map["type"].as_str().unwrap().to_string();
+                map.insert(
+                    "happening".into(),
+                    happening(h, format!("the `{t}` beat plays")),
+                );
+            }
+            for v in map.values_mut() {
+                declare_effects(v);
+            }
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(declare_effects),
+        _ => {}
+    }
+}
+
+/// Fill in the declarations the engine demands of every campaign and that a
+/// fixture about something else has no opinion on: a `happening` on every quest,
+/// objective, ambush and story-node effect (`DW0481`); a `cast` entry per quest
+/// for every stage-2 NPC, standing at its own anchor and offering its tree's root
+/// (`DW0460`); a `title` and `hint` on every `kill`, and a `title` and
+/// `item_name` on a `collect` that adopts a container (`DW0860`–`DW0863`).
+///
+/// A field the fixture states is left alone, so a test about one of these
+/// declarations writes its own and this never contradicts it. What it never
+/// supplies is a wording: a `sealed_hint` or a shortcut's press answer is a
+/// content decision (`DW0429`), and a fixture that seals something says what the
+/// seal answers.
+pub fn declare_story(
+    quests: &mut serde_json::Value,
+    npcs: &serde_json::Value,
+    dialogue: &serde_json::Value,
+) {
+    let roots: std::collections::BTreeMap<String, String> = dialogue["content"]["dialogues"]
+        .as_array()
+        .map(|trees| {
+            trees
+                .iter()
+                .filter_map(|t| {
+                    Some((
+                        t["npc"].as_str()?.to_string(),
+                        t["root"].as_str()?.to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let bodies: Vec<(String, String)> = npcs["content"]["npcs"]
+        .as_array()
+        .map(|ns| {
+            ns.iter()
+                .filter_map(|n| {
+                    Some((
+                        n["id"].as_str()?.to_string(),
+                        n["anchor"].as_str()?.to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let content = &mut quests["content"];
+    if let Some(list) = content["quests"].as_array_mut() {
+        for q in list {
+            let id = q["id"].as_str().unwrap_or("").to_string();
+            if q.get("happening").is_none() {
+                q["happening"] = happening("learns", format!("the party takes on {id}"));
+            }
+            if let Some(objs) = q["objectives"].as_array_mut() {
+                for o in objs {
+                    let oid = o["id"].as_str().unwrap_or("").to_string();
+                    let kind = o["type"].as_str().unwrap_or("").to_string();
+                    if o.get("happening").is_none() {
+                        let verb = match kind.as_str() {
+                            "reach-anchor" => "arrives",
+                            "kill" => "survives",
+                            "collect" => "gains",
+                            "interact" => "opens",
+                            _ => "learns",
+                        };
+                        o["happening"] = happening(verb, format!("the party completes {oid}"));
+                    }
+                    if kind == "kill" {
+                        if o.get("title").is_none() {
+                            o["title"] = serde_json::json!(format!("Fight: {oid}"));
+                        }
+                        if o.get("hint").is_none() {
+                            o["hint"] = serde_json::json!("The wave comes to you here.");
+                        }
+                    }
+                    if kind == "collect" && o.get("container").is_some() {
+                        if o.get("title").is_none() {
+                            o["title"] = serde_json::json!(format!("Collect: {oid}"));
+                        }
+                        if o.get("item_name").is_none() {
+                            o["item_name"] = serde_json::json!("the token");
+                        }
+                    }
+                }
+            }
+            if !bodies.is_empty() {
+                if q.get("cast").is_none() {
+                    q["cast"] = serde_json::json!({});
+                }
+                for (npc, anchor) in &bodies {
+                    if q["cast"].get(npc).is_none() {
+                        q["cast"][npc] = serde_json::json!({
+                            "at": anchor,
+                            "doing": format!("keeping to {anchor}"),
+                            "dialogue": roots.get(npc).cloned().unwrap_or_else(|| "none".to_string()),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    if let Some(list) = content.get_mut("ambushes").and_then(|a| a.as_array_mut()) {
+        for a in list {
+            if a.get("happening").is_none() {
+                let id = a["id"].as_str().unwrap_or("").to_string();
+                a["happening"] = happening("arrives", format!("ambush {id} springs"));
+            }
+        }
+    }
+    declare_effects(content);
+}
+
+/// The dialogue half of [`declare_story`]: a `happening` on every option that
+/// sets a flag (the story-weight options `DW0481` reads), and on every
+/// story-node effect an option runs.
+pub fn declare_dialogue_story(dialogue: &mut serde_json::Value) {
+    if let Some(trees) = dialogue["content"]["dialogues"].as_array_mut() {
+        for t in trees {
+            if let Some(nodes) = t["nodes"].as_array_mut() {
+                for n in nodes {
+                    if let Some(opts) = n["options"].as_array_mut() {
+                        for o in opts {
+                            let sets_flag = o["effects"]
+                                .as_array()
+                                .map(|es| es.iter().any(|e| e["type"] == "set-flag"))
+                                .unwrap_or(false);
+                            if sets_flag && o.get("happening").is_none() {
+                                let label = o["label"].as_str().unwrap_or("").to_string();
+                                o["happening"] =
+                                    happening("believes", format!("the party answers: {label}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    declare_effects(&mut dialogue["content"]);
+}
+
+/// [`declare_story`] over a campaign directory, in place: `quests.json` against
+/// the directory's own `npcs.json` and `dialogue.json`, then the dialogue.
+pub fn declare_story_dir(dir: &Path) {
+    let read = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(dir.join(name)).unwrap()).unwrap()
+    };
+    let npcs = read("npcs.json");
+    let dialogue = read("dialogue.json");
+    patch_file(&dir.join("quests.json"), |q| {
+        declare_story(q, &npcs, &dialogue)
+    });
+    patch_file(&dir.join("dialogue.json"), declare_dialogue_story);
+}
+
+/// [`declare_story`] over a quests document written in a test, against the
+/// `npcs.json` and `dialogue.json` of `base` — the campaign directory the
+/// document stands in for.
+pub fn declared_quests_doc(quests: &str, base: &Path) -> String {
+    let read = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(base.join(name)).unwrap()).unwrap()
+    };
+    let npcs = read("npcs.json");
+    let dialogue = read("dialogue.json");
+    patch_doc(quests, |q| declare_story(q, &npcs, &dialogue))
+}
+
+/// [`declare_dialogue_story`] over a dialogue document written in a test.
+pub fn declared_dialogue_doc(dialogue: &str) -> String {
+    patch_doc(dialogue, declare_dialogue_story)
 }
 
 // ---------------------------------------------------------------------------

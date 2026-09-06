@@ -1,6 +1,6 @@
 //! DSL v0.5 (spec-0010): declared world `time`/`weather` + per-area `lighting`
 //! and the `set-time`/`set-weather` effect verbs validate under `0.5.0` and are
-//! reserved (`DW0141`) earlier; `lighting.min_light` is range-checked (`DW0196`).
+//! `lighting.min_light` is range-checked (`DW0196`).
 //!
 //! Built on the hello-world casting/quests/dialogue (unchanged, 0.2.0) with a
 //! v0.5 stage-1 `world` document — additive fields, so the rest is untouched.
@@ -11,7 +11,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// A v0.5 stage-1 world document declaring time, weather and an area `lighting`.
 const WORLD_V05: &str = r#"{
-  "dsl_version": "0.5.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -56,17 +56,6 @@ fn v05_world_surface_validates_clean() {
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.5 world surface, got: {diags:#?}"
-    );
-}
-
-/// The same fields under a pre-0.5 world version are reserved → `DW0141`.
-#[test]
-fn v05_world_surface_reserved_before_0_5() {
-    let pre = WORLD_V05.replacen("\"0.5.0\"", "\"0.4.0\"", 1);
-    let diags = check_campaign(&campaign_with_world(&pre));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "v0.5 world surface must be reserved under 0.4.0 (DW0141): {diags:#?}"
     );
 }
 

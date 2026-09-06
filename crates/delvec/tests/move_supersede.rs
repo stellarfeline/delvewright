@@ -47,7 +47,7 @@ fn read_hw(name: &str) -> String {
 
 /// One `move-npc` for the keeper (the pre-existing single-walk shape).
 const QUESTS_ONE_WALK: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -86,7 +86,7 @@ fn quests_two_walks() -> String {
 
 /// One `move-actor` leg for a puppet (the pre-existing single-leg shape).
 const QUESTS_ONE_LEG: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.19.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

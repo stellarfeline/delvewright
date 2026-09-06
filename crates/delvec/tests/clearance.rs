@@ -37,7 +37,7 @@ fn npcs_doc(base_entity: &str) -> String {
 /// at a chosen place relative to a body.
 fn edits_doc(offset: [i32; 3], note: &str) -> String {
     serde_json::json!({
-        "dsl_version": "0.6.0",
+        "dsl_version": "0.19.0",
         "campaign_id": "hello-world",
         "stage": "world-edits",
         "content": { "batches": [ {
