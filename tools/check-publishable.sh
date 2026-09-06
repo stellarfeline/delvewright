@@ -60,6 +60,26 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/versions.toml"
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found" >&2; exit 2; }
 
+# Every scratch tree this script makes is torn down on EVERY exit path — a
+# passing run, a `fail`-then-continue run, and an early `exit 1`/`exit 2` alike
+# — registered here, before either variable is assigned, so a check that exits
+# early (packaging itself failing, for one) still cleans up what it had made.
+# `$VERIFY_TARGET` sits under `$ROOT/target`, which `Swatinem/rust-cache` walks
+# on every save and restore in the calling job; left behind, its extracted
+# package trees (each carrying its own nested `tests/` fixtures) are exactly the
+# dangling paths that action then reports `ENOENT opendir` on. A build-verify
+# tree is not build output the next run can reuse — check 0 already purges any
+# same-named leftovers from the cargo registry cache for the same reason — so it
+# owes the same treatment as `$SCRATCH`, not a place in the cache at all.
+VERIFY_TARGET=""
+SCRATCH=""
+cleanup() {
+  [ -n "$VERIFY_TARGET" ] && rm -rf "$VERIFY_TARGET"
+  [ -n "$SCRATCH" ] && rm -rf "$SCRATCH"
+  return 0
+}
+trap cleanup EXIT
+
 # `--allow-dirty` is for local runs only. CI works from a clean checkout, so the
 # VCS-dirty check stays armed there — a packaged tarball built from uncommitted
 # bytes is exactly the artifact nobody could reproduce.
@@ -251,7 +271,6 @@ echo "== 3. the packaged binary builds standing alone =="
 # a packaged version disagreed, cargo would go looking for a crate on crates.io
 # that does not exist and fail here.
 SCRATCH="$(mktemp -d)"
-trap 'rm -rf "$SCRATCH"' EXIT
 i=0
 while [ "$i" -lt "${#NAMES[@]}" ]; do
   tar -xzf "$PKG/${NAMES[$i]}-${VERS[$i]}.crate" -C "$SCRATCH"
