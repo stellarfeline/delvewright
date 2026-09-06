@@ -780,6 +780,17 @@ fn validate_loaded(
             // effect history. Error tier, except the staleness lint (DW0467),
             // which warns.
             diags.extend(delvewright_compiler::cast::check_cast(&campaign));
+            // `DW0884`: a cast row whose anchor name BOTH the beat's area and
+            // the npc's own area answer to. The same finding `DW0461`'s place
+            // arm refuses at the build tier from the seated pieces, refused here
+            // — where the row is entered — before a cell is ever computed. Needs
+            // the prefab registry (which areas answer to a name is a fact about
+            // the pieces they bind), which is why it sits beside `check_cast`
+            // rather than inside it. No-op for a campaign whose beats and bodies
+            // share an area, which is every single-area campaign.
+            diags.extend(delvewright_compiler::cast::check_shared_cast_anchor(
+                &campaign, &prefabs,
+            ));
             // An objective keeps the promise its prompt makes (DW0860-DW0863):
             // a failure clock armed before its own prompt could be read, an
             // adopted container nothing distinguishes from the scenery beside

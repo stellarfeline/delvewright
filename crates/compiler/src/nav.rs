@@ -32,7 +32,10 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
 
-use crate::plan::{Plan, RegionEvent, RegionWrite, ResolvedAnchor, Step, TrapPlan};
+use crate::plan::{
+    BodyScope, BodyStation, Plan, RegionEvent, RegionWrite, ResolvedAnchor, Step, TrapPlan,
+    body_station,
+};
 use delvewright_dsl::Diagnostic;
 use delvewright_dsl::{DwCode, ExitTier};
 
@@ -2489,29 +2492,65 @@ fn npc_start(plan: &Plan, npc_id: &str) -> Option<[i32; 3]> {
     plan.point(area, npc.anchor.as_str())
 }
 
-/// Resolve a `move-npc` destination: the anchor in the NPC's own area, else any
-/// area (first match). Mirrors the emitter's `movenpc_target`.
-fn move_target(plan: &Plan, npc_id: &str, to_anchor: &str) -> Option<[i32; 3]> {
-    if let Some(area) = plan.npc_area(npc_id)
-        && let Some(pos) = plan.point(area, to_anchor)
-    {
-        return Some(pos);
+/// Resolve a `move-npc` destination through [`body_station`], the one
+/// authority for where a body stands, instead of nav's own by-name scan.
+///
+/// The caller's scope is [`BodyScope::Beat`], exactly as the cast ledger's
+/// per-beat station declares it: the quest whose bundle fired this move
+/// (`beat`, when [`crate::timeline::walk_with_beat_area`] found one) first,
+/// then the NPC's own declared area (`home`), then an unambiguous crossing.
+/// Before this, the fallback step scanned every area for the first name
+/// match with no ambiguity check and no beat priority at all — home always
+/// won even when the move's own quest names the anchor too, and two other
+/// areas sharing a name settled silently by whichever sorted first.
+fn move_target(
+    plan: &Plan,
+    npc_id: &str,
+    to_anchor: &str,
+    beat: Option<&str>,
+) -> Result<[i32; 3], Failure> {
+    let home = plan.npc_area(npc_id).unwrap_or("");
+    let scope = BodyScope::Beat {
+        beat: beat.unwrap_or(home),
+        home,
+    };
+    match body_station(&plan.anchors, scope, to_anchor) {
+        station @ BodyStation::At { .. } => Ok(station.pos().expect("an `At` station has a place")),
+        BodyStation::Ambiguous(areas) => Err(Failure::new(
+            crate::gates::DW_ANCHOR_AMBIGUOUS,
+            format!(
+                "move-npc: destination anchor `{to_anchor}` for NPC `{npc_id}` is a name {n} of \
+                 this campaign's areas provide ({list}) — neither the quest this move fires \
+                 from nor the npc's own area (`{home}`) is among them, so nothing an author can \
+                 see says which building the body is walking to. {remedy}",
+                n = areas.len(),
+                list = areas
+                    .iter()
+                    .map(|a| format!("`{a}`"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                remedy = crate::gates::anchor_ambiguity_remedy(
+                    &areas.iter().map(|a| (a.clone(), BTreeSet::new())).collect()
+                ),
+            ),
+        )),
+        BodyStation::Missing => Err(Failure::new(
+            DW_MOVE_UNROUTABLE,
+            format!(
+                "move-npc: destination anchor `{to_anchor}` for NPC `{npc_id}` did not resolve \
+                 to a world position — use a `to_anchor` that the NPC's area prefab provides"
+            ),
+        )),
     }
-    for ((_, name), resolved) in &plan.anchors {
-        if name == to_anchor {
-            return match resolved {
-                ResolvedAnchor::Point { pos, .. } => Some(*pos),
-                ResolvedAnchor::Gate { from, .. } => Some(*from),
-            };
-        }
-    }
-    None
 }
 
 /// Plan every `move-npc` in the campaign into a walked-path [`MovePlan`], deduped
-/// by `(npc, to_anchor)` in first-seen order. `DW0307` when a move is unroutable.
-/// Each NPC's successive moves **chain**: the first leg starts at the stage-2
-/// anchor, every later leg at the previous leg's target (round-6; see
+/// by `(npc, to_anchor)` in first-seen order. `DW0307` when a move is
+/// unroutable, `DW0859` when its destination names an anchor two areas answer
+/// to and neither the move's own quest nor the NPC's home settles it
+/// ([`move_target`]). Each NPC's successive moves **chain**: the first leg
+/// starts at the stage-2 anchor, every later leg at the previous leg's target
+/// (round-6; see
 /// [`plan_actor_moves`]). Two moves sharing `(npc, to_anchor)` still share one
 /// content-keyed driver, planned from the first occurrence's origin (documented
 /// limitation of the content key).
@@ -2558,7 +2597,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
     let mut planned_origin: BTreeMap<(String, String, String), ([i32; 3], BranchGate)> =
         BTreeMap::new();
     let mut cache = SealCache::default();
-    for (eff, seal) in crate::timeline::walk(plan) {
+    for (eff, seal, beat) in crate::timeline::walk_with_beat_area(plan) {
         let QuestEffect::MoveNpc {
             npc,
             to_anchor,
@@ -2575,16 +2614,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
             Some(i) => &cache.worlds[i],
             None => world,
         };
-        let anchor_pos =
-            move_target(plan, npc.as_str(), to_anchor.as_str()).ok_or_else(|| Failure {
-                code: DW_MOVE_UNROUTABLE,
-                message: format!(
-                    "move-npc: destination anchor `{}` for NPC `{}` did not resolve to a world \
-                     position — use a `to_anchor` that the NPC's area prefab provides",
-                    to_anchor.as_str(),
-                    npc.as_str()
-                ),
-            })?;
+        let anchor_pos = move_target(plan, npc.as_str(), to_anchor.as_str(), beat)?;
         let target = leg_world
             .snap_standable(anchor_pos, SNAP_RADIUS)
             .ok_or_else(|| Failure {
