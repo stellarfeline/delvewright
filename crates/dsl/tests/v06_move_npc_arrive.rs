@@ -23,7 +23,7 @@ use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign};
 /// A v0.6 stage-5 quests doc: the keeper walks to the exit; arrival sets
 /// `flag/arrived` (+ narrates), and the follow-up objective is gated on it.
 const QUESTS_ARRIVE: &str = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.20.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

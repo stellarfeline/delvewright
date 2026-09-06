@@ -22,7 +22,7 @@
         "theme": "A lonely keep at the edge of the moor.",
         "title": "The Keeper's Door"
       },
-      "dsl_version": "0.21.0",
+      "dsl_version": "0.20.0",
       "stage": "world"
     }
   },

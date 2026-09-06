@@ -39,7 +39,7 @@ repository = "https://github.com/stellarfeline/delvewright"
 # crate's, which is the format's own number (`dsl_version`) and is bound to
 # `[engine] dsl_crate_req` in versions.toml.
 [workspace.dependencies]
-delvewright-dsl = { path = "crates/dsl", version = "=0.21.0" }
+delvewright-dsl = { path = "crates/dsl", version = "=0.20.0" }
 delvewright-compiler = { path = "crates/compiler", version = "=1.1.0" }
 delvewright-grammar = { path = "crates/grammar", version = "=1.1.0" }
 delvewright-schem = { path = "crates/schem", version = "=1.1.0" }

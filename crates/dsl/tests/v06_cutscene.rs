@@ -77,7 +77,7 @@ fn diags(version: &str, cutscene: &str) -> Vec<delvewright_dsl::Diagnostic> {
 /// v0.6 additions never invalidate an existing campaign.
 #[test]
 fn single_shot_cutscene_still_validates_under_0_4() {
-    let d = diags("0.21.0", SINGLE);
+    let d = diags("0.20.0", SINGLE);
     assert!(d.is_empty(), "single-shot cutscene must stay valid: {d:#?}");
 }
 
@@ -85,7 +85,7 @@ fn single_shot_cutscene_still_validates_under_0_4() {
 #[test]
 fn look_at_and_shots_validate_under_0_6() {
     for body in [SINGLE_LOOK_AT, MULTI] {
-        let d = diags("0.21.0", body);
+        let d = diags("0.20.0", body);
         assert!(d.is_empty(), "expected clean v0.6 cutscene: {d:#?}");
     }
 }
@@ -97,7 +97,7 @@ fn mixing_shot_spellings_is_dw0199() {
       "path": [ { "anchor": "anchor/exit", "offset": [0, 2, 0] } ],
       "shots": [ { "seconds": 2,
                    "path": [ { "anchor": "anchor/exit", "offset": [0, 2, 0] } ] } ] }"#;
-    let d = diags("0.21.0", mixed);
+    let d = diags("0.20.0", mixed);
     assert!(
         d.iter().any(|x| x.code == "DW0199"),
         "mixed cutscene spellings must be DW0199: {d:#?}"
@@ -107,7 +107,7 @@ fn mixing_shot_spellings_is_dw0199() {
 /// A cutscene declaring no shot at all is `DW0199`.
 #[test]
 fn cutscene_without_any_shot_is_dw0199() {
-    let d = diags("0.21.0", r#"{ "type": "cutscene" }"#);
+    let d = diags("0.20.0", r#"{ "type": "cutscene" }"#);
     assert!(
         d.iter().any(|x| x.code == "DW0199"),
         "shotless cutscene must be DW0199: {d:#?}"
@@ -118,7 +118,7 @@ fn cutscene_without_any_shot_is_dw0199() {
 #[test]
 fn shot_with_empty_path_is_dw0199() {
     let d = diags(
-        "0.21.0",
+        "0.20.0",
         r#"{ "type": "cutscene", "shots": [ { "seconds": 2, "path": [] } ] }"#,
     );
     assert!(
@@ -132,7 +132,7 @@ fn shot_with_empty_path_is_dw0199() {
 #[test]
 fn single_shot_without_seconds_is_dw0199() {
     let d = diags(
-        "0.21.0",
+        "0.20.0",
         r#"{ "type": "cutscene", "path": [ { "anchor": "anchor/exit", "offset": [0, 2, 0] } ] }"#,
     );
     assert!(
@@ -150,7 +150,7 @@ fn single_shot_without_seconds_is_dw0199() {
 #[test]
 fn styled_shot_validates_clean() {
     let d = diags(
-        "0.21.0",
+        "0.20.0",
         r#"{ "type": "cutscene", "shots": [
              { "shot_style": "orbit-arc", "degrees": 90, "dist": 10,
                "subject": { "anchor": "anchor/exit", "offset": [0, 1, 0] } } ] }"#,
@@ -184,7 +184,7 @@ fn style_shape_violations_are_dw0348() {
              "subject": { "anchor": "anchor/exit" } } ] }"#,
     ];
     for body in cases {
-        let d = diags("0.21.0", body);
+        let d = diags("0.20.0", body);
         assert!(
             d.iter().any(|x| x.code == "DW0348"),
             "expected DW0348 for {body}: {d:#?}"
@@ -202,7 +202,7 @@ fn follow_styles_without_motion_are_dw0349() {
         r#"{ "type": "cutscene", "shots": [ { "shot_style": "low-follow",
              "subject": { "npc": "npc/keeper" } } ] }"#,
     ] {
-        let d = diags("0.21.0", body);
+        let d = diags("0.20.0", body);
         assert!(
             d.iter().any(|x| x.code == "DW0349"),
             "expected DW0349 for {body}: {d:#?}"
@@ -215,7 +215,7 @@ fn follow_styles_without_motion_are_dw0349() {
 #[test]
 fn follow_style_with_sibling_move_is_clean() {
     let d = diags(
-        "0.21.0",
+        "0.20.0",
         r#"{ "type": "cutscene", "shots": [ { "shot_style": "side-track",
              "subject": { "npc": "npc/keeper" } } ] },
            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
@@ -230,7 +230,7 @@ fn follow_style_with_sibling_move_is_clean() {
 #[test]
 fn unknown_subject_npc_is_dangling_ref() {
     let d = diags(
-        "0.21.0",
+        "0.20.0",
         r#"{ "type": "cutscene", "shots": [ { "shot_style": "insert",
              "subject": { "npc": "npc/nobody" } } ] }"#,
     );
@@ -262,7 +262,7 @@ fn pre_style_shot_debug_rendering_is_stable() {
 #[test]
 fn unknown_shot_field_is_dw0100() {
     let d = diags(
-        "0.21.0",
+        "0.20.0",
         r#"{ "type": "cutscene", "shots": [ { "seconds": 2, "fov": 70,
              "path": [ { "anchor": "anchor/exit", "offset": [0, 2, 0] } ] } ] }"#,
     );
@@ -308,7 +308,7 @@ fn mistyped_shot_subject_fields_are_dw0100() {
                "subject_b": { "anchor": "anchor/door", "ofsett": [0, 1, 0] } } ] }"#,
     ];
     for body in cases {
-        let d = diags("0.21.0", body);
+        let d = diags("0.20.0", body);
         assert!(
             d.iter().any(|x| x.code == "DW0100"),
             "a mistyped shot subject must be a schema error, not silently \
@@ -322,7 +322,7 @@ fn mistyped_shot_subject_fields_are_dw0100() {
 #[test]
 fn well_formed_shot_subjects_still_validate() {
     let d = diags(
-        "0.21.0",
+        "0.20.0",
         r#"{ "type": "cutscene", "shots": [
              { "shot_style": "two-shot",
                "subject": { "anchor": "anchor/exit", "offset": [0, 1, 0] },

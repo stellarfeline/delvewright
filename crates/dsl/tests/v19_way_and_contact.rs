@@ -34,7 +34,7 @@ use serde_json::{Value, json};
 ///   exercised side by side in one document rather than in two.
 const GRAPH: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.20.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -65,7 +65,7 @@ const GRAPH: &str = r#"{
 
 const BRIEF: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.20.0",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -83,7 +83,7 @@ const BRIEF: &str = r#"{
 /// portal, so both kinds are resolved, derived and measured in one plan.
 const PLAN: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.20.0",
   "stage": "site-plan",
   "content": {
     "region": { "min": [0, 56, 0], "extent": [128, 32, 128] },

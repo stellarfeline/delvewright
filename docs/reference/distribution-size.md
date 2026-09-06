@@ -210,7 +210,7 @@ ls -l target/release/delvec                                  → 30,945,760 B
 ls -l target/aarch64-apple-darwin/release/delvec             → 24,489,840 B (shelf recipe)
 ```
 
-Both report `delvec 1.1.0, dsl 0.21.0, mc 1.21.11`. A repo-wide `strip` would
+Both report `delvec 1.1.0, dsl 0.20.0, mc 1.21.11`. A repo-wide `strip` would
 take symbols off every developer's `cargo build --release`, which is why the
 flag sits where it does; the 26% gap is recorded, not hidden.
 

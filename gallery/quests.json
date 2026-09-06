@@ -421,22 +421,24 @@
             "anchor": "anchor/hearth",
             "on_rest": [
               {
-                "forbids_flags": [
-                  "flag/hall-sealed"
-                ],
-                "requires_flags": [
-                  "flag/hall-open"
-                ],
-                "requires_state": [
-                  {
-                    "op": "at-most",
-                    "state": "state/labels-read",
-                    "value": 9
-                  }
-                ],
                 "style": "chat",
                 "text": "The hearth takes the chill off.",
-                "type": "narrate"
+                "type": "narrate",
+                "when": {
+                  "forbids_flags": [
+                    "flag/hall-sealed"
+                  ],
+                  "requires_flags": [
+                    "flag/hall-open"
+                  ],
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/labels-read",
+                      "value": 9
+                    }
+                  ]
+                }
               }
             ],
             "prompt": "Rest at the hearth",
@@ -839,7 +841,12 @@
                   ]
                 }
               ],
-              "type": "sequence"
+              "type": "sequence",
+              "when": {
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             }
           ]
         },
@@ -1113,7 +1120,15 @@
                 "text": "Something large comes off the rafters.",
                 "verb": "arrives"
               },
-              "type": "spawn-actor"
+              "type": "spawn-actor",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             },
             {
               "actor": "actor/hall-moth",
@@ -1122,7 +1137,15 @@
                 "text": "It stops circling and comes down.",
                 "verb": "believes"
               },
-              "type": "unleash-actor"
+              "type": "unleash-actor",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             },
             {
               "actor": "actor/standard-bearer",
@@ -1155,7 +1178,15 @@
               ],
               "speed": 1.2,
               "to_anchor": "anchor/vantage",
-              "type": "move-actor"
+              "type": "move-actor",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             },
             {
               "block": "minecraft:polished_andesite",
@@ -1292,7 +1323,15 @@
                 "verb": "departs"
               },
               "style": "vanish",
-              "type": "despawn-actor"
+              "type": "despawn-actor",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             },
             {
               "happening": {
@@ -2726,6 +2765,6 @@
       }
     ]
   },
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.20.0",
   "stage": "quests"
 }

@@ -24,7 +24,7 @@ use delvewright_orchestrator::{Layout, harvest, report_json};
 ## Compatibility
 
 - **Minecraft**: Java Edition 1.21.11.
-- **Campaign format**: `dsl_version` `0.21.0`, the one number this engine accepts.
+- **Campaign format**: `dsl_version` `0.20.0`, the one number this engine accepts.
 - **Rust**: 1.97.1 or newer.
 
 ## Documentation

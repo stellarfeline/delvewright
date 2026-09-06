@@ -23,7 +23,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// effect, a trigger (trigger-level and effect-level). `flag/armed` and
 /// `flag/stood-down` are both produced by `set-flag` effects.
 const QUESTS_FORBIDS: &str = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.20.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

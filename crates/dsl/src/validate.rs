@@ -491,7 +491,7 @@ fn read_after_write_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 d.push(Diagnostic::warning(
                     codes::STATE_READ_AFTER_WRITE,
                     site.stage,
-                    format!("{}/{i}/requires_state", site.path),
+                    format!("{}/{i}/when/requires_state", site.path),
                     format!(
                         "this `{}` compares `{}`, and effect {at} of the same bundle already \
                          changes `{}` behind a gate on `{}` itself — so this comparison is made \
@@ -4389,7 +4389,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/quests/{i}/{path}/requires_flags/{n}"),
+                        format!("/content/quests/{i}/{path}/when/requires_flags/{n}"),
                         format!(
                             "effect `requires_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
@@ -4404,7 +4404,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/quests/{i}/{path}/forbids_flags/{n}"),
+                        format!("/content/quests/{i}/{path}/when/forbids_flags/{n}"),
                         format!(
                             "effect `forbids_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — the gate can never suppress anything; add the \
@@ -4426,7 +4426,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/triggers/{i}/{path}/requires_flags/{n}"),
+                        format!("/content/triggers/{i}/{path}/when/requires_flags/{n}"),
                         format!(
                             "effect `requires_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
@@ -4440,7 +4440,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/triggers/{i}/{path}/forbids_flags/{n}"),
+                        format!("/content/triggers/{i}/{path}/when/forbids_flags/{n}"),
                         format!(
                             "effect `forbids_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — the gate can never suppress anything; add the \

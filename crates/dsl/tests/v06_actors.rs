@@ -15,7 +15,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 stage-5 quests document: one actor puppet, spawned then walked to the
 /// exit (despawn-on-arrive), then a two-step timeline unleashing and killing it.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.20.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

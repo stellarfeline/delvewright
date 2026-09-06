@@ -2,7 +2,7 @@
   "easy.en": {
     "campaign_id": "gallery",
     "delvec_version": "1.1.0",
-    "dsl_version": "0.21.0",
+    "dsl_version": "0.20.0",
     "inputs": {
       "classes.json": "6b934e05aafb343d35afd560ec59e6a9cd45ba9a23a86b7d272e95d7acc121b8",
       "dialogue.json": "686eb7dd0dbdbf64e4ea9219ee6acafd3ca82a1f382579e47c635c4489b0cbf2",
@@ -552,7 +552,7 @@
   "hard.en": {
     "campaign_id": "gallery",
     "delvec_version": "1.1.0",
-    "dsl_version": "0.21.0",
+    "dsl_version": "0.20.0",
     "inputs": {
       "classes.json": "6b934e05aafb343d35afd560ec59e6a9cd45ba9a23a86b7d272e95d7acc121b8",
       "dialogue.json": "686eb7dd0dbdbf64e4ea9219ee6acafd3ca82a1f382579e47c635c4489b0cbf2",
@@ -1102,7 +1102,7 @@
   "ocean-horizon.en": {
     "campaign_id": "gallery",
     "delvec_version": "1.1.0",
-    "dsl_version": "0.21.0",
+    "dsl_version": "0.20.0",
     "inputs": {
       "classes.json": "6b934e05aafb343d35afd560ec59e6a9cd45ba9a23a86b7d272e95d7acc121b8",
       "dialogue.json": "686eb7dd0dbdbf64e4ea9219ee6acafd3ca82a1f382579e47c635c4489b0cbf2",
@@ -1652,7 +1652,7 @@
   "primary.en": {
     "campaign_id": "gallery",
     "delvec_version": "1.1.0",
-    "dsl_version": "0.21.0",
+    "dsl_version": "0.20.0",
     "inputs": {
       "classes.json": "6b934e05aafb343d35afd560ec59e6a9cd45ba9a23a86b7d272e95d7acc121b8",
       "dialogue.json": "686eb7dd0dbdbf64e4ea9219ee6acafd3ca82a1f382579e47c635c4489b0cbf2",
@@ -2202,7 +2202,7 @@
   "primary.zh-cn": {
     "campaign_id": "gallery",
     "delvec_version": "1.1.0",
-    "dsl_version": "0.21.0",
+    "dsl_version": "0.20.0",
     "inputs": {
       "classes.json": "6b934e05aafb343d35afd560ec59e6a9cd45ba9a23a86b7d272e95d7acc121b8",
       "dialogue.json": "686eb7dd0dbdbf64e4ea9219ee6acafd3ca82a1f382579e47c635c4489b0cbf2",
@@ -2753,7 +2753,7 @@
   "site-plan.en": {
     "campaign_id": "gallery",
     "delvec_version": "1.1.0",
-    "dsl_version": "0.21.0",
+    "dsl_version": "0.20.0",
     "inputs": {
       "classes.json": "6b934e05aafb343d35afd560ec59e6a9cd45ba9a23a86b7d272e95d7acc121b8",
       "detail-plan.json": "549390b72d92db18077a975fde5e047f9cd40f553007a1a4c99a2bdafa81c025",
@@ -3056,7 +3056,7 @@
   "void-horizon.en": {
     "campaign_id": "gallery",
     "delvec_version": "1.1.0",
-    "dsl_version": "0.21.0",
+    "dsl_version": "0.20.0",
     "inputs": {
       "classes.json": "6b934e05aafb343d35afd560ec59e6a9cd45ba9a23a86b7d272e95d7acc121b8",
       "dialogue.json": "686eb7dd0dbdbf64e4ea9219ee6acafd3ca82a1f382579e47c635c4489b0cbf2",

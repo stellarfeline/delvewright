@@ -417,7 +417,7 @@ test("the version is carried as provenance, whatever the number", () => {
   // The engine accepts exactly one dsl_version (ADR-0024) and refuses every
   // other before a critical path exists, so the harness records the number
   // and does not keep a second list of them.
-  for (const v of ["0.21.0", "0.20.0", "1.0.0"]) {
+  for (const v of ["0.20.0", "0.20.0", "1.0.0"]) {
     const raw = validRaw();
     raw["version"] = v;
     assert.equal(parseCriticalPath(raw).version, v);

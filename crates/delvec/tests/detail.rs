@@ -272,7 +272,7 @@ fn write_detail_plan(dir: &Path, details: &[serde_json::Value]) {
             "palette": { "role/wall": "minecraft:stone_bricks", "role/floor": "minecraft:tuff" },
             "details": details,
         },
-        "dsl_version": "0.21.0",
+        "dsl_version": "0.20.0",
         "stage": "detail-plan",
     });
     std::fs::write(
@@ -1267,7 +1267,7 @@ fn dw0842_refuses_a_gate_station_bound_to_a_cell() {
     // Declare a gate station on the bound place and bind it to `seat0`, which
     // is a point: the piece has a cell where the campaign promised a volume.
     common::patch_file(&d.campaign.join("layout-graph.json"), |v| {
-        v["dsl_version"] = serde_json::json!("0.21.0");
+        v["dsl_version"] = serde_json::json!("0.20.0");
         for n in v["content"]["nodes"].as_array_mut().unwrap() {
             if n["id"] == "node/exit" {
                 n["stations"] = serde_json::json!([
