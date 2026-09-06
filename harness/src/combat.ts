@@ -786,16 +786,17 @@ export type UnassistedResult = (typeof UNASSISTED_RESULTS)[number];
 /**
  * The unassisted attempt, as an OBSERVATION.
  *
- * `healthAtStart` is here because it is the variable the harness owns and used
- * not to state: the die-retry stage runs first and leaves the bot at whatever
- * health that fight ended on, so "one honest unassisted attempt" is taken from a
- * different starting body every run. It is RECORDED rather than manufactured —
- * the gallery measured both halves of why. Made to regenerate to full first, the
- * bot was beaten to death waiting, because the wave it is about to be measured
- * against is standing next to it and `eatDecision` rightly refuses to eat with a
- * hostile in reach. And full health does not decide the fight: two runs opened
- * at 20.0/20 and both ended `died`. What a sample owes is the state it was taken
- * at, which is what makes it comparable to the next one.
+ * `healthAtStart` is here because a sample owes the state it was taken at: the
+ * die-retry stage runs immediately before, and what it leaves behind is the body
+ * this measurement is made with. Nothing recorded it, so two runs of one tree
+ * that ended differently had nowhere to differ.
+ *
+ * RECORDED, never manufactured, and the gallery measured why. Made to regenerate
+ * to full first, the bot was beaten to death waiting: the wave it is about to be
+ * measured against is standing next to it and `eatDecision` rightly refuses to
+ * eat with a hostile in reach. It is also unnecessary — the die-retry stage's
+ * last act is a scripted death and a respawn, so the attempt already opens at
+ * `20.0/20` on every gallery run that reached it, and it ends `died` anyway.
  */
 export interface UnassistedOutcome {
   readonly result: UnassistedResult;
