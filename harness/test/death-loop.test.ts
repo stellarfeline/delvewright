@@ -22,6 +22,7 @@ import {
   lethalTrialFailures,
   openLethalTrial,
   parseDeathPlan,
+  volumeReachesCell,
   seatAtRespawn,
   tableAnchor,
   type DeathPlan,
@@ -29,6 +30,7 @@ import {
   type LethalVolume,
   type StakeRule,
 } from "../src/death-loop.ts";
+import type { Vec3Tuple } from "../src/critical-path.ts";
 
 /** The economy fixture's plan, as `delvec` really emits it. */
 function planDoc(): Record<string, unknown> {
@@ -279,6 +281,60 @@ test("a body at the centre of any cell of the box is one the volume kills", () =
     );
   }
   assert.equal(boxCells(WEST_PIT).length, 45, "45 cells examined, not a subset of them");
+});
+
+/**
+ * **The navigator and the server must agree on which cells kill.**
+ *
+ * The pathfinder's lethal exclusion asked `inBox`, so it kept the bot out of the
+ * cells inside a volume and left the shell of cells the volume can still reach a
+ * body in wide open. The gallery measured it three runs out of three: the
+ * east-pit trial opened with the bot parked at the west pit's own stake anchor
+ * `[1, 65, 5]` and it was killed at `[3.85, 65.00, 5.14]`, `[3.70, 65.00, 5.29]`
+ * and `[3.63, 65.00, 5.30]` — all cell `[3, 65, 5]`, all outside the declared
+ * box, all inside the reach — and the east pit was reported unexercised every
+ * time.
+ */
+test("the pathfinder's exclusion covers every cell the volume can kill in", () => {
+  // The cell the runs died in. Outside the box; inside the reach.
+  assert.ok(!inBox([3, 65, 5], WEST_PIT), "the box does not contain it");
+  assert.ok(volumeReachesCell([3, 65, 5], WEST_PIT), "and the selector reaches it anyway");
+  // The stake anchor `delvec` used to choose, for the same reason.
+  assert.ok(volumeReachesCell([1, 65, 5], WEST_PIT));
+  // Every cell of the box, and one shell around it on every axis, is excluded —
+  // and nothing beyond that, so the detour this costs is exactly one cell.
+  for (const c of boxCells(WEST_PIT)) {
+    assert.ok(volumeReachesCell(c, WEST_PIT), `[${c.join(", ")}] is in the box`);
+  }
+  assert.ok(volumeReachesCell([0, 65, 1], WEST_PIT), "the -x/-z corner of the shell");
+  assert.ok(volumeReachesCell([4, 65, 5], WEST_PIT), "the +x/+z corner of the shell");
+  assert.ok(volumeReachesCell([2, 62, 3], WEST_PIT), "a course below: the head is inside");
+  assert.ok(volumeReachesCell([2, 68, 3], WEST_PIT), "a course above: the feet are on the ceiling");
+  assert.ok(!volumeReachesCell([5, 65, 5], WEST_PIT), "two out is clear");
+  assert.ok(!volumeReachesCell([2, 65, 6], WEST_PIT), "two out is clear");
+  assert.ok(!volumeReachesCell([2, 61, 3], WEST_PIT), "two below is clear");
+  assert.ok(!volumeReachesCell([2, 69, 3], WEST_PIT), "two above is clear");
+});
+
+test("the cell rule is the body rule, asked of the nearest body the cell can hold", () => {
+  // Not a second reading of the server: every answer above is `bodyInVolume` at
+  // the position inside the cell that comes closest to the volume. Checked here
+  // by sweeping the cell by hand and comparing, so the two cannot drift.
+  const cells: Vec3Tuple[] = [];
+  for (let x = -1; x <= 5; x++) for (let z = 0; z <= 6; z++) cells.push([x, 65, z]);
+  let reached = 0;
+  for (const c of cells) {
+    let any = false;
+    for (let dx = 0; dx <= 1; dx += 0.05) {
+      for (let dz = 0; dz <= 1; dz += 0.05) {
+        if (bodyInVolume([c[0] + dx, c[1], c[2] + dz], WEST_PIT)) any = true;
+      }
+    }
+    assert.equal(volumeReachesCell(c, WEST_PIT), any, `[${c.join(", ")}]`);
+    if (any) reached += 1;
+  }
+  assert.equal(cells.length, 49, "49 cells swept, not a subset of them");
+  assert.equal(reached, 25, "5x5 of them — the 3x3 box plus one cell of shell");
 });
 
 test("the entry cell is the nearest cell of the box, ties broken lexicographically", () => {

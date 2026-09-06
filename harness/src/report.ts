@@ -24,6 +24,7 @@ import type {
   EncounterTier,
   FloorLedger,
   PerformedRest,
+  UnassistedOutcome,
 } from "./combat.ts";
 import type { DeathLoopBinding, LethalTrial } from "./death-loop.ts";
 import type { ClassifiedDeath } from "./teardown.ts";
@@ -68,6 +69,17 @@ export interface EncounterReport {
   readonly assistPolicy: "assisted" | "unassisted-first";
   readonly phaseReached: EncounterPhase;
   readonly assistWindows: number;
+  /**
+   * What the inverted floor gate's ONE honest unassisted attempt observed —
+   * `undefined` on an encounter whose policy takes no such attempt.
+   *
+   * The gate's own measurement, and it reached the artifact nowhere. Three
+   * gallery runs of one tree ended `won`, `died` and `died`, and their rows here
+   * were identical: `phase_reached: "cleared"` in all three, because the
+   * assisted retry cleared the fight either way. A gate whose result cannot be
+   * read off its own report is a gate nobody can disbelieve.
+   */
+  readonly unassisted?: UnassistedOutcome;
 }
 
 /**
@@ -401,6 +413,20 @@ export class RunReport {
         assist_policy: e.assistPolicy,
         phase_reached: e.phaseReached,
         assist_windows: e.assistWindows,
+        // The floor gate's own measurement, per encounter. `null` where the
+        // policy takes no unassisted attempt; otherwise the result, the health
+        // the sample was taken at, and what the attempt reached — so two runs
+        // that ended differently differ HERE instead of nowhere.
+        unassisted: e.unassisted
+          ? {
+              result: e.unassisted.result,
+              health_at_start: e.unassisted.healthAtStart,
+              max_health: e.unassisted.maxHealth,
+              engaged: e.unassisted.engaged,
+              killed: e.unassisted.killed,
+              detail: e.unassisted.detail ?? null,
+            }
+          : null,
       })),
       // spec-0023 §3: "the run artifact names every assist window (encounter id,
       // ticks)". Loudly, and including any the harness failed to close.

@@ -767,10 +767,42 @@ export class AssistLedger {
 // The inverted floor gate (spec-0023 "bot as difficulty FLOOR")
 // ---------------------------------------------------------------------------
 
-/** The outcome of the unassisted attempt at a billed encounter. */
+/**
+ * How the one honest unassisted attempt ENDED.
+ *
+ * Four endings, not two, because the ways of not winning are different facts
+ * with different owners. `died` and `held` are measurements of the delve: the
+ * bot reached melee and the fight beat it, by killing it or by outlasting the
+ * step's budget. `unengaged` is not a measurement at all — the budget ran out
+ * with the bot never in reach of a single wave body, so nothing about the
+ * encounter's difficulty was observed. Recorded as one boolean they were
+ * indistinguishable, and the ladder reported all of them as the same silence: on
+ * the gallery, three runs of one tree produced one win and two losses whose
+ * `encounters[]` rows were byte-identical.
+ */
+export const UNASSISTED_RESULTS = ["won", "died", "held", "unengaged", "not-attempted"] as const;
+export type UnassistedResult = (typeof UNASSISTED_RESULTS)[number];
+
+/**
+ * The unassisted attempt, as an OBSERVATION.
+ *
+ * `healthAtStart` is here because it is the variable the harness owns and used
+ * not to state: the die-retry stage runs first and leaves the bot at whatever
+ * health that fight ended on, so "one honest unassisted attempt" was being taken
+ * from a different starting body every run. A sample is comparable to another
+ * sample only if the state it was taken at is on the record.
+ */
 export interface UnassistedOutcome {
-  readonly attempted: boolean;
-  readonly won: boolean;
+  readonly result: UnassistedResult;
+  /** The bot's health when the window opened, and the maximum it is out of. */
+  readonly healthAtStart: number;
+  readonly maxHealth: number;
+  /** Wave bodies the attempt actually reached melee with. */
+  readonly engaged: number;
+  /** Wave bodies confirmed dead during it. */
+  readonly killed: number;
+  /** How the fight ended, in the words of whatever ended it. */
+  readonly detail?: string;
 }
 
 /**
@@ -781,17 +813,40 @@ export interface UnassistedOutcome {
  * that content decides. Ordinary encounters carry no expectation at all, so they
  * never produce a finding however easily they fall.
  */
-export function floorFinding(
+export function floorFinding(enc: Encounter, outcome: UnassistedOutcome): string | undefined {
+  if (enc.tier === "ordinary") return undefined;
+  if (outcome.result !== "won") return undefined;
+  return (
+    `${enc.wave} is billed \`${enc.tier}\` and the UNASSISTED bot beat it on its first ` +
+    `attempt, from ${outcome.healthAtStart.toFixed(1)}/${outcome.maxHealth} health ` +
+    `(${outcome.killed} body/bodies down, ${outcome.engaged} engaged). The bot is a poor ` +
+    `fencer by design — a fight it wins cold is very likely too easy to carry that ` +
+    `billing in a souls delve. Advisory: raise the stack, or drop the tier to \`ordinary\`.`
+  );
+}
+
+/**
+ * The other thing the floor gate can say: **it did not measure this encounter.**
+ *
+ * A billed fight the bot never reached melee with produced exactly the silence a
+ * fight it reached and lost produces, and the silence is the reading a reader
+ * takes for "the encounter held". It did not hold; nobody swung at it. Stated as
+ * its own finding so an unmeasured floor is never read as a measured one — the
+ * same rule the compiler's own ledger already follows on the encounters it
+ * cannot cover.
+ */
+export function unmeasuredFloorFinding(
   enc: Encounter,
   outcome: UnassistedOutcome,
 ): string | undefined {
   if (enc.tier === "ordinary") return undefined;
-  if (!outcome.attempted || !outcome.won) return undefined;
+  if (outcome.result !== "unengaged" && outcome.result !== "not-attempted") return undefined;
   return (
-    `${enc.wave} is billed \`${enc.tier}\` and the UNASSISTED bot beat it on its first ` +
-    `attempt. The bot is a poor fencer by design — a fight it wins cold is very ` +
-    `likely too easy to carry that billing in a souls delve. Advisory: raise the ` +
-    `stack, or drop the tier to \`ordinary\`.`
+    `${enc.wave} is billed \`${enc.tier}\` and the inverted floor gate did NOT measure it: ` +
+    `the unassisted attempt ended \`${outcome.result}\` with ${outcome.engaged} of its bodies ` +
+    `engaged and ${outcome.killed} down, so no honest first attempt was taken and this run ` +
+    `says nothing about how hard the fight is. Not a verdict on the content — the bot never ` +
+    `reached it${outcome.detail ? `: ${outcome.detail}` : ""}.`
   );
 }
 

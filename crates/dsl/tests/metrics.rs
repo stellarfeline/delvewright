@@ -323,3 +323,70 @@ fn every_kinds_plural_is_a_plural_and_not_the_noun_plus_an_s() {
     );
     assert!(checked >= 6, "and the list is not empty: {checked} kind(s)");
 }
+
+/// **The selector rule, against the vanilla test written out by hand.**
+///
+/// `selector_reaches_body_in_cell` is a shortcut: it decides a cell by arithmetic
+/// on its extremes instead of by trying bodies. This checks it against the thing
+/// it is a shortcut for — a swept body box intersected with the region
+/// `[lo, hi + 1]`, which is what `EntitySelectorParser::createAabb` builds and
+/// what `getEntities` intersects against. Both sides are written here, so the two
+/// cannot agree by construction.
+#[test]
+fn the_cell_rule_agrees_with_a_swept_body_box() {
+    use delvewright_dsl::metrics::{PLAYER_HEIGHT, PLAYER_WIDTH, selector_reaches_body_in_cell};
+    // The gallery's west pit, exactly as `delvec` emits it.
+    let (lo, hi) = ([1, 63, 2], [3, 67, 4]);
+    let half = PLAYER_WIDTH / 2.0;
+    let hits = |c: [i32; 3]| -> bool {
+        // Every body position the cell can hold, at 1/20 of a block.
+        for i in 0..=20 {
+            for k in 0..=20 {
+                let (px, pz) = (
+                    f64::from(c[0]) + f64::from(i) / 20.0,
+                    f64::from(c[2]) + f64::from(k) / 20.0,
+                );
+                let body_lo = [px - half, f64::from(c[1]), pz - half];
+                let body_hi = [px + half, f64::from(c[1]) + PLAYER_HEIGHT, pz + half];
+                let inside = (0..3).all(|a| {
+                    body_lo[a] <= f64::from(hi[a]) + 1.0 && body_hi[a] >= f64::from(lo[a])
+                });
+                if inside {
+                    return true;
+                }
+            }
+        }
+        false
+    };
+    let mut examined = 0usize;
+    let mut reached = 0usize;
+    for x in -1..=5 {
+        for y in 61..=69 {
+            for z in 0..=6 {
+                let c = [x, y, z];
+                assert_eq!(
+                    selector_reaches_body_in_cell(lo, hi, c),
+                    hits(c),
+                    "cell {c:?}"
+                );
+                examined += 1;
+                if hits(c) {
+                    reached += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(
+        examined,
+        7 * 9 * 7,
+        "441 cells examined, not a subset of them"
+    );
+    // The box is 3x5x3; the reach is one cell of shell on every axis, which is
+    // 5x7x5 — stated as a number so a rule that silently widened would red here.
+    assert_eq!(reached, 5 * 7 * 5);
+    // The cell the gallery's compiler used to choose as the west pit's stake
+    // anchor, and the cell the bot really died in on three ladder runs.
+    assert!(selector_reaches_body_in_cell(lo, hi, [1, 65, 5]));
+    assert!(selector_reaches_body_in_cell(lo, hi, [3, 65, 5]));
+    assert!(!selector_reaches_body_in_cell(lo, hi, [1, 65, 6]));
+}
