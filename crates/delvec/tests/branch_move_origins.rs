@@ -45,7 +45,7 @@ fn read_hw(name: &str) -> String {
 /// The third leg's origin must be `anchor/exit` (the last leg its own branch
 /// can prove ran), never `anchor/keeper-stand` (the flee leg's destination).
 const QUESTS_BRANCHED: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -62,13 +62,13 @@ const QUESTS_BRANCHED: &str = r#"{
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
             { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/keeper-stand",
-              "requires_flags": ["flag/flee"] }
+            { "type": "move-npc",
+              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to_anchor": "anchor/keeper-stand" }
           ]
         },
         "on_complete": [
-          { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/door",
-            "requires_flags": ["flag/wait"] },
+          { "type": "move-npc",
+            "when": { "requires_flags": ["flag/wait"] }, "npc": "npc/keeper", "to_anchor": "anchor/door" },
           { "type": "campaign-complete" }
         ]
       }
@@ -84,7 +84,7 @@ const QUESTS_BRANCHED: &str = r#"{
 /// leg 1 goes to `keeper-stand` instead). Kept deliberately small: the point is
 /// that `(body, destination)` alone cannot key a driver.
 const QUESTS_SHARED_MARK: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -100,10 +100,10 @@ const QUESTS_SHARED_MARK: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/door",
-              "requires_flags": ["flag/flee"] },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
-              "requires_flags": ["flag/flee"] },
+            { "type": "move-npc",
+              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to_anchor": "anchor/door" },
+            { "type": "move-npc",
+              "when": { "requires_flags": ["flag/flee"] }, "npc": "npc/keeper", "to_anchor": "anchor/exit" },
             { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }
           ]
         },
@@ -115,7 +115,7 @@ const QUESTS_SHARED_MARK: &str = r#"{
 
 /// The pre-branch baseline: one unconditional walk, nothing gated anywhere.
 const QUESTS_UNGATED: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -363,7 +363,7 @@ fn branch_keyed_driver_names_are_deterministic() {
 #[test]
 fn two_origins_on_one_branch_is_dw0488() {
     const QUESTS: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

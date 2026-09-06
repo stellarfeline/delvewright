@@ -33,17 +33,21 @@
           "obj/decide": [
             {
               "flag": "flag/wait",
-              "requires_flags": [
-                "flag/wait"
-              ],
-              "type": "set-flag"
+              "type": "set-flag",
+              "when": {
+                "requires_flags": [
+                  "flag/wait"
+                ]
+              }
             },
             {
               "flag": "flag/flee",
-              "requires_flags": [
-                "flag/flee"
-              ],
-              "type": "set-flag"
+              "type": "set-flag",
+              "when": {
+                "requires_flags": [
+                  "flag/flee"
+                ]
+              }
             },
             {
               "anchor": "anchor/door",
@@ -52,10 +56,12 @@
                 "text": "The party throws the bar off themselves and shoulders the gate open.",
                 "verb": "opens"
               },
-              "requires_flags": [
-                "flag/flee"
-              ],
-              "type": "open-gate"
+              "type": "open-gate",
+              "when": {
+                "requires_flags": [
+                  "flag/flee"
+                ]
+              }
             }
           ]
         },
@@ -215,6 +221,6 @@
       }
     ]
   },
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "stage": "quests"
 }

@@ -9468,29 +9468,36 @@ fn moveactor_bare(actor: &str, to_anchor: &str, gate_key: &str) -> String {
         .to_string()
 }
 
-/// **Every `sequence` in the campaign, with the function name it is emitted
+/// **Every `sequence` the campaign declares, with the function name it is emitted
 /// under** — `seq_<root>_<n>`, where `<root>` is the effect root's own key with
 /// its `fx.` prefix dropped (so an `on_objective_complete` bundle reads
-/// `rescue_oc_find_the_bell`) and `<n>` is the sequence's index within that
+/// `rescue_oc_find_the_bell`) and `<n>` is the timeline's index within that
 /// root's deep walk.
 ///
 /// Positional rather than content-addressed. A name derived from a hash of the
 /// steps told a reader of the emitted pack nothing about where the timeline came
 /// from, and it made the `Debug` rendering of every effect part of the pack's
 /// bytes — a field added to any verb moved function names that had nothing to do
-/// with it. A position is stable under exactly the edits a reader expects it to
-/// be: it moves when the bundle it sits in is re-ordered, and not otherwise.
+/// with it. A position moves under exactly the edits a reader expects it to: the
+/// bundle it sits in being re-ordered, and nothing else.
+///
+/// Keyed by the timeline itself (`Verb::Sequence`, which is the whole of what the
+/// generated body depends on — the guard wraps the CALL, never the body), and the
+/// first declaration wins, so two identical timelines share one function exactly
+/// as they did under the content key. Identity is by value and not by address
+/// because emission reads a trap's payload from a clone, not from the campaign's
+/// own allocation.
 ///
 /// This is **one** enumeration, read by both consumers — `sequence_fns`, which
 /// generates the functions, and [`sequence_fn`], which emits the call — so the
 /// generator and the caller cannot disagree about a name. It is built from
-/// `plan::for_each_effect_root`, the single root walk, so a sequence in any root
+/// `plan::for_each_effect_root`, the single root walk, so a timeline in any root
 /// (a `shortcuts[].on_unlock`, a dialogue `on_respawn`) is named by the same rule.
 ///
 /// Determinism (ADR-0006): the root walk's order is contractual and the deep walk
 /// is declaration order; no hashing, no address, no wall clock.
-fn sequence_sites(c: &delvewright_dsl::Campaign) -> Vec<(&QuestEffect, String)> {
-    let mut out: Vec<(&QuestEffect, String)> = Vec::new();
+fn sequence_sites(c: &delvewright_dsl::Campaign) -> Vec<(&Verb, String)> {
+    let mut out: Vec<(&Verb, String)> = Vec::new();
     plan::for_each_effect_root(c, &mut |site, effs| {
         let root = fn_safe(site.key.strip_prefix("fx.").unwrap_or(&site.key));
         let mut n = 0usize;
@@ -9499,10 +9506,14 @@ fn sequence_sites(c: &delvewright_dsl::Campaign) -> Vec<(&QuestEffect, String)> 
             push_effect_deep(e, &mut here);
         }
         for e in here {
-            if matches!(e.verb, delvewright_dsl::Verb::Sequence { .. }) {
-                out.push((e, format!("seq_{root}_{n}")));
-                n += 1;
+            if !matches!(e.verb, Verb::Sequence { .. }) {
+                continue;
             }
+            if out.iter().any(|(v, _)| **v == e.verb) {
+                continue;
+            }
+            out.push((&e.verb, format!("seq_{root}_{n}")));
+            n += 1;
         }
     });
     let mut names: Vec<&str> = out.iter().map(|(_, n)| n.as_str()).collect();
@@ -9512,7 +9523,7 @@ fn sequence_sites(c: &delvewright_dsl::Campaign) -> Vec<(&QuestEffect, String)> 
     assert_eq!(
         names.len(),
         before,
-        "two sequences were given one function name — a positional name must be unique"
+        "two timelines were given one function name — a positional name must be unique"
     );
     out
 }
@@ -9529,15 +9540,15 @@ fn fn_safe(s: &str) -> String {
 ///
 /// # Panics
 ///
-/// If `eff` is a `sequence` the campaign does not own. Emission synthesizes
-/// effects (the scheduled-probe `set-flag`, a chrome `narrate`) but never a
-/// timeline, and a synthesized one would emit a call to a function
-/// `sequence_fns` never generated — which is the failure this asserts rather
-/// than ships.
+/// If the timeline is not one the campaign declares. Emission synthesizes effects
+/// (the scheduled-probe `set-flag`, a chrome `narrate`) but never a timeline, and
+/// a synthesized one would emit a call to a function `sequence_fns` never
+/// generated — the dangling-call failure `DW0497` exists for, asserted here at
+/// the seam that would create it rather than found downstream.
 fn sequence_fn(plan: &Plan, eff: &QuestEffect) -> String {
     sequence_sites(plan.campaign)
         .into_iter()
-        .find(|(e, _)| std::ptr::eq(*e, eff))
+        .find(|(v, _)| **v == eff.verb)
         .map(|(_, name)| name)
         .expect("every `sequence` emission lowers is one the campaign declares")
 }
@@ -9821,9 +9832,9 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
 fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
-    for (eff, base) in sequence_sites(plan.campaign) {
-        let Verb::Sequence { steps } = &eff.verb else {
-            unreachable!("sequence_sites yields only `sequence` effects");
+    for (verb, base) in sequence_sites(plan.campaign) {
+        let Verb::Sequence { steps } = verb else {
+            unreachable!("sequence_sites yields only `sequence` timelines");
         };
         let mut start: Vec<String> = Vec::new();
         for (i, step) in steps.iter().enumerate() {

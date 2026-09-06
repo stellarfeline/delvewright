@@ -64,7 +64,7 @@ fn load(ns: &str) -> LoadedCampaign {
 fn campaign(loaded: &LoadedCampaign, with_on_death: bool) -> Campaign {
     let mut c = parse_campaign(&loaded.raw).expect("fixture parses");
     if with_on_death {
-        c.quests.dsl_version = "0.19.0".to_string();
+        c.quests.dsl_version = "0.21.0".to_string();
         c.quests.content.on_death = on_death_bundle();
     }
     c

@@ -26,7 +26,7 @@ fn read_hw(name: &str) -> String {
 /// effect and two objectives carry `forbids_flags`, and an approach trigger is
 /// armed by `flag/arrived` but stood down by `flag/blocked`.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -44,8 +44,8 @@ const QUESTS_V06: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "narrate", "text": "The way is open.",
-              "forbids_flags": ["flag/blocked"] },
+            { "type": "narrate",
+              "when": { "forbids_flags": ["flag/blocked"] }, "text": "The way is open." },
             { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
               "on_arrive": [ { "type": "set-flag", "flag": "flag/arrived" } ] }
           ]

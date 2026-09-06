@@ -31,7 +31,7 @@ compile." The engine kept that promise with a mechanism in five layers:
 
 The cost was measured on the engine's own repository. Every surface change was
 written twice, once for the new number and once as the grandfathered arm, and
-tested twice. The engine's fixtures declared numbers from `0.2.0` to `0.19.0`
+tested twice. The engine's fixtures declared numbers from `0.2.0` to `0.21.0`
 and the gallery was a mosaic of five numbers, so a test proving an emitter
 proved the old arm as often as the live one. A campaign's build depended on
 eleven per-document numbers, so "what does this campaign compile to" had no
@@ -80,7 +80,7 @@ binds both to `versions.toml` `[engine] dsl_crate_version`.
 - Documents declare the **full** number, and `delvec fmt` writes the current
   one.
 - The engine accepts exactly that one number. A patch bump is therefore a new
-  accepted number too: a document declaring `0.19.0` is refused by an engine
+  accepted number too: a document declaring `0.21.0` is refused by an engine
   whose crate is `0.19.1`, and every document this repository holds moves with
   the bump exactly as it does for a minor (Decision 4). What the two halves of
   the number say is what changed — the format, or only the API — never whether

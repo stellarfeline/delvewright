@@ -31,7 +31,7 @@ fn hw(name: &str) -> String {
 fn quests_doc(extra: &str, talk_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -159,10 +159,10 @@ const PURSE_AND_STAKE: &str = r#",
         "offers": [
           { "label": "Bank an ember", "tooltip": "Costs one ember.",
             "effects": [
-              { "type": "narrate", "text": "You have nothing left to give.",
-                "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] },
-              { "type": "add-state", "state": "state/embers", "amount": -1,
-                "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }
+              { "type": "narrate",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] }, "text": "You have nothing left to give." },
+              { "type": "add-state",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }, "state": "state/embers", "amount": -1 }
             ] }
         ] }
     ]"#;

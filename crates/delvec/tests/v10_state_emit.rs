@@ -78,7 +78,7 @@ fn patched_prefabs() -> PathBuf {
 }
 
 const WORLD: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "cast-ledger",
   "stage": "world",
   "content": {
@@ -95,7 +95,7 @@ const WORLD: &str = r#"{
 /// Two data — one shared by the party, one held per player — read by a gate at
 /// every consumer class the engine has, and written by all three verbs.
 const QUESTS: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "cast-ledger",
   "stage": "quests",
   "content": {
@@ -149,8 +149,8 @@ const QUESTS: &str = r#"{
           "obj/talk": [
             { "type": "set-state", "state": "state/toll", "value": 0 },
             { "type": "add-state", "state": "state/nerve", "amount": -1 },
-            { "type": "open-gate", "anchor": "anchor/door",
-              "requires_state": [ { "state": "state/toll", "op": "at-most", "value": 0 } ] }
+            { "type": "open-gate",
+              "when": { "requires_state": [ { "state": "state/toll", "op": "at-most", "value": 0 } ] }, "anchor": "anchor/door" }
           ]
         },
         "on_complete": [ { "type": "narrate", "text": "The bolt slides back." } ],
@@ -191,7 +191,7 @@ const QUESTS: &str = r#"{
 }"#;
 
 const DIALOGUE: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "cast-ledger",
   "stage": "dialogue",
   "content": {

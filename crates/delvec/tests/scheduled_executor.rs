@@ -218,7 +218,7 @@ fn read_hw(name: &str) -> String {
 ///   (`at_ticks: 20`) step, so the timeline is reached through a scheduled
 ///   bundle — the nested-recursion case.
 const SCHEDULED_QUESTS: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -240,9 +240,9 @@ const SCHEDULED_QUESTS: &str = r#"{
                 { "type": "narrate", "text": "The keeper takes his post." },
                 { "type": "give-item", "item": "minecraft:torch", "count": 1 },
                 { "type": "open-gate", "anchor": "anchor/door" },
-                { "type": "set-time", "time": "day", "requires_flags": ["flag/arrived"] },
-                { "type": "play-sound", "sound": "minecraft:block.note_block.pling",
-                  "forbids_flags": ["flag/late"] },
+                { "type": "set-time", "when": { "requires_flags": ["flag/arrived"] }, "time": "day" },
+                { "type": "play-sound",
+                  "when": { "forbids_flags": ["flag/late"] }, "sound": "minecraft:block.note_block.pling" },
                 { "type": "sequence", "steps": [
                     { "at_ticks": 0, "effects": [
                       { "type": "narrate", "style": "title", "text": "At last." } ] },

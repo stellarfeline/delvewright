@@ -35,7 +35,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 fn quests_doc(on_complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -259,7 +259,7 @@ fn close_then_open_then_walk_builds_clean() {
 /// mode the no-false-certainty rule exists to prevent.
 #[test]
 fn conditional_close_gate_seals_nothing() {
-    let body = r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed.", "requires_flags": ["flag/sealed"] },
+    let body = r#"{ "type": "close-gate", "when": { "requires_flags": ["flag/sealed"] }, "anchor": "anchor/door", "sealed_hint": "Sealed." },
        { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -273,7 +273,7 @@ fn conditional_close_gate_seals_nothing() {
 #[test]
 fn close_gate_in_another_bundle_does_not_seal_this_timeline() {
     let quests = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

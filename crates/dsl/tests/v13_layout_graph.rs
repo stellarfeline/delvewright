@@ -51,7 +51,7 @@ use serde_json::{Value, json};
 ///   both beat-bound places.
 const GREEN: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -83,7 +83,7 @@ const GREEN: &str = r#"{
 
 const BRIEF: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.21.0",
   "stage": "geometry-brief",
   "content": {
     "facts": [
