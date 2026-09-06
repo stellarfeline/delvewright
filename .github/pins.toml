@@ -364,6 +364,7 @@ value = "actions/checkout@v4"
 sites = [
     ".github/actions/checkout-content/action.yml",
     ".github/workflows/ci.yml",
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
     ".github/workflows/infra-images.yml",
@@ -377,6 +378,7 @@ id = "action-rust-cache"
 value = "Swatinem/rust-cache@v2"
 sites = [
     ".github/workflows/ci.yml",
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
     ".github/workflows/release.yml",
