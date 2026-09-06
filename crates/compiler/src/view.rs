@@ -3,12 +3,10 @@
 //!
 //! Everything here is CPU: JSON emission, PNG compositing, and a self-contained
 //! HTML page. Nothing in this module reaches a GPU, a Vulkan loader or
-//! `nucleation`, and that is load-bearing rather than incidental — `nucleation`
-//! carries a C build script, so a single dependency edge from here would red the
-//! cross-build shelf gate on both static-musl targets and take `delvec` off four
-//! of its five prebuilt platforms. The `view::` prefix is what makes that edge
-//! visible in review: a `use nucleation::…` under this directory is the defect,
-//! and it has exactly one legitimate home, which is the other crate.
+//! `nucleation`, so every arm below runs on a machine with no adapter. The
+//! `view::` prefix is what makes that edge visible in review: a `use
+//! nucleation::…` under this directory is the defect, and it has exactly one
+//! legitimate home, which is the render crate.
 //!
 //! The arms it backs, all reachable as `delvec` subcommands:
 //!

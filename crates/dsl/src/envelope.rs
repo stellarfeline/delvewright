@@ -970,6 +970,14 @@ pub fn check_campaign(raw: &RawCampaign) -> Vec<Diagnostic> {
 mod version_ledger_tests {
     use super::*;
 
+    /// **The crate's version is the format's number.** `SUPPORTED_DSL_VERSION`
+    /// is stated as a literal because three gates read it textually; this is
+    /// what keeps the literal and `Cargo.toml`'s `version` from drifting apart.
+    #[test]
+    fn the_accepted_dsl_version_is_the_crate_version() {
+        assert_eq!(SUPPORTED_DSL_VERSION, env!("CARGO_PKG_VERSION"));
+    }
+
     /// A reservation is **in the ledger and not accepted**, and it sits above
     /// everything implemented. Below the latest it would shadow a landed
     /// surface; outside the ledger it would not be held at all, because a

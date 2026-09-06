@@ -4,7 +4,7 @@
 A reference image is concept art produced BEFORE any prefab exists: the creator
 describes a scene, a model draws it, and the owner confirms the *design* against
 a picture rather than against prose. It is not a render — a render is a candidate
-prefab imaged by `delve-render`, which happens later, at contact-sheet curation.
+prefab imaged by `delvec render`, which happens later, at contact-sheet curation.
 Two stages, two producers; do not conflate them.
 
 Output lands in a gitignored working directory (`.refimg/` by default), which is

@@ -505,7 +505,7 @@ pub fn check(
 
     // §2.9's vacuity reds, judged by the one rule that judges every other
     // gate's. Sealed HERE and not only in `gates::judge`, because this report
-    // has consumers that never reach `judge`: `delve-admit`'s spatial audit
+    // has consumers that never reach `judge`: `delvec prefab`'s spatial audit
     // reads it straight, and `export::refuse_broken_contract` refuses an
     // artifact on it. A zero binding raised here as a finding and nowhere as a
     // verdict is how a contract gate over nothing shipped a green.

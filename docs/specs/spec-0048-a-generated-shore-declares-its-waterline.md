@@ -41,7 +41,7 @@
 ## 1. The measured ground
 
 Instruments: engine worktree at revision `4f396bae` (source, and the
-`delve-grammar` binary built from it), the content library at the checkout the
+`delvec` binary built from it), the content library at the checkout the
 `campaigns/` symlink resolves to (revision `72913b06`), and the compiler's own
 committed fixtures run on the same tree. Three readings per claim where the
 claim is load-bearing, with unrelated failure modes.
@@ -50,7 +50,7 @@ claim is load-bearing, with unrelated failure modes.
   `#[serde(deny_unknown_fields)]` over exactly eight fields (`version`,
   `name`, `start`, `params`, `palette`, `include`, `rules`, `contract`);
   none is a datum. Live cross-check: a corpus document given a `"waterline"`
-  key is refused by `delve-grammar check` naming the unknown field and the
+  key is refused by `delvec grammar check` naming the unknown field and the
   whole closed list. And both export sites (`crates/grammar/src/export.rs:507`
   and `:627`, the single-template and tile-set writers) construct their
   metadata with `waterline_y: None` literally.
@@ -59,13 +59,13 @@ claim is load-bearing, with unrelated failure modes.
   has no `waterline_y` at all — byte-identical to the shape left behind when
   an admission step *deleted* the field, which is the exact
   indistinguishability `DW0344`'s zero-binding doctrine names. Demonstrated:
-  `delve-grammar expand --program ambush-door --region 11x5x13` writes
+  `delvec grammar expand --program ambush-door --region 11x5x13` writes
   metadata whose keys are `anchors`, `connectors`, `license`, `lighting`,
   `prefab_id`, `structure`.
 - **The proof works wherever a declaration exists, and seals where none does.**
   On this tree, `ocean_waterline_off_sea_level_exits_3_with_dw0344` and
   `an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound`
-  (`crates/compiler/tests/cli.rs`) both pass: an off-datum declaration is a
+  (`crates/delvec/tests/cli.rs`) both pass: an off-datum declaration is a
   build error, and an ocean world with zero declarations gets the `DW0344`
   binding report rather than a silent pass.
 - **The binding count today is five, all of it hand-generated.** One ocean
@@ -208,7 +208,7 @@ without inventing an addressing scheme no other consumer needs.
    the test asserting it (DW-coverage rule).
 4. Corpus demonstration: a library or idiom program that authors a shore and
    declares its waterline, plus the committed refusal probe — until it
-   exists, `delve-grammar coverage` names the construct undemonstrated, which
+   exists, `delvec grammar coverage` names the construct undemonstrated, which
    is the grammar's own analogue of the gallery obligation and reds in the
    same PR.
 5. Docs, same PR: `grammar.md` §2 table and §7 export; `prefab-procedure.md`

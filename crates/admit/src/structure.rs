@@ -1,7 +1,7 @@
 //! An editable vanilla structure template (`.nbt`), read from and written back to
-//! the same gzip-framed Java NBT the compiler/generator/`delve-schem` emit.
+//! the same gzip-framed Java NBT the compiler/generator/`delvec schem` emit.
 //!
-//! `delve-render`/`delve-schem` each read structures for their own purpose;
+//! `delvec render`/`delvec schem` each read structures for their own purpose;
 //! admission needs one editable model it can both **inspect** (palette audit,
 //! light probe) and **mutate** (socket carving) and re-emit deterministically.
 //! Determinism (ADR-0006): compounds are `BTreeMap`-ordered via the schem crate's

@@ -3991,7 +3991,7 @@ fn a_lift_shaft_expands_deterministically() {
 
 /// **The contract the shipped lift reads, asserted on the geometry.**
 ///
-/// `crates/compiler/tests/fixtures/lift` builds its car with `fill-region
+/// `crates/delvec/tests/fixtures/lift` builds its car with `fill-region
 /// {anchor, extent [1,0,1]}` — a box *centred* on the station with unsigned
 /// half-extents, so 3×3 at the station's own level — clears the same box at the
 /// floor it leaves, and teleports its riders to the anchor itself. Three things

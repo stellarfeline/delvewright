@@ -10,7 +10,7 @@ Behaviour references: [`grammar.md`](grammar.md) (what the back end does),
 (diagnostics).
 
 **Two libraries, and they are not the same one.** The **rule library** is the
-programs — `delve-grammar list` prints them and says so, `delve-grammar show
+programs — `delvec grammar list` prints them and says so, `delvec grammar show
 --program <name>` prints one, and they live in this repository. The **prefab
 library** is the built pieces — `.nbt` and `.json` pairs a campaign binds, in
 the *content* repository, reached through the `campaigns/` symlink (ADR-0007).
@@ -31,14 +31,14 @@ that matches no row is **escalated, not improvised**.
 |---|---|---|
 | a new structural piece — a building, room, passage, stair; generic (T1) **or** a specific named referent (T2) | **grammar program** (this procedure, §1–§8) | The adopted production route for both tiers. T2 is an input-modality property — the program is authored *against the referent* from the rule library's corpus; named referents are proven recognizable this way, and the grammar's IR is what makes iteration converge where freehand geometry regresses. |
 | a variation inside an existing hand-built tileset (another keep room in the keep's own conventions) | **grammar program**, matching the tileset's palette/conventions | The Rust generators are maintained, not extended (§9). A generator's conventions are data to imitate, not a surface to grow. |
-| a named referent that plausibly exists as a **community build** | check licence-gated ingestion first (`delve-schem` + `delve-admit`, spec-0007); fall back to grammar | Availability is luck — the corpus audit found most schematic sources unverifiable or NC-tainted, so ingestion is an opportunistic shortcut, never the plan of record. Everything ingested passes the same audit/socket/lighting admission as generated pieces. |
+| a named referent that plausibly exists as a **community build** | check licence-gated ingestion first (`delvec schem` + `delvec prefab`, spec-0007); fall back to grammar | Availability is luck — the corpus audit found most schematic sources unverifiable or NC-tainted, so ingestion is an opportunistic shortcut, never the plan of record. Everything ingested passes the same audit/socket/lighting admission as generated pieces. |
 | genuinely un-statable by axis-aligned boxes: a **smooth** curve, a diagonal, a profile whose step varies independently of the box, a vault bending on two axes at once, or noise/terrain (§6) | **in-house generator work** (Rust: value-noise fields, 4-5-rule cellular automata, the ported craft passes) — an engine task, not an authoring step | The grammar has no smooth curve, no diagonal, no noise, no terrain, by design. This route costs a worker dispatch and says so up front; it is the one row where "make a prefab" becomes "extend the engine". **Check §6 and `grammar.md` §2c before taking it** — a stepped arch, a gable, a spire, a batter and a tapered vault are all one recursion (idiom 3), two roofs meeting in a valley are that recursion peeling a ring (idiom 3), and any shape with a mirror plane is a rule body written mirrored (idiom 7). All three were mistaken for this row. |
 | terrain or backdrop *around* the playable scene | **surround layer** (`horizon` — ocean/void today; the spec-0026 library when it lands), never a prefab | A surround is analytically known so the proofs can read it; modelling vanilla worldgen was evaluated and rejected (the compiler cannot see server terrain without re-implementing its noise — a folklore hack). |
 | an atmosphere-tier set-piece whose power is composition — scale contrast, approach framing, lighting (T3) | **no current route — escalate to the owner** | Measured, not assumed: the landmark probe showed T3's missing layer is presentation (lighting/fog/camera), not geometry. Composition is art direction and is M4 design work. Attempting it through any row above produces the geometry and loses the scene. |
 
 And the composition rules — how the routes combine into an area:
 
-- **The one assembly chain**: piece (any route above) → `delve-admit` admission
+- **The one assembly chain**: piece (any route above) → `delvec prefab` admission
   → pool declaration → **compiler-as-jigsaw layout** (the compiler is the
   jigsaw; sockets are a connectivity vocabulary, not runtime mechanics) →
   edit scripts for L2/L3 fixes → relight → validation renders. There is no
@@ -75,7 +75,7 @@ depends on what the piece is for, and one of them is written for you:
 
 - **A campaign's zone** names them in that campaign's `zones.json`, beside the
   program, with the gates it claims (§4). That file is what
-  `delve-grammar audit --campaign-root` re-expands from, so the record is the
+  `delvec grammar audit --campaign-root` re-expands from, so the record is the
   thing CI runs.
 - **A piece for the prefab library**, with no campaign yet, needs nothing extra:
   the expand writes the region and the seed into the metadata's
@@ -182,7 +182,7 @@ pinned block registry at `crates/dsl/data/blocks-1.21.11.json`, and a
 `~/.chunky/resources/minecraft.jar`). Missing either one is a named refusal that
 says which. **The step does not become optional** — it becomes a different
 source of measured names: the rule library is a corpus somebody already
-measured, so take roles from it (`delve-grammar list`, then `delve-grammar show
+measured, so take roles from it (`delvec grammar list`, then `delvec grammar show
 --program <nearest>`) and bind by editing a role that already exists rather than
 by recalling a block. Record where each name came from beside the role, as you
 would record a hex. The one thing you still may not do is invent a name: an id
@@ -206,9 +206,9 @@ rule to change one of those is how a program grows a family that nothing keeps i
 step.
 
 ```sh
-delve-grammar list                                # what exists — incl. `idiom-*`
-delve-grammar show --program idiom-shape          # the technique, runnable
-delve-grammar show --program store-room > my-piece.json
+delvec grammar list                                # what exists — incl. `idiom-*`
+delvec grammar show --program idiom-shape          # the technique, runnable
+delvec grammar show --program store-room > my-piece.json
 ```
 
 Then start from the corpus, never from the schema. The rule library is a
@@ -249,7 +249,7 @@ contract**, and it is written here, in this document, beside the rules — a
 `claim` node naming each body of space, and one `contract` block classifying the
 names. **The authoring surface, with a worked example, is
 [`grammar.md`](grammar.md) §2d** — that is the section to open, and it is the
-only one that says how; `delve-grammar show --program spatial-contract` prints a
+only one that says how; `delvec grammar show --program spatial-contract` prints a
 runnable one.
 
 **Write one whenever the piece has more than one way in and out.** §4's
@@ -275,7 +275,7 @@ relation and read the `contract-exterior-faces` line to see what it exported.
 
 **Declaring one is not a two-line addition, and there is no flag to stage it.**
 The moment a `contract` block is present, nine obligations run at every door
-that reads the piece — `delve-grammar expand`, and `delve-admit audit` again
+that reads the piece — `delvec grammar expand`, and `delvec prefab audit` again
 afterwards. They are catalogued with what each binds to in `grammar.md` §2d, and
 in summary they ask that every claimed name resolve, that every standable cell
 lie in something declared, that an `enclosed` space actually be closed except at
@@ -285,7 +285,7 @@ empty is withheld with its reason printed rather than passed. Budget the
 contract as part of authoring the piece, not as a fix applied to a finished one.
 
 ```sh
-delve-grammar check --file my-piece.json          # structure only; fast
+delvec grammar check --file my-piece.json          # structure only; fast
 ```
 
 `check` finds unknown rules, unknown roles, split/child mismatches, unmatchable
@@ -308,7 +308,7 @@ Budget `check` as insurance against a slipped keystroke and nothing else.
 ## 4. Expand, and let the machine judge
 
 ```sh
-delve-grammar expand --file my-piece.json --region 9x6x21 --seed 1 \
+delvec grammar expand --file my-piece.json --region 9x6x21 --seed 1 \
     --traversable --id my-piece -o out/
 ```
 
@@ -404,7 +404,7 @@ anchors. Read the findings.
 **A zone belongs to its campaign, and its campaign runs the same gates over it.**
 A program that becomes one of a campaign's zones goes to
 `campaigns/<campaign>/design/programs/`, and is named in `zones.json` beside it
-with the region, the seed and the optional gates it claims. `delve-grammar audit
+with the region, the seed and the optional gates it claims. `delvec grammar audit
 --campaign-root <content repo>` then expands and judges every zone there, and
 both repos' CI run it. A program file that directory carries and the manifest
 does not name is a finding — without that, a zone nothing checks and a zone
@@ -445,8 +445,8 @@ read-the-rule round-trip per guard refusal.
 ## 5. See it before believing it
 
 ```sh
-delve-render piece out/<id>.nbt   -o shots/ --size 640   # one structure template
-delve-render piece out/<id>.json  -o shots/ --size 640   # a zone that shipped as a tile set
+delvec render piece out/<id>.nbt   -o shots/ --size 640   # one structure template
+delvec render piece out/<id>.json  -o shots/ --size 640   # a zone that shipped as a tile set
 ```
 
 Which of the two the expand wrote is a fact about the region (§6); pass whichever
@@ -521,7 +521,7 @@ whose identity is one elevation — a west front, a gatehouse, an approach face 
 has no picture until you ask for one.
 
 ```sh
-delve-render piece out/<id>.json -o shots/ --size 640 \
+delvec render piece out/<id>.json -o shots/ --size 640 \
     --view name=west-front,face=north \
     --view name=long-flank,face=west
 ```
@@ -586,7 +586,7 @@ Each of these was established by running it, except the two marked otherwise:
   that cap is an internal packaging detail the toolchain absorbs: an expansion
   past it is written as a set of `≤48` tiles plus one manifest, cut
   deterministically from the region. It reaches neither the design nor the rest
-  of the loop — `delve-render piece` and `delve-admit audit` take the manifest
+  of the loop — `delvec render piece` and `delvec prefab audit` take the manifest
   and treat the zone as one thing. *Established by running it.*
 - **Axis-aligned boxes only**, and the true statement is narrower than it
   sounds. What is genuinely out of reach: a **smooth** curve (the steps are
@@ -625,11 +625,11 @@ Each of these was established by running it, except the two marked otherwise:
 ## 7. Admit it
 
 ```sh
-delve-admit audit    out/<id>.nbt          # a TILE SET passes out/<id>.json instead
-delve-admit socket   out/<id>.nbt --pos X,Y,Z --facing <dir> --opening 3,3 \
+delvec prefab audit    out/<id>.nbt          # a TILE SET passes out/<id>.json instead
+delvec prefab socket   out/<id>.nbt --pos X,Y,Z --facing <dir> --opening 3,3 \
                      --name <ns>:<name> --target <ns>:<name> --pool pool/<name>
-delve-admit lighting out/<id>.nbt --write
-delve-admit audit    out/<id>.nbt          # again, after the edits
+delvec prefab lighting out/<id>.nbt --write
+delvec prefab audit    out/<id>.nbt          # again, after the edits
 ```
 
 **A single-template piece hands `audit` the `.nbt`, never the `.json`.** The
@@ -637,7 +637,7 @@ metadata beside a single template is not a manifest, and passing it is `DW0732`
 at exit 2. Only a zone past the 48-per-axis cap has a manifest to hand it, and
 the next paragraph is about that zone.
 
-`delve-admit anchor` is the fourth step of the chain and is **not on this route**:
+`delvec prefab anchor` is the fourth step of the chain and is **not on this route**:
 it writes a place — and what that place is FOR — into an anchor of a piece whose
 producer could not, which is a hand-built or ingested piece. A grammar program
 declares its own anchors with `mark` (`grammar.md` §2b), role included, and they
@@ -651,7 +651,7 @@ makes an anchor the entry — a name never does. On this route write it on the
 `mark`; on the ingestion route write it here:
 
 ```sh
-delve-admit anchor out/<id>.nbt --name <anchor> --pos X,Y,Z --facing <dir> \
+delvec prefab anchor out/<id>.nbt --name <anchor> --pos X,Y,Z --facing <dir> \
                    --role entry          # ...and --no-role takes one off
 ```
 
@@ -675,7 +675,7 @@ under-specified shape alike — but a *hand-built* or ingested piece does not, s
 
 `audit` also opens the spatial contract's **second door**, and says what it did
 with it. A piece whose document declares a contract is judged against its own
-bytes by the checker `delve-grammar expand` runs, and a disagreement is `DW0782`.
+bytes by the checker `delvec grammar expand` runs, and a disagreement is `DW0782`.
 A door that did not open is `DW0783` and never a silence: it names what it
 therefore did not examine, and it refuses (exit 1) rather than reporting a pass
 when the document does not parse, or when the document declares no contract while
@@ -814,7 +814,7 @@ use.
 | `license` | no | `{source, spdx, note, provenance, generated_by?}`. |
 | `waterline_y` | no | Local y of the piece's top authored water block. Checked against the ocean datum by `DW0344`; an ocean world where no placed piece declares one is reported by `DW0344` rather than passing on an empty check, and there is no exemption for a piece that "needs none". |
 | `spatial_contract` | no | The piece's declared spaces, out-of-walk regions, edges and faces (ADR-0020). |
-| `footprint_class` | no | The metrics-table size class this piece claims to serve (`size-class.*`). Judged against the piece's own structure size at `delve-admit audit` and again wherever a `detail-plan` row consumes the piece (`DW0848`; an unknown name is `DW0812`). Absent means the claim is not made — a piece bound by a `details[]` row is held to exact frame equality (`DW0843`) either way. |
+| `footprint_class` | no | The metrics-table size class this piece claims to serve (`size-class.*`). Judged against the piece's own structure size at `delvec prefab audit` and again wherever a `detail-plan` row consumes the piece (`DW0848`; an unknown name is `DW0812`). Absent means the claim is not made — a piece bound by a `details[]` row is held to exact frame equality (`DW0843`) either way. |
 
 An **anchor** is `{pos?, facing?, role?, region?, block?, resolves_to?,
 dispenser?, trigger_block?, note?}` — one object class covering a point, a gate
@@ -840,7 +840,7 @@ An anchor's **name** says nothing about this. Renaming an anchor makes it no mor
 the entry than leaving it alone does — a generated zone could not spell a reserved
 name anyway (every key it exports is `anchor/<stem>`), which is the whole reason
 the role exists. Write the role where the producer writes the anchor: on the
-`mark` (§7, `grammar.md` §2b), or with `delve-admit anchor --role entry`.
+`mark` (§7, `grammar.md` §2b), or with `delvec prefab anchor --role entry`.
 
 A **gate anchor** — the thing `close-gate`, `open-gate`, a `shortcut` and a
 `timed-gate` fill and clear — is declared either way and reads the same. Write
@@ -899,7 +899,7 @@ has probed does not have to invent a measurement. Field order on write is the
 order of the table above, which is the order the checked-in prefab library already uses.
 
 A key the reading version does not model is **kept** and written back out. That
-matters because these files are read-modify-written: `delve-admit socket` edits
+matters because these files are read-modify-written: `delvec prefab socket` edits
 `connectors`, `lighting` edits `lighting`, `anchor` edits the four place fields
 (`pos`, `facing`, `region`, `block`) of the one anchor it names, and each leaves
 the rest of the document as it found it. A type that models fewer fields than the
@@ -950,9 +950,9 @@ edit.
 | Reader | Uses |
 | --- | --- |
 | `delvec` (`compiler::registry`) | the whole document; consumes anchors, connectors, lighting, `waterline_y`, `spatial_contract.faces` |
-| `delve-admit` | the whole document, read-modify-write |
-| `delve-grammar` | writes it (single template) and the tile-set manifest (several) |
-| `delve-render` | a narrow view — `anchors`, `connectors`, `lighting` — built from the document's own leaf types, because it must also read a tile-set manifest, which names `structure_set` instead of `structure` |
+| `delvec prefab` | the whole document, read-modify-write |
+| `delvec grammar` | writes it (single template) and the tile-set manifest (several) |
+| `delvec render` | a narrow view — `anchors`, `connectors`, `lighting` — built from the document's own leaf types, because it must also read a tile-set manifest, which names `structure_set` instead of `structure` |
 | `delvewright_schem::split` | one key, `structure_set`, to tell the two shapes apart |
 | `prefabs/*-generator` | write it, serialize-only (separate Cargo workspaces; they never read a prefab back) |
 

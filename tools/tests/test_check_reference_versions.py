@@ -111,7 +111,7 @@ def gate(tmp_path, monkeypatch):
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(module, "DOC", tmp_path / "compiler.md")
-    monkeypatch.setattr(module, "COMPILER_CARGO_TOML", tmp_path / "Cargo.toml")
+    monkeypatch.setattr(module, "ROOT_CARGO_TOML", tmp_path / "Cargo.toml")
     monkeypatch.setattr(module, "ENVELOPE_RS", tmp_path / "envelope.rs")
     monkeypatch.setattr(module, "VERSIONS_TOML", tmp_path / "versions.toml")
     (tmp_path / "crates" / "published").mkdir(parents=True)
@@ -177,7 +177,7 @@ def run(
         ),
         encoding="utf-8",
     )
-    gate.COMPILER_CARGO_TOML.write_text(
+    gate.ROOT_CARGO_TOML.write_text(
         CARGO_TEMPLATE.format(version=real_delvec), encoding="utf-8"
     )
     ledger = list(real_supported) + [v for v, _ in real_reserved]

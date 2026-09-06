@@ -1,53 +1,33 @@
 [package]
-# The PACKAGE is `delvec` because `cargo install` resolves by CRATE name, never
-# by binary name: `cargo install delvewright-compiler` is the only spelling that
-# could ever have worked, and nobody would guess it. ADR-0016 names the engine
-# `delvec`; this makes the registry agree with the ADR.
-#
-# The LIBRARY target keeps the old name (`[lib] name` below) so the 366 in-tree
-# `use delvewright_compiler::…` paths do not churn for zero behavioural gain. A
-# package whose lib target is named differently from the package is ordinary
-# Cargo; an external dependent would write
-# `delvec = "1"` + `use delvewright_compiler::…`, which is why the README says so.
-name = "delvec"
-# ADR-0016's engine version line. Single source: `DELVEC_VERSION` is
-# `env!("CARGO_PKG_VERSION")` (src/lib.rs), which reaches manifest.json, the
-# storybook markers and the skill's `verified_with`. check-versions.sh binds it
-# to `[engine] version` in versions.toml, and release.yml refuses a `v*` tag
-# whose name disagrees with it.
-version = "1.1.0"
-edition = "2024"
-# See the note in crates/dsl/Cargo.toml: the toolchain we actually build on.
-rust-version = "1.97.1"
-description = "Deterministic compiler that turns staged Delvewright DSL documents into a vanilla Minecraft adventure-map datapack."
-license = "GPL-3.0-only"
-repository = "https://github.com/stellarfeline/delvewright"
+# The compiler LIBRARY: `delvewright-compiler`, library target `delvewright_compiler`
+# (the name every `use delvewright_compiler::…` path in the tree already spells).
+# The executable that mounts it is the `delvec` crate (crates/delvec, ADR-0023
+# §3); nothing here is a `[[bin]]`.
+name = "delvewright-compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The Delvewright compiler library: staged campaign documents in, a deterministic Minecraft adventure-map datapack out — the engine behind the delvec binary."
 readme = "README.md"
 keywords = ["minecraft", "datapack", "compiler", "adventure"]
-categories = ["command-line-utilities", "game-development"]
-# `cargo package` ships everything git tracks unless excluded. `tests/` and
-# `examples/` are 1.9 MB of fixtures that a `cargo install delvec` never
-# compiles; `data/` is NOT excludable — src/registry.rs `include_str!`s it.
-exclude = ["tests/", "examples/"]
+categories = ["game-development"]
+# `cargo package` ships everything git tracks unless excluded. `tests/` holds the
+# two node tests of the viewer page, which no `cargo install` runs; `data/` is
+# NOT excludable — src/registry.rs `include_str!`s it.
+exclude = ["tests/"]
 
 [lib]
-# Deliberately not the package name — see the [package] note above.
 name = "delvewright_compiler"
 path = "src/lib.rs"
 
-[[bin]]
-name = "delvec"
-path = "src/main.rs"
-
 [dependencies]
-# `version` is REQUIRED for publication: a path-only dependency cannot be
-# packaged (`cargo package` refuses it, by name), and crates.io drops the `path`
-# key — so on the registry this requirement is the ONLY thing left standing. `=`
-# so that `delvec 1.0.0` resolves to exactly one `delvewright-dsl` build and no
-# other; bound to `[engine] dsl_crate_req` in versions.toml.
-delvewright-dsl = { path = "../dsl", version = "=0.1.0" }
+delvewright-dsl.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The CPU render arms are declared here as a clap `Subcommand` (`view::cli`) and
+# mounted by the `delvec` crate.
 clap = { version = "4", features = ["derive"] }
 sha2 = "0.10"
 
@@ -59,59 +39,33 @@ sha2 = "0.10"
 # MIT.
 schemars = "1"
 
-# fastnbt + flate2 moved to real dependencies (2026-07-31): `delvec` now parses
-# each structure's NBT to derive placement-sentinel blocks (runtime verification
-# that `place template` landed — far freshly-forceloaded chunks are not reliably
-# loaded in the same tick, so placement is retried until sentinels verify).
+# The compiler parses each structure's NBT to derive placement-sentinel blocks
+# (runtime verification that `place template` landed — far freshly-forceloaded
+# chunks are not reliably loaded in the same tick, so placement is retried
+# until sentinels verify).
 #
-# DEP FLAG (beyond the spec-0002 budget of clap/sha2/NBT): `flate2` is required
-# because Minecraft structure `.nbt` files are gzip-framed NBT and neither
-# fastnbt nor valence_nbt provides the gzip container. flate2's GzEncoder writes
-# a zero mtime, so the output is deterministic (ADR-0006). MIT/Apache-2.0.
+# `flate2` is required because Minecraft structure `.nbt` files are gzip-framed
+# NBT and neither fastnbt nor valence_nbt provides the gzip container. flate2's
+# GzEncoder writes a zero mtime, so the output is deterministic (ADR-0006).
+# MIT/Apache-2.0.
 fastnbt = "2"
 flate2 = "1"
 
-# DEP FLAG: `crc32fast` supplies the CRC-32 the per-delve NPC-skin resource pack
-# zip needs (spec-0009 bake). The zip is hand-written with the STORE method and
-# fixed zero timestamps so its bytes — and thus its sha1 — are deterministic
-# (ADR-0006). MIT/Apache-2.0.
+# `crc32fast` supplies the CRC-32 the per-delve NPC-skin resource pack zip needs
+# (spec-0009 bake). The zip is hand-written with the STORE method and fixed zero
+# timestamps so its bytes — and thus its sha1 — are deterministic (ADR-0006).
+# MIT/Apache-2.0.
 crc32fast = "1"
 
 # The CPU render arms (`viewer`, `scene`, `panorama`, `contact-sheet`, `index`)
-# came into this crate with ADR-0021 §1, and they decode and composite PNGs:
-# block textures out of the client jar for the derived colour table, and the
-# contact sheet's tiled and labelled cells.
-#
-# Pure Rust, and that is the load-bearing property rather than a nicety: this is
-# the crate the cross-build shelf compiles for five targets, two of them
-# static-musl (`versions.toml [engine].targets`), and a dependency with a C build
-# script reds both of them with no cross-compiler in the release recipe. Default
-# features carry every decoder the crate has; the render surface reads and writes
-# PNG only, so the rest is turned off rather than shipped. MIT/Apache-2.0.
+# decode and composite PNGs: block textures out of the client jar for the
+# derived colour table, and the contact sheet's tiled and labelled cells.
+# Default features carry every decoder the crate has; the render surface reads
+# and writes PNG only, so the rest is turned off rather than shipped.
+# MIT/Apache-2.0.
 image = { version = "0.24", default-features = false, features = ["png"] }
 
 # The client jar is a zip, and `view::assets` reads block textures straight out
-# of it — the jar is a creator prerequisite, never redistributed (ADR-0010), so
-# the reader has to live in the binary the creator installs. `deflate` only: the
-# jar uses no other method, and the default feature set drags bzip2/zstd C
-# libraries that would red the static-musl shelf targets. MIT.
+# of it — the jar is a creator prerequisite, never redistributed (ADR-0010).
+# `deflate` only: the jar uses no other method. MIT.
 zip = { version = "2", default-features = false, features = ["deflate"] }
-
-[dev-dependencies]
-# Integration tests synthesize structure `.nbt` bytes (gzip-framed NBT) to drive
-# the assembled-world / gravity-despawn checks against a real plan.
-fastnbt = "2"
-flate2 = "1"
-
-# spec-0027 acceptance 4 is a seam, and a seam is only tested from both sides:
-# `tests/grammar_prefab.rs` exports a real grammar prefab and loads it through
-# this crate's `PrefabRegistry`. Test-only — the engine never depends on the
-# grammar back end, which is generation-time tooling (ADR-0003).
-delvewright-grammar = { path = "../grammar" }
-
-# The block-state rule, for the one test that AUTHORS a prefab palette rather
-# than hand-framing an input: `tests/edit.rs` writes a real `.nbt` into a real
-# prefab directory and stamps it through the real build. Anything that authors a
-# palette owes the pinned registry a verdict (`tools/check-structure-emitters.py`),
-# and an exemption would be the weaker answer here because the check is right.
-delvewright-schem = { path = "../schem" }
