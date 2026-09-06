@@ -324,6 +324,11 @@ struct PoolDef {
     members: Vec<PoolMember>,
 }
 
+/// The suffix that marks a gate report beside a piece: `<id>.report.json`.
+/// Written by `delvec grammar expand` and `delvec detail`, skipped by name by
+/// [`PrefabRegistry::load_dir`].
+pub const REPORT_SUFFIX: &str = ".report.json";
+
 /// Loads and caches prefab metadata from a `prefabs/` directory, and answers
 /// anchor / pool / lighting queries for DSL validation and analysis.
 #[derive(Debug, Clone)]
@@ -363,9 +368,25 @@ impl PrefabRegistry {
         let mut paths: Vec<PathBuf> = Vec::new();
         for entry in std::fs::read_dir(dir)? {
             let path = entry?.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                paths.push(path);
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
             }
+            // **A gate report is not prefab metadata, and is told apart by
+            // name** — the one rule, as `pools.json` is told apart by name. The
+            // grammar's expander and `delvec detail` both write `<id>.report.json`
+            // beside the piece they froze (the gates it passed, the measurements
+            // it was taken at); read as metadata it is a `DW0346` on every build,
+            // which made an expander's output directory something the compiler
+            // refused. The suffix is the full `.report.json`, so a metadata file
+            // that happens to contain `report` in its stem is still read.
+            if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.ends_with(REPORT_SUFFIX))
+            {
+                continue;
+            }
+            paths.push(path);
         }
         paths.sort();
         for path in paths {
@@ -467,6 +488,20 @@ impl PrefabRegistry {
             pool_members,
             load_diagnostics,
         })
+    }
+
+    /// Add one piece to the registry, replacing any piece of the same id.
+    ///
+    /// The registry is otherwise read off a directory, and this is the one way a
+    /// piece that is not on disk yet enters it: `delvec detail` judges the piece
+    /// it is about to write — `DW0843`–`DW0845`, `DW0848` — against the library
+    /// plus that piece, **before** any file exists, with the same `detail::check`
+    /// validation runs afterwards. The anchor index is kept in step so the
+    /// binding checks read the piece exactly as they would read it from disk.
+    pub fn insert(&mut self, meta: PrefabMeta) {
+        let names: BTreeSet<String> = meta.anchors.keys().cloned().collect();
+        self.anchor_names.insert(meta.prefab_id.clone(), names);
+        self.by_id.insert(meta.prefab_id.clone(), meta);
     }
 
     /// Per-file load failures (`DW0346`) from [`Self::load_dir`]. The CLI folds

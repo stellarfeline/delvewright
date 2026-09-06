@@ -360,7 +360,12 @@ fn run_list() -> ExitCode {
 /// `show`'s piped JSON. A composition is the one thing about a program that the
 /// file on disk does not say — the rules arrived from somewhere else — so an
 /// operator who is looking at a green verdict learns what the green was over.
-fn composition_to_stderr(loaded: &Loaded) {
+/// Say what a document composed, prefix by prefix, with its binding count.
+///
+/// `pub` because `delvec detail` loads a program through the same loader and
+/// owes its reader the same line; a second copy of this would be the private
+/// per-gate parse rule `CLAUDE.md` refuses.
+pub fn composition_to_stderr(loaded: &Loaded) {
     if loaded.compositions.is_empty() {
         return;
     }
@@ -704,7 +709,10 @@ fn run_expand(
 }
 
 /// Say what was judged, and say plainly what bound to nothing.
-fn report_to_stderr(id: &str, report: &gates::Report) {
+///
+/// `pub` for the reason [`composition_to_stderr`] is: `delvec detail` judges an
+/// expansion with the same `gates::judge` and prints the same report.
+pub fn report_to_stderr(id: &str, report: &gates::Report) {
     eprintln!("{id}: {}", report.verdict);
     for gate in &report.gates {
         eprintln!(
