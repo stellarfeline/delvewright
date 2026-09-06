@@ -179,12 +179,33 @@ the kinds are decided by properties of the OBJECT, verified online:
   a toolchain held at a major/minor line the publisher advances. Staleness is not
   a concept for it. It is registered so that the count of deliberately-unfrozen
   refs is a number somebody can see rather than a habit.
+- `held` — the pin names a commit on the upstream default branch, same as
+  `track`, but for a site that BUILDS the pinned tool and is judged as one unit
+  with it rather than re-pinned on every upstream merge: an admission judge, a
+  compiler a content repository compiles at its own CI time, anything whose
+  question is "does this still admit/build/pass" rather than "is this the tip".
+  `track`'s per-merge red is the wrong shape for that site — `builds = []` would
+  make the offline check pass, but it is a lie the moment the site's own
+  `cargo build … -p <pkg>` names a package, and the offline check catches that
+  lie the same way it catches `track`'s. So drift from the upstream default
+  branch is never a finding for `held` — the online check prints the distance as
+  information only — and what makes the hold deliberate instead of silent is
+  four terms, all verified online, none of them a free-text escape a rotted pin
+  could also write: the value is a real upstream commit; `judged_by` (the file
+  whose CI job runs this pin's online check, same obligation as `track`) carries
+  the value as a literal, so the workflow that claims to build from this commit
+  really does; `reviewed` names the commit the last judgement read, and must
+  itself be a real commit upstream; and `why` is present, saying what interval
+  was judged and what the judgement found. Any one missing is a red naming the
+  missing term — the policy is not reachable by a pin that omits them.
 
 `track`'s watched paths are NOT author-written. The registry records `builds`, the
 package names the site file builds out of the pinned checkout, and the check
 derives those packages' source directories from the upstream tree itself. The
 offline half asserts that every `cargo build … -p <pkg>` in a pin's site file
-appears in `builds`, so narrowing the watch to dodge a red is a red.
+appears in `builds`, so narrowing the watch to dodge a red is a red. `held` does
+not derive a watch set at all, so it carries no `builds` and is not subject to
+that check.
 
 Exit 0 = pass, 1 = a finding, 2 = the registry or a checkout is unusable.
 """
@@ -506,11 +527,11 @@ RE_CHECKOUT = re.compile(
 RE_ENV_EXPR = re.compile(r"\$\{\{\s*env\.([A-Za-z0-9_]+)\s*\}\}")
 RE_ENV_ENTRY = re.compile(r"^\s{2}(?P<key>[A-Z][A-Z0-9_]*):\s*(?P<val>\S+)\s*$", re.M)
 
-VALID_POLICIES = {"release", "track", "immutable", "floating"}
+VALID_POLICIES = {"release", "track", "immutable", "floating", "held"}
 
 # The repositories this project builds. A pin onto one of them names an
 # instrument or an input whose drift changes what CI decides, so it must be
-# judged (`track`) or be a published release (`release`) — it may not be
+# judged (`track`, `held`) or be a published release (`release`) — it may not be
 # downgraded to `immutable` to escape the drift check. A pin onto anything else
 # is a third-party artifact named by its bytes; its currency is a supply-chain
 # question with a different owner and this gate does not pretend to answer it.
@@ -1190,24 +1211,26 @@ def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[s
                 f"{sorted(VALID_POLICIES)}"
             )
         repo = pin.get("repo")
-        if policy in ("release", "track") and not repo:
+        if policy in ("release", "track", "held") and not repo:
             errors.append(f"{pid}: policy {policy!r} must name the `repo` it pins")
-        if policy in ("release", "track") and repo and repo not in OWN_REPOS:
+        if policy in ("release", "track", "held") and repo and repo not in OWN_REPOS:
             errors.append(
                 f"{pid}: policy {policy!r} judges a pin against the history of a "
                 f"repository this project builds, and {repo} is not one of "
                 f"{sorted(OWN_REPOS)}"
             )
-        if repo in OWN_REPOS and policy not in ("release", "track"):
+        if repo in OWN_REPOS and policy not in ("release", "track", "held"):
             errors.append(
                 f"{pid}: pins {repo}, which this project builds, but is declared "
                 f"{policy!r}. A pin onto our own history decides what CI judges "
-                f"with; it is `track` (and gets judged) or `release` (and is a "
-                f"published tag). It is not exempt by being called immutable."
+                f"with; it is `track` (re-pinned, judged per merge), `held` "
+                f"(judged as one unit with the site that builds it, drift not a "
+                f"finding), or `release` (a published tag). It is not exempt by "
+                f"being called immutable."
             )
-        if policy == "track" and not pin.get("reviewed"):
+        if policy in ("track", "held") and not pin.get("reviewed"):
             errors.append(
-                f"{pid}: a `track` pin must carry `reviewed` — the upstream "
+                f"{pid}: a {policy!r} pin must carry `reviewed` — the upstream "
                 f"revision it was last judged against. Without it the pin can "
                 f"rot with nothing in any diff to show nobody looked."
             )
@@ -1215,7 +1238,7 @@ def check_offline(root: pathlib.Path, registry: list[dict]) -> tuple[int, list[s
         # that runs its online check, and that file must actually contain the
         # invocation — the doc line this project has shipped five times is
         # exactly what a `judged_by` nobody verifies would be.
-        if policy in ("track", "release"):
+        if policy in ("track", "release", "held"):
             judged_by = pin.get("judged_by")
             if not judged_by:
                 errors.append(
@@ -1428,6 +1451,54 @@ def check_online(
             else:
                 print(f"  ok   {pid}: release pin at {', '.join(tags)} — frozen, "
                       f"drift is not a finding")
+            continue
+
+        if policy == "held":
+            # The four terms, none of them a free-text field a rotted pin could
+            # also write. Each is checked here rather than left to the offline
+            # half, because this policy's whole claim — deliberate, not rotted —
+            # is a claim ABOUT the upstream history, and the fixture that proves
+            # it is a `--online` run.
+            why = pin.get("why")
+            if not why:
+                errors.append(
+                    f"{pid}: policy 'held' must carry `why` — the interval it "
+                    f"judged and what the judgement found. A missing `why` is "
+                    f"indistinguishable from a pin nobody has looked at."
+                )
+                continue
+            judged_by = pin.get("judged_by")
+            text = read_text(root / judged_by) if judged_by else None
+            if text is None or not literal_at(text, value):
+                errors.append(
+                    f"{pid}: `judged_by` ({judged_by}) does not carry {value} as "
+                    f"a literal — the workflow that is supposed to build from "
+                    f"this commit does not actually name it, so the value and "
+                    f"what CI builds could have already come apart"
+                )
+                continue
+            reviewed = pin.get("reviewed")
+            if not reviewed:
+                errors.append(
+                    f"{pid}: policy 'held' must carry `reviewed` — the upstream "
+                    f"revision the judgement in `why` read"
+                )
+                continue
+            try:
+                git(repo, "cat-file", "-e", f"{reviewed}^{{commit}}")
+            except subprocess.CalledProcessError:
+                errors.append(
+                    f"{pid}: `reviewed` names {reviewed[:8]}, which is not a "
+                    f"commit in {pin.get('repo')}"
+                )
+                continue
+            head = default_head(repo)
+            behind = git(repo, "rev-list", "--count", f"{value}..{head}")
+            print(
+                f"  ---  {pid}: {behind} commit(s) behind {pin.get('repo')} "
+                f"default branch; held deliberately at {value[:8]} (reviewed "
+                f"{reviewed[:8]}) — drift is not a finding for this policy"
+            )
             continue
 
         # policy == "track"
