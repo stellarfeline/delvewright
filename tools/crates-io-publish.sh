@@ -44,9 +44,32 @@
 # stated timeout, not a sleep chosen by feel, and it turns "cargo's internal wait
 # was not enough" from an unresolvable `delvec` on the registry into a red job.
 #
+# WHICH CRATES ONE RUN DECIDES ABOUT
+#
+# The full set is the RELEASE set: `versions.toml [engine]` in dependency order,
+# and `tools/check-publishable.sh` must have packaged it first — the release path
+# publishes only what that gate has already proven builds standing alone.
+#
+# `--only <crate>` narrows the run to ONE crate the manifest names, and then this
+# script packages that crate itself (`cargo package -p <crate>` into the same
+# `target/package-verify` the full gate writes to, so both paths hash the same
+# artifact). That is what the DSL crate's two automatic sites need: the crate's
+# version IS the `dsl_version`, so it moves on `main` rather than on a release
+# tag, and neither of those sites has a whole-shelf packaging run to piggyback on.
+#
+# Every mode prints one machine-readable line, `crates-io-publish: TO_PUBLISH=…`,
+# holding the names it decided to upload (empty when the registry already has
+# them). `.github/workflows/dsl-crate-publish.yml` reads it to decide whether to
+# ask for the environment approval at all.
+#
 # Usage:
 #   tools/crates-io-publish.sh --plan      # what WOULD happen; touches nothing
 #   tools/crates-io-publish.sh --publish   # do it (needs $CARGO_REGISTRY_TOKEN)
+#   tools/crates-io-publish.sh --plan --only delvewright-dsl
+#   tools/crates-io-publish.sh --publish --only delvewright-dsl [--allow-dirty]
+#
+# `--allow-dirty` is local-only and reaches nothing but the `--only` packaging:
+# CI works from a clean checkout, so the VCS-dirty refusal stays armed there.
 #
 # The token is read by cargo straight out of the environment. This script never
 # runs `cargo login` and never writes a credential to disk.
@@ -58,8 +81,25 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/versions.toml"
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found" >&2; exit 2; }
 
-MODE="${1:-}"
-case "$MODE" in --plan|--publish) ;; *) echo "usage: ${BASH_SOURCE[0]} (--plan|--publish)" >&2; exit 2 ;; esac
+USAGE="usage: ${BASH_SOURCE[0]} (--plan|--publish) [--only <crate>] [--allow-dirty]"
+MODE=""
+ONLY=""
+DIRTY_FLAG=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --plan|--publish)
+      [ -z "$MODE" ] || { echo "crates-io-publish: --plan and --publish are exclusive" >&2; echo "$USAGE" >&2; exit 2; }
+      MODE="$1" ;;
+    --only)
+      shift
+      ONLY="${1:-}"
+      [ -n "$ONLY" ] || { echo "crates-io-publish: --only needs a crate name" >&2; echo "$USAGE" >&2; exit 2; } ;;
+    --allow-dirty) DIRTY_FLAG=(--allow-dirty) ;;
+    *) echo "crates-io-publish: unknown argument '$1'" >&2; echo "$USAGE" >&2; exit 2 ;;
+  esac
+  shift
+done
+[ -n "$MODE" ] || { echo "$USAGE" >&2; exit 2; }
 
 eval "$(python3 - "$MANIFEST" <<'PY'
 import sys, tomllib
@@ -159,7 +199,41 @@ NAMES=("$DSL_CRATE")
 VERS=("$DSL_CRATE_VERSION")
 for n in $ENGINE_CRATES; do NAMES+=("$n"); VERS+=("$VERSION"); done
 NAMES+=("$CRATE"); VERS+=("$VERSION")
+DECLARED="${#NAMES[@]}"
+
+# --only: one crate the manifest declares, and only one. A name it does not
+# declare is refused HERE rather than surviving as an empty selection — a run
+# that compared zero crates and exited 0 is the unbound gate this file's bind
+# test exists to prevent, arriving through a typo instead of through curl.
+if [ -n "$ONLY" ]; then
+  sel=-1
+  i=0
+  while [ "$i" -lt "${#NAMES[@]}" ]; do
+    [ "${NAMES[$i]}" = "$ONLY" ] && sel="$i"
+    i=$((i + 1))
+  done
+  if [ "$sel" -lt 0 ]; then
+    echo "crates-io-publish: --only '$ONLY' names no crate in versions.toml [engine]." >&2
+    echo "  It declares ${#NAMES[@]}: ${NAMES[*]}" >&2
+    exit 2
+  fi
+  only_name="${NAMES[$sel]}"; only_vers="${VERS[$sel]}"
+  NAMES=("$only_name"); VERS=("$only_vers")
+  echo "== --only: 1 of $DECLARED declared crate(s) selected — $only_name $only_vers =="
+  # The bytes this run compares against the registry. The full set arrives here
+  # already packaged by `tools/check-publishable.sh`; a single selected crate has
+  # no such run in front of it, so it is packaged here, into the SAME directory,
+  # by the same command shape. Output is not redirected: a packaging failure is
+  # the finding, and it belongs in the log of whatever invoked this.
+  mkdir -p "$ROOT/target"
+  echo "== cargo package -p $only_name (into target/package-verify) =="
+  (cd "$ROOT" && CARGO_TARGET_DIR="$ROOT/target/package-verify" \
+      cargo package -p "$only_name" ${DIRTY_FLAG[@]+"${DIRTY_FLAG[@]}"})
+  echo
+fi
+
 TO_PUBLISH=()
+TO_PUBLISH_LINE=""
 echo "== what crates.io already holds =="
 i=0
 while [ "$i" -lt "${#NAMES[@]}" ]; do
@@ -169,6 +243,7 @@ while [ "$i" -lt "${#NAMES[@]}" ]; do
   if [ -z "$remote" ]; then
     printf '  PUBLISH %s %s (absent from the index; our sha256 %s)\n' "$n" "$v" "$mine"
     TO_PUBLISH+=("$n")
+    TO_PUBLISH_LINE="${TO_PUBLISH_LINE:+$TO_PUBLISH_LINE }$n"
   elif [ "$remote" = "$mine" ]; then
     printf '  skip    %s %s (already published, byte-identical: %s)\n' "$n" "$v" "$mine"
   else
@@ -177,7 +252,21 @@ while [ "$i" -lt "${#NAMES[@]}" ]; do
     printf '            ours     sha256 %s\n' "$mine"
     echo >&2
     echo "crates-io-publish: $n $v cannot be republished — a crates.io version is permanent." >&2
-    echo "  Bump [engine] $( [ "$n" = "$DSL_CRATE" ] && echo 'dsl_crate_version + dsl_crate_req' || echo 'version (and the root Cargo.toml [workspace.package] + [workspace.dependencies] it binds)' ) in versions.toml and re-tag." >&2
+    if [ "$n" = "$DSL_CRATE" ]; then
+      # The DSL crate's version IS the dsl_version, so moving it moves four
+      # statements of one number that validation/check-versions.sh holds equal —
+      # and every campaign document that declares the old one. Nothing is re-tagged
+      # for it: .github/workflows/dsl-crate-publish.yml uploads it off `main`.
+      echo "  $DSL_CRATE $v must move. It is the dsl_version, so all four of these carry it:" >&2
+      echo "    crates/dsl/Cargo.toml            [package] version" >&2
+      echo "    crates/dsl/src/envelope.rs       SUPPORTED_DSL_VERSION" >&2
+      echo "    versions.toml                    [engine] dsl_crate_version" >&2
+      echo "    versions.toml                    [engine] dsl_crate_req (=<version>)" >&2
+      echo "  A format change bumps the minor, a Rust-API-only change bumps the patch." >&2
+      echo "  Push the bump to main and the publish hook uploads it; no tag is involved." >&2
+    else
+      echo "  Bump [engine] version (and the root Cargo.toml [workspace.package] + [workspace.dependencies] it binds) in versions.toml and re-tag." >&2
+    fi
     exit 1
   fi
   i=$((i + 1))
@@ -185,6 +274,10 @@ done
 
 echo
 echo "crates-io-publish: ${#TO_PUBLISH[@]} of ${#NAMES[@]} crate(s) would be uploaded"
+# The machine-readable verdict, one line, always printed. A caller that must
+# decide whether an upload is even going to happen reads this instead of
+# re-asking the index with a second copy of the lookup.
+echo "crates-io-publish: TO_PUBLISH=$TO_PUBLISH_LINE"
 if [ "$MODE" = "--plan" ]; then
   echo "crates-io-publish: --plan, nothing was uploaded"
   exit 0
@@ -232,5 +325,9 @@ while :; do
 done
 
 echo
-echo "crates-io-publish: OK — ${#NAMES[@]} crate(s) are on crates.io: $DSL_CRATE $DSL_CRATE_VERSION, and $CRATE $VERSION with its $((${#NAMES[@]} - 2)) library crates"
-echo "crates-io-publish: \`cargo install $CRATE\` now resolves to $VERSION"
+if [ -n "$ONLY" ]; then
+  echo "crates-io-publish: OK — $ONLY ${VERS[0]} is on crates.io ($DECLARED declared, 1 selected)"
+else
+  echo "crates-io-publish: OK — ${#NAMES[@]} crate(s) are on crates.io: $DSL_CRATE $DSL_CRATE_VERSION, and $CRATE $VERSION with its $((${#NAMES[@]} - 2)) library crates"
+  echo "crates-io-publish: \`cargo install $CRATE\` now resolves to $VERSION"
+fi
