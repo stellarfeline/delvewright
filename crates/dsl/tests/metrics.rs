@@ -384,6 +384,22 @@ fn the_cell_rule_agrees_with_a_swept_body_box() {
     // The box is 3x5x3; the reach is one cell of shell on every axis, which is
     // 5x7x5 — stated as a number so a rule that silently widened would red here.
     assert_eq!(reached, 5 * 7 * 5);
+    // …and the shell is the whole of what this rule adds. The reading it
+    // replaces — cell containment, which is what both `applyLethalExclusion` and
+    // `choose_anchor` used — answers about 3 * 5 * 3 cells, so a rule that
+    // collapsed back to it would lose 130 of the 175 and red here.
+    let contained = |c: [i32; 3]| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]);
+    let mut both = 0usize;
+    for x in -1..=5 {
+        for y in 61..=69 {
+            for z in 0..=6 {
+                if contained([x, y, z]) {
+                    both += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(both, 3 * 5 * 3);
     // The cell the gallery's compiler used to choose as the west pit's stake
     // anchor, and the cell the bot really died in on three ladder runs.
     assert!(selector_reaches_body_in_cell(lo, hi, [1, 65, 5]));
