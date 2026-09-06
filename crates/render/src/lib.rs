@@ -3,25 +3,15 @@
 //! spike-render-fidelity spike.
 //!
 //! This crate is what `nucleation`/`wgpu` reaches, and that is the whole reason
-//! it is a crate of its own. ADR-0021 §1 moved the CPU render surface —
-//! `viewer`, `scene`, `panorama`, `contact-sheet`, `index`, `palette` — into
-//! `delvec`, so a creator installs one binary and nothing render-shaped is a
-//! second download. What stayed behind is `piece`, `batch` and `fidelity-gate`,
-//! the three arms that mesh and rasterise.
-//!
-//! **They stayed for a distribution reason, never a capability one** (ADR-0021
-//! §3). The shelf's Linux targets are static-musl on purpose, and three separate
-//! things block a GPU arm there: a fully static binary cannot `dlopen` a Vulkan
-//! loader, `nucleation` carries a C build script with no musl cross-compiler in
-//! the release recipe, and the shelf's linker has no `libdl.a` to resolve
-//! `-ldl` against. So these arms are built from a checkout instead — which takes
-//! nothing away, because the source build is what guarantees a creator can run
-//! every validation the pipeline needs, and the skill's `Init` section builds
-//! this crate at the step that needs it rather than letting the step degrade.
+//! it is a crate of its own: the CPU render surface — `viewer`, `scene`,
+//! `panorama`, `contact-sheet`, `index`, `palette` — lives in the compiler
+//! library and reaches no GPU, while `piece`, `batch` and `fidelity-gate`, the
+//! three arms that mesh and rasterise, live here. Both halves are subcommands of
+//! the one binary (ADR-0023 §3): this crate's [`cli`] mounts as `delvec render`.
 //!
 //! - [`render`] — headless GPU render wrapper (Nucleation / wgpu), and the one
 //!   place a parsed structure becomes a `UniversalSchematic`.
-//! - [`shots`] — per-piece shot planner (`delve-render piece`).
+//! - [`shots`] — per-piece shot planner (`delvec render piece`).
 //! - [`view`] — author-declared cameras (`piece --view`): a bearing and a
 //!   subject box, in the language `<stem>-shots.json` already writes back. It
 //!   aims ONE still frame the renderer then bakes, where `delvec viewer` hands
@@ -46,6 +36,7 @@
 /// names it. `is_featureless` and `is_magenta` are pure pixel math with no GPU
 /// in them, and the CPU arms produce frames that need the same verdicts.
 pub use delvewright_compiler::view::detect;
+pub mod cli;
 pub mod fidelity;
 pub mod occupancy;
 pub mod render;

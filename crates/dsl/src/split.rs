@@ -6,8 +6,8 @@
 //! dimensions, per-part sizes and zone-local offsets, and every consumer
 //! reassembles losslessly from that manifest.
 //!
-//! Two producers write tilings — `delve-schem convert` for an oversize `.schem`
-//! import, and `delve-grammar expand` for a zone whose expansion outgrows one
+//! Two producers write tilings — `delvec schem convert` for an oversize `.schem`
+//! import, and `delvec grammar expand` for a zone whose expansion outgrows one
 //! template — and they call the same [`plan_split`], so a volume tiles the same
 //! way whichever door it came in by. [`TileSet`] is the manifest contract
 //! itself: one struct, `Serialize` for the producers and `Deserialize` for the

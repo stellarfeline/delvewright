@@ -41,7 +41,7 @@ flowchart TD
     HB --> WS
     SH --> IN
     HB --> IN
-    IN[["Init — six binaries over two target dirs,<br/>client jar, Chunky, reference-image path,<br/>content symlink"]]
+    IN[["Init — one binary, delvec,<br/>client jar, Chunky, reference-image path,<br/>content symlink"]]
     IN --> PM{areas[] or site plan?}
     PM --> WS
     WS[["1 · workspace in the CONTENT repo<br/>campaigns/campaigns/id/<br/>documents + GENERATION.md + DESIGN.md"]]
@@ -158,7 +158,7 @@ something it does not check is how a green run ships a broken delve.
 
 | # | Gate | Proves | Does **not** prove |
 |---|---|---|---|
-| 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/refimg.py`. A render is a candidate prefab imaged by `delve-render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
+| 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/refimg.py`. A render is a candidate prefab imaged by `delvec render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
 | 7 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
 | 8 | `delvec build` | the DSL compiles to a datapack | nothing about play |
 | 9 | the walk | somebody has stood in the world — scale, route legibility, silhouette; and the staging gate has run, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign — an `UNBOUND` row on a campaign that contains none of the objects it is about is a fact about the ledger, not about the delve |

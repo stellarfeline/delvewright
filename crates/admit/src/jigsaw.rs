@@ -12,7 +12,7 @@
 //! Resolution replaces each jigsaw cell with exactly the `final_state` the vanilla
 //! generator would have baked in — the intended primitive, not a workaround (no
 //! raycast/heuristic; the block is read straight off the block entity). This must
-//! run **at import, before** `delve-admit socket` carves *our* sockets (our
+//! run **at import, before** `delvec prefab socket` carves *our* sockets (our
 //! sockets are jigsaw blocks too, with `final_state` = air; resolving after
 //! carving would dissolve them).
 //!

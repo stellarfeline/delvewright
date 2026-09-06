@@ -1,4 +1,4 @@
-//! Diagnostics for `delve-schem`, mirroring the compiler's `DWxxxx` /
+//! Diagnostics for `delvec schem`, mirroring the compiler's `DWxxxx` /
 //! one-JSON-object-per-line convention (spec-0002). spec-0007 owns the `DW07xx`
 //! range. Diagnostics go to stderr so stdout stays reserved for the
 //! `--palette-report` audit output.

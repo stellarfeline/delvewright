@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# ADR-0017: build ONE release-shelf artifact for `delvec`, or cross-CHECK the
-# whole shelf.
+# ADR-0017 / ADR-0023: build ONE release-shelf artifact for `delvec`, or
+# cross-CHECK the whole shelf.
 #
 # WHY THIS IS A SCRIPT AND NOT WORKFLOW YAML
 #
@@ -18,6 +18,10 @@
 #   dist/delvec-v<version>-<target>.tar.gz        binary + LICENSE
 #   dist/delvec-v<version>-<target>.tar.gz.sha256 the checksum line for it
 #
+# The binary is the WHOLE creator (ADR-0023 §3): compiler, prefab authoring and
+# admission, schematic conversion, playtest harvesting, and both the CPU and the
+# GPU render arms. Nothing is a second download and no cargo feature narrows it.
+#
 # `.tar.gz` for EVERY target including Windows, on purpose: one archive format is
 # one extraction path for ADR-0014's future bootstrap, and a per-OS format branch
 # is somewhere for the shelf to end up half-built. Windows 10 1803+ ships bsdtar;
@@ -32,6 +36,12 @@
 # COMPILER'S OUTPUT (datapack + world), not about our own build artifacts. What
 # binds a download to a release is the published sha256, which is emitted here
 # and asserted by the release workflow.
+#
+# LINUX IS GNU (ADR-0023 §4). The binary links glibc dynamically, so it carries a
+# glibc floor: the newest `GLIBC_x.y` symbol version it references, which is a
+# property of the runner that built it. The floor is MEASURED off the ELF and
+# printed by `build_one`, never promised; a creator on an older distro builds
+# from source, which is the guaranteed path (ADR-0023 §2).
 #
 # Usage:
 #   tools/build-release-binaries.sh --list-targets
@@ -97,82 +107,45 @@ sha256_line() { # <file>
 #   -C strip=symbols  a downloaded binary carries no debug symbols; the debug
 #                     build in `target/` is untouched, and a backtrace from a
 #                     release binary was never going to be useful without the
-#                     matching source anyway.
-#                     MEASURED (2026-08-11, aarch64-apple-darwin, rustc 1.97.1):
-#                     9,794,464 B -> 7,917,536 B built at 922cfb6, the commit
-#                     that first wrote this comment. It claimed "11.7 MB -> ~4 MB
-#                     per target", which was never true of any target — the
-#                     smallest v1.1.0 shelf artifact is 7,923,608 B. Corrected
-#                     rather than deleted, because the wrong figure was the only
-#                     statement in the repo about how big `delvec` is. Full
-#                     inventory + causes: docs/reference/distribution-size.md.
+#                     matching source anyway. NOTE this flag lives HERE and not
+#                     in `[profile.release]`, so `cargo install delvec` hands
+#                     out an UNstripped binary. That is a deliberate trade — a
+#                     repo-wide `strip` would take symbols off every developer's
+#                     `cargo build --release` — and it is recorded, not hidden
+#                     (docs/reference/distribution-size.md).
 #
-#                     NOTE this flag lives HERE and not in `[profile.release]`,
-#                     so `cargo install delvec` hands out an UNstripped binary
-#                     (10,012,928 B vs the shelf's 8,053,424 B at v1.1.0). That
-#                     is a deliberate trade — a repo-wide `strip` would take
-#                     symbols off every developer's `cargo build --release` —
-#                     and it is recorded, not hidden (distribution-size.md §6.1).
-#
-#   -C linker=rust-lld (musl only)  `*-linux-musl` normally wants `musl-gcc`,
-#                     which means an apt step on the runner and NOTHING on a
-#                     macOS workstation — the shelf would be un-buildable on the
-#                     owner's own dev machine, which is the "works on my machine"
-#                     shape CLAUDE.md's Environments section forbids. rustup
-#                     already ships `rust-lld` and a self-contained musl libc,
-#                     and `delvec`'s dependency set is pure Rust (flate2 on the
-#                     miniz_oxide backend), so lld links it directly. MEASURED
-#                     2026-08-06: cross-linked from macOS/aarch64 to
-#                     x86_64-unknown-linux-musl, `static-pie linked`, no apt, no
-#                     cross-gcc, no container.
+# No target needs a linker flag: every Linux target is built natively on a
+# runner of its own architecture (engine-release.yml), darwin links both slices
+# on the macOS runner, and msvc links on the Windows runner.
 target_rustflags() { # <triple>
-  local flags="-C strip=symbols"
-  case "$1" in
-    *-linux-musl)
-      local sysroot host
-      sysroot="$(rustc --print sysroot)"
-      host="$(rustc -vV | sed -n 's/^host: //p')"
-      flags="$flags -C linker=$sysroot/lib/rustlib/$host/bin/rust-lld -C linker-flavor=ld.lld"
-      ;;
-  esac
-  printf '%s' "$flags"
+  printf '%s' "-C strip=symbols"
 }
 
-# A musl artifact that quietly acquired a dynamic interpreter is no longer the
-# "runs on any Linux" binary the shelf promises, and the promise would fail on a
-# stranger's machine rather than here. The exact invariant is "this ELF has no
-# PT_INTERP program header", so it is read out of the ELF header directly rather
-# than pattern-matched on `file`'s prose (which is not a stable interface, and
-# `file` is not on every runner).
-assert_no_dynamic_interpreter() { # <binary>
-  python3 - "$1" <<'PY'
-import sys, struct
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
-path = sys.argv[1]
-with open(path, "rb") as fh:
-    data = fh.read()
-if data[:4] != b"\x7fELF":
-    sys.exit(f"{path}: not an ELF file — a musl shelf artifact must be one")
-is64, little = data[4] == 2, data[5] == 1
-end = "<" if little else ">"
-if not is64:
-    sys.exit(f"{path}: 32-bit ELF; every shelf target is 64-bit")
-e_phoff, = struct.unpack_from(end + "Q", data, 0x20)
-e_phentsize, e_phnum = struct.unpack_from(end + "HH", data, 0x36)
-PT_INTERP = 3
-for i in range(e_phnum):
-    p_type, = struct.unpack_from(end + "I", data, e_phoff + i * e_phentsize)
-    if p_type == PT_INTERP:
-        sys.exit(f"{path}: has a PT_INTERP dynamic interpreter — not statically linked")
-print(f"  ok   no PT_INTERP in {e_phnum} program headers (statically linked)")
-PY
+# The glibc floor a Linux artifact actually carries, read off the ELF's
+# versioned symbol references rather than promised from the runner's name. A
+# floor that cannot be measured is a refusal, not a blank: a downloaded binary
+# that fails on a stranger's machine is the exact moment this line exists for.
+print_glibc_floor() { # <binary>
+  command -v objdump >/dev/null 2>&1 || {
+    echo "build-release-binaries: objdump is not on PATH, so the glibc floor of $1 cannot be measured" >&2
+    exit 1
+  }
+  local floor
+  floor="$( { objdump -T "$1" || true; } | grep -o 'GLIBC_[0-9][0-9.]*' | sort -t_ -k2,2V | uniq | tail -1)"
+  if [ -z "$floor" ]; then
+    echo "build-release-binaries: $1 references no GLIBC_* symbol version — not the gnu binary the shelf promises" >&2
+    exit 1
+  fi
+  printf '  ok   glibc floor of %s: %s (newest versioned symbol the binary references)\n' "$(basename "$1")" "$floor"
 }
 
-# ------------------------------------------------- ADR-0021 §1: the surface is
-# unconditional code. A cargo feature would ship a same-name-different-capability
-# binary — an artifact whose name promises a surface its bytes may not carry —
-# and nothing else in this repo would notice, because every test builds with the
-# same feature set. So the rule is asserted here, where the artifact is made.
+# ------------------------------------------------- ADR-0021 §1 / ADR-0023 §3:
+# the surface is unconditional code. A cargo feature would ship a
+# same-name-different-capability binary — an artifact whose name promises a
+# surface its bytes may not carry — and nothing else in this repo would notice,
+# because every test builds with the same feature set. So the rule is asserted
+# here, where the artifact is made, over EVERY crate whose clap types the binary
+# mounts.
 #
 # This half needs no binary and therefore runs for EVERY target, cross or not.
 assert_no_feature_gated_surface() {
@@ -180,24 +153,24 @@ assert_no_feature_gated_surface() {
 import pathlib, re, sys
 sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 root = pathlib.Path(sys.argv[1])
-src = root / "crates" / "compiler" / "src"
 # A clap item is a `#[derive(Parser)]`/`#[derive(Subcommand)]` type or anything
 # inside one. A feature gate ANYWHERE in those files could remove a subcommand,
 # a variant or a flag, so the rule is the file, not a line-by-line adjacency
 # guess that a reformat would slip past.
 CLAP = re.compile(r"#\[derive\((?:[^)]*\b(?:Parser|Subcommand|Args|ValueEnum)\b[^)]*)\)\]")
 GATE = re.compile(r"#\[(?:cfg|cfg_attr)\(\s*(?:[^)]*\b)?feature\s*=")
-examined, findings = 0, []
-for f in sorted(src.rglob("*.rs")):
+examined, findings, crates = 0, [], set()
+for f in sorted((root / "crates").glob("*/src/**/*.rs")):
     text = f.read_text(encoding="utf-8")
     if not CLAP.search(text):
         continue
     examined += 1
+    crates.add(f.relative_to(root / "crates").parts[0])
     for i, line in enumerate(text.splitlines(), 1):
         if GATE.search(line):
             findings.append(f"{f.relative_to(root)}:{i}: {line.strip()}")
 if examined == 0:
-    print("  FAIL no file in crates/compiler/src declares a clap type — this "
+    print("  FAIL no file under crates/*/src declares a clap type — this "
           "check examined nothing, which is a vacuous pass, not a pass")
     raise SystemExit(1)
 for hit in findings:
@@ -205,13 +178,15 @@ for hit in findings:
 if findings:
     raise SystemExit(1)
 print(f"  ok   no cargo feature gates any subcommand ({examined} clap-bearing "
-      f"file(s) examined)")
+      f"file(s) examined across {len(crates)} crate(s))")
 PY
 }
 
 # The other half: the BUILT binary lists exactly the subcommands the source
-# declares. Executable only on the host's own triple, like the `--version` check
-# below; on a cross build it says so by name rather than passing quietly.
+# declares — at the top level, and inside every mounted group (`delvec grammar
+# --help` lists exactly the grammar verbs, and so on). Executable only on the
+# host's own triple, like the `--version` check below; on a cross build it says
+# so by name rather than passing quietly.
 assert_help_matches_source() { # <binary>
   python3 - "$ROOT" "$1" <<'PY'
 import importlib.util, pathlib, re, subprocess, sys
@@ -219,7 +194,7 @@ sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-new
 root, binary = pathlib.Path(sys.argv[1]), sys.argv[2]
 
 # ONE parser. `tools/lib/clap_surface.py` reads the clap surface out of the
-# crate's sources for every gate that asks — here, and in the campaigns
+# crates' sources for every gate that asks — here, and in the campaigns
 # repository, which vendors that file byte-for-byte. A second copy would be a
 # mirror that drifts, which is the defect this project names rather than a
 # saving.
@@ -227,42 +202,60 @@ spec = importlib.util.spec_from_file_location(
     "clap_surface", root / "tools" / "lib" / "clap_surface.py")
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
-main_rs = root / "crates" / "compiler" / "src" / "main.rs"
+# The binary's own `main.rs` first — its `Cli` is the root — then every crate's
+# sources, since the mounted surfaces are declared in their own crates.
+main_rs = root / "crates" / "delvec" / "src" / "main.rs"
 sources = [main_rs.read_text(encoding="utf-8")]
 sources += [f.read_text(encoding="utf-8")
-            for f in sorted(main_rs.parent.rglob("*.rs")) if f != main_rs]
-declared = set(gate.parse_cli("\n".join(sources))[0])
+            for f in sorted((root / "crates").glob("*/src/**/*.rs")) if f != main_rs]
+source = "\n".join(sources)
+declared = set(gate.parse_cli(source)[0])
+groups = gate.parse_groups(source)
 
-out = subprocess.run([binary, "--help"], capture_output=True, text=True).stdout
-block, built = False, set()
-for line in out.splitlines():
-    if line.startswith("Commands:"):
-        block = True
-        continue
-    if block:
-        if re.match(r"^[A-Za-z].*:$", line):
-            break
-        m = re.match(r"^  ([a-z][a-z0-9-]*)\s", line)
-        if m and m.group(1) != "help":
-            built.add(m.group(1))
+def built_commands(args):
+    out = subprocess.run([binary, *args, "--help"], capture_output=True, text=True).stdout
+    block, built = False, set()
+    for line in out.splitlines():
+        if line.startswith("Commands:"):
+            block = True
+            continue
+        if block:
+            if re.match(r"^[A-Za-z].*:$", line):
+                break
+            m = re.match(r"^  ([a-z][a-z0-9-]*)\s", line)
+            if m and m.group(1) != "help":
+                built.add(m.group(1))
+    return built
 
-if not built:
-    print("  FAIL the built binary lists no subcommands — this check examined "
-          "nothing, which is a vacuous pass")
+def compare(label, declared, built):
+    if not built:
+        print(f"  FAIL {label} lists no subcommands — this check examined "
+              "nothing, which is a vacuous pass")
+        return False
+    missing, extra = sorted(declared - built), sorted(built - declared)
+    if missing:
+        print(f"  FAIL the source declares {missing} under {label} but the built "
+              f"binary does not offer them — the artifact's name promises a "
+              f"surface its bytes do not carry")
+    if extra:
+        print(f"  FAIL {label} offers {extra}, which the source parse does not "
+              f"know about — the parser has fallen behind the CLI")
+    return not (missing or extra)
+
+ok = compare("the built binary", declared, built_commands([]))
+n_verbs = 0
+for group, verbs in sorted(groups.items()):
+    ok = compare(f"`delvec {group}`", verbs, built_commands([group])) and ok
+    n_verbs += len(verbs)
+if not groups:
+    print("  FAIL the source parse found no mounted group — the binary is "
+          "expected to mount grammar, prefab, schem and render surfaces")
+    ok = False
+if not ok:
     raise SystemExit(1)
-missing = sorted(declared - built)
-extra = sorted(built - declared)
-if missing:
-    print(f"  FAIL the source declares {missing} but the built binary does not "
-          f"offer them — the artifact's name promises a surface its bytes do "
-          f"not carry")
-if extra:
-    print(f"  FAIL the built binary offers {extra}, which the source parse does "
-          f"not know about — the parser has fallen behind the CLI")
-if missing or extra:
-    raise SystemExit(1)
-print(f"  ok   built binary offers exactly the {len(built)} subcommand(s) the "
-      f"source declares")
+print(f"  ok   built binary offers exactly the {len(declared)} top-level "
+      f"subcommand(s) the source declares, and its {len(groups)} mounted "
+      f"group(s) exactly their {n_verbs} verb(s)")
 PY
 }
 
@@ -274,8 +267,8 @@ PY
 #
 # What this catches is the decay that would otherwise surface only at release
 # time, with the tag already pushed: a new dependency that does not build for
-# musl / msvc / darwin. Build scripts DO run under `cargo check`, so a dep that
-# drags in a C toolchain fails here too.
+# gnu / msvc / darwin. Build scripts DO run under `cargo check`, so a dependency
+# whose build script needs a C toolchain for the target fails here too.
 check_only() {
   local failed=0
   # ADR-0021 §1, and it is bound to BOTH entry points on purpose: a check that
@@ -321,7 +314,7 @@ build_one() { # <triple>
   local bin="$ROOT/target/$t/release/delvec$exe"
   [ -f "$bin" ] || { echo "build-release-binaries: no binary at $bin" >&2; exit 1; }
 
-  case "$t" in *-linux-musl) assert_no_dynamic_interpreter "$bin" ;; esac
+  case "$t" in *-linux-gnu) print_glibc_floor "$bin" ;; esac
 
   assert_no_feature_gated_surface
 

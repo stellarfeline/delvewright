@@ -4,7 +4,7 @@
 //! The idiom index ([`super::idioms`]) is a curated set of *techniques* and
 //! grows only when an authoring trial fails for want of one. This is the other
 //! set: every IR construct owes the corpus at least one example an author can
-//! reach with `delve-grammar show`, because the corpus is what an author reads
+//! reach with `delvec grammar show`, because the corpus is what an author reads
 //! instead of the schema. Negating a guard is a language feature, not a way of
 //! building anything, so it earns an example here and no entry there.
 //!

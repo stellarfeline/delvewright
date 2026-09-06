@@ -14,7 +14,7 @@
 //! **Why it lives in `delvec` rather than beside the GPU arms.** ADR-0021 §1
 //! puts the shared render surface here — the structure reader, the
 //! prefab-metadata projection and the `DW072x`/`DW079x` catalog are ONE
-//! definition and `delve-render` names them. This is the same kind of thing:
+//! definition and `delvec render` names them. This is the same kind of thing:
 //! "does this frame show anything" is a question about pixels, not about who
 //! rasterised them, and the CPU arms produce frames too. Leaving it in the GPU
 //! crate meant any consumer outside that workspace had to reach past a pinned

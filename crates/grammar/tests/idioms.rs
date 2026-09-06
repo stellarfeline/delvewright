@@ -129,7 +129,7 @@ fn cells(size: [u32; 3]) -> impl Iterator<Item = [i32; 3]> {
 ///
 /// The binding count is asserted rather than only the verdict: a gate that
 /// looked at zero objects is not a pass (CLAUDE.md), and the two always-on gates
-/// plus the opt-in walk are exactly what `delve-grammar expand` prints, so this
+/// plus the opt-in walk are exactly what `delvec grammar expand` prints, so this
 /// is the same verdict an author reading the reference will get.
 #[test]
 fn every_documented_example_expands_green_at_its_documented_region() {
@@ -200,7 +200,7 @@ fn the_registry_and_the_documented_table_agree_in_both_directions() {
 }
 
 /// ADR-0006 over the teaching set: same program, same region, same seed, same
-/// bytes — and the JSON an author copies out of `delve-grammar show` expands to
+/// bytes — and the JSON an author copies out of `delvec grammar show` expands to
 /// the same model as the Rust it came from.
 #[test]
 fn every_documented_example_is_deterministic_and_survives_json() {
@@ -968,7 +968,7 @@ fn the_composition_demonstration_carries_the_idioms_it_names() {
 /// `any_of` and the shape of a sentence starting with *unless*.
 ///
 /// `negated_guard` is in the corpus because every IR construct owes
-/// `delve-grammar list` an example; it is **not** in the idiom index, because
+/// `delvec grammar list` an example; it is **not** in the idiom index, because
 /// negating a guard is a language feature and not a way of building anything
 /// (spec-0033 §4.8). The claim asserted here is only that the guard means what
 /// it says, from both sides.

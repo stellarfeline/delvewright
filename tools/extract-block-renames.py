@@ -11,7 +11,7 @@ Why this exists
 
 The game datafixes every structure ``.nbt`` it loads against the ``DataVersion``
 the file declares, so a pre-pin template naming ``minecraft:chain`` loads
-``minecraft:iron_chain`` and is correct. Two checks in ``delve-admit audit`` then
+``minecraft:iron_chain`` and is correct. Two checks in ``delvec prefab audit`` then
 disagreed about it: the spelling rule (``DW0734``) passed it as a warning because
 the fixer handles it, and the palette allowlist (``DW0730``) refused it in the
 next breath, because the allowlist is a list of names AT THE PIN and was being

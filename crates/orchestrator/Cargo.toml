@@ -1,15 +1,17 @@
 [package]
 name = "delvewright-orchestrator"
-version = "0.0.0"
-edition = "2024"
-publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Playtest harvesting for Delvewright: a server log plus the creator overlay's layout manifest in, a versioned playtest report out — mounted as `delvec harvest`."
+readme = "README.md"
 
-# `delve-harvest` (spec-0006 M2): parse a playtest server log + the creator
+# `delvec harvest` (spec-0006 M2): parse a playtest server log + the creator
 # overlay's layout manifest into a versioned `playtest-report.json`. The
-# orchestrator's first real job (ADR-0012 thin-glue role).
-[[bin]]
-name = "delve-harvest"
-path = "src/main.rs"
+# orchestrator's first real job (ADR-0012 thin-glue role). The command line is
+# `cli`, mounted by the `delvec` binary (ADR-0023 §3).
 
 [lib]
 path = "src/lib.rs"

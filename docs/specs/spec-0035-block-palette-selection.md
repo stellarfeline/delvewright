@@ -11,12 +11,12 @@
   sandstone-family).
 - **Depends on**: spec-0027 §4 (palette-role budget, 60/30/10 per material
   family — approved, **not built**, and it does not define "material family").
-- **Builds on**: `tools/block-appearance.py`, `delve-render contact-sheet`.
+- **Builds on**: `tools/block-appearance.py`, `delvec render contact-sheet`.
 
 ## 1. The problem, stated precisely
 
 Palette choice fails in a way no existing check sees. Every wrong block in both
-defects was a legal id, existed in 1.21.11, passed `delve-admit`, compiled
+defects was a legal id, existed in 1.21.11, passed `delvec prefab`, compiled
 deterministically and rendered without a diagnostic. The failure is entirely in
 *appearance*, and appearance had exactly one machine surface: a ranked list of
 nearest mean colours.
@@ -79,7 +79,7 @@ leaf is visual.
 
 Measured, not assumed. Sources are already-pinned: the misode/mcmeta 1.21.11
 summary route (`crates/compiler/data/PROVENANCE.md`) and the EULA-gated client
-jar (`versions.toml [render]`, resolved as `delve-render` resolves it).
+jar (`versions.toml [render]`, resolved as `delvec render` resolves it).
 
 ### 3.1 Classification — no jar needed
 
@@ -87,7 +87,7 @@ jar (`versions.toml [render]`, resolved as `delve-render` resolves it).
 |---|---|---|
 | **form** — full cube / slab / stair / wall / fence / door / trapdoor / button / pressure plate / sign / pane | vanilla block tags (`#slabs`, `#stairs`, `#walls`, `#fences`, `#doors`, `#trapdoors`, `#buttons`, `#pressure_plates`, `#signs`, …) + blockstate property signature from `blocks-1.21.11.json` | 204 block tags exist in 1.21.11; the form tags are complete for their families |
 | **family** — material derivation group | connected components of the recipe graph: `stonecutting` ∪ `smelting` ∪ crafting recipes with exactly one block-valued ingredient | 1166 blocks → **806 families, 126 multi-member covering 486 blocks**, largest 20 (deepslate), no runaway merge. Probes: sandstone → 11 (sand, cut/smooth/chiseled, slabs, stairs, wall); diorite → 7; deepslate → 20; **calcite → 1**; `dried_kelp_block` → 1 |
-| **gravity** | the set `delve-admit`/`DW0313` already owns (`sand`, `gravel`, `concrete_powder`, anvils, `dragon_egg`) | in-repo, reuse — do not re-derive |
+| **gravity** | the set `delvec prefab`/`DW0313` already owns (`sand`, `gravel`, `concrete_powder`, anvils, `dragon_egg`) | in-repo, reuse — do not re-derive |
 | **technical / never-a-material** | `TECHNICAL` in `tools/block-appearance.py` | in-repo, reuse |
 | **biome-tinted** | `TINTED_*` in `tools/block-appearance.py` | in-repo, reuse |
 
@@ -252,7 +252,7 @@ Two visual stages, not one, and they are different questions:
 
 - **swatch sheet** — "is this the material?" (pattern, scale, how the mix reads
   as a field). Cheap, always run, no jar-side cost beyond the table.
-- **`delve-render` piece/contact-sheet** — "is this the building?" (the palette
+- **`delvec render` piece/contact-sheet** — "is this the building?" (the palette
   on the actual geometry, in light). Already built; needs GPU + jar; unchanged
   by this spec. The swatch sheet exists so that the expensive stage is not the
   first place a wrong material is discovered.

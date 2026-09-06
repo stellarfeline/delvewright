@@ -23,7 +23,7 @@
 //!
 //! A **reference image** is concept art drawn by an image model at the
 //! design-alignment gate (`tools/refimg.py`), before any prefab exists. A
-//! **render** is a candidate prefab imaged by `delve-render`, later, here. This
+//! **render** is a candidate prefab imaged by `delvec render`, later, here. This
 //! module consumes renders and, optionally, a score file measuring them against
 //! a reference. It never draws either one.
 //!
@@ -57,7 +57,7 @@ pub struct Candidate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Layout {
-    /// One subdirectory per candidate (`delve-render batch` output).
+    /// One subdirectory per candidate (`delvec render batch` output).
     PerCandidateDir,
     /// One PNG per candidate, flat in the directory.
     Flat,
@@ -65,7 +65,7 @@ pub enum Layout {
 
 /// Discover candidates under `dir`.
 ///
-/// Two layouts, chosen by what is actually there — `delve-render batch` writes
+/// Two layouts, chosen by what is actually there — `delvec render batch` writes
 /// one subdirectory of shots per prefab, while a hand-assembled set of picks is
 /// usually flat. If any immediate subdirectory holds a PNG, the sheet is built
 /// from subdirectories (one representative shot each) and loose top-level PNGs
@@ -134,7 +134,7 @@ pub fn discover(dir: &Path, shot: Option<&str>) -> Result<(Vec<Candidate>, Layou
             DW_INPUT,
             format!(
                 "no candidates under {}: expected one subdirectory of renders per candidate \
-                 (`delve-render batch` output) or a flat directory of `.png` renders",
+                 (`delvec render batch` output) or a flat directory of `.png` renders",
                 dir.display()
             ),
         ));
