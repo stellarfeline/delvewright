@@ -265,7 +265,7 @@ fn the_answer_dies_with_the_door() {
 #[test]
 fn a_barred_door_with_nothing_to_say_is_dw0429() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.19.0".to_string();
+    c.quests.dsl_version = "0.20.0".to_string();
     let diags = diagnostics(&c);
     let d = diags
         .iter()
@@ -310,7 +310,7 @@ fn a_barred_door_with_nothing_to_say_is_dw0429() {
 #[test]
 fn the_obligation_is_discharged_by_any_use_trigger_and_not_by_a_strike() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.19.0".to_string();
+    c.quests.dsl_version = "0.20.0".to_string();
     // The fixture already carries a `strike` answer on this very gate.
     assert!(
         diagnostics(&c).iter().any(|d| d.code == "DW0429"),
@@ -340,7 +340,7 @@ fn the_obligation_is_discharged_by_any_use_trigger_and_not_by_a_strike() {
 #[test]
 fn the_campaign_can_write_its_own_wrong_side_answer() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.19.0".to_string();
+    c.quests.dsl_version = "0.20.0".to_string();
     c.quests.content.triggers.push(authored_answer());
     assert!(
         diagnostics(&c).is_empty(),
@@ -367,7 +367,7 @@ fn the_campaign_can_write_its_own_wrong_side_answer() {
 /// 0.11 campaign that bars a door must have.
 fn answered_fixture() -> Campaign {
     let mut c = fixture();
-    c.quests.dsl_version = "0.19.0".to_string();
+    c.quests.dsl_version = "0.20.0".to_string();
     c.quests.content.triggers.push(authored_answer());
     assert!(
         diagnostics(&c).is_empty(),
@@ -400,7 +400,7 @@ fn authored_answer() -> EnvTrigger {
 #[test]
 fn a_presser_answer_on_a_left_click_is_dw0427() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.19.0".to_string();
+    c.quests.dsl_version = "0.20.0".to_string();
     let mut t = authored_answer();
     t.on = delvewright_dsl::TriggerOn::Strike;
     c.quests.content.triggers.push(t);
@@ -422,7 +422,7 @@ fn a_presser_answer_on_a_left_click_is_dw0427() {
 #[test]
 fn an_authored_trigger_in_the_reserved_namespace_is_dw0428() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.19.0".to_string();
+    c.quests.dsl_version = "0.20.0".to_string();
     let mut t = authored_answer();
     // The exact id `plan::press_answer_trigger_id` would mint for this door.
     t.id = delvewright_dsl::TriggerId("trigger/dw-press-door-inner-door".to_string());

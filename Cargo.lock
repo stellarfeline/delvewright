@@ -553,7 +553,7 @@ dependencies = [
 
 [[package]]
 name = "delvewright-dsl"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "jsonschema",
  "schemars",

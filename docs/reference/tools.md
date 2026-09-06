@@ -158,7 +158,10 @@ delvec allocation <campaign-dir> node/near-hall   # one place
 delvec allocation <campaign-dir> --all            # every place, in plan order
 ```
 
-**`delvec fmt` is a mandatory step, not a tidiness option.** Run it over the
+**`delvec fmt` is a mandatory step, not a tidiness option.** It also **writes
+the `dsl_version`**: every envelope comes out declaring the one number the
+engine implements, so adopting a campaign to a new surface is `delvec fmt` plus
+the edit the surface asks for. Run it over the
 campaign directory **after the last edit
 of a stage document or an l10n sidecar and before committing** — a three-key
 insertion into a non-canonical sidecar once produced a 103-insertion /

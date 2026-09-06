@@ -85,9 +85,11 @@ with no `extent` the crossing is the whole face, so the width is the face and
 both offsets default to `0`.
 
 **Defaults.** On a vertical face with along axis `L` (`1` for east/west,
-`0` for north/south): `at = (ext(a)[L] - w) div 2` and
-`meets = (ext(b)[L] - w) div 2`. On a horizontal face the same per axis with
-`[w_x, w_z]`. `div` rounds toward negative infinity.
+`0` for north/south): `at = max(0, (ext(a)[L] - w) div 2)` and
+`meets = max(0, (ext(b)[L] - w) div 2)`. On a horizontal face the same per
+axis with `[w_x, w_z]`. `div` rounds toward negative infinity; a crossing
+wider than its face centres at the corner, and whether it fits is `DW0829`'s
+or `DW0876`'s question, as before.
 
 **Placing `b` from a placed `a`** across face `F` of `a`:
 

@@ -157,12 +157,12 @@ crates = [
 # Bound both ways by validation/check-versions.sh: to the crate manifest, and to
 # `DSL_VERSION` in crates/dsl/src/envelope.rs.
 dsl_crate = "delvewright-dsl"
-dsl_crate_version = "0.19.0"
+dsl_crate_version = "0.20.0"
 
 # The engine crates' `delvewright-dsl` requirement (`[workspace.dependencies]`)
 # is `=` and exactly this version, so one engine version on crates.io resolves
 # to exactly one `delvewright-dsl` build and no other.
-dsl_crate_req = "=0.19.0"
+dsl_crate_req = "=0.20.0"
 
 # `rust-version` in both published manifests, and the channel in
 # rust-toolchain.toml. They must be the same string: a `rust-version` looser than

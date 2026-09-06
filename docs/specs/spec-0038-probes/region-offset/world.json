@@ -15,6 +15,6 @@
     "theme": "A keep whose two landings are joined by one cage on a chain.",
     "title": "Probe: a region one block below its anchor"
   },
-  "dsl_version": "0.10.0",
+  "dsl_version": "0.20.0",
   "stage": "world"
 }
