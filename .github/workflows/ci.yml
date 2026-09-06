@@ -49,6 +49,36 @@ jobs:
       - name: every pin is declared
         run: python3 tools/check-pins.py
 
+  # The DSL crate's version IS the `dsl_version`, and it goes to crates.io off
+  # `main` rather than off a release tag (.github/workflows/dsl-crate-publish.yml).
+  # That makes "the number moved when the bytes moved" a property of every pull
+  # request, not of release day: a crates.io version is permanent, so a change to
+  # `crates/dsl` under a number the registry already serves is unpublishable
+  # forever and would be discovered by the hook, after the merge, with the fix
+  # being a second pull request.
+  #
+  # This asks the registry the same question the hook and the release path ask,
+  # through the same script and the same checksum comparison — absent -> fine,
+  # present with our exact bytes -> fine, present with DIFFERENT bytes -> refused,
+  # naming every place the number is written. `--only` makes it package the one
+  # crate it is judging, so this costs one small `cargo package` rather than the
+  # whole shelf.
+  #
+  # A JOB, not a step of `rust`: this one reaches the crates.io index over the
+  # network, and a registry outage should name itself rather than redden the
+  # tree's fmt/clippy/test verdict. Its name is a required status context —
+  # `.github/required-status-checks.txt`, held in lockstep by
+  # `tools/check-required-contexts.py`.
+  dsl-crate-version:
+    name: dsl crate version (crates.io)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "dsl-crate-version" }
+      - name: the dsl crate's number has moved if its bytes have
+        run: bash tools/crates-io-publish.sh --plan --only delvewright-dsl
+
   rust:
     name: rust (fmt, clippy, test)
     runs-on: ubuntu-latest
