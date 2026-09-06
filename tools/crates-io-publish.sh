@@ -19,19 +19,63 @@
 # those versions are burned. This script instead asks the registry what it
 # already holds:
 #
-#   * version absent               -> publish it
-#   * present, cksum == our bytes  -> SKIP; the previous run got that far
-#   * present, cksum != our bytes  -> HARD FAIL, by name. Something changed under
-#                                     a version already served. crates.io will
-#                                     never accept the new bytes and pretending
-#                                     otherwise would ship a `delvec` bound to a
-#                                     sibling crate nobody can reproduce.
+#   * version absent                  -> publish it
+#   * present, same crate             -> SKIP; the previous run got that far
+#   * present, a DIFFERENT crate      -> HARD FAIL, by name. Something changed
+#                                        under a version already served.
+#                                        crates.io will never accept the new
+#                                        bytes and pretending otherwise would
+#                                        ship a `delvec` bound to a sibling crate
+#                                        nobody can reproduce.
 #
-# The comparison is exact: the registry index publishes the sha256 of the
-# uploaded `.crate`, and `cargo package` output is byte-identical run to run
-# (MEASURED on cargo 1.97.1, 2026-08-06: two packagings of both crates produced
-# the same two sha256s), so "same version, same bytes" is a decidable question
-# rather than a guess.
+# "Same crate" is decided below, under PROVENANCE IS NOT CONTENT.
+#
+# PROVENANCE IS NOT CONTENT, AND THE SHA256 CANNOT TELL THEM APART
+#
+# The registry index publishes the sha256 of the uploaded `.crate`, and two
+# packagings of one tree produce the same tarball (MEASURED on cargo 1.97.1: two
+# runs at one commit, byte-identical). But `cargo package` writes
+# `.cargo_vcs_info.json` INTO the tarball, carrying the sha1 of the commit it
+# packaged from — so the tarball's own sha256 is a function of the COMMIT, not
+# of the crate. MEASURED, varying only that: `delvewright-dsl` 0.19.0 packaged
+# at two commits whose `crates/dsl`, root `Cargo.toml` and `Cargo.lock` are
+# byte-identical (`git diff` empty over all three) produced sha256
+# e51b1459…4df at f25dc13a and 7640e366…8ee at 46de7d60, and `diff -r` over the
+# two extracted trees reports EXACTLY ONE differing file: `.cargo_vcs_info.json`.
+#
+# On a release tag that never mattered — a re-run packages the same commit. It
+# matters completely for `delvewright-dsl`, which publishes off `main`: the next
+# push after a publish packages a different commit, so a byte comparison would
+# report "the same version with DIFFERENT bytes" and refuse, on every push,
+# forever, for a crate nobody had touched.
+#
+# So the question this script decides is the one that is actually being asked:
+# does the registry's tarball hold the SAME CRATE this tree packages?
+#
+#   * sha256 equal                          -> identical, decided and cheap
+#   * sha256 differs                        -> fetch the registry's own `.crate`
+#     (checking it against the index sha256 first, so a bad download can never
+#     read as "same") and compare the two archives FILE BY FILE, by content
+#   * every file matches but the ignored set -> the same crate; skip
+#   * any other file differs, is added or is removed -> HARD FAIL by name
+#
+# THE IGNORED SET IS TWO NAMES, CLOSED, AND THIS IS A LOOSENING — say so plainly:
+# a version whose `.cargo_vcs_info.json` or `Cargo.lock` differs is accepted here
+# where a byte comparison would refuse it.
+#
+#   `.cargo_vcs_info.json` — the commit the upload was cut from. It is a fact
+#     about a checkout, not about the crate; keeping it in the comparison is the
+#     defect above.
+#   `Cargo.lock` — the resolution of this crate's own dependency graph. A
+#     dependent NEVER reads a library's packaged lockfile, and the DSL crate's
+#     number is the `dsl_version`, which moves for a format change or a Rust-API
+#     change and for nothing else. Comparing it would demand a `dsl_version` bump
+#     — and a re-declaration in every campaign document — for a `cargo update`.
+#
+# Nothing else is ignored: `Cargo.toml` (the manifest crates.io serves, workspace
+# inheritance already resolved into it), `Cargo.toml.orig`, `README.md` and every
+# source, schema and data file are compared by content, and the comparison prints
+# how many files it examined on each side.
 #
 # INDEX PROPAGATION
 #
@@ -158,12 +202,94 @@ PY
   rm -f "$body_file"
 }
 
+# Where tools/check-publishable.sh packages, and where `--only` packages: its
+# verify target directory. One statement of the path, because two things read it.
+local_crate_path() { # <crate-name> <version>
+  printf '%s\n' "$ROOT/target/package-verify/package/$1-$2.crate"
+}
+
 local_cksum() { # <crate-name> <version>
-  # Where tools/check-publishable.sh packages: its verify target directory.
-  local f="$ROOT/target/package-verify/package/$1-$2.crate"
+  local f
+  f="$(local_crate_path "$1" "$2")"
   [ -f "$f" ] || { echo "crates-io-publish: no packaged tarball at $f — run tools/check-publishable.sh first" >&2; exit 2; }
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$f" | cut -d' ' -f1
   else shasum -a 256 "$f" | cut -d' ' -f1; fi
+}
+
+# The registry's own `.crate`, fetched and CHECKED against the index sha256
+# before a byte of it is believed. A download that is truncated, cached wrong or
+# served from somewhere else must never be read as "the same crate".
+fetch_registry_crate() { # <crate-name> <version> <expected-sha256> <dest-file>
+  curl -fsSL "https://static.crates.io/crates/$1/$1-$2.crate" -o "$4"
+  local got
+  if command -v sha256sum >/dev/null 2>&1; then got="$(sha256sum "$4" | cut -d' ' -f1)"
+  else got="$(shasum -a 256 "$4" | cut -d' ' -f1)"; fi
+  if [ "$got" != "$3" ]; then
+    echo "crates-io-publish: the .crate downloaded for $1 $2 hashes $got, but the index says $3." >&2
+    echo "  Nothing below can be decided from bytes the registry does not vouch for. Refusing." >&2
+    exit 1
+  fi
+}
+
+# Same crate or not: every file in both archives compared by content, with the
+# two provenance names ignored (see PROVENANCE IS NOT CONTENT above). Prints the
+# verdict and the counts; returns 0 = same crate, 1 = a different crate.
+compare_crate_contents() { # <ours.crate> <theirs.crate> <crate-name> <version>
+  python3 - "$1" "$2" "$3" "$4" <<'PY'
+import hashlib, posixpath, sys, tarfile
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+
+ours, theirs, name, vers = sys.argv[1:5]
+# Closed and named. Neither is content a dependent can observe; every other
+# member of the archive is compared.
+IGNORED = {".cargo_vcs_info.json", "Cargo.lock"}
+
+
+def members(path):
+    """{path-inside-the-crate: sha256} for every regular file, top dir stripped."""
+    out = {}
+    with tarfile.open(path, "r:gz") as tf:
+        for m in tf:
+            if not m.isfile():
+                continue
+            rel = m.name.split("/", 1)[1] if "/" in m.name else m.name
+            rel = posixpath.normpath(rel)
+            fh = tf.extractfile(m)
+            out[rel] = hashlib.sha256(fh.read()).hexdigest() if fh else ""
+    return out
+
+
+a, b = members(ours), members(theirs)
+print(f"    ours {len(a)} file(s), registry {len(b)} file(s); "
+      f"{len(IGNORED)} name(s) ignored: {' '.join(sorted(IGNORED))}")
+if not a or not b:
+    print("    REFUSE  an archive with no files in it decides nothing")
+    raise SystemExit(1)
+
+diffs = []
+for rel in sorted(set(a) | set(b)):
+    if rel in IGNORED:
+        continue
+    if rel not in b:
+        diffs.append(f"only in ours:     {rel}")
+    elif rel not in a:
+        diffs.append(f"only in registry: {rel}")
+    elif a[rel] != b[rel]:
+        diffs.append(f"differs:          {rel}")
+
+compared = len(set(a) | set(b)) - len(IGNORED & (set(a) | set(b)))
+if compared == 0:
+    print("    REFUSE  0 files compared — the ignored set swallowed the archive")
+    raise SystemExit(1)
+if diffs:
+    print(f"    DIFFERENT {name} {vers}: {len(diffs)} of {compared} compared file(s) do not match")
+    for d in diffs[:20]:
+        print(f"      {d}")
+    if len(diffs) > 20:
+        print(f"      ... and {len(diffs) - 20} more")
+    raise SystemExit(1)
+print(f"    SAME {compared} file(s) compared, all identical; only provenance differs")
+PY
 }
 
 # BIND TEST — not a connectivity check.
@@ -247,27 +373,40 @@ while [ "$i" -lt "${#NAMES[@]}" ]; do
   elif [ "$remote" = "$mine" ]; then
     printf '  skip    %s %s (already published, byte-identical: %s)\n' "$n" "$v" "$mine"
   else
-    printf '  FAIL    %s %s is on crates.io with DIFFERENT bytes\n' "$n" "$v"
+    # The bytes differ, which on its own says nothing: `cargo package` stamps the
+    # commit into the tarball. Ask the registry for its own copy and compare the
+    # two archives file by file.
+    printf '  ?       %s %s is on crates.io with different BYTES; comparing CONTENTS\n' "$n" "$v"
     printf '            registry sha256 %s\n' "$remote"
     printf '            ours     sha256 %s\n' "$mine"
-    echo >&2
-    echo "crates-io-publish: $n $v cannot be republished — a crates.io version is permanent." >&2
-    if [ "$n" = "$DSL_CRATE" ]; then
-      # The DSL crate's version IS the dsl_version, so moving it moves four
-      # statements of one number that validation/check-versions.sh holds equal —
-      # and every campaign document that declares the old one. Nothing is re-tagged
-      # for it: .github/workflows/dsl-crate-publish.yml uploads it off `main`.
-      echo "  $DSL_CRATE $v must move. It is the dsl_version, so all four of these carry it:" >&2
-      echo "    crates/dsl/Cargo.toml            [package] version" >&2
-      echo "    crates/dsl/src/envelope.rs       SUPPORTED_DSL_VERSION" >&2
-      echo "    versions.toml                    [engine] dsl_crate_version" >&2
-      echo "    versions.toml                    [engine] dsl_crate_req (=<version>)" >&2
-      echo "  A format change bumps the minor, a Rust-API-only change bumps the patch." >&2
-      echo "  Push the bump to main and the publish hook uploads it; no tag is involved." >&2
+    theirs="$(mktemp)"
+    fetch_registry_crate "$n" "$v" "$remote" "$theirs"
+    same=0
+    compare_crate_contents "$(local_crate_path "$n" "$v")" "$theirs" "$n" "$v" || same=$?
+    rm -f "$theirs"
+    if [ "$same" -eq 0 ]; then
+      printf '  skip    %s %s (already published, same crate)\n' "$n" "$v"
     else
-      echo "  Bump [engine] version (and the root Cargo.toml [workspace.package] + [workspace.dependencies] it binds) in versions.toml and re-tag." >&2
+      printf '  FAIL    %s %s is on crates.io as a DIFFERENT crate\n' "$n" "$v"
+      echo >&2
+      echo "crates-io-publish: $n $v cannot be republished — a crates.io version is permanent." >&2
+      if [ "$n" = "$DSL_CRATE" ]; then
+        # The DSL crate's version IS the dsl_version, so moving it moves four
+        # statements of one number that validation/check-versions.sh holds equal.
+        # Nothing is re-tagged for it: .github/workflows/dsl-crate-publish.yml
+        # uploads it off `main`.
+        echo "  $DSL_CRATE $v must move. It is the dsl_version, so all four of these carry it:" >&2
+        echo "    crates/dsl/Cargo.toml            [package] version" >&2
+        echo "    crates/dsl/src/envelope.rs       SUPPORTED_DSL_VERSION" >&2
+        echo "    versions.toml                    [engine] dsl_crate_version" >&2
+        echo "    versions.toml                    [engine] dsl_crate_req (=<version>)" >&2
+        echo "  A format change bumps the minor, a Rust-API-only change bumps the patch." >&2
+        echo "  Push the bump to main and the publish hook uploads it; no tag is involved." >&2
+      else
+        echo "  Bump [engine] version (and the root Cargo.toml [workspace.package] + [workspace.dependencies] it binds) in versions.toml and re-tag." >&2
+      fi
+      exit 1
     fi
-    exit 1
   fi
   i=$((i + 1))
 done
