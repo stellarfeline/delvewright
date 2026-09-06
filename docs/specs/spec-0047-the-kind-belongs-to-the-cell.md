@@ -201,7 +201,7 @@ adoption obligation.
 6. **Determinism.** The double-expand suite extends over a mixed-kind region;
    the verdict is pure over (grid, resolved contract). *Vacuous if* the pair
    carries no mixed region — the new partition would never serialise.
-7. **One checker, two doors.** `delve-admit audit` agrees with `expand` on a
+7. **One checker, two doors.** `delvec prefab audit` agrees with `expand` on a
    piece whose contract carries a mixed-kind region — same bytes, same
    resolved contract, same verdict and enumeration. *Vacuous if* the
    admit-side fixture's regions are all kind-uniform.
@@ -213,7 +213,7 @@ adoption obligation.
 
 1. Checker: the per-cell classification, the enumeration breakdown, the
    anchors- and majority-gate re-keys; the fixtures of §7 in the same PR.
-2. `delve-admit` door parity (no metadata change — the contract block is
+2. `delvec prefab` door parity (no metadata change — the contract block is
    carried whole).
 3. Docs in the same PR: `grammar.md`'s `contract-no-body` row and the
    out-of-walk prose state the per-cell binding.

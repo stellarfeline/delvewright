@@ -1,0 +1,93 @@
+{
+  "campaign_id": "daylight-yard",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/hold-the-yard",
+          "verb": "learns"
+        },
+        "id": "quest/hold-the-yard",
+        "objectives": [
+          {
+            "happening": {
+              "text": "the party completes obj/muster",
+              "verb": "learns"
+            },
+            "id": "obj/muster",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          },
+          {
+            "after": [
+              "obj/muster"
+            ],
+            "happening": {
+              "text": "the party completes obj/purge",
+              "verb": "survives"
+            },
+            "hint": "Put the hollow garrison down where it stands.",
+            "id": "obj/purge",
+            "title": "Hold the Yard",
+            "type": "kill",
+            "wave": "wave/garrison"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/muster": [
+            {
+              "anchor": "anchor/door",
+              "happening": {
+                "text": "the gate at anchor/door opens",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            },
+            {
+              "happening": {
+                "text": "wave/garrison arrives",
+                "verb": "arrives"
+              },
+              "type": "spawn-wave",
+              "wave": "wave/garrison"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ],
+    "waves": [
+      {
+        "anchor": "anchor/exit",
+        "id": "wave/garrison",
+        "mobs": [
+          {
+            "count": 2,
+            "entity": "minecraft:zombie",
+            "name": "Hollow Footman"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.19.0",
+  "stage": "quests"
+}

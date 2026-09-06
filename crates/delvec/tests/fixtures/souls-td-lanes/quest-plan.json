@@ -1,0 +1,19 @@
+{
+  "campaign_id": "souls-td-lanes",
+  "content": {
+    "finale": "quest/hold-the-keep",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [],
+        "goal": "Break the warband walking the hall, and the drowned they summon.",
+        "id": "quest/hold-the-keep",
+        "mandatory": true,
+        "npcs": []
+      }
+    ]
+  },
+  "dsl_version": "0.19.0",
+  "stage": "quest-plan"
+}

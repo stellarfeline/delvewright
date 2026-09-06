@@ -37,7 +37,7 @@ Engine measured at `800c958e`; content library at `71ee2120` (its `main`).
 ### 1.1 The record
 
 `crates/dsl/src/registry.rs::Lighting` (re-exported by `delvewright_schem` and
-`delve-admit` — one authority) carries `profile`, `measured_min_light`,
+`delvec prefab` — one authority) carries `profile`, `measured_min_light`,
 `measured` (a date), `rationale`, `method`. A hand-written `Deserialize`
 enforces the one machine rule the record has: a measured profile carries
 `measured_min_light` + `measured`, an `unmeasured` one carries neither. The
@@ -50,7 +50,7 @@ the probe writes night figures.
 
 ### 1.2 The instrument already computes everything the gate needs
 
-`delve-admit lighting` (`crates/admit/src/light.rs`, `main.rs::run_lighting`)
+`delvec prefab lighting` (`crates/admit/src/light.rs`, `main.rs::run_lighting`)
 floods the piece at both ends of the engine's sky table and prints a
 machine-readable report carrying `profile`, `measured_min_light`,
 `min_light_daylight`, `dark_threshold`, `assumed_sky {profile_taken_at,
@@ -61,9 +61,9 @@ sentence and keeps only the night minimum as a number.
 
 ### 1.3 Nothing invokes the instrument
 
-Zero invocations of `delve-admit lighting` in this repository's workflows and
+Zero invocations of `delvec prefab lighting` in this repository's workflows and
 tools, and zero occurrences of `lighting` in the content repository's
-`tools/prefab-audit.py` (its per-PR gate runs `delve-admit audit` only). The
+`tools/prefab-audit.py` (its per-PR gate runs `delvec prefab audit` only). The
 only occurrences are doc lines (`docs/reference/prefab-procedure.md` §9,
 `tools.md`, `grammar.md`), and a doc line is not an invocation.
 
@@ -268,7 +268,7 @@ measured against the trees named there before being written down.
 2. `Lighting::taken` + §3.2 rules; the shared context shape moved to where
    the probe's report and `set_lighting_from_probe` both consume it; the
    canonical hash in the same authority.
-3. `delve-admit lighting --verify` (probe-and-compare; DW codes handed at
+3. `delvec prefab lighting --verify` (probe-and-compare; DW codes handed at
    dispatch, catalog rows and code-asserting tests per the DW-coverage rule).
 4. Library migration (content repository, sequenced against `87fa767`).
 5. The content-repo binding: verify joins the event that admits a record —

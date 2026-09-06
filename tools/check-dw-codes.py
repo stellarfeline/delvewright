@@ -54,8 +54,12 @@ one test in `crates/<crate>/tests/**/*.rs` or inside a `#[cfg(test)]` module in
 - a **symbolic** diagnostic-code constant (e.g. `pub const DW_STRIP: &str =
   "DW0700";`) referenced somewhere other than a `use` line. Symbol resolution is
   scoped per-crate: two crates may (and do) reuse a constant name for different
-  codes (`DW_INPUT` names `DW0710` in `delve-schem` and `DW0732` in
-  `delve-admit`), so a name resolves only against the crate that defines it.
+  codes (`DW_INPUT` names `DW0710` in `delvec schem` and `DW0732` in
+  `delvec prefab`), so a name resolves against the crate that defines it — the
+  test's own crate, or the crate a `use delvewright_<x>::…::NAME` line in that
+  test names. The second case is how `crates/delvec/tests/**` counts: the one
+  binary's tests assert every crate's codes, and they say which crate each
+  symbol comes from on the `use` line that imports it.
 
 What deliberately does **not** count, and why the matcher is shaped this way:
 
@@ -94,16 +98,13 @@ from lib import mdtable  # noqa: E402
 CODE_RE = re.compile(r"DW[0-9]{4}")
 # A diagnostic-code constant, in either shape the workspace uses:
 #
-#   pub const L10N_MISSING: DwCode = DwCode::every_version("DW0180");
-#   pub const DW_HAPPENING_MISSING: DwCode = DwCode::since("DW0481", 8);
+#   pub const L10N_MISSING: DwCode = DwCode::new("DW0180", ExitTier::Build);
 #   pub const DW_STRIP: &str = "DW0700";
 #
-# The `DwCode` form is the campaign-facing one: it carries the version at which
-# the rule starts binding a campaign (`dsl::diagnostic::Binds`), which is what
-# makes an unfenced obligation impossible to add. The bare `&str` form remains in
-# `delve-schem` / `delve-admit` / `delve-render`, whose diagnostics are about
-# prefabs, schematics and renders — artifacts that carry no `dsl_version`, so
-# there is nothing for a fence to grandfather against.
+# The `DwCode` form is the campaign-facing one: it carries the exit tier and the
+# subject of the rule. The bare `&str` form remains in `delvec schem` /
+# `delvec prefab` / `delvec render`, whose diagnostics are about prefabs,
+# schematics and renders.
 #
 # Matching BOTH is load-bearing, not tidiness: this regex is how a symbol name is
 # resolved to its code, so a form it does not know silently drops every code
@@ -111,7 +112,7 @@ CODE_RE = re.compile(r"DW[0-9]{4}")
 # exactly that — 20 codes reported uncovered that were covered all along).
 CONST_RE = re.compile(
     r'const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:&(?:\'static\s+)?str|DwCode)\s*=\s*'
-    r'(?:DwCode::(?:every_version|since)\(\s*)?"(DW[0-9]{4})"'
+    r'(?:DwCode::new\(\s*)?"(DW[0-9]{4})"'
 )
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOC_PATH = REPO_ROOT / "docs" / "reference" / "compiler.md"
@@ -127,7 +128,8 @@ PENDING: set[str] = set()
 # one-line justification; prefer writing the test (see module docstring).
 ALLOWLIST: dict[str, str] = {
     # The fidelity gate's missing-texture (magenta) hard-fail is only
-    # constructed in `delve-render`'s `run_piece`/`run_fidelity_gate` (main.rs),
+    # constructed in `delvec render`'s `run_piece`/`run_fidelity_gate`
+    # (crates/render/src/cli.rs),
     # both of which require a real GPU adapter + the 1.21.11 client jar (never
     # committed — EULA) to actually render a frame first. The detection
     # *algorithm* it wraps (`detect::scan_default`) is unit-tested directly in
@@ -305,11 +307,11 @@ EXIT_TIER_HEADER = ("Code", "What the author changes")
 
 # A `DwCode` constant together with the tier it declares. Deliberately separate
 # from CONST_RE, which also matches the bare `&str` codes in the tooling
-# binaries: those carry no `dsl_version` and no tier, so demanding one of them
+# binaries: those carry no tier, so demanding one of them
 # would be a gate asking a question its subject cannot answer.
 TIERED_CONST_RE = re.compile(
     r'const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:\w+::)*DwCode\s*=\s*'
-    r'(?:\w+::)*DwCode::(?:every_version|since)\(\s*"(DW[0-9]{4})"'
+    r'(?:\w+::)*DwCode::new\(\s*"(DW[0-9]{4})"'
     r'([^;]*?)\)\s*;'
 )
 TIER_RE = re.compile(r"ExitTier::(Analysis|Build)")
@@ -395,24 +397,66 @@ def crate_test_scope_texts(crate: str) -> list[str]:
     return texts
 
 
+# `use delvewright_schem::diag::{DW_INPUT, Diagnostic};` / `use delvewright_dsl::DwCode;`
+# — the crate a test imports a symbol from, so the symbol resolves against THAT
+# crate's table rather than the test's own. The crate directory is the library
+# name minus its `delvewright_` prefix; `delvewright_compiler` is `crates/compiler`.
+IMPORT_RE = re.compile(r"^\s*use\s+delvewright_(\w+)::(?:([\w:]+)::)?(?:\{([^}]*)\}|(\w+))\s*;", re.MULTILINE)
+
+
+def imported_symbols(
+    raw: str, tables: dict[str, dict[str, str]]
+) -> tuple[dict[str, str], dict[str, str]]:
+    """What a test's `use delvewright_<x>::…` lines bring into scope.
+
+    Returns (constant name -> DW code) for every diagnostic constant imported by
+    name, and (module name -> crate) for every module imported — `use
+    delvewright_compiler::atmos;` or `watch::{self, …}` — so that a
+    `module::NAME` reference in the test body resolves against THAT crate's
+    table, exactly as the compiler resolves it."""
+    names_out: dict[str, str] = {}
+    modules_out: dict[str, str] = {}
+    for crate, path, braced, single in IMPORT_RE.findall(raw):
+        table = tables.get(crate, {})
+        leaves = [n.strip().split(" as ")[0].strip() for n in braced.split(",")] if braced else [single]
+        last_path = path.split("::")[-1] if path else None
+        for leaf in leaves:
+            if leaf == "self" and last_path:
+                modules_out[last_path] = crate
+            elif leaf in table:
+                names_out[leaf] = table[leaf]
+            elif leaf and leaf[:1].islower():
+                modules_out[leaf] = crate
+    return names_out, modules_out
+
+
 def tested_codes() -> set[str]:
     """Every DW code **asserted** by test code: a bare `"DWxxxx"` string literal,
-    or a per-crate symbolic diagnostic-code constant, in comment-stripped test
-    source with `use` lines removed. See the module docstring for what does not
-    count and why."""
+    or a symbolic diagnostic-code constant — the test's own crate's, or one it
+    imports by `use` from a sibling crate — in comment-stripped test source with
+    `use` lines removed. See the module docstring for what does not count and
+    why."""
     found: set[str] = set()
     if not CRATES_DIR.is_dir():
         return found
-    for crate_dir in sorted(p for p in CRATES_DIR.iterdir() if p.is_dir()):
-        crate = crate_dir.name
-        symbols = crate_symbol_table(crate)
-        name_res = {name: re.compile(r"\b" + re.escape(name) + r"\b") for name in symbols}
+    crates = sorted(p.name for p in CRATES_DIR.iterdir() if p.is_dir())
+    tables = {crate: crate_symbol_table(crate) for crate in crates}
+    for crate in crates:
         for raw in crate_test_scope_texts(crate):
+            symbols = dict(tables[crate])
+            imported, modules = imported_symbols(raw, tables)
+            symbols.update(imported)
+            name_res = {name: re.compile(r"\b" + re.escape(name) + r"\b") for name in symbols}
             text = assertable_text(raw)
             found |= set(BARE_CODE_LITERAL_RE.findall(text))
             for name, pattern in name_res.items():
                 if pattern.search(text):
                     found.add(symbols[name])
+            # `module::NAME`, where the module was imported from a named crate.
+            for module, src_crate in modules.items():
+                for name, code in tables.get(src_crate, {}).items():
+                    if re.search(r"\b" + re.escape(module) + r"::" + re.escape(name) + r"\b", text):
+                        found.add(code)
     return found
 
 

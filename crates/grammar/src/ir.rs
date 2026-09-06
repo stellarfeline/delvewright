@@ -1823,7 +1823,7 @@ impl fmt::Display for ProgramError {
                  program FILE, so resolving it reads a file, which validation deliberately never \
                  does; until it is resolved the rules a `{prefix}/…` call reaches do not exist in \
                  this program at all. Load the document with `document::load` (what \
-                 `delve-grammar --file` does) rather than deserialising it straight into an \
+                 `delvec grammar --file` does) rather than deserialising it straight into an \
                  expansion"
             ),
             ProgramError::ContingentBlockIsAMix { what, role, region } => write!(

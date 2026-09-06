@@ -1,4 +1,4 @@
-//! Prefab metadata (`<basename>.json` beside the `.nbt`), as `delve-admit` uses
+//! Prefab metadata (`<basename>.json` beside the `.nbt`), as `delvec prefab` uses
 //! it.
 //!
 //! The document's shape is not defined here. It is
@@ -73,7 +73,7 @@ pub fn set_lighting_from_probe(doc: &mut PrefabMeta, p: &LightProbe) {
         )
     };
     let method = Some(format!(
-        "static light estimate (delve-admit, the compiler's block+sky flood): min over {} floor \
+        "static light estimate (delvec prefab, the compiler's block+sky flood): min over {} floor \
          cell(s) reachable on foot from {} ground-level entry cell(s), of {} standable in the \
          region box; {}. {sky} NOT a live-server probe; dark_threshold={}. \
          Re-probe live for borderline pieces.",

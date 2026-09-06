@@ -1,0 +1,178 @@
+{
+  "campaign_id": "hello-world",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/decide",
+          "verb": "learns"
+        },
+        "id": "quest/decide",
+        "objectives": [
+          {
+            "happening": {
+              "text": "the party completes obj/decide",
+              "verb": "learns"
+            },
+            "id": "obj/decide",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {
+          "obj/decide": [
+            {
+              "flag": "flag/wait",
+              "requires_flags": [
+                "flag/wait"
+              ],
+              "type": "set-flag"
+            },
+            {
+              "flag": "flag/flee",
+              "requires_flags": [
+                "flag/flee"
+              ],
+              "type": "set-flag"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/bolt",
+          "verb": "learns"
+        },
+        "id": "quest/bolt",
+        "objectives": [
+          {
+            "anchor": "anchor/keeper-stand",
+            "happening": {
+              "text": "the party completes obj/bolt",
+              "verb": "opens"
+            },
+            "id": "obj/bolt",
+            "requires_flags": [
+              "flag/flee"
+            ],
+            "type": "interact"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {
+          "obj/bolt": [
+            {
+              "text": "You run. The Keeper does not call after you.",
+              "type": "narrate"
+            },
+            {
+              "happening": {
+                "text": "the delve is complete",
+                "verb": "survives"
+              },
+              "type": "campaign-complete"
+            }
+          ]
+        },
+        "trigger": {
+          "quest": "quest/decide",
+          "type": "quest-complete"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/hold",
+          "verb": "learns"
+        },
+        "id": "quest/hold",
+        "objectives": [
+          {
+            "happening": {
+              "text": "the party completes obj/watch",
+              "verb": "learns"
+            },
+            "id": "obj/watch",
+            "npc": "npc/keeper",
+            "requires_flags": [
+              "flag/wait"
+            ],
+            "type": "talk-to"
+          },
+          {
+            "after": [
+              "obj/watch"
+            ],
+            "anchor": "anchor/exit",
+            "happening": {
+              "text": "the party completes obj/walk-out",
+              "verb": "arrives"
+            },
+            "id": "obj/walk-out",
+            "radius": 2,
+            "requires_flags": [
+              "flag/wait"
+            ],
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {
+          "obj/walk-out": [
+            {
+              "text": "The hinge gives. The road is yours.",
+              "type": "narrate"
+            },
+            {
+              "happening": {
+                "text": "the delve is complete",
+                "verb": "survives"
+              },
+              "type": "campaign-complete"
+            }
+          ],
+          "obj/watch": [
+            {
+              "anchor": "anchor/door",
+              "happening": {
+                "text": "the gate at anchor/door opens",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            }
+          ]
+        },
+        "trigger": {
+          "quest": "quest/decide",
+          "type": "quest-complete"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.19.0",
+  "stage": "quests"
+}

@@ -1,5 +1,5 @@
 //! Prefab metadata (`<basename>.json` beside the `.nbt`) — the socket/anchor
-//! subset `delve-render piece` needs to aim interior shots. Degrades gracefully:
+//! subset `delvec render piece` needs to aim interior shots. Degrades gracefully:
 //! a missing/partial file just yields fewer shots (exterior + top-down always
 //! render from the `.nbt` alone).
 //!

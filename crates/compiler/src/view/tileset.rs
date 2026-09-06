@@ -20,7 +20,7 @@ use delvewright_dsl::split::{TileSet, fragment_refusal, read_tile_set, tile_evid
 
 use crate::view::nbt::{NbtError, Structure, parse_structure};
 
-/// What a path handed to `delve-render piece` turned out to be.
+/// What a path handed to `delvec render piece` turned out to be.
 #[derive(Debug)]
 pub enum PieceInput {
     /// One structure template, read as before.

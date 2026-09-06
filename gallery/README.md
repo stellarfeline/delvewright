@@ -211,11 +211,11 @@ been written by anything, so nothing had ever compiled it. Each is attributed by
 a differential, because that is the only honest way to say "this one thing is
 responsible".
 
-**An `ambushes[]` entry cannot compile at `dsl_version` 0.8.0 or above.**
+**An `ambushes[]` entry cannot compile.**
 `Ambush::to_trigger` desugars an ambush into a trigger whose effects are the
 telegraph, then a `spawn-actor` and an `unleash-actor` per actor — constructing
-both with `happening: None`. Since 0.8.0 `DW0481` requires a `happening` on every
-beat, and `Ambush` carries no field an author could supply one through. The
+both with `happening: None`. `DW0481` requires a `happening` on every beat, and
+`Ambush` carries no field an author could supply one through. The
 surface is declared, schema-valid, and refused at validation on effects the author
 never wrote and cannot reach. *Attribution:* removing the gallery's one ambush
 takes the `DW0481` count from 2 to 0 with nothing else changed, and `to_trigger`

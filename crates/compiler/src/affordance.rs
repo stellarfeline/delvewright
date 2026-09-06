@@ -97,7 +97,7 @@ use delvewright_dsl::{DwCode, ExitTier};
 /// findable only by luck. This is an error and not a warning because the
 /// failure mode is a soft-lock: the drowned bell's shortcut was the only route
 /// back, and an unfindable lever is an unopenable door.
-pub const DW_AFFORDANCE_INVISIBLE: DwCode = DwCode::every_version("DW0420", ExitTier::Build);
+pub const DW_AFFORDANCE_INVISIBLE: DwCode = DwCode::new("DW0420", ExitTier::Build);
 
 /// `DW0421`: an affordance's visible hardware is destroyed by a function that
 /// does not own the affordance.
@@ -107,7 +107,7 @@ pub const DW_AFFORDANCE_INVISIBLE: DwCode = DwCode::every_version("DW0420", Exit
 /// Anything else reaching it (a cleanup pass whose selector widened, a tag
 /// collision of the `DW0361` family) erases the player's only way to find a
 /// live affordance, which is how the drowned bell read as a vanished lever.
-pub const DW_AFFORDANCE_HARDWARE_ERASED: DwCode = DwCode::every_version("DW0421", ExitTier::Build);
+pub const DW_AFFORDANCE_HARDWARE_ERASED: DwCode = DwCode::new("DW0421", ExitTier::Build);
 
 /// `DW0545`: an engine **fixture** — an entity whose position is engine state —
 /// is reachable by a selector that quantifies over a **box**.
@@ -125,7 +125,7 @@ pub const DW_AFFORDANCE_HARDWARE_ERASED: DwCode = DwCode::every_version("DW0421"
 /// Both are compiler defects, never authoring ones: no campaign JSON can cause
 /// either, and no campaign JSON can fix either. That is why the message is
 /// addressed to whoever is changing the engine.
-pub const DW_FIXTURE_REACHABLE: DwCode = DwCode::every_version("DW0545", ExitTier::Build);
+pub const DW_FIXTURE_REACHABLE: DwCode = DwCode::new("DW0545", ExitTier::Build);
 
 /// The class tag on every engine-summoned entity whose position **is** engine
 /// state — an affordance hitbox, its visible hardware, a stake marker, a

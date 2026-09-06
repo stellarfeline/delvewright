@@ -1,0 +1,71 @@
+{
+  "campaign_id": "v04-showcase",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/greet",
+            "options": [
+              {
+                "label": "Who are you?",
+                "next": "dlg/lore"
+              },
+              {
+                "effects": [
+                  {
+                    "objective": "obj/talk",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "I'll clear the keep."
+              },
+              {
+                "effects": [
+                  {
+                    "flag": "flag/curious",
+                    "type": "set-flag"
+                  }
+                ],
+                "happening": {
+                  "text": "the party answers: What lies past the door?",
+                  "verb": "believes"
+                },
+                "label": "What lies past the door?",
+                "next": "dlg/secret",
+                "requires_flags": [
+                  "flag/summoned"
+                ]
+              }
+            ],
+            "text": "You came. Put down the guard the moor raised, take the key it kept, and unbar the inner door. The shrine lies past it."
+          },
+          {
+            "id": "dlg/lore",
+            "options": [
+              {
+                "label": "Back.",
+                "next": "dlg/greet"
+              }
+            ],
+            "text": "The captain who lost this place. I hold the gate still, because I cannot leave it."
+          },
+          {
+            "id": "dlg/secret",
+            "options": [
+              {
+                "label": "Back.",
+                "next": "dlg/greet"
+              }
+            ],
+            "text": "A shrine older than the keep. Reach it, and the moor's hold breaks."
+          }
+        ],
+        "npc": "npc/keeper",
+        "root": "dlg/greet"
+      }
+    ]
+  },
+  "dsl_version": "0.19.0",
+  "stage": "dialogue"
+}

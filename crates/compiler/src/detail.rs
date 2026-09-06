@@ -27,7 +27,7 @@
 //! |---|---|
 //! | `DW0841`–`DW0845` ([`check`]) | `validate_loaded` in `delvec`'s `main` — the one funnel every subcommand's validation goes through, `build` included |
 //! | `DW0841` again ([`check_walk`]) | `delvec allocation`, before it prints a single number |
-//! | `DW0848` | `delve-admit audit`, and [`check`] wherever a row consumes the piece |
+//! | `DW0848` | `delvec prefab audit`, and [`check`] wherever a row consumes the piece |
 //! | the frame, and the piece's bytes | [`place`], inside `Plan::build` |
 //! | the hash line, and the blockout-drift advisory | `emit::build_with_warnings`, the one function that turns a `Plan` into a datapack |
 //!
@@ -75,19 +75,19 @@ use crate::solver::Rotation;
 const STAGE: &str = "detail-plan";
 
 /// `DW0841`: detail without a passed, fresh walk of this plan.
-pub const DW_UNWALKED: DwCode = DwCode::every_version("DW0841", ExitTier::Build);
+pub const DW_UNWALKED: DwCode = DwCode::new("DW0841", ExitTier::Build);
 
 /// `DW0842`: the binding does not bind.
-pub const DW_BINDING: DwCode = DwCode::every_version("DW0842", ExitTier::Build);
+pub const DW_BINDING: DwCode = DwCode::new("DW0842", ExitTier::Build);
 
 /// `DW0843`: the piece is not the shape of its allocation.
-pub const DW_NOT_THE_FRAME: DwCode = DwCode::every_version("DW0843", ExitTier::Build);
+pub const DW_NOT_THE_FRAME: DwCode = DwCode::new("DW0843", ExitTier::Build);
 
 /// `DW0844`: the piece's openings are not the plan's seams.
-pub const DW_FACES: DwCode = DwCode::every_version("DW0844", ExitTier::Build);
+pub const DW_FACES: DwCode = DwCode::new("DW0844", ExitTier::Build);
 
 /// `DW0845`: an owed anchor has no standing.
-pub const DW_ANCHOR_STANDING: DwCode = DwCode::every_version("DW0845", ExitTier::Build);
+pub const DW_ANCHOR_STANDING: DwCode = DwCode::new("DW0845", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // The instrument (spec-0050 §2)
@@ -1393,7 +1393,7 @@ pub fn check(
                      beside the map's; a piece with no contract gives the equivalence instrument \
                      nothing to read, and a place detailed with one would be a hole in the proof \
                      rather than a finding in it. Re-export the piece with its contract, or admit \
-                     it through `delve-admit`, which resolves one.",
+                     it through `delvec prefab`, which resolves one.",
                     piece = row.piece,
                 ),
             ));

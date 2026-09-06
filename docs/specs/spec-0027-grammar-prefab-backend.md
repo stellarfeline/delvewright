@@ -38,7 +38,7 @@ snapshot are derived outputs.
 - New crate `crates/grammar` (Rust port of the BSD-3 Python core; Python→Rust
   port is sanctioned by the borrow-don't-reinvent rule). Deterministic
   expansion: same program + same seed → byte-identical voxel model.
-- Output: voxel model → existing `delve-schem`/prefab metadata path →
+- Output: voxel model → existing `delvec schem`/prefab metadata path →
   `.nbt` (+ provenance row: generator = grammar, program hash, seed).
 - Block-state aware from day one: the primitive vocabulary includes block
   states (stairs/slabs/panes) — the sandbox showed name-only palettes cannot
@@ -99,7 +99,7 @@ authoring loop:
 | LLM authors a grammar program | built (`crates/grammar`, see `docs/reference/grammar.md`) |
 | expander builds N candidates (seed-varied) | built, but nothing **drives** a sweep — the seed variation is assembled by hand |
 | machine gates (§4) filter | **not built** — the craft diagnostics are still a later phase |
-| contact-sheet render | **built**: `delve-render contact-sheet <dir> -o <png>` |
+| contact-sheet render | **built**: `delvec render contact-sheet <dir> -o <png>` |
 | owner curates | AC6 unmet — she has not viewed a sheet yet; that remains the merge gate for this spec's claims |
 | chosen output frozen as `.nbt` with provenance | built (§2 export path) |
 

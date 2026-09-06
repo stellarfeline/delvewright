@@ -15,8 +15,8 @@ compiler.
 **The symlink is the only mechanism.** There is no environment-variable
 override — `$DELVEWRIGHT_CAMPAIGNS_DIR` is read by no code, so exporting it
 produces exactly the two failures this file exists to prevent. The path is
-constructed literally in five places (`crates/compiler/tests/common/mod.rs`,
-`crates/compiler/src/main.rs`'s `--prefabs` default, `crates/render/src/nbt.rs`,
+constructed literally in five places (`crates/delvec/tests/common/mod.rs`,
+`crates/delvec/src/main.rs`'s `--prefabs` default, `crates/compiler/src/view/nbt.rs`,
 `crates/render/tests/gpu.rs`, `.github/workflows/release.yml`); making an
 override real means all five sites or none.
 

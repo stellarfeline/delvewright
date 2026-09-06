@@ -63,8 +63,8 @@ def test_a_collision_across_crates_is_detected_too(gate):
 
 def test_distinct_codes_and_reused_constant_names_are_not_collisions(gate):
     """The legitimate pattern the gate must never flag: two crates reusing a
-    constant NAME for DIFFERENT codes (`DW_INPUT` is DW0710 in delve-schem and
-    DW0732 in delve-admit). Same name, different code = fine; the collision is
+    constant NAME for DIFFERENT codes (`DW_INPUT` is DW0710 in delvec schem and
+    DW0732 in delvec prefab). Same name, different code = fine; the collision is
     the reverse."""
     _rs(gate, "schem", "diag.rs", 'pub const DW_INPUT: &str = "DW0710";')
     _rs(gate, "admit", "diag.rs", 'pub const DW_INPUT: &str = "DW0732";')
@@ -277,9 +277,9 @@ def test_a_declared_tier_is_read_off_the_constant(gate):
         gate,
         "compiler",
         "emit.rs",
-        'pub const DW_WAVE_NO_ROOM: DwCode = DwCode::every_version("DW0312", ExitTier::Analysis);\n'
-        'pub const DW_BUILD: DwCode = DwCode::every_version("DW0300", ExitTier::Build);\n'
-        'pub const DW_FENCED: DwCode = DwCode::since("DW0481", 8, ExitTier::Build);\n',
+        'pub const DW_WAVE_NO_ROOM: DwCode = DwCode::new("DW0312", ExitTier::Analysis);\n'
+        'pub const DW_BUILD: DwCode = DwCode::new("DW0300", ExitTier::Build);\n'
+        'pub const DW_FENCED: DwCode = DwCode::new("DW0481", ExitTier::Build);\n',
     )
     tiers, unreadable = gate.declared_tiers()
     assert tiers == {"DW0312": "Analysis", "DW0300": "Build", "DW0481": "Build"}
@@ -295,7 +295,7 @@ def test_a_constant_written_through_a_path_is_still_read(gate):
         "dsl",
         "prefab.rs",
         'pub const DW_FOOTPRINT_CLASS: crate::DwCode = '
-        'crate::DwCode::every_version("DW0848", crate::ExitTier::Build);\n',
+        'crate::DwCode::new("DW0848", crate::ExitTier::Build);\n',
     )
     tiers, unreadable = gate.declared_tiers()
     assert tiers == {"DW0848": "Build"}
@@ -309,7 +309,7 @@ def test_a_tierless_dwcode_constant_is_reported_not_skipped(gate):
         gate,
         "compiler",
         "nav.rs",
-        'pub const DW_ODD: DwCode = DwCode::every_version("DW0399");\n',
+        'pub const DW_ODD: DwCode = DwCode::new("DW0399");\n',
     )
     tiers, unreadable = gate.declared_tiers()
     assert tiers == {}

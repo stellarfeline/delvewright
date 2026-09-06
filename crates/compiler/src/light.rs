@@ -36,10 +36,10 @@ use delvewright_dsl::{DwCode, ExitTier};
 
 /// `DW0210`: a reachable walkable cell measured below light 3 in an area with no
 /// `lighting` declaration and no night-vision class-kit mitigation (spec-0010).
-pub const DW_DARK_UNMITIGATED: DwCode = DwCode::every_version("DW0210", ExitTier::Analysis);
+pub const DW_DARK_UNMITIGATED: DwCode = DwCode::new("DW0210", ExitTier::Analysis);
 /// `DW0211`: a declared fixture cannot raise every reachable walkable cell to
 /// `min_light` — no valid placement site remains (spec-0010).
-pub const DW_RELIGHT_UNSATISFIABLE: DwCode = DwCode::every_version("DW0211", ExitTier::Analysis);
+pub const DW_RELIGHT_UNSATISFIABLE: DwCode = DwCode::new("DW0211", ExitTier::Analysis);
 
 /// The measured-darkness threshold: a reachable walkable cell below this, with no
 /// declaration and no night-vision, is `DW0210` (spec-0010 mitigation hierarchy).
@@ -601,7 +601,7 @@ impl LightModel {
     /// may itself be opaque (a glowstone/shroomlight block) — it still lights its
     /// passing neighbours.
     ///
-    /// Public because it is the compiler's ONE light flood, and `delve-admit`'s
+    /// Public because it is the compiler's ONE light flood, and `delvec prefab`'s
     /// per-piece probe asks the same question of a single prefab. A second copy
     /// of it is what shipped a probe with no sky term at all.
     ///

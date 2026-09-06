@@ -101,6 +101,7 @@
 #![deny(missing_docs)]
 
 pub mod block;
+pub mod cli;
 pub mod compose;
 pub mod contract;
 pub mod coverage;

@@ -1,0 +1,91 @@
+{
+  "campaign_id": "hello-world",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "options": [
+              {
+                "label": "Who are you?",
+                "next": "dlg/lore"
+              },
+              {
+                "effects": [
+                  {
+                    "flag": "flag/wait",
+                    "type": "set-flag"
+                  },
+                  {
+                    "objective": "obj/decide",
+                    "type": "complete-objective"
+                  }
+                ],
+                "happening": {
+                  "text": "the party answers: We hold. I stand the watch.",
+                  "verb": "believes"
+                },
+                "label": "We hold. I stand the watch."
+              },
+              {
+                "effects": [
+                  {
+                    "flag": "flag/flee",
+                    "type": "set-flag"
+                  },
+                  {
+                    "objective": "obj/decide",
+                    "type": "complete-objective"
+                  }
+                ],
+                "happening": {
+                  "text": "the party answers: I run. Keep your road.",
+                  "verb": "believes"
+                },
+                "label": "I run. Keep your road."
+              },
+              {
+                "label": "The watch is stood.",
+                "next": "dlg/watch",
+                "requires_flags": [
+                  "flag/wait"
+                ]
+              }
+            ],
+            "text": "Halt, traveler. The moor road is drowned and the gate stays shut. Well? Do we hold, or do you run?"
+          },
+          {
+            "id": "dlg/lore",
+            "options": [
+              {
+                "label": "Back.",
+                "next": "dlg/greeting"
+              }
+            ],
+            "text": "I am the Keeper. I have watched this gate since the moor swallowed the old road."
+          },
+          {
+            "id": "dlg/watch",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "objective": "obj/watch",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "Open it."
+              }
+            ],
+            "text": "So it is. Dawn, and the moor kept its distance. The gate is yours."
+          }
+        ],
+        "npc": "npc/keeper",
+        "root": "dlg/greeting"
+      }
+    ]
+  },
+  "dsl_version": "0.19.0",
+  "stage": "dialogue"
+}

@@ -59,18 +59,18 @@ use crate::registry::PrefabRegistry;
 use crate::solver::Rotation;
 
 /// `DW0547`: an `open-way` reference does not name exactly one placed way.
-pub const DW_WAY_REFERENCE: DwCode = DwCode::every_version("DW0547", ExitTier::Build);
+pub const DW_WAY_REFERENCE: DwCode = DwCode::new("DW0547", ExitTier::Build);
 
 /// `DW0548`: required content stands beyond a way no forced opening precedes.
-pub const DW_WAY_UNOPENED: DwCode = DwCode::every_version("DW0548", ExitTier::Build);
+pub const DW_WAY_UNOPENED: DwCode = DwCode::new("DW0548", ExitTier::Build);
 
 /// `DW0549`: a placed piece declares a way the staging could not put in the
 /// world — the disposition enumeration binds to fewer ways than exist.
-pub const DW_WAY_UNSTAGED: DwCode = DwCode::every_version("DW0549", ExitTier::Build);
+pub const DW_WAY_UNSTAGED: DwCode = DwCode::new("DW0549", ExitTier::Build);
 
 /// `DW0555` (advisory): ways are staged and no required element stands behind
 /// any of them, so the reachability half of this gate examined nothing.
-pub const DW_WAY_UNBOUND: DwCode = DwCode::every_version("DW0555", ExitTier::Build);
+pub const DW_WAY_UNBOUND: DwCode = DwCode::new("DW0555", ExitTier::Build);
 
 /// The space name a contract edge uses for "outside the piece".
 const EXTERIOR: &str = "exterior";

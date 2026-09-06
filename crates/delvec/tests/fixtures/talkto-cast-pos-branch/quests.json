@@ -1,0 +1,146 @@
+{
+  "campaign_id": "talkto-cast-branch",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": "dlg/greeting",
+              "doing": "barring the door with one arm, listening to the moor",
+              "forbids_flags": [
+                "flag/flee"
+              ]
+            },
+            {
+              "at": "anchor/exit",
+              "dialogue": "dlg/bolt",
+              "doing": "already through the gate the moment the party refused the watch",
+              "requires_flags": [
+                "flag/flee"
+              ]
+            }
+          ]
+        },
+        "happening": {
+          "subject": "npc/keeper",
+          "text": "The party reaches the Keeper's door with the moor at their backs.",
+          "verb": "arrives"
+        },
+        "id": "quest/decide",
+        "objectives": [
+          {
+            "happening": {
+              "subject": "npc/keeper",
+              "text": "The Keeper tells them the road is drowned, and asks whether they hold or run.",
+              "verb": "learns"
+            },
+            "id": "obj/decide",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {
+          "obj/decide": [
+            {
+              "flag": "flag/wait",
+              "requires_flags": [
+                "flag/wait"
+              ],
+              "type": "set-flag"
+            },
+            {
+              "flag": "flag/flee",
+              "requires_flags": [
+                "flag/flee"
+              ],
+              "type": "set-flag"
+            },
+            {
+              "anchor": "anchor/door",
+              "happening": {
+                "subject": "anchor/door",
+                "text": "The bar comes off the inner gate and it swings wide.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            },
+            {
+              "happening": {
+                "subject": "npc/keeper",
+                "text": "The Keeper walks out through the lifted gate and takes up station on the road.",
+                "verb": "arrives"
+              },
+              "npc": "npc/keeper",
+              "requires_flags": [
+                "flag/flee"
+              ],
+              "to_anchor": "anchor/exit",
+              "type": "move-npc"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": "dlg/hold",
+              "doing": "still at his post, the gate open behind him",
+              "requires_flags": [
+                "flag/wait"
+              ]
+            },
+            {
+              "at": "anchor/exit",
+              "dialogue": "dlg/bolt",
+              "doing": "waiting past the lifted gate, already half on the road",
+              "requires_flags": [
+                "flag/flee"
+              ]
+            }
+          ]
+        },
+        "happening": {
+          "subject": "npc/keeper",
+          "text": "Whatever the party chose, the Keeper has one word left to give them.",
+          "verb": "survives"
+        },
+        "id": "quest/parley",
+        "objectives": [
+          {
+            "happening": {
+              "subject": "npc/keeper",
+              "text": "The Keeper says his last, and the delve closes on it.",
+              "verb": "learns"
+            },
+            "id": "obj/parley",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "The delve ends with the Keeper's word taken and the road open.",
+              "verb": "gains"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "quest": "quest/decide",
+          "type": "quest-complete"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.19.0",
+  "stage": "quests"
+}
