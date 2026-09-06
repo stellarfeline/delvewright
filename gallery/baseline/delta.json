@@ -1,6 +1,6 @@
 {
   "added": [],
-  "base_commit": "e2f251c6dd32c770e92259aa75c95df9f54201db",
+  "base_commit": "ed39b9c73008ed980e77e1c28a358c297649d282",
   "changed": [
     "easy.en:creator-datapack/layout.json",
     "easy.en:critical-path.json",
