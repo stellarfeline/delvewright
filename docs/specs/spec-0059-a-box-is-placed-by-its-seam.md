@@ -202,8 +202,8 @@ coordinates against a box that moved is the residue §10 records.
   the primary plus one declared edit that deletes the entry box's `min` — the
   engine refuses with `DW0883`. Coverage stays at every unit bound or
   refusal-proven, none in neither.
-- `crates/compiler/tests/fixtures/blockout/` and every inline plan in
-  `crates/dsl/tests/` and `crates/compiler/tests/` adopt. The metrics gym's
+- `crates/delvec/tests/fixtures/blockout/` and every inline plan in
+  `crates/dsl/tests/` and `crates/delvec/tests/` adopt. The metrics gym's
   generator (`compiler::gym`) emits the relational form: the spine's seams at
   `at: 1, meets: 1` as they stand today, the first bay pinned.
 - The three walk records (`gallery/overlays/site-plan/`, two probes) are
