@@ -4979,6 +4979,32 @@ pub(crate) enum EffectRoot<'a> {
     ShopOffer,
 }
 
+/// **The area an [`EffectRoot`]'s bundle plays in, when it has one.**
+///
+/// A quest's own area for [`EffectRoot::ObjectiveComplete`] and
+/// [`EffectRoot::QuestComplete`] — the two roots [`EffectRoot`]'s own doc names
+/// as carrying an owner; `None` for every other root (a trigger, a trap
+/// payload, a dialogue respawn, a shortcut unlock, `on_death`, a shop offer),
+/// which are global by construction and have no area to be scoped to.
+///
+/// This is the SAME area [`crate::continuity::replay`]'s `here_area` binds a
+/// `move-npc`'s [`crate::continuity::Staged::area`] to — read once, from the
+/// quest plan, so a `move-npc`'s own destination and the continuity model's
+/// idea of where that move puts the body cannot disagree about which building
+/// "here" names. `nav::plan_moves` asks it to give [`body_station`]'s
+/// [`BodyScope::Beat`] the same `beat` the cast ledger's per-beat station
+/// already asks for.
+pub(crate) fn effect_root_area<'a>(
+    campaign: &'a Campaign,
+    root: &EffectRoot<'a>,
+) -> Option<&'a str> {
+    match root {
+        EffectRoot::ObjectiveComplete { quest, .. } => quest_area_of(campaign, quest),
+        EffectRoot::QuestComplete(quest) => quest_area_of(campaign, quest.id.as_str()),
+        _ => None,
+    }
+}
+
 /// Where an effect was declared: which stage document, the JSON pointer inside it,
 /// and which root it hangs off. Carried so a diagnostic can name the exact firing
 /// site and so a consumer can reason about *when* the firing happens.
