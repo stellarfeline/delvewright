@@ -151,22 +151,18 @@ crates = [
     "delvewright-render",
 ]
 
-# `delvewright-dsl` is a real dependency of `delvec`, so it must exist on
-# crates.io first — but it is DELIBERATELY NOT on the engine version line.
-# Locking them together looks tidy and sets a trap: a publish that half-succeeds
-# burns the dsl version permanently (crates.io versions cannot be reused), and
-# under lockstep the retry would have to move `delvec` too — which would put the
-# engine version out of step with the git tag `v1.0.0` that ADR-0016 pins. With
-# an independent line, a burned dsl version costs a dsl bump and nothing else.
-# `0.x` is also the honest semver for it: it is the DSL types the engine speaks,
-# not a library anyone should depend on directly.
+# `delvewright-dsl` is a real dependency of every engine crate, so it must exist
+# on crates.io first — and it is NOT on the engine version line.
+# The DSL crate's version IS the `dsl_version`: the crate defines the format, so its package number is the format's number — a format change bumps the minor, a Rust-API-only change bumps the patch, documents declare the full number and `delvec fmt` writes the current one.
+# Bound both ways by validation/check-versions.sh: to the crate manifest, and to
+# `SUPPORTED_DSL_VERSION` in crates/dsl/src/envelope.rs.
 dsl_crate = "delvewright-dsl"
-dsl_crate_version = "0.2.0"
+dsl_crate_version = "0.19.0"
 
-# The engine's `[dependencies] delvewright-dsl` requirement is `=` and exactly
-# this version, so `delvec 1.0.0` on crates.io can resolve to exactly one
-# `delvewright-dsl` build and no other.
-dsl_crate_req = "=0.2.0"
+# The engine crates' `delvewright-dsl` requirement (`[workspace.dependencies]`)
+# is `=` and exactly this version, so one engine version on crates.io resolves
+# to exactly one `delvewright-dsl` build and no other.
+dsl_crate_req = "=0.19.0"
 
 # `rust-version` in both published manifests, and the channel in
 # rust-toolchain.toml. They must be the same string: a `rust-version` looser than

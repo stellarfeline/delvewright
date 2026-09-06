@@ -122,7 +122,7 @@ emit_log() { # <log-path> <what-was-being-run>
 # the packaged dsl had already left behind), and the same holds one layer up:
 # the `.crate` cargo copies into `registry/cache/<registry>/<name>-<version>.crate`
 # is reused by name and version too (measured: the compiler's verify unpacked a
-# dsl 0.2.0 tarball from the previous run and missed a function the packaged one
+# `delvewright-dsl` tarball from the previous run and missed a function the packaged one
 # exports). Both copies of OUR crates at OUR versions are purged from every
 # registry cache except crates.io's own — whose copy, if one exists at this
 # version, is the burned-version finding `crates-io-publish.sh` reports and
@@ -145,7 +145,7 @@ echo "   (${#NAMES[@]} crates: ${NAMES[*]}; engine v$VERSION, $DSL_CRATE v$DSL_C
 mkdir -p "$ROOT/target"
 # The verify builds get a target directory of their own, emptied first. Cargo
 # fingerprints a REGISTRY dependency as immutable — by name, version and
-# registry, never by its bytes — so a `delvewright-dsl 0.2.0` rlib compiled by
+# registry, never by its bytes — so a `delvewright-dsl` rlib compiled by
 # a previous run's verify from a previous packaging is reused as-is by the next
 # run's, and a dependent is then judged against a sibling that no longer exists
 # (measured: the compiler's verify missed a function the freshly packaged dsl
