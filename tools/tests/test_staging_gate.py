@@ -198,16 +198,19 @@ def test_the_same_artifact_binds_once_the_build_emits_it(gate, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_a_check_that_matches_nothing_is_red(gate, tmp_path):
+def test_a_check_that_matches_nothing_is_named_by_which_zero_it_is(gate, tmp_path):
     """The island's floor gate examined zero enemies for nineteen rounds and
     was green every time.
 
-    This row selects its class by identity, so the zero is MEASURED and the
-    red it earns is named `INAPPLICABLE`. Which red a zero is, is the two
-    tests below; that it is one is this one."""
+    This row selects its class by identity, so the zero is MEASURED, and a
+    measured zero of the class across the declared design is `INAPPLICABLE`:
+    counted, never silent, and not a refusal — the surface is optional and
+    this campaign does not use it. Which zero a zero is, is the two tests
+    below; that it is never an unremarked zero is this one."""
     r = run(gate, tmp_path, BOUND_ROW, objectives=[{"type": "narrate"}])
-    assert r["verdict"] in gate.RED_VERDICTS
     assert r["verdict"] == "INAPPLICABLE"
+    assert r["verdict"] not in gate.RED_VERDICTS
+    assert r["verdict"] in gate.NOT_A_GAP_VERDICTS
     assert r["binding"] == 0
 
 
@@ -228,9 +231,11 @@ def test_an_unbound_row_names_which_kind_of_zero_it_is(gate, tmp_path):
     assert r["precondition"] == 1
 
 
-def test_a_zero_precondition_is_labelled_inapplicable_and_still_red(gate, tmp_path):
+def test_a_zero_precondition_is_labelled_inapplicable_and_does_not_refuse(gate, tmp_path):
     """A campaign declaring none of the objects the class needs cannot exercise
-    it. That is a fact for the round summary — never a pass."""
+    it. That is a fact for the round summary — and it is not a refusal: the
+    class it is about is an OPTIONAL surface this campaign did not use, and a
+    surface the DSL requires cannot be absent from a build that compiled."""
     row = dict(
         BOUND_ROW,
         id="z",
@@ -243,7 +248,7 @@ def test_a_zero_precondition_is_labelled_inapplicable_and_still_red(gate, tmp_pa
     r = run(gate, tmp_path, row, objectives=[{"type": "narrate"}])
     assert r["verdict"] == "INAPPLICABLE"
     assert r["precondition"] == 0
-    assert r["verdict"] in gate.RED_VERDICTS
+    assert r["verdict"] not in gate.RED_VERDICTS
 
 
 # ---------------------------------------------------------------------------
@@ -314,14 +319,15 @@ def test_an_identity_zero_on_a_blockout_is_out_of_stage_not_red(gate, tmp_path):
     assert r["binding"] == 0 and r["precondition"] == 0
 
 
-def test_the_same_zero_on_an_assembled_campaign_stays_red(gate, tmp_path):
-    """Absence on a build that claims to be finished is the news. The stage is
-    the only thing that moves: `OUT-OF-STAGE` needs the twice-measured
-    blockout and this subject is not one, so the same measured double zero is
-    the red `INAPPLICABLE` — and never `UNBOUND`, whose whole content is that
-    nobody looked."""
+def test_the_same_zero_on_an_assembled_campaign_is_counted_inapplicable(gate, tmp_path):
+    """The stage is the only thing that moves: `OUT-OF-STAGE` needs the
+    twice-measured blockout and this subject is not one, so the same measured
+    double zero is `INAPPLICABLE` — and never `UNBOUND`, whose whole content
+    is that nobody looked. Neither refuses; what separates them is that only
+    OUT-OF-STAGE makes a claim about a stage, which is why `--strict` reaches
+    it and not this."""
     r = run(gate, tmp_path, IDENTITY_ZERO_ROW, objectives=[{"type": "talk-to"}])
-    assert r["verdict"] in gate.RED_VERDICTS
+    assert r["verdict"] not in gate.RED_VERDICTS
     assert r["verdict"] == "INAPPLICABLE"
     assert (r["binding"], r["precondition"]) == (0, 0)
     assert "never measured" not in r["detail"]
@@ -339,7 +345,7 @@ def test_an_identity_zero_on_an_assembled_campaign_is_measured_not_guessed(gate,
     is what makes the zero a fact about the campaign."""
     absent = run(gate, tmp_path, IDENTITY_ZERO_ROW, objectives=[{"type": "talk-to"}])
     assert absent["verdict"] == "INAPPLICABLE"
-    assert absent["verdict"] in gate.RED_VERDICTS
+    assert absent["verdict"] not in gate.RED_VERDICTS
     assert (absent["binding"], absent["precondition"]) == (0, 0)
     assert "selects the object class by identity" in absent["detail"]
 
@@ -390,11 +396,12 @@ def test_a_declaration_shaped_zero_on_an_assembled_campaign_still_says_nobody_lo
 
 def test_a_detail_plan_document_ends_the_blockout_stage(gate, tmp_path):
     """The verdict is about a stage, never about a campaign: the day the
-    campaign details, every OUT-OF-STAGE row reverts to red."""
+    campaign details, no row carries the blockout allowance any more — the
+    same measured double zero is adjudicated afresh as `INAPPLICABLE`, out of
+    the boot banner and out of `--strict`'s reach."""
     camp = make_blockout_campaign(tmp_path, detail_plan=True)
     build = make_blockout_build(tmp_path)
     r = adjudicate_on(gate, camp, build, IDENTITY_ZERO_ROW)
-    assert r["verdict"] in gate.RED_VERDICTS
     assert r["verdict"] == "INAPPLICABLE"
 
 
@@ -406,7 +413,6 @@ def test_a_manifest_not_compiled_from_the_site_plan_fails_closed(gate, tmp_path)
     build = make_blockout_build(tmp_path, inputs=("quests.json",))
     r = adjudicate_on(gate, camp, build, IDENTITY_ZERO_ROW)
     assert r["verdict"] != "OUT-OF-STAGE"
-    assert r["verdict"] in gate.RED_VERDICTS
     assert r["verdict"] == "INAPPLICABLE"
 
 
@@ -447,7 +453,6 @@ def test_a_measured_double_zero_is_out_of_stage_only_at_pre_detail(gate, tmp_pat
     assert adjudicate_on(gate, camp, build, row)["verdict"] == "OUT-OF-STAGE"
     r = run(gate, tmp_path, row, objectives=[{"type": "talk-to"}])
     assert r["verdict"] == "INAPPLICABLE"
-    assert r["verdict"] in gate.RED_VERDICTS
 
 
 def test_a_declaration_shaped_zero_without_a_probe_stays_red_on_a_blockout(gate, tmp_path):
@@ -502,22 +507,19 @@ def test_an_absent_campaign_file_class_on_a_blockout_is_out_of_stage(gate, tmp_p
     assert (r["binding"], r["precondition"]) == (0, 0)
 
 
-def test_the_same_missing_storybook_on_an_assembled_campaign_stays_red(gate, tmp_path):
-    """A finished campaign owes its storybook; absence there is the news. The
-    file class is self-measuring on every subject, so the red is the measured
-    `INAPPLICABLE`; only the blockout stage turns that same pair of zeros into
-    `OUT-OF-STAGE`."""
+def test_the_same_missing_storybook_on_an_assembled_campaign_is_inapplicable(gate, tmp_path):
+    """The file class is self-measuring on every subject, so the verdict is the
+    measured `INAPPLICABLE`; only the blockout stage turns that same pair of
+    zeros into `OUT-OF-STAGE`."""
     camp = make_campaign(tmp_path, objectives=[{"type": "talk-to"}])
     build = make_build(tmp_path)
     r = adjudicate_on(gate, camp, build, STORYBOOK_ROW)
-    assert r["verdict"] in gate.RED_VERDICTS
     assert r["verdict"] == "INAPPLICABLE"
 
 
-def test_the_storybook_reverts_to_red_once_the_campaign_details(gate, tmp_path):
+def test_the_storybook_is_readjudicated_once_the_campaign_details(gate, tmp_path):
     camp = make_blockout_campaign(tmp_path, detail_plan=True)
     r = adjudicate_on(gate, camp, make_blockout_build(tmp_path), STORYBOOK_ROW)
-    assert r["verdict"] in gate.RED_VERDICTS
     assert r["verdict"] == "INAPPLICABLE"
 
 
@@ -795,17 +797,17 @@ def test_a_manifest_with_no_inputs_object_fails_closed(gate, tmp_path):
     assert r["verdict"] == "MISSING-CHECK"
 
 
-def test_the_measured_zero_is_still_red_on_an_assembled_campaign(gate, tmp_path):
-    """The widening adds NO exemption. The zero is handed to the unchanged
-    adjudication, and off a pre-detail blockout that is a red exactly as every
-    other zero is."""
+def test_the_measured_zero_is_adjudicated_unchanged_on_an_assembled_campaign(gate, tmp_path):
+    """The widening adds NO verdict of its own. The zero is handed to the
+    unchanged adjudication, and off a pre-detail blockout that is the counted
+    `INAPPLICABLE` exactly as every other measured zero of a class is."""
     camp = make_campaign(tmp_path, objectives=[{"type": "talk-to"}])
     build = make_build(tmp_path)
     (build / "manifest.json").write_text(
         json.dumps({"inputs": {"quests.json": "0" * 8}, "outputs": {}})
     )
     r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
-    assert r["verdict"] in gate.RED_VERDICTS
+    assert r["verdict"] == "INAPPLICABLE"
     assert r["binding"] == 0
 
 
@@ -1335,3 +1337,244 @@ def test_the_owner_facing_paths_actually_invoke_the_gate(gate):
     assert "staging-admission" in owner_play
     assert owner_play.count("service_completed_successfully") >= 2, \
         "both 25565-publishing services must depend on the admission check"
+
+
+# ---------------------------------------------------------------------------
+# The refusal is on PRESENCE, not on absence
+#
+# `INAPPLICABLE` stopped being a refusal, so the boundary it moved has to be
+# driven from both sides — and from fixtures, never from the live ledger, so
+# that what is proved is the RULE and not today's data. The class below is a
+# real one: an `interact` objective declaring `requires_item`, the island's
+# item-gate finding. One variable moves between the two subjects, the presence
+# of an object of the class, and it decides refuse/admit.
+#
+# A campaign that declares no gate, no wave, no mount has used an OPTIONAL
+# surface not at all, which is a design choice; a surface the DSL requires
+# cannot be absent from a build that compiled at all. What must still refuse is
+# the other side: the class is here and no check binds to it.
+# ---------------------------------------------------------------------------
+
+
+PRESENT_CLASS_ROW = {
+    "id": "gate",
+    "finding": "an item gate refused a player who was carrying the item",
+    "carrier": {"kind": "dw", "code": LIVE_CODE},
+    "binding": {
+        "kind": "dsl",
+        "files": ["quests.json"],
+        "match": {"has": ["requires_item"]},
+    },
+    "applies_when": {
+        "kind": "dsl",
+        "files": ["quests.json"],
+        "match": {"eq": {"type": "interact"}},
+    },
+}
+
+
+def gate_cli(tmp_path, where, objectives, rows, *extra):
+    """Run the real gate end to end over a fixture campaign, build and ledger."""
+    root = tmp_path / where
+    root.mkdir(parents=True, exist_ok=True)
+    camp = make_campaign(root, objectives=objectives)
+    tree = make_build(root)
+    (tree / "manifest.json").write_text(
+        json.dumps({"inputs": {"quests.json": "0" * 8}, "outputs": {"a": where}})
+    )
+    ledger = root / "led.json"
+    ledger.write_text(json.dumps({"findings": rows}))
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+         "--ledger", str(ledger), *extra],
+        capture_output=True, text=True,
+    )
+    return proc, tree
+
+
+def test_an_object_of_the_class_with_nothing_binding_still_refuses(gate, tmp_path):
+    """The direction that must never soften. The campaign DECLARES an interact
+    objective — an object that could carry the item-gate defect — and the
+    check that would catch it counts zero of them, because the declaration it
+    keys off is not there. That is the island's floor gate exactly: carriers
+    present, check inert. The gate refuses, mints no token, and the verifier
+    refuses the tree after it."""
+    proc, tree = gate_cli(
+        tmp_path, "present", [{"type": "interact"}], [dict(PRESENT_CLASS_ROW)]
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "UNBOUND" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+    assert verify(tree).returncode == 1
+
+
+def test_the_same_campaign_without_the_object_is_admitted(gate, tmp_path):
+    """One variable moves: the interact objective is gone, so the class has no
+    object in this build at all. Nothing was skipped — an optional surface was
+    not used — and holding the build for it would make every small delve
+    unstageable forever, for reasons about other people's campaigns."""
+    proc, tree = gate_cli(
+        tmp_path, "absent", [{"type": "narrate"}], [dict(PRESENT_CLASS_ROW)]
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert token["red_count"] == 0
+    # Admitted, and never silent about what it could not exercise.
+    assert token["inapplicable"] == ["gate"]
+    assert token["inapplicable_count"] == 1
+    assert "INAPPLICABLE" in proc.stderr
+    assert "cannot meet them" in proc.stderr
+
+
+def test_declaring_the_field_the_check_reads_binds_the_row(gate, tmp_path):
+    """The third subject, so the pair above is not two ways of measuring
+    nothing: declare the field and the same row is BOUND."""
+    proc, tree = gate_cli(
+        tmp_path,
+        "bound",
+        [{"type": "interact", "requires_item": "key/vault"}],
+        [dict(PRESENT_CLASS_ROW)],
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert token["inapplicable_count"] == 0
+
+
+def test_the_headline_counts_inapplicable_in_its_own_words(gate, tmp_path):
+    """A pass that could not exercise a class must not read as coverage: the
+    count is in the headline and the rows are listed under a heading that says
+    what the zero means."""
+    proc, _ = gate_cli(
+        tmp_path, "headline", [{"type": "narrate"}], [dict(PRESENT_CLASS_ROW)]
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "- `INAPPLICABLE`: 1 " in proc.stdout
+    assert "an optional surface this campaign does not use" in proc.stdout
+    assert "## Inapplicable — classes this campaign contains no object of" in proc.stdout
+
+
+def test_the_verifier_announces_what_this_session_cannot_meet(gate, tmp_path):
+    """The token is read where the session starts. A build admitted with
+    classes it contains none of says so at boot, for the same reason the
+    override banner does."""
+    proc, tree = gate_cli(
+        tmp_path, "banner", [{"type": "narrate"}], [dict(PRESENT_CLASS_ROW)]
+    )
+    assert proc.returncode == 0, proc.stderr
+    r = verify(tree)
+    assert r.returncode == 0
+    assert "contains no object of 1 past finding class(es)" in r.stderr
+    assert "never coverage" in r.stderr
+
+
+def test_strict_does_not_restore_the_old_rule(gate, tmp_path):
+    """`--strict` is the floor for rows a DECLARATION excused. Nothing declared
+    an INAPPLICABLE row: the class measured zero across the design. A flag that
+    failed on it would be "resemble the campaigns we happened to test" under
+    another name."""
+    proc, _ = gate_cli(
+        tmp_path, "strict", [{"type": "narrate"}], [dict(PRESENT_CLASS_ROW)], "--strict"
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# What the non-refusal is secured by: a count over the CAMPAIGN SOURCE
+#
+# `INAPPLICABLE` is now an admission, so the property it rests on has to be one
+# the defect cannot supply. A zero counted in the BUILD tree is exactly what a
+# defect manufactures — stop emitting the ledger and the class "disappears"
+# from a build whose campaign still declares it. So at least one of the two
+# counts must be taken over the campaign source, which only the author can
+# move. Zero live ledger rows are of the refused shape today (all 94 measure
+# one side over the source); it binds against the row nobody has written yet,
+# and both directions are driven here.
+# ---------------------------------------------------------------------------
+
+
+BUILD_SIDE_PRECONDITION = {"kind": "out", "glob": "**/*.mcfunction", "contains": "wave"}
+SOURCE_SIDE_PRECONDITION = {
+    "kind": "dsl",
+    "files": ["quests.json"],
+    "match": {"eq": {"type": "volley"}},
+}
+
+
+def test_a_double_zero_counted_only_in_the_build_tree_refuses(gate, tmp_path):
+    """An unemitted artifact whose precondition is also derived output. Both
+    numbers are zero and both came from the same place the defect would act,
+    so nothing here measured the campaign's declared design."""
+    row = dict(
+        PRESENT_CLASS_ROW,
+        id="derived",
+        binding={"kind": "artifact", "file": "combat-plan.json", "path": "fights.total"},
+        applies_when=BUILD_SIDE_PRECONDITION,
+    )
+    r = run(gate, tmp_path, row, objectives=[{"type": "narrate"}])
+    assert r["verdict"] == "UNBOUND"
+    assert r["verdict"] in gate.RED_VERDICTS
+    assert "counted in the BUILD tree" in r["detail"]
+
+
+def test_moving_the_precondition_to_the_source_makes_the_absence_measured(gate, tmp_path):
+    """One variable: the same binding, the same campaign, the same two zeros —
+    and a precondition counted over the stage documents the author wrote."""
+    row = dict(
+        PRESENT_CLASS_ROW,
+        id="derived",
+        binding={"kind": "artifact", "file": "combat-plan.json", "path": "fights.total"},
+        applies_when=SOURCE_SIDE_PRECONDITION,
+    )
+    r = run(gate, tmp_path, row, objectives=[{"type": "narrate"}])
+    assert r["verdict"] == "INAPPLICABLE"
+    assert (r["binding"], r["precondition"]) == (0, 0)
+
+
+def test_the_same_demand_holds_on_the_emitted_zero_path(gate, tmp_path):
+    """The other adjudication site: an `out` glob that ran and matched nothing,
+    with a derived precondition. Same rule, driven separately because it is a
+    different branch."""
+    row = dict(
+        PRESENT_CLASS_ROW,
+        id="glob",
+        binding={"kind": "out", "glob": "**/declared_difficulty.mcfunction"},
+        applies_when=BUILD_SIDE_PRECONDITION,
+    )
+    r = run(gate, tmp_path, row, objectives=[{"type": "narrate"}])
+    assert r["verdict"] == "UNBOUND"
+    assert "counted in the BUILD tree" in r["detail"]
+
+    sourced = dict(row, applies_when=SOURCE_SIDE_PRECONDITION)
+    assert run(gate, tmp_path, sourced, objectives=[{"type": "narrate"}])["verdict"] == (
+        "INAPPLICABLE"
+    )
+
+
+def test_a_blockout_buys_no_forgiveness_for_a_build_side_double_zero(gate, tmp_path):
+    """The stage cannot answer a question nobody asked of the design, so the
+    demand holds on a pre-detail blockout too."""
+    row = dict(
+        PRESENT_CLASS_ROW,
+        id="derived",
+        binding={"kind": "out", "glob": "**/declared_difficulty.mcfunction"},
+        applies_when=BUILD_SIDE_PRECONDITION,
+    )
+    camp = make_blockout_campaign(tmp_path, objectives=[{"type": "narrate"}])
+    build = make_blockout_build(tmp_path)
+    assert adjudicate_on(gate, camp, build, row)["verdict"] == "UNBOUND"
+
+
+def test_every_live_ledger_row_anchors_its_absence_in_the_source(gate):
+    """The live data against the rule, with the count COMPUTED from the ledger.
+    A row that measured both sides in the build tree could never reach
+    INAPPLICABLE — it would refuse forever — so this states, rather than
+    assumes, that the guard above binds to nothing today."""
+    doc = gate.load_ledger(gate.DEFAULT_LEDGER)
+    rows = [r for r in doc["findings"] if r.get("binding")]
+    assert rows, "the ledger declares no binding probes at all"
+    build_side_only = [
+        r["id"]
+        for r in rows
+        if not gate._absence_is_declared(r["binding"], r.get("applies_when"))
+    ]
+    assert build_side_only == [], build_side_only

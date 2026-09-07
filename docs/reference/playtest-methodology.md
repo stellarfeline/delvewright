@@ -69,6 +69,22 @@ a clean coverage set look identical to a reader who is not counting. When a
 campaign has hostile bodies but no tiered actor or wave, the floor gate is
 unbound; say so in the round summary rather than reporting a pass.
 
+**Which zero it is decides what the finding says, and only one of them blocks.**
+A check binds where the object is. The zero above is the one that blocks: the
+objects are THERE — hostile bodies, dialogue nodes, a flask — and the check is
+inert over them, so the class is present in this build and nothing on it would
+catch that defect a second time. The other zero is a campaign that declares
+none of the class's objects at all, and that is not a hole in the engine's
+coverage: the surface is optional and using it not at all is a design choice.
+A surface the DSL *requires* cannot be absent from a build that compiled, so
+every zero of the second kind is an optional surface. Refusing on it would make
+a gate whose pass condition is "resemble the campaigns we happened to test" —
+unsatisfiable by a creator's first delve, forever, for reasons about other
+people's campaigns. So it is counted, named per class in the round summary, and
+it does not block. Which of the two a zero is is always a MEASUREMENT (rule 7),
+never an assumption in either direction, and the measurement is anchored in the
+campaign SOURCE, which no emission defect can rewrite.
+
 **The mirror image, read the same way.** A run can go RED for a reason that is not a
 verdict on the delve either. When the harness itself dies, the run report carries
 `harness_crash: {stage, reason}` and the bot exits 4 — distinct from a failed step
@@ -176,23 +192,40 @@ mechanical bug" are different claims and only the first was ever measurable.
 The gate re-runs nothing. Per row it asks: does a general-form check exist, and
 does it BIND — non-zero — here.
 
-**Six reds, one per way a green has really lied**, because folding them together
-would be the seventh:
+**Five reds, one per way a green has really lied**, because folding them together
+would be the sixth. Each says the same thing in a different voice: an object of
+the class is HERE and nothing this build carries would catch the defect again.
 
 | Verdict | What it means | Its real instance |
 |---|---|---|
 | `NO-GENERAL-FORM` | the instance was fixed, the class never built | rule 2's `DW0489`, eleven rounds late |
 | `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
 | `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's floor gate, nineteen rounds |
-| `INAPPLICABLE` | zero binding **and** a MEASURED zero precondition — the campaign declares none of the objects the class needs | the island has no trap, so no volley-saturation proof can say anything about it |
 | `UNFENCED` | the campaign's `dsl_version` never reached the surface the check keys off | rule 1's branch proofs before round 19 |
 | `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | the drowned-bell remake today |
 
-`INAPPLICABLE` is a **red**, not an exemption. The temptation is to let a row
-excuse itself by declaring its own binding class as its own precondition, which
-is not a gate; and "this build cannot exercise the class" is exactly what the
-round summary must say rather than fold away. Naming *which* zero a zero is
-never turns a red into a pass — the only non-reds are the two below.
+**The refusal is on presence, not on absence.** `INAPPLICABLE` — zero binding
+**and** a MEASURED zero precondition, so the campaign declares none of the
+objects the class needs — is counted, never refused. The island has no trap, so
+no volley-saturation proof can say anything about it, and holding the build
+until someone authors a trap is not coverage work. Absence of an OPTIONAL
+surface is a design choice; a surface the DSL requires cannot be absent from a
+build that compiled, so every zero the gate can see is an optional one. What the
+gate still refuses is the mirror: the class is present and no check binds to it.
+
+This is what makes it a general engine's gate rather than one campaign's. The
+ledger records defects found on particular campaigns — today's rows come from
+six of them, most from one — so a creator's first delve contains almost none of
+those object classes. A pass condition of "resemble the campaigns we happened to
+test" would hold every new delve unstageable forever.
+
+Counted is not folded away. The count is in the gate's headline in its own
+words, the rows are listed in their own section, their ids go into the admission
+token, and the verifier announces the number at boot: *this session cannot meet
+these classes.* A pass is admission, never coverage, and rule 4's obligation is
+kept by naming them in the round summary class by class. `--strict` does not add
+them either — that flag is the floor for rows a DECLARATION excused, and nothing
+declared this one.
 
 **Which zero it is, is always a measurement.** Two things can measure it. A
 declared `applies_when` probe, for a binding that counts a DECLARATION inside
@@ -206,12 +239,20 @@ and a `campaign` glob with no `contains`, where the file IS the object. Such a
 row may not declare an `applies_when` at all — it could only name its own
 binding, which the ledger loader refuses outright — so the gate reads the
 shape on every subject and reports the measured `INAPPLICABLE` rather than
-`UNBOUND`, whose whole content is that nobody looked. A campaign small enough
-to contain none of the ledger's object classes is still refused; every one of
-its zeros is a counted fact about the campaign, and the round summary can say
-so per class.
+`UNBOUND`, whose whole content is that nobody looked.
 
-**The first permitted non-red** is rule 2's own escape, no wider: a row may close
+**And at least one of the two counts is taken over the campaign SOURCE.** That
+is the property the non-refusal is secured by, and it is one the defect cannot
+supply: a zero counted in the build tree is exactly what an emission defect
+manufactures — stop writing the ledger and the class "disappears" from a build
+whose campaign still declares it. A `dsl` predicate reads the stage documents
+the author wrote and a `campaign` glob reads the campaign directory; only the
+author can move either number, and moving it is the design choice the whole rule
+is about. A double zero counted only in derived output stays `UNBOUND` and
+refuses. No live ledger row is of that shape today; the demand binds against the
+row nobody has written yet, and both directions are driven from fixtures.
+
+**The first non-red a row can DECLARE** is rule 2's own escape, no wider: a row may close
 `DECLARED-UNCOVERABLE` with a `disposition` (`no-machine-form` / `not-a-defect`)
 **and** a substantive justification. Sixteen island rows qualify and every one is
 a judgement — prose register, pacing, whether a space reads as open. A bare
@@ -219,7 +260,7 @@ label buys nothing; the gate checks the justification is there and says
 something. Their count is in the headline because rule 4 makes each a standing
 risk item at that staging review.
 
-**The second permitted non-red is not an escape — it is a different subject.**
+**The second is not an escape either — it is a different subject.**
 `OUT-OF-STAGE` exists because the map pipeline (spec-0049) made staging a
 series of events over a growing artifact: the whole-map blockout is walked
 before any content exists, and on that walk the zero-binding verdicts redded
@@ -257,16 +298,18 @@ no campaign can carry one. `OUT-OF-STAGE` rows are counted in the headline, list
 section, named by id in the admission token, and announced by the boot banner
 — the owner is told, per class, what her walk is not protected from, which is
 rule 4's obligation kept rather than folded away. The moment the campaign
-gains a detail-plan document, every one of these rows is adjudicated red
-again: the verdict is a statement about one staging of one stage, never a
-standing exemption. `--strict` fails on these rows too.
+gains a detail-plan document, every one of these rows is adjudicated afresh
+with no blockout allowance — the same measured double zero is then the counted
+`INAPPLICABLE`, out of the boot banner and out of `--strict`'s reach. The
+verdict is a statement about one staging of one stage, never a standing
+exemption. `--strict` fails on these rows, because a stage CLAIM is exactly
+what a reviewer at the floor wants re-examined.
 
 One consequence, stated because it is measured rather than hidden: an
 unemitted validation artifact whose row declares an `applies_when` that
-measures zero now reads `INAPPLICABLE` on an assembled campaign (still red)
-instead of `MISSING-CHECK` — "the compiler emits this ledger over zero
-objects" is a different fact from "the check no longer exists", and the remedy
-differs.
+measures zero now reads `INAPPLICABLE` on an assembled campaign instead of
+`MISSING-CHECK` — "the compiler emits this ledger over zero objects" is a
+different fact from "the check no longer exists", and the remedy differs.
 
 ### An ABSENT optional stage document is a count, not a shrug
 
@@ -291,9 +334,9 @@ every one of those campaigns fails to build — no build tree, no manifest, and
 `--build` is mandatory. The defect cannot present this witness.
 
 The zero this produces is adjudicated by the rules above and by nothing else:
-red on an assembled campaign, and `OUT-OF-STAGE` only where the twice-measured
-blockout determination already grants it. No verdict, row field, disposition or
-operator flag is added anywhere. Its cost is one obligation the ledger now
+the counted `INAPPLICABLE` on an assembled campaign, and `OUT-OF-STAGE` only
+where the twice-measured blockout determination already grants it. No verdict,
+row field, disposition or operator flag is added anywhere. Its cost is one obligation the ledger now
 carries: a `dsl` probe may only name a document this gate reads, refused at
 load time, because a mistyped filename appears in no manifest and would
 otherwise measure zero on every campaign forever.
@@ -349,7 +392,9 @@ classes in this session is the override, not a new finding.*
 **Obligation.** Every playtest APPENDS its findings to the ledger, the same day,
 with the triage rule 4 requires. The gate's red list is carried into the round
 summary item by item — a red is not permission to stop, it is the list of
-classes she is not protected from. The gate is deliberately **not** a CI status
+classes she is not protected from — and so is its `INAPPLICABLE` list, which is
+the list of classes this build cannot present to her at all. The gate is
+deliberately **not** a CI status
 check: it is red today by design, and making an honest red list blocking would
 force the one move CLAUDE.md forbids. Its falsification suite is in CI instead
 (`tools/tests/test_staging_gate.py`), including a tripwire asserting that both
