@@ -90,7 +90,8 @@ fn open_way_carries_the_whole_gate() {
     let gated = r#"{ "type": "open-way", "piece": "prefab/hello-room", "way": "w",
        "when": {
          "requires_flags": ["flag/keeper-spoke"],
-         "forbids_flags": ["flag/keeper-spoke"]
+         "forbids_flags": ["flag/keeper-spoke"],
+         "requires_state": []
        } }"#;
     let c = parse_campaign(&raw(quests_doc("0.20.0", gated))).expect("it parses");
     let effects = &c.quests.content.quests[0]

@@ -11,6 +11,18 @@ name: engine release (delvec)
 #      (`versions.toml [engine]`, ADR-0023 §6), so `cargo install delvec`
 #      installs the same creator the archive carries.
 #
+# WHO PUBLISHES `delvewright-dsl`
+#
+# Not this workflow. That crate's version is the `dsl_version`, so it moves on a
+# clock of its own and is uploaded by `.github/workflows/dsl-crate-publish.yml`
+# the moment its number moves on `main` — one authority, and it is that one.
+# The DSL crate stays in the set below as a NO-OP RE-CHECK: `delvec` declares
+# `=<dsl version>`, so the release must not proceed if the registry does not
+# already hold exactly those bytes, and the checksum comparison can only confirm
+# it (skip), refuse it (different bytes under that version), or — if the hook
+# never ran — supply it. It can never publish a DIFFERENT dsl than the one the
+# hook decided on, because the number it reads is the same `versions.toml` value.
+#
 # NOTHING HERE MAY BE DONE BY HAND. A human `cargo publish` or a hand-uploaded
 # asset is the failure mode being closed, not a fallback.
 #

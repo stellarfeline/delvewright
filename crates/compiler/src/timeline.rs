@@ -112,13 +112,43 @@ pub fn walk_campaign<'a>(
     c: &'a Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
 ) -> Vec<(&'a QuestEffect, GateState)> {
+    walk_campaign_with_beat_area(c, anchors)
+        .into_iter()
+        .map(|(e, s, _)| (e, s))
+        .collect()
+}
+
+/// [`walk`], each effect additionally paired with the area the firing
+/// [`crate::plan::EffectRoot`] plays in ([`crate::plan::effect_root_area`]) —
+/// `None` for a root with no owning quest (a trigger, a trap payload, a
+/// dialogue respawn, a shortcut unlock, `on_death`, a shop offer).
+///
+/// The one extra fact `nav::plan_moves` needs to give a `move-npc`'s
+/// destination the same [`crate::plan::BodyScope::Beat`] scope the cast
+/// ledger's per-beat station already asks [`crate::plan::body_station`] for,
+/// instead of scanning every area for the first name match.
+pub fn walk_with_beat_area<'a>(
+    plan: &'a Plan,
+) -> Vec<(&'a QuestEffect, GateState, Option<&'a str>)> {
+    walk_campaign_with_beat_area(plan.campaign, &plan.anchors)
+}
+
+/// [`walk_with_beat_area`] against a bare campaign + resolved anchor table —
+/// the shared core `walk_campaign` reduces away its area column.
+fn walk_campaign_with_beat_area<'a>(
+    c: &'a Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<(&'a QuestEffect, GateState, Option<&'a str>)> {
     let mut out = Vec::new();
     // Every root is its own timeline, in the one order
     // [`crate::plan::for_each_effect_root`] fixes. They are concatenated to match
     // the canonical pre-order, but no seal crosses from one into the next — which
     // is why the enumeration needs no per-root reasoning here at all.
-    crate::plan::for_each_effect_root(c, &mut |_site, effs| {
-        walk_list(effs, &GateState::new(), anchors, &mut out);
+    crate::plan::for_each_effect_root(c, &mut |site, effs| {
+        let beat = crate::plan::effect_root_area(c, &site.root);
+        let mut root_out = Vec::new();
+        walk_list(effs, &GateState::new(), anchors, &mut root_out);
+        out.extend(root_out.into_iter().map(|(e, s)| (e, s, beat)));
     });
     out
 }

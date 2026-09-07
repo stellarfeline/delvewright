@@ -1,0 +1,118 @@
+name: dsl crate publish (main)
+
+# The `delvewright-dsl` crate's version IS the `dsl_version` — the crate defines
+# the format, so its package number is the format's number (crates/dsl/Cargo.toml
+# says so, and `validation/check-versions.sh` holds the four statements of it
+# equal). A number that names a format has to be resolvable the moment a document
+# declares it, and the engine's own release line moves on a different clock, so
+# this crate does not wait for a `v*` tag: it goes to crates.io when its number
+# moves on `main`, and this workflow is the only thing that moves it.
+#
+# NOTHING HERE IS DONE BY HAND, in the sense `engine-release.yml`'s header means
+# it: no human runs `cargo publish` and no human decides which version goes up.
+# What a human still does is authorise the one-way door — `crates-io` is an
+# environment with a required reviewer, and that pause is one of the four
+# mechanisms that header names. Removing it to make this "fully automatic" would
+# delete a gate, not a chore.
+#
+# TWO JOBS, AND WHY THE SPLIT IS THE POINT
+#
+# An environment approval is requested when the JOB is reached, not when it has
+# work to do. A single publishing job here would raise an approval prompt on
+# EVERY push to `main` — most of them for a version already on the registry —
+# and an approval that is almost always a no-op is one nobody reads. So `plan`
+# runs without the environment, asks the registry what it already holds, and
+# `publish` is reached only when the answer is "this version is not there".
+#
+# `plan` is also the gate's other half: it fails, before any credential exists in
+# the run, if the version the manifest names is on crates.io with DIFFERENT bytes.
+# The same refusal runs on every pull request as `dsl crate version (crates.io)`
+# in `ci.yml`, so a bump that is owed is normally demanded there first.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancel: the second half is irreversible. Two pushes in a row simply
+  # queue, and the later run finds the version already published, byte-identical,
+  # and skips it.
+  group: dsl-crate-publish
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: does the dsl crate's number move
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "dsl-crate-publish" }
+      # versions.toml is the single source of truth (spec-0005), and the version
+      # about to be published is read out of it. A tree that disagrees with
+      # itself about the dsl_version must not reach the registry with either
+      # answer.
+      - name: consumers agree with versions.toml
+        run: bash validation/check-versions.sh
+      - name: ask the registry what it already holds
+        id: plan
+        run: |
+          set -euo pipefail
+          # The status is captured before anything reads the output: a plan that
+          # refused (the version is on crates.io with different bytes) must red
+          # here, not be parsed for a verdict it never reached.
+          rc=0
+          bash tools/crates-io-publish.sh --plan --only delvewright-dsl > plan.txt 2>&1 || rc=$?
+          cat plan.txt
+          [ "$rc" -eq 0 ] || exit "$rc"
+          # The script's one machine-readable line. Reading it is what keeps the
+          # index lookup in one place instead of copied into this workflow.
+          list="$(sed -n 's/^crates-io-publish: TO_PUBLISH=//p' plan.txt)"
+          version="$(python3 -c 'import sys,tomllib;sys.stdout.reconfigure(newline="\n");print(tomllib.load(open("versions.toml","rb"))["engine"]["dsl_crate_version"])')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ -z "$list" ]; then
+            echo "delvewright-dsl $version is already on crates.io, byte-identical — nothing to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "delvewright-dsl $version is not on crates.io; asking for the publish approval."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    name: publish delvewright-dsl (owner approval)
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    # THE gate. `crates-io` holds CARGO_REGISTRY_TOKEN and carries a required
+    # reviewer, so the run pauses here. Read back from the API rather than
+    # assumed: the environment has no deployment branch policy, so `main`
+    # reaches it exactly as a `v*` tag does.
+    environment: crates-io
+    permissions:
+      contents: read
+      # Lets the first step read this run's own approval history.
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      # FIRST, before anything that touches the outside world. An environment can
+      # exist, hold the token and protect nothing; this reads the CONSEQUENCE —
+      # whether this run was actually held for a human — instead of the setting.
+      - name: the gate actually bound (a run nobody approved must not publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/assert-run-approved.sh crates-io
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "dsl-crate-publish" }
+      # Packages the crate itself, compares its sha256 with the registry's,
+      # uploads only what is absent, and polls until the index serves our exact
+      # bytes. Re-running it after a half-finished run is safe by construction.
+      - name: publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: bash tools/crates-io-publish.sh --publish --only delvewright-dsl

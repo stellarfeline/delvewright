@@ -139,6 +139,34 @@ fn gate_providers(
     (areas, refusals)
 }
 
+/// **Which of this campaign's areas certainly answer to `anchor`**, and through
+/// which of their pieces — the same question [`gate_providers`] asks about a
+/// gate, asked about the NAME, because a name two buildings answer to is a fact
+/// about the name and not about the verb that said it.
+///
+/// **Certainly** is the whole of the difference from a by-name sweep. An area
+/// binding a bare `prefab` answers yes exactly when that piece declares the
+/// name. An area binding a `prefab_pool` answers yes only when **every** member
+/// does, because which member the solver seats is not knowable here — a pool
+/// where some members declare it and some do not is left to the build tier,
+/// which knows what was seated (`DW0461`'s place arm). Withholding there is what
+/// keeps this from refusing a campaign on a coin-flip.
+pub(crate) fn certain_anchor_providers(
+    c: &Campaign,
+    prefabs: &PrefabRegistry,
+    anchor: &str,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for area in &c.world.content.areas {
+        let pieces = prefabs.area_pieces(area);
+        if pieces.is_empty() || !pieces.iter().all(|p| prefabs.declares_anchor(p, anchor)) {
+            continue;
+        }
+        out.insert(area.id.as_str().to_string(), pieces.into_iter().collect());
+    }
+    out
+}
+
 /// **What an author may do about an ambiguous anchor name, and what they may
 /// not.**
 ///

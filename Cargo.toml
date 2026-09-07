@@ -19,7 +19,7 @@ members = [
 # refuses a `v*` tag whose name disagrees with it. `delvewright-dsl` is
 # deliberately on its own line (see crates/dsl/Cargo.toml).
 [workspace.package]
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 # The toolchain this repo actually builds and tests on (rust-toolchain.toml).
 # Asserted equal to that pin by check-versions.sh: a `rust-version` looser than
@@ -40,12 +40,12 @@ repository = "https://github.com/stellarfeline/delvewright"
 # `[engine] dsl_crate_req` in versions.toml.
 [workspace.dependencies]
 delvewright-dsl = { path = "crates/dsl", version = "=0.20.0" }
-delvewright-compiler = { path = "crates/compiler", version = "=1.1.0" }
-delvewright-grammar = { path = "crates/grammar", version = "=1.1.0" }
-delvewright-schem = { path = "crates/schem", version = "=1.1.0" }
-delvewright-admit = { path = "crates/admit", version = "=1.1.0" }
-delvewright-orchestrator = { path = "crates/orchestrator", version = "=1.1.0" }
-delvewright-render = { path = "crates/render", version = "=1.1.0" }
+delvewright-compiler = { path = "crates/compiler", version = "=1.2.0" }
+delvewright-grammar = { path = "crates/grammar", version = "=1.2.0" }
+delvewright-schem = { path = "crates/schem", version = "=1.2.0" }
+delvewright-admit = { path = "crates/admit", version = "=1.2.0" }
+delvewright-orchestrator = { path = "crates/orchestrator", version = "=1.2.0" }
+delvewright-render = { path = "crates/render", version = "=1.2.0" }
 
 # An unoptimized `delvec` is unusable on a real campaign, and nothing used to say
 # so: `cargo build` hands you `target/debug/delvec`, and on `nobodys-cave-island`

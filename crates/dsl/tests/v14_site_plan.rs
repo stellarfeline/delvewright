@@ -137,67 +137,292 @@ const BRIEF: &str = r#"{
 ///   `(33.5, 7.5)` which is at least the 24 the brief asks for, and grade is 64.
 const PLAN: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.20.0",
-  "stage": "site-plan",
   "content": {
-    "region": { "min": [0, 48, 0], "extent": [64, 48, 64] },
-    "datums": [
-      { "id": "datum/grade", "y": 64, "note": "The plane the delve opens on." },
-      { "id": "datum/undercroft", "y": 59 }
-    ],
     "boxes": [
-      { "node": "node/porch", "min": [4, 4], "extent": [8, 8],
-        "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 4 } },
-      { "node": "node/hall", "min": [13, 4], "extent": [16, 16],
-        "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 8 } },
-      { "node": "node/vault", "min": [30, 4], "extent": [8, 8],
-        "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 4 } },
-      { "node": "node/cellar", "min": [4, 13], "extent": [8, 16],
-        "floor": { "datum": "datum/undercroft" }, "ceiling": { "clearance": 12 } },
-      { "node": "node/yard", "min": [30, 13], "extent": [16, 16],
-        "floor": { "datum": "datum/grade" }, "ceiling": "open" },
-      { "node": "node/pit", "min": [32, 16], "extent": [8, 8],
-        "floor": { "y": 59 }, "ceiling": { "clearance": 4 } }
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          4,
+          4
+        ],
+        "node": "node/porch"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/hall"
+      },
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/vault"
+      },
+      {
+        "ceiling": {
+          "clearance": 12
+        },
+        "extent": [
+          8,
+          16
+        ],
+        "floor": {
+          "datum": "datum/undercroft"
+        },
+        "node": "node/cellar"
+      },
+      {
+        "ceiling": "open",
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/yard"
+      },
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "y": 59
+        },
+        "node": "node/pit"
+      }
     ],
-    "seams": [
-      { "edge": "edge/porch-hall", "face": "east", "at": [6, 64], "opening": "arch" },
-      { "edge": "edge/hall-vault", "face": "east", "at": [6, 64], "opening": "door" },
-      { "edge": "edge/hall-cellar", "face": "west", "at": [14, 64], "opening": "passage",
-        "stair_in": "node/cellar" },
-      { "edge": "edge/porch-cellar", "face": "south", "at": [6, 64], "opening": "passage" },
-      { "edge": "edge/vault-yard", "face": "south", "at": [32, 64], "opening": "arch" },
-      { "edge": "edge/yard-pit", "face": "down", "at": [32, 16], "opening": "passage" },
-      { "edge": "edge/pit-yard", "face": "up", "at": [32, 16], "opening": "passage",
-        "stair_in": "node/pit" }
-    ],
-    "volumes": [
-      { "id": "volume/undercroft-rock", "region": { "min": [4, 48, 4], "extent": [44, 10, 36] },
-        "role": "massif", "note": "The rock the cellar and the pit are cut into." },
-      { "id": "volume/sky-over-the-yard",
-        "region": { "min": [30, 72, 13], "extent": [16, 20, 16] }, "role": "clearance" }
+    "datums": [
+      {
+        "id": "datum/grade",
+        "note": "The plane the delve opens on.",
+        "y": 64
+      },
+      {
+        "id": "datum/undercroft",
+        "y": 59
+      }
     ],
     "identities": [
-      { "fact": "fact/region-span", "measure": { "of": "region-extent", "axis": "x" },
-        "cmp": "eq" },
-      { "fact": "fact/hall-span",
-        "measure": { "of": "box-extent", "node": "node/hall", "axis": "x" }, "cmp": "eq" },
-      { "fact": "fact/hall-height", "measure": { "of": "box-height", "node": "node/hall" },
-        "cmp": "eq" },
-      { "fact": "fact/porch-to-vault",
-        "measure": { "of": "distance-xz", "from": "node/porch", "to": "node/vault" },
-        "cmp": "ge" },
-      { "fact": "fact/grade", "measure": { "of": "datum-y", "datum": "datum/grade" },
-        "cmp": "eq" }
+      {
+        "cmp": "eq",
+        "fact": "fact/region-span",
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/hall-span",
+        "measure": {
+          "axis": "x",
+          "node": "node/hall",
+          "of": "box-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/hall-height",
+        "measure": {
+          "node": "node/hall",
+          "of": "box-height"
+        }
+      },
+      {
+        "cmp": "ge",
+        "fact": "fact/porch-to-vault",
+        "measure": {
+          "from": "node/porch",
+          "of": "distance-xz",
+          "to": "node/vault"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/grade",
+        "measure": {
+          "datum": "datum/grade",
+          "of": "datum-y"
+        }
+      }
+    ],
+    "lighting": {
+      "fixture": "torch",
+      "min_light": 7
+    },
+    "region": {
+      "extent": [
+        64,
+        48,
+        64
+      ],
+      "min": [
+        0,
+        48,
+        0
+      ]
+    },
+    "seams": [
+      {
+        "at": 2,
+        "edge": "edge/porch-hall",
+        "face": "east",
+        "meets": 2,
+        "opening": "arch"
+      },
+      {
+        "at": 2,
+        "edge": "edge/hall-vault",
+        "face": "east",
+        "meets": 2,
+        "opening": "door"
+      },
+      {
+        "at": 10,
+        "edge": "edge/hall-cellar",
+        "face": "west",
+        "meets": 1,
+        "opening": "passage",
+        "stair_in": "node/cellar"
+      },
+      {
+        "edge": "edge/porch-cellar",
+        "face": "south",
+        "opening": "passage"
+      },
+      {
+        "at": 2,
+        "edge": "edge/vault-yard",
+        "face": "south",
+        "meets": 2,
+        "opening": "arch"
+      },
+      {
+        "at": [
+          2,
+          3
+        ],
+        "edge": "edge/yard-pit",
+        "face": "down",
+        "meets": [
+          0,
+          0
+        ],
+        "opening": "passage"
+      },
+      {
+        "at": [
+          0,
+          0
+        ],
+        "edge": "edge/pit-yard",
+        "face": "up",
+        "meets": [
+          2,
+          3
+        ],
+        "opening": "passage",
+        "stair_in": "node/pit"
+      }
     ],
     "sightlines": [
-      { "edge": "edge/porch-vault-sightline", "from": [8, 65, 8], "to": [33, 65, 8] }
+      {
+        "edge": "edge/porch-vault-sightline",
+        "from": [
+          8,
+          65,
+          8
+        ],
+        "to": [
+          33,
+          65,
+          8
+        ]
+      }
     ],
     "views": [
-      { "id": "view/from-the-south", "eye": [20, 80, 60], "look_at": [20, 66, 12],
-        "note": "The approach the silhouette is judged from." }
+      {
+        "eye": [
+          20,
+          80,
+          60
+        ],
+        "id": "view/from-the-south",
+        "look_at": [
+          20,
+          66,
+          12
+        ],
+        "note": "The approach the silhouette is judged from."
+      }
     ],
-    "lighting": { "fixture": "torch", "min_light": 7 }
-  }
+    "volumes": [
+      {
+        "id": "volume/undercroft-rock",
+        "note": "The rock the cellar and the pit are cut into.",
+        "region": {
+          "extent": [
+            44,
+            10,
+            36
+          ],
+          "min": [
+            4,
+            48,
+            4
+          ]
+        },
+        "role": "massif"
+      },
+      {
+        "id": "volume/sky-over-the-yard",
+        "region": {
+          "extent": [
+            16,
+            20,
+            16
+          ],
+          "min": [
+            30,
+            72,
+            13
+          ]
+        },
+        "role": "clearance"
+      }
+    ]
+  },
+  "dsl_version": "0.20.0",
+  "stage": "site-plan"
 }"#;
 
 // ---------------------------------------------------------------------------
@@ -398,8 +623,15 @@ fn the_binding_ledger_counts_what_the_plan_holds() {
     assert_eq!(b.plan.identities, 5);
     assert_eq!(b.plan.sightlines, 1);
     assert_eq!(b.plan.views, 1);
+    assert_eq!(
+        (b.plan.pinned, b.plan.derived, b.plan.components),
+        (1, 5, 1)
+    );
     let line = b.plan.line();
-    assert!(line.contains("6 box(es) (15 pair(s) compared)"), "{line}");
+    assert!(
+        line.contains("6 box(es) (15 pair(s) compared; 1 pinned, 5 derived, in 1 component(s))"),
+        "{line}"
+    );
     assert!(line.contains("7 seam(s) (2 stair, 2 drop)"), "{line}");
     assert!(line.contains("5 identity(ies)"), "{line}");
 }
@@ -608,6 +840,8 @@ fn a_box_off_the_kit_grid_is_refused_with_both_numbers() {
 /// grow it — which is what the prescription says.
 #[test]
 fn a_box_outside_the_region_is_refused_and_the_region_is_not_grown() {
+    // A pin puts the vault where it says (the seam that would place it
+    // disagrees, which is `DW0883` — a second finding, not this one).
     let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["min"] = json!([60, 4]));
     let msg = d
         .iter()
@@ -631,17 +865,19 @@ fn a_volume_outside_the_region_is_refused() {
 /// region beside its own span. The fold below must never reach this case.
 #[test]
 fn a_single_box_outside_the_region_still_gets_its_own_line() {
-    let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["min"] = json!([60, 4]));
+    // The pit hangs nothing off itself, so a pin that puts it out of the
+    // region moves exactly one box (the seams that disagree are `DW0883`).
+    let d = plan_diags(|v| boxes(v)[box_of("node/pit")]["min"] = json!([60, 16]));
     let leaving: Vec<&delvewright_dsl::Diagnostic> =
         d.iter().filter(|x| x.code == "DW0826").collect();
     assert_eq!(leaving.len(), 1, "one offender is one line: {leaving:?}");
     assert_eq!(
         leaving[0].path,
-        format!("/content/boxes/{}", box_of("node/vault")),
+        format!("/content/boxes/{}", box_of("node/pit")),
         "and it is addressed at the box that is wrong"
     );
     assert!(
-        leaving[0].message.contains("`node/vault`")
+        leaving[0].message.contains("`node/pit`")
             && leaving[0].message.contains("against the region's"),
         "{}",
         leaving[0].message
@@ -744,7 +980,10 @@ fn a_volume_inside_a_box_is_refused() {
 /// refusal says so with the gap it measured.
 #[test]
 fn a_seam_on_a_face_the_boxes_do_not_share_is_refused() {
-    let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["min"] = json!([31, 4]));
+    // Across a wall the packing leaves exactly one cell, so the gap a seam can
+    // get wrong is the vertical one: the pit's floor two courses lower puts two
+    // cells between the yard's floor and the pit's ceiling.
+    let d = plan_diags(|v| boxes(v)[box_of("node/pit")]["floor"] = json!({ "y": 58 }));
     let msg = d
         .iter()
         .find(|x| x.code == "DW0828")
@@ -765,11 +1004,11 @@ fn a_seam_on_the_wrong_face_of_the_right_boxes_is_refused() {
     assert!(has(&got, "DW0828"), "{got:?}");
 }
 
-/// `at` names the opening's low corner on the shared face's own two axes; a
-/// corner off that face allocates the seam nowhere.
+/// `at` is an offset along the `a` box's own face; one past that face
+/// allocates the seam nowhere.
 #[test]
 fn a_seam_anchored_off_the_shared_face_is_refused() {
-    let got = plan_with(|v| seams(v)[seam_of("edge/porch-hall")]["at"] = json!([40, 64]));
+    let got = plan_with(|v| seams(v)[seam_of("edge/porch-hall")]["at"] = json!(40));
     assert!(has(&got, "DW0828"), "{got:?}");
 }
 
@@ -800,7 +1039,9 @@ fn an_opening_the_table_does_not_define_is_refused() {
 /// onto the sill. Two blocks up is past a jump.
 #[test]
 fn a_sill_a_body_cannot_reach_is_refused() {
-    let d = plan_diags(|v| seams(v)[seam_of("edge/hall-vault")]["at"] = json!([6, 66]));
+    // The sill is the higher of the two floors: lift the vault two blocks and a
+    // body in the hall cannot get into the door.
+    let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["floor"] = json!({ "y": 66 }));
     let msg = d
         .iter()
         .find(|x| x.code == "DW0829" && x.message.contains("sill"))
@@ -818,32 +1059,24 @@ fn a_sill_a_body_cannot_reach_is_refused() {
 /// the run the host really has** — the arithmetic the derivation lays treads
 /// by, because it is the same function.
 ///
-/// The green plan's `hall|cellar` stair has its sill at the hall's own floor,
-/// so its climb and its rise are both 5 and nothing distinguishes the two
-/// readings. Lift the sill to y 68 — one field, and a sill a plan is entitled
-/// to put where it likes — and the courses have to carry 9, which no standard
-/// pitch fits in the eight blocks of run the cellar affords. The refusal names
-/// the rise, the climb, the run needed and the run available, which are the
-/// numbers a plan edit needs.
-///
-/// This is the pair that says the check reads the derivation's own arithmetic.
-/// Measured against the RISE it is a run of 5 in a host affording 8, which is
-/// green — and the derivation then lays no treads at all, because it measures
-/// the climb. A place whose only way in is that stair comes back as an unreached
-/// `DW0837` five stages later, with nothing pointing at the seam.
+/// The green plan's `hall|cellar` stair climbs 5. Sink the cellar four more —
+/// one field — and the courses have to carry 9, which no standard pitch fits in
+/// the eight blocks of run the cellar affords. The refusal names the rise, the
+/// run needed and the run available, which are the numbers a plan edit needs.
+/// The sill is derived (the higher floor), so the climb the treads carry is the
+/// rise the floors state: one arithmetic, and this check reads it.
 #[test]
 fn a_stair_that_no_standard_pitch_fits_is_refused_with_its_numbers() {
-    let d = plan_diags(|v| seams(v)[seam_of("edge/hall-cellar")]["at"] = json!([14, 68]));
+    let d = plan_diags(|v| boxes(v)[box_of("node/cellar")]["floor"] = json!({ "y": 55 }));
     let msg = d
         .iter()
         .find(|x| x.code == "DW0830")
         .map(|x| x.message.clone())
         .unwrap_or_default();
     assert!(!msg.is_empty(), "{d:?}");
-    assert!(msg.contains("climbs 5 block(s)"), "{msg}");
+    assert!(msg.contains("climbs 9 block(s)"), "{msg}");
     assert!(msg.contains("for a climb of 9"), "{msg}");
     assert!(msg.contains("affords 8"), "{msg}");
-    assert!(msg.contains("The treads carry 9, not 5"), "{msg}");
 }
 
 /// **A run exactly as long as the courses it must carry is buildable**, and is
@@ -1000,10 +1233,10 @@ fn every_measure_is_falsifiable_on_its_own() {
     assert!(has(&height, "DW0833"), "hall height 9 != 8: {height:?}");
 
     // The porch centre is (7.5, 7.5) and the vault centre (33.5, 7.5), which is
-    // 26 apart. Slide the vault back to x 20..27 and the centres are 16 apart,
-    // under the 24 the brief asks for.
-    let standoff = plan_with(|v| boxes(v)[box_of("node/vault")]["min"] = json!([20, 4]));
-    assert!(has(&standoff, "DW0833"), "16 < 24: {standoff:?}");
+    // 26 apart. Halve the hall and the vault, hung off its east face, slides
+    // back to x 22..29: the centres are 18 apart, under the 24 the brief asks.
+    let standoff = plan_with(|v| boxes(v)[box_of("node/hall")]["extent"] = json!([8, 16]));
+    assert!(has(&standoff, "DW0833"), "18 < 24: {standoff:?}");
 
     let grade = plan_with(|v| v["content"]["datums"][0]["y"] = json!(65));
     assert!(has(&grade, "DW0833"), "grade 65 != 64: {grade:?}");
@@ -1605,4 +1838,241 @@ fn a_campaign_with_no_map_is_told_about_both_placement_authorities() {
             x.message
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0059 — a box is placed by its seam, and the grid is derived
+// ---------------------------------------------------------------------------
+
+/// The packing hands every corner back: the pinned porch, and every other box
+/// hung off a box that already stood by the first seam in document order that
+/// reached it.
+#[test]
+fn every_derived_corner_is_handed_back_with_the_seam_that_placed_it() {
+    let raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let c = delvewright_dsl::parse_campaign(&raw).expect("the green plan parses");
+    let lines = delvewright_dsl::placements(&c);
+    assert_eq!(lines.len(), 6, "{lines:#?}");
+    let expect = [
+        ("node/porch", "[4, 4]", "pinned"),
+        (
+            "node/hall",
+            "[13, 4]",
+            "hung off `node/porch` across the east face by the seam for `edge/porch-hall`",
+        ),
+        (
+            "node/vault",
+            "[30, 4]",
+            "hung off `node/hall` across the east face by the seam for `edge/hall-vault`",
+        ),
+        (
+            "node/cellar",
+            "[4, 13]",
+            "hung off `node/hall` across the west face by the seam for `edge/hall-cellar`",
+        ),
+        (
+            "node/yard",
+            "[30, 13]",
+            "hung off `node/vault` across the south face by the seam for `edge/vault-yard`",
+        ),
+        (
+            "node/pit",
+            "[32, 16]",
+            "hung off `node/yard` across the down face by the seam for `edge/yard-pit`",
+        ),
+    ];
+    for (node, corner, by) in expect {
+        let line = lines
+            .iter()
+            .find(|l| l.contains(&format!("`{node}`")))
+            .unwrap_or_else(|| panic!("no placing line for {node}: {lines:#?}"));
+        assert!(line.contains(corner) && line.contains(by), "{line}");
+    }
+}
+
+/// `DW0883`, first shape: a component of the seam graph with no pinned box.
+/// Nothing places it, and the refusal names every box and the box to pin.
+#[test]
+fn a_component_no_pin_seeds_is_refused_naming_every_box_in_it() {
+    let d = plan_diags(|v| {
+        boxes(v)[box_of("node/porch")]
+            .as_object_mut()
+            .expect("box")
+            .remove("min");
+    });
+    let refusals: Vec<_> = d.iter().filter(|x| x.code == "DW0883").collect();
+    assert_eq!(refusals.len(), 1, "{d:?}");
+    let m = &refusals[0].message;
+    for node in ["porch", "hall", "vault", "cellar", "yard", "pit"] {
+        assert!(m.contains(&format!("`node/{node}`")), "{m}");
+    }
+    assert!(m.contains("Pin one of them — `node/porch`"), "{m}");
+    assert!(m.contains("6 box(es) in this component"), "{m}");
+    // No box has cells, so nothing geometric is judged against a corner that
+    // does not exist — the one refusal is the whole story.
+    for code in ["DW0826", "DW0827", "DW0828", "DW0829", "DW0830", "DW0831"] {
+        assert!(
+            !has(&codes_of_diags(&d), code),
+            "{code} fired over unplaced boxes: {d:?}"
+        );
+    }
+}
+
+fn codes_of_diags(d: &[delvewright_dsl::Diagnostic]) -> Vec<String> {
+    d.iter().map(|x| x.code.to_string()).collect()
+}
+
+/// `DW0883`, second shape: a pin and the seam that reaches the box disagree.
+/// Both corners are named, with how each was obtained.
+#[test]
+fn a_pin_the_packing_contradicts_is_refused_naming_both_corners() {
+    let d = plan_diags(|v| boxes(v)[box_of("node/vault")]["min"] = json!([31, 4]));
+    let refusals: Vec<_> = d.iter().filter(|x| x.code == "DW0883").collect();
+    assert_eq!(refusals.len(), 1, "{d:?}");
+    let m = &refusals[0].message;
+    assert!(m.contains("`node/vault` stands at [31, 4] (pinned)"), "{m}");
+    assert!(m.contains("would stand at [30, 4]"), "{m}");
+    assert!(m.contains("hung off `node/porch`"), "{m}");
+    assert_eq!(
+        refusals[0].path,
+        format!("/content/seams/{}", seam_of("edge/hall-vault")),
+        "addressed at the seam that disagrees"
+    );
+}
+
+/// A pin that says what the packing derives is a claim the packing verifies,
+/// and is accepted.
+#[test]
+fn a_pin_the_packing_agrees_with_is_accepted() {
+    let got = plan_with(|v| boxes(v)[box_of("node/vault")]["min"] = json!([30, 4]));
+    assert!(!has(&got, "DW0883") && !has(&got, "DW0828"), "{got:?}");
+}
+
+/// The face decides the shape of an offset: one number along a wall, two
+/// through a floor. The wrong shape is `DW0828` naming the face.
+#[test]
+fn an_offset_of_the_wrong_shape_for_its_face_is_refused() {
+    let wall = plan_diags(|v| seams(v)[seam_of("edge/porch-hall")]["at"] = json!([2, 2]));
+    let m = wall
+        .iter()
+        .find(|x| x.code == "DW0828")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(m.contains("is a wall with one horizontal axis"), "{m}");
+    let floor = plan_diags(|v| seams(v)[seam_of("edge/yard-pit")]["at"] = json!(2));
+    let m = floor
+        .iter()
+        .find(|x| x.code == "DW0828")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(
+        m.contains("is a floor or ceiling with two in-plane axes"),
+        "{m}"
+    );
+}
+
+/// A seam whose two boxes both already stand places nothing; when the cells it
+/// names from `a` are not the cells it names from `b`, the loop does not close
+/// and the refusal is at that seam.
+#[test]
+fn a_loop_that_does_not_close_is_refused_at_the_seam_that_closes_it() {
+    let d = plan_diags(|v| seams(v)[seam_of("edge/porch-cellar")]["meets"] = json!(3));
+    let refusals: Vec<_> = d.iter().filter(|x| x.code == "DW0828").collect();
+    assert_eq!(refusals.len(), 1, "{d:?}");
+    let m = &refusals[0].message;
+    assert!(
+        m.contains("closes a loop, and the loop does not close"),
+        "{m}"
+    );
+    assert!(m.contains("`node/cellar` stands at [4, 13]"), "{m}");
+    assert!(m.contains("would stand at [3, 13]"), "{m}");
+    assert!(
+        !has(&codes_of_diags(&d), "DW0883"),
+        "no pin is involved: {d:?}"
+    );
+}
+
+/// The scan is document order, and a consistent plan packs to the same corners
+/// however its seams are ordered — determinism is of the corners, not of which
+/// seam happened to place them.
+#[test]
+fn reordering_the_seams_of_a_consistent_plan_moves_no_corner() {
+    let corners = |patch: fn(&mut Value)| -> Vec<String> {
+        let mut v: Value = serde_json::from_str(PLAN).expect("parses");
+        patch(&mut v);
+        let raw = campaign(
+            Some(serde_json::to_string(&v).expect("re-serialize")),
+            Some(GRAPH.to_string()),
+            Some(BRIEF.to_string()),
+        );
+        let c = delvewright_dsl::parse_campaign(&raw).expect("parses");
+        let mut lines: Vec<String> = delvewright_dsl::placements(&c)
+            .into_iter()
+            .map(|l| l.split(" — ").next().unwrap_or_default().to_string())
+            .collect();
+        lines.sort();
+        lines
+    };
+    let forward = corners(|_| {});
+    let reversed = corners(|v| seams(v).reverse());
+    assert_eq!(forward, reversed);
+    assert_eq!(forward.len(), 6);
+}
+
+/// The regeneration property (spec-0059 §7): widen one box and every new
+/// refusal is about that box or one of its seams; no other box is re-typed.
+#[test]
+fn one_extent_edit_raises_findings_about_that_box_alone() {
+    let green = plan_diags(|_| {});
+    let edited = plan_diags(|v| boxes(v)[box_of("node/hall")]["extent"] = json!([20, 16]));
+    let new: Vec<_> = edited
+        .iter()
+        .filter(|x| !green.iter().any(|g| g.code == x.code && g.path == x.path))
+        .collect();
+    assert!(
+        !new.is_empty(),
+        "widening the hall past its class and its brief fact says so"
+    );
+    let hall_seams = ["edge/porch-hall", "edge/hall-vault", "edge/hall-cellar"];
+    let mut residue = 0;
+    for x in &new {
+        // The one residue spec-0059 §7 names: a sightline end typed in world
+        // coordinates against a box that moved. It is `DW0824` at the
+        // sightline, never at a box.
+        if x.path.starts_with("/content/sightlines/") {
+            assert_eq!(x.code, "DW0824", "{x:?}");
+            residue += 1;
+            continue;
+        }
+        let about_hall = x.message.contains("`node/hall`")
+            || x.path
+                .starts_with(&format!("/content/boxes/{}", box_of("node/hall")))
+            || hall_seams.iter().any(|e| x.message.contains(e));
+        assert!(about_hall, "a finding not about the hall: {x:?}");
+    }
+    assert_eq!(
+        residue, 1,
+        "the vault moved under the sightline's `to` end: {new:?}"
+    );
+    // And the vault, hung off the hall's east face, moved with it — read from
+    // the derivation, not from a document that was never edited.
+    let mut v: Value = serde_json::from_str(PLAN).expect("parses");
+    boxes(&mut v)[box_of("node/hall")]["extent"] = json!([20, 16]);
+    let raw = campaign(
+        Some(serde_json::to_string(&v).expect("re-serialize")),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let c = delvewright_dsl::parse_campaign(&raw).expect("parses");
+    let lines = delvewright_dsl::placements(&c);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("`node/vault` stands at [34, 4]")),
+        "{lines:#?}"
+    );
 }

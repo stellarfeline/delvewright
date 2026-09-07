@@ -30,10 +30,6 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "min": [
-          21,
-          21
-        ],
         "node": "node/far-hall"
       },
       {
@@ -47,10 +43,6 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "min": [
-          4,
-          13
-        ],
         "node": "node/annex"
       },
       {
@@ -64,10 +56,6 @@
         "floor": {
           "datum": "datum/loft"
         },
-        "min": [
-          40,
-          12
-        ],
         "node": "node/loft"
       },
       {
@@ -81,10 +69,6 @@
         "floor": {
           "y": 60
         },
-        "min": [
-          24,
-          16
-        ],
         "node": "node/undercroft"
       },
       {
@@ -96,10 +80,6 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "min": [
-          24,
-          38
-        ],
         "node": "node/exit"
       }
     ],
@@ -201,105 +181,100 @@
     },
     "seams": [
       {
-        "at": [
-          14,
-          64
-        ],
+        "at": 10,
         "edge": "edge/annex-arch",
         "face": "west",
+        "meets": 1,
         "opening": "arch"
       },
       {
-        "at": [
-          22,
-          64
-        ],
+        "at": 9,
         "edge": "edge/annex-chute",
         "face": "east",
+        "meets": 1,
         "opening": "arch"
       },
       {
-        "at": [
-          23,
-          64
-        ],
+        "at": 2,
         "edge": "edge/west-door",
         "face": "south",
+        "meets": 2,
         "opening": "door"
       },
       {
-        "at": [
-          28,
-          64
-        ],
         "edge": "edge/centre-door",
         "face": "south",
+        "meets": 7,
         "opening": "door"
       },
       {
-        "at": [
-          33,
-          64
-        ],
+        "at": 12,
         "edge": "edge/east-door",
         "face": "south",
+        "meets": 12,
         "opening": "door"
       },
       {
-        "at": [
-          41,
-          69
-        ],
+        "at": 20,
         "edge": "edge/loft-stair",
         "face": "north",
+        "meets": 1,
         "opening": "passage",
         "stair_in": "node/far-hall"
       },
       {
-        "at": [
-          45,
-          69
-        ],
+        "at": 24,
         "edge": "edge/loft-drop",
         "face": "north",
+        "meets": 5,
         "opening": "arch"
       },
       {
         "at": [
-          25,
-          21
+          4,
+          0
         ],
         "edge": "edge/undercroft-stair",
         "face": "down",
+        "meets": [
+          1,
+          5
+        ],
         "opening": "passage",
         "stair_in": "node/far-hall"
       },
       {
         "at": [
-          28,
-          16
+          4,
+          0
         ],
         "edge": "edge/undercroft-crawl",
         "face": "up",
+        "meets": [
+          7,
+          12
+        ],
         "opening": "passage",
         "stair_in": "node/undercroft"
       },
       {
         "at": [
-          25,
-          16
+          4,
+          12
         ],
         "edge": "edge/undercroft-shaft",
         "face": "down",
+        "meets": [
+          1,
+          0
+        ],
         "opening": "door"
       },
       {
-        "at": [
-          26,
-          64
-        ],
+        "at": 5,
         "edge": "edge/exit-arch",
         "face": "south",
+        "meets": 2,
         "opening": "arch"
       }
     ],

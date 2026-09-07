@@ -32,6 +32,18 @@
 #               major tag, or a toolchain held at a major/minor line the
 #               publisher advances. Registered so that the number of
 #               deliberately-unfrozen refs is visible instead of habitual.
+#   held      — a commit on the upstream default branch, for a site that BUILDS
+#               the pinned tool and is judged as one unit with it rather than
+#               re-pinned on every upstream merge. Drift from the default branch
+#               is never a finding — the online check prints the distance as
+#               information only. What makes the hold deliberate: the value is
+#               a real upstream commit, `judged_by` carries it as a literal, so
+#               the workflow really builds from the commit it claims to; carries
+#               `reviewed`, the upstream revision the judgement read, itself a
+#               real commit; and carries `why`. Any missing term is a red naming
+#               it. `builds = []` is not the same thing — that lies the moment
+#               the site's own `cargo build … -p <pkg>` names a package, and the
+#               offline check catches the lie same as it would for `track`.
 #
 # `builds` is the package names the site file builds out of the pinned checkout.
 # It is not a watch list an author writes: the online check derives the watched
@@ -352,6 +364,7 @@ value = "actions/checkout@v4"
 sites = [
     ".github/actions/checkout-content/action.yml",
     ".github/workflows/ci.yml",
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
     ".github/workflows/infra-images.yml",
@@ -365,6 +378,7 @@ id = "action-rust-cache"
 value = "Swatinem/rust-cache@v2"
 sites = [
     ".github/workflows/ci.yml",
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
     ".github/workflows/release.yml",
