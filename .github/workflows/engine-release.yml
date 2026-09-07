@@ -154,6 +154,18 @@ jobs:
         with: { ref: "${{ needs.identity.outputs.tag }}" }
       - uses: Swatinem/rust-cache@v2
         with: { key: "shelf-${{ matrix.target }}" }
+      # The script below reads versions.toml through stdlib `tomllib` (floor
+      # >= 3.11, versions.toml [ci].python_tools_version). `ubuntu-22.04` and
+      # `ubuntu-22.04-arm` both ship python3.10 by default — release run
+      # 34069406209 (v1.2.0) failed both Linux legs with `ModuleNotFoundError:
+      # No module named 'tomllib'` while macOS and Windows built, because only
+      # those two images predate the floor. Harmless on macos-latest /
+      # windows-latest, which already default to a newer line; pinned here
+      # rather than left to the runner image so a future LTS bump cannot
+      # silently reopen this.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       # git-bash on the Windows runner, so one script serves all three OSes.
       - name: build + archive + checksum
         shell: bash
