@@ -126,34 +126,38 @@ mineflayer = "4.37.1"
 # this file, the way validation/server-bootstrap-cache.sh does).
 #
 # The number lives in the root Cargo.toml's `[workspace.package] version`, which
-# every engine crate inherits; check-versions.sh holds the two equal.
+# the engine crate inherits; check-versions.sh holds the two equal.
 version = "1.2.0"
 
-# crates.io identity of the ONE binary (ADR-0023 §3). `cargo install` resolves
-# by CRATE name, never by binary name, so the package that carries the
-# executable IS `delvec` (crates/delvec), and nothing else in it.
+# crates.io identity of the ONE binary (ADR-0023 §3) and of the whole engine
+# (ADR-0025): `cargo install` resolves by CRATE name, never by binary name, so
+# the package that carries the executable IS `delvec` (crates/delvec), and every
+# capability the binary mounts is a module of it.
 crate = "delvec"
 
-# The library crates the binary is assembled from, every one on this version
-# line and every one published beside it (ADR-0023 §6): `cargo install delvec`
-# must build the same surface the release archive carries. Dependency order —
-# the order `cargo publish` uploads them in. The compiler library keeps its
-# library-target name `delvewright_compiler`, which every `use` path spells.
-# Consumed by: validation/check-versions.sh (every manifest under crates/ is
-# either here, `delvec`, or the DSL crate — a new crate is a decision),
-# tools/check-publishable.sh, tools/crates-io-publish.sh.
+# What crates.io publishes: exactly these two, in dependency order — the order
+# `cargo publish` uploads them in — and never a third (ADR-0025). `cargo install
+# delvec` resolves its dependencies on crates.io, so every crate the binary is
+# assembled from must be public; the engine is therefore one package, and a
+# feature adds a module or a subcommand, never a crate. The two entries restate
+# `dsl_crate` and `crate` in publish order; validation/check-versions.sh holds
+# the three equal, and equal to the workspace's members, both ways.
+# Consumed by: validation/check-versions.sh, tools/check-publishable.sh,
+# tools/crates-io-publish.sh, .github/workflows/engine-release.yml.
 crates = [
+    "delvewright-dsl",
+    "delvec",
 ]
 
-# `delvewright-dsl` is a real dependency of every engine crate, so it must exist
-# on crates.io first — and it is NOT on the engine version line.
+# `delvewright-dsl` is a real dependency of the engine, so it must exist on
+# crates.io first — and it is NOT on the engine version line.
 # The DSL crate's version IS the `dsl_version`: the crate defines the format, so its package number is the format's number — a format change bumps the minor, a Rust-API-only change bumps the patch, documents declare the full number and `delvec fmt` writes the current one.
 # Bound both ways by validation/check-versions.sh: to the crate manifest, and to
 # `DSL_VERSION` in crates/dsl/src/envelope.rs.
 dsl_crate = "delvewright-dsl"
 dsl_crate_version = "0.21.0"
 
-# The engine crates' `delvewright-dsl` requirement (`[workspace.dependencies]`)
+# The engine's `delvewright-dsl` requirement (`[workspace.dependencies]`)
 # is `=` and exactly this version, so one engine version on crates.io resolves
 # to exactly one `delvewright-dsl` build and no other.
 dsl_crate_req = "=0.21.0"

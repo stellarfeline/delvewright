@@ -5,10 +5,9 @@ members = [
     "crates/delvec",
 ]
 
-# The ENGINE version line (ADR-0016 line 2, ADR-0023 §6): every crate under
-# `crates/` except `delvewright-dsl` inherits this one number, and it is the
-# number the git tag, the crates.io versions and the skill's `requires.delvec`
-# window must all equal. `validation/check-versions.sh` binds it to
+# The ENGINE version line (ADR-0016 line 2, ADR-0025): `delvec`, the one engine
+# crate, inherits this one number, and it is the number the git tag, the
+# crates.io version and the skill's `requires.delvec` window must all equal. `validation/check-versions.sh` binds it to
 # `versions.toml [engine].version`; `.github/workflows/engine-release.yml`
 # refuses a `v*` tag whose name disagrees with it. `delvewright-dsl` is
 # deliberately on its own line (see crates/dsl/Cargo.toml).
@@ -23,15 +22,14 @@ rust-version = "1.97.1"
 license = "GPL-3.0-only"
 repository = "https://github.com/stellarfeline/delvewright"
 
-# One declaration per in-tree crate, so a member says `name.workspace = true`
-# and nothing else. `version` is REQUIRED beside `path` for publication: a
-# path-only dependency cannot be packaged (`cargo package` refuses it, by name),
-# and crates.io drops the `path` key — so on the registry the `=` requirement
-# is the ONLY thing left standing, and `=` so that one engine version resolves
-# to exactly one build of each crate and no other. Every `=` here is bound to
-# `[workspace.package] version` above by check-versions.sh, except the DSL
-# crate's, which is the format's own number (`dsl_version`) and is bound to
-# `[engine] dsl_crate_req` in versions.toml.
+# The one in-tree dependency, declared once so the engine says
+# `delvewright-dsl.workspace = true` and nothing else. `version` is REQUIRED
+# beside `path` for publication: a path-only dependency cannot be packaged
+# (`cargo package` refuses it, by name), and crates.io drops the `path` key — so
+# on the registry the `=` requirement is the ONLY thing left standing, and `=`
+# so that one engine version resolves to exactly one build of the format crate
+# and no other. The number is the format's own (`dsl_version`), bound to
+# `[engine] dsl_crate_req` in versions.toml by check-versions.sh.
 [workspace.dependencies]
 delvewright-dsl = { path = "crates/dsl", version = "=0.21.0" }
 
@@ -63,7 +61,7 @@ delvewright-dsl = { path = "crates/dsl", version = "=0.21.0" }
 # them, describing state nothing in this repository reads. There is no debugger in
 # the toolchain: `lldb`, `gdb`, `dwarfdump`, `addr2line` and `dsymutil` appear in
 # no script or job, and `std::backtrace`, `#[track_caller]` and `RUST_BACKTRACE`
-# appear zero times across all seven crates' `src/` and `tests/`.
+# appear zero times across both crates' `src/` and `tests/`.
 #
 # `line-tables-only` keeps what a failing test needs, and that is measured rather
 # than asserted: a panicking test under `RUST_BACKTRACE=full` prints 46 frames of

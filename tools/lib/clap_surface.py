@@ -19,7 +19,7 @@ surface is parsed out of the clap derive macros rather than asked of a binary.
 The shape it keys off is the one rustfmt guarantees: variants at four spaces,
 their fields at eight.
 
-The surface spans several crates (ADR-0023 §3): the binary's own `main.rs`
+The surface spans several modules of one crate (ADR-0023 §3, ADR-0025): the binary's own `main.rs`
 declares the compiler's verbs and MOUNTS the grammar, prefab, schematic,
 harvest and render surfaces as tuple variants — `Grammar(GrammarArgs)` — whose
 `Args` type carries a `#[command(subcommand)]` enum of its own. Callers hand

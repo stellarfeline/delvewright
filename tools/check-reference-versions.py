@@ -178,7 +178,7 @@ README_RUST_RE = re.compile(r"\*\*Rust\*\*:\s*`?(\d[\d.]*\d)`?\s+or newer")
 # that license id) — it is excluded below by where it sits: immediately after
 # a hyphen that is itself immediately after a letter, the one shape an SPDX
 # license expression has and a version claim does not. Demonstrated false
-# positive: `GPL-3.0-only.` sits on all eight published pages today.
+# positive: `GPL-3.0-only.` sits on both published pages today.
 VERSION_LITERAL_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)+(?!\w)")
 
 # Version literals on a published page that are deliberately NOT one of this
@@ -323,7 +323,7 @@ def check_published_pages(
                 # identifier — immediately after a hyphen that is itself
                 # immediately after a letter — and is not a claim about the
                 # build at all. This is the one exclusion earned by a real
-                # false positive on the eight pages today, not a guess at one.
+                # false positive on both pages today, not a guess at one.
                 if start >= 2 and line[start - 1] == "-" and line[start - 2].isalpha():
                     continue
                 literals_seen += 1

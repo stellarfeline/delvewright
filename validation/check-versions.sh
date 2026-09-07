@@ -213,7 +213,7 @@ fi
 echo "== Engine release line ([engine], ADR-0016 / ADR-0017 / ADR-0023) =="
 # ADR-0016 requires four numbers to be ONE number: the version compiled into the
 # binary, the git tag, the crates.io version, and the window the `/new-delve`
-# skill declares — and ADR-0023 §6 puts seven crates on that one number. Here
+# skill declares — and ADR-0025 puts one crate, `delvec`, on that one number. Here
 # they are bound; `.github/workflows/engine-release.yml` binds the git tag at release time
 # (it cannot be checked from a working tree), and the skill's window is bound in
 # the campaigns repository, by `tools/check-skill-version.py` there — the page
@@ -260,10 +260,15 @@ def resolved(pkg, key):
 
 members = {m: load_member(m) for m in ws["members"]}
 by_name = {mani["package"]["name"]: (m, mani) for m, mani in members.items()}
-engine_names = [e["crate"], *e["crates"]]
+# 0. The publish set is exactly the format crate, then the engine, in that
+#    order (ADR-0025). A third name here is a third crate, which is refused.
+publish_set = list(e["crates"])
+(ok if publish_set == [e["dsl_crate"], e["crate"]] else bad)(
+    f"[engine].crates == [dsl_crate, crate] in publish order (found: {publish_set})")
+engine_names = [n for n in publish_set if n != e["dsl_crate"]]
 
 # 1. The engine version line is ONE literal: `[workspace.package] version`,
-#    inherited by every engine crate (ADR-0023 §6). The DSL crate keeps its own.
+#    inherited by the engine crate (ADR-0025). The DSL crate keeps its own.
 (ok if ws_pkg.get("version") == e["version"] else bad)(
     f"root Cargo.toml [workspace.package] version {ws_pkg.get('version')!r} (manifest: {e['version']!r})")
 for name in engine_names:
@@ -305,11 +310,11 @@ lib_name = engine.get("lib", {}).get("name")
 
 # 4. Every in-tree dependency is declared ONCE, in `[workspace.dependencies]`,
 #    with the `=` requirement that is the only binding left once `path` is
-#    stripped on publish: `=<engine version>` for engine crates, the DSL
-#    crate's own `dsl_crate_req`. A member manifest may name a sibling only as
-#    `name.workspace = true`.
+#    stripped on publish — the DSL crate's own `dsl_crate_req`; nothing depends
+#    on the engine crate, so it has no entry. A member manifest may name a
+#    sibling only as `name.workspace = true`.
 n_req = 0
-for name in [e["dsl_crate"], *e["crates"]]:
+for name in [n for n in publish_set if n != e["crate"]]:
     spec = ws_deps.get(name)
     want = e["dsl_crate_req"] if name == e["dsl_crate"] else f"={e['version']}"
     req = spec.get("version") if isinstance(spec, dict) else None
@@ -327,13 +332,15 @@ for m, mani in members.items():
     "every in-tree dependency of every member goes through [workspace.dependencies]"
     if not stray else f"in-tree dependencies declared outside [workspace.dependencies]: {stray}")
 
-# 5. Publishability inventory, in BOTH directions (ADR-0023 §6): every member
-#    under `crates/` is on versions.toml's list and is publishable; the root
-#    excludes nothing under `crates/`. A crate added without a versions.toml row
-#    would otherwise be swept onto crates.io by the first `--workspace` anything,
+# 5. Publishability inventory, in BOTH directions (ADR-0025): every member
+#    under `crates/` is one of the two names versions.toml publishes and is
+#    publishable, both names are members, and the root excludes nothing under
+#    `crates/`. A third crate is refused here by name — the decision is taken:
+#    a feature adds a module to `delvec`. Without this a crate added beside the
+#    two would be swept onto crates.io by the first `--workspace` anything,
 #    irreversibly — or, with `publish = false`, would silently leave the binary
 #    with a dependency `cargo install delvec` cannot resolve.
-publishable = {e["crate"], e["dsl_crate"], *e["crates"]}
+publishable = set(publish_set)
 n_pub = 0
 for m, mani in members.items():
     name, flag = mani["package"]["name"], mani["package"].get("publish", True)
@@ -341,7 +348,7 @@ for m, mani in members.items():
         n_pub += 1
         (ok if flag is not False else bad)(f"{name} is publishable")
     else:
-        bad(f"{name} ({m}) is a workspace member versions.toml [engine] does not name — a new crate is a decision")
+        bad(f"{name} ({m}) is a workspace member versions.toml [engine].crates does not name — a third crate is refused (ADR-0025): add a module to delvec")
 missing = publishable - set(by_name)
 if missing:
     bad(f"versions.toml names crate(s) that are not workspace members: {sorted(missing)}")

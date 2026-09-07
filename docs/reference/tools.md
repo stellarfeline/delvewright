@@ -4,7 +4,8 @@ Live inventory of what an authoring, admission or validation session can actuall
 run today (CLAUDE.md *Tooling sync*). Nothing aspirational is listed: every
 invocation below was executed. Semantics live in the per-tool references —
 [`compiler.md`](compiler.md) for `delvec`, [`i18n.md`](i18n.md) for translation,
-the crate READMEs for the rest; this page is the index and the flag surface.
+the module docs (`cargo doc -p delvec`) and the sections below for the rest;
+this page is the index and the flag surface.
 
 Each entry carries a **class**, which decides how it enters a skill:
 
@@ -18,8 +19,8 @@ Each entry carries a **class**, which decides how it enters a skill:
 Every Rust tool is a subcommand of the one binary, `delvec` (ADR-0023 §3): run
 it from repo root as `cargo run -q -p delvec --bin delvec -- <subcommand> <args>`,
 or from a `cargo build` target directory as `target/debug/delvec <subcommand>`.
-The library crate behind each surface is named beside its section so a reader
-can find the code; it is never a second thing to build.
+The module of `delvec` behind each surface is named beside its section so a
+reader can find the code; there is nothing else to build.
 
 **How you get `delvec`** (ADR-0017 — three true paths, pick by what you are
 doing). Everything else in this file is pipeline-repo-only and has one path.
