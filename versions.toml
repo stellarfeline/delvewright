@@ -192,6 +192,22 @@ targets = [
     "x86_64-pc-windows-msvc",
 ]
 
+# The GH-hosted runner IMAGE each Linux target's shelf job names, so the release
+# matrix and the CI gate that stands in for it cannot silently name a different
+# one (release run 34069406209, v1.2.0: the CI job passed on `ubuntu-latest`
+# while the release's `ubuntu-22.04` / `ubuntu-22.04-arm` jobs both failed —
+# `ubuntu-latest` ships a newer stdlib `tomllib` than either named image, so the
+# pair shared no runner and the divergence went unseen until the tag was
+# pushed). `validation/check-versions.sh` holds engine-release.yml's matrix
+# `runner:` field for both targets equal to this table, and holds ci.yml's
+# `engine-shelf` job's `runs-on:` equal to the x86_64 entry — one host is
+# enough for the CI side because `--check-only` never links (rustup supplies
+# every target's std regardless of host arch), so what the CI job needs is the
+# same BASE OS as the release images, not the same CPU architecture.
+[engine.linux_runners]
+x86_64-unknown-linux-gnu = "ubuntu-22.04"
+aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
+
 [content]
 # The pinned content repo (spec-0007 Step 0): the prefab library + campaign
 # sources live here, not in this GPL repo (ADR-0007). Determinism (ADR-0006):
@@ -322,9 +338,13 @@ textures = "minecraft-client-1.21.11.jar"
 # has a lockfile, so what this selects is the runtime, not the dependency set.
 # Consumed by: .github/workflows/ci.yml, .github/workflows/release.yml.
 node_version = "24"
-# The interpreter for the two Python tool suites (`tools/skin`, `tools/tests`).
+# The interpreter for the two Python tool suites (`tools/skin`, `tools/tests`),
+# and for every inline python `tools/build-release-binaries.sh` runs to read
+# `versions.toml` (stdlib `tomllib`, floor >= 3.11) — the shelf's build step
+# needs the same floor the tool suites do, for the same reason.
 # A MINOR line, resolved by actions/setup-python to its newest patch.
-# Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool).
+# Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool,
+# engine-shelf), .github/workflows/engine-release.yml (shelf build).
 python_tools_version = "3.12"
 # The interpreter for the mecha cross-check, and it is a DIFFERENT line from the
 # one above on purpose rather than by drift: `mecha_version` below declares

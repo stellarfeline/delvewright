@@ -306,16 +306,32 @@ jobs:
   # The target list is NOT duplicated here — `tools/build-release-binaries.sh`
   # reads it out of `versions.toml [engine].targets`, the same list the release
   # matrix is checked against, and it states its binding count on every run.
+  #
+  # `runs-on` is `versions.toml [engine.linux_runners]`'s x86_64 entry, not
+  # `ubuntu-latest`, and it is bound there by `validation/check-versions.sh`: a
+  # standing gate that never runs the release's own base image can go green
+  # while the release fails on it (release run 34069406209, v1.2.0 — this job
+  # passed on `ubuntu-latest`'s newer stdlib while both Linux shelf jobs failed
+  # `ModuleNotFoundError: No module named 'tomllib'` on `ubuntu-22.04` /
+  # `ubuntu-22.04-arm`). One host is enough for both Linux targets: `cargo
+  # check` never links, so what this job needs from the runner is the same BASE
+  # OS as the release images, not the same CPU architecture as the aarch64 one.
   engine-shelf:
     # Name must stay exactly "engine binaries (cross-build shelf)" — it is a
     # required status context in branch protection; renaming it deadlocks every
     # PR (see .github/required-status-checks.txt).
     name: engine binaries (cross-build shelf)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with: { key: cross-build-shelf }
+      # Same floor and same reasoning as engine-release.yml's shelf job: the
+      # script this step runs reads versions.toml through stdlib `tomllib`
+      # (>= 3.11), which `ubuntu-22.04` does not ship by default.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: every shelf target compiles
         run: bash tools/build-release-binaries.sh --check-only
 

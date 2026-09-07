@@ -470,10 +470,13 @@ bytes runs through the compiler computing the frame from the site plan inside
 `Plan::build` — the one constructor every world-reaching verb goes through. That
 is the same tooth the blockout's is: inversion is not forbidden, it is
 uncompilable. The escalation path a part that wants different *space* takes is
-a **site-plan revision**, which moves the plan hash, which re-opens the walk gate
-(`DW0841`), which re-runs the whole's walk; a part that wants different
-*traversal* revises the **layout graph** and pays the identical cost through the
-other half of the walk record's freshness key. The cost is stated, not hidden.
+a **site-plan revision**, which moves a cell, which moves the grid hash, which
+re-opens the walk gate (`DW0841`), which re-runs the whole's walk; a part that
+wants different *traversal* revises the **layout graph** and pays the identical
+cost through the other half of the walk record's freshness key. The cost is
+stated, not hidden — and it is charged only for changes a body can feel: a
+`dsl_version` bump, a reformat, a reworded note or a renamed intent moves
+neither half.
 
 **The frame** a piece must exactly fill is the box's play space grown one course
 downward — the walk plane's own floor. Everything else the derivation writes
@@ -513,9 +516,23 @@ allocate.
 `dsl_version`, no `campaign_id`, no `stage`, because it records an event rather
 than being authored against a schema. Its form is
 `{site_plan_sha256, layout_graph_sha256, blockout_sha256, engine_revision,
-verdict, findings[]}`, and every build of a site-plan campaign prints all three
-hashes with the engine's **revision** beside them, so a record can name its
-subject and its instrument literally. It is hand-authored and it is refused when
+verdict, findings[]}`, and every run that validates a site-plan campaign prints
+all three hashes with the engine's **revision** beside them, so a record can name
+its subject and its instrument literally.
+
+**All three are over what the engine DERIVES, and none over a document's bytes**:
+`site_plan_sha256` is the **grid** — every placed box's corner, extent, floor and
+headroom, every placed seam's cells, crossing and rise, the whole's own volumes
+and the region they stand in; `layout_graph_sha256` is the **ways** a body moves
+by — every edge whole, the entry, the goal, the critical path, the beats and
+every station; `blockout_sha256` is the massing with nothing bound. So
+`sha256sum site-plan.json` produces none of them and the run's own output is the
+only place they exist — which is why they are printed at **validation** rather
+than at emission, refused runs included: the state that needs the numbers is the
+state `DW0841` has just refused, and a gate whose remedy is reachable only once
+the gate is green is a gate discharged by hand.
+
+It is hand-authored and it is refused when
 it is wrong, so it is schema-exportable like everything else a person writes:
 `delvec schema --stage walk-record`, derived from the same struct `DW0841`
 parses. Not being a stage document decides what the document CONTAINS; it never
@@ -5457,20 +5474,23 @@ can be reached through.
 whether a row exists rather than chosen among demands: there is no
 acknowledgement field, no exemption list and no severity an author selects. The
 two soft edges are each secured by a property the defect cannot supply. The walk
-record's freshness key is the **two authored documents the whole is derived
-from** — the site plan and the layout graph — and the defect `DW0841` catches,
+record's freshness key is the **two halves the walked whole is made of** — the
+derived grid, and the ways a body moves by — and the defect `DW0841` catches,
 detailing a whole the walk never passed, is exactly what moves one of them. The
 blockout-drift advisory is reachable only by toolchain movement, because both
-keyed documents have been compared and found equal by the time it fires: the
-derivation is a pure function of the plan, the graph, the metrics table and the
-engine, so what is left to have moved is the engine or the table. The advisory
-suppresses itself on a graph mismatch for that reason and not as a
+halves have been compared and found equal by the time it fires: the derivation is
+a pure function of the plan, the graph, the metrics table and the engine, and
+everything it reads out of the two documents is in one of the halves — the placed
+boxes, the placed seams, the plan's volumes and region; the entry, every edge
+whole and every node's stations — so what is left to have moved is the engine or
+the table. That enumeration is held by a test that perturbs each input in turn.
+The advisory suppresses itself on a ways mismatch for that reason and not as a
 duplicate-diagnostic nicety — a campaign edit reaching it would make its own text
 false.
 
 | Code | Rule |
 |---|---|
-| `DW0841` | **Detail without a passed walk of this whole.** A campaign carrying a `detail-plan` is refused unless `walk-record.json` exists, parses, carries `verdict: "passed"`, and names both this plan's `site_plan_sha256` and this graph's `layout_graph_sha256`. Missing, unparseable, stale-in-the-plan, stale-in-the-graph and `"findings"` are each named separately — the plan and the graph are different edits with different repairs — and a stale record's refusal prints both sides of the hash that moved. Each hash is over its document's **canonical** bytes, so a reformat is not a re-walk. Both documents are in the key because the derived whole is a function of both: a seam is cut to air or filled with the bar by its edge's `class`, the side an `anchor/unlock-…` stands on is its `opens_from`, and a sky-open box's headroom is its node's `size_class` — so a graph-only edit can move the walked bytes, and can move the walked *connectivity* while moving no byte at all. Stated plainly: the machine half of this gate is freshness and an explicit verdict — that a human really walked is the record author's assertion, held by operating practice, and no engine check can prove otherwise. A `blockout_sha256` mismatch under an unchanged plan **and** an unchanged graph is instead a **warning** naming both hashes and both engine revisions. An **absent** graph is not an unchanged one and never reaches that warning: its text asserts that both authored documents were compared and found equal, and a campaign with no `layout-graph.json` has one of them missing (`DW0824`). Validation tier (exit 1). **Binding: walk records read, freshness hashes compared out of the two keyed documents, and `details[]` rows stood in front of.** |
+| `DW0841` | **Detail without a passed walk of this whole.** A campaign carrying a `detail-plan` is refused unless `walk-record.json` exists, parses, carries `verdict: "passed"`, and names both this campaign's `site_plan_sha256` (the derived **grid**) and its `layout_graph_sha256` (the **ways** a body moves by). Missing, unparseable, stale-in-the-grid, stale-in-the-ways and `"findings"` are each named separately — a moved box and a changed way are different edits with different repairs — and a stale record's refusal prints both sides of the hash that moved. **Neither hash is over a document's bytes.** The grid is every placed box's corner, extent, floor and headroom, every placed seam's cells, crossing and rise, the whole's own volumes and the region they stand in; the ways are every edge whole — so `class`, `one_way`, `falls`, `shortcut`, `gating` and `opens_from` — plus the entry, the goal, the critical path, the beats and every station. A key over canonical bytes measured the wrong thing: the canonical writer stamps the engine's own format number into every document, so a `dsl_version` bump re-opened this gate on every walked campaign at once with nothing moved, demanding a repair — walk the whole again — that nobody can honestly perform, and what happened instead was the record edited by hand. Now a bump, a reformat, a reworded `note` and a renamed `intent` move neither half, and a box moved one block moves the grid. Both halves are still needed, because the whole is a function of both documents: a seam is cut to air or filled with the bar by its edge's `class`, the side an `anchor/unlock-…` stands on is its `opens_from`, and a sky-open box's headroom is its node's `size_class` — so a graph-only edit can move the walked bytes, and can move the walked *connectivity* while moving no byte at all. The halves are named for the OBJECT that moved rather than for a document, because the derivation entangles the two: a `size_class` lives in the graph and moves the grid. Both are CLOSED by construction — every derived object is destructured exhaustively in the engine, with no `..`, so a new field stops the compiler building until somebody places it. Stated plainly: the machine half of this gate is freshness and an explicit verdict — that a human really walked is the record author's assertion, held by operating practice, and no engine check can prove otherwise. A `blockout_sha256` mismatch under an unchanged grid **and** unchanged ways is instead a **warning** naming both hashes and both engine revisions. An **absent** graph is not an unchanged one and never reaches that warning: its text asserts that both halves were compared and found equal, and a campaign with no `layout-graph.json` has one of them missing (`DW0824`). Validation tier (exit 1). **Binding: walk records read, freshness hashes compared out of the two keyed halves, and `details[]` rows stood in front of.** |
 | `DW0842` | **The binding does not bind.** A `detail-plan` in a campaign with no site plan (the limiting case, naming the missing document); a `place` naming no layout-graph node; two rows for one place; a `piece` the prefab library does not hold; an `anchors` key that is not a name this place owes; an `anchors` value naming no anchor of the piece. Validation tier (exit 1). **Binding: rows resolved, against the plan's box count.** **Folded at a zero box count**: when the site plan resolves no box every row misses by construction, so one line states the count, names every row and defers to the primary that already said it — `DW0824` when the campaign carries no `layout-graph.json`, and the plan's own emptiness otherwise. With a map to be wrong about it refuses per row exactly as it always has. |
 | `DW0843` | **The piece is not the shape of its allocation.** The piece's structure size differs from the handed frame on any axis — the refusal prints both extents, the axis and the direction. **Undersize refuses exactly as oversize does**: the box is the footprint, so a smaller building means a smaller box, which is a site-plan edit and a re-walk, taken visibly. Also under this code: a bound piece declaring no spatial contract, because the equivalence instrument would have nothing to read and a place detailed with such a piece would be a hole in the proof rather than a finding in it. Validation tier (exit 1), metadata only. **Binding: pieces measured.** **Deferral**: a `details[]` row is judged against a frame and a seam set the SITE PLAN computed, so where the plan has already refused one of them — the place's box off the kit grid (`DW0825`), or a seam the plan writes on this place and does not resolve (`DW0828`/`DW0829`) — the line still refuses on its own terms and says what it stands downstream of. The primary is in another document, where the reader cannot otherwise see the relation. |
 | `DW0844` | **The piece's openings are not the plan's seams.** Both directions, from metadata, before any byte assembles: a seam this box must answer with no aligned face opening of a compatible class, and a face of the piece answering no seam — the *discovered* seam, at the earliest tier there is. Alignment means the face's opening cells answer the seam's allocated cells across the party plane, or **at** them for a seam lying in the piece's own floor course. Deliberately redundant with `DW0836`/`DW0838` and **not** their replacement: this reads declarations and names the piece and the seam at validation, they read bytes at build and remain the independent observers, and a piece that lies in its metadata passes here and reds there. Validation tier (exit 1). **Binding: seams required, and declared faces examined.** **Deferral**: a `details[]` row is judged against a frame and a seam set the SITE PLAN computed, so where the plan has already refused one of them — the place's box off the kit grid (`DW0825`), or a seam the plan writes on this place and does not resolve (`DW0828`/`DW0829`) — the line still refuses on its own terms and says what it stands downstream of. The primary is in another document, where the reader cannot otherwise see the relation. |

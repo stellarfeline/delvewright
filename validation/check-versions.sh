@@ -20,6 +20,7 @@ COMPOSE="$ROOT/validation/compose.yaml"
 HARNESS_PKG="$ROOT/harness/package.json"
 CI_WF="$ROOT/.github/workflows/ci.yml"
 RELEASE_WF="$ROOT/.github/workflows/release.yml"
+ENGINE_RELEASE_WF="$ROOT/.github/workflows/engine-release.yml"
 SKIN_REQ="$ROOT/tools/skin/requirements.txt"
 SKIN_PYPROJECT="$ROOT/tools/skin/pyproject.toml"
 SKIN_CATALOG="$ROOT/tools/skin/delve_skin/catalog.py"
@@ -397,6 +398,36 @@ hard = sorted(t for t in declared if t in code)
     if not hard else
     f"tools/build-release-binaries.sh hardcodes {hard} — read them from versions.toml")
 
+# 9. The release's per-Linux-target runner IMAGE and the standing CI gate that
+#    stands in for it must name the same one (release run 34069406209, v1.2.0:
+#    the CI job passed on `ubuntu-latest` — a newer stdlib `tomllib` than either
+#    named image ships — while both release Linux jobs failed on the images
+#    they actually name; the pair shared no runner).
+linux_runners = e.get("linux_runners", {})
+if not linux_runners:
+    bad("[engine].linux_runners is empty — the release/CI Linux runner binding checks nothing")
+else:
+    pairs = dict(_re.findall(r"target:\s*([A-Za-z0-9_.-]+),\s*runner:\s*([A-Za-z0-9_.-]+)\s*\}", wf))
+    mismatch = [f"{t}: matrix names {pairs.get(t)!r} (manifest: {want!r})"
+                for t, want in linux_runners.items() if pairs.get(t) != want]
+    (ok if not mismatch else bad)(
+        f"engine-release.yml matrix runner == [engine.linux_runners] for {len(linux_runners)} Linux target(s)"
+        if not mismatch else f"engine-release.yml linux runner mismatch: {mismatch}")
+
+    # ci.yml's cross-build shelf job is ONE job, so it names one image — the
+    # x86_64 entry, because `--check-only` never links and the host's CPU
+    # architecture is not what the failing class of bug turned on.
+    ci_wf = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    job_match = _re.search(r"\n  engine-shelf:\n(.*?)(?=\n  [A-Za-z][A-Za-z0-9_-]*:\n)", ci_wf, _re.S)
+    shelf_block = job_match.group(1) if job_match else ""
+    runs_match = _re.search(r"runs-on:\s*([A-Za-z0-9_.-]+)", shelf_block)
+    got_runs = runs_match.group(1) if runs_match else None
+    want_runs = linux_runners.get("x86_64-unknown-linux-gnu")
+    (ok if got_runs == want_runs and got_runs is not None else bad)(
+        f"ci.yml engine-shelf runs-on == {want_runs!r} ([engine.linux_runners] x86_64 entry)"
+        if got_runs == want_runs and got_runs is not None else
+        f"ci.yml engine-shelf runs-on is {got_runs!r} (manifest [engine.linux_runners] x86_64 entry: {want_runs!r})")
+
 for status, msg in out:
     print(f"{status}\t{msg}")
 PY
@@ -440,10 +471,25 @@ all_stated "node -> release.yml" 'node-version: *"[^"]*"' "node-version: \"$NODE
 py_total="$( { grep -oE 'python-version: *"[^"]*"' "$CI_WF" || true; } | wc -l | tr -d ' ')"
 py_tools="$( { grep -oF "python-version: \"$PYTHON_TOOLS_VERSION\"" "$CI_WF" || true; } | wc -l | tr -d ' ')"
 py_mecha="$( { grep -oF "python-version: \"$PYTHON_MECHA_VERSION\"" "$CI_WF" || true; } | wc -l | tr -d ' ')"
-if [ "$py_tools" = "2" ] && [ "$py_mecha" = "1" ] && [ "$py_total" = "3" ]; then
-  pass "python lines -> ci.yml (2 x $PYTHON_TOOLS_VERSION + 1 x $PYTHON_MECHA_VERSION = $py_total, none other)"
+# 3 x tools: skin toolchain, i18n translation tool, engine-shelf (the cross-
+# build shelf gate needs the same >= 3.11 tomllib floor build-release-binaries.sh
+# does).
+if [ "$py_tools" = "3" ] && [ "$py_mecha" = "1" ] && [ "$py_total" = "4" ]; then
+  pass "python lines -> ci.yml (3 x $PYTHON_TOOLS_VERSION + 1 x $PYTHON_MECHA_VERSION = $py_total, none other)"
 else
-  fail "python lines -> ci.yml: $py_total selection(s), of which $py_tools at '$PYTHON_TOOLS_VERSION' and $py_mecha at '$PYTHON_MECHA_VERSION' — versions.toml declares 2 and 1 and nothing else"
+  fail "python lines -> ci.yml: $py_total selection(s), of which $py_tools at '$PYTHON_TOOLS_VERSION' and $py_mecha at '$PYTHON_MECHA_VERSION' — versions.toml declares 3 and 1 and nothing else"
+fi
+
+# engine-release.yml's shelf job reads the same manifest through the same
+# stdlib tomllib floor, so it carries the same interpreter — one occurrence,
+# and no other python-version line in this workflow (a second one would be an
+# undeclared third selection, same defect class as the ci.yml check above).
+py_total_rel="$( { grep -oE 'python-version: *"[^"]*"' "$ENGINE_RELEASE_WF" || true; } | wc -l | tr -d ' ')"
+py_tools_rel="$( { grep -oF "python-version: \"$PYTHON_TOOLS_VERSION\"" "$ENGINE_RELEASE_WF" || true; } | wc -l | tr -d ' ')"
+if [ "$py_tools_rel" = "1" ] && [ "$py_total_rel" = "1" ]; then
+  pass "python lines -> engine-release.yml (1 x $PYTHON_TOOLS_VERSION, none other)"
+else
+  fail "python lines -> engine-release.yml: $py_total_rel selection(s), of which $py_tools_rel at '$PYTHON_TOOLS_VERSION' — versions.toml declares exactly 1"
 fi
 
 # The mecha cross-check's interpreter and its beet are ENTAILED, not chosen:
