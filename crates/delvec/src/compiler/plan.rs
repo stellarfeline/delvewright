@@ -2737,10 +2737,14 @@ impl<'a> Plan<'a> {
             w.extend(e.warnings.clone());
             PlanError::new(e.failure.code, e.failure.message).with_warnings(w)
         })?;
-        if let Some(finding) = binding.finding(
-            crate::compiler::faces::placed_pieces(&areas),
-            campaign.site_plan.is_some(),
-        ) {
+        let placed = crate::compiler::faces::placed_pieces(&areas);
+        // Printed on every plan, found anything or not: the count this check
+        // owes its reader is a fraction of the PLACEMENT, and stating it only
+        // when it was zero is what let a build read `0 with a spatial contract`
+        // as an unremarkable advisory line rather than as a check that examined
+        // nothing.
+        eprintln!("{}", binding.line(placed));
+        if let Some(finding) = binding.finding(placed, campaign.site_plan.is_some()) {
             warnings.push(finding);
         }
 
