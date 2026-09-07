@@ -1,17 +1,7 @@
 {
-  "added": [
-    "easy.en:validation/piece-exposure.json",
-    "hard.en:validation/piece-exposure.json",
-    "ocean-horizon.en:validation/piece-exposure.json",
-    "primary.en:validation/piece-exposure.json",
-    "primary.zh-cn:validation/piece-exposure.json",
-    "site-plan.en:validation/piece-exposure.json",
-    "void-horizon.en:validation/piece-exposure.json"
-  ],
-  "base_commit": "a71a01d3bc32ec7e5e49e084cdc58d079c23049a",
+  "added": [],
+  "base_commit": "c2a90ac2ecb93c5cc92dcd5c47829a9c67cea55f",
   "changed": [],
-  "classes": {
-    "validation ledger": 7
-  },
+  "classes": {},
   "removed": []
 }
