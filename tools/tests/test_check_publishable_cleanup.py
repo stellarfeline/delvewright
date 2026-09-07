@@ -1,18 +1,18 @@
-r"""Guard: `tools/check-publishable.sh` leaves no scratch tree behind.
+r"""Guard: a FAILING `tools/check-publishable.sh` run leaves no scratch tree.
 
-`VERIFY_TARGET` (`target/package-verify`, the `CARGO_TARGET_DIR` check 1 points
+`VERIFY_TARGET` (`package-verify`, the `CARGO_TARGET_DIR` check 1 points
 `cargo package` at so it verifies siblings against a temporary registry rather
-than `crates/*` on disk) sits inside the tree `Swatinem/rust-cache` walks when
-saving and restoring its cache for the calling job (`rust (fmt, clippy, test)`,
-`ci.yml`'s default `workspaces: .`). Left behind, its extracted package trees —
-each carrying the packaged crate's own `tests/` fixtures — are the dangling
-paths that action was observed printing `ENOENT opendir …/tests/target` for: a
-build-VERIFICATION tree is not build output worth caching, and check 0 already
-purges same-named leftovers from the cargo registry cache for the identical
-reason. The fix tears `VERIFY_TARGET` down on every exit path — a full pass, an
-early `fail`-and-exit, or a mid-run crash — via one `trap … EXIT` registered
-before either scratch variable is assigned, the same treatment `$SCRATCH`
-(check 3's standalone-build tree) already had on its own.
+than `crates/*` on disk) sits BESIDE `target/`, not under it — deliberately,
+per `tools/lib/package-verify.sh` — so `Swatinem/rust-cache`'s save/restore walk
+for the calling job never sees it at all, regardless of what a run does to it.
+A PASSING run keeps `package-verify/package/*.crate` (plus the sha256 written
+beside each) for `tools/crates-io-publish.sh` to read — that half is
+`test_publish_gate_order.py`'s job. A FAILING run — packaging itself failed, a
+later check found something wrong, a mid-run crash — proved nothing, so it
+leaves NOTHING: `$SUCCESS` stays 0, and `cleanup`'s `trap … EXIT`, registered
+before either scratch variable is assigned, removes `VERIFY_TARGET` whole. The
+same treatment `$SCRATCH` (check 3's standalone-build tree) already had on its
+own, on every exit path alike.
 
 This is a REAL run of the script, with only `cargo` shimmed to leave real
 evidence under `$CARGO_TARGET_DIR/package/` before failing — a green here must
@@ -32,6 +32,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 PREFLIGHT = REPO / "tools" / "check-publishable.sh"
+LIB = REPO / "tools" / "lib"
 
 
 @pytest.fixture
@@ -40,9 +41,11 @@ def preflight_tree_with_leftover_cargo(tmp_path: Path) -> tuple[Path, dict[str, 
     `$CARGO_TARGET_DIR/package/` before failing, so the tree cleanup is supposed
     to remove is never merely absent to begin with.
     """
-    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "lib").mkdir(parents=True)
     shutil.copy(PREFLIGHT, tmp_path / "tools" / "check-publishable.sh")
     shutil.copy(REPO / "versions.toml", tmp_path / "versions.toml")
+    shutil.copy(LIB / "checksum.sh", tmp_path / "tools" / "lib" / "checksum.sh")
+    shutil.copy(LIB / "package-verify.sh", tmp_path / "tools" / "lib" / "package-verify.sh")
 
     binpath = tmp_path / "bin"
     binpath.mkdir()
@@ -77,7 +80,7 @@ def test_the_package_verify_tree_does_not_survive_a_failing_run(
     combined = proc.stdout + proc.stderr
     assert "cargo package exited 101" in combined, combined
 
-    verify_target = tree / "target" / "package-verify"
+    verify_target = tree / "package-verify"
     assert not verify_target.exists(), (
         f"{verify_target} survived a failing run with real evidence written "
         f"into it — the verify tree is scratch state the script owns end to "

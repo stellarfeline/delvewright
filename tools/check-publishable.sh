@@ -41,6 +41,11 @@
 #    crates.io will hold, never from `crates/*` on disk — and the binary it
 #    builds offers the whole surface (`--version`, and `--help` on every
 #    mounted group).
+# 4. A sha256 is written beside each verified tarball, and ONLY THEN — a run
+#    that found anything wrong leaves nothing behind. `tools/crates-io-publish.sh`
+#    re-reads both: the tarball to know what crates.io would receive, the sum to
+#    refuse a tarball whose bytes moved after this script proved them
+#    publishable.
 #
 # WHAT THIS DOES NOT PROVE
 #
@@ -60,21 +65,28 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/versions.toml"
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found" >&2; exit 2; }
 
-# Every scratch tree this script makes is torn down on EVERY exit path — a
-# passing run, a `fail`-then-continue run, and an early `exit 1`/`exit 2` alike
-# — registered here, before either variable is assigned, so a check that exits
-# early (packaging itself failing, for one) still cleans up what it had made.
-# `$VERIFY_TARGET` sits under `$ROOT/target`, which `Swatinem/rust-cache` walks
-# on every save and restore in the calling job; left behind, its extracted
-# package trees (each carrying its own nested `tests/` fixtures) are exactly the
-# dangling paths that action then reports `ENOENT opendir` on. A build-verify
-# tree is not build output the next run can reuse — check 0 already purges any
-# same-named leftovers from the cargo registry cache for the same reason — so it
-# owes the same treatment as `$SCRATCH`, not a place in the cache at all.
+. "$ROOT/tools/lib/checksum.sh"
+. "$ROOT/tools/lib/package-verify.sh"
+
+# Two gates guard one artifact: this script packages and verifies the tarball,
+# `tools/crates-io-publish.sh` reads it back to decide what crates.io is
+# missing. A run that PASSES leaves `package-verify/package/*.crate` (plus a
+# sha256 written beside each, right below, once every check is 0 findings) for
+# that second gate to read; a run that fails leaves NOTHING, because a tarball
+# nobody verified is not proof of anything. `$SUCCESS` decides which of those
+# `cleanup` does, and it is registered here — before either scratch variable is
+# assigned — so a check that exits early (packaging itself failing, for one)
+# still tears its tree down in full. `tools/lib/package-verify.sh` states what
+# "leaves" means and why `package-verify` sits beside `target/`, not under it.
 VERIFY_TARGET=""
 SCRATCH=""
+SUCCESS=0
 cleanup() {
-  [ -n "$VERIFY_TARGET" ] && rm -rf "$VERIFY_TARGET"
+  if [ "$SUCCESS" = 1 ] && [ -n "$VERIFY_TARGET" ]; then
+    dw_prune_package_verify "$VERIFY_TARGET"
+  elif [ -n "$VERIFY_TARGET" ]; then
+    rm -rf "$VERIFY_TARGET"
+  fi
   [ -n "$SCRATCH" ] && rm -rf "$SCRATCH"
   return 0
 }
@@ -172,7 +184,7 @@ mkdir -p "$ROOT/target"
 # exports, with `Unpacking` of the fresh tarball printed right above it). An
 # unpublished version has no immutable bytes, so nothing built from one may
 # outlive the run that built it.
-VERIFY_TARGET="$ROOT/target/package-verify"
+VERIFY_TARGET="$ROOT/package-verify"
 rm -rf "$VERIFY_TARGET"
 PKG_LOG="$ROOT/target/package-log.txt"
 rm -f "$PKG_LOG"
@@ -330,4 +342,26 @@ echo "check-publishable: ${#NAMES[@]} crate(s) packaged, 1 standalone build, eng
 if [ "$fails" -ne 0 ]; then
   echo "check-publishable: $fails finding(s)" >&2; exit 1
 fi
-echo "check-publishable: OK — \`cargo install $CRATE\` has everything it needs"
+
+echo
+echo "== 4. sha256 written beside each tarball, for tools/crates-io-publish.sh =="
+# The hash that makes the pair one artifact: `crates-io-publish.sh` refuses a
+# tarball whose CURRENT bytes do not match what got built standing alone in
+# check 3, above — a mistake here errors instead of silently trusting whatever
+# happens to sit at the path afterward.
+# `$PKG` is guaranteed by `cargo package` succeeding, checked directory-by-directory
+# right after check 1 — but `tools/check-shell-redirect-dirs.py` reads redirects
+# by syntax, not by what an earlier check proved, so the redirect below still
+# needs its own `mkdir -p` (AN ERROR PATH MUST NOT DEPEND ON AN ARTIFACT THE
+# ERROR MAY HAVE PREVENTED FROM EXISTING applies to a passing path too: nothing
+# here may assume `cargo package`'s own directory creation).
+mkdir -p "$PKG"
+i=0
+while [ "$i" -lt "${#NAMES[@]}" ]; do
+  crate_file="$PKG/${NAMES[$i]}-${VERS[$i]}.crate"
+  dw_sha256_file "$crate_file" > "$crate_file.sha256"
+  i=$((i + 1))
+done
+pass "sha256 written beside all ${#NAMES[@]} tarball(s)"
+SUCCESS=1
+echo "check-publishable: OK — \`cargo install $CRATE\` has everything it needs; tarballs kept at $PKG (sha256 beside each) for tools/crates-io-publish.sh"
