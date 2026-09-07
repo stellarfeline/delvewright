@@ -1003,3 +1003,83 @@ fn read3(v: &serde_json::Value) -> [i64; 3] {
         a[2].as_i64().unwrap(),
     ]
 }
+
+/// **A synthetic stone box as gzipped structure-template bytes**, lit from
+/// inside so the darkness gate never pre-empts whatever the caller is proving.
+///
+/// `open_x0` drops the whole `x == 0` slab — floor, wall and ceiling together.
+/// That one flag is the variable two different proofs turn: it makes the column
+/// beside the interior floor bottomless, so a body standing there is one step
+/// from leaving the world (`DW0322`), and it is also what lets the party's air
+/// out of the room, so the piece's own outside becomes something a body can be
+/// in front of (`DW0885`).
+///
+/// Shared rather than copied. It lived in `tests/boundary_assembled.rs` and was
+/// copied verbatim into a second file, which
+/// `tools/check-structure-emitters.py` caught in the only way it can: the copy
+/// was a new site naming `fastnbt::to_bytes` that judged no palette, and the
+/// repair the tool offers first is an exemption. Two fixtures framing the same
+/// box would have been two entries on an exclusion list, which is exactly the
+/// growth that check exists to refuse — so the function moved here, both call
+/// sites lost the ingredient, and the list got shorter instead.
+///
+/// The palette is three literal ids in this one function — air, stone,
+/// glowstone — and the bytes never leave the test that asks for them: they are
+/// handed to `emit::build` in memory and written into no prefab library, which
+/// is why this is a fixture and not an emitter.
+pub fn box_nbt(size: [i32; 3], open_x0: bool) -> Vec<u8> {
+    use fastnbt::Value;
+    let [sx, sy, sz] = size;
+    let mut blocks: Vec<Value> = Vec::new();
+    let mut push = |x: i32, y: i32, z: i32, state: i32| {
+        let mut c = std::collections::HashMap::new();
+        c.insert(
+            "pos".to_string(),
+            Value::List(vec![Value::Int(x), Value::Int(y), Value::Int(z)]),
+        );
+        c.insert("state".to_string(), Value::Int(state));
+        blocks.push(Value::Compound(c));
+    };
+    for x in 0..sx {
+        if open_x0 && x == 0 {
+            continue;
+        }
+        for y in 0..sy {
+            for z in 0..sz {
+                if y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1 {
+                    push(x, y, z, 1); // stone
+                }
+            }
+        }
+    }
+    // Interior glowstone: the lighting gate is not what these tests are about.
+    for x in [2, sx / 2, sx - 3] {
+        for z in [2, sz / 2, sz - 3] {
+            push(x, sy - 2, z, 2);
+        }
+    }
+    let palette = Value::List(vec![
+        box_pal_entry("minecraft:air"),
+        box_pal_entry("minecraft:stone"),
+        box_pal_entry("minecraft:glowstone"),
+    ]);
+    let mut root = std::collections::HashMap::new();
+    root.insert("DataVersion".to_string(), Value::Int(4671));
+    root.insert(
+        "size".to_string(),
+        Value::List(vec![Value::Int(sx), Value::Int(sy), Value::Int(sz)]),
+    );
+    root.insert("palette".to_string(), palette);
+    root.insert("blocks".to_string(), Value::List(blocks));
+    root.insert("entities".to_string(), Value::List(vec![]));
+    let raw = fastnbt::to_bytes(&Value::Compound(root)).unwrap();
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut gz, &raw).unwrap();
+    gz.finish().unwrap()
+}
+
+fn box_pal_entry(name: &str) -> fastnbt::Value {
+    let mut c = std::collections::HashMap::new();
+    c.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
+    fastnbt::Value::Compound(c)
+}

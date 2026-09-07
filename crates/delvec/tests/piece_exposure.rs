@@ -34,67 +34,6 @@ fn hello_world() -> Campaign {
     parse_campaign(&loaded.raw).expect("hello-world parses")
 }
 
-/// A stone box, lit from inside so the darkness gate never pre-empts this one.
-///
-/// `open_x0` drops the whole `x == 0` slab. That is what lets the party's air out
-/// of the room — and it is the only difference between a world this check has
-/// nothing to say about and a world it refuses.
-fn box_nbt(size: [i32; 3], open_x0: bool) -> Vec<u8> {
-    use fastnbt::Value;
-    let [sx, sy, sz] = size;
-    let mut blocks: Vec<Value> = Vec::new();
-    let mut push = |x: i32, y: i32, z: i32, state: i32| {
-        let mut c = std::collections::HashMap::new();
-        c.insert(
-            "pos".to_string(),
-            Value::List(vec![Value::Int(x), Value::Int(y), Value::Int(z)]),
-        );
-        c.insert("state".to_string(), Value::Int(state));
-        blocks.push(Value::Compound(c));
-    };
-    for x in 0..sx {
-        if open_x0 && x == 0 {
-            continue;
-        }
-        for y in 0..sy {
-            for z in 0..sz {
-                if y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1 {
-                    push(x, y, z, 1);
-                }
-            }
-        }
-    }
-    for x in [2, sx / 2, sx - 3] {
-        for z in [2, sz / 2, sz - 3] {
-            push(x, sy - 2, z, 2);
-        }
-    }
-    let palette = Value::List(vec![
-        pal_entry("minecraft:air"),
-        pal_entry("minecraft:stone"),
-        pal_entry("minecraft:glowstone"),
-    ]);
-    let mut root = std::collections::HashMap::new();
-    root.insert("DataVersion".to_string(), Value::Int(4671));
-    root.insert(
-        "size".to_string(),
-        Value::List(vec![Value::Int(sx), Value::Int(sy), Value::Int(sz)]),
-    );
-    root.insert("palette".to_string(), palette);
-    root.insert("blocks".to_string(), Value::List(blocks));
-    root.insert("entities".to_string(), Value::List(vec![]));
-    let raw = fastnbt::to_bytes(&Value::Compound(root)).unwrap();
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    std::io::Write::write_all(&mut gz, &raw).unwrap();
-    gz.finish().unwrap()
-}
-
-fn pal_entry(name: &str) -> fastnbt::Value {
-    let mut c = std::collections::HashMap::new();
-    c.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
-    fastnbt::Value::Compound(c)
-}
-
 /// Build hello-world against `nbt`, with `hello-room.json` carrying exactly
 /// `shown_faces`.
 ///
@@ -168,8 +107,12 @@ fn refusal(r: Result<BuildOutput, BuildFailure>) -> (String, String) {
 /// silence. `exposed > 0` beside `judged == 0` is what says the question was put.
 #[test]
 fn a_room_the_party_cannot_leave_is_examined_and_not_judged() {
-    let out = build_declaring("exposure-sealed", &box_nbt([11, 6, 11], false), None)
-        .expect("a sealed room builds");
+    let out = build_declaring(
+        "exposure-sealed",
+        &common::box_nbt([11, 6, 11], false),
+        None,
+    )
+    .expect("a sealed room builds");
     let ledger: serde_json::Value = serde_json::from_slice(
         out.get("validation/piece-exposure.json")
             .expect("every assembled world emits the piece-exposure ledger"),
@@ -204,7 +147,7 @@ fn a_room_the_party_cannot_leave_is_examined_and_not_judged() {
 fn an_open_room_that_declares_nothing_is_dw0885() {
     let (code, message) = refusal(build_declaring(
         "exposure-open-silent",
-        &box_nbt([11, 6, 11], true),
+        &common::box_nbt([11, 6, 11], true),
         None,
     ));
     assert_eq!(code, "DW0885", "{message}");
@@ -250,7 +193,7 @@ fn an_open_room_that_declares_nothing_is_dw0885() {
 fn the_same_room_with_its_sides_declared_reaches_the_next_proof() {
     let (code, message) = refusal(build_declaring(
         "exposure-open-declared",
-        &box_nbt([11, 6, 11], true),
+        &common::box_nbt([11, 6, 11], true),
         Some(&["down", "east", "north", "south", "up"]),
     ));
     assert_eq!(
@@ -270,7 +213,7 @@ fn the_same_room_with_its_sides_declared_reaches_the_next_proof() {
 fn a_declaration_naming_a_face_of_pure_air_is_dw0885() {
     let (code, message) = refusal(build_declaring(
         "exposure-empty-side",
-        &box_nbt([11, 6, 11], true),
+        &common::box_nbt([11, 6, 11], true),
         Some(&["down", "east", "north", "south", "up", "west"]),
     ));
     assert_eq!(code, "DW0885", "{message}");
@@ -295,7 +238,7 @@ fn a_declaration_naming_a_face_of_pure_air_is_dw0885() {
 fn a_shown_face_that_is_not_a_side_is_dw0885() {
     let (code, message) = refusal(build_declaring(
         "exposure-bad-side",
-        &box_nbt([11, 6, 11], false),
+        &common::box_nbt([11, 6, 11], false),
         Some(&["top"]),
     ));
     assert_eq!(code, "DW0885", "{message}");
