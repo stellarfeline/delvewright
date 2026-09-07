@@ -124,7 +124,7 @@ DOC_VERSIONS_RE = re.compile(
 # the root manifest carries at column zero.
 CARGO_VERSION_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"')
 
-# `pub const DSL_VERSION: &str = "0.21.0";` — the one `dsl_version` the engine
+# `pub const DSL_VERSION: &str = "0.21.1";` — the one `dsl_version` the engine
 # accepts (ADR-0024).
 RS_DSL_VERSION_RE = re.compile(r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*"([^"]+)"\s*;')
 
@@ -133,7 +133,7 @@ RS_DSL_VERSION_RE = re.compile(r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*"([^
 # gate that wants a pin shares. A regex here was a second parser of TOML.
 
 # The DW0102 catalog row restates the one number by hand:
-#   | `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.21.0`. … |
+#   | `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.21.1`. … |
 #
 # It is looked for among the rows a TABLE holds, not anywhere in the file. A
 # blank line ends a pipe table, so a row under one renders as a paragraph of
@@ -148,7 +148,7 @@ DOC_DW0102_RE = re.compile(
 
 # `- **Minecraft**: Java Edition 1.21.11.`
 README_MC_RE = re.compile(r"\*\*Minecraft\*\*:\s*Java Edition\s+`?(\d[\d.]*\d)`?")
-# ``- **Campaign format**: `dsl_version` `0.21.0`.``
+# ``- **Campaign format**: `dsl_version` `0.21.1`.``
 README_FORMAT_RE = re.compile(r"\*\*Campaign format\*\*:\s*`dsl_version`\s+`([^`]+)`")
 # `- **Rust**: 1.97.1 or newer.`
 README_RUST_RE = re.compile(r"\*\*Rust\*\*:\s*`?(\d[\d.]*\d)`?\s+or newer")

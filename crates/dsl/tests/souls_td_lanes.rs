@@ -12,7 +12,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// hello-world's quest stage at 0.6.0 with a raider lane and an aggro-edge wave.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

@@ -36,7 +36,7 @@ fn read(dir: &std::path::Path, name: &str) -> String {
 fn world_with_mitigation() -> String {
     let w = read(&common::hello_world_dir(), "world.json");
     let mut v: serde_json::Value = serde_json::from_str(&w).unwrap();
-    v["dsl_version"] = serde_json::json!("0.21.0");
+    v["dsl_version"] = serde_json::json!("0.21.1");
     v["content"]["areas"][0]["mitigation"] = serde_json::json!("night-vision");
     serde_json::to_string(&v).unwrap()
 }

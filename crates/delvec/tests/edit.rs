@@ -67,7 +67,7 @@ fn edits_copy(name: &str) -> PathBuf {
 /// Overwrite the copy's `world-edits.json` content with the given batches.
 fn set_batches(dir: &Path, batches: serde_json::Value) {
     let doc = serde_json::json!({
-        "dsl_version": "0.21.0",
+        "dsl_version": "0.21.1",
         "campaign_id": "hello-world",
         "stage": "world-edits",
         "content": { "batches": batches }
@@ -281,7 +281,7 @@ fn set_ocean_horizon_at(dir: &Path, dsl_version: &str) {
 /// The world-stage version floor for `horizon` (spec-0013) and the current
 /// `DSL_VERSION` — the two ends every `horizon: ocean` proof is driven
 /// at.
-const OCEAN_VERSIONS: [&str; 2] = ["0.21.0", "0.21.0"];
+const OCEAN_VERSIONS: [&str; 2] = ["0.21.1", "0.21.1"];
 
 fn set_ocean_horizon(dir: &Path) {
     set_ocean_horizon_at(dir, OCEAN_VERSIONS[0]);
@@ -977,7 +977,7 @@ fn set_quests_v06(dir: &Path, content: serde_json::Value) {
         let path = dir.join(file);
         let mut v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        v["dsl_version"] = serde_json::json!("0.21.0");
+        v["dsl_version"] = serde_json::json!("0.21.1");
         if doc == "quests" {
             v["content"] = content.clone();
         }
