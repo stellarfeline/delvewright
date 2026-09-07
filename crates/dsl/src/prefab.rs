@@ -153,6 +153,30 @@ pub struct PrefabMeta {
     /// level. Absent for pieces that author no sea, which are then not checked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waterline_y: Option<i32>,
+    /// **The sides of this piece the player is meant to see** — the piece's own
+    /// claim that a given face is finished exterior surface rather than the cut
+    /// edge of something that belongs inside a hill.
+    ///
+    /// Local side names, in the piece's own frame, from the same six-word
+    /// vocabulary [`ContractFace::dir`] uses: `east` `west` `up` `down` `south`
+    /// `north`. They turn with the placement, so a piece rotated a quarter turn
+    /// shows the side it was built to show.
+    ///
+    /// It is the third thing a piece says about its own outside, and the three
+    /// are different claims about the same object rather than one claim written
+    /// three ways: [`Self::waterline_y`] says where the piece meets the sea,
+    /// [`SpatialContract::faces`] says where a body crosses a side, and this
+    /// says which sides are finished. None of the others can stand in for it —
+    /// a cave with a mouth declares one `walk` face and is still a block of rock
+    /// on the other five — which is why `DW0885` reads this and not them.
+    ///
+    /// **Absent means no side is shown**, and that is the load-bearing default:
+    /// a piece authored to be buried is exactly a piece that writes nothing
+    /// here, so the silence has to be the strict answer or the defect declares
+    /// itself by omission. What discharges the obligation for such a piece is
+    /// the world burying it, which is geometry the declaration cannot fake.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shown_faces: Vec<String>,
     /// The piece's spatial contract, when it declares one.
     ///
     /// Absent means legacy metadata — the piece makes no spatial claim — exactly
@@ -1043,6 +1067,11 @@ impl PrefabMeta {
             }),
             license: Some(license),
             waterline_y: None,
+            // A freshly admitted piece shows nothing, for the same reason it
+            // claims no size class: which of its sides are finished surface is
+            // the author's claim about what the piece is FOR, and reading it off
+            // the bytes would be this document inferring intent from material.
+            shown_faces: Vec::new(),
             spatial_contract: None,
             // A freshly admitted piece makes no claim about which size class of
             // box it fills, and inventing one from its bytes would be the

@@ -2243,6 +2243,25 @@ fn yard_metadata() -> serde_json::Value {
         // own bytes at admission and again wherever a detail plan consumes it
         // (`DW0848`). 8×8 on the kit grid, three of clearance: an `alcove`.
         "footprint_class": "alcove",
+        // **The sides of this piece the player is meant to see** (`DW0885`).
+        // The yard is the one piece in this gallery whose outside the party's
+        // own air reaches: it is an `open_top` court, so the air a body stands
+        // in leaves through the sky, runs around the outside of the box and
+        // comes back under it. Its four walls and its top are inside the site
+        // plan's own volumes and buried by them; its FLOOR is the one face with
+        // nothing in front of it, hanging over a `void` world's nothing.
+        //
+        // So `down` is the whole list, and it is the piece saying that its
+        // underside is a deliberate finished face of a free-standing court
+        // rather than the cut edge of something that expected ground there.
+        //
+        // The list is exact, never a blanket: a side declared here that the
+        // world has in fact buried is refused by the same code, so padding it
+        // out to six reds rather than passing. That is what makes this a bound
+        // declaration and not a hatch — perturb it either way and the gallery
+        // goes red, which is what `gallery/probes/a-face-nothing-stands-in-front-of`
+        // pins.
+        "shown_faces": ["down"],
         "spatial_contract": {
             "entry": "yard",
             "spaces": {

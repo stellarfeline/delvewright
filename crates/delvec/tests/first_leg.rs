@@ -61,7 +61,8 @@ fn fixture(tag: &str, patch: impl FnOnce(&Path)) -> PathBuf {
 fn plan_of(dir: &Path) -> Result<(delvewright_dsl::Campaign, PrefabRegistry), String> {
     let loaded = delvec::compiler::load::load_campaign_dir(dir).expect("fixture loads");
     let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("library loads");
+    let prefabs =
+        PrefabRegistry::load_dir(&common::shown_prefabs_dir("first-leg")).expect("library loads");
     Ok((campaign, prefabs))
 }
 
@@ -78,7 +79,8 @@ fn refusal(dir: &Path) -> Result<(), (String, String)> {
 fn build(dir: &Path) -> Result<BuildOutput, BuildFailure> {
     let loaded = delvec::compiler::load::load_campaign_dir(dir).expect("fixture loads");
     let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("library loads");
+    let prefabs =
+        PrefabRegistry::load_dir(&common::shown_prefabs_dir("first-leg")).expect("library loads");
     let plan = Plan::build(&campaign, &prefabs).map_err(|e| BuildFailure::Diagnostic {
         code: e.failure.code,
         message: e.failure.message,
@@ -297,7 +299,7 @@ fn the_first_leg_is_counted() {
     let count = |dir: &Path| -> (usize, usize) {
         let loaded = delvec::compiler::load::load_campaign_dir(dir).expect("loads");
         let campaign = parse_campaign(&loaded.raw).expect("parses");
-        let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+        let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("first-leg")).unwrap();
         let plan = Plan::build(&campaign, &prefabs).expect("plans");
         // Every leg of these two is a walk. A crossing is a ride and is not
         // counted, so a campaign with one would make the arithmetic below say

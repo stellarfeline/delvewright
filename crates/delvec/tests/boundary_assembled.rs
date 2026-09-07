@@ -101,7 +101,14 @@ fn pal_entry(name: &str) -> fastnbt::Value {
 /// structure. No edit script exists, so `edit_replay` is `None` and the ONLY
 /// boundary proof that runs is the stage-10 one over the assembled world.
 fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput, BuildFailure> {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    // This fixture hands `emit` its OWN structure bytes in place of the
+    // library's, so the sides the piece really has are the synthetic box's. Write
+    // them over the copy before the `shown_faces` declaration is read off them,
+    // or `DW0885` is judging a claim about a wall this world does not have.
+    let dir = common::shown_prefabs_dir("boundary");
+    std::fs::write(dir.join("hello-room.nbt"), &nbt).unwrap();
+    common::declare_shown_faces(&dir, "hello-room");
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
     let plan = Plan::build(campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {

@@ -512,6 +512,12 @@ pub fn export_prefab(
             None,
         )),
         waterline_y: None,
+        // The export declares no shown side (`DW0885`). A program says what a
+        // building IS; which of its sides a player is meant to look at is a
+        // fact about where it is placed, and the export has no placement. Absent
+        // is the strict answer — the world must bury what nobody claims — and it
+        // moves no exported byte for a program that already writes none.
+        shown_faces: Vec::new(),
         spatial_contract: contract_metadata(&expansion),
         // The export makes no `footprint_class` claim (spec-0050 §5). A program
         // states a building; which size class of site-plan box that building is
@@ -639,6 +645,12 @@ pub fn export_zone(
             Some((plan.grid, tiles.len())),
         )),
         waterline_y: None,
+        // The export declares no shown side (`DW0885`). A program says what a
+        // building IS; which of its sides a player is meant to look at is a
+        // fact about where it is placed, and the export has no placement. Absent
+        // is the strict answer — the world must bury what nobody claims — and it
+        // moves no exported byte for a program that already writes none.
+        shown_faces: Vec::new(),
         spatial_contract: contract_metadata(&expansion),
         // The export makes no `footprint_class` claim (spec-0050 §5). A program
         // states a building; which size class of site-plan box that building is

@@ -15,6 +15,7 @@
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
 //! - [`blockout`]: the derived blockout — the map pipeline's stage nobody authors.
 //! - [`branch`]: branch-complete narrative verification (`DW0480`–`DW0485`).
+//! - [`burial`]: is a placed piece's outward solid boundary buried, or declared (`DW0885`)?
 //! - [`calibrate`]: `delvec calibrate` — a harvested rehearsal report turned back into anchor + offset patches.
 //! - [`camera`]: cutscene camera geometry: the eased dolly and the `shot_style` expansion, shared by emission and validation.
 //! - [`cast`]: the NPC scene ledger (`DW0460`–`DW0467`).
@@ -80,6 +81,7 @@ pub mod batchstate;
 pub mod blocking;
 pub mod blockout;
 pub mod branch;
+pub mod burial;
 pub mod calibrate;
 pub mod camera;
 pub mod cast;
