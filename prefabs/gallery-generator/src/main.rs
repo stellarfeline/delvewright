@@ -37,7 +37,7 @@ use serde::Serialize;
 /// The cross-tileset invariants and the connection derivation, shared as a
 /// crate so the rule is compiled once and its own tests run with the
 /// generators' (`prefabs/invariants`).
-use prefab_invariants::{connections, invariants};
+use prefab_invariants::{connections, invariants, walkplane};
 
 /// MC 1.21.11 data version (ADR-0009).
 const DATA_VERSION: i32 = 4671;
@@ -1603,13 +1603,17 @@ fn lift_metadata(meta: &serde_json::Value) -> serde_json::Value {
     m
 }
 
-/// Every anchor stands clear of the tide pool, and the pool is where the
-/// declaration says the water is.
+/// **Every anchor stands clear of the tide pool** — the standability proof the
+/// lift could break, because a pool cut under an anchor puts a body in the
+/// water.
 ///
-/// The first half is the standability proof the lift could break: a pool cut
-/// under an anchor would put a body in the water. The second is the one that
-/// makes `waterline_y` a measurement — the top water block is at local
-/// y=[`SHORE_PLINTH`] and there is none above it.
+/// It used to carry a second half, that the declared `waterline_y` is the top
+/// authored water block, and that half is **gone on purpose**. It is now
+/// `DW0887` in the engine, reached by every library rather than by this one
+/// generator; a generator-private copy of an engine rule is a second authority
+/// that agrees until it does not, and this one could only ever have proven the
+/// gallery. What proves the gallery's shores now is what proves a creator's:
+/// the build opens the bytes (spec-0060 §11).
 fn assert_the_shore_is_standable(id: &str, s: &Structure, meta: &serde_json::Value) {
     let water: Vec<[i32; 3]> = s
         .blocks
@@ -1617,16 +1621,6 @@ fn assert_the_shore_is_standable(id: &str, s: &Structure, meta: &serde_json::Val
         .filter(|b| s.palette[b.state as usize].name == "minecraft:water")
         .map(|b| b.pos)
         .collect();
-    assert!(
-        !water.is_empty(),
-        "{id}: a shore piece with no authored water declares a waterline it cannot show"
-    );
-    let top = water.iter().map(|p| p[1]).max().expect("water exists");
-    assert_eq!(
-        top,
-        meta["waterline_y"].as_i64().expect("declared") as i32,
-        "{id}: the declared waterline is not the top authored water block"
-    );
     let anchors = meta["anchors"].as_object().expect("an anchor inventory");
     let mut examined = 0usize;
     for (name, a) in anchors {
@@ -1653,6 +1647,24 @@ fn assert_the_shore_is_standable(id: &str, s: &Structure, meta: &serde_json::Val
     );
 }
 
+/// **The piece's own walk plane, measured off the bytes about to be written**
+/// (spec-0060 §4).
+///
+/// Every generator writes this, and every one of them measures it rather than
+/// typing it: `walk_y` has no default, so a number nobody read off the blocks
+/// is one tileset's convention wearing the name of a measurement. The rule
+/// itself lives once, in `prefab_invariants::walkplane`, so the number this
+/// generator writes and the number the engine's seating derivation expects are
+/// the same rule rather than two that agree.
+///
+/// It refuses a piece with no standable cell instead of writing some number for
+/// it: a piece a body cannot stand in has no walk plane, and every piece that
+/// reaches here is one a party walks.
+fn declare_walk_y(id: &str, s: &Structure, meta: &mut serde_json::Value) {
+    let cells = invariant_cells(s);
+    meta["walk_y"] = serde_json::json!(walkplane::measure_walk_y(id, s.size, &cells));
+}
+
 /// Lift one piece onto its plinth, prove the result, and hand back both halves.
 fn to_shore(
     id: &str,
@@ -1661,8 +1673,9 @@ fn to_shore(
     pool: &[(i32, i32)],
 ) -> (Structure, serde_json::Value) {
     let lifted = lift_to_shore(s, pool);
-    let meta = lift_metadata(meta);
+    let mut meta = lift_metadata(meta);
     assert_the_shore_is_standable(id, &lifted, &meta);
+    declare_walk_y(id, &lifted, &mut meta);
     (lifted, meta)
 }
 
@@ -2122,13 +2135,21 @@ fn write_shard(out: &Path) {
     gz.write_all(&nbt).expect("gzip write");
     let framed = gz.finish().expect("gzip finish");
     std::fs::write(out.join(format!("{SHARD_ID}.nbt")), &framed).expect("write shard nbt");
-    let meta = serde_json::json!({
+    let mut meta = serde_json::json!({
         "prefab_id": format!("prefab/{SHARD_ID}"),
         "structure": { "file": format!("{SHARD_ID}.nbt"), "id": SHARD_ID, "size": SHARD_SIZE, "data_version": DATA_VERSION, "generator": "prefabs/gallery-generator (gallery-prefab-gen)" },
         "anchors": {},
         "lighting": { "profile": "lit", "measured_min_light": 8, "measured": "2026-08-20", "method": "derived: a lantern on a solid 3-cube; never entered, only stamped" },
         "license": { "source": "original", "spdx": "GPL-3.0-or-later", "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.", "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)." }
     });
+    // A fragment source is a block of material something later cuts from, not a
+    // place a party stands, so it may genuinely have no walk plane — and a
+    // piece with none writes no `walk_y`. That is the honest document: it
+    // cannot be seated on a horizon that derives an origin from one, and
+    // `DW0886` is where a campaign that tries to learns it.
+    if let Some(w) = walkplane::walk_y(s.size, &cells) {
+        meta["walk_y"] = serde_json::json!(w);
+    }
     let mut t = serde_json::to_string_pretty(&meta).expect("metadata serializes");
     t.push(chr_nl());
     std::fs::write(out.join(format!("{SHARD_ID}.json")), t.as_bytes()).expect("write shard json");
@@ -2344,7 +2365,9 @@ fn write_yard(out: &Path) {
     gz.write_all(&nbt).expect("gzip write");
     let framed = gz.finish().expect("gzip finish");
     std::fs::write(out.join(format!("{YARD_ID}.nbt")), &framed).expect("write yard nbt");
-    let mut t = serde_json::to_string_pretty(&yard_metadata()).expect("metadata serializes");
+    let mut yard = yard_metadata();
+    declare_walk_y(YARD_ID, &s, &mut yard);
+    let mut t = serde_json::to_string_pretty(&yard).expect("metadata serializes");
     t.push(chr_nl());
     std::fs::write(out.join(format!("{YARD_ID}.json")), t.as_bytes()).expect("write yard json");
     println!(

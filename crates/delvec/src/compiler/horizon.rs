@@ -67,6 +67,37 @@ pub const SEA_LEVEL: i32 = crate::compiler::plan::SEA_LEVEL;
 /// gains ground to stand beside.
 pub const VALLEY_GAP_FLOOR_TOP_Y: i32 = crate::compiler::plan::BASE_Y - 1;
 
+/// **The world y an `ocean` world's walk plane stands at**: one block above the
+/// sea (spec-0060 §3.1).
+///
+/// This is the vanilla-normal beach relationship — a body standing on a shore is
+/// one block above the water it can swim in, so it can climb out — and it is the
+/// datum an ocean area's origin is DERIVED from, rather than a datum for the
+/// origin itself. spec-0013's "areas sit at y=64+" is retired by that ruling and
+/// not reinterpreted: under it an island's walk plane would stand four blocks
+/// above its own shore.
+pub const OCEAN_WALK_REF_Y: i32 = SEA_LEVEL + 1;
+
+/// **The walk-plane datum of a base**, where it has one.
+///
+/// `Some` for a base that seats a piece by its walk plane — today `ocean`
+/// alone — and the number an area's origin is derived from:
+/// `origin.y = walk_ref_y - walk_y`.
+///
+/// `None` for a base whose areas stand on a fixed origin datum. `void` and
+/// `valley` both keep [`crate::compiler::plan::BASE_Y`], and that is a decision
+/// rather than an omission: `void` declares nothing outside the placed
+/// geometry, so there is no outside relationship for a walk plane to be held
+/// against, and `valley`'s gap floor is pinned one block under `BASE_Y` so that
+/// a piece placed at that origin stands beside it. A campaign that swaps `void`
+/// for `valley` moves no piece, and neither does this.
+pub fn walk_ref_y(base: HorizonBase) -> Option<i32> {
+    match base {
+        HorizonBase::Ocean => Some(OCEAN_WALK_REF_Y),
+        HorizonBase::Void | HorizonBase::Valley => None,
+    }
+}
+
 /// The seed stream the valley surround draws from (ADR-0006 named streams).
 /// Fixed here rather than at the call site so a re-seeding of one build cannot
 /// silently become a re-seeding of a different one.
@@ -92,5 +123,35 @@ mod tests {
         assert!(!HorizonBase::Void.has_surround());
         assert!(!HorizonBase::Ocean.has_surround());
         assert!(HorizonBase::Valley.has_surround());
+    }
+
+    /// The ocean's datum is the beach relationship, stated as a number: a body
+    /// standing on the walk plane is exactly one block above the water it can
+    /// swim in, so it can climb out (spec-0060 §3.1).
+    #[test]
+    fn the_ocean_walk_plane_is_one_block_above_the_sea() {
+        assert_eq!(OCEAN_WALK_REF_Y, SEA_LEVEL + 1);
+        assert_eq!(walk_ref_y(HorizonBase::Ocean), Some(SEA_LEVEL + 1));
+    }
+
+    /// Only a base that seats a piece by its walk plane has a walk-plane datum,
+    /// and the question is answered for the whole enum rather than for the one
+    /// base that has one today.
+    #[test]
+    fn only_the_ocean_seats_by_a_walk_plane() {
+        assert!(walk_ref_y(HorizonBase::Void).is_none());
+        assert!(walk_ref_y(HorizonBase::Valley).is_none());
+        assert!(walk_ref_y(HorizonBase::Ocean).is_some());
+    }
+
+    /// The two numbers spec-0060 §3.2 states as worked examples, derived rather
+    /// than restated: a keep interior (`walk_y` 1) is seated at 62 and stands
+    /// dry at 63; an island piece (`walk_y` 3) is seated at 60.
+    #[test]
+    fn the_origin_is_derived_from_the_piece_and_not_from_the_world() {
+        let r = walk_ref_y(HorizonBase::Ocean).expect("the ocean has a walk-plane datum");
+        assert_eq!(r - 1, 62);
+        assert_eq!(r - 3, 60);
+        assert!(r > SEA_LEVEL, "a walk plane above the sea is the point");
     }
 }

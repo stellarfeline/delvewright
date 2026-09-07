@@ -481,6 +481,16 @@ impl PrefabRegistry {
         self.by_id.get(prefab_id)
     }
 
+    /// **Every prefab this registry loaded**, id and document, in id order.
+    ///
+    /// A library sweep needs the population and not one lookup at a time: a
+    /// checker that can only ask about a piece it already knows the name of
+    /// cannot state a denominator, and a denominator is what makes a green
+    /// sweep evidence rather than a shape.
+    pub fn all(&self) -> impl Iterator<Item = (&String, &PrefabMeta)> {
+        self.by_id.iter()
+    }
+
     /// The member pieces of a prefab pool (`pool/<name>`), if declared.
     pub fn pool(&self, pool_id: &str) -> Option<&[PoolMember]> {
         self.pool_members.get(pool_id).map(|v| v.as_slice())

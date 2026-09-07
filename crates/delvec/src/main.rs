@@ -792,6 +792,21 @@ fn validate_loaded(
             diags.extend(delvec::compiler::cast::check_shared_cast_anchor(
                 &campaign, &prefabs,
             ));
+            // **`DW0886` / `DW0887`: a horizon and a piece set are a pair**
+            // (spec-0060). Refused here rather than at the build, on `DW0855`'s
+            // own precedent: the verdict is a fact about the documents and the
+            // library — the declared base, the pools the world names, each
+            // member's metadata and its bytes — so nothing has to be placed to
+            // know it, and a creator should not spend a build to learn that the
+            // pieces they chose cannot stand where they put them. It opens the
+            // `.nbt`, because a verdict from declarations alone reports a
+            // library of fictions as seatable. The binding line states what it
+            // examined, zeroes included.
+            {
+                let (bind, sd) = delvec::compiler::seating::check(&campaign, &prefabs, prefabs_dir);
+                examined.push(bind.line());
+                diags.extend(sd);
+            }
             // An objective keeps the promise its prompt makes (DW0860-DW0863):
             // a failure clock armed before its own prompt could be read, an
             // adopted container nothing distinguishes from the scenery beside

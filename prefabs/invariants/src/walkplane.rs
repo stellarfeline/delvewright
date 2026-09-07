@@ -4,9 +4,7 @@
 //! by the seating derivation, and refused by `DW0886` when it is absent — and a
 //! measurement taken seven times is seven measurements.
 
-use std::collections::BTreeMap;
-
-use crate::invariants::{blockshape, Cells};
+use crate::invariants::{Cells, blockshape};
 
 /// **The local y of this piece's walk plane** — the number the prefab document
 /// declares as `walk_y`, and the number a walk-plane horizon derives an area's
@@ -62,6 +60,20 @@ pub fn measure_walk_y(id: &str, size: [i32; 3], cells: &Cells) -> i32 {
     })
 }
 
+/// **The same measurement, for a producer that writes pieces a body cannot
+/// stand in** — a solid fragment source, a block of material a later step cuts
+/// from.
+///
+/// `None` says the piece has no walk plane, and a generator that gets it writes
+/// no `walk_y` key. That is the honest document rather than a convenience: a
+/// piece with no walk plane cannot be seated on a horizon that derives an
+/// origin from one, and `DW0886` is where a campaign that tries learns it.
+/// Every generator that writes a piece a party walks in uses
+/// [`measure_walk_y`], which refuses instead.
+pub fn walk_y(size: [i32; 3], cells: &Cells) -> Option<i32> {
+    scan(size, cells).0
+}
+
 /// The scan behind [`measure_walk_y`]: the lowest standable local y, and how
 /// many cells were examined.
 ///
@@ -92,6 +104,8 @@ fn scan(size: [i32; 3], cells: &Cells) -> (Option<i32>, usize) {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     fn stone(cells: &mut Cells, p: [i32; 3]) {
