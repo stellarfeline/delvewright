@@ -37,6 +37,13 @@ outside the runner, whereas a `run:` is the first thing that can. Inside that
 step's script, blank lines, comments and `set -...` lines may precede the
 invocation; nothing else may.
 
+Being FIRST is not only about the irreversible act. The guard reads
+`GITHUB_RUN_ID` and `GITHUB_REPOSITORY` out of its own environment to decide
+which run's approval history to ask about, and any earlier `run:` step can write
+to `$GITHUB_ENV` — so a step ahead of it could point it at a different, approved
+run and the guard would report a binding count of 1 about something else
+entirely. Nothing before it can run, so nothing before it can redirect it.
+
 VACUITY: a run that scans workflows and finds no environment-gated job exits
 non-zero. There are two of them in this repository, so a zero is the discovery
 rule having broken — a glob that matched nothing, a parser that lost the `jobs`
