@@ -21,6 +21,7 @@
 
 use crate::continuity::NpcWhere;
 use crate::failure::Failure;
+use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{
@@ -608,8 +609,8 @@ impl StealthBeat {
     pub fn is_punishing(&self) -> bool {
         fn punishing(eff: &QuestEffect) -> bool {
             if matches!(
-                eff,
-                QuestEffect::DamagePlayers { .. } | QuestEffect::SpawnWave { .. }
+                &eff.verb,
+                Verb::DamagePlayers { .. } | Verb::SpawnWave { .. }
             ) {
                 return true;
             }
@@ -898,7 +899,7 @@ pub struct Plan<'a> {
     pub critical_path_sneak: Vec<bool>,
     /// Per-step cutscene duration (DSL v0.4), aligned 1:1 with `critical_path`:
     /// `Some(seconds)` when completing that step's objective triggers a
-    /// `QuestEffect::Cutscene` → emitted as `cutscene_seconds`.
+    /// `Verb::Cutscene` → emitted as `cutscene_seconds`.
     pub critical_path_cutscene: Vec<Option<u32>>,
     /// Resolved `set-checkpoint` effects (DSL v0.6, spec-0012), content-ordered.
     pub checkpoints: Vec<CheckpointPlan>,
@@ -3814,7 +3815,7 @@ pub struct CriticalPath {
 ///
 /// Also returns the inter-area transport map and, per step, the DSL v0.4 harness
 /// hints: `sneak` (a `stealth` objective) and `cutscene_seconds` (a step whose
-/// completion triggers a `QuestEffect::Cutscene`).
+/// completion triggers a `Verb::Cutscene`).
 ///
 /// `start` is where the party begins ([`resolve_campaign_start`]) — the origin
 /// of the FIRST leg, and therefore part of the population every crossing is
@@ -4742,7 +4743,7 @@ fn collect_seal_hints(
 ///
 /// So a press answer is **not a mechanism**. It is an ordinary
 /// [`EnvTrigger`]`{on: use, audience: presser}` carrying an ordinary
-/// [`QuestEffect::Narrate`]`{style: actionbar}` — the general "click a thing, run
+/// [`Verb::Narrate`]`{style: actionbar}` — the general "click a thing, run
 /// anything" verb, which since DSL v0.11 can reach both the channel and the
 /// addressee that the private copy reached. This struct is the *sugar*: the wording
 /// and the body it hangs on, lowered by [`PressAnswer::trigger`] into the one path
@@ -4818,14 +4819,14 @@ impl PressAnswer {
             // A wall is not consumed by being asked: it answers every press.
             once: false,
             audience: delvewright_dsl::TriggerAudience::Presser,
-            effects: vec![QuestEffect::Narrate {
-                text: chrome.rebind(&self.text),
-                style: Some(delvewright_dsl::NarrateStyle::Actionbar),
-                sound: None,
-                requires_flags: Vec::new(),
-                forbids_flags: Vec::new(),
-                requires_state: Vec::new(),
-            }],
+            effects: vec![
+                Verb::Narrate {
+                    text: chrome.rebind(&self.text),
+                    style: Some(delvewright_dsl::NarrateStyle::Actionbar),
+                    sound: None,
+                }
+                .into(),
+            ],
         }
     }
 }
@@ -5025,6 +5026,10 @@ pub(crate) struct EffectRootSite<'a> {
     /// JSON pointer to the **list** within that document (an element's pointer is
     /// this plus `/<index>`).
     pub path: String,
+    /// The list's key prefix — the same stable, readable, position-derived
+    /// identifier the l10n inventory keys off, so anything that has to NAME a
+    /// root (a generated function, a translation key) uses one name for it.
+    pub key: String,
     /// Which root this list is.
     pub root: EffectRoot<'a>,
 }
@@ -5075,6 +5080,7 @@ pub(crate) fn for_each_effect_root<'a>(
             &EffectRootSite {
                 stage: site.stage,
                 path: site.path.clone(),
+                key: site.key.clone(),
                 root,
             },
             list,
@@ -5849,7 +5855,7 @@ impl V06Collector<'_> {
             );
         } else if let Some((zones, on_caught, grace)) = eff.begin_stealth() {
             self.push_stealth(zones, on_caught, grace, fire_step);
-        } else if matches!(eff, QuestEffect::EndStealth) {
+        } else if matches!(&eff.verb, Verb::EndStealth) {
             self.stealth_ends.push(fire_step);
         }
         // Descend into every nested effect list (`sequence` steps, `on_respawn`,

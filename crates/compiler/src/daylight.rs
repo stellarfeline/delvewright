@@ -270,7 +270,7 @@ fn fightable_actor(c: &Campaign, actor: &delvewright_dsl::Actor) -> bool {
     }
     let mut unleashed = false;
     delvewright_dsl::for_each_campaign_effect(c, &mut |_, _, eff| {
-        if let delvewright_dsl::QuestEffect::UnleashActor { actor: id, .. } = eff
+        if let delvewright_dsl::Verb::UnleashActor { actor: id, .. } = &eff.verb
             && id.as_str() == actor.id.as_str()
         {
             unleashed = true;

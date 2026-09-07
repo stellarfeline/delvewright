@@ -61,6 +61,7 @@
 //! objective completes, so it is not a sound proxy, and the sound one (resolving
 //! each objective's anchor to its area) is a different subsystem's question.
 
+use delvewright_dsl::Verb;
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, Objective, QuestEffect};
 
 /// `DW0860`: a **failure clock** — a `begin-stealth` that answers exposure with
@@ -336,8 +337,8 @@ fn check_failure_clocks(c: &Campaign, d: &mut Vec<Diagnostic>, b: &mut PromiseBi
         // emitter writes the commands in and therefore the order one tick's
         // worth of lines reaches the chat.
         for (i, eff) in list.iter().enumerate() {
-            match eff {
-                QuestEffect::Sequence { steps } => {
+            match &eff.verb {
+                Verb::Sequence { steps } => {
                     for (si, step) in steps.iter().enumerate() {
                         for (ei, inner) in step.effects.iter().enumerate() {
                             note(
@@ -432,18 +433,18 @@ fn note(
 ) {
     let here = *ord;
     *ord += 1;
-    match eff {
+    match &eff.verb {
         // Every narrate channel is a prompt: chat, title, subtitle, actionbar and
         // art all put authored words in front of the party. The channel changes
         // where the words sit, never whether they have to be read.
-        QuestEffect::Narrate { text, .. } => {
+        Verb::Narrate { text, .. } => {
             prompts.push(Prompt {
                 at,
                 ord: here,
                 text: text.clone(),
             });
         }
-        QuestEffect::BeginStealth {
+        Verb::BeginStealth {
             on_caught,
             grace_ticks,
             ..

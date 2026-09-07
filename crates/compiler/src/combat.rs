@@ -53,6 +53,7 @@
 //! assumption.
 
 use crate::failure::Failure;
+use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{
@@ -550,9 +551,9 @@ fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>
         .collect();
     let mut out: BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>)> = BTreeMap::new();
     for_each_campaign_effect(c, &mut |path, site, eff| {
-        let (actor, unleash) = match eff {
-            QuestEffect::SpawnActor { actor, .. } => (actor, false),
-            QuestEffect::UnleashActor { actor, .. } => (actor, true),
+        let (actor, unleash) = match &eff.verb {
+            Verb::SpawnActor { actor, .. } => (actor, false),
+            Verb::UnleashActor { actor, .. } => (actor, true),
             _ => return,
         };
         let (kind, owner, objective) = match site {
@@ -1263,8 +1264,8 @@ fn collect_unconditional_damage(
     out: &mut Vec<(String, u32, String)>,
 ) {
     for (i, e) in effects.iter().enumerate() {
-        match e {
-            QuestEffect::DamagePlayers {
+        match &e.verb {
+            Verb::DamagePlayers {
                 amount,
                 within,
                 damage_type,
@@ -1278,7 +1279,7 @@ fn collect_unconditional_damage(
                     .unwrap_or_else(|| "minecraft:generic".to_string());
                 out.push((format!("{path}/{i}"), *amount, id));
             }
-            QuestEffect::Sequence { steps } => {
+            Verb::Sequence { steps } => {
                 for (j, step) in steps.iter().enumerate() {
                     collect_unconditional_damage(
                         &step.effects,
@@ -1317,9 +1318,9 @@ fn has_any_sustain(c: &Campaign, items: &ItemCombatRegistry) -> bool {
     let mut walk = |effects: &[QuestEffect]| {
         let mut stack: Vec<&QuestEffect> = effects.iter().collect();
         while let Some(e) = stack.pop() {
-            match e {
-                QuestEffect::GiveItem { item, .. } if is_food(item) => given = true,
-                QuestEffect::Sequence { steps } => {
+            match &e.verb {
+                Verb::GiveItem { item, .. } if is_food(item) => given = true,
+                Verb::Sequence { steps } => {
                     stack.extend(steps.iter().flat_map(|s| s.effects.iter()));
                 }
                 _ => {}

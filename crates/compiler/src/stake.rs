@@ -369,8 +369,8 @@ pub fn runtime_mutable_regions(plan: &Plan) -> Vec<LabelledBox> {
                 &mut out,
             );
         }
-        match eff {
-            delvewright_dsl::QuestEffect::SetBlock { anchor, .. } => {
+        match &eff.verb {
+            delvewright_dsl::Verb::SetBlock { anchor, .. } => {
                 if let Some(cell) = plan.point_any(anchor.as_str()) {
                     push(
                         format!("`set-block` anchor `{anchor}`"),
@@ -379,7 +379,7 @@ pub fn runtime_mutable_regions(plan: &Plan) -> Vec<LabelledBox> {
                     );
                 }
             }
-            delvewright_dsl::QuestEffect::Collapse { region_anchor, .. } => {
+            delvewright_dsl::Verb::Collapse { region_anchor, .. } => {
                 if let Some(r) = plan.zone_box(region_anchor) {
                     push(
                         format!("`collapse` volume at anchor `{}`", region_anchor.anchor),

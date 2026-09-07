@@ -104,7 +104,7 @@ fn version_line() {
     // workaround the version exists to remove. No committed document carries
     // either surface, so every campaign that compiled before compiles
     // byte-identically.
-    assert!(s.contains("dsl 0.20.0"), "{s}");
+    assert!(s.contains("dsl 0.21.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 
@@ -1192,7 +1192,7 @@ fn move_unroutable_exits_3_with_dw0307() {
     let camp = tmp("mv-cross-void");
     copy_dir(&common::keep_crawl_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.20.0");
+        d["dsl_version"] = serde_json::json!("0.21.0");
         common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
             "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/objective"
         }));
@@ -1228,7 +1228,7 @@ fn move_actor_unroutable_exits_3_with_dw0325() {
     let camp = tmp("ma-cross-void");
     copy_dir(&common::keep_crawl_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.20.0");
+        d["dsl_version"] = serde_json::json!("0.21.0");
         common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
             "type": "move-actor", "actor": "actor/beast", "to_anchor": "anchor/objective"
         }));
@@ -1292,7 +1292,7 @@ fn cutscene_over_angular_budget_exits_3_with_dw0347() {
     // Halve the duration and add a `look_at` (v0.6 surface) the pan cannot
     // reach inside the budget.
     let camp = showcase_with_quests_patch("cs-spin", |d| {
-        d["dsl_version"] = serde_json::json!("0.20.0");
+        d["dsl_version"] = serde_json::json!("0.21.0");
         let cs = showcase_cutscene(d);
         cs["seconds"] = serde_json::json!(1);
         cs["look_at"] = serde_json::json!({ "anchor": "anchor/objective", "offset": [1, 2, 1] });
@@ -1387,7 +1387,7 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
     let camp = tmp("v06-ocean");
     copy_dir(&common::hello_world_dir(), &camp);
     let world = r#"{
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -1538,7 +1538,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
     let camp = tmp("v06-actors");
     copy_dir(&common::hello_world_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.20.0");
+        d["dsl_version"] = serde_json::json!("0.21.0");
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
@@ -1643,7 +1643,7 @@ fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
             serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap())
                 .unwrap();
         if let Some(h) = horizon {
-            world["dsl_version"] = serde_json::json!("0.20.0");
+            world["dsl_version"] = serde_json::json!("0.21.0");
             let content = world["content"].as_object_mut().unwrap();
             content.insert("horizon".into(), serde_json::json!(h));
             content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -1701,7 +1701,7 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
             serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         f(&mut doc);
         if ocean {
-            doc["dsl_version"] = serde_json::json!("0.20.0");
+            doc["dsl_version"] = serde_json::json!("0.21.0");
         }
         std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
     };
@@ -1823,7 +1823,7 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     copy_dir(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.20.0");
+    world["dsl_version"] = serde_json::json!("0.21.0");
     let content = world["content"].as_object_mut().unwrap();
     content.insert("horizon".into(), serde_json::json!("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -1935,7 +1935,7 @@ fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(ocean_camp.join("world.json")).unwrap())
             .unwrap();
-    world["dsl_version"] = serde_json::json!("0.20.0");
+    world["dsl_version"] = serde_json::json!("0.21.0");
     let content = world["content"].as_object_mut().unwrap();
     content.insert("horizon".into(), serde_json::json!("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -2257,7 +2257,7 @@ fn dw0330_warning_reports_but_does_not_fail_the_build() {
     )
     .unwrap();
     // `narrate` is a v0.4 effect; the hello-world fixture is v0.3.
-    quests["dsl_version"] = serde_json::json!("0.20.0");
+    quests["dsl_version"] = serde_json::json!("0.21.0");
     // An on-screen title far wider than any screen renders.
     quests["content"]["quests"][0]["on_complete"]
         .as_array_mut()
@@ -2319,7 +2319,7 @@ fn a_missing_skin_png_is_dw0309() {
         &std::fs::read_to_string(common::hello_world_dir().join("npcs.json")).unwrap(),
     )
     .unwrap();
-    npcs["dsl_version"] = "0.20.0".into();
+    npcs["dsl_version"] = "0.21.0".into();
     npcs["content"]["npcs"][0]["skin"] =
         serde_json::json!({ "texture_id": "keeper", "model": "wide" });
     common::materialize_from(
@@ -2352,7 +2352,7 @@ fn actor_skin_campaign(name: &str) -> std::path::PathBuf {
     let camp = tmp(name);
     copy_dir(&common::hello_world_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.20.0");
+        d["dsl_version"] = serde_json::json!("0.21.0");
         common::objective_effects(d, 0, "obj/talk").push(serde_json::json!({
             "type": "spawn-actor", "actor": "actor/giant"
         }));
@@ -2417,7 +2417,7 @@ fn every_declared_skin_is_baked_into_the_pack() {
     let camp = actor_skin_campaign("actor-skin-baked");
     // Give the stage-2 npc a skin too, so one build carries one of each class.
     common::patch_file(&camp.join("npcs.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.20.0");
+        d["dsl_version"] = serde_json::json!("0.21.0");
         d["content"]["npcs"][0]["skin"] =
             serde_json::json!({ "texture_id": "keeper", "model": "slim" });
     });

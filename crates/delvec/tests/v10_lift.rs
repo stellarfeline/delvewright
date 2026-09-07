@@ -180,20 +180,26 @@ fn func(out: &BuildOutput, name: &str) -> String {
     .to_string()
 }
 
-/// The two emitted `seq_<hash>` entry-point names, in emission order.
+/// The emitted `sequence` entry-point names, sorted. A timeline's entry function
+/// is the one whose first step function (`<entry>_0`) is also emitted — a rule
+/// that reads the same whatever the naming scheme is, rather than one that has to
+/// recognise a hash.
 fn sequence_roots(out: &BuildOutput) -> Vec<String> {
-    let mut v: Vec<String> = out
+    let names: std::collections::BTreeSet<String> = out
         .keys()
         .filter_map(|p| {
-            let n = p
-                .strip_prefix(&format!("datapack/data/{NS}/function/"))?
-                .strip_suffix(".mcfunction")?;
-            (n.starts_with("seq_") && !n.rsplit('_').next().is_some_and(|t| t.len() == 1))
-                .then(|| n.to_string())
+            Some(
+                p.strip_prefix(&format!("datapack/data/{NS}/function/"))?
+                    .strip_suffix(".mcfunction")?
+                    .to_string(),
+            )
         })
         .collect();
-    v.sort();
-    v
+    names
+        .iter()
+        .filter(|n| n.starts_with("seq_") && names.contains(&format!("{n}_0")))
+        .cloned()
+        .collect()
 }
 
 // ---------------------------------------------------------------- criterion 9 --
@@ -205,7 +211,7 @@ fn sequence_roots(out: &BuildOutput) -> Vec<String> {
 /// names, property names, `required` entries, string `enum` members and the
 /// `const` tags that spell a verb. Derived from the Rust types by `schemars`, so
 /// the enumeration is complete by construction rather than by diligence: a
-/// `QuestEffect::Lift`, a `lift` field or a `lift_car` id prefix cannot exist
+/// `Verb::Lift`, a `lift` field or a `lift_car` id prefix cannot exist
 /// without appearing here.
 ///
 /// Prose is deliberately NOT searched. `schemars` copies doc comments into

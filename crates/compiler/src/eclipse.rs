@@ -99,9 +99,10 @@
 //! a dead character. The affordance and the body each need their own cell.
 
 use crate::failure::Failure;
+use delvewright_dsl::Verb;
 use std::collections::BTreeSet;
 
-use delvewright_dsl::{Campaign, Diagnostic, Objective, QuestEffect, TriggerOn};
+use delvewright_dsl::{Campaign, Diagnostic, Objective, TriggerOn};
 
 use crate::nav::entity_dims;
 use crate::plan::Plan;
@@ -336,11 +337,11 @@ fn walkers(c: &Campaign) -> BTreeSet<&str> {
     // walker on the sweep that was blind to R4 alone, which is exactly what
     // enumerating roots by hand produces: each copy misses a different one.
     let mut out = BTreeSet::new();
-    delvewright_dsl::for_each_campaign_effect(c, &mut |_path, _site, e| match e {
-        QuestEffect::MoveNpc { npc, .. } => {
+    delvewright_dsl::for_each_campaign_effect(c, &mut |_path, _site, e| match &e.verb {
+        Verb::MoveNpc { npc, .. } => {
             out.insert(npc.as_str());
         }
-        QuestEffect::MoveActor { actor, .. } => {
+        Verb::MoveActor { actor, .. } => {
             out.insert(actor.as_str());
         }
         _ => {}

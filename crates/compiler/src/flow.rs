@@ -115,6 +115,7 @@
 //! cast ledger open that tree only after the beat. The button stays ungated and
 //! is simply not on screen yet.
 
+use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{
@@ -1761,7 +1762,7 @@ impl<'a> Flow<'a> {
         {
             for e in effs {
                 e.visit_deep(&mut |x| {
-                    if let QuestEffect::SpawnWave { wave, .. } = x {
+                    if let Verb::SpawnWave { wave, .. } = &x.verb {
                         out.insert(wave.as_str().to_string());
                     }
                 });
@@ -2005,18 +2006,18 @@ impl<'a> Flow<'a> {
                 }
                 continue;
             }
-            match e {
-                QuestEffect::SetFlag { flag, .. } => {
+            match &e.verb {
+                Verb::SetFlag { flag, .. } => {
                     st.flags.insert(flag.as_str().to_string());
                 }
-                QuestEffect::CampaignComplete { .. } => {
+                Verb::CampaignComplete { .. } => {
                     if complete_at.is_none() {
                         *complete_at = Some((pos, objective.to_string()));
                     }
                 }
-                QuestEffect::SetCheckpoint { .. }
-                | QuestEffect::Bonfire { .. }
-                | QuestEffect::BeginStealth { .. } => continue,
+                Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. } => {
+                    continue;
+                }
                 _ => {}
             }
             if let Some((id, w)) = e.writes_state() {
@@ -2028,7 +2029,7 @@ impl<'a> Flow<'a> {
                 st.wrote.entry(id).or_default().push(StateWriteRecord {
                     beat: beat.clone(),
                     position: pos,
-                    verb: e.verb(),
+                    verb: e.verb.tag(),
                     after,
                 });
             }
@@ -2187,16 +2188,16 @@ fn collect_flags(effs: &[QuestEffect], gate: &[String], out: &mut Vec<GatedFlag>
         here.extend(e.requires_flags().iter().map(|f| f.as_str().to_string()));
         here.sort();
         here.dedup();
-        if let QuestEffect::SetFlag { flag, .. } = e {
+        if let Verb::SetFlag { flag, .. } = &e.verb {
             out.push(GatedFlag {
                 flag: flag.as_str().to_string(),
                 requires: here.clone(),
             });
         }
-        match e {
-            QuestEffect::SetCheckpoint { .. }
-            | QuestEffect::Bonfire { .. }
-            | QuestEffect::BeginStealth { .. } => continue,
+        match &e.verb {
+            Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. } => {
+                continue;
+            }
             _ => {
                 for list in e.nested_effect_lists() {
                     collect_flags(list, &here, out);
@@ -2413,10 +2414,8 @@ fn undatable_state(c: &Campaign) -> BTreeSet<String> {
 fn collect_undated_writes(effs: &[QuestEffect], all: bool, out: &mut BTreeSet<String>) {
     for e in effs {
         let reaction = matches!(
-            e,
-            QuestEffect::SetCheckpoint { .. }
-                | QuestEffect::Bonfire { .. }
-                | QuestEffect::BeginStealth { .. }
+            &e.verb,
+            Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. }
         );
         if all && let Some((id, _)) = e.writes_state() {
             out.insert(id.as_str().to_string());

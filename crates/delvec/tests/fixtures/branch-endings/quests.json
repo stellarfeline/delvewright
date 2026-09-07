@@ -31,17 +31,21 @@
           "obj/decide": [
             {
               "flag": "flag/wait",
-              "requires_flags": [
-                "flag/wait"
-              ],
-              "type": "set-flag"
+              "type": "set-flag",
+              "when": {
+                "requires_flags": [
+                  "flag/wait"
+                ]
+              }
             },
             {
               "flag": "flag/flee",
-              "requires_flags": [
-                "flag/flee"
-              ],
-              "type": "set-flag"
+              "type": "set-flag",
+              "when": {
+                "requires_flags": [
+                  "flag/flee"
+                ]
+              }
             }
           ]
         },
@@ -173,6 +177,6 @@
       }
     ]
   },
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "stage": "quests"
 }

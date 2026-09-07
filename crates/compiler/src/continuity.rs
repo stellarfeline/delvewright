@@ -45,6 +45,7 @@
 //! lint entirely. No false certainty: a warning is only raised where the
 //! DAG-ordered history is unambiguous.
 
+use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{Campaign, Diagnostic, Objective, QuestEffect};
@@ -256,8 +257,8 @@ fn walk_bundle(
 ) {
     for (j, e) in effs.iter().enumerate() {
         let epath = format!("{path}/{j}");
-        match e {
-            QuestEffect::Sequence { steps } => {
+        match &e.verb {
+            Verb::Sequence { steps } => {
                 for (s, step) in steps.iter().enumerate() {
                     walk_bundle(
                         &step.effects,
@@ -271,7 +272,7 @@ fn walk_bundle(
                     );
                 }
             }
-            QuestEffect::MoveActor {
+            Verb::MoveActor {
                 to_anchor,
                 on_arrive,
                 ..
@@ -287,7 +288,7 @@ fn walk_bundle(
                     diags,
                 );
             }
-            QuestEffect::MoveNpc {
+            Verb::MoveNpc {
                 npc,
                 to_anchor,
                 on_arrive,
@@ -313,7 +314,7 @@ fn walk_bundle(
                     diags,
                 );
             }
-            QuestEffect::DespawnNpc { npc, .. } => {
+            Verb::DespawnNpc { npc, .. } => {
                 if excluded.contains_key(npc.as_str()) {
                     continue;
                 }
@@ -343,7 +344,7 @@ fn walk_bundle(
                 }
                 st.last_staged = Some(loc.anchor);
             }
-            QuestEffect::SpawnNpc { npc, .. } => {
+            Verb::SpawnNpc { npc, .. } => {
                 if excluded.contains_key(npc.as_str()) {
                     continue;
                 }
@@ -395,9 +396,7 @@ fn walk_bundle(
             }
             // Reaction bundles fire at unknowable times — do not descend; any NPC
             // they stage is already excluded from tracking.
-            QuestEffect::SetCheckpoint { .. }
-            | QuestEffect::Bonfire { .. }
-            | QuestEffect::BeginStealth { .. } => {}
+            Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. } => {}
             _ => {}
         }
     }
@@ -421,11 +420,9 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
 
     /// The lifecycle-target NPC of `e`, if it is a lifecycle effect.
     fn lifecycle_npc(e: &QuestEffect) -> Option<&str> {
-        match e {
-            QuestEffect::SpawnNpc { npc, .. } => Some(npc.as_str()),
-            QuestEffect::DespawnNpc { npc, .. } | QuestEffect::MoveNpc { npc, .. } => {
-                Some(npc.as_str())
-            }
+        match &e.verb {
+            Verb::SpawnNpc { npc, .. } => Some(npc.as_str()),
+            Verb::DespawnNpc { npc, .. } | Verb::MoveNpc { npc, .. } => Some(npc.as_str()),
             _ => None,
         }
     }
@@ -452,10 +449,10 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
                     );
                 }
             }
-            match e {
-                QuestEffect::SetCheckpoint { on_respawn, .. } => scan(on_respawn, true, out),
-                QuestEffect::Bonfire { on_rest, .. } => scan(on_rest, true, out),
-                QuestEffect::BeginStealth { on_caught, .. } => scan(on_caught, true, out),
+            match &e.verb {
+                Verb::SetCheckpoint { on_respawn, .. } => scan(on_respawn, true, out),
+                Verb::Bonfire { on_rest, .. } => scan(on_rest, true, out),
+                Verb::BeginStealth { on_caught, .. } => scan(on_caught, true, out),
                 _ => {
                     for list in e.nested_effect_lists() {
                         scan(list, reactive, out);

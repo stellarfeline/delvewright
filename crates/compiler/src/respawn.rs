@@ -29,6 +29,7 @@
 //! Determinism (ADR-0006): every walk is over the one effect-root enumeration and
 //! over slices in declaration order; every map is a `BTreeMap`.
 
+use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{EffectRootOwner, QuestEffect, TriggerOn, for_each_effect_root};
@@ -582,15 +583,15 @@ fn walk_bundle(list: &[QuestEffect], f: &mut dyn FnMut(&QuestEffect, bool)) {
 
 /// What one effect does, as this proof reads it.
 fn act_of(eff: &QuestEffect) -> Act {
-    match eff {
-        QuestEffect::SetFlag { flag, .. } => Act::SetFlag(flag.as_str().to_string()),
-        QuestEffect::SpawnWave { wave, .. } => Act::Stage(wave.as_str().to_string()),
-        QuestEffect::SpawnActor { actor, .. } => Act::Stage(actor.as_str().to_string()),
-        QuestEffect::DespawnActor { actor, .. } => Act::RemoveActor(actor.as_str().to_string()),
-        QuestEffect::UnleashActor { actor, .. } => Act::Unleash(actor.as_str().to_string()),
-        QuestEffect::MoveActor { actor, .. } => Act::MoveActor(actor.as_str().to_string()),
-        QuestEffect::SpawnNpc { npc, .. } => Act::SpawnNpc(npc.as_str().to_string()),
-        QuestEffect::DespawnNpc { npc, .. } => Act::DespawnNpc(npc.as_str().to_string()),
+    match &eff.verb {
+        Verb::SetFlag { flag, .. } => Act::SetFlag(flag.as_str().to_string()),
+        Verb::SpawnWave { wave, .. } => Act::Stage(wave.as_str().to_string()),
+        Verb::SpawnActor { actor, .. } => Act::Stage(actor.as_str().to_string()),
+        Verb::DespawnActor { actor, .. } => Act::RemoveActor(actor.as_str().to_string()),
+        Verb::UnleashActor { actor, .. } => Act::Unleash(actor.as_str().to_string()),
+        Verb::MoveActor { actor, .. } => Act::MoveActor(actor.as_str().to_string()),
+        Verb::SpawnNpc { npc, .. } => Act::SpawnNpc(npc.as_str().to_string()),
+        Verb::DespawnNpc { npc, .. } => Act::DespawnNpc(npc.as_str().to_string()),
         _ => Act::Other,
     }
 }
@@ -795,8 +796,8 @@ fn locate_checkpoints(plan: &Plan, sited: &[Sited]) -> BTreeMap<usize, BundleId>
         let id = bundle;
         bundle += 1;
         walk_bundle(list, &mut |eff, _| {
-            let anchor = match eff {
-                QuestEffect::SetCheckpoint { anchor, .. } | QuestEffect::Bonfire { anchor, .. } => {
+            let anchor = match &eff.verb {
+                Verb::SetCheckpoint { anchor, .. } | Verb::Bonfire { anchor, .. } => {
                     anchor.as_str().to_string()
                 }
                 _ => return,
@@ -826,18 +827,15 @@ mod tests {
     }
 
     fn despawn(id: &str) -> QuestEffect {
-        QuestEffect::DespawnActor {
+        Verb::DespawnActor {
             actor: actor(id),
             style: DespawnStyle::Vanish,
-            happening: None,
         }
+        .into()
     }
 
     fn spawn(id: &str) -> QuestEffect {
-        QuestEffect::SpawnActor {
-            actor: actor(id),
-            happening: None,
-        }
+        Verb::SpawnActor { actor: actor(id) }.into()
     }
 
     /// A `move-npc` gated on a flag, carrying `inner` in its `on_arrive` — the one
@@ -845,15 +843,18 @@ mod tests {
     /// `despawn-actor` itself is world-global staging and carries no per-effect
     /// gate of its own.
     fn gated(flag: &str, inner: Vec<QuestEffect>) -> QuestEffect {
-        QuestEffect::MoveNpc {
-            npc: NpcId("npc/keeper".into()),
-            to_anchor: AnchorId("anchor/door".into()),
-            speed: None,
-            on_arrive: inner,
-            requires_flags: vec![FlagId(flag.into())],
-            forbids_flags: Vec::new(),
-            requires_state: Vec::new(),
+        QuestEffect {
+            when: Some(delvewright_dsl::Guard {
+                requires_flags: vec![FlagId(flag.into())],
+                ..Default::default()
+            }),
             happening: None,
+            verb: Verb::MoveNpc {
+                npc: NpcId("npc/keeper".into()),
+                to_anchor: AnchorId("anchor/door".into()),
+                speed: None,
+                on_arrive: inner,
+            },
         }
     }
 
