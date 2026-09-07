@@ -16,11 +16,12 @@
 //! halves.
 //!
 //! *Reachability.* Two readers ask this table the same question and share no
-//! dependency edge: the engine (`delvec::schem`'s walk, `delvec::grammar`'s
-//! contract checker, the compiler's navigation model) and the prefab generator
-//! workspaces, which source-include this file beside their own invariants
-//! (`prefabs/invariants.rs`). `delvewright-dsl` is the one crate both already
-//! resolve, and a source include reaches a file, not a crate.
+//! dependency edge with each other: the engine (`delvec::schem`'s walk,
+//! `delvec::grammar`'s contract checker, the compiler's navigation model) and
+//! the prefab generators, which are a workspace of their own that may not depend
+//! on `delvec`. `delvewright-dsl` is the one crate both can depend on, and both
+//! do — the generators through `prefab-invariants`, which re-exports this
+//! module under the name their invariants already spell.
 //!
 //! *Object class.* A collision box is a fact about **a vanilla block state under
 //! the pinned game version** (ADR-0009, Minecraft Java 1.21.11) — the same kind of

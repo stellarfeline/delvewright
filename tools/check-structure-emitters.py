@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Nothing in this repo may write a prefab `.nbt` without judging its block states.
 
-The rule itself lives elsewhere (`prefabs/invariants/src/invariants.rs::assert_blocks_are_real`
-for the generator workspaces, `BlockRegistry::validate` inside the workspace).
+The rule itself lives elsewhere
+(`prefabs/invariants/src/invariants.rs::assert_blocks_are_real` for the
+generators, `BlockRegistry::validate` inside the engine's workspace).
 This file answers a different question: **which sites is it obliged at?**
 
 That set was enumerated by hand once, and the hand missed one. Five tileset
@@ -41,17 +42,20 @@ So the set is discovered, not listed. Three checks:
    cell), and an emitter whose palette carries no connection class says so in
    [`NOT_CONNECTION_EMITTERS`] with its reason.
 
-3. **Every prefab generator workspace is a workspace CI runs.** The other way a
-   new emitter arrives is a new `prefabs/<name>-generator/`. The wirings a
-   generator owes are looked for BY NAME — the build cache, the double run, and
-   `cargo fmt` — because they are established by different mechanisms and no
-   longer all by a list. The two enumerated ones are held equal to what is on
-   disk, in both directions. `fmt` is derived (`tools/fmt-workspaces.sh` takes
-   its population from `git ls-files`), so what is asked of it is not a name
-   match but whether the population can be TRUNCATED: is the sweep invoked, is
-   each manifest inside the population it derives from, does its own exclusion
-   prefix swallow one. Either way, adding a generator without wiring it up is an
-   ordinary red rather than a tileset nothing ever runs twice.
+3. **Every package in `prefabs/` is built, and every generator in it is run
+   twice.** The other way a new emitter arrives is a new
+   `prefabs/<name>-generator/`. The wirings it owes are looked for BY NAME —
+   workspace membership, the build cache, the double run, and `cargo fmt` —
+   because each is established by a different mechanism. The two enumerated ones
+   (the workspace's `members`, the job's `for g in` loop) are held equal to what
+   is on disk, in both directions, over two populations the disk decides: a
+   `Cargo.toml` makes a directory a package and a `src/main.rs` makes it a
+   generator. `fmt` is derived (`tools/fmt-workspaces.sh` takes its population
+   from `git ls-files`), so what is asked of it is not a name match but whether
+   the population can be TRUNCATED: is the sweep invoked, is each manifest inside
+   the population it derives from, does its own exclusion prefix swallow one.
+   Either way, adding a generator without wiring it up is an ordinary red rather
+   than a tileset nothing ever runs twice.
 
 Exit 0 clean, 1 with findings. All three checks print their binding count: a
 check that matched nothing is a finding, not a pass (CLAUDE.md).

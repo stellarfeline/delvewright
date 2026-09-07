@@ -11,7 +11,8 @@ rather than a second copy that can fall a version behind. `blocks-1.21.11.json`,
 beside the module that reads them (`delvewright_dsl::blocks`, re-exported as
 `delvec::schem::blocks`): a module can only `include_str!` a file its own crate
 ships, and that module is the format's — read by the engine, the CPU render
-surface included, and source-included by the prefab generator workspaces.
+surface included, and read by the prefab generators through their dependency on
+it.
 `entity-tags-1.21.11.json` sits there for the sibling reason:
 both validation tiers ask which entity types do X, and the DSL crate cannot
 `include_str!` a file it does not ship. Every reproduce command below names the

@@ -1393,8 +1393,8 @@ const SKINS: [(&str, [u8; 3], [u8; 3]); 2] = [
 ];
 
 /// Standard CRC-32 (PNG's, and gzip's). Written out rather than pulled in: the
-/// generator workspaces deliberately carry a four-crate dependency set, and one
-/// polynomial is cheaper than a fifth.
+/// generators deliberately carry a small third-party dependency set, and one
+/// polynomial is cheaper than another crate in it.
 fn crc32(bytes: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;
     for b in bytes {

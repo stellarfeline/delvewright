@@ -1600,8 +1600,8 @@ fn serialize_tile(
 /// because the operator running the tool does not run `cargo test`. The states
 /// are compiler constants no author can reach, so a failure is an engine defect
 /// and dies loudly rather than resolving to a diagnostic — the same shape
-/// `prefabs/invariants/src/invariants.rs` uses for the seven generator workspaces, which cannot
-/// depend on this crate and reach the identical registry another way.
+/// `prefabs/invariants/src/invariants.rs` uses for the seven generators, which
+/// cannot depend on this crate and reach the identical registry another way.
 ///
 /// Property names and values are judged too, not just ids: the flora tables
 /// write `minecraft:oak_log[axis=y]` and `minecraft:oak_leaves[persistent=true]`,
