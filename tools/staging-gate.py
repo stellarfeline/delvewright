@@ -44,9 +44,9 @@ people's campaigns.
 So `INAPPLICABLE` — a MEASURED zero of the class across the declared design —
 does not refuse. It is counted in the headline in its own words, printed in
 its own section, and carried into the admission token, because a pass that
-counted 55 classes it could not exercise must never read as coverage. What
-still refuses is `UNBOUND`: the objects are there and the check is inert over
-them.
+could not exercise most of the ledger's classes must never read as coverage —
+on a two-scene delve that is the majority of the rows. What still refuses is
+`UNBOUND`: the objects are there and the check is inert over them.
 
 ## The ways a green has lied here, each with a real instance
 
@@ -103,7 +103,7 @@ required surface cannot be absent from a build that compiled. The remedy a
 refusal would prescribe is "author content you did not want", which is not
 coverage work at all. So these rows are counted in the headline in their own
 words, listed in their own section, and named in the admission token: a pass
-that could not exercise 55 classes says so, per class, and the round summary
+that could not exercise a class says so, per class, and the round summary
 carries the list. `--strict` does not add them either — a flag that restored
 "resemble the campaigns we happened to test" would just be the old rule under
 a different name.
