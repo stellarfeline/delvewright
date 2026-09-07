@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use delvewright_schem::nbt::Nbt;
 
-use crate::structure::{PaletteEntry, Structure, synth};
+use crate::admit::structure::{PaletteEntry, Structure, synth};
 
 /// A shell of `wall` with a hollow air interior and a solid `floor` at y=0. Sizes
 /// are inclusive extents. `lights` place a glowstone at those cells.

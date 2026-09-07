@@ -11,8 +11,8 @@ use std::collections::BTreeMap;
 
 use delvewright_schem::nbt::Nbt;
 
-use crate::meta::{Connector, PrefabMeta};
-use crate::structure::{PaletteEntry, Structure};
+use crate::admit::meta::{Connector, PrefabMeta};
+use crate::admit::structure::{PaletteEntry, Structure};
 
 /// A socket declaration.
 #[derive(Debug, Clone)]

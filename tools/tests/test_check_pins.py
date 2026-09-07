@@ -320,7 +320,7 @@ why = "the judge"
         f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n"
         f"      - run: python3 tools/check-pins.py --online engine\n"
-        f"      - run: cargo build -p delvewright-admit --release\n",
+        f"      - run: cargo build -p delvec --release\n",
         encoding="utf-8",
     )
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
@@ -419,7 +419,7 @@ why = "judged the interval ending here; the admission rules it enforces did not 
         f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n"
         f"      - run: python3 tools/check-pins.py --online engine\n"
-        f"      - run: cargo build -p delvewright-admit --release\n",
+        f"      - run: cargo build -p delvec --release\n",
         encoding="utf-8",
     )
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)

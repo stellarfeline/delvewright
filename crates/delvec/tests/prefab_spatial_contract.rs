@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_admit::structure::{PaletteEntry, Structure};
+use delvec::admit::structure::{PaletteEntry, Structure};
 use delvewright_grammar::ir::{
     EdgeClass, Mark, MarkAt, Node, Opens, Program, Reorient, Rounding, Size, Split, Way,
 };
@@ -424,7 +424,7 @@ fn pier_on_disk(tag: &str) -> PathBuf {
         .into_iter()
         .map(|c| (c, PaletteEntry::simple("minecraft:stone_bricks"), None))
         .collect();
-    let structure = delvewright_admit::structure::synth([25, 8, 9], &cells);
+    let structure = delvec::admit::structure::synth([25, 8, 9], &cells);
     std::fs::write(dir.join("pier.nbt"), structure.write()).unwrap();
 
     // The document, built off a real exported one so every block this test is

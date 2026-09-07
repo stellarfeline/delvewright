@@ -139,9 +139,9 @@ const HARD_FORBID_BE: &[&str] = &[
     "structure_block",
 ];
 
-use crate::allowlist::Allowlist;
-use crate::diag::{DW_ALLOWLIST, DW_FORBIDDEN, DW_UNKNOWN_BLOCK, Diagnostic};
-use crate::structure::Structure;
+use crate::admit::allowlist::Allowlist;
+use crate::admit::diag::{DW_ALLOWLIST, DW_FORBIDDEN, DW_UNKNOWN_BLOCK, Diagnostic};
+use crate::admit::structure::Structure;
 
 /// One machine-readable audit finding (mirrors a [`Diagnostic`] in JSON form).
 #[derive(Debug, Clone, Serialize)]
@@ -202,8 +202,8 @@ pub struct AuditReport {
     /// metadata does not parse, and a tile-set manifest the door skipped
     /// outright. Four different facts, one silence, and the silence read as the
     /// first. `state` is which one; the counts beside it are what was examined
-    /// (see [`crate::spatial::DoorBinding`]).
-    pub contract: crate::spatial::DoorBinding,
+    /// (see [`crate::admit::spatial::DoorBinding`]).
+    pub contract: crate::admit::spatial::DoorBinding,
     /// For a zone that ships as a tile set: what was audited, tile by tile.
     ///
     /// Absent — and omitted from the JSON entirely — for a single structure
@@ -245,7 +245,7 @@ impl AuditReport {
     /// tool refused is the artifact disagreeing with the exit code — which is
     /// the "response nobody reads" shape one layer out. The door's own lines
     /// join `findings` for the same reason.
-    pub fn record_contract_door(&mut self, door: &crate::spatial::Door) {
+    pub fn record_contract_door(&mut self, door: &crate::admit::spatial::Door) {
         self.contract = door.binding().clone();
         let diags = door.diagnostics();
         self.findings.extend(diags.iter().map(to_finding));
@@ -284,7 +284,7 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
     fold_in(
         &mut report,
         &mut diags,
-        crate::settling::judge(&crate::spatial::grid(s)),
+        crate::admit::settling::judge(&crate::admit::spatial::grid(s)),
     );
     (report, diags)
 }
@@ -294,7 +294,7 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
 fn fold_in(
     report: &mut AuditReport,
     diags: &mut Vec<Diagnostic>,
-    settling: crate::settling::Settling,
+    settling: crate::admit::settling::Settling,
 ) {
     report.stairs_examined = settling.stairs_examined;
     report.fluid_cells_examined = settling.fluid_cells_examined;
@@ -523,7 +523,7 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
         fluid_held_cells: 0,
         fluid_at_edge: 0,
         findings: diags.iter().map(to_finding).collect(),
-        contract: crate::spatial::DoorBinding::default(),
+        contract: crate::admit::spatial::DoorBinding::default(),
         tiles: None,
     };
     (report, diags)
@@ -584,7 +584,8 @@ pub fn audit_tile_set(
     // The settling rules read neighbours, so they judge the ASSEMBLED zone and
     // never a tile: a channel or a stair run that crosses a seam is one piece
     // of geometry that happens to be packaged in two files.
-    let settling = crate::settling::judge(&crate::settling::zone_grid(zone_size, tiles));
+    let settling =
+        crate::admit::settling::judge(&crate::admit::settling::zone_grid(zone_size, tiles));
     all_diags.extend(settling.diagnostics);
 
     let verdict = if all_diags.iter().any(|d| d.is_error()) {
@@ -608,7 +609,7 @@ pub fn audit_tile_set(
         fluid_held_cells: settling.fluid_held_cells,
         fluid_at_edge: settling.fluid_at_edge,
         findings: all_diags.iter().map(to_finding).collect(),
-        contract: crate::spatial::DoorBinding::default(),
+        contract: crate::admit::spatial::DoorBinding::default(),
         tiles: Some(audits),
     };
     (report, all_diags)

@@ -101,7 +101,7 @@ use delvewright_dsl::{WorldTime, WorldWeather};
 use delvewright_schem::nav::{self, Voxels};
 use delvewright_schem::split::TilePart;
 
-use crate::structure::Structure;
+use crate::admit::structure::Structure;
 
 /// Default block-light threshold below which a floor is `dark` (aligns with the
 /// compiler's `DW0210` "floor light < 3" rule). Configurable — FLAGGED for owner

@@ -118,7 +118,7 @@ fn piece(tag: &str) -> (PathBuf, PathBuf) {
             "id": "room",
             "size": SIZE,
             "data_version": 4671,
-            "generator": "crates/admit/tests/footprint_class.rs",
+            "generator": "crates/delvec/tests/prefab_footprint_class.rs",
         },
         "anchors": {},
         "connectors": [],
@@ -127,7 +127,7 @@ fn piece(tag: &str) -> (PathBuf, PathBuf) {
             "source": "original",
             "spdx": "GPL-3.0-or-later",
             "note": "Test fixture.",
-            "provenance": "Synthesised by crates/admit/tests/footprint_class.rs."
+            "provenance": "Synthesised by crates/delvec/tests/prefab_footprint_class.rs."
         }
     });
     std::fs::write(

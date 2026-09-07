@@ -1,12 +1,12 @@
 //! Audit fixtures (spec-0007 quality bar): a clean piece, a command-block piece,
 //! a disallowed-palette piece, and an NBT-bearing spawner.
 
-use delvewright_admit::allowlist::Allowlist;
-use delvewright_admit::audit::{audit, audit_tile_set};
-use delvewright_admit::fixtures;
-use delvewright_admit::meta::{License, PrefabMeta};
-use delvewright_admit::socket::{self, SocketDecl};
-use delvewright_admit::structure::Structure;
+use delvec::admit::allowlist::Allowlist;
+use delvec::admit::audit::{audit, audit_tile_set};
+use delvec::admit::fixtures;
+use delvec::admit::meta::{License, PrefabMeta};
+use delvec::admit::socket::{self, SocketDecl};
+use delvec::admit::structure::Structure;
 use delvewright_schem::split::TilePart;
 
 /// Pair a structure with the manifest entry that would describe it.
@@ -223,7 +223,7 @@ fn the_rename_passes_the_audit() {
     let mut s = fixtures::clean_room();
     s.set_cell(
         [2, 1, 2],
-        delvewright_admit::structure::PaletteEntry::simple("minecraft:iron_chain"),
+        delvec::admit::structure::PaletteEntry::simple("minecraft:iron_chain"),
         None,
     );
     let (rep, _) = audit("ropes", &s, &Allowlist::default_building());
@@ -296,7 +296,7 @@ fn the_allowlist_judges_the_id_the_game_loads_and_still_refuses_a_dead_one() {
     typo.data_version = 2975;
     typo.set_cell(
         [2, 1, 2],
-        delvewright_admit::structure::PaletteEntry::simple("minecraft:chian"),
+        delvec::admit::structure::PaletteEntry::simple("minecraft:chian"),
         None,
     );
     let (rep, _) = audit("typo", &typo, &Allowlist::default_building());
@@ -334,13 +334,13 @@ fn an_omitted_connection_property_fails_and_a_variant_omission_does_not() {
     // The real defect: bars with nothing written — an isolated post.
     s.set_cell(
         [2, 1, 2],
-        delvewright_admit::structure::PaletteEntry::simple("minecraft:iron_bars"),
+        delvec::admit::structure::PaletteEntry::simple("minecraft:iron_bars"),
         None,
     );
     // The benign omission: a lantern with neither `hanging` nor `waterlogged`.
     s.set_cell(
         [1, 2, 1],
-        delvewright_admit::structure::PaletteEntry::simple("minecraft:lantern"),
+        delvec::admit::structure::PaletteEntry::simple("minecraft:lantern"),
         None,
     );
     let (rep, _) = audit("grate", &s, &Allowlist::default_building());
@@ -363,7 +363,7 @@ fn an_omitted_connection_property_fails_and_a_variant_omission_does_not() {
     let mut s = fixtures::clean_room();
     s.set_cell(
         [2, 1, 2],
-        delvewright_admit::structure::PaletteEntry::with_props(
+        delvec::admit::structure::PaletteEntry::with_props(
             "minecraft:iron_bars",
             &[
                 ("east", "false"),

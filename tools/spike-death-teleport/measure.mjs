@@ -676,7 +676,7 @@ async function q2Run(bot, cfg, rep) {
 
 // ------------------------------------------------------------------ incidental
 /**
- * The legacy camelCase gamerule identifiers, probed live. `crates/admit/src/
+ * The legacy camelCase gamerule identifiers, probed live. `crates/delvec/src/admit/
  * gallery.rs` and `tools/spike-jump-arc/measure.mjs` both still emit some of
  * these; recording the server's verdict here makes the claim checkable.
  */

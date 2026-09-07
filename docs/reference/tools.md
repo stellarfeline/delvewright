@@ -416,7 +416,7 @@ the sentence the command itself prints on every run.
 
 Exit: `0` ok · `2` input/usage · `3` output · `4` a gate went red.
 
-## 3. `delvec prefab` — prefab admission (`crates/admit`) · agent + human
+## 3. `delvec prefab` — prefab admission (`crates/delvec/src/admit`) · agent + human
 
 The gate every prefab passes before the library will place it: mechanical palette
 audit (ADR-0013 licence discipline + code-injection forbid), socket carving,
@@ -462,7 +462,7 @@ structure blocks, NBT-bearing spawners, and any block entity carrying an
 embedded `Command` — found by the same recursive scan the `delvec schem`
 conversion strip uses, so the two cannot drift. The **palette allowlist**
 (`DW0730`) is a broad default vanilla building-and-decoration set
-(`crates/admit/src/allowlist.rs`: stone, wood, glass and copper families, inert
+(`crates/delvec/src/admit/allowlist.rs`: stone, wood, glass and copper families, inert
 flora, non-functional furniture and job-site blocks, decorative minerals and
 ores, archaeology) that deliberately still flags surprising blocks — redstone,
 tnt, note blocks — for review, and is overridable with `--allowlist <file>`
@@ -496,7 +496,7 @@ exporter resolved from the piece's own contract, and any anchor key this version
 does not model. Naming a `--pos` does supersede a `--region` and vice versa:
 where the anchor is, is one property written two ways. The role is not a sixth
 way of saying where, so it is written on `--role`, removed on `--no-role`, and
-untouched when the edit mentions neither. `crates/admit/tests/metadata_preservation.rs` holds
+untouched when the edit mentions neither. `crates/delvec/tests/prefab_metadata_preservation.rs` holds
 every step to this, path by path, on a real export carrying every field at risk.
 
 `lighting` measures the light over the **floor a body can walk to from outside**,
@@ -572,8 +572,8 @@ recognised by the name `<base>.x<i>y<j>z<k>.nbt` it carries, not by what happens
 to sit in the directory beside it.
 
 **Which commands owe that refusal is enumerated, not listed.**
-`crates/admit/tests/fragment_doors.rs` walks the parser itself
-(`delvewright_admit::cli::Cli`) and requires every command it finds to be
+`crates/delvec/tests/prefab_fragment_doors.rs` walks the parser itself
+(`delvec::admit::cli::Cli`) and requires every command it finds to be
 classified exactly once: a command that opens a piece an author named refuses a
 lone tile with `DW0739`, both beside its manifest and after being copied away
 from it; one that does not is named with its reason. A command added and

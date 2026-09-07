@@ -1,7 +1,7 @@
 //! Gallery world emission + the `dw.note` curation round-trip.
 
-use delvewright_admit::fixtures;
-use delvewright_admit::gallery::{self, Candidate};
+use delvec::admit::fixtures;
+use delvec::admit::gallery::{self, Candidate};
 use delvewright_orchestrator::Layout;
 
 fn candidates() -> Vec<Candidate> {
@@ -100,7 +100,7 @@ fn curation_round_trips_dw_notes_into_a_per_asset_report() {
 
 #[test]
 fn merge_into_card_is_idempotent() {
-    use delvewright_admit::catalog::CurationNote;
+    use delvec::admit::catalog::CurationNote;
     let notes = vec![CurationNote {
         at: "12:00:20".into(),
         text: "lovely arch".into(),

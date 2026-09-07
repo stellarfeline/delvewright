@@ -35,7 +35,7 @@ use std::collections::BTreeSet;
 use delvewright_schem::blocks::{BlockRegistry, LoadedId};
 use serde::Deserialize;
 
-use crate::structure::PaletteEntry;
+use crate::admit::structure::PaletteEntry;
 
 /// A resolved allowlist: exact ids plus name-suffix families.
 #[derive(Debug, Clone)]

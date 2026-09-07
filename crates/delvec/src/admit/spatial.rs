@@ -22,8 +22,8 @@ use delvewright_grammar::geom::Box3;
 use delvewright_grammar::model::VoxelModel;
 use delvewright_schem::prefab::PrefabMeta;
 
-use crate::diag::{DW_CONTRACT, DW_UNJUDGED, Diagnostic};
-use crate::structure::Structure;
+use crate::admit::diag::{DW_CONTRACT, DW_UNJUDGED, Diagnostic};
+use crate::admit::structure::Structure;
 
 /// Turn a parsed structure template into the block grid the checker reads.
 ///
@@ -150,7 +150,7 @@ pub struct DoorBinding {
 
 /// The word a report prints for a door that was never opened.
 ///
-/// The library-level [`audit`] and [`crate::audit::audit`] do not open it; only
+/// The library-level [`audit`] and [`crate::admit::audit::audit`] do not open it; only
 /// `delvec prefab audit` does. A report that says so is not the same artifact as a
 /// report that says the door opened and found nothing wrong, which is the whole
 /// obligation here.

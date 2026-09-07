@@ -33,7 +33,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_admit::structure::{PaletteEntry, Structure};
+use delvec::admit::structure::{PaletteEntry, Structure};
 use delvewright_grammar::export::export_zone;
 use delvewright_grammar::ir::{
     EdgeClass, Mark, MarkAt, Node, Opens, Program, Reorient, Rounding, Size, Split, Way,

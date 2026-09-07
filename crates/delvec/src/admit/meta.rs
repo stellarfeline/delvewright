@@ -12,7 +12,7 @@
 //! ignored.
 //!
 //! What lives here is only what is specific to this tool: turning
-//! [`crate::light::LightProbe`] — a type the shared crate has no reason to know —
+//! [`crate::admit::light::LightProbe`] — a type the shared crate has no reason to know —
 //! into a `lighting` block.
 
 pub use delvewright_schem::prefab::{
@@ -20,7 +20,7 @@ pub use delvewright_schem::prefab::{
     PieceTemplate, PrefabMeta, Region, StructureMeta,
 };
 
-use crate::light::LightProbe;
+use crate::admit::light::LightProbe;
 
 /// Write a probe result into a document's `lighting` block, marked as a static
 /// estimate.
@@ -38,7 +38,7 @@ use crate::light::LightProbe;
 ///
 /// It also states the **sky the profile was taken at**, the daylight figure
 /// beside it, and *why that was the sky*
-/// ([`crate::light::SkyClaim`]). A floor's light is not one number — the middle
+/// ([`crate::admit::light::SkyClaim`]). A floor's light is not one number — the middle
 /// of a pavilion is bright at noon and black at midnight — so a level with no sky
 /// written beside it is unreadable in exactly the way an unstated binding is; and
 /// a piece the sky never reaches has one figure rather than two, which the

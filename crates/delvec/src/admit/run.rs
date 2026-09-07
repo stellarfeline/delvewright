@@ -1,5 +1,5 @@
 //! What runs `delvec prefab` — the prefab admission pipeline (spec-0007, M3);
-//! the command line's type is [`crate::cli`].
+//! the command line's type is [`crate::admit::cli`].
 //!
 //! Exit codes: `0` ok · `1` audit/validation failure · `2` input error · `3`
 //! output error · `≥10` internal. Diagnostics (`DW073x..DW076x`) go to stderr,
@@ -10,21 +10,21 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use crate::allowlist::Allowlist;
-use crate::audit::{self, audit};
-use crate::catalog::CatalogCard;
-use crate::cli::{CatalogCmd, PrefabArgs, PrefabCommand};
-use crate::diag::{
+use crate::admit::allowlist::Allowlist;
+use crate::admit::audit::{self, audit};
+use crate::admit::catalog::CatalogCard;
+use crate::admit::cli::{CatalogCmd, PrefabArgs, PrefabCommand};
+use crate::admit::diag::{
     DW_DARK, DW_FRAGMENT, DW_GALLERY, DW_INPUT, DW_NO_PROVENANCE, DW_TOOLING, DW_UNBOUND,
     Diagnostic,
 };
-use crate::gallery::{self, Candidate};
-use crate::light::{self, Zone};
-use crate::meta::{self, AnchorEdit, AnchorRole, License, PrefabMeta, Region};
-use crate::settling;
-use crate::socket::{self, SocketDecl};
-use crate::spatial::Door;
-use crate::structure::Structure;
+use crate::admit::gallery::{self, Candidate};
+use crate::admit::light::{self, Zone};
+use crate::admit::meta::{self, AnchorEdit, AnchorRole, License, PrefabMeta, Region};
+use crate::admit::settling;
+use crate::admit::socket::{self, SocketDecl};
+use crate::admit::spatial::Door;
+use crate::admit::structure::Structure;
 use delvewright_schem::split::{TilePart, TileSet, fragment_refusal, tile_evidence};
 
 const EXIT_FAIL: u8 = 1;
@@ -166,7 +166,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             };
             let (rep, diags) = audit(&nbt.display().to_string(), &structure, &allow);
             let meta_path = nbt.with_extension("json");
-            let door = Door::open(&crate::spatial::grid(&structure), 1, &meta_path);
+            let door = Door::open(&crate::admit::spatial::grid(&structure), 1, &meta_path);
             (rep, diags, door, audit::footprint_class(&meta_path))
         };
     for d in &diags {
@@ -328,7 +328,7 @@ fn run_resolve_jigsaw(nbt: &Path, json: bool) -> ExitCode {
         Ok(s) => s,
         Err(e) => return input_err(&format!("cannot parse {}: {e}", nbt.display()), json),
     };
-    let resolved = crate::jigsaw::resolve(&mut structure);
+    let resolved = crate::admit::jigsaw::resolve(&mut structure);
     for r in &resolved {
         Diagnostic::warning(DW_TOOLING, format!("resolved jigsaw -> `{}`", r.became))
             .at(r.pos)
@@ -797,7 +797,7 @@ fn run_curate_merge(report: &Path, catalog: &Path, json: bool) -> ExitCode {
     };
     let mut merged = 0usize;
     for (asset_id, notes_val) in assets {
-        let notes: Vec<crate::catalog::CurationNote> =
+        let notes: Vec<crate::admit::catalog::CurationNote> =
             match serde_json::from_value(notes_val.clone()) {
                 Ok(n) => n,
                 Err(e) => return input_err(&format!("asset {asset_id}: {e}"), json),

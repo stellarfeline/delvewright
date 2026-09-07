@@ -1,12 +1,12 @@
 //! Admission tooling: structure round-trip determinism, socket carving, and the
 //! static light probe.
 
-use delvewright_admit::fixtures;
-use delvewright_admit::jigsaw;
-use delvewright_admit::light::{self, Zone};
-use delvewright_admit::meta::{self, License, LightingProfile, PrefabMeta};
-use delvewright_admit::socket::{self, SocketDecl};
-use delvewright_admit::structure::{Structure, roundtrip};
+use delvec::admit::fixtures;
+use delvec::admit::jigsaw;
+use delvec::admit::light::{self, Zone};
+use delvec::admit::meta::{self, License, LightingProfile, PrefabMeta};
+use delvec::admit::socket::{self, SocketDecl};
+use delvec::admit::structure::{Structure, roundtrip};
 
 fn license() -> License {
     License {
@@ -223,12 +223,12 @@ fn an_open_air_piece_is_measurable() {
         for z in 0..5 {
             cells.push((
                 [x, 0, z],
-                delvewright_admit::structure::PaletteEntry::simple("minecraft:stone_bricks"),
+                delvec::admit::structure::PaletteEntry::simple("minecraft:stone_bricks"),
                 None,
             ));
         }
     }
-    let yard = delvewright_admit::structure::synth([5, 3, 5], &cells);
+    let yard = delvec::admit::structure::synth([5, 3, 5], &cells);
     let p = light::probe(
         &Zone::single(&yard),
         light::DEFAULT_DARK_THRESHOLD,

@@ -1,6 +1,6 @@
 //! Catalog card schema + license-allowlist validation.
 
-use delvewright_admit::catalog::{CatalogCard, license_allowed};
+use delvec::admit::catalog::{CatalogCard, license_allowed};
 
 fn card_json(quality: u8, spdx: &str, source: &str, url: &str) -> String {
     let url_field = if url.is_empty() {
@@ -109,7 +109,7 @@ fn reject_card_may_record_a_forbidden_license() {
     let card = CatalogCard::from_json(json).unwrap();
     assert_eq!(
         card.style_fit.verdict,
-        delvewright_admit::catalog::Verdict::Reject
+        delvec::admit::catalog::Verdict::Reject
     );
     assert!(
         card.validate().is_empty(),

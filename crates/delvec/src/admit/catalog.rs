@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::diag::{DW_CATALOG, DW_LICENSE, Diagnostic};
+use crate::admit::diag::{DW_CATALOG, DW_LICENSE, Diagnostic};
 
 /// A catalog card. `deny_unknown_fields` makes the schema closed.
 #[derive(Debug, Clone, Serialize, Deserialize)]

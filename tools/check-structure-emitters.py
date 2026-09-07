@@ -124,7 +124,7 @@ NOT_CONNECTION_EMITTERS = {
 # every one is printed on every run, because an exemption nobody sees is how a
 # convenient exemption becomes a habit.
 NOT_EMITTERS = {
-    "crates/admit/src/structure.rs": (
+    "crates/delvec/src/admit/structure.rs": (
         "rewriter, not an emitter: it re-serialises the palette it read out of an existing "
         "template rather than authoring one. Judging here would hold a PRE-PIN piece to a "
         "registry that describes 1.21.11 alone and has no authority over it — the same "

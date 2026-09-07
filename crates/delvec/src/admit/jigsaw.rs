@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 
 use delvewright_schem::nbt::Nbt;
 
-use crate::structure::{PaletteEntry, Structure};
+use crate::admit::structure::{PaletteEntry, Structure};
 
 /// One resolved jigsaw cell, for diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq)]

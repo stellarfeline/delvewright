@@ -23,8 +23,8 @@ use delvewright_compiler::commands::{CommandError, CommandTree};
 use delvewright_orchestrator::{Layout, harvest};
 use serde::Serialize;
 
-use crate::catalog::{Curation, CurationNote};
-use crate::structure::Structure;
+use crate::admit::catalog::{Curation, CurationNote};
+use crate::admit::structure::Structure;
 
 /// Datapack namespace for the gallery.
 const NS: &str = "admit";

@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use delvewright_admit::fixtures;
+use delvec::admit::fixtures;
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {

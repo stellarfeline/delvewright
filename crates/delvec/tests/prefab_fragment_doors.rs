@@ -36,8 +36,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as Proc, Output};
 
 use clap::Subcommand;
-use delvewright_admit::cli::PrefabCommand;
-use delvewright_admit::fixtures;
+use delvec::admit::cli::PrefabCommand;
+use delvec::admit::fixtures;
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Proc {

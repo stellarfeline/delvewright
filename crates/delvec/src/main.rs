@@ -271,7 +271,7 @@ enum Command {
     Grammar(delvewright_grammar::cli::GrammarArgs),
     /// A prefab piece under admission: audit, socket, anchor, lighting, catalog
     /// card, gallery world, curation.
-    Prefab(delvewright_admit::cli::PrefabArgs),
+    Prefab(delvec::admit::cli::PrefabArgs),
     /// An outside schematic: convert a Sponge `.schem` into a structure `.nbt`.
     Schem(delvewright_schem::cli::SchemArgs),
     /// A playtest log: pair `[DelveNote]` stamps with the creator's notes into
@@ -421,7 +421,7 @@ fn main() -> ExitCode {
         } => run_calibrate(report, layout, out, cli.json),
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvewright_grammar::cli::run(args.clone()),
-        Command::Prefab(args) => delvewright_admit::cli::run(args.clone(), cli.json),
+        Command::Prefab(args) => delvec::admit::cli::run(args.clone(), cli.json),
         Command::Schem(args) => delvewright_schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvewright_orchestrator::cli::run(args.clone()),
         Command::Render(args) => delvewright_render::cli::run(args.clone(), cli.json),

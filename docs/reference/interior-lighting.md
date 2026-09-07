@@ -21,7 +21,7 @@ under the darkest reachable `(time, weather)` sky, with no `lighting` and no `mi
 declaration. `DW0211` is its declared-relight sibling.
 
 The model is `crates/compiler/src/light.rs` — the **one** authority for emission, opacity and the
-flood. `crates/admit`'s prefab probe and spec-0010's assembled gate both read it rather than
+flood. `crates/delvec/src/admit`'s prefab probe and spec-0010's assembled gate both read it rather than
 keeping a copy; a private second copy is what once left the prefab probe with no sky term at all
 and reported daylit colonnades as pitch black.
 

@@ -503,7 +503,6 @@ name = "delvec"
 version = "1.2.0"
 dependencies = [
  "clap",
- "delvewright-admit",
  "delvewright-compiler",
  "delvewright-dsl",
  "delvewright-grammar",
@@ -516,22 +515,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
-]
-
-[[package]]
-name = "delvewright-admit"
-version = "1.2.0"
-dependencies = [
- "clap",
- "delvewright-compiler",
- "delvewright-dsl",
- "delvewright-grammar",
- "delvewright-orchestrator",
- "delvewright-schem",
- "fastnbt",
- "flate2",
- "serde",
- "serde_json",
 ]
 
 [[package]]

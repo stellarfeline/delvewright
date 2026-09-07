@@ -25,8 +25,8 @@ use delvewright_schem::fluid;
 use delvewright_schem::split::TilePart;
 use delvewright_schem::stairs;
 
-use crate::diag::Diagnostic;
-use crate::structure::Structure;
+use crate::admit::diag::Diagnostic;
+use crate::admit::structure::Structure;
 
 /// Write one structure's blocks into `model` at `offset`.
 fn blit(model: &mut VoxelModel, s: &Structure, offset: [i32; 3]) {

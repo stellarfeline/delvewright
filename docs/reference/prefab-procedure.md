@@ -911,7 +911,7 @@ licensed to replace an anchor whole, which deletes the `dispenser` cell and
 `trigger_block` a trap's hardware lives on, the `resolves_to` the exporter
 derived from the piece's own contract, and any anchor key the tool does not
 model — none of which the operator typed and all of which is the anchor's.
-`crates/admit/tests/metadata_preservation.rs` holds every step to the paths it
+`crates/delvec/tests/prefab_metadata_preservation.rs` holds every step to the paths it
 declares, on a real export carrying each field at risk, and refuses to classify
 a subcommand it has never been told about.
 

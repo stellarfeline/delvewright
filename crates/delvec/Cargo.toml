@@ -22,6 +22,10 @@ categories = ["command-line-utilities", "game-development"]
 # megabytes of fixtures that a `cargo install delvec` never compiles.
 exclude = ["tests/"]
 
+[lib]
+name = "delvec"
+path = "src/lib.rs"
+
 [[bin]]
 name = "delvec"
 path = "src/main.rs"
@@ -33,18 +37,19 @@ delvewright-compiler.workspace = true
 delvewright-dsl.workspace = true
 delvewright-grammar.workspace = true
 delvewright-schem.workspace = true
-delvewright-admit.workspace = true
 delvewright-orchestrator.workspace = true
 delvewright-render.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 
-[dev-dependencies]
-# Integration tests synthesize structure `.nbt` bytes (gzip-framed NBT) to drive
-# the assembled-world / gravity-despawn checks against a real plan.
+# Vanilla structure templates are gzip-framed Java NBT: `fastnbt` reads and
+# writes the NBT, `flate2` supplies the gzip container (mtime pinned to 0 for
+# byte-identity, ADR-0006). MIT/Apache-2.0.
 fastnbt = "2"
 flate2 = "1"
+
+[dev-dependencies]
 sha2 = "0.10"
 # The contact-sheet tests read the composited page back. Same version and
 # feature set the compiler library links.

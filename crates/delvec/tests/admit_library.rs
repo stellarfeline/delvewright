@@ -32,9 +32,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use delvewright_admit::allowlist::Allowlist;
-use delvewright_admit::spatial::{self, Door};
-use delvewright_admit::structure::Structure;
+use delvec::admit::allowlist::Allowlist;
+use delvec::admit::spatial::{self, Door};
+use delvec::admit::structure::Structure;
 use delvewright_schem::blocks::{BlockRegistry, StateJudgement};
 use delvewright_schem::convert::DATA_VERSION as PINNED_DATA_VERSION;
 

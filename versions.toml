@@ -147,7 +147,6 @@ crates = [
     "delvewright-schem",
     "delvewright-grammar",
     "delvewright-orchestrator",
-    "delvewright-admit",
     "delvewright-render",
 ]
 
@@ -267,7 +266,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # touches is an input the compiler is handed through `--prefabs`.
 #
 # `DW0735` says a state that omits a shape-carrying property drops the geometry
-# the property assembles; the library sweep (`crates/admit/tests/library.rs`)
+# the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
 sha = "a8c3f98831735aa370908a43d37db85d09fae25c"

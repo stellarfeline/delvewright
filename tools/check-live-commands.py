@@ -2,7 +2,7 @@
 """Nothing in this repo may speak to a Minecraft server without being able to hear it.
 
 A command whose response nobody reads cannot fail — and three sites
-proved it. `crates/admit/src/gallery.rs` emitted four legacy camelCase gamerules
+proved it. `crates/delvec/src/admit/gallery.rs` emitted four legacy camelCase gamerules
 and an out-of-range `text_opacity:255b`; 1.21.11 refused `admit:load` and
 `admit:finish` in their entirety, so the gallery world booted with no objectives,
 nothing forceloaded and nothing placed, and every test stayed green.

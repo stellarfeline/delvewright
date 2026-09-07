@@ -13,8 +13,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
 
-use crate::light::DEFAULT_DARK_THRESHOLD;
-pub use crate::run::run;
+use crate::admit::light::DEFAULT_DARK_THRESHOLD;
+pub use crate::admit::run::run;
 
 /// `delvec prefab`: the command line, as a type.
 #[derive(Clone, Args)]
