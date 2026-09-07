@@ -11,7 +11,7 @@ That is the enumeration-somebody-remembered shape this repository refuses
 elsewhere by name. It examined 240 of the 335 JSON files git tracks, and the
 95 it never looked at held **50** that were not canonical — `gallery/`
 (whose own spec, spec-0039 criterion 16, asserts in writing that its JSON *is*
-inside the sweep), `docs/specs/spec-003{7,8}-probes/`, `docs/playtest-findings.json`,
+inside the sweep), the spec probe fixtures, `docs/playtest-findings.json`,
 `.github/`, `harness/`, `tools/spike-*/`. Nothing was red, because nothing looked.
 A hand-authored document is non-canonical by default and only CI says so — but
 only if CI looks, and a root list only ever covers the directories that existed
