@@ -613,6 +613,7 @@ mod tests {
             use_gates: BTreeSet::new(),
             flooded: BTreeSet::new(),
             partial: std::collections::BTreeMap::new(),
+            waterloggable: std::collections::BTreeSet::new(),
         }
     }
 

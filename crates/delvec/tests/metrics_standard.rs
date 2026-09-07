@@ -97,6 +97,7 @@ fn two_ledges(rise: i64) -> (World, [i32; 3], [i32; 3]) {
             use_gates: BTreeSet::new(),
             flooded: BTreeSet::new(),
             partial,
+            waterloggable: BTreeSet::new(),
         },
         Premises::geometry_only(),
     );

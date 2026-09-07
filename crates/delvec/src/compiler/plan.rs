@@ -904,6 +904,10 @@ pub struct Plan<'a> {
     /// `Some(seconds)` when completing that step's objective triggers a
     /// `Verb::Cutscene` → emitted as `cutscene_seconds`.
     pub critical_path_cutscene: Vec<Option<u32>>,
+    /// What the ocean-datum invariant (`DW0344`) examined in this build, printed
+    /// as its own line by [`crate::compiler::emit::build`]. `NOT_AN_OCEAN` for
+    /// every world that declares another horizon.
+    pub waterline: WaterlineBinding,
     /// Resolved `set-checkpoint` effects (DSL v0.6, spec-0012), content-ordered.
     pub checkpoints: Vec<CheckpointPlan>,
     /// Resolved `begin-stealth` beats (DSL v0.6, spec-0014), content-ordered.
@@ -1399,6 +1403,24 @@ impl Step {
             | Step::Kill { objective_id, .. }
             | Step::Collect { objective_id, .. }
             | Step::Interact { objective_id, .. } => Some(objective_id.as_str()),
+            Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
+        }
+    }
+
+    /// The absolute cell this step names, when it names one.
+    ///
+    /// `None` for the two path-frame steps, which stand nowhere: a class is
+    /// chosen from wherever the party is, and the completion assertion is a
+    /// scoreboard read. Every other step is a place the party is required to be,
+    /// which is what makes this the cell a world proof can hold against the
+    /// ground it put there.
+    pub fn pos(&self) -> Option<[i32; 3]> {
+        match self {
+            Step::TalkTo { pos, .. }
+            | Step::Reach { pos, .. }
+            | Step::Kill { pos, .. }
+            | Step::Collect { pos, .. }
+            | Step::Interact { pos, .. } => Some(*pos),
             Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
         }
     }
@@ -2181,7 +2203,41 @@ fn check_ocean_waterline(
                 continue; // missing metadata is already DW0300 upstream
             };
             let Some(w) = meta.waterline_y else {
-                continue;
+                // **A piece standing in the sea and saying nothing about it is a
+                // refusal.** The warning this used to be passed the field case:
+                // a two-scene delve whose every objective stood in shin-deep
+                // water, green through every gate, with this diagnostic printing
+                // the words "is still standing in the water at y=60" as an
+                // advisory. A green build over a flooded critical path is worse
+                // than a build that will not run.
+                if piece.bbox().0[1] > SEA_LEVEL {
+                    continue; // clear of the sea: nothing here meets it
+                }
+                return Err(PlanError::new(
+                    DW_OCEAN_WATERLINE,
+                    format!(
+                        "area `{area}` places prefab `{prefab}` at y={y}, so its box reaches down to y={lo} — at or \
+                         below this world's sea plane (y={SEA_LEVEL}) — and its prefab metadata declares no \
+                         `waterline_y`. Nothing then states where this piece meets the sea, and every downstream proof \
+                         — nav, boundary, POV, PackTest — derives from the placement none of them checked. The moves, \
+                         in the order to try them: (1) DECLARE the waterline the piece really authors (`waterline_y` in \
+                         `{base}.json`, the local y of its top authored water block; the island tileset convention is \
+                         {ISLAND_WATERLINE_Y}, with the walk plane one block above it) — and if the piece authors no \
+                         water, it is not a shore and the declaration would be a fiction, so do not write one; (2) \
+                         RAISE the piece clear of the sea, so its box starts above y={SEA_LEVEL} — an ocean area's own \
+                         origin is y={OCEAN_BASE_Y}, so a piece whose lower courses are solid plinth up to local \
+                         y={ISLAND_WATERLINE_Y} stands its walk plane on dry land; (3) CHOOSE another horizon — a world \
+                         of interior pieces that never meant to meet a sea wants `void`, and gets a byte-identical \
+                         build with no ocean to fall into. Do not silence this by declaring a waterline for water the \
+                         piece does not author: the check would then be reading a fiction, and the sea would still be \
+                         where it is",
+                        area = area.area_id,
+                        prefab = piece.prefab_id,
+                        y = piece.pos[1],
+                        lo = piece.bbox().0[1],
+                        base = meta.base(),
+                    ),
+                ));
             };
             binding.checked += 1;
             let placed = piece.pos[1] + w;
@@ -2258,78 +2314,43 @@ impl WaterlineBinding {
         reaching_sea: 0,
     };
 
-    /// **Seal the binding**: what a binding of zero means for this invariant.
+    /// **The one line this invariant owes its reader**, printed whether it found
+    /// anything or not — a count only says something when the run that found
+    /// nothing prints it too.
     ///
-    /// A check that examined nothing has proved nothing, so the verdict a zero
-    /// binding *earns* here is a refusal — the answer
-    /// `grammar::gates::seal_zero_bindings` reaches at the other door, and the
-    /// two doors are not allowed to disagree about what a zero means. No
-    /// discharge is available to soften it, and both candidates fail the two
-    /// rules that mechanism sets for an honest empty:
+    /// A zero binding used to be reported here, as a warning, because the
+    /// refusal it deserved was not authorable: the only discharge an author
+    /// could offer was "this piece needs no waterline", which is the deleted
+    /// declaration wearing a different name, and the only geometric one — "no
+    /// piece reaches the sea" — was thought unsatisfiable under a single global
+    /// ocean datum.
     ///
-    /// - The only thing an author could offer is "this piece needs no
-    ///   waterline" — the deleted declaration wearing a different name. The
-    ///   defect produces it perfectly, so it is an opt-out secured by exactly
-    ///   the property in question.
-    /// - The only geometric candidate is "no piece reaches the sea"
-    ///   ([`Self::reaching_sea`] = 0), and under the single global ocean datum
-    ///   no such world can be built: every ocean area origin is
-    ///   [`OCEAN_BASE_Y`] (60) and the sea is at [`SEA_LEVEL`] (62), so every
-    ///   piece stands in the water. A discharge no world can satisfy is a dead
-    ///   escape hatch that reads like a live one.
+    /// Both halves of that have moved. The refusal now lands on the PIECE
+    /// ([`check_ocean_waterline`]) rather than on the emptiness, so a world that
+    /// reaches a zero binding at all is one whose every piece stands clear of the
+    /// sea — [`Self::reaching_sea`] is 0 — and that is geometry, which a missing
+    /// declaration cannot produce. And it is satisfiable: an ocean area's origin
+    /// is [`OCEAN_BASE_Y`] and a piece whose lower courses are solid to local
+    /// y=[`ISLAND_WATERLINE_Y`] stands its walk plane above [`SEA_LEVEL`], which
+    /// is the island convention read forwards.
     ///
-    /// # Why this reports rather than refuses, and what changes that
-    ///
-    /// A refusal is only landable when what it demands is authorable, and here
-    /// it is not. The same global datum that makes the geometric discharge
-    /// unsatisfiable also leaves an author no lever: a piece's walk plane lands
-    /// where its own geometry puts it above y=60, and nothing in the DSL can
-    /// raise it clear of the sea. So the only move that would green a refusal
-    /// is declaring a `waterline_y` for water the piece does not author — the
-    /// gate would be demanding a fiction, which is the same vacuity arriving
-    /// from the other side.
-    ///
-    /// The capability that makes the demand satisfiable is spec-0026's
-    /// per-area datum, and it arrives together with the gate that supplies the
-    /// honest discharge: an empirical flood proof that reads assembled blocks
-    /// rather than declarations, and therefore cannot be emptied by editing
-    /// metadata. The refusal belongs in that change, not ahead of it.
-    ///
-    /// That deferral is **bound, not remembered**: the fixture in
-    /// `tests/cli.rs` asserts that every placed piece of an ocean world stands
-    /// at or below the sea plane. The day a per-area datum makes that false,
-    /// the assertion reds and the severity question is reopened by the test
-    /// rather than by anyone recalling this paragraph.
-    pub fn seal(&self) -> Option<Diagnostic> {
-        if !self.ocean || self.checked > 0 || self.placed == 0 {
-            return None;
+    /// So there is nothing left for this to report and everything left for it to
+    /// state: what was placed, what stands in the water, and what was checked.
+    pub fn line(&self) -> String {
+        if !self.ocean {
+            return "waterline binding: this world declares no ocean horizon, so the ocean-datum \
+                    invariant (DW0344) does not apply — 0 piece(s) examined of 0."
+                .to_string();
         }
-        Some(Diagnostic::warning(
-            DW_OCEAN_WATERLINE,
-            "world",
-            "/content/horizon",
-            format!(
-                "the ocean-datum check examined ZERO of {placed} placed piece(s): this world \
-                 declares `horizon: ocean` and {reaching} of those piece(s) stand at or below the \
-                 sea plane (y={SEA_LEVEL}), but not one declares a `waterline_y` in its prefab \
-                 metadata. Nothing here proves that anything in this world meets the sea where \
-                 the sea is, while every downstream proof — nav, boundary, POV, PackTest — \
-                 derives from the placement none of them checked. A check that examined nothing \
-                 has proved nothing, so this is stated rather than passed over. It is a \
-                 warning and not yet a refusal only because the demand is not yet authorable — \
-                 no lever lifts a piece clear of the sea — and a fixture reds the day one \
-                 exists. The invariant is \
-                 keyed off an optional field, which makes a declaration that was DELETED look \
-                 exactly like one that was never needed, and those two need opposite answers. \
-                 Declare `waterline_y` on the piece(s) that meet the sea — the local y of the \
-                 top authored water block, {ISLAND_WATERLINE_Y} by the island convention \
-                 (`prefabs/island-tileset.md`) — or, if this world really authors no shore, it \
-                 is still standing in the water at y={OCEAN_BASE_Y} and wants a horizon that is \
-                 not `ocean`",
-                placed = self.placed,
-                reaching = self.reaching_sea,
-            ),
-        ))
+        format!(
+            "waterline binding: {checked} of {placed} placed piece(s) declare a `waterline_y` and \
+             were held to sea level (y={SEA_LEVEL}); {reaching} piece(s) have a box reaching at \
+             or below the sea plane, and every one of those without a declaration is refused \
+             (DW0344), so a zero here means the pieces stand clear of the water.",
+            checked = self.checked,
+            placed = self.placed,
+            reaching = self.reaching_sea,
+        )
     }
 }
 
@@ -2337,41 +2358,41 @@ impl WaterlineBinding {
 mod waterline_binding_tests {
     use super::*;
 
-    /// The three states, and the one that is not a pass.
+    /// The line states the three numbers, and says what a zero now means.
     ///
-    /// `NOT_AN_OCEAN` and "examined something" are silent for different
-    /// reasons, and a world that placed nothing has no population at all —
-    /// none of the three is the case this exists for.
+    /// `NOT_AN_OCEAN` says the invariant does not apply, which is a different
+    /// statement from applying and binding to nothing — and the second is no
+    /// longer a report, because a piece that stands in the sea without a
+    /// declaration is refused where it is placed rather than counted here.
     #[test]
-    fn only_an_ocean_that_placed_pieces_and_examined_none_reports() {
-        assert!(WaterlineBinding::NOT_AN_OCEAN.seal().is_none());
+    fn the_line_states_what_was_examined_and_what_stands_in_the_water() {
+        let none = WaterlineBinding::NOT_AN_OCEAN.line();
+        assert!(none.contains("declares no ocean horizon"), "{none}");
+        assert!(none.contains("0 piece(s) examined of 0"), "{none}");
+
         let bound = WaterlineBinding {
             ocean: true,
             placed: 3,
-            checked: 3,
-            reaching_sea: 3,
-        };
-        assert!(bound.seal().is_none(), "a bound check says nothing");
-        let empty = WaterlineBinding {
+            checked: 2,
+            reaching_sea: 2,
+        }
+        .line();
+        assert!(bound.contains("2 of 3 placed piece(s)"), "{bound}");
+        assert!(bound.contains("2 piece(s) have a box reaching"), "{bound}");
+
+        // The only world that can reach a zero binding is one whose pieces all
+        // stand clear of the water, and the line says so rather than passing.
+        let clear = WaterlineBinding {
             ocean: true,
-            placed: 0,
+            placed: 4,
             checked: 0,
             reaching_sea: 0,
-        };
-        assert!(empty.seal().is_none(), "no pieces is not a zero binding");
-
-        let unbound = WaterlineBinding {
-            ocean: true,
-            placed: 2,
-            checked: 0,
-            reaching_sea: 2,
-        };
-        let d = unbound.seal().expect("a zero binding is never silent");
-        assert_eq!(d.code, "DW0344", "it answers under its own code");
+        }
+        .line();
+        assert!(clear.contains("0 of 4 placed piece(s)"), "{clear}");
         assert!(
-            d.message.contains("examined ZERO of 2 placed piece(s)"),
-            "the binding count is stated: {}",
-            d.message
+            clear.contains("the pieces stand clear of the water"),
+            "{clear}"
         );
     }
 }
@@ -2718,13 +2739,15 @@ impl<'a> Plan<'a> {
         //
         // Bound here and nowhere else, on the same reasoning as the mating check
         // below: every campaign build goes through `Plan::build`. The binding
-        // count comes back with the verdict, because a check keyed off an
-        // optional metadata field goes quiet rather than red when the field
-        // disappears — and `seal` is what stops that quiet from reading as a
-        // pass.
-        if let Some(finding) = check_ocean_waterline(campaign, &areas, prefabs)?.seal() {
-            warnings.push(finding);
-        }
+        // count comes back with the verdict and is PRINTED by the build, because
+        // a check keyed off an optional metadata field goes quiet rather than red
+        // when the field disappears. What stops that quiet from reading as a pass
+        // is no longer a report about the emptiness: it is that a piece standing
+        // in the sea without the declaration is refused outright, so the only
+        // world that can reach a zero binding is one whose pieces all stand clear
+        // of the water — a discharge taken from geometry, which the missing
+        // declaration cannot fake.
+        let waterline = check_ocean_waterline(campaign, &areas, prefabs)?;
 
         // ---- the pieces fit together (DW0780/DW0781, ADR-0020) ----
         //
@@ -2969,6 +2992,7 @@ impl<'a> Plan<'a> {
             massing_bounds,
             blockout,
             surround,
+            waterline,
         })
     }
 

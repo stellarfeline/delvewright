@@ -856,6 +856,12 @@ pub struct World {
     /// top, that height in sixteenths. Absent = a full cube. Feeds
     /// the physical step rule in [`World::neighbors_fp`].
     partial: BTreeMap<[i32; 3], u8>,
+    /// Cells whose block **can** hold water
+    /// ([`crate::compiler::assembled::is_waterloggable`]). Read by exactly one
+    /// proof, [`measure_sea_seepage`]: under an ocean ambient every one of these
+    /// standing in the sea's own band comes out of `/place template` waterlogged,
+    /// which makes it a water source the block map does not contain.
+    waterloggable: BTreeSet<[i32; 3]>,
     /// Cells inside a declared **lethal volume** (DSL v0.10, spec-0031).
     ///
     /// A volume that kills whatever enters it is, for a route, a volume no route
@@ -940,6 +946,12 @@ pub struct World {
     /// [`World::with_ambient`], whose signature takes both so no call site can
     /// set the premise and forget the extent.
     built: Vec<BuiltPiece>,
+    /// **Where the party is required to stand**, objective id paired with the
+    /// cell the critical path names for it, in path order. Empty on a synthetic
+    /// world. Read only by [`measure_sea_seepage`], so a wet walk region can be
+    /// reported as the objectives it drowns rather than as a list of
+    /// coordinates.
+    objective_cells: Vec<(String, [i32; 3])>,
 }
 
 /// The step rule's three constants, taken from the metrics table (spec-0049 §2)
@@ -999,6 +1011,7 @@ pub struct Premises {
     world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
     clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
     transit_teleports: Vec<([i32; 3], [i32; 3])>,
+    objective_cells: Vec<(String, [i32; 3])>,
 }
 
 impl Premises {
@@ -1027,6 +1040,15 @@ impl Premises {
             world_load_seals: seals,
             clocked_gates: plan.timed_gates.iter().map(|g| g.gate_region).collect(),
             transit_teleports: plan.transit_teleports.clone(),
+            // Where the party is required to stand, by name. A proof that finds
+            // the walk region wet can then say WHICH objective is in the water
+            // rather than only which cell is — the difference between a
+            // coordinate and a thing to fix.
+            objective_cells: plan
+                .critical_path
+                .iter()
+                .filter_map(|s| Some((s.objective()?.to_string(), s.pos()?)))
+                .collect(),
         }
     }
 
@@ -1053,6 +1075,7 @@ impl Premises {
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
             transit_teleports: Vec::new(),
+            objective_cells: Vec::new(),
         }
     }
 }
@@ -1156,6 +1179,8 @@ impl World {
             use_gates: self.use_gates.clone(),
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
+            waterloggable: self.waterloggable.clone(),
+            objective_cells: self.objective_cells.clone(),
             lethal: BTreeSet::new(),
             lethal_regions: Vec::new(),
             pinned: self.pinned.clone(),
@@ -1219,6 +1244,7 @@ impl World {
             use_gates: occ.use_gates,
             flooded: occ.flooded,
             partial: occ.partial,
+            waterloggable: occ.waterloggable,
             lethal: premises
                 .lethal_regions
                 .iter()
@@ -1233,6 +1259,7 @@ impl World {
             flood_regions: Vec::new(),
             ambient: premises.ambient,
             built: premises.built,
+            objective_cells: premises.objective_cells,
         }
     }
 
@@ -1256,6 +1283,19 @@ impl World {
     pub fn with_ambient(mut self, ambient: Ambient, built: Vec<BuiltPiece>) -> Self {
         self.ambient = ambient;
         self.built = built;
+        self
+    }
+
+    /// This world with `cells` declared waterloggable — a fact a real world
+    /// carries off its own block map ([`crate::compiler::assembled::Occupancy`])
+    /// and a synthetic one has no blocks to carry.
+    ///
+    /// `#[cfg(test)]` on purpose: production code that set this by hand would be
+    /// stating a block fact it did not read from the blocks, which is the shape
+    /// the premise type exists to prevent.
+    #[cfg(test)]
+    pub fn with_waterloggable(mut self, cells: BTreeSet<[i32; 3]>) -> Self {
+        self.waterloggable = cells;
         self
     }
 
@@ -1319,6 +1359,8 @@ impl World {
             use_gates: self.use_gates.clone(),
             flooded: self.flooded.clone(),
             partial,
+            waterloggable: self.waterloggable.clone(),
+            objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             pinned,
@@ -1356,6 +1398,8 @@ impl World {
             use_gates: self.use_gates.clone(),
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
+            waterloggable: self.waterloggable.clone(),
+            objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1401,6 +1445,8 @@ impl World {
             use_gates: self.use_gates.clone(),
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
+            waterloggable: self.waterloggable.clone(),
+            objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1449,6 +1495,8 @@ impl World {
             use_gates: self.use_gates.clone(),
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
+            waterloggable: self.waterloggable.clone(),
+            objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1521,6 +1569,8 @@ impl World {
             use_gates: self.use_gates.clone(),
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
+            waterloggable: self.waterloggable.clone(),
+            objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1587,6 +1637,8 @@ impl World {
             use_gates: BTreeSet::new(),
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
+            waterloggable: self.waterloggable.clone(),
+            objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1632,6 +1684,7 @@ impl World {
                 use_gates: BTreeSet::new(),
                 flooded,
                 partial: BTreeMap::new(),
+                waterloggable: BTreeSet::new(),
             },
             Premises::geometry_only(),
         )
@@ -7700,7 +7753,8 @@ impl FluidEscape {
 // The ambient sea inside the built volume (DW0851)
 // ---------------------------------------------------------------------------
 
-/// `DW0851`: **the ambient sea reaches a cell a body was proved to stand on.**
+/// `DW0851`: **the sea is in the walk region** — a cell a body was proved to
+/// stand on holds water once the world loads.
 ///
 /// The world model holds water in two disjoint places and only one of them
 /// reaches walkability. [`crate::compiler::assembled::Occupancy::flooded`] is seeded from
@@ -7708,62 +7762,54 @@ impl FluidEscape {
 /// and every downstream proof reads it. The **ambient sea** is not in that block
 /// map at all: under [`Ambient::Ocean`] the world generator puts water in every
 /// column the content did not build, and [`World::ambient_water`] is the only
-/// thing that knows it. That predicate had exactly one reader, the stranding
-/// proof's `swimmable`, which asks about the sea *surface outside* the content.
-///
-/// So the sea never reached `flooded`, never reached `is_occupied`, and never
-/// reached [`World::is_standable`]: **a cell inside a placed piece that the sea
-/// will fill was proved standable, and nothing could see it.** Field case: an
-/// interior room in an ocean world sat one block under sea level and its whole
-/// walk plane was under water a minute after boot, while the compiler modelled
-/// it dry — the route proof, the wave seating and the exported waypoints all
-/// stood on cells the game had already flooded.
+/// thing that knows it. So the sea never reached `flooded`, never reached
+/// `is_occupied`, and never reached [`World::is_standable`]: **a cell inside a
+/// placed piece that the sea will fill was proved standable, and nothing could
+/// see it.**
 ///
 /// ## The model
 ///
-/// A piece's bytes decide what is inside its box ([`built_volume`]) — but they
-/// decide it at *placement*, and vanilla fluid physics runs afterwards. The sea
-/// is an unbounded body of source blocks pressed against every outward face of
-/// the built volume below [`Sea::level`], so wherever such a face is open, water
-/// comes in. This proof asks that one question and nothing else:
+/// The question is asked of **the walk**, and of nothing else: the denominator is
+/// the reachable standable set the build already computed, which is where the
+/// party goes. For each of those cells the proof reads what the delivered world
+/// puts there. The sea gets into a placed piece two ways, and both are seeds of
+/// one flow:
 ///
-/// 1. **Seeds** — every non-blocking cell *inside* the built volume, in the sea's
-///    own band (`floor_top < y ≤ level`), that is 6-adjacent to an ambient sea
-///    cell. That is the contact face, and it is where the sea is already
-///    touching the content.
-/// 2. **Flow** — [`crate::compiler::assembled::flood`], the same function the block map's
+/// 1. **An open face** — a non-blocking cell *inside* the built volume, in the
+///    sea's own band (`floor_top < y ≤ level`), 6-adjacent to an ambient sea
+///    cell. That is where the sea is already touching the content.
+/// 2. **A waterloggable block the placement hands to the sea.** `/place template`
+///    carries the fluid already in a cell onto the block it writes there, so a
+///    stair, a fence, a pane, a chest or a set of iron bars placed below the sea
+///    plane comes out `waterlogged=true` whatever the prefab said — and a
+///    waterlogged cell is a genuine water source that spreads into its
+///    neighbours. This is not a corner: it is what actually happened. The
+///    tidewatch field case's staircase came out waterlogged four cells below the
+///    surface, ran down its own treads, and put both of the delve's objectives
+///    under water at `[260,61,4]` and `[260,61,8]` — through a hull whose open
+///    contact face was, correctly, zero cells wide. The gallery's own
+///    `ocean-horizon` point did the same thing with 10 blocks and 367 cells.
+/// 3. **Flow** — [`crate::compiler::assembled::flood`], the same function the block map's
 ///    water runs through: infinite-water source formation, then 7-level decay
 ///    with infinite downward fall. Deliberately **not** a second physics, so a
 ///    room cannot be judged wet by one model and dry by the other.
-/// 3. **Confinement** — every non-built cell 6-adjacent to the built volume is
+/// 4. **Confinement** — every non-built cell 6-adjacent to the built volume is
 ///    added to the barrier set, so the flow stays inside the content instead of
 ///    wandering across an ocean that is already water. What leaves the built
 ///    volume is `DW0318`'s question, not this one.
-/// 4. **Verdict** — a **reachable, standable** cell whose **head** cell the flow
-///    reaches. Reachable, because a decorative sunken cellar nobody walks into is
-///    content and not a defect; standable, because that is precisely the claim
-///    `DW0314` and every route, seat and waypoint downstream rests on; and the
-///    head cell, because that is where the two models actually contradict each
-///    other about the same fact.
+/// 5. **Verdict** — a walk cell whose **own** cell the flow reaches. That is
+///    where the body's feet go, and the delve says a body stands there.
 ///
-/// ## Why the head cell and not the feet
+/// ## Why the foot cell, and what wading is
 ///
-/// A body whose feet cell is wet and whose head cell is dry is **wading**, and
-/// vanilla lets it walk: the map says ground, the game says shin-deep water, and
-/// both are true. A body whose head cell is wet is **swimming** — the map says a
-/// body stands here and the game says a body cannot. That is a contradiction
-/// about the same fact, which is what a proof is entitled to refuse; the first is
-/// a difference in how deep the shore is drawn.
-///
-/// This line was chosen against a measurement rather than in the abstract, and
-/// the measurement is the reason it is not the more obvious one. The released
-/// `nobodys-cave-island` walks a 26-cell strip of its west bank at exactly sea
-/// level: every reachable standable cell that campaign has at or below the
-/// waterline is in that strip, and not one of them has a wet head. A feet-cell
-/// verdict refuses that shoreline — correct, accepted, played work — which is how
-/// a diagnostic gets weakened later by somebody who needs it green. The wading
-/// cells are still **counted**, in the binding ledger, so the shoreline is a
-/// number a reader can act on instead of a silence.
+/// The line was drawn at the head cell once, on the argument that a body whose
+/// feet are wet and whose head is dry is wading and vanilla lets it walk. That is
+/// true about vanilla and wrong about a delve: the field case is a two-scene
+/// campaign whose every objective stands in shin-deep sea, and a head-cell
+/// verdict passed it. So the foot cell decides. A walk cell that is dry underfoot
+/// and merely *touches* water — at head height or beside it — is the shoreline,
+/// and it is **counted and named** rather than judged, because a shoreline 26
+/// cells wide and one 2000 cells wide are different maps.
 ///
 /// ## Direction of error
 ///
@@ -7771,56 +7817,69 @@ impl FluidEscape {
 /// call a cell wet that vanilla leaves dry, never the reverse. The seeds are
 /// entered as *sources* where vanilla would start them one level down, so a wide
 /// contact face fills further than the game would. Over-marking turns a proof red
-/// — caught, escalated, and answerable by walling the face; under-marking is
-/// tm-02 itself, a wet cell shipping as proven dry.
+/// — caught, escalated, and answerable by walling the face or lifting the floor;
+/// under-marking is a wet cell shipping as proven dry.
 ///
 /// ## What this is not
 ///
-/// Not the shoreline. A shore piece that authors its own water up to the
-/// waterline (`DW0344`, spec-0048) has that water in the block map already: those
-/// cells are `flooded`, therefore not standable, therefore never reachable, and
-/// this proof has nothing to say about them. Wading into the sea off a beach is a
-/// body leaving the walk region, which is `DW0322`'s question.
+/// Not the shoreline outside the content. A shore piece that authors its own
+/// water up to the waterline (`DW0344`, spec-0048) has that water in the block
+/// map already: those cells are `flooded`, therefore not standable, therefore
+/// never in the walk region, and this proof has nothing to say about them. Wading
+/// into the sea off a beach is a body leaving the walk region, which is
+/// `DW0322`'s question.
 pub const DW_SEA_ENTERS_WALK: DwCode = DwCode::new("DW0851", ExitTier::Build);
 
 /// **What the sea-seepage proof looked at**, so its verdict reads as a
 /// measurement rather than a silence (CLAUDE.md: every validation artifact states
 /// its binding count, with its denominator).
 ///
-/// Five of these six numbers are denominators or measurements and only
-/// `submerged` is a conclusion. `pieces` is how much built volume there is;
-/// `contact_cells` is how much of it the sea is touching — a build where that is
-/// zero has a watertight hull and this proof examined nothing; `wet_cells` is how
-/// far the water then got; `walk_cells` is how large the walk region it was
-/// compared against is; `wading` is the shoreline, reported and not judged.
-/// A run under `horizon: void` reports zeroes and says so in `horizon`: there is
-/// no ambient sea to come in.
+/// Only `submerged` is a conclusion; every other number is a denominator or a
+/// measurement. `walk_cells` is the population the verdict is drawn from — the
+/// walk region the build already proved, which is where the party stands — and
+/// `objective_cells` is how many of the critical path's own cells are in it.
+/// `pieces` is how much built volume there is; `contact_cells` is how much of it
+/// the sea touches through an open face; `sea_waterlogged` is how many of its
+/// blocks the sea waterlogs at placement; `wet_cells` is how far the water then
+/// got. A run under `horizon: void` reports zeroes and says so in `horizon`:
+/// there is no ambient sea to come in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeaSeepage {
     /// The horizon the verdict is stated against — `"void"` or `"ocean"`.
     pub horizon: &'static str,
     /// Placed pieces forming the built volume ([`World::built`]).
     pub pieces: usize,
-    /// Cells inside the built volume that the ambient sea is directly touching —
-    /// the seed set. **Zero means the built volume presents no open face to the
-    /// sea**, which is the watertight case and the one honest way this proof
-    /// passes without looking at anything.
+    /// Cells inside the built volume that the ambient sea is directly touching
+    /// through an open face — one of the two seed sets.
     pub contact_cells: usize,
+    /// Blocks inside the built volume, in the sea's own band, that the placement
+    /// hands to the sea: waterloggable, therefore `waterlogged=true` the moment
+    /// `/place template` writes them into an ocean column
+    /// ([`crate::compiler::assembled::is_waterloggable`]). The other seed set,
+    /// and the one that put the field case's whole walk plane under water.
+    pub sea_waterlogged: usize,
     /// Every cell inside the built volume the sea reaches from those seeds.
     pub wet_cells: usize,
-    /// Reachable standable cells this build has — the population `submerged` and
-    /// `wading` are both drawn from.
+    /// **The denominator**: reachable standable cells this build has. Every
+    /// verdict below is drawn from this population and from nothing else.
     pub walk_cells: usize,
-    /// **Measured, not judged**: reachable standable cells the sea covers to the
-    /// feet only. A body wades these and the game agrees it can, so they are not
-    /// a finding — but a shoreline 26 cells wide and one 2000 cells wide are
+    /// How many cells the critical path names are in that population — the
+    /// binding count that matters, because these are the cells the party is
+    /// REQUIRED to stand on.
+    pub objective_cells: usize,
+    /// **Measured, not judged**: walk cells that are dry underfoot and touch
+    /// water — head-height or at the foot's own level. That is a shoreline, and a
+    /// body walks it; a shoreline 26 cells wide and one 2000 cells wide are
     /// different maps, and a check that says nothing about either is a silence.
-    pub wading: usize,
-    /// The violation: reachable standable cells whose **head** cell the sea
-    /// fills, sorted (ADR-0006).
+    pub wading: Vec<[i32; 3]>,
+    /// The violation: walk cells whose **own** cell — where the body's feet go —
+    /// holds fluid once the world loads, sorted (ADR-0006).
     pub submerged: Vec<[i32; 3]>,
     /// The placed pieces those cells lie in — where to fix it. Sorted, deduped.
     pub in_pieces: Vec<String>,
+    /// The objectives standing in submerged cells, `(objective id, cell)`, in
+    /// critical-path order. What a reader acts on.
+    pub drowned_objectives: Vec<(String, [i32; 3])>,
 }
 
 /// The 6 face-adjacent offsets, in a fixed order (determinism, ADR-0006).
@@ -7833,22 +7892,36 @@ const FACE6: [[i32; 3]; 6] = [
     [0, 0, 1],
 ];
 
-/// Measure how far the ambient sea comes into the built volume, and what of the
-/// walk region it reaches. See [`DW_SEA_ENTERS_WALK`] for the model.
+/// The 4 cardinal horizontal steps, in a fixed order (determinism, ADR-0006) —
+/// what "beside" means for a body standing in a cell.
+const HORIZ4: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+
+/// Measure the delivered fluid over **the walk**, and what of it the party
+/// stands in. See [`DW_SEA_ENTERS_WALK`] for the model.
 ///
 /// `reachable` is the caller's already-computed reachable walkable set — passed
 /// in rather than re-derived so this proof and the stranding proof are answering
-/// about the **same** walk region, and so a build pays for that flood once.
+/// about the **same** walk region, and so a build pays for that flood once. It is
+/// also the denominator: this proof asks its question of every cell a body was
+/// proved to stand on, and of nothing else.
 pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> SeaSeepage {
+    let objective_cells = world
+        .objective_cells
+        .iter()
+        .filter(|(_, c)| reachable.contains(c))
+        .count();
     let empty = |horizon| SeaSeepage {
         horizon,
         pieces: world.built.len(),
         contact_cells: 0,
+        sea_waterlogged: 0,
         wet_cells: 0,
         walk_cells: reachable.len(),
-        wading: 0,
+        objective_cells,
+        wading: Vec::new(),
         submerged: Vec::new(),
         in_pieces: Vec::new(),
+        drowned_objectives: Vec::new(),
     };
     let Ambient::Ocean(sea) = &world.ambient else {
         return empty("void");
@@ -7887,9 +7960,9 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
         }
     }
 
-    // Seeds (model step 1): the contact face — inside the built volume, inside the
-    // sea's own band, open, and touching ambient sea water.
-    let mut seeds: BTreeSet<[i32; 3]> = BTreeSet::new();
+    // Seeds, set 1 (model step 1a): the contact face — inside the built volume,
+    // inside the sea's own band, open, and touching ambient sea water.
+    let mut contact: BTreeSet<[i32; 3]> = BTreeSet::new();
     for (_, (lo, hi)) in &world.built {
         let y_lo = (sea.floor_top + 1).max(lo[1]);
         let y_hi = sea.level.min(hi[1]);
@@ -7904,14 +7977,38 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
                         .iter()
                         .any(|d| world.ambient_water([c[0] + d[0], c[1] + d[1], c[2] + d[2]]))
                     {
-                        seeds.insert(c);
+                        contact.insert(c);
                     }
                 }
             }
         }
     }
+    // Seeds, set 2 (model step 1b): every waterloggable block the placement puts
+    // in the sea's band. The cell stays occupied by its host block — it is a
+    // barrier, exactly as an authored `waterlogged=true` cell is in
+    // `occupancy_of` — and it is a source that wets its neighbours.
+    let waterlogged: BTreeSet<[i32; 3]> = world
+        .waterloggable
+        .iter()
+        .copied()
+        .filter(|c| c[1] > sea.floor_top && c[1] <= sea.level && world.is_built(*c))
+        .collect();
+    let mut seeds = contact.clone();
+    seeds.extend(waterlogged.iter().copied());
     if seeds.is_empty() {
-        return empty("ocean");
+        return SeaSeepage {
+            horizon: "ocean",
+            pieces: world.built.len(),
+            contact_cells: 0,
+            sea_waterlogged: 0,
+            wet_cells: 0,
+            walk_cells: reachable.len(),
+            objective_cells,
+            wading: Vec::new(),
+            submerged: Vec::new(),
+            in_pieces: Vec::new(),
+            drowned_objectives: Vec::new(),
+        };
     }
 
     // Flow (model step 2), through the block map's own flood — never a second
@@ -7919,17 +8016,25 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
     let mut wet = crate::compiler::assembled::flood(&barriers, &seeds);
     wet.retain(|c| !barriers.contains(c) && world.is_built(*c));
 
-    // Verdict (model step 4): the head cell decides. The feet-only cells are
-    // counted beside it rather than dropped — see `SeaSeepage::wading`.
+    // Verdict (model step 4): the FOOT cell decides, and the population is the
+    // walk. A cell whose own block is fluid is a cell the delve proved a body
+    // stands on and the game fills with water before that body arrives.
     let submerged: Vec<[i32; 3]> = reachable
         .iter()
         .copied()
-        .filter(|&c| wet.contains(&[c[0], c[1] + 1, c[2]]))
+        .filter(|c| wet.contains(c))
         .collect();
-    let wading = reachable
+    let wading: Vec<[i32; 3]> = reachable
         .iter()
-        .filter(|&&c| wet.contains(&c) && !wet.contains(&[c[0], c[1] + 1, c[2]]))
-        .count();
+        .copied()
+        .filter(|&c| {
+            !wet.contains(&c)
+                && (wet.contains(&[c[0], c[1] + 1, c[2]])
+                    || HORIZ4
+                        .iter()
+                        .any(|(dx, dz)| wet.contains(&[c[0] + dx, c[1], c[2] + dz])))
+        })
+        .collect();
     let mut in_pieces: BTreeSet<String> = BTreeSet::new();
     for &c in &submerged {
         for (id, (lo, hi)) in &world.built {
@@ -7938,15 +8043,25 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
             }
         }
     }
+    let drowned: BTreeSet<[i32; 3]> = submerged.iter().copied().collect();
+    let drowned_objectives: Vec<(String, [i32; 3])> = world
+        .objective_cells
+        .iter()
+        .filter(|(_, c)| drowned.contains(c))
+        .cloned()
+        .collect();
     SeaSeepage {
         horizon: "ocean",
         pieces: world.built.len(),
-        contact_cells: seeds.len(),
+        contact_cells: contact.len(),
+        sea_waterlogged: waterlogged.len(),
         wet_cells: wet.len(),
         walk_cells: reachable.len(),
+        objective_cells,
         wading,
         submerged,
         in_pieces: in_pieces.into_iter().collect(),
+        drowned_objectives,
     }
 }
 
@@ -7970,25 +8085,37 @@ impl SeaSeepage {
         } else {
             format!("in placed piece(s) {}", self.in_pieces.join(", "))
         };
+        let drowned = if self.drowned_objectives.is_empty() {
+            "no objective stands in one".to_string()
+        } else {
+            format!(
+                "the objective(s) {} stand in them",
+                self.drowned_objectives
+                    .iter()
+                    .map(|(id, c)| format!("`{id}` at {c:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
         Some(Failure {
             code: DW_SEA_ENTERS_WALK,
             message: format!(
-                "the ambient sea covers the walk region: {n} reachable standable cell(s) across \
-                 {cols} column(s), {blame}, have their HEAD cell under water once the world \
-                 loads — this build proves a body stands there and the game gives it a body that \
-                 swims. The piece put air in those cells; vanilla fluid physics fills them from \
-                 the sea before any player arrives, on the server's own clock. Cells (feet): \
-                 {sample}{extra}; the highest is y={highest} against sea level y={level}. \
-                 Examined {contact} cell(s) of open contact face and {wet} cell(s) the sea \
-                 reaches inside {pieces} placed piece(s), against a walk region of {walk} \
-                 cell(s), of which a further {wading} are wet to the feet only (wading — \
-                 measured, not judged). WHERE to fix: the piece whose face is open below the \
-                 waterline, or the placement that put that face against the sea. HOW: close the \
-                 face (a hull, a wall, a block the water cannot pass), raise the floor so the \
-                 walk plane stands clear of y={level}, or author the water yourself so the room \
-                 IS flooded and every proof downstream knows it. Do NOT weaken this check or \
-                 move the path around it: the water arrives whether or not anything proved it, \
-                 and a route over these cells is a route through the sea.",
+                "the sea is in the walk region: {n} of the {walk} cell(s) a body was proved to \
+                 stand on, across {cols} column(s), {blame}, hold WATER once the world loads — \
+                 and {drowned}. This build proves the party walks there and the game gives them \
+                 water to stand in. Cells (feet): {sample}{extra}; the highest is y={highest} \
+                 against sea level y={level}. Examined the whole walk region ({walk} cell(s), of \
+                 which {obj} are named by the critical path) against {contact} cell(s) of open \
+                 contact face and {logged} block(s) the sea waterlogs at placement, over {wet} \
+                 cell(s) the water reaches inside {pieces} placed piece(s); a further {wading} \
+                 walk cell(s) are dry underfoot and touch water (wading — measured, not judged). \
+                 WHERE to fix: the piece whose open face or waterloggable block stands below \
+                 y={level}, or the placement that put it there. HOW: raise the floor so the walk \
+                 plane stands clear of y={level}, close the face the sea comes through, or \
+                 author the water yourself so the room IS flooded and every proof downstream \
+                 knows it. Do NOT weaken this check or move the path around it: the water \
+                 arrives whether or not anything proved it, and a route over these cells is a \
+                 route through the sea.",
                 n = self.submerged.len(),
                 cols = columns.len(),
                 sample = sample.join(", "),
@@ -7999,26 +8126,57 @@ impl SeaSeepage {
                 },
                 level = crate::compiler::plan::SEA_LEVEL,
                 contact = self.contact_cells,
+                logged = self.sea_waterlogged,
                 wet = self.wet_cells,
                 pieces = self.pieces,
                 walk = self.walk_cells,
-                wading = self.wading,
+                obj = self.objective_cells,
+                wading = self.wading.len(),
             ),
         })
     }
 
+    /// The one line this proof owes its reader, printed whether it found
+    /// anything or not: a count only says something when the run that found
+    /// nothing prints it too.
+    pub fn line(&self) -> String {
+        format!(
+            "sea-seepage binding: horizon `{h}`; {walk} walk cell(s) examined, of which {obj} are named by \
+             the critical path; {sub} submerged and {wade} wading, over {wet} cell(s) the sea reaches \
+             inside {pieces} placed piece(s) from {contact} cell(s) of open contact face and {logged} \
+             block(s) the placement waterlogs.",
+            h = self.horizon,
+            walk = self.walk_cells,
+            obj = self.objective_cells,
+            sub = self.submerged.len(),
+            wade = self.wading.len(),
+            wet = self.wet_cells,
+            pieces = self.pieces,
+            contact = self.contact_cells,
+            logged = self.sea_waterlogged,
+        )
+    }
+
     /// The binding ledger (`validation/sea-seepage.json`): what was examined, not
-    /// only what was found — so a build whose hull is watertight says *zero
-    /// contact face* rather than going quiet, and one that wades says how far.
+    /// only what was found — so a build that looked at a walk region of zero says
+    /// so, and one that wades says how far and where.
     pub fn ledger(&self) -> serde_json::Value {
         serde_json::json!({
             "horizon": self.horizon,
             "pieces_examined": self.pieces,
             "contact_face_cells": self.contact_cells,
+            "blocks_the_sea_waterlogs": self.sea_waterlogged,
             "cells_the_sea_reaches": self.wet_cells,
             "walk_cells_examined": self.walk_cells,
+            "critical_path_cells_examined": self.objective_cells,
             "walk_cells_submerged": self.submerged.len(),
-            "walk_cells_wading": self.wading,
+            "walk_cells_wading": self.wading.len(),
+            "submerged_cells": self.submerged,
+            "wading_cells": self.wading,
+            "drowned_objectives": self.drowned_objectives
+                .iter()
+                .map(|(id, c)| serde_json::json!({"objective": id, "cell": c}))
+                .collect::<Vec<_>>(),
             "in_pieces": self.in_pieces,
             "verdict": if self.finding().is_some() { "fail" } else { "pass" },
         })
@@ -8983,21 +9141,25 @@ mod tests {
         (solid, vec![([0, 60, 0], [7, 64, 7])])
     }
 
-    /// **The shoreline is not a finding**, and this is the fixture that decides
-    /// the verdict's predicate.
+    /// **A walk plane at exactly the waterline is a finding.** This is the
+    /// fixture that decides the verdict's predicate, and it changed.
     ///
     /// A plate whose top is at `sea_level - 1` inside a piece box that carries on
     /// upward: the walk plane sits at exactly the waterline, INSIDE the built
-    /// volume, with the open sea against its western face. That is the shape of
-    /// `nobodys-cave-island`'s west bank — a released, accepted, played campaign
-    /// whose every reachable cell at or below the waterline is one of 26 such
-    /// cells, none of them head-deep.
+    /// volume, with the open sea against its western face. The sea runs onto that
+    /// plate — every cell of it — so a body proved to stand there stands in
+    /// water.
     ///
-    /// A feet-cell verdict refuses it. So the verdict is the head cell, and the
-    /// wading is **counted** instead of judged: a body that can breathe where it
-    /// was proved to stand is not a contradiction, it is a shore.
+    /// The verdict used to be the HEAD cell, on the argument that a body which
+    /// can breathe where it was proved to stand is not a contradiction. The field
+    /// case is what settled it the other way: a two-scene delve whose two
+    /// objectives stood at `[260,61,4]` and `[260,61,8]`, both `minecraft:water`
+    /// in the delivered world, both dry to the head, and `walk_cells_wading: 0`
+    /// printed over them. The island convention already says where a shore's land
+    /// plane goes — one block ABOVE the waterline — and this is that rule read
+    /// forwards.
     #[test]
-    fn sea_seepage_wades_a_shoreline_and_does_not_refuse_it_dw0851() {
+    fn sea_seepage_refuses_a_walk_plane_at_the_waterline_dw0851() {
         let mut solid = BTreeSet::new();
         for x in 0..8 {
             for z in 0..8 {
@@ -9012,19 +9174,62 @@ mod tests {
         assert_eq!(m.horizon, "ocean");
         assert!(
             m.contact_cells > 0,
-            "the sea IS touching this piece — a zero here would be the unbound              vacuity mode wearing a pass: {m:?}"
+            "the sea IS touching this piece — a zero here would be the unbound \
+             vacuity mode wearing a pass: {m:?}"
         );
         assert!(
-            m.wading > 0,
-            "the walk plane is at the waterline, so it is wet to the feet: {m:?}"
+            !m.submerged.is_empty(),
+            "the walk plane is at the waterline, so the party stands in it: {m:?}"
+        );
+        assert!(m.finding().is_some(), "and that is refused");
+        verify_boundary_safety(&world, &roots([3, 62, 3]))
+            .expect_err("a walk plane at sea level is not a floor");
+    }
+
+    /// **The shore the convention describes**: the same plate one block higher,
+    /// so the walk plane stands at `sea_level + 1`. Dry underfoot, and the cells
+    /// beside the water are counted as wading rather than judged.
+    ///
+    /// The wading count is what makes the pass a measurement: a shore 8 cells
+    /// wide and one 2000 cells wide are different maps.
+    #[test]
+    fn sea_seepage_wades_a_shore_one_block_above_the_sea() {
+        // A long plate at the waterline, walled off from the sea except at one
+        // end, so the flow's 7-cell decay dies before the far end: the wet cells
+        // and the dry-but-touching cells are both in one walk region.
+        let mut solid = BTreeSet::new();
+        for x in 0..20 {
+            for z in 0..4 {
+                solid.insert([x, 61, z]); // the plate: walk plane at y=62
+                if z == 0 || z == 3 {
+                    for y in 62..=64 {
+                        solid.insert([x, y, z]); // side walls, so only the end is open
+                    }
+                }
+            }
+        }
+        for y in 62..=64 {
+            for z in 0..4 {
+                solid.insert([19, y, z]); // the far end is closed
+            }
+        }
+        let world = ocean(solid, BTreeSet::new(), vec![([0, 60, 0], [19, 66, 3])]);
+        let reachable = world.reachable_walkable_rooted(&roots([15, 62, 2]));
+        let m = measure_sea_seepage(&world, &reachable);
+        assert!(m.contact_cells > 0, "the open end is contact face: {m:?}");
+        assert!(m.wet_cells > 0, "the sea runs down the plate: {m:?}");
+        assert!(
+            !m.wading.is_empty(),
+            "the first dry cell beyond the flow's reach touches it: {m:?}"
         );
         assert!(
-            m.submerged.is_empty(),
-            "nothing is head-deep on a shore: {m:?}"
+            m.wading.iter().all(|c| !m.submerged.contains(c)),
+            "wading and submerged are disjoint populations: {m:?}"
         );
-        assert!(m.finding().is_none(), "a shore is not a finding");
-        // And the whole proof agrees: this world is buildable.
-        verify_boundary_safety(&world, &roots([3, 62, 3])).expect("wade the shore");
+        assert!(
+            m.walk_cells >= m.wading.len() + m.submerged.len(),
+            "both are drawn from the walk region: {m:?}"
+        );
     }
 
     /// The finding itself: a room whose walk plane is under the sea, with its west
@@ -9052,7 +9257,7 @@ mod tests {
             .expect_err("a flooded walk plane is refused");
         assert_eq!(err.code, DW_SEA_ENTERS_WALK);
         assert!(
-            err.message.contains("HEAD cell under water"),
+            err.message.contains("hold WATER once the world loads"),
             "names what is wrong:\n{}",
             err.message
         );
@@ -9063,16 +9268,60 @@ mod tests {
         );
         // The verdict carries its own denominators.
         assert!(
-            err.message.contains("against a walk region of")
-                && err.message.contains("cell(s) of open contact face"),
+            err.message
+                .contains("cell(s) a body was proved to stand on")
+                && err.message.contains("cell(s) of open contact face")
+                && err
+                    .message
+                    .contains("block(s) the sea waterlogs at placement"),
             "states its binding counts:\n{}",
             err.message
         );
     }
 
-    /// The same room with its wall intact: **zero contact face**, and the proof
-    /// says so. This is the only honest way this check passes without looking at
-    /// anything, and it is a number rather than a silence.
+    /// **The sea gets in through a block, not only through a hole.**
+    ///
+    /// The room's hull is intact — zero contact face — and a single waterloggable
+    /// block stands in the sea's band inside it. `/place template` hands that
+    /// block the water already in the cell, so it lands `waterlogged=true` and
+    /// spreads. This is the field case's own mechanism: the tidewatch's staircase
+    /// came out waterlogged four cells under the surface and put both objectives
+    /// in the water through a hull that presented no open face at all, and the
+    /// gallery's own `ocean-horizon` point does the same thing with 10 blocks and
+    /// 367 water cells.
+    #[test]
+    fn sea_seepage_refuses_a_sealed_room_the_placement_waterlogs_dw0851() {
+        let (solid, covered) = sunken_room(&[]);
+        let bars = [3, 61, 5];
+        let mut solid = solid;
+        solid.insert(bars); // the host block occupies its cell, as iron bars do
+        let world = ocean(solid, BTreeSet::new(), covered).with_waterloggable([bars].into());
+        let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
+        let m = measure_sea_seepage(&world, &reachable);
+        assert_eq!(
+            m.contact_cells, 0,
+            "the hull is watertight — a contact-face model sees nothing here: {m:?}"
+        );
+        assert_eq!(m.sea_waterlogged, 1, "the placement wets one block: {m:?}");
+        assert!(
+            !m.submerged.is_empty(),
+            "and the water it spreads is on the walk plane: {m:?}"
+        );
+        let err = verify_boundary_safety(&world, &roots([3, 61, 3]))
+            .expect_err("a room the placement floods is refused");
+        assert_eq!(err.code, DW_SEA_ENTERS_WALK);
+        assert!(
+            err.message
+                .contains("1 block(s) the sea waterlogs at placement"),
+            "names the seed that did it:\n{}",
+            err.message
+        );
+    }
+
+    /// The same room with its wall intact and nothing waterloggable in it:
+    /// **zero contact face and zero waterlogged blocks**, and the proof says so.
+    /// This is the only honest way this check passes without looking at anything,
+    /// and it is two numbers rather than a silence.
     #[test]
     fn sea_seepage_passes_a_watertight_hull_with_a_stated_zero() {
         let (solid, covered) = sunken_room(&[]);
@@ -9080,8 +9329,9 @@ mod tests {
         let reachable = world.reachable_walkable_rooted(&roots([3, 61, 3]));
         let m = measure_sea_seepage(&world, &reachable);
         assert_eq!(m.contact_cells, 0, "no face is open to the sea: {m:?}");
+        assert_eq!(m.sea_waterlogged, 0, "nothing in it can hold water: {m:?}");
         assert_eq!(m.wet_cells, 0);
-        assert_eq!(m.wading, 0);
+        assert!(m.wading.is_empty());
         assert!(m.submerged.is_empty());
         assert!(
             m.walk_cells > 0,
@@ -9089,11 +9339,17 @@ mod tests {
         );
         assert_eq!(m.ledger()["verdict"], "pass");
         assert_eq!(m.ledger()["contact_face_cells"], 0);
+        assert!(
+            m.line().contains("walk cell(s) examined"),
+            "the line states the denominator: {}",
+            m.line()
+        );
     }
 
-    /// A hole below the waterline that never reaches it wets feet and no heads —
-    /// vanilla water does not climb, and neither does this model. The room is
-    /// wet, the walk is not refused, and the wading number says how wet.
+    /// A hole below the waterline that never reaches it wets the walk plane and
+    /// no heads — vanilla water does not climb, and neither does this model. The
+    /// feet are in it, which is the finding; the head cells at `y=62` stay dry,
+    /// which is why the old head-cell verdict said nothing.
     #[test]
     fn sea_seepage_water_entering_below_the_surface_does_not_rise() {
         let (solid, covered) = sunken_room(&[[0, 61, 3]]);
@@ -9103,10 +9359,14 @@ mod tests {
         assert!(m.contact_cells > 0, "the hole is contact face: {m:?}");
         assert!(m.wet_cells > 0, "water came in: {m:?}");
         assert!(
-            m.submerged.is_empty(),
-            "no head cell is wet — the water cannot rise to y=62 from a y=61 hole: {m:?}"
+            m.submerged.iter().all(|c| c[1] == 61),
+            "the water cannot rise to y=62 from a y=61 hole — every wet walk cell \
+             is on the plane the hole is on: {m:?}"
         );
-        assert!(m.wading > 0, "the floor it reached is wet: {m:?}");
+        assert!(
+            !m.submerged.is_empty(),
+            "the floor it reached is the floor the party stands on: {m:?}"
+        );
     }
 
     /// Under `horizon: void` there is no ambient sea, so the proof reports zeroes
@@ -10444,6 +10704,7 @@ mod tests {
                 use_gates: use_gates.iter().copied().collect(),
                 flooded: BTreeSet::new(),
                 partial: BTreeMap::new(),
+                waterloggable: BTreeSet::new(),
             },
             Premises::geometry_only(),
         )

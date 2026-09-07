@@ -190,6 +190,31 @@ pub fn is_waterlogged(name: &str) -> bool {
     state_value(name, "waterlogged") == Some("true")
 }
 
+/// Whether a block **can** hold water — its pinned registry entry carries the
+/// `waterlogged` property — regardless of what the authored state says.
+///
+/// The distinction from [`is_waterlogged`] is the whole of it. That one asks what
+/// the prefab's bytes SAY; this one asks what vanilla will DO to those bytes when
+/// they land in water. `/place template` carries the fluid already in the cell
+/// onto the block it writes there: a waterloggable block placed into an ocean
+/// column comes out of the placement `waterlogged=true` whatever the template
+/// declared, because `waterlogged=false` is a state the block can hold water in
+/// and vanilla fills it from the world rather than from the template.
+///
+/// Measured, not reasoned: the gallery's own `ocean-horizon` build, booted on the
+/// pinned 1.21.11 image, comes out with 10 waterlogged blocks — 8 iron bars and 2
+/// chests, all of them authored with no `waterlogged` key at all — and 367 water
+/// cells across its walk plane that the model called air.
+///
+/// The registry is the authority rather than a list of block ids here for the
+/// reason every other block question is: a list is a copy of the registry that
+/// stops being one.
+pub fn is_waterloggable(name: &str) -> bool {
+    delvewright_dsl::blocks::BlockRegistry::v1_21_11()
+        .properties(bare_id(name))
+        .is_some_and(|props| props.contains_key("waterlogged"))
+}
+
 /// Whether a block falls under gravity when the cell below cannot support it
 /// (vanilla `FallingBlock`). In the delve's `the_void` world such a block, placed
 /// unsupported by `/place template`, drops out of the world and leaves air — so
@@ -848,6 +873,13 @@ pub struct Occupancy {
     /// that height in sixteenths of a block. Absent = a full cube
     /// (16/16). Drives the nav step rule's true rise between two standing cells.
     pub partial: BTreeMap<[i32; 3], u8>,
+    /// Cells holding a block that **can** hold water ([`is_waterloggable`]),
+    /// whatever its authored state. Not a collision class and not disjoint from
+    /// the others: it is a second question about the same cells, asked because a
+    /// world generator that puts water where these blocks land turns every one of
+    /// them into a source (`crate::compiler::nav::measure_sea_seepage`, `DW0851`).
+    /// Under a horizon with no ambient water nothing reads it.
+    pub waterloggable: BTreeSet<[i32; 3]>,
 }
 
 /// The nav occupancy of the settled assembled world — see
@@ -924,7 +956,11 @@ pub fn occupancy_of(
     let mut barriers: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut sources: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut partial: BTreeMap<[i32; 3], u8> = BTreeMap::new();
+    let mut waterloggable: BTreeSet<[i32; 3]> = BTreeSet::new();
     for (cell, name) in &blocks {
+        if is_waterloggable(name) {
+            waterloggable.insert(*cell);
+        }
         // A waterlogged block's cell holds a real water source that spreads into
         // its air neighbours — seed the flood from it, then classify
         // the host block normally below (the cell itself stays occupied).
@@ -979,6 +1015,7 @@ pub fn occupancy_of(
         use_gates,
         flooded,
         partial,
+        waterloggable,
     }
 }
 
