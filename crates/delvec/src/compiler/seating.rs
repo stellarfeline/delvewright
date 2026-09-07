@@ -124,9 +124,25 @@ impl PieceFacts {
     /// Read one piece: its declarations from `meta`, its measurements from the
     /// `.nbt` files beside it in `dir`.
     pub fn read(meta: &PrefabMeta, dir: &Path) -> Result<PieceFacts, String> {
+        let (grid, nbt_opened) = crate::admit::settling::piece_grid(meta, dir)?;
+        Ok(PieceFacts::measure(meta, &grid, nbt_opened))
+    }
+
+    /// The same measurements, over a grid the caller already has.
+    ///
+    /// `delvec prefab audit` assembles one — a single template's, or a whole
+    /// zone's from its manifest — before anything here is asked, and the
+    /// admission event is where `DW0887` has to bind: it is what CI runs over a
+    /// library and what the prefab procedure runs on every piece, one file at a
+    /// time. Splitting the read from the measurement is what lets that door use
+    /// this rule rather than grow a second copy of it.
+    pub fn measure(
+        meta: &PrefabMeta,
+        grid: &crate::grammar::model::VoxelModel,
+        nbt_opened: usize,
+    ) -> PieceFacts {
         use crate::schem::nav::standable_cells;
 
-        let (grid, nbt_opened) = crate::admit::settling::piece_grid(meta, dir)?;
         let mut water_cells = 0usize;
         let mut top_water_y = None::<i32>;
         let mut bottom_water_y = None::<i32>;
@@ -138,14 +154,14 @@ impl PieceFacts {
                 bottom_water_y = Some(bottom_water_y.map_or(pos[1], |b: i32| b.min(pos[1])));
             }
         }
-        let standable = standable_cells(&grid);
+        let standable = standable_cells(grid);
         let lowest_standable = standable.iter().map(|c| c[1]).min();
         let standable_below_walk = match meta.walk_y {
             Some(w) => standable.iter().filter(|c| c[1] < w).count(),
             None => 0,
         };
-        let fluid_at_edge = crate::grammar::settle::fluid_bodies(&grid).at_edge.len();
-        Ok(PieceFacts {
+        let fluid_at_edge = crate::grammar::settle::fluid_bodies(grid).at_edge.len();
+        PieceFacts {
             id: meta.prefab_id.clone(),
             base: meta.base().to_string(),
             walk_y: meta.walk_y,
@@ -157,7 +173,7 @@ impl PieceFacts {
             standable_below_walk,
             fluid_at_edge,
             nbt_opened,
-        })
+        }
     }
 }
 

@@ -106,6 +106,11 @@ const PIECE_DOORS: &[Door] = &[
         handed: Handed::Nbt,
     },
     Door {
+        path: &["planes"],
+        extra: &[],
+        handed: Handed::Nbt,
+    },
+    Door {
         path: &["gallery"],
         extra: &[],
         handed: Handed::Dir,
