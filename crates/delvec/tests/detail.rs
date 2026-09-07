@@ -1991,6 +1991,44 @@ fn a_refused_build_still_prints_the_hashes_its_refusal_asks_for() {
     );
 }
 
+/// **The second door owes the same.** `delvec allocation` parses rather than
+/// validating — its stdout is a machine-readable document an authoring loop
+/// reads — so it does not pass through the funnel that prints the hashes, and a
+/// refusal there would hand over nothing to re-record from. It prints them on
+/// stderr itself, and stdout stays the document.
+#[test]
+fn a_refused_allocation_still_prints_the_hashes_its_refusal_asks_for() {
+    let tmp = tempdir("refused-allocation-hashes");
+    let d = detailed(&tmp, &[]);
+    let c = campaign_at(&d.campaign);
+    let h = detail::Hashes::of(&c).unwrap();
+    std::fs::remove_file(d.campaign.join("walk-record.json")).unwrap();
+
+    let out = delvec(&[
+        "--prefabs",
+        d.prefabs.to_str().unwrap(),
+        "allocation",
+        d.campaign.to_str().unwrap(),
+        "node/exit",
+    ]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    for (what, hash) in [
+        ("grid", &h.site_plan),
+        ("ways", &h.layout_graph),
+        ("blockout", &h.blockout),
+    ] {
+        assert!(
+            err.contains(hash.as_str()),
+            "the refused handing states the {what} hash: {err}"
+        );
+    }
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains(&h.blockout),
+        "and stdout is still the machine-readable document, unpolluted"
+    );
+}
+
 /// **The key is the walked whole, and the key is CLOSED.**
 ///
 /// The derived whole is a function of the site plan, the layout graph, the

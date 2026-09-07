@@ -2567,6 +2567,15 @@ fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: boo
         );
         return ExitCode::from(1);
     }
+    // The three hashes, on stderr, before the gate — for the reason
+    // `validate_loaded` prints them there: this verb does not go through that
+    // funnel (see the note above on why it parses rather than validates), so
+    // without this the second of the two doors refuses and hands over nothing
+    // the author can re-record from. stdout stays the machine-readable document
+    // and gains nothing.
+    if let Some(h) = delvewright_compiler::detail::Hashes::of(&campaign) {
+        eprintln!("{}", h.line());
+    }
     // **The gate, at the second of the two events that begin detail work.** It is
     // asked of the campaign as it stands, so a campaign with no `detail-plan`
     // yet — which is exactly the campaign asking for its first allocation — is

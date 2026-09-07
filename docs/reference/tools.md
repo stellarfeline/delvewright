@@ -144,7 +144,10 @@ every validation (`DW0842`–`DW0845`) and over the built bytes at every build
 (`DW0836`–`DW0838`). It exists for the authoring loop, on the creator's own
 machine.
 
-It **refuses without a passed, fresh walk record** (`DW0841`), and it asks that of
+It prints the campaign's three hashes on stderr before it asks anything, so a
+refusal here hands over the numbers a re-record needs; stdout stays the
+machine-readable document. It **refuses without a passed, fresh walk record**
+(`DW0841`), and it asks that of
 a campaign that has no `detail-plan` yet as readily as of one that has — which is
 exactly the campaign asking for its first allocation, and exactly the moment the
 ordering has to hold. A campaign with a passed, fresh record and no detail plan is
