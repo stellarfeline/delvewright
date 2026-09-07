@@ -14,9 +14,10 @@ crates.io version can never be deleted or reused.
 `tools/assert-run-approved.sh` is the repository-side answer: it reads the run's
 own approval history through the Actions API and refuses when no approval names
 the environment, so the workflow asserts the CONSEQUENCE of the setting instead
-of describing the setting. It is correct and it is invoked by hand, as the first
-step of each job that needs it — which makes the rule a convention, and ADR-0017
-says so in the same paragraph, along with the trigger for undoing that:
+of describing the setting. What it could not do is get itself invoked: it sits as
+a hand-written first step in each job that needs it, which makes its PLACEMENT a
+convention. ADR-0017 says so in the same paragraph, with the trigger for ending
+that:
 
     if a second environment-gated job is ever added, it inherits nothing,
     and the checker is the work to redo.
