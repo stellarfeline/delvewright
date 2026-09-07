@@ -873,14 +873,14 @@ def test_a_rust_file_that_really_runs_docker_is_a_finding(repo: Path) -> None:
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/orchestrator/src/stage.rs",
+        "crates/delvec/src/orchestrator/stage.rs",
         "pub fn stage() {\n"
         '    Command::new("sh").arg("-c").arg("docker run --rm base:latest");\n'
         "}\n",
     )
     r = run(repo)
     assert r.returncode == 1
-    assert "crates/orchestrator/src/stage.rs" in r.stderr
+    assert "crates/delvec/src/orchestrator/stage.rs" in r.stderr
     assert "no FETCH_SITES pattern covers it" in r.stderr
 
 
@@ -888,14 +888,14 @@ def test_a_rust_file_that_clones_a_repository_is_a_finding(repo: Path) -> None:
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/orchestrator/src/fetch.rs",
+        "crates/delvec/src/orchestrator/fetch.rs",
         "pub fn fetch() {\n"
         '    Command::new("sh").arg("-c").arg("git clone https://example.invalid/r");\n'
         "}\n",
     )
     r = run(repo)
     assert r.returncode == 1
-    assert "crates/orchestrator/src/fetch.rs" in r.stderr
+    assert "crates/delvec/src/orchestrator/fetch.rs" in r.stderr
 
 
 def test_a_dockerfile_the_site_list_does_not_name_is_a_finding(repo: Path) -> None:

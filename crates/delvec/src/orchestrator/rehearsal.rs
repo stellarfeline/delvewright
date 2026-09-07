@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::split_log_line;
+use crate::orchestrator::split_log_line;
 
 /// The rehearsal report schema version. Independent of `playtest-report.json`:
 /// the two artifacts describe different things and version separately.

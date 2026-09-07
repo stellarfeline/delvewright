@@ -21,8 +21,8 @@ use std::process::ExitCode;
 
 use clap::Args;
 
-use crate::rehearsal::{harvest_rehearsal, rehearsal_json};
-use crate::{Layout, harvest, report_json};
+use crate::orchestrator::rehearsal::{harvest_rehearsal, rehearsal_json};
+use crate::orchestrator::{Layout, harvest, report_json};
 
 /// `delvec harvest`: the command line, as a type.
 #[derive(Clone, Args)]

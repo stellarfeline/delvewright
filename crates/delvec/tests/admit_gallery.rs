@@ -2,7 +2,7 @@
 
 use delvec::admit::fixtures;
 use delvec::admit::gallery::{self, Candidate};
-use delvewright_orchestrator::Layout;
+use delvec::orchestrator::Layout;
 
 fn candidates() -> Vec<Candidate> {
     let a = fixtures::clean_room().write();

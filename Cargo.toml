@@ -3,7 +3,6 @@ resolver = "3"
 members = [
     "crates/dsl",
     "crates/schem",
-    "crates/orchestrator",
     "crates/delvec",
 ]
 
@@ -37,7 +36,6 @@ repository = "https://github.com/stellarfeline/delvewright"
 [workspace.dependencies]
 delvewright-dsl = { path = "crates/dsl", version = "=0.21.0" }
 delvewright-schem = { path = "crates/schem", version = "=1.2.0" }
-delvewright-orchestrator = { path = "crates/orchestrator", version = "=1.2.0" }
 
 # An unoptimized `delvec` is unusable on a real campaign, and nothing used to say
 # so: `cargo build` hands you `target/debug/delvec`, and on `nobodys-cave-island`

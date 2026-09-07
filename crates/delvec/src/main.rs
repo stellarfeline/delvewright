@@ -276,7 +276,7 @@ enum Command {
     Schem(delvewright_schem::cli::SchemArgs),
     /// A playtest log: pair `[DelveNote]` stamps with the creator's notes into
     /// `playtest-report.json` (and `[DelveShot]` stamps into a rehearsal report).
-    Harvest(delvewright_orchestrator::cli::HarvestArgs),
+    Harvest(delvec::orchestrator::cli::HarvestArgs),
     /// GPU renders through Nucleation/wgpu: one piece's shot set, a whole
     /// library, or the missing-texture fidelity gate.
     Render(delvec::render::cli::RenderArgs),
@@ -423,7 +423,7 @@ fn main() -> ExitCode {
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
         Command::Prefab(args) => delvec::admit::cli::run(args.clone(), cli.json),
         Command::Schem(args) => delvewright_schem::cli::run(args.clone(), cli.json),
-        Command::Harvest(args) => delvewright_orchestrator::cli::run(args.clone()),
+        Command::Harvest(args) => delvec::orchestrator::cli::run(args.clone()),
         Command::Render(args) => delvec::render::cli::run(args.clone(), cli.json),
     }
 }

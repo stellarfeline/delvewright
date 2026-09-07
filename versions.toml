@@ -144,7 +144,6 @@ crate = "delvec"
 # tools/check-publishable.sh, tools/crates-io-publish.sh.
 crates = [
     "delvewright-schem",
-    "delvewright-orchestrator",
 ]
 
 # `delvewright-dsl` is a real dependency of every engine crate, so it must exist

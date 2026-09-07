@@ -1081,7 +1081,7 @@ core), and tier the sample budget with `-target` — ~64 for a draft you only ne
 to judge framing on, ~300 for final art (`delvec panorama --spp`'s default),
 500 for the review scene set (`scene`'s `sppTarget`).
 
-## 5. `delvec harvest` — playtest note harvester (`crates/orchestrator`) · human
+## 5. `delvec harvest` — playtest note harvester (`crates/delvec/src/orchestrator`) · human
 
 Pairs in-game `[DelveNote]` stamps with the creator's chat notes into
 `playtest-report.json` (spec-0006). The capture half is human — the owner plays and
