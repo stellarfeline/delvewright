@@ -17,7 +17,7 @@
  *      with a Chinese IME active `.key` is `"Process"` for every letter, so a
  *      `.key`-matched WASD is dead exactly for the reader this project has.
  *
- * `crates/render/tests/controls.test.mjs` executes every claim below.
+ * `crates/compiler/tests/controls.test.mjs` executes every claim below.
  */
 "use strict";
 

@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use crate::nbt::Structure;
+use crate::render::nbt::Structure;
 
 /// Player eye height above the standing cell's floor, in blocks — the same eye
 /// the compiler's player-POV cameras stand at, so a per-prefab eye shot and a

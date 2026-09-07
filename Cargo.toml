@@ -6,7 +6,6 @@ members = [
     "crates/grammar",
     "crates/schem",
     "crates/orchestrator",
-    "crates/render",
     "crates/delvec",
 ]
 
@@ -43,7 +42,6 @@ delvewright-compiler = { path = "crates/compiler", version = "=1.2.0" }
 delvewright-grammar = { path = "crates/grammar", version = "=1.2.0" }
 delvewright-schem = { path = "crates/schem", version = "=1.2.0" }
 delvewright-orchestrator = { path = "crates/orchestrator", version = "=1.2.0" }
-delvewright-render = { path = "crates/render", version = "=1.2.0" }
 
 # An unoptimized `delvec` is unusable on a real campaign, and nothing used to say
 # so: `cargo build` hands you `target/debug/delvec`, and on `nobodys-cave-island`

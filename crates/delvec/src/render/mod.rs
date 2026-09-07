@@ -1,4 +1,4 @@
-//! `delvewright-render` — the **GPU half** of the deterministic render layer
+//! `delvec::render` — the **GPU half** of the deterministic render layer
 //! (spec-0007 rendering infra / spec-0003 visual tier, M3). Productionizes the
 //! spike-render-fidelity spike.
 //!
@@ -45,6 +45,6 @@ pub mod view;
 
 // One definition, two spellings — the same arrangement `delvewright_schem` has
 // for `prefab`. These modules moved into `delvec` with the CPU surface; naming
-// them here keeps `crate::nbt` / `crate::diag` / `crate::meta` inside this
+// them here keeps `crate::render::nbt` / `crate::render::diag` / `crate::render::meta` inside this
 // crate's own modules resolving to that one definition rather than to a copy.
 pub use delvewright_compiler::view::{diag, meta, nbt};

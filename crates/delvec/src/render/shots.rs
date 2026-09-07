@@ -22,23 +22,23 @@
 //! cannot answer it, because from outside a roofed piece every anchor shot is
 //! the same picture of the same rock.
 //!
-//! The eye point is **resolved, not assumed** (`crate::occupancy`): a prefab is
+//! The eye point is **resolved, not assumed** (`crate::render::occupancy`): a prefab is
 //! mostly solid, so an anchor cell may hold a gate, a barrel or a wall. The
 //! resolution is reported per shot and raises `DW0727`; it is never applied
 //! silently.
 //!
-//! **Views** ([`crate::view`]) are the same shots, stated by the author instead
+//! **Views** ([`crate::render::view`]) are the same shots, stated by the author instead
 //! of derived: a bearing and a subject box arrive as input, and the planner
 //! appends them to this plan. They are not a third camera kind and not a second
 //! planner — the fixed set simply contains no square-on elevation, and an author
 //! who needs one says so.
 
-use crate::detect::Featureless;
-use crate::diag::{DW_ANCHOR_EYE, DW_INPUT, Diagnostic};
-use crate::meta::PrefabMeta;
-use crate::nbt::Structure;
-use crate::occupancy::{Clearance, Facing, Occupancy, Placement, Standing};
-use crate::view::View;
+use crate::render::detect::Featureless;
+use crate::render::diag::{DW_ANCHOR_EYE, DW_INPUT, Diagnostic};
+use crate::render::meta::PrefabMeta;
+use crate::render::nbt::Structure;
+use crate::render::occupancy::{Clearance, Facing, Occupancy, Placement, Standing};
+use crate::render::view::View;
 
 /// Field of view for the orbit shots (degrees) — a long lens that keeps a piece
 /// readable without perspective stretch.
@@ -108,7 +108,7 @@ pub struct PieceShot {
     pub cutaway: bool,
     /// Present exactly when `framing` is [`Framing::Eye`].
     pub eye: Option<EyeCamera>,
-    /// Present exactly when the author declared this shot ([`crate::view`]) —
+    /// Present exactly when the author declared this shot ([`crate::render::view`]) —
     /// what they asked for, so the frame can be re-asked for verbatim.
     pub view: Option<View>,
 }
@@ -217,7 +217,7 @@ pub fn plan_piece(
         let (fmin, fmax) = v
             .framed_box(st, meta)
             .map_err(|e| Diagnostic::error(DW_INPUT, e))?;
-        let target = crate::view::midpoint(fmin, fmax);
+        let target = crate::render::view::midpoint(fmin, fmax);
         plan.shots.push(PieceShot {
             name: v.name.clone(),
             kind: "view",
@@ -245,7 +245,7 @@ pub fn plan_piece(
 ///
 /// Nucleation's orbit camera has no distance field — it fits itself to the model
 /// and divides by `zoom` — so the wanted standoff is expressed as a ratio of two
-/// fits taken with the same replicated formula ([`crate::render::fit_distance`]):
+/// fits taken with the same replicated formula ([`crate::render::render::fit_distance`]):
 /// the model's, which is what the renderer would do unasked, over the framed
 /// box's, which is what the author asked for. The ratio cancels the constants,
 /// so this stays correct if the fit formula is ever corrected.
@@ -265,13 +265,13 @@ fn solve_zoom(
     // vanishes when the camera looks straight up or down. There is no framing
     // arithmetic to do there, and a ratio taken from the degenerate basis would
     // be a large number pointing the camera at its own target.
-    let forward = crate::render::view_direction(v.yaw_deg, v.pitch_deg);
+    let forward = crate::render::render::view_direction(v.yaw_deg, v.pitch_deg);
     if forward[0] * forward[0] + forward[2] * forward[2] < 1e-6 {
         return v.zoom;
     }
     let model_max = [st.size[0] as f32, st.size[1] as f32, st.size[2] as f32];
     let fit = |lo: [f32; 3], hi: [f32; 3]| {
-        crate::render::fit_distance(lo, hi, 1.0, *target, v.yaw_deg, v.pitch_deg, v.fov_deg)
+        crate::render::render::fit_distance(lo, hi, 1.0, *target, v.yaw_deg, v.pitch_deg, v.fov_deg)
     };
     let framed = fit(*fmin, *fmax);
     let whole = fit([0.0, 0.0, 0.0], model_max);
@@ -389,7 +389,7 @@ fn plan_fixed_set(st: &Structure, meta: Option<&PrefabMeta>) -> PiecePlan {
                      taken for it. The remaining shots of this anchor are orbit cameras outside \
                      the piece; nothing in this render set shows what a body there would see",
                     facing.as_str(),
-                    crate::occupancy::SEARCH_RADIUS
+                    crate::render::occupancy::SEARCH_RADIUS
                 ),
             ));
             continue;
@@ -458,14 +458,14 @@ pub fn empty_frame_diagnostic(stem: &str, shot: &PieceShot, f: &Featureless) -> 
             // is either aimed at nothing, or aimed out of itself, and only the
             // first is a defect.
             let cause = match &e.clearance {
-                crate::occupancy::Clearance::LeavesThePiece { open } => format!(
+                crate::render::occupancy::Clearance::LeavesThePiece { open } => format!(
                     "The view runs {open} open cell(s) and then leaves the template. If this \
                      anchor is meant to face outward (an approach, a threshold), what it is about \
                      lives in the assembled world, and its real view is the campaign's own \
                      player-POV shot, not a per-piece render. Otherwise the piece is missing the \
                      thing the anchor names"
                 ),
-                crate::occupancy::Clearance::Blocked { open, state } => format!(
+                crate::render::occupancy::Clearance::Blocked { open, state } => format!(
                     "The view runs {open} open cell(s) and then meets `{state}`, whose face fills \
                      the frame — the anchor is pressed against a surface"
                 ),
@@ -721,7 +721,7 @@ mod tests {
         assert_eq!(
             s.framing,
             Framing::Eye {
-                pos: [3.5, 1.0 + crate::occupancy::EYE_HEIGHT, 4.5]
+                pos: [3.5, 1.0 + crate::render::occupancy::EYE_HEIGHT, 4.5]
             }
         );
         assert!(!s.cutaway, "an eye shot never strips the ceiling");
@@ -972,7 +972,15 @@ mod tests {
             };
             let target = target.unwrap();
             let fit = |lo, hi| {
-                crate::render::fit_distance(lo, hi, 1.0, target, v.yaw_deg, v.pitch_deg, v.fov_deg)
+                crate::render::render::fit_distance(
+                    lo,
+                    hi,
+                    1.0,
+                    target,
+                    v.yaw_deg,
+                    v.pitch_deg,
+                    v.fov_deg,
+                )
             };
             let (fmin, fmax) = v.framed_box(&st, Some(&meta)).unwrap();
             // Nucleation's own distance: its model fit, divided by our zoom.
@@ -1021,7 +1029,7 @@ mod tests {
         let st = shell([7, 5, 9]);
         let v = View::parse("name=west-front,face=north,zoom=90").unwrap();
         let plan = plan_piece(&st, Some(&view_meta()), std::slice::from_ref(&v)).unwrap();
-        let f = crate::detect::Featureless { distinct: 1 };
+        let f = crate::render::detect::Featureless { distinct: 1 };
 
         let view_shot = plan.shots.iter().find(|s| s.kind == "view").unwrap();
         let d = empty_frame_diagnostic("piece", view_shot, &f);

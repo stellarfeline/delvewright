@@ -502,19 +502,22 @@ checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
 name = "delvec"
 version = "1.2.0"
 dependencies = [
+ "blake3",
  "clap",
  "delvewright-compiler",
  "delvewright-dsl",
  "delvewright-grammar",
  "delvewright-orchestrator",
- "delvewright-render",
  "delvewright-schem",
  "fastnbt",
  "flate2",
  "image 0.24.9",
+ "nucleation",
+ "pollster",
  "serde",
  "serde_json",
  "sha2",
+ "zip",
 ]
 
 [[package]]
@@ -563,25 +566,6 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "delvewright-render"
-version = "1.2.0"
-dependencies = [
- "blake3",
- "clap",
- "delvewright-compiler",
- "delvewright-dsl",
- "delvewright-schem",
- "fastnbt",
- "flate2",
- "image 0.24.9",
- "nucleation",
- "pollster",
- "serde",
- "serde_json",
- "zip",
 ]
 
 [[package]]

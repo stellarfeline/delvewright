@@ -5,7 +5,7 @@
 //!
 //! The GPU arms' own CLI paths — texture resolution failing before any
 //! rendering is attempted, and `--view` spec parsing — stayed with the binary
-//! that has them, in `crates/render/tests/cli.rs`.
+//! that has them, in `crates/delvec/tests/render_cli.rs`.
 
 use std::path::PathBuf;
 use std::process::Command;

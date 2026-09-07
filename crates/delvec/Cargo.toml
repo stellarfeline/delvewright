@@ -38,7 +38,6 @@ delvewright-dsl.workspace = true
 delvewright-grammar.workspace = true
 delvewright-schem.workspace = true
 delvewright-orchestrator.workspace = true
-delvewright-render.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
@@ -49,8 +48,37 @@ clap = { version = "4", features = ["derive"] }
 fastnbt = "2"
 flate2 = "1"
 
+# The render arms decode and composite PNGs: block textures out of the client
+# jar for the derived colour table, rendered frames for the fidelity colour-key
+# scan and double-render comparison, the contact sheet's tiled cells. The feature
+# set is the one the linked binary already had: the GPU arms declared the crate's
+# defaults and cargo unified them over the CPU arms' `png`-only declaration.
+# Narrowing it is a separate, measured decision. MIT/Apache-2.0.
+image = "0.24"
+
+# The client jar is a zip, and the render arms read block textures and
+# `data/**/worldgen/biome/*.json` straight out of it, by name, lazily — the jar
+# is a creator prerequisite, never redistributed (ADR-0010). `deflate` only: the
+# jar uses no other method, and the defaults would add 29 crates of AES, bzip2,
+# lzma and zstd codecs plus three `-sys` C builds. MIT.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+# Nucleation (MIT) — headless mesher + wgpu GPU renderer behind `delvec render`,
+# from crates.io at the exact version `versions.toml [render].nucleation_version`
+# records (checked by validation/check-versions.sh). `pollster` blocks on the
+# renderer's async init. Both MIT/Apache-2.0.
+nucleation = { version = "=0.10.14", features = ["rendering"] }
+pollster = "0.4"
+
+# `blake3` is a non-optional dependency of Nucleation, and its build script
+# compiles C or assembly for the host — which a `cargo check --target` from a
+# machine without that target's C compiler cannot do, so the cross-build shelf
+# gate (`tools/build-release-binaries.sh --check-only`) would red on every
+# target but the host's own. `pure` turns every C and assembly path off and
+# leaves the Rust implementation; nothing here hashes enough for the speed to
+# matter. Declared here, not in nucleation's manifest, because a feature is
+# unioned across the graph and this is the crate that needs it. MIT/Apache-2.0.
+blake3 = { version = "1", features = ["pure"] }
+
 [dev-dependencies]
 sha2 = "0.10"
-# The contact-sheet tests read the composited page back. Same version and
-# feature set the compiler library links.
-image = { version = "0.24", default-features = false, features = ["png"] }

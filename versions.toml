@@ -147,7 +147,6 @@ crates = [
     "delvewright-schem",
     "delvewright-grammar",
     "delvewright-orchestrator",
-    "delvewright-render",
 ]
 
 # `delvewright-dsl` is a real dependency of every engine crate, so it must exist
@@ -282,7 +281,7 @@ sha = "a8c3f98831735aa370908a43d37db85d09fae25c"
 # `schematic-mesher` (its `animation::glb` names exports 0.2.0 lacks); 0.10.14
 # is the newest that builds and passes the render crate's whole test suite,
 # the GPU tests included. MIT.
-# Consumed by: crates/render/Cargo.toml (`nucleation = { version = "=…" }`).
+# Consumed by: crates/delvec/Cargo.toml (`nucleation = { version = "=…" }`).
 nucleation_version = "0.10.14"
 nucleation_license = "MIT"
 

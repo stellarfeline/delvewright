@@ -279,7 +279,7 @@ enum Command {
     Harvest(delvewright_orchestrator::cli::HarvestArgs),
     /// GPU renders through Nucleation/wgpu: one piece's shot set, a whole
     /// library, or the missing-texture fidelity gate.
-    Render(delvewright_render::cli::RenderArgs),
+    Render(delvec::render::cli::RenderArgs),
 }
 
 #[derive(Subcommand)]
@@ -424,7 +424,7 @@ fn main() -> ExitCode {
         Command::Prefab(args) => delvec::admit::cli::run(args.clone(), cli.json),
         Command::Schem(args) => delvewright_schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvewright_orchestrator::cli::run(args.clone()),
-        Command::Render(args) => delvewright_render::cli::run(args.clone(), cli.json),
+        Command::Render(args) => delvec::render::cli::run(args.clone(), cli.json),
     }
 }
 

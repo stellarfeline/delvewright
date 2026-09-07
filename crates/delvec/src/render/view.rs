@@ -3,7 +3,7 @@
 //!
 //! # Why this exists
 //!
-//! The planned set ([`crate::shots`]) answers two questions well and a third not
+//! The planned set ([`crate::render::shots`]) answers two questions well and a third not
 //! at all. The orbit cameras are corner-isometrics at pitch 30, a plan at pitch
 //! 90 and per-socket/per-anchor obliques; the eye cameras stand inside the piece
 //! at a body's eye height. **Nothing in that set is square-on at a face.** A
@@ -16,7 +16,7 @@
 //!
 //! # What a view is
 //!
-//! Nothing new. [`crate::shots::PieceShot`] is already a complete camera
+//! Nothing new. [`crate::render::shots::PieceShot`] is already a complete camera
 //! description — a bearing, a pitch, a field of view, a framing, a cutaway — and
 //! `<stem>-shots.json` already writes every one of those fields down per shot.
 //! A view is that same description arriving as an *input*: an author states one,
@@ -39,9 +39,9 @@
 //! own, that box becomes another [`Subject`] variant and every other field here
 //! is unchanged.
 
-use crate::meta::PrefabMeta;
-use crate::nbt::Structure;
-use crate::occupancy::Facing;
+use crate::render::meta::PrefabMeta;
+use crate::render::nbt::Structure;
+use crate::render::occupancy::Facing;
 
 /// A face of an axis-aligned box, named the way Minecraft names directions.
 ///
@@ -208,7 +208,7 @@ pub fn midpoint(lo: [f32; 3], hi: [f32; 3]) -> [f32; 3] {
 
 /// Default field of view for a declared view: the orbit lens, so a declared
 /// elevation is directly comparable with the planned exterior shots.
-pub const DEFAULT_VIEW_FOV_DEG: f32 = crate::shots::ORBIT_FOV_DEG;
+pub const DEFAULT_VIEW_FOV_DEG: f32 = crate::render::shots::ORBIT_FOV_DEG;
 
 /// One author-declared camera.
 #[derive(Debug, Clone, PartialEq)]

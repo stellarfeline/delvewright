@@ -24,7 +24,7 @@ ENGINE_RELEASE_WF="$ROOT/.github/workflows/engine-release.yml"
 SKIN_REQ="$ROOT/tools/skin/requirements.txt"
 SKIN_PYPROJECT="$ROOT/tools/skin/pyproject.toml"
 SKIN_CATALOG="$ROOT/tools/skin/delve_skin/catalog.py"
-RENDER_CARGO="$ROOT/crates/render/Cargo.toml"
+DELVEC_CARGO="$ROOT/crates/delvec/Cargo.toml"
 BOOTSTRAP_SH="$ROOT/validation/server-bootstrap-cache.sh"
 
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found"; exit 2; }
@@ -167,10 +167,10 @@ if [[ $NUCLEATION_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 else
   fail "render.nucleation_version '$NUCLEATION_VERSION' is not an exact x.y.z version"
 fi
-if [ -f "$RENDER_CARGO" ]; then
-  want_in "nucleation =version -> crates/render/Cargo.toml" "nucleation = { version = \"=$NUCLEATION_VERSION\"" "$RENDER_CARGO"
+if [ -f "$DELVEC_CARGO" ]; then
+  want_in "nucleation =version -> crates/delvec/Cargo.toml" "nucleation = { version = \"=$NUCLEATION_VERSION\"" "$DELVEC_CARGO"
 else
-  fail "crates/render/Cargo.toml missing (cannot verify the render dep pin)"
+  fail "crates/delvec/Cargo.toml missing (cannot verify the render dep pin)"
 fi
 # deepslate is BUNDLED, unlike every other renderer here, so the pin has to bind
 # to the bytes rather than to a version string: the page carries the renderer

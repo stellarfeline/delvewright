@@ -7,10 +7,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use delvec::render::occupancy::Clearance;
+use delvec::render::shots;
 use delvewright_compiler::view::meta::PrefabMeta;
 use delvewright_compiler::view::tileset::{PieceInput, load_piece};
-use delvewright_render::occupancy::Clearance;
-use delvewright_render::shots;
 use delvewright_schem::convert::{self, DATA_VERSION};
 use delvewright_schem::schematic::{BlockState, ParsedSchematic};
 use delvewright_schem::split::{TilePart, TileSet};
@@ -321,7 +321,7 @@ fn an_eye_shot_on_a_tiled_zone_stands_in_the_zone_and_sees_across_the_cut() {
     assert_eq!(
         shot.framing,
         shots::Framing::Eye {
-            pos: [3.5, 1.0 + delvewright_render::occupancy::EYE_HEIGHT, 55.5]
+            pos: [3.5, 1.0 + delvec::render::occupancy::EYE_HEIGHT, 55.5]
         }
     );
 
@@ -390,7 +390,7 @@ fn a_single_prefabs_metadata_is_not_a_manifest() {
 ///   and the framed box of a north face is the face itself.
 #[test]
 fn a_declared_view_on_a_tiled_zone_aims_at_the_zone_not_at_a_tile() {
-    use delvewright_render::view::View;
+    use delvec::render::view::View;
 
     let (dir, manifest) = stage_hollow("view");
 

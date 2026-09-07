@@ -10,7 +10,7 @@
 //! ability to catch a real placeholder is proven separately against a committed
 //! `heavy_core` crop (`detect::tests::catches_real_heavy_core_placeholder`).
 
-use crate::nbt::Structure;
+use crate::render::nbt::Structure;
 
 /// The newest-block showcase, one block per Z, on a stone-brick floor so every
 /// face is visible. `heavy_core` is intentionally absent (see module docs).
@@ -36,7 +36,7 @@ const SHOWCASE: &[&str] = &[
 ];
 
 /// Build the fidelity-gate fixture structure directly as a [`Structure`] (the
-/// same shape [`crate::nbt::parse_structure`] produces), so it flows through the
+/// same shape [`crate::render::nbt::parse_structure`] produces), so it flows through the
 /// same `build_schematic` → render path as a real prefab.
 pub fn fixture_structure() -> Structure {
     let depth = SHOWCASE.len() as i32;

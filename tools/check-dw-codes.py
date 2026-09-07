@@ -129,18 +129,18 @@ PENDING: set[str] = set()
 ALLOWLIST: dict[str, str] = {
     # The fidelity gate's missing-texture (magenta) hard-fail is only
     # constructed in `delvec render`'s `run_piece`/`run_fidelity_gate`
-    # (crates/render/src/cli.rs),
+    # (crates/delvec/src/render/cli.rs),
     # both of which require a real GPU adapter + the 1.21.11 client jar (never
     # committed — EULA) to actually render a frame first. The detection
     # *algorithm* it wraps (`detect::scan_default`) is unit-tested directly in
-    # `crates/render/src/detect.rs`'s `#[cfg(test)]` module; the CLI wiring that
+    # `crates/compiler/src/view/detect.rs`'s `#[cfg(test)]` module; the CLI wiring that
     # emits DW0720 from a real render is exercised by
-    # `crates/render/tests/gpu.rs::detector_catches_heavy_core_when_included`,
+    # `crates/delvec/tests/render_gpu.rs::detector_catches_heavy_core_when_included`,
     # `#[ignore]`d because no GPU/jar is available in CI or this dev sandbox.
     "DW0720": (
         "requires a GPU adapter + the never-committed 1.21.11 client jar "
-        "(see crates/render/tests/gpu.rs, #[ignore]d); the detector algorithm "
-        "it wraps is unit-tested in crates/render/src/detect.rs"
+        "(see crates/delvec/tests/render_gpu.rs, #[ignore]d); the detector algorithm "
+        "it wraps is unit-tested in crates/compiler/src/view/detect.rs"
     ),
 }
 

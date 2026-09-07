@@ -14,7 +14,7 @@
 //!
 //! The three arms that are NOT here — `piece`, `batch`, `fidelity-gate` — are
 //! the ones that mesh and rasterise through `nucleation`/`wgpu`. They live in
-//! `crates/render` and mount as `delvec render …` (ADR-0023 §3).
+//! `crates/delvec/src/render` and mount as `delvec render …` (ADR-0023 §3).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -803,7 +803,7 @@ fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, vopts: &ViewO
                         "{e}. A block-entity texture is asked for by id and never by a model \
                          file, so a wrong id is invisible: the block renders as the \
                          missing-texture checker and nothing is said. Fix the table in \
-                         crates/render/src/viewer/resources.rs against the pinned version."
+                         crates/compiler/src/view/viewer/resources.rs against the pinned version."
                     ),
                 ),
                 vopts.json,

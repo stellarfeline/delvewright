@@ -40,8 +40,8 @@ use nucleation::rendering::camera::{
 };
 use nucleation::rendering::gpu::GpuRenderer;
 
-use crate::nbt::Structure;
-use crate::shots::Framing;
+use crate::render::nbt::Structure;
+use crate::render::shots::Framing;
 
 /// Fixed directional-light direction (pinned for reproducibility).
 const LIGHT_DIRECTION: [f32; 3] = [0.35, 1.0, 0.5];
@@ -269,16 +269,16 @@ pub fn render_structure(
     })
 }
 
-/// Rebuild a parsed [`Structure`](crate::nbt::Structure) as a Nucleation
+/// Rebuild a parsed [`Structure`](crate::render::nbt::Structure) as a Nucleation
 /// `UniversalSchematic`. When
 /// `strip_ceiling` is set, blocks at the top Y layer are omitted, yielding a
 /// "dollhouse" cutaway so an orbit camera can see the (roofed) interior — used
 /// for the per-piece interior/anchor shots (a validation artifact, never
 /// shipped). `air` states are skipped (they carry no mesh).
 pub fn build_schematic(
-    st: &crate::nbt::Structure,
+    st: &crate::render::nbt::Structure,
     strip_ceiling: bool,
-) -> Result<nucleation::UniversalSchematic, crate::nbt::NbtError> {
+) -> Result<nucleation::UniversalSchematic, crate::render::nbt::NbtError> {
     use nucleation::{BlockState, UniversalSchematic};
     let mut schem = UniversalSchematic::new("delve-prefab".to_string());
     let top_y = st.size[1] - 1;
@@ -291,7 +291,7 @@ pub fn build_schematic(
             continue;
         }
         let bs = BlockState::from_block_string(state_str).map_err(|e| {
-            crate::nbt::NbtError(format!("cannot parse block state `{state_str}`: {e:?}"))
+            crate::render::nbt::NbtError(format!("cannot parse block state `{state_str}`: {e:?}"))
         })?;
         schem.set_block(pos[0], pos[1], pos[2], &bs);
     }

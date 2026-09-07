@@ -93,7 +93,7 @@ pub const SEA_PLANE_NOTE: &str = "ocean-horizon sea plane drawn at world-gen sea
 
 /// The colour an unrecognised block renders as: full magenta, the same
 /// missing-texture key `delvec render`'s fidelity gate scans for
-/// (`crate::…`/`delvewright_render::detect`). Deliberately loud — a block the
+/// (`crate::…`/`delvec::render::detect`). Deliberately loud — a block the
 /// palette has never seen must be *obvious* in the frame rather than quietly
 /// shaded as generic stone, so extending the palette is prompted by looking at a
 /// render instead of by reading source.

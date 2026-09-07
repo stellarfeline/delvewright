@@ -20,13 +20,13 @@ use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
 
-use crate::detect;
-use crate::diag::{DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RENDER, Diagnostic, exit};
-use crate::fidelity;
-use crate::meta::PrefabMeta;
-use crate::render::{self, RenderParams};
-use crate::shots;
-use crate::view::View;
+use crate::render::detect;
+use crate::render::diag::{DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RENDER, Diagnostic, exit};
+use crate::render::fidelity;
+use crate::render::meta::PrefabMeta;
+use crate::render::render::{self, RenderParams};
+use crate::render::shots;
+use crate::render::view::View;
 use delvewright_compiler::view::cli::{fail, resolve_textures};
 use delvewright_compiler::view::tileset;
 
@@ -348,7 +348,7 @@ fn shot_manifest(
         "size": size,
         // Rounded for the reader: the constant is an `f32`, and its exact `f64`
         // widening (1.6200000047683716) says nothing a reviewer wants.
-        "eye_height": (f64::from(crate::occupancy::EYE_HEIGHT) * 1000.0).round() / 1000.0,
+        "eye_height": (f64::from(crate::render::occupancy::EYE_HEIGHT) * 1000.0).round() / 1000.0,
         "anchors": {
             "declared": plan.binding.declared,
             "eye_eligible": plan.binding.eligible,

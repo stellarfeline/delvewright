@@ -5,7 +5,7 @@
 //!
 //! ```sh
 //! DELVEWRIGHT_CLIENT_JAR=~/.chunky/resources/minecraft.jar \
-//!   cargo test -p delvewright-render --test gpu -- --ignored --nocapture
+//!   cargo test -p delvec --test render_gpu -- --ignored --nocapture
 //! ```
 //!
 //! ## Double-render stability finding (measured 2026-07-30, macOS/Metal)
@@ -20,11 +20,11 @@
 
 use std::path::{Path, PathBuf};
 
+use delvec::render::detect;
+use delvec::render::fidelity;
+use delvec::render::render::{self, RenderParams};
+use delvec::render::shots;
 use delvewright_compiler::view::nbt;
-use delvewright_render::detect;
-use delvewright_render::fidelity;
-use delvewright_render::render::{self, RenderParams};
-use delvewright_render::shots;
 
 /// Resolve textures the way the CLI does; `None` → skip the test.
 fn textures() -> Option<String> {
@@ -149,7 +149,7 @@ fn opposite_facings_render_different_pictures() {
         ],
         blocks,
     };
-    let eye = [2.5, 1.0 + delvewright_render::occupancy::EYE_HEIGHT, 5.5];
+    let eye = [2.5, 1.0 + delvec::render::occupancy::EYE_HEIGHT, 5.5];
     let frame = |yaw: f32| {
         render::render_structure(
             &st,
@@ -165,8 +165,8 @@ fn opposite_facings_render_different_pictures() {
         )
         .expect("render")
     };
-    let north = frame(delvewright_render::occupancy::Facing::North.view_yaw_deg());
-    let south = frame(delvewright_render::occupancy::Facing::South.view_yaw_deg());
+    let north = frame(delvec::render::occupancy::Facing::North.view_yaw_deg());
+    let south = frame(delvec::render::occupancy::Facing::South.view_yaw_deg());
     let differing = north
         .rgba
         .iter()
@@ -224,11 +224,11 @@ fn an_eye_view_is_not_mirrored() {
         &pack,
         false,
         &RenderParams {
-            yaw_deg: delvewright_render::occupancy::Facing::North.view_yaw_deg(),
+            yaw_deg: delvec::render::occupancy::Facing::North.view_yaw_deg(),
             pitch_deg: 0.0,
             fov_deg: shots::PLAYER_FOV_DEG,
             framing: shots::Framing::Eye {
-                pos: [2.5, 1.0 + delvewright_render::occupancy::EYE_HEIGHT, 5.5],
+                pos: [2.5, 1.0 + delvec::render::occupancy::EYE_HEIGHT, 5.5],
             },
             dim: 256,
         },
@@ -382,7 +382,7 @@ fn render_shot(
 }
 
 fn plan_view(st: &nbt::Structure, spec: &str) -> shots::PieceShot {
-    let v = delvewright_render::view::View::parse(spec).expect("parse view");
+    let v = delvec::render::view::View::parse(spec).expect("parse view");
     shots::plan_piece(st, None, std::slice::from_ref(&v))
         .expect("plan")
         .shots

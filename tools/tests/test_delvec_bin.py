@@ -164,12 +164,13 @@ def test_a_missing_named_path_is_refused(delvec_bin, tmp_path):
 def test_a_sibling_targets_fresh_artifacts_cannot_make_the_gate_refuse(
     delvec_bin, tmp_path
 ):
-    """`crates/render` carries its own `target/`. Walking `crates/` naively makes
-    every run refuse forever, which is the cry-wolf direction that gets a gate
-    disabled. Tracked files are the population."""
+    """An untracked build artifact under `crates/` — a nested `target/` — is
+    newer than the binary. Walking `crates/` naively makes every run refuse
+    forever, which is the cry-wolf direction that gets a gate disabled. Tracked
+    files are the population."""
     repo = fake_repo(tmp_path)
     binary = fake_delvec(repo)
-    junk = repo / "crates" / "render" / "target" / "debug" / "build.rs"
+    junk = repo / "crates" / "delvec" / "target" / "debug" / "build.rs"
     junk.parent.mkdir(parents=True)
     junk.write_text("fresh\n")  # newer than the binary, and untracked
 
@@ -184,7 +185,7 @@ def test_without_git_the_walk_skips_target_and_says_which_method_decided(
 ):
     repo = fake_repo(tmp_path, git=False)
     binary = fake_delvec(repo)
-    junk = repo / "crates" / "render" / "target" / "debug" / "build.rs"
+    junk = repo / "crates" / "delvec" / "target" / "debug" / "build.rs"
     junk.parent.mkdir(parents=True)
     junk.write_text("fresh\n")
 

@@ -32,7 +32,7 @@
 //!
 //! What is deliberately NOT here is the GPU half — `piece`, `batch` and
 //! `fidelity-gate`, which mesh and rasterise through `nucleation`/`wgpu`. Those
-//! live in `crates/render` and are built from a checkout rather than shipped on
+//! live in `crates/delvec/src/render` and are built from a checkout rather than shipped on
 //! the shelf (ADR-0021 §3). That is a statement about distribution and never
 //! about capability: the source build is what guarantees a creator can run every
 //! validation the pipeline needs, and the skill's `Init` section builds the arm
