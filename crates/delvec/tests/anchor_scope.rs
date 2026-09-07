@@ -26,9 +26,9 @@
 
 mod common;
 
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::{Plan, ResolvedAnchor, Step};
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::{Plan, ResolvedAnchor, Step};
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 use serde_json::json;
 

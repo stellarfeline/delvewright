@@ -495,7 +495,7 @@ fn the_rule_library_audits_to_exactly_its_record() {
     assert!(
         text.contains(&format!(
             "audited {} program(s)",
-            delvewright_grammar::library::PROGRAMS.len()
+            delvec::grammar::library::PROGRAMS.len()
         )),
         "{text}"
     );

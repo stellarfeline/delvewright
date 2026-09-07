@@ -34,7 +34,7 @@ use serde::Serialize;
 /// generators' (`prefabs/invariants`).
 use prefab_invariants::{connections, invariants};
 
-/// MC 1.21.11 data version (ADR-0009); see `crates/compiler/data/PROVENANCE.md`.
+/// MC 1.21.11 data version (ADR-0009); see `crates/delvec/data/PROVENANCE.md`.
 const DATA_VERSION: i32 = 4671;
 
 /// The piece's id — the `.nbt` stem and what the invariants report against.

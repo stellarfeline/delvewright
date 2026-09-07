@@ -1,6 +1,6 @@
 # ADR-0023: The creator toolchain as decided — one `delvec` is the delve creator, archive-first acquisition, a source-build floor, lazy-loaded externals
 
-- **Status**: Accepted
+- **Status**: Accepted; §6 superseded by ADR-0025
 - **Date**: 2026-09-05
 - **Source**: the settled acquisition rules for the creator toolchain, until now
   recorded only in ADR-0021's source note and in `CLAUDE.md` while ADR-0017/0018

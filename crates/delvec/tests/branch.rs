@@ -20,7 +20,7 @@
 
 mod common;
 
-use delvewright_compiler::branch;
+use delvec::compiler::branch;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 use serde_json::Value;
 

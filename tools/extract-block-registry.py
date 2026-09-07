@@ -2,7 +2,7 @@
 """Extract the pinned 1.21.11 BLOCK-state registry from a `misode/mcmeta` summary.
 
 The repo already checks every emitted *command* against a pinned command tree
-(`crates/compiler/data/commands-1.21.11.json`), and every item id against a
+(`crates/delvec/data/commands-1.21.11.json`), and every item id against a
 pinned item registry. Nothing checked an emitted **block id** — which is how
 `minecraft:chain`, renamed to `minecraft:iron_chain` in 1.21.11, reached a
 shipped `.nbt` and stayed there. This script vendors the registry that closes

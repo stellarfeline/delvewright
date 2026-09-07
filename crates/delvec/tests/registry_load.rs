@@ -16,7 +16,7 @@
 
 mod common;
 
-use delvewright_compiler::registry::{
+use delvec::compiler::registry::{
     DW_PREFAB_META_INVALID, DW_PREFAB_META_UNKNOWN_KEY, PrefabRegistry,
 };
 
@@ -339,7 +339,7 @@ fn a_tile_set_manifest_loads_as_the_zone_it_describes() {
         "structure_set".to_string(),
         serde_json::json!({
             "base": "hello-room", "size": [20, 10, 84], "part_max": 48,
-            "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/grammar",
+            "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/delvec/src/grammar",
             "parts": [
                 { "file": "hello-room.x0y0z0.nbt", "id": "hello-room.x0y0z0",
                   "grid_index": [0, 0, 0], "offset": [0, 0, 0], "size": [20, 10, 48] },
@@ -387,7 +387,7 @@ fn a_manifest_that_does_not_tile_its_zone_is_still_dw0346() {
         "structure_set".to_string(),
         serde_json::json!({
             "base": "hello-room", "size": [20, 10, 84], "part_max": 48,
-            "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/grammar",
+            "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/delvec/src/grammar",
             "parts": [
                 { "file": "hello-room.x0y0z0.nbt", "id": "hello-room.x0y0z0",
                   "grid_index": [0, 0, 0], "offset": [0, 0, 0], "size": [20, 10, 48] }

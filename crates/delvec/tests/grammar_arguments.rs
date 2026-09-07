@@ -32,16 +32,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_grammar::block::BlockState;
-use delvewright_grammar::coverage;
-use delvewright_grammar::gates;
-use delvewright_grammar::geom::Axis;
-use delvewright_grammar::ir::{
+use delvec::grammar::block::BlockState;
+use delvec::grammar::coverage;
+use delvec::grammar::gates;
+use delvec::grammar::geom::Axis;
+use delvec::grammar::ir::{
     Alternative, ArithOp, CmpOp, Cond, DimRef, Expr, Material, Node, Program, ProgramError,
     Reorient, Rounding, Size, Split,
 };
-use delvewright_grammar::library;
-use delvewright_grammar::{Box3, ExpandError, ExpandOptions, Expansion, Limits, expand};
+use delvec::grammar::library;
+use delvec::grammar::{Box3, ExpandError, ExpandOptions, Expansion, Limits, expand};
 
 /// `delvec grammar …`: the one binary, entered at the grammar program surface.
 fn grammar() -> Command {
@@ -693,7 +693,7 @@ fn a_non_identity_frame_does_change_the_bytes() {
             .palette
             .iter()
             .find(|(_, paint)| {
-                matches!(paint.states(), delvewright_grammar::ir::States::One(b) if !b.is_air())
+                matches!(paint.states(), delvec::grammar::ir::States::One(b) if !b.is_air())
             })
             .map(|(role, _)| role.clone())
         else {
@@ -1082,7 +1082,7 @@ fn the_json_form_is_the_one_an_author_would_write() {
 #[test]
 fn an_included_program_keeps_its_bindings() {
     let zone = Program::new("zone", "zone").rule("zone", Node::call("arch/piece"));
-    let zone = delvewright_grammar::include(zone, &library::idioms::arguments(), "arch").unwrap();
+    let zone = delvec::grammar::include(zone, &library::idioms::arguments(), "arch").unwrap();
     zone.validate().unwrap();
     assert!(zone.palette.contains_key("arch/glazing"));
     assert_eq!(
@@ -1101,7 +1101,7 @@ fn an_included_program_keeps_its_bindings() {
 /// **`bind` owes the program-document fence an entry the moment that fence
 /// exists.**
 ///
-/// `Program::version` and `crates/grammar/src/version.rs` do not exist yet. So
+/// `Program::version` and `crates/delvec/src/grammar/version.rs` do not exist yet. So
 /// instead of a line in a document asking someone to remember, the obligation is
 /// bound to the event that creates it: the day the module lands, this test
 /// starts asserting that `bind` is fenced, and reds if it is not.
@@ -1110,7 +1110,7 @@ fn an_included_program_keeps_its_bindings() {
 /// state it is in on every run — and to one thing the moment the module exists.
 #[test]
 fn bind_is_fenced_the_moment_the_program_version_module_exists() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../grammar/src/version.rs");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/grammar/version.rs");
     let Ok(source) = std::fs::read_to_string(&path) else {
         println!(
             "binding count 0: {} does not exist yet, so there is no fence for `bind` to be in",

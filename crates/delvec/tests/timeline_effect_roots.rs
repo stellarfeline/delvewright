@@ -24,10 +24,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc carrying the stage-5 puppet plus a caller-supplied
@@ -45,7 +45,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 fn quests_doc(traps: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -108,7 +108,7 @@ const TRAP_WALKS_THEN_SEALS: &str = r#"{
 /// but the bundle is a plain `Vec<QuestEffect>` and is really lowered, into
 /// `cp_on_respawn_<i>`.
 const DIALOGUE_SEALS_THEN_WALKS: &str = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -292,7 +292,7 @@ fn a_trap_payload_walk_is_planned_and_emitted() {
 /// whose text names its root, so the walk's own output states which roots it
 /// reached.
 const FIVE_ROOT_QUESTS: &str = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -329,7 +329,7 @@ const FIVE_ROOT_QUESTS: &str = r#"{
 }"#;
 
 const FIVE_ROOT_DIALOGUE: &str = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -361,7 +361,7 @@ fn the_walk_reaches_all_five_roots_in_the_fixed_order() {
     let c = parse_hw(FIVE_ROOT_QUESTS, Some(FIVE_ROOT_DIALOGUE));
     assert_validates(&c);
     let plan = Plan::build(&c, &prefabs()).expect("plan builds");
-    let roots: Vec<&str> = delvewright_compiler::timeline::walk(&plan)
+    let roots: Vec<&str> = delvec::compiler::timeline::walk(&plan)
         .into_iter()
         .filter_map(|(e, _)| match &e.verb {
             delvewright_dsl::Verb::Narrate { text, .. } => text.strip_prefix("root: "),

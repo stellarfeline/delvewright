@@ -14,11 +14,11 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{parse_campaign, validate_campaign_with};
 
 const NS: &str = "hello-world";
@@ -61,7 +61,7 @@ fn patched_prefabs(name: &str, trigger_block: Option<&str>) -> PathBuf {
 
 fn world_v06() -> serde_json::Value {
     serde_json::json!({
-        "dsl_version": "0.21.0",
+        "dsl_version": "0.21.1",
         "campaign_id": "hello-world",
         "stage": "world",
         "content": {
@@ -77,7 +77,7 @@ fn world_v06() -> serde_json::Value {
 
 fn quests_v06(trap: serde_json::Value) -> serde_json::Value {
     serde_json::json!({
-        "dsl_version": "0.21.0",
+        "dsl_version": "0.21.1",
         "campaign_id": "hello-world",
         "stage": "quests",
         "content": {

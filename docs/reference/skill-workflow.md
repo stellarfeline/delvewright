@@ -349,7 +349,7 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    frontmatter carries `version:`, `requires: delvec:` and `verified_with:`, and
    the campaigns repository's `tools/check-skill-version.py` binds all three: the
    window must contain the engine at `[engine].authoring_ref`, `verified_with`
-   must equal that engine's `crates/compiler/Cargo.toml` version in **both**
+   must equal that engine's root `Cargo.toml` `[workspace.package] version` in **both**
    directions, and every subcommand and long flag the skill names must exist in
    its clap CLI. The values and the counts are not copied
    here — the checker prints its own binding count on every run, and a literal
