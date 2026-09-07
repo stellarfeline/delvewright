@@ -25,8 +25,8 @@ use crate::compiler::view::tileset;
 use crate::render::detect;
 use crate::render::diag::{DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RENDER, Diagnostic, exit};
 use crate::render::fidelity;
+use crate::render::gpu::{self, RenderParams};
 use crate::render::meta::PrefabMeta;
-use crate::render::render::{self, RenderParams};
 use crate::render::shots;
 use crate::render::view::View;
 
@@ -121,7 +121,7 @@ fn run_piece(
         Ok(t) => t,
         Err(d) => return fail(d, json, exit::RENDER),
     };
-    let pack = match render::load_pack(&textures) {
+    let pack = match gpu::load_pack(&textures) {
         Ok(p) => p,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), json, exit::RENDER),
     };
@@ -237,7 +237,7 @@ fn render_piece(
             framing: shot.framing,
             dim: size,
         };
-        let frame = render::render_structure(st, pack, shot.cutaway, &params)
+        let frame = gpu::render_structure(st, pack, shot.cutaway, &params)
             .map_err(|e| (Diagnostic::error(DW_RENDER, e), exit::RENDER))?;
         // Advisory only: note a placeholder in a per-piece render (the gate is
         // the enforcing command).
@@ -387,7 +387,7 @@ fn run_batch(
         Ok(t) => t,
         Err(d) => return fail(d, json, exit::RENDER),
     };
-    let pack = match render::load_pack(&textures) {
+    let pack = match gpu::load_pack(&textures) {
         Ok(p) => p,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), json, exit::RENDER),
     };
@@ -468,7 +468,7 @@ fn run_fidelity_gate(out: Option<&Path>, cli: &RenderArgs, json: bool) -> ExitCo
         Ok(t) => t,
         Err(d) => return fail(d, json, exit::RENDER),
     };
-    let pack = match render::load_pack(&textures) {
+    let pack = match gpu::load_pack(&textures) {
         Ok(p) => p,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), json, exit::RENDER),
     };
@@ -484,7 +484,7 @@ fn run_fidelity_gate(out: Option<&Path>, cli: &RenderArgs, json: bool) -> ExitCo
         },
         dim: cli.size,
     };
-    let frame = match render::render_structure(&st, &pack, false, &params) {
+    let frame = match gpu::render_structure(&st, &pack, false, &params) {
         Ok(f) => f,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), json, exit::RENDER),
     };
@@ -527,7 +527,7 @@ fn run_fidelity_gate(out: Option<&Path>, cli: &RenderArgs, json: bool) -> ExitCo
     }
 }
 
-fn save_png(frame: &render::Frame, path: &Path) -> Result<(), (Diagnostic, u8)> {
+fn save_png(frame: &gpu::Frame, path: &Path) -> Result<(), (Diagnostic, u8)> {
     let img = image::RgbaImage::from_raw(frame.width, frame.height, frame.rgba.clone())
         .ok_or_else(|| {
             (

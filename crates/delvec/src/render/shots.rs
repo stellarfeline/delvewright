@@ -245,7 +245,7 @@ pub fn plan_piece(
 ///
 /// Nucleation's orbit camera has no distance field — it fits itself to the model
 /// and divides by `zoom` — so the wanted standoff is expressed as a ratio of two
-/// fits taken with the same replicated formula ([`crate::render::render::fit_distance`]):
+/// fits taken with the same replicated formula ([`crate::render::gpu::fit_distance`]):
 /// the model's, which is what the renderer would do unasked, over the framed
 /// box's, which is what the author asked for. The ratio cancels the constants,
 /// so this stays correct if the fit formula is ever corrected.
@@ -265,13 +265,13 @@ fn solve_zoom(
     // vanishes when the camera looks straight up or down. There is no framing
     // arithmetic to do there, and a ratio taken from the degenerate basis would
     // be a large number pointing the camera at its own target.
-    let forward = crate::render::render::view_direction(v.yaw_deg, v.pitch_deg);
+    let forward = crate::render::gpu::view_direction(v.yaw_deg, v.pitch_deg);
     if forward[0] * forward[0] + forward[2] * forward[2] < 1e-6 {
         return v.zoom;
     }
     let model_max = [st.size[0] as f32, st.size[1] as f32, st.size[2] as f32];
     let fit = |lo: [f32; 3], hi: [f32; 3]| {
-        crate::render::render::fit_distance(lo, hi, 1.0, *target, v.yaw_deg, v.pitch_deg, v.fov_deg)
+        crate::render::gpu::fit_distance(lo, hi, 1.0, *target, v.yaw_deg, v.pitch_deg, v.fov_deg)
     };
     let framed = fit(*fmin, *fmax);
     let whole = fit([0.0, 0.0, 0.0], model_max);
@@ -972,7 +972,7 @@ mod tests {
             };
             let target = target.unwrap();
             let fit = |lo, hi| {
-                crate::render::render::fit_distance(
+                crate::render::gpu::fit_distance(
                     lo,
                     hi,
                     1.0,

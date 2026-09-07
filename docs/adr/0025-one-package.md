@@ -2,9 +2,9 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-07
-- **Source**: the ruling that the workspace has two members and a feature
-  never adds a crate; measured against the tree at the revision this ADR was
-  written from.
+- **Source**: the one-binary rule (ADR-0023 §3) carried to the package: the
+  workspace has two members and a feature never adds a crate; measured against
+  the tree at the revision this ADR was written from.
 - **Supersedes, in part**: ADR-0023 §6 (both channels publish the same eight
   crates). Every other section of ADR-0023 stands.
 

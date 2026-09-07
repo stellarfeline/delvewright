@@ -19,6 +19,7 @@
 //! `dw.o_<obj>`, `dw.q_<quest>`, `dw.qa_<quest>` (quest active), `dw.dlg_<npc>`,
 //! tag `dw_npc_<npc>`, function `class_apply_<class>`, dialog `<npc>_<node>`.
 
+use crate::compiler::blockout::Perturb;
 use crate::compiler::continuity::NpcWhere;
 use crate::compiler::failure::Failure;
 use delvewright_dsl::Verb;
@@ -2382,11 +2383,7 @@ pub type TransportMap = BTreeMap<String, [i32; 3]>;
 impl<'a> Plan<'a> {
     /// Build the plan. Requires a validated campaign and loaded prefab metadata.
     pub fn build(campaign: &'a Campaign, prefabs: &PrefabRegistry) -> Result<Self, PlanError> {
-        Self::build_with(
-            campaign,
-            prefabs,
-            crate::compiler::blockout::Perturb::none(),
-        )
+        Self::build_with(campaign, prefabs, Perturb::none())
     }
 
     /// [`Plan::build`] with a deliberate defect built into the blockout
@@ -2398,7 +2395,7 @@ impl<'a> Plan<'a> {
     pub fn build_with(
         campaign: &'a Campaign,
         prefabs: &PrefabRegistry,
-        perturb: crate::compiler::blockout::Perturb,
+        perturb: Perturb,
     ) -> Result<Self, PlanError> {
         let namespace = campaign.world.campaign_id.as_str().to_string();
         let seed = campaign.world.content.seed;

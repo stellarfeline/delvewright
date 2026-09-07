@@ -9,7 +9,7 @@
 //! three arms that mesh and rasterise, live here. Both halves are subcommands of
 //! the one binary (ADR-0023 §3): this crate's [`cli`] mounts as `delvec render`.
 //!
-//! - [`render`] — headless GPU render wrapper (Nucleation / wgpu), and the one
+//! - [`gpu`] — headless GPU render wrapper (Nucleation / wgpu), and the one
 //!   place a parsed structure becomes a `UniversalSchematic`.
 //! - [`shots`] — per-piece shot planner (`delvec render piece`).
 //! - [`view`] — author-declared cameras (`piece --view`): a bearing and a
@@ -38,8 +38,8 @@
 pub use crate::compiler::view::detect;
 pub mod cli;
 pub mod fidelity;
+pub mod gpu;
 pub mod occupancy;
-pub mod render;
 pub mod shots;
 pub mod view;
 

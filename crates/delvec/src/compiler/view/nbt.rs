@@ -14,7 +14,7 @@
 //! committed prefabs, which is why it lives on this side of ADR-0021 §1's split:
 //! the CPU render arms `delvec` now carries all read structures, and none of them
 //! meshes one. The one nucleation-typed function that used to sit here,
-//! `build_schematic`, went to `delvec::render::render`, its only caller.
+//! `build_schematic`, went to `delvec::render::gpu`, its only caller.
 
 use std::collections::HashMap;
 use std::io::Read as _;
