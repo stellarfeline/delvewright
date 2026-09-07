@@ -2376,6 +2376,156 @@ fn write_yard(out: &Path) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// The QUAY: the one gallery piece the party can walk OUTSIDE of, on a sea
+// ---------------------------------------------------------------------------
+
+/// The shore piece's id.
+///
+/// # What it is here to make askable
+///
+/// The gallery's ocean point was four sealed boxes. Every one of them is solid
+/// on all six sides and every one of those sides has nothing in front of it —
+/// and `DW0885` correctly judged none of them, because there is nowhere out
+/// there for a body to be. So the ocean's own power to bury an outward face —
+/// the thing that makes `ocean` seat a keep at all — was asserted nowhere, and
+/// the point's exposure binding read `0 judged` and `0 shown_faces
+/// declaration(s) of which 0 are bound`. A zero binding is a finding
+/// (spec-0060 §11.3).
+///
+/// A quay closes it. It is an open court on two courses of plinth, so the air a
+/// body stands in leaves through the sky and runs around the outside, and every
+/// one of its four walls is then judged. Its plinth stands below y=62 and the
+/// SEA buries it; its parapet stands above and the piece answers for it in
+/// `shown_faces`. One piece, both halves of the rule, on the base where the
+/// answer is the water itself.
+const QUAY_ID: &str = "gallery-quay";
+
+/// Extent before the shore lift; `to_shore` adds [`SHORE_PLINTH`] courses under
+/// it and grows the y.
+const QUAY_SIZE: [i32; 3] = [8, 4, 8];
+
+/// The tide pool cut into the quay's own paving, in `(x, z)`. Clear of the
+/// mooring anchor, and interior on every side so the water is the piece's own
+/// rather than a run off its face.
+const QUAY_POOL: [(i32, i32); 2] = [(1, 1), (1, 2)];
+
+/// Where a body stands on the quay, before the lift.
+const QUAY_SEAT: [i32; 3] = [4, 1, 4];
+
+/// A quay: paving, a parapet around three sides, and a mooring post.
+///
+/// The parapet is what makes the piece answerable. A court with nothing above
+/// its floor course would put every solid boundary cell under the sea, the sea
+/// would bury all of them, and the binding would be non-zero and prove nothing
+/// about `shown_faces`. What is wanted is both: cells the water buries and
+/// cells the document answers for.
+fn build_quay() -> Structure {
+    let mut palette = Palette::new();
+    let mut blocks = Vec::new();
+    let [sx, sy, sz] = QUAY_SIZE;
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let edge = x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+                // The way in: the north face is left open at the paving's own
+                // level, so a body can walk off the quay into the water and
+                // back up onto it — the beach relationship the ocean datum is.
+                let opening = z == 0 && (3..=4).contains(&x);
+                let lamp =
+                    (1..=2).contains(&y) && matches!((x, z), (0, 0) | (0, 7) | (7, 0) | (7, 7));
+                let name = if y == 0 {
+                    "minecraft:polished_andesite"
+                } else if lamp {
+                    "minecraft:sea_lantern"
+                } else if (1..=2).contains(&y) && edge && !opening {
+                    "minecraft:polished_blackstone_bricks"
+                } else {
+                    "minecraft:air"
+                };
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: palette.idx(name, None),
+                });
+            }
+        }
+    }
+    Structure {
+        data_version: DATA_VERSION,
+        size: QUAY_SIZE,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    }
+}
+
+/// The quay's document, before the shore lift.
+///
+/// `shown_faces` names the four walls and NOTHING else, and the exactness is
+/// the whole demonstration. `down` is the plinth's underside, standing under
+/// the sea, which the water buries; `up` is open sky over a court with no solid
+/// cell on its top plane, so there is no side there to show. `DW0885` refuses a
+/// declared side the world has in fact buried and a declared side of pure air
+/// alike, so padding this list out to six reds — which is what makes these four
+/// a bound declaration rather than a hatch.
+fn quay_metadata() -> serde_json::Value {
+    serde_json::json!({
+        "prefab_id": format!("prefab/{QUAY_ID}"),
+        "structure": {
+            "file": format!("{QUAY_ID}.nbt"),
+            "id": QUAY_ID,
+            "size": QUAY_SIZE,
+            "data_version": DATA_VERSION,
+            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+        },
+        "anchors": {
+            "quay-mooring": {
+                "pos": QUAY_SEAT,
+                "facing": "north",
+                "note": "where a body stands on the quay, clear of the tide pool"
+            }
+        },
+        "shown_faces": ["east", "north", "south", "west"],
+        "lighting": {
+            "profile": "lit",
+            "measured_min_light": 15,
+            "measured": "2026-09-07",
+            "method": "derived: four sea lanterns in the parapet corners, over a court open to the sky"
+        },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+        }
+    })
+}
+
+fn write_quay(out: &Path) {
+    let court = build_quay();
+    let (s, meta) = to_shore(QUAY_ID, &court, &quay_metadata(), &QUAY_POOL);
+    let cells = invariant_cells(&s);
+    invariants::assert_blocks_are_real(QUAY_ID, &cells);
+    connections::assert_shape_is_stated(QUAY_ID, &cells);
+    let fluid = invariants::assert_fluid_is_contained(QUAY_ID, s.size, &cells);
+
+    let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{QUAY_ID}.nbt")), &framed).expect("write quay nbt");
+    let mut t = serde_json::to_string_pretty(&meta).expect("metadata serializes");
+    t.push(chr_nl());
+    std::fs::write(out.join(format!("{QUAY_ID}.json")), t.as_bytes()).expect("write quay json");
+    println!(
+        "{QUAY_ID}: shore piece written — walk plane at local y={}, waterline {}, \
+         {} fluid source(s) examined, {} at the piece's own face",
+        meta["walk_y"], meta["waterline_y"], fluid.examined, fluid.at_edge
+    );
+}
+
 fn chr_nl() -> char {
     10_u8 as char
 }
@@ -2415,6 +2565,7 @@ fn main() {
     write_annex(out);
     write_shard(out);
     write_yard(out);
+    write_quay(out);
     // The skins destination IS created: unlike the prefab directory it is not an
     // existing library the operator might mistype, it is a fixed subdirectory of
     // the campaign the caller just named, and it is gitignored build output.

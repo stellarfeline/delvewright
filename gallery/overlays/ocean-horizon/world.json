@@ -24,6 +24,12 @@
           "min": 3
         },
         "prefab_pool": "pool/gallery-annex"
+      },
+      {
+        "id": "area/quay",
+        "mitigation": "night-vision",
+        "name": "The Quay",
+        "prefab": "prefab/gallery-quay"
       }
     ],
     "boundary": {
