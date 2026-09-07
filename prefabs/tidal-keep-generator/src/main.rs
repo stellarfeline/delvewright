@@ -2,8 +2,8 @@
 //! prefabs that stage "The Drowned Bell" (a souls campaign: barrow shore →
 //! gatehouse → wall walk → courtyard/chapel hub → cistern undercroft → bell
 //! tower). A sibling of `prefabs/island-terrain-generator` and
-//! `prefabs/cave-generator`: its own `[workspace]`, outside `crates/`, so it never
-//! enters the shipped `delvec` binary and no existing `.nbt` output moves
+//! `prefabs/cave-generator`: a member of the `prefabs/` workspace, outside
+//! `crates/` and excluded from the engine's, so it never enters the shipped `delvec` binary and no existing `.nbt` output moves
 //! (ADR-0006).
 //!
 //! Convention: `tk:socket` — keep-socket-v1 geometry (3×3 opening, one jigsaw
@@ -32,16 +32,10 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 
-/// Cross-tileset generator invariants, shared by source include so a lesson
-/// learned in one tileset does not have to be re-learned in the other four
-/// (the generators are separate Cargo workspaces on purpose).
-#[path = "../../invariants.rs"]
-mod invariants;
-
-/// The connection derivation, shared the same way: what a fence, a wall, a pane
-/// or a lichen joins is computed from the blocks beside it, at the emitter.
-#[path = "../../connections.rs"]
-mod connections;
+/// The cross-tileset invariants and the connection derivation, shared as a
+/// crate so the rule is compiled once and its own tests run with the
+/// generators' (`prefabs/invariants`).
+use prefab_invariants::{connections, invariants};
 
 use flate2::{Compression, GzBuilder};
 

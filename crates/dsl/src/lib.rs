@@ -23,6 +23,12 @@ pub mod detailplan;
 pub mod diagnostic;
 pub mod effects;
 pub mod envelope;
+/// **What a cell does when there is fluid beside it** — block knowledge, so it
+/// lives beside [`blocks`] and [`blockshape`] rather than beside any one reader
+/// of it. `delvewright_schem::fluid` re-exports it, and the prefab generators
+/// reach it through their dependency on this crate: they may not depend on
+/// `delvec`, and this is the crate every reader of a block fact can reach.
+pub mod fluid;
 pub mod fmt;
 pub mod gate;
 pub mod ids;

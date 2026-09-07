@@ -1,11 +1,11 @@
 //! Cross-tileset generator invariants — one authority, every generator.
 //!
-//! The generators under `prefabs/*-generator` are deliberately separate Cargo
-//! workspaces (`docs/reference/tools.md` §9) so that none of them can enter the
-//! shipped `delvec`. That isolation is worth its cost, but it must not cost us
-//! the same lesson once per generator: this file is included by every one as
-//! `#[path = "../../invariants.rs"] mod invariants;` — a source include, not a
-//! dependency, so the workspaces stay independent while the rule stays single.
+//! The generators under `prefabs/*-generator` are outside `crates/` and stay
+//! outside the engine's resolution (`[workspace] exclude`, `docs/reference/tools.md`
+//! §9), so that none of them can enter the shipped `delvec`. That isolation is
+//! worth its cost, but it must not cost us the same lesson once per generator:
+//! every generator reaches this module by depending on `prefab-invariants`,
+//! which compiles it once for all seven.
 //!
 //! Everything here is an `assert!`-style gate or the vocabulary a gate defines.
 //! Running a generator is the test (`prefab-generators` CI job): it either emits
@@ -16,41 +16,34 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-/// The pinned 1.21.11 block-state registry, source-included the same way this
-/// file is: one authority, every generator, no dependency edge.
+/// The pinned 1.21.11 block-state registry, read out of the DSL crate's own
+/// vendored copy — one file, one authority.
 ///
-/// `crates/delvec/src/schem` parses the identical file for the in-workspace emitters
-/// (`delvec::schem::blocks`). Two readers of one file is not two authorities
-/// — the alternative here would be a *further* hand-maintained block list, which
-/// is the defect this gate exists to catch.
-const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/dsl/data/blocks-1.21.11.json");
+/// `delvewright_dsl::blocks` parses the identical file for the in-workspace
+/// emitters. Two readers of one file is not two authorities — the alternative
+/// here would be a *further* hand-maintained block list, which is the defect
+/// this gate exists to catch.
+const BLOCK_REGISTRY_JSON: &str = include_str!("../../../crates/dsl/data/blocks-1.21.11.json");
 
 /// **What a block state does to a body that walks into it** — the same module
 /// `delvec`, the grammar back end and the admission pipeline all read
-/// (`delvewright_dsl::blockshape`, spec-0056), source-included the same way the
-/// registry above is.
+/// (`delvewright_dsl::blockshape`, spec-0056), reached here through the
+/// dependency on the crate that owns it.
 ///
-/// It sits beside [`fluid`] under this name deliberately: `fluid` reaches it as
-/// `super::blockshape`, which resolves inside `delvec::schem` — where the
-/// module root re-exports it — and here, where this module is its neighbour. An
-/// absolute `delvewright_dsl::` path would resolve in the workspace and not in a
-/// generator, and the include would break the day the two touched.
-#[path = "../crates/dsl/src/blockshape.rs"]
-#[allow(dead_code)]
-pub mod blockshape;
+/// Re-exported under this name so that a generator, the compiler and the
+/// admission pipeline all spell the question the same way.
+pub use delvewright_dsl::blockshape;
 
 /// **What a cell does when there is fluid beside it** — the same module the
-/// in-workspace auditor reads (`delvec::schem::fluid`), source-included the
-/// same way the registry above is.
+/// in-workspace auditor reads (`delvewright_dsl::fluid`, re-exported by the
+/// schematic layer), reached the same way.
 ///
 /// Every fact in it was measured on the pinned server, and two of them are the
 /// opposite of what a reader would guess (`waterlogged=true` does not spread;
 /// `waterlogged=false` is a wall). Restating them here would be a second
 /// authority on a question that already has one, and the two would agree right
 /// up until they did not.
-#[path = "../crates/delvec/src/schem/fluid.rs"]
-#[allow(dead_code)]
-pub mod fluid;
+pub use delvewright_dsl::fluid;
 
 fn block_registry() -> &'static BTreeMap<String, BTreeMap<String, Vec<String>>> {
     static REGISTRY: OnceLock<BTreeMap<String, BTreeMap<String, Vec<String>>>> = OnceLock::new();

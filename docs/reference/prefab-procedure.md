@@ -954,18 +954,18 @@ edit.
 | `delvec grammar` | writes it (single template) and the tile-set manifest (several) |
 | `delvec render` | a narrow view — `anchors`, `connectors`, `lighting` — built from the document's own leaf types, because it must also read a tile-set manifest, which names `structure_set` instead of `structure` |
 | `delvec::schem::split` | one key, `structure_set`, to tell the two shapes apart |
-| `prefabs/*-generator` | write it, serialize-only (separate Cargo workspaces; they never read a prefab back) |
+| `prefabs/*-generator` | write it, serialize-only (their own workspace, outside the engine's; they never read a prefab back) |
 
 ## 10. Hand-written Rust generators
 
-`prefabs/*-generator` are standalone Cargo workspaces that predate the
+`prefabs/*-generator` are members of the `prefabs/` workspace and predate the
 grammar back end. They are maintained, not extended: a new piece is a grammar
 program. Running one is `cargo run --release --manifest-path
 prefabs/<gen>/Cargo.toml -- campaigns/prefabs/`, and every piece it emits goes
-through `prefabs/invariants.rs` — including the block-registry check, so the
+through `prefabs/invariants/src/invariants.rs` — including the block-registry check, so the
 `DW0733` class is refused at that emitter too.
 
-`prefabs/connections.rs` runs at those same emitters, just before those gates.
+`prefabs/invariants/src/connections.rs` runs at those same emitters, just before those gates.
 It fills the shape-carrying properties a state leaves unwritten — connections
 for a fence, wall, pane or bars; absent faces for a vine or a lichen — from the
 piece's own neighbours, by vanilla's rule, and never overwrites a value the

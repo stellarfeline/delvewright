@@ -47,21 +47,21 @@ use std::sync::OnceLock;
 use crate::invariants::Cells;
 
 /// The pinned block registry — legal property names and values per block.
-/// Source-included the same way this file is (see `invariants.rs`: two readers
-/// of one file is not two authorities).
-const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/dsl/data/blocks-1.21.11.json");
+/// Read out of the DSL crate's own vendored copy (see `invariants.rs`: two
+/// readers of one file is not two authorities).
+const BLOCK_REGISTRY_JSON: &str = include_str!("../../../crates/dsl/data/blocks-1.21.11.json");
 
 /// Per block, the properties its own blockstate definition's `multipart`
 /// selectors name — Mojang's answer to "which properties carry this block's
 /// shape", never a hand-kept id list. `DW0735` fires on exactly this class.
 const SHAPE_PROPS_JSON: &str =
-    include_str!("../crates/dsl/data/blockstate-shape-props-1.21.11.json");
+    include_str!("../../../crates/dsl/data/blockstate-shape-props-1.21.11.json");
 
 /// Per block, its **form** (shape class), derived from vanilla's own block
 /// tags. `fence`, `wall` and `pane` are the three connection classes whose
 /// members must be recognised by class rather than by name.
 const CLASSIFICATION_JSON: &str =
-    include_str!("../crates/delvec/data/block-classification-1.21.11.json");
+    include_str!("../../../crates/delvec/data/block-classification-1.21.11.json");
 
 fn registry() -> &'static BTreeMap<String, BTreeMap<String, Vec<String>>> {
     static R: OnceLock<BTreeMap<String, BTreeMap<String, Vec<String>>>> = OnceLock::new();
@@ -471,7 +471,7 @@ where
 
 /// A piece's palette and block list, in the one shape every generator shares.
 /// Each generator converts its own `Structure` into this and back — the types
-/// are per-workspace (they are separate Cargo workspaces on purpose), the rule
+/// are per-package (the generators are outside the engine's workspace on purpose), the rule
 /// is not.
 pub struct Piece {
     /// `(block id, properties)`, in palette order.
@@ -620,7 +620,7 @@ fn wall_state(
             "{id}: a wall at {pos:?} has {above} above it, and this module has no verdict on \
              whether that block's underside is a full face — so it cannot say whether the wall \
              runs up to meet it (`tall`) or stops short (`low`). Classify {above} in \
-             `prefabs/connections.rs` (FULL_CUBES / NO_FULL_FACE) rather than letting the wall \
+             `prefabs/invariants/src/connections.rs` (FULL_CUBES / NO_FULL_FACE) rather than letting the wall \
              guess."
         )
     });
@@ -744,7 +744,7 @@ fn sturdy_for_connection(
             "{id}: the cell at {pos:?} has {nname} to its {dir}, and this module has no verdict \
              on whether that block presents a full face there — so it cannot say whether the \
              fence/wall/bars join it or stop at it. Classify {nname} in \
-             `prefabs/connections.rs` (FULL_CUBES / NO_FULL_FACE, or a per-state rule if its \
+             `prefabs/invariants/src/connections.rs` (FULL_CUBES / NO_FULL_FACE, or a per-state rule if its \
              faces differ). Guessing is not available: connecting where vanilla would not and \
              failing to connect where it would are equally visible."
         )
@@ -825,7 +825,7 @@ pub fn assert_attachments_are_supported(id: &str, cells: &Cells) {
                 panic!(
                     "{id}: {name} at {pos:?} declares a face to its {face}, where {nname} is, and \
                      this module has no verdict on whether that block can hold it. Classify \
-                     {nname} in `prefabs/connections.rs`."
+                     {nname} in `prefabs/invariants/src/connections.rs`."
                 )
             });
             if !supported {

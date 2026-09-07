@@ -11,16 +11,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::Write as _;
 use std::path::Path;
 
-/// Cross-tileset generator invariants, shared by source include so a lesson
-/// learned in one tileset does not have to be re-learned in the other four
-/// (the generators are separate Cargo workspaces on purpose).
-#[path = "../../invariants.rs"]
-mod invariants;
-
-/// The connection derivation, shared the same way: what a fence, a wall, a pane
-/// or a lichen joins is computed from the blocks beside it, at the emitter.
-#[path = "../../connections.rs"]
-mod connections;
+/// The cross-tileset invariants and the connection derivation, shared as a
+/// crate so the rule is compiled once and its own tests run with the
+/// generators' (`prefabs/invariants`).
+use prefab_invariants::{connections, invariants};
 
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
@@ -251,10 +245,6 @@ fn doorway_cells_at(size: [i32; 3], side: Side, floor_y: i32) -> (Vec<[i32; 3]>,
         }
     }
     (cells, jc)
-}
-
-fn door_center(size: [i32; 3], side: Side) -> [i32; 3] {
-    door_center_at(size, side, 0)
 }
 
 /// Cells (3 wide x 3 tall) that make up a floor-level doorway on `side`, plus the
@@ -566,220 +556,35 @@ fn axis_points(n: i32) -> Vec<i32> {
     pts
 }
 
-fn main() {
-    let out = std::env::args()
-        .nth(1)
-        .expect("usage: keep-prefab-gen <out_dir>");
-    let out = Path::new(&out);
-    std::fs::create_dir_all(out).expect("mkdir");
-
-    let mut specs: Vec<Spec> = vec![];
-
-    // 1. spawn hall 9x5x9, door S. spawn anchor center facing the door.
-    specs.push(Spec {
-        id: "keep-spawn-hall",
-        size: [9, 5, 9],
-        doors: vec![Side::South],
-        lights: ceiling_grid([9, 5, 9]),
-        extras: vec![
-            ([1, 1, 1], Cell::Block(ACCENT, None)),
-            ([7, 1, 1], Cell::Block(ACCENT, None)),
-        ],
-        anchors: vec![
-            // `spawn` faces the exit door so the arriving player looks toward
-            // where they will go. `anchor/exit` faces NORTH (back toward the
-            // spawn) so that when an NPC stands here it greets players arriving
-            // from the spawn instead of turning its back on them (M2 facing fix).
-            ("spawn", a_pos([4, 1, 4], Some("south"))),
-            ("anchor/exit", a_pos([4, 1, 8], Some("north"))),
-        ],
-    });
-
-    // 2. straight corridor 5x5x7, doors N/S.
-    specs.push(Spec {
-        id: "keep-corridor-straight",
-        size: [5, 5, 7],
-        doors: vec![Side::North, Side::South],
-        lights: vec![[2, 4, 3]],
-        extras: vec![],
-        anchors: vec![],
-    });
-
-    // 3. corner corridor 7x5x7, doors N + E.
-    specs.push(Spec {
-        id: "keep-corridor-corner",
-        size: [7, 5, 7],
-        doors: vec![Side::North, Side::East],
-        lights: vec![[3, 4, 3]],
-        extras: vec![],
-        anchors: vec![],
-    });
-
-    // 4. tee corridor 7x5x7, doors N + E + W.
-    specs.push(Spec {
-        id: "keep-corridor-tee",
-        size: [7, 5, 7],
-        doors: vec![Side::North, Side::East, Side::West],
-        lights: vec![[3, 4, 3]],
-        extras: vec![],
-        anchors: vec![],
-    });
-
-    // 5. small room A 7x5x7, door N. npc stand.
-    specs.push(Spec {
-        id: "keep-room-small-a",
-        size: [7, 5, 7],
-        doors: vec![Side::North],
-        lights: ceiling_grid([7, 5, 7]),
-        extras: vec![([5, 1, 5], Cell::Block(ACCENT, None))],
-        // `anchor/chest` (v0.3 collect target) sits centred, facing the single north
-        // entry door so arrivals see it head-on. `anchor/npc-stand` gets its OWN
-        // clear-floor cell (west wall, mid-room), off the x=3 door→chest walking
-        // line and clear of the accent — it used to collide with the chest cell,
-        // which made an NPC + chest share one block and the anchor unusable (gap 12).
-        anchors: vec![
-            ("anchor/npc-stand", a_pos([1, 1, 3], Some("east"))),
-            ("anchor/chest", a_pos([3, 1, 4], Some("north"))),
-        ],
-    });
-
-    // 6. small room B 7x5x9, doors N/S. npc stand.
-    specs.push(Spec {
-        id: "keep-room-small-b",
-        size: [7, 5, 9],
-        doors: vec![Side::North, Side::South],
-        lights: ceiling_grid([7, 5, 9]),
-        extras: vec![
-            ([1, 1, 4], Cell::Block(ACCENT, None)),
-            ([5, 1, 4], Cell::Block(ACCENT, None)),
-        ],
-        // `anchor/wave` (v0.3 wave spawn) is centred, facing the north entry door.
-        // `anchor/npc-stand` gets its own clear-floor cell (west wall, near the north
-        // door), off the x=3 north↔south through-passage and clear of the accents —
-        // it used to collide with the wave-spawn cell, making the anchor unusable
-        // (gap 12).
-        anchors: vec![
-            ("anchor/npc-stand", a_pos([1, 1, 2], Some("east"))),
-            ("anchor/wave", a_pos([3, 1, 4], Some("north"))),
-        ],
-    });
-
-    // 7. small room C 9x5x7, doors N + E. npc stand.
-    specs.push(Spec {
-        id: "keep-room-small-c",
-        size: [9, 5, 7],
-        doors: vec![Side::North, Side::East],
-        lights: ceiling_grid([9, 5, 7]),
-        extras: vec![([4, 1, 5], Cell::Block(ACCENT, None))],
-        // `anchor/door` (v0.3 interact target) faces the east entry door.
-        // `anchor/npc-stand` gets its own clear-floor cell (north wall, east side),
-        // off the x=4 north-door passage and the z=3 east-door passage and clear of
-        // the accent — it used to collide with the door/interact cell, making the
-        // anchor unusable (gap 12).
-        anchors: vec![
-            ("anchor/npc-stand", a_pos([6, 1, 1], Some("south"))),
-            ("anchor/door", a_pos([2, 1, 3], Some("east"))),
-        ],
-    });
-
-    // 8. gate room 7x5x9, doors N/S, iron-bars gate at z=4.
-    //
-    // The gate must seal the passage WALL-TO-WALL (M2 fix): the room interior
-    // spans x=1..=5, so bars only across the 3-wide doorway (x=2..4) left the
-    // floor at x=1 and x=5 open and the owner walked around the gate. The barred
-    // row now fills the whole interior width (x=1..=5). The OPENABLE region
-    // (`anchor/gate`) stays the 3-wide central passage (x=2..4) that a player
-    // actually walks through; the x=1 and x=5 columns are permanent bar flanks
-    // that keep the wall sealed after the gate opens. Iron bars are non-occluding
-    // (light passes through), so the sealed-doorway floor-light probe is unchanged.
-    let gate_extras: Vec<([i32; 3], Cell)> = (1..=5)
+/// The bars of the gate room's wall-to-wall gate (piece 8).
+///
+/// The gate must seal the passage WALL-TO-WALL (M2 fix): the room interior
+/// spans x=1..=5, so bars only across the 3-wide doorway (x=2..4) left the
+/// floor at x=1 and x=5 open and the owner walked around the gate. The barred
+/// row now fills the whole interior width (x=1..=5). The OPENABLE region
+/// (`anchor/gate`) stays the 3-wide central passage (x=2..4) that a player
+/// actually walks through; the x=1 and x=5 columns are permanent bar flanks
+/// that keep the wall sealed after the gate opens. Iron bars are non-occluding
+/// (light passes through), so the sealed-doorway floor-light probe is unchanged.
+fn gate_extras() -> Vec<([i32; 3], Cell)> {
+    (1..=5)
         .flat_map(|x| (1..=3).map(move |y| ([x, y, 4], Cell::Block(GATE, None))))
-        .collect();
-    specs.push(Spec {
-        id: "keep-gate-room",
-        size: [7, 5, 9],
-        doors: vec![Side::North, Side::South],
-        lights: ceiling_grid([7, 5, 9]),
-        extras: gate_extras,
-        anchors: vec![
-            ("anchor/gate", a_region([2, 1, 4], [4, 3, 4], GATE)),
-            // Keeper faces NORTH — toward the north entry door players arrive
-            // through (he stands on the north side of the gate). Previously faced
-            // south (into the sealed gate), turning his back on arrivals.
-            ("anchor/keeper-stand", a_pos([3, 1, 2], Some("north"))),
-        ],
-    });
+        .collect()
+}
 
-    // 9. shrine / objective room 9x5x9, door N. objective anchor center.
-    specs.push(Spec {
-        id: "keep-shrine",
-        size: [9, 5, 9],
-        doors: vec![Side::North],
-        lights: ceiling_grid([9, 5, 9]),
-        extras: vec![
-            ([4, 1, 6], Cell::Block(ACCENT, None)),
-            ([3, 1, 6], Cell::Block(ACCENT, None)),
-            ([5, 1, 6], Cell::Block(ACCENT, None)),
-        ],
-        anchors: vec![("anchor/objective", a_pos([4, 1, 6], Some("north")))],
-    });
-
-    // 10. boss / finale hall 11x5x13, door N. boss + objective anchors.
-    specs.push(Spec {
-        id: "keep-boss-hall",
-        size: [11, 5, 13],
-        doors: vec![Side::North],
-        lights: ceiling_grid([11, 5, 13]),
-        extras: vec![
-            ([1, 1, 1], Cell::Block(ACCENT, None)),
-            ([9, 1, 1], Cell::Block(ACCENT, None)),
-            ([1, 1, 11], Cell::Block(ACCENT, None)),
-            ([9, 1, 11], Cell::Block(ACCENT, None)),
-        ],
-        anchors: vec![
-            ("anchor/boss", a_pos([5, 1, 9], Some("north"))),
-            ("anchor/objective", a_pos([5, 1, 11], Some("north"))),
-        ],
-    });
-
-    // 11. dead-end alcove 5x5x5, door N. decorative.
-    specs.push(Spec {
-        id: "keep-alcove",
-        size: [5, 5, 5],
-        doors: vec![Side::North],
-        lights: vec![[2, 4, 2]],
-        extras: vec![([2, 1, 3], Cell::Block(ACCENT, None))],
-        anchors: vec![],
-    });
-
-    // 12. cross junction 7x5x7, doors N/S/E/W.
-    specs.push(Spec {
-        id: "keep-cross",
-        size: [7, 5, 7],
-        doors: vec![Side::North, Side::South, Side::East, Side::West],
-        lights: vec![[3, 4, 3]],
-        extras: vec![],
-        anchors: vec![],
-    });
-
-    // 13. vertical stair connector 5x9x11: low door South (floor 0), high door
-    //     North (floor 4) — a +4 elevation rise between its two sockets, so mating
-    //     it lifts the layout one level. Usable up OR down by orientation (the
-    //     mating rule picks which socket meets the parent). The climb is a
-    //     continuous run of real `stone_brick_stairs`, 3 wide, one step per z, with
-    //     solid stone-brick fill beneath each step for support; glowstone is
-    //     embedded in the side walls at head height along the run so every floor
-    //     cell clears the `lit` bar.
-    //
-    // Stair facing (M2 round-2 fix 2): the player ascends NORTH (from the south low
-    // door toward the north high door), so the stairs face **north** — a vanilla
-    // stair's raised half-step sits on its `facing` side, so `facing = the
-    // direction you ascend toward`. The prior `facing:"south"` put the raised step
-    // on the downhill side, presenting a full-block riser to a north-bound climber
-    // (the owner's "climbs on full blocks / wrong-facing stairs"). z=5..8 are the
-    // four ascending stair steps (top y 1→4); z<=4 is the flat high landing (solid
-    // to y4, stand y5); z=9 is the flat low threshold (stand y1). Verified live by
-    // rendering the regenerated piece.
+/// The climb, the fill beneath it and the wall lights of the vertical stair
+/// connector (piece 13).
+///
+/// Stair facing (M2 round-2 fix 2): the player ascends NORTH (from the south low
+/// door toward the north high door), so the stairs face **north** — a vanilla
+/// stair's raised half-step sits on its `facing` side, so `facing = the
+/// direction you ascend toward`. The prior `facing:"south"` put the raised step
+/// on the downhill side, presenting a full-block riser to a north-bound climber
+/// (the owner's "climbs on full blocks / wrong-facing stairs"). z=5..8 are the
+/// four ascending stair steps (top y 1→4); z<=4 is the flat high landing (solid
+/// to y4, stand y5); z=9 is the flat low threshold (stand y1). Verified live by
+/// rendering the regenerated piece.
+fn stair_extras() -> Vec<([i32; 3], Cell)> {
     let stair_props = || {
         Some(vec![
             ("facing", "north"),
@@ -811,14 +616,197 @@ fn main() {
             stair_extras.push(([x, s + 2, z], Cell::Block(LIGHT, None)));
         }
     }
-    specs.push(Spec {
-        id: "keep-stair",
-        size: [5, 9, 11],
-        doors: vec![Side::South],
-        lights: vec![],
-        extras: stair_extras,
-        anchors: vec![],
-    });
+    stair_extras
+}
+
+fn main() {
+    let out = std::env::args()
+        .nth(1)
+        .expect("usage: keep-prefab-gen <out_dir>");
+    let out = Path::new(&out);
+    std::fs::create_dir_all(out).expect("mkdir");
+
+    let specs: Vec<Spec> = vec![
+        // 1. spawn hall 9x5x9, door S. spawn anchor center facing the door.
+        Spec {
+            id: "keep-spawn-hall",
+            size: [9, 5, 9],
+            doors: vec![Side::South],
+            lights: ceiling_grid([9, 5, 9]),
+            extras: vec![
+                ([1, 1, 1], Cell::Block(ACCENT, None)),
+                ([7, 1, 1], Cell::Block(ACCENT, None)),
+            ],
+            anchors: vec![
+                // `spawn` faces the exit door so the arriving player looks toward
+                // where they will go. `anchor/exit` faces NORTH (back toward the
+                // spawn) so that when an NPC stands here it greets players arriving
+                // from the spawn instead of turning its back on them (M2 facing fix).
+                ("spawn", a_pos([4, 1, 4], Some("south"))),
+                ("anchor/exit", a_pos([4, 1, 8], Some("north"))),
+            ],
+        },
+        // 2. straight corridor 5x5x7, doors N/S.
+        Spec {
+            id: "keep-corridor-straight",
+            size: [5, 5, 7],
+            doors: vec![Side::North, Side::South],
+            lights: vec![[2, 4, 3]],
+            extras: vec![],
+            anchors: vec![],
+        },
+        // 3. corner corridor 7x5x7, doors N + E.
+        Spec {
+            id: "keep-corridor-corner",
+            size: [7, 5, 7],
+            doors: vec![Side::North, Side::East],
+            lights: vec![[3, 4, 3]],
+            extras: vec![],
+            anchors: vec![],
+        },
+        // 4. tee corridor 7x5x7, doors N + E + W.
+        Spec {
+            id: "keep-corridor-tee",
+            size: [7, 5, 7],
+            doors: vec![Side::North, Side::East, Side::West],
+            lights: vec![[3, 4, 3]],
+            extras: vec![],
+            anchors: vec![],
+        },
+        // 5. small room A 7x5x7, door N. npc stand.
+        Spec {
+            id: "keep-room-small-a",
+            size: [7, 5, 7],
+            doors: vec![Side::North],
+            lights: ceiling_grid([7, 5, 7]),
+            extras: vec![([5, 1, 5], Cell::Block(ACCENT, None))],
+            // `anchor/chest` (v0.3 collect target) sits centred, facing the single north
+            // entry door so arrivals see it head-on. `anchor/npc-stand` gets its OWN
+            // clear-floor cell (west wall, mid-room), off the x=3 door→chest walking
+            // line and clear of the accent — it used to collide with the chest cell,
+            // which made an NPC + chest share one block and the anchor unusable (gap 12).
+            anchors: vec![
+                ("anchor/npc-stand", a_pos([1, 1, 3], Some("east"))),
+                ("anchor/chest", a_pos([3, 1, 4], Some("north"))),
+            ],
+        },
+        // 6. small room B 7x5x9, doors N/S. npc stand.
+        Spec {
+            id: "keep-room-small-b",
+            size: [7, 5, 9],
+            doors: vec![Side::North, Side::South],
+            lights: ceiling_grid([7, 5, 9]),
+            extras: vec![
+                ([1, 1, 4], Cell::Block(ACCENT, None)),
+                ([5, 1, 4], Cell::Block(ACCENT, None)),
+            ],
+            // `anchor/wave` (v0.3 wave spawn) is centred, facing the north entry door.
+            // `anchor/npc-stand` gets its own clear-floor cell (west wall, near the north
+            // door), off the x=3 north↔south through-passage and clear of the accents —
+            // it used to collide with the wave-spawn cell, making the anchor unusable
+            // (gap 12).
+            anchors: vec![
+                ("anchor/npc-stand", a_pos([1, 1, 2], Some("east"))),
+                ("anchor/wave", a_pos([3, 1, 4], Some("north"))),
+            ],
+        },
+        // 7. small room C 9x5x7, doors N + E. npc stand.
+        Spec {
+            id: "keep-room-small-c",
+            size: [9, 5, 7],
+            doors: vec![Side::North, Side::East],
+            lights: ceiling_grid([9, 5, 7]),
+            extras: vec![([4, 1, 5], Cell::Block(ACCENT, None))],
+            // `anchor/door` (v0.3 interact target) faces the east entry door.
+            // `anchor/npc-stand` gets its own clear-floor cell (north wall, east side),
+            // off the x=4 north-door passage and the z=3 east-door passage and clear of
+            // the accent — it used to collide with the door/interact cell, making the
+            // anchor unusable (gap 12).
+            anchors: vec![
+                ("anchor/npc-stand", a_pos([6, 1, 1], Some("south"))),
+                ("anchor/door", a_pos([2, 1, 3], Some("east"))),
+            ],
+        },
+        // 8. gate room 7x5x9, doors N/S, iron-bars gate at z=4.
+        Spec {
+            id: "keep-gate-room",
+            size: [7, 5, 9],
+            doors: vec![Side::North, Side::South],
+            lights: ceiling_grid([7, 5, 9]),
+            extras: gate_extras(),
+            anchors: vec![
+                ("anchor/gate", a_region([2, 1, 4], [4, 3, 4], GATE)),
+                // Keeper faces NORTH — toward the north entry door players arrive
+                // through (he stands on the north side of the gate). Previously faced
+                // south (into the sealed gate), turning his back on arrivals.
+                ("anchor/keeper-stand", a_pos([3, 1, 2], Some("north"))),
+            ],
+        },
+        // 9. shrine / objective room 9x5x9, door N. objective anchor center.
+        Spec {
+            id: "keep-shrine",
+            size: [9, 5, 9],
+            doors: vec![Side::North],
+            lights: ceiling_grid([9, 5, 9]),
+            extras: vec![
+                ([4, 1, 6], Cell::Block(ACCENT, None)),
+                ([3, 1, 6], Cell::Block(ACCENT, None)),
+                ([5, 1, 6], Cell::Block(ACCENT, None)),
+            ],
+            anchors: vec![("anchor/objective", a_pos([4, 1, 6], Some("north")))],
+        },
+        // 10. boss / finale hall 11x5x13, door N. boss + objective anchors.
+        Spec {
+            id: "keep-boss-hall",
+            size: [11, 5, 13],
+            doors: vec![Side::North],
+            lights: ceiling_grid([11, 5, 13]),
+            extras: vec![
+                ([1, 1, 1], Cell::Block(ACCENT, None)),
+                ([9, 1, 1], Cell::Block(ACCENT, None)),
+                ([1, 1, 11], Cell::Block(ACCENT, None)),
+                ([9, 1, 11], Cell::Block(ACCENT, None)),
+            ],
+            anchors: vec![
+                ("anchor/boss", a_pos([5, 1, 9], Some("north"))),
+                ("anchor/objective", a_pos([5, 1, 11], Some("north"))),
+            ],
+        },
+        // 11. dead-end alcove 5x5x5, door N. decorative.
+        Spec {
+            id: "keep-alcove",
+            size: [5, 5, 5],
+            doors: vec![Side::North],
+            lights: vec![[2, 4, 2]],
+            extras: vec![([2, 1, 3], Cell::Block(ACCENT, None))],
+            anchors: vec![],
+        },
+        // 12. cross junction 7x5x7, doors N/S/E/W.
+        Spec {
+            id: "keep-cross",
+            size: [7, 5, 7],
+            doors: vec![Side::North, Side::South, Side::East, Side::West],
+            lights: vec![[3, 4, 3]],
+            extras: vec![],
+            anchors: vec![],
+        },
+        // 13. vertical stair connector 5x9x11: low door South (floor 0), high door
+        //     North (floor 4) — a +4 elevation rise between its two sockets, so mating
+        //     it lifts the layout one level. Usable up OR down by orientation (the
+        //     mating rule picks which socket meets the parent). The climb is a
+        //     continuous run of real `stone_brick_stairs`, 3 wide, one step per z, with
+        //     solid stone-brick fill beneath each step for support; glowstone is
+        //     embedded in the side walls at head height along the run so every floor
+        //     cell clears the `lit` bar.
+        Spec {
+            id: "keep-stair",
+            size: [5, 9, 11],
+            doors: vec![Side::South],
+            lights: vec![],
+            extras: stair_extras(),
+            anchors: vec![],
+        },
+    ];
 
     for spec in &specs {
         write_piece(out, spec);
