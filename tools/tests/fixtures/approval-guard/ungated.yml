@@ -1,0 +1,9 @@
+name: fixture — no job declares an environment
+on: { push: { branches: [main] } }
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo build --workspace

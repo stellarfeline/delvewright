@@ -814,6 +814,26 @@ jobs:
       # quietly stops running. Deterministic, offline, stdlib-only python3.
       - name: required status checks and ci.yml job names agree
         run: python3 tools/check-required-contexts.py
+      # The same class one door further out, on the one path that can never be
+      # undone. `crates-io` holds CARGO_REGISTRY_TOKEN and is supposed to hold a
+      # run until a reviewer approves it; it carried `protection_rules: []`, so a
+      # tag push published two crates to crates.io through a job named "(owner
+      # approval)" with nobody reviewing anything, and a crates.io version can
+      # never be deleted. `tools/assert-run-approved.sh` reads the run's own
+      # approval history and refuses when none names the environment — the
+      # CONSEQUENCE of the setting, which is the only half of it this repository
+      # can see. That assertion was then invoked by hand, and ADR-0017 records the
+      # convention along with its own trigger: a second environment-gated job
+      # inherits nothing. There are now two, so this binds the rule to the object
+      # class instead — every job declaring `environment:` calls the guard, with
+      # its own environment name, as its first `run:` step. It reads the workflow
+      # files through `tools/lib/workflow_yaml.py`, the one shared parse rule,
+      # which refuses constructs it does not implement rather than reading past
+      # them into a clean pass. States its binding count and REFUSES a zero: a
+      # scan that finds no environment-gated job is the discovery rule breaking,
+      # not a clean repository. Deterministic, offline, stdlib-only python3.
+      - name: every environment-gated job proves its own approval
+        run: python3 tools/check-approval-guard.py
       # ADR-0016's third version line — the `/new-delve` skill's own version and
       # the `delvec` window it drives — is checked in the CONTENT repository, by
       # `tools/check-skill-version.py` there, because that is where the page

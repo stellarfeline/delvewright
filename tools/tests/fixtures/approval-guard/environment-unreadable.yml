@@ -1,0 +1,12 @@
+name: fixture — the environment name cannot be read out of the declaration
+on: { push: { branches: [main] } }
+jobs:
+  publish:
+    name: publish (owner approval)
+    runs-on: ubuntu-latest
+    environment:
+      url: https://crates.io/crates/delvec
+    steps:
+      - uses: actions/checkout@v4
+      - name: the gate actually bound
+        run: bash tools/assert-run-approved.sh crates-io

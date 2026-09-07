@@ -1,0 +1,36 @@
+# The shape the live workflows have: a planning job with no environment, and a
+# gated job whose FIRST `run:` step is the guard, behind a `uses:` checkout.
+name: fixture — a guarded environment job
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  plan:
+    name: work out whether there is anything to do
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: decide
+        run: |
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: publish (owner approval)
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: the gate actually bound
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/assert-run-approved.sh crates-io
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "fixture" }
+      - name: the irreversible act
+        run: bash tools/does-the-thing.sh

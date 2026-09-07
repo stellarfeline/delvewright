@@ -1,0 +1,8 @@
+name: fixture — a gated job that is a reusable-workflow call
+on: { push: { branches: [main] } }
+jobs:
+  publish:
+    name: publish (owner approval)
+    environment: crates-io
+    uses: ./.github/workflows/reusable.yml
+    secrets: inherit
