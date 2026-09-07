@@ -1784,6 +1784,21 @@ pub fn build_with_warnings(
     if let Some(gate) = &traversal_gate {
         put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
     }
+    // The piece-mating binding ledger (`DW0780`/`DW0781`): how many placed
+    // pieces touch, in how many pairs, how many of those pairs a declared face
+    // crosses, and which of the two declarations each piece was judged by. It
+    // is emitted on every build, zeroes included, and `examined` is the count
+    // over the PLACEMENT rather than over the declarations — a ledger keyed on
+    // declarations reads a library that declares nothing as an honest zero,
+    // which is the sentence this check printed while passing.
+    put_json(
+        &mut out,
+        "validation/piece-mating.json",
+        &plan.face_binding.to_json(
+            crate::compiler::faces::placed_pieces(&plan.areas),
+            plan.campaign.site_plan.is_some(),
+        ),
+    );
     // The fluid-escape binding ledger (`DW0318`): the horizon the verdict was
     // stated against, the pieces and fluid cells examined, and how many cells
     // ended up outside the built volume. `None` only for a campaign that

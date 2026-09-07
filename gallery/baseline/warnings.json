@@ -151,11 +151,6 @@
       "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/areas",
-      "stage": "world"
-    },
-    {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
@@ -335,11 +330,6 @@
     {
       "code": "DW0498",
       "pointer": "/content/areas/1",
-      "stage": "world"
-    },
-    {
-      "code": "DW0781",
-      "pointer": "/areas",
       "stage": "world"
     },
     {
@@ -530,11 +520,6 @@
       "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/areas",
-      "stage": "world"
-    },
-    {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
@@ -717,11 +702,6 @@
       "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/areas",
-      "stage": "world"
-    },
-    {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
@@ -901,11 +881,6 @@
     {
       "code": "DW0498",
       "pointer": "/content/areas/1",
-      "stage": "world"
-    },
-    {
-      "code": "DW0781",
-      "pointer": "/areas",
       "stage": "world"
     },
     {
@@ -1135,11 +1110,6 @@
     {
       "code": "DW0498",
       "pointer": "/content/areas/1",
-      "stage": "world"
-    },
-    {
-      "code": "DW0781",
-      "pointer": "/areas",
       "stage": "world"
     },
     {

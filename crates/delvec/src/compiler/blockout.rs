@@ -864,6 +864,9 @@ fn piece(prefab_id: String, lo: [i64; 3], size: [i64; 3]) -> PiecePlacement {
         pos: narrow(lo),
         size: narrow(size),
         rotation: Rotation::None,
+        // Derived massing has no sockets: this world's ways are ALLOCATED by
+        // the site plan and proved by `DW0836`, never mated.
+        mated: Vec::new(),
     }
 }
 
