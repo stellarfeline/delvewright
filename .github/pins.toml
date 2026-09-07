@@ -396,7 +396,7 @@ why = "GitHub's Node toolchain action, held at its major tag."
 [[pin]]
 id = "action-setup-python"
 value = "actions/setup-python@v5"
-sites = [".github/workflows/ci.yml"]
+sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml"]
 policy = "floating"
 why = "GitHub's Python toolchain action, held at its major tag."
 
@@ -499,20 +499,26 @@ and a `grep -q` stops at the first and calls that agreement.
 [[pin]]
 id = "ci-python-tools"
 value = "3.12"
-sites = [".github/workflows/ci.yml", "versions.toml"]
+sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml", "versions.toml"]
 policy = "floating"
 bound_by = "validation/check-versions.sh"
 bound_key = "python_tools_version"
 why = """
 The interpreter the two Python tool suites run on: `tools/skin` (spec-0009
 composition + preview, whose test asserts byte-identical PNGs) and `tools/tests`
-(the stdlib-only tooling suite, whose network is blocked at `urlopen`).
+(the stdlib-only tooling suite, whose network is blocked at `urlopen`) — and,
+since release run 34069406209 (v1.2.0), the same interpreter
+`tools/build-release-binaries.sh` needs to read `versions.toml`: `ubuntu-22.04`
+and `ubuntu-22.04-arm` ship python3.10 by default, below stdlib `tomllib`'s
+floor, so both the release's shelf job (engine-release.yml) and the CI job that
+stands in for it (ci.yml's `engine-shelf`) now pin this line explicitly rather
+than trusting the runner image's default.
 
-HELD FOR one interpreter across both suites, which is what makes a determinism
-result from one month comparable to the next — the same argument the Rust
-toolchain pin makes, one language over. The floor is real and lower: both suites
-need >= 3.11 for stdlib `tomllib`, and `tools/skin`'s own manifest declares
-`requires-python >= 3.10`.
+HELD FOR one interpreter across every one of these, which is what makes a
+determinism result from one month comparable to the next — the same argument
+the Rust toolchain pin makes, one language over. The floor is real and lower:
+every consumer needs >= 3.11 for stdlib `tomllib`, and `tools/skin`'s own
+manifest declares `requires-python >= 3.10`.
 
 WHY IT DIFFERS from `ci-python-mecha`, since two interpreter lines in one
 workflow reads as drift and this pair is not: they carry disjoint dependency
@@ -526,10 +532,13 @@ POLICY `floating`: `3.12` is a MINOR line, resolved by actions/setup-python to
 its newest patch, so patch releases arrive without a pull request.
 
 BOUND by check-versions.sh, which reads [ci].python_tools_version and asserts the
-WHOLE SET rather than this value alone — every `python-version:` in ci.yml is one
-of the two declared lines, used exactly as many times as declared. A third value
-anywhere in the file breaks the sum and reds, which is the property a per-value
-presence check cannot give when one file legitimately holds two.
+WHOLE SET rather than this value alone — every `python-version:` in ci.yml is
+one of the two declared lines, used exactly as many times as declared (three of
+the tools line, one of the mecha line, since ci.yml's `engine-shelf` job joined
+the tools line), and engine-release.yml's single `python-version:` line is
+checked the same way. A third value anywhere in either file breaks its sum and
+reds, which is the property a per-value presence check cannot give when a file
+legitimately holds more than one occurrence.
 """
 
 [[pin]]
