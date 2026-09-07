@@ -26,7 +26,7 @@ pub trait ItemRegistry {
     /// `count: 2` puts nothing in the chest (`DW0436`). `None` means "this registry
     /// does not know", and the check is then skipped rather than guessed: the small
     /// vendored DSL-side subset carries ids only, while the compiler injects the full
-    /// 1.21.11 table (`crates/compiler/data/item-stack-sizes-1.21.11.json`).
+    /// 1.21.11 table (`crates/delvec/data/item-stack-sizes-1.21.11.json`).
     fn max_stack_size(&self, _item_id: &str) -> Option<u32> {
         None
     }
@@ -44,7 +44,7 @@ pub trait EntityRegistry {
 /// The vendored `entity_type` **tag** table: tag id → its member entity ids,
 /// from Mojang's own generated reports (`crates/dsl/data/entity-tags-1.21.11.json`,
 /// regenerated per MC pin by `tools/extract-entity-tags.py`;
-/// `crates/compiler/data/PROVENANCE.md`).
+/// `crates/delvec/data/PROVENANCE.md`).
 ///
 /// Vanilla's answer to every question of the form "which entity types do X" that
 /// vanilla itself answers. It lives in this crate — not beside the compiler's
@@ -343,7 +343,7 @@ pub trait BlockRegistry {
 /// `enchantment` registry of the same misode/mcmeta 1.21.11 registries summary
 /// the item/entity registries come from (SHA-256
 /// `7efb184902cfef62b431bc9826ebcbcde2c23746e5624326ffcf922e15cf28f9`, pinned in
-/// `crates/compiler/data/PROVENANCE.md`) — Mojang's own generated data, not a
+/// `crates/delvec/data/PROVENANCE.md`) — Mojang's own generated data, not a
 /// third-party reconstruction.
 pub const ENCHANTMENT_IDS_1_21_11: &[&str] = &[
     "minecraft:aqua_affinity",
@@ -436,7 +436,7 @@ impl EnchantmentRegistry for VendoredEnchantmentRegistry {
 /// misode/mcmeta 1.21.11 registries summary the item/entity/enchantment lists
 /// come from (SHA-256
 /// `7efb184902cfef62b431bc9826ebcbcde2c23746e5624326ffcf922e15cf28f9`, pinned in
-/// `crates/compiler/data/PROVENANCE.md`) — Mojang's own generated data.
+/// `crates/delvec/data/PROVENANCE.md`) — Mojang's own generated data.
 ///
 /// Complete and stable for the pinned version, so unlike the item/entity
 /// registries there is **nothing for the compiler to inject**: this const IS the

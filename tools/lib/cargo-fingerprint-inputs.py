@@ -93,7 +93,7 @@ otherwise would be worse than a stated limit. What is left out, and the reason:
   * A `.cargo/config.toml` in a SUB-directory of the tree. Cargo reads it only for
     a build launched from that sub-directory, and `worktree-new.sh` closes by
     telling the reader to build from the tree root.
-  * `[profile.*]` in the nested workspaces (`crates/render`, `prefabs/*-generator`,
+  * `[profile.*]` in the nested workspaces (`prefabs/*-generator`,
     `docs/experiments/…`). Each keeps its own `target/` inside its own directory,
     and none of them is what `worktree-new.sh` clones.
 

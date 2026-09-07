@@ -19,12 +19,10 @@ hand, so a crate that later becomes publishable — by deleting one
 `publish = false` line — inherits both gates with **no edit to either gate**.
 
 Globbing the directory rather than reading `[workspace] members` is deliberate
-and load-bearing: `crates/render` is deliberately EXCLUDED from the workspace
-(it carries its own `[workspace]` table, to keep a git dependency out of every
-other crate's resolution), so a members-only derivation would never see it — and
-`publish = false` is the only thing that keeps it off crates.io. A gate blind to
-the one crate whose publishability is not visible from the workspace table is
-the wrong gate.
+and load-bearing: a crate under `crates/` that carries its own `[workspace]`
+table is invisible to a members-only derivation, and `publish = false` would be
+the only thing keeping it off crates.io. A gate blind to the one crate whose
+publishability is not visible from the workspace table is the wrong gate.
 
 The glob is then cross-checked against the root manifest: every path the root
 `[workspace] members` or `exclude` names must have been discovered. A crate that

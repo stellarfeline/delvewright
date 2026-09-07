@@ -340,11 +340,11 @@ cannot collide with another ladder or with a live owner session.
 **CI placement (spec-0006 acceptance).** This is a **local** test, run by hand:
 **no CI job calls it.** It boots a full server *and* a bot (~2–3 min), beyond tier
 2's ~2-min budget. Every-push coverage of the mechanism already lives in tier 1 —
-the harvester's parsing/pairing/report logic (`crates/orchestrator` unit tests,
-incl. Chinese note text) and the overlay emission + byte-determinism
-(`crates/compiler` tests). The live wiring is proven only when somebody runs this
-script; wiring it into `ci.yml`'s `tier 2` job as a step (never a new job — every
-job name is a required status context) is the open work.
+the harvester's parsing/pairing/report logic (`crates/delvec/src/orchestrator` unit
+tests, incl. Chinese note text) and the overlay emission + byte-determinism
+(`crates/delvec/src/compiler` tests). The live wiring is proven only when somebody
+runs this script; wiring it into `ci.yml`'s `tier 2` job as a step (never a new job
+— every job name is a required status context) is the open work.
 
 ## What the stack does today
 

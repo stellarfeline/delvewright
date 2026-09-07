@@ -186,7 +186,7 @@ enforced separately by validation/check-versions.sh and
 [[pin]]
 id = "nucleation-version"
 value = "0.10.14"
-sites = ["crates/render/Cargo.toml", "versions.toml"]
+sites = ["crates/delvec/Cargo.toml", "versions.toml"]
 policy = "immutable"
 bound_by = "validation/check-versions.sh"
 bound_key = "nucleation_version"

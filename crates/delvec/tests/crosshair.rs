@@ -17,11 +17,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::crosshair::{DW_CROSSHAIR_CONTEST, threshold};
-use delvewright_compiler::emit::{self, BuildFailure};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::crosshair::{DW_CROSSHAIR_CONTEST, threshold};
+use delvec::compiler::emit::{self, BuildFailure};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
 
 fn hw(name: &str) -> String {
@@ -31,7 +31,7 @@ fn hw(name: &str) -> String {
 /// Two NPCs in the hello-room: the keeper on his stand, a scout at the exit
 /// (`anchor/keeper-stand` is local `[5, 1, 4]`, `anchor/exit` is `[5, 1, 8]`).
 const NPCS: &str = r#"{
-  "dsl_version": "0.21.0", "campaign_id": "hello-world", "stage": "npcs",
+  "dsl_version": "0.21.1", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [
     { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
       "area": "area/keep", "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
@@ -43,7 +43,7 @@ const NPCS: &str = r#"{
 }"#;
 
 const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.21.0", "campaign_id": "hello-world", "stage": "quest-plan",
+  "dsl_version": "0.21.1", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
     { "id": "quest/one", "goal": "Speak with the Keeper.", "area": "area/keep",
       "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
@@ -53,7 +53,7 @@ const QUEST_PLAN: &str = r#"{
 }"#;
 
 const DIALOGUE: &str = r#"{
-  "dsl_version": "0.21.0", "campaign_id": "hello-world", "stage": "dialogue",
+  "dsl_version": "0.21.1", "campaign_id": "hello-world", "stage": "dialogue",
   "content": { "dialogues": [
     { "npc": "npc/keeper", "root": "dlg/greeting", "nodes": [
       { "id": "dlg/greeting", "text": "Halt.", "options": [
@@ -77,7 +77,7 @@ const DIALOGUE: &str = r#"{
 fn quests(scout_to: &str, cast_two: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "0.21.1", "campaign_id": "hello-world", "stage": "quests",
   "content": {{ "quests": [
     {{ "id": "quest/one", "trigger": {{ "type": "campaign-start" }},
        "objectives": [ {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }} ],
@@ -205,7 +205,7 @@ fn the_eclipse_proof_is_silent_on_the_same_fixture() {
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    let eclipse = delvewright_compiler::eclipse::check_body_eclipse(&plan)
+    let eclipse = delvec::compiler::eclipse::check_body_eclipse(&plan)
         .expect("DW0359 has nothing to say about two bodies");
     assert!(
         !eclipse.iter().any(|d| d.code == "DW0359"),

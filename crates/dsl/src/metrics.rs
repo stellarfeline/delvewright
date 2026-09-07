@@ -148,16 +148,14 @@ const _: () = assert!(crate::blockshape::FULL_HEIGHT_16 as i64 == FULL_16);
 /// What a walker has to do to gain a given rise — the engine's ONE answer, and
 /// the reason it is here rather than in either walk.
 ///
-/// Two crates ask this question of two different object classes. `delvec`'s
+/// Two walks ask this question of two different object classes. The compiler's
 /// navigation model asks it of an assembled world, where a floor has a real
-/// collision top and a body has a footprint; `delvewright-schem`'s walk asks it
-/// of a box of cells with a passability answer for each, which is what a grammar
+/// collision top and a body has a footprint; `delvec::schem`'s walk asks it of a
+/// box of cells with a passability answer for each, which is what a grammar
 /// expansion, a structure template read off disk and a reassembled zone all are.
-/// Neither crate can hold the shared answer: `delvec` is published to crates.io
-/// and may only depend on published crates, and `delvewright-schem` is not one.
-/// This crate is the only one both already reach, and it is where the three
-/// numbers the rule is written in terms of already live — so the rule lives
-/// beside them.
+/// The rule belongs to neither walk: it is a fact about the pinned game's body,
+/// and this crate is where the three numbers it is written in terms of already
+/// live — so the rule lives beside them, and both walks read one answer.
 ///
 /// The two callers still measure the rise differently, and that is a difference
 /// of **measurement**, never of rule: a box of cells with no collision heights

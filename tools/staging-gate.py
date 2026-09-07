@@ -468,7 +468,7 @@ def _absent_stage_docs(files: list, pred: dict, subj: Subject) -> tuple[int | No
     *nobody measured*, and it cannot present this fact:
 
     - a campaign that DOES declare the document has it hashed into `inputs`
-      (pinned by `crates/compiler/tests/edit.rs`: "the stage-7 script is a
+      (pinned by `crates/delvec/tests/edit.rs`: "the stage-7 script is a
       hashed build input"), so it can never take this branch;
     - a campaign whose document is present but broken — a directory in its
       place, unreadable, non-UTF-8, malformed — does not build at all:

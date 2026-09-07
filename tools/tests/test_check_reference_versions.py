@@ -257,7 +257,7 @@ def test_absent_file_exits_2(gate):
 
 # --- the same constants, on the pages a stranger reads ----------------------
 #
-# `crates/compiler/README.md` and `crates/dsl/README.md` are rendered VERBATIM
+# `crates/delvec/README.md` and `crates/dsl/README.md` are rendered VERBATIM
 # as crates.io front pages. They state the Minecraft version, the `dsl_version`
 # and the minimum Rust — the facts that decide whether a visitor can use the
 # crate — and those were bound to nothing before this gate. The file set is

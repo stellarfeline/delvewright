@@ -11,10 +11,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::{Plan, ResolvedAnchor};
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::{Plan, ResolvedAnchor};
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 const NS: &str = "hello-world";
@@ -23,7 +23,7 @@ const NS: &str = "hello-world";
 fn quests_doc(cutscene: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -422,7 +422,7 @@ fn overlay_emission_is_deterministic() {
 #[test]
 fn the_tier3_fixture_seeds_the_proposal_the_flow_asserts() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let loaded = delvewright_compiler::load::load_campaign_dir(&common::cutscene_shots_dir())
+    let loaded = delvec::compiler::load::load_campaign_dir(&common::cutscene_shots_dir())
         .expect("the fixture campaign loads");
     let campaign = parse_campaign(&loaded.raw).expect("the fixture campaign parses");
     let plan = Plan::build(&campaign, &prefabs).expect("the fixture plans");

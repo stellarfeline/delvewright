@@ -7,8 +7,8 @@ name: engine release (delvec)
 #      target in `versions.toml [engine].targets`. Release `v1.0.0` existed with
 #      ZERO assets, so the engine pin ADR-0016 requires and the skill's
 #      `requires.delvec` window were promises against an empty shelf.
-#   2. crates.io — `delvewright-dsl`, the engine library crates, then `delvec`
-#      (`versions.toml [engine]`, ADR-0023 §6), so `cargo install delvec`
+#   2. crates.io — `delvewright-dsl`, then `delvec` (`versions.toml
+#      [engine].crates`, ADR-0025), so `cargo install delvec`
 #      installs the same creator the archive carries.
 #
 # WHO PUBLISHES `delvewright-dsl`

@@ -11,10 +11,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit;
-use delvewright_compiler::plan::{Plan, Step};
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit;
+use delvec::compiler::plan::{Plan, Step};
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
 
 /// hello-world's quests stage with one `collect`, parameterised on the adoption
@@ -22,7 +22,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_w
 fn quests_doc(fields: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -47,7 +47,7 @@ fn quests_doc(fields: &str) -> String {
 /// A stage-7 batch that stands a barrel on the collect's anchor cell — the
 /// prefab furniture the objective adopts.
 const BARREL_EDITS: &str = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {

@@ -11,9 +11,10 @@
 #
 # The obvious instrument, `cargo publish --dry-run`, has a documented way of
 # being VACUOUS — this repo's own named failure class (CLAUDE.md: a green gate
-# that binds to nothing). `delvec` depends on seven sibling crates in this
-# workspace. If the dry run satisfied those dependencies by reaching for the
-# siblings ON DISK, it would prove nothing about a tarball a stranger downloads.
+# that binds to nothing). `delvec` depends on one sibling crate in this
+# workspace, the format crate `delvewright-dsl`. If the dry run satisfied that
+# dependency by reaching for the sibling ON DISK, it would prove nothing about a
+# tarball a stranger downloads.
 # MEASURED on cargo 1.97.1 (2026-08-06) rather than assumed: a multi-package
 # `cargo package` builds a temporary LOCAL REGISTRY under
 # `<target>/package/tmp-registry/` holding the packaged siblings, and verifies each
@@ -27,8 +28,8 @@
 # 1. Every published crate packages at all (`cargo package`), which is where a
 #    path-only dependency, a missing `description`/`license`, a `publish =
 #    false`, or a file `include!`d from outside the package would fail — by
-#    name. The set is `versions.toml [engine]`: the DSL crate, every crate in
-#    `crates`, and `crate` itself.
+#    name. The set is `versions.toml [engine].crates`: the format crate, then
+#    the engine, and nothing else (ADR-0025).
 # 2. The GENERATED manifest that crates.io will actually serve declares no
 #    `path` under any `*dependencies*` table (dev-dependencies included — a
 #    path-only dev-dependency is stripped, one carrying a version survives as a
@@ -104,15 +105,18 @@ sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-new
 e = tomllib.load(open(sys.argv[1], "rb"))["engine"]
 for k in ("version", "crate", "dsl_crate", "dsl_crate_version", "dsl_crate_req"):
     print(f'{k.upper()}={e[k]!r}'.replace("'", '"'))
-print('ENGINE_CRATES=' + repr(" ".join(e["crates"])).replace("'", '"'))
+print('PUBLISH_CRATES=' + repr(" ".join(e["crates"])).replace("'", '"'))
 PY
 )"
-# Dependency order, as versions.toml states it: the DSL crate first, the engine
-# library crates, the binary last. bash 3.2 (macOS) has no `mapfile`.
-NAMES=("$DSL_CRATE")
-VERS=("$DSL_CRATE_VERSION")
-for n in $ENGINE_CRATES; do NAMES+=("$n"); VERS+=("$VERSION"); done
-NAMES+=("$CRATE"); VERS+=("$VERSION")
+# Publish order, as versions.toml states it: the format crate, then the engine
+# (ADR-0025); each name's version is its own line's. bash 3.2 (macOS) has no
+# `mapfile`.
+NAMES=()
+VERS=()
+for n in $PUBLISH_CRATES; do
+  NAMES+=("$n")
+  if [ "$n" = "$DSL_CRATE" ]; then VERS+=("$DSL_CRATE_VERSION"); else VERS+=("$VERSION"); fi
+done
 
 fails=0
 pass() { printf '  ok   %s\n' "$1"; }

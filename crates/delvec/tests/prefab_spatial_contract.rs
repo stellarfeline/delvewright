@@ -9,12 +9,12 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_admit::structure::{PaletteEntry, Structure};
-use delvewright_grammar::ir::{
+use delvec::admit::structure::{PaletteEntry, Structure};
+use delvec::grammar::ir::{
     EdgeClass, Mark, MarkAt, Node, Opens, Program, Reorient, Rounding, Size, Split, Way,
 };
-use delvewright_grammar::library::spatial_contract::spatial_contract;
-use delvewright_grammar::{Axis, Box3, ExpandOptions, export_prefab};
+use delvec::grammar::library::spatial_contract::spatial_contract;
+use delvec::grammar::{Axis, Box3, ExpandOptions, export_prefab};
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {
@@ -420,11 +420,11 @@ fn pier_on_disk(tag: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 
-    let cells: Vec<([i32; 3], PaletteEntry, Option<delvewright_schem::nbt::Nbt>)> = pier_cells()
+    let cells: Vec<([i32; 3], PaletteEntry, Option<delvec::schem::nbt::Nbt>)> = pier_cells()
         .into_iter()
         .map(|c| (c, PaletteEntry::simple("minecraft:stone_bricks"), None))
         .collect();
-    let structure = delvewright_admit::structure::synth([25, 8, 9], &cells);
+    let structure = delvec::admit::structure::synth([25, 8, 9], &cells);
     std::fs::write(dir.join("pier.nbt"), structure.write()).unwrap();
 
     // The document, built off a real exported one so every block this test is
@@ -461,16 +461,14 @@ fn the_second_door_agrees_on_a_region_that_is_part_facade_and_part_sealed() {
     // Door one: the model an expansion would have had in memory, built here from
     // the cell list rather than from the file the other door reads.
     let mut model =
-        delvewright_grammar::model::VoxelModel::new(delvewright_grammar::geom::Box3::at_origin([
-            25, 8, 9,
-        ]));
-    let brick = delvewright_grammar::block::BlockState::simple("minecraft:stone_bricks");
+        delvec::grammar::model::VoxelModel::new(delvec::grammar::geom::Box3::at_origin([25, 8, 9]));
+    let brick = delvec::grammar::block::BlockState::simple("minecraft:stone_bricks");
     for cell in pier_cells() {
         model.set(cell, &brick).unwrap();
     }
-    let contract: delvewright_schem::prefab::SpatialContract =
+    let contract: delvec::schem::prefab::SpatialContract =
         serde_json::from_value(pier_contract()).unwrap();
-    let first = delvewright_grammar::contract::check(&model, &contract, &Default::default());
+    let first = delvec::grammar::contract::check(&model, &contract, &Default::default());
     assert!(first.is_pass(), "{:#?}", first.gates);
 
     let mixed = first

@@ -30,12 +30,12 @@ server_jar_size = 56327581
 
 [datapack]
 # Datapack pack_format for 1.21.11 (min_format = max_format = [94, 1]).
-# Consumed by: the compiler's emitted pack.mcmeta (crates/compiler/src/emit.rs).
+# Consumed by: the compiler's emitted pack.mcmeta (crates/delvec/src/compiler/emit.rs).
 pack_format = [94, 1]
 
 [resourcepack]
 # RESOURCE-pack format for 1.21.11 (min_format = max_format = [75, 0]).
-# Consumed by: crates/compiler/src/resourcepack.rs (RESOURCE_PACK_FORMAT), the
+# Consumed by: crates/delvec/src/compiler/resourcepack.rs (RESOURCE_PACK_FORMAT), the
 # NPC-skin / art-font pack's pack.mcmeta.
 #
 # Provenance: the pinned 1.21.11 client jar's version.json reports
@@ -126,43 +126,41 @@ mineflayer = "4.37.1"
 # this file, the way validation/server-bootstrap-cache.sh does).
 #
 # The number lives in the root Cargo.toml's `[workspace.package] version`, which
-# every engine crate inherits; check-versions.sh holds the two equal.
+# the engine crate inherits; check-versions.sh holds the two equal.
 version = "1.2.0"
 
-# crates.io identity of the ONE binary (ADR-0023 §3). `cargo install` resolves
-# by CRATE name, never by binary name, so the package that carries the
-# executable IS `delvec` (crates/delvec), and nothing else in it.
+# crates.io identity of the ONE binary (ADR-0023 §3) and of the whole engine
+# (ADR-0025): `cargo install` resolves by CRATE name, never by binary name, so
+# the package that carries the executable IS `delvec` (crates/delvec), and every
+# capability the binary mounts is a module of it.
 crate = "delvec"
 
-# The library crates the binary is assembled from, every one on this version
-# line and every one published beside it (ADR-0023 §6): `cargo install delvec`
-# must build the same surface the release archive carries. Dependency order —
-# the order `cargo publish` uploads them in. The compiler library keeps its
-# library-target name `delvewright_compiler`, which every `use` path spells.
-# Consumed by: validation/check-versions.sh (every manifest under crates/ is
-# either here, `delvec`, or the DSL crate — a new crate is a decision),
-# tools/check-publishable.sh, tools/crates-io-publish.sh.
+# What crates.io publishes: exactly these two, in dependency order — the order
+# `cargo publish` uploads them in — and never a third (ADR-0025). `cargo install
+# delvec` resolves its dependencies on crates.io, so every crate the binary is
+# assembled from must be public; the engine is therefore one package, and a
+# feature adds a module or a subcommand, never a crate. The two entries restate
+# `dsl_crate` and `crate` in publish order; validation/check-versions.sh holds
+# the three equal, and equal to the workspace's members, both ways.
+# Consumed by: validation/check-versions.sh, tools/check-publishable.sh,
+# tools/crates-io-publish.sh, .github/workflows/engine-release.yml.
 crates = [
-    "delvewright-compiler",
-    "delvewright-schem",
-    "delvewright-grammar",
-    "delvewright-orchestrator",
-    "delvewright-admit",
-    "delvewright-render",
+    "delvewright-dsl",
+    "delvec",
 ]
 
-# `delvewright-dsl` is a real dependency of every engine crate, so it must exist
-# on crates.io first — and it is NOT on the engine version line.
+# `delvewright-dsl` is a real dependency of the engine, so it must exist on
+# crates.io first — and it is NOT on the engine version line.
 # The DSL crate's version IS the `dsl_version`: the crate defines the format, so its package number is the format's number — a format change bumps the minor, a Rust-API-only change bumps the patch, documents declare the full number and `delvec fmt` writes the current one.
 # Bound both ways by validation/check-versions.sh: to the crate manifest, and to
 # `DSL_VERSION` in crates/dsl/src/envelope.rs.
 dsl_crate = "delvewright-dsl"
-dsl_crate_version = "0.21.0"
+dsl_crate_version = "0.21.1"
 
-# The engine crates' `delvewright-dsl` requirement (`[workspace.dependencies]`)
+# The engine's `delvewright-dsl` requirement (`[workspace.dependencies]`)
 # is `=` and exactly this version, so one engine version on crates.io resolves
 # to exactly one `delvewright-dsl` build and no other.
-dsl_crate_req = "=0.21.0"
+dsl_crate_req = "=0.21.1"
 
 # `rust-version` in both published manifests, and the channel in
 # rust-toolchain.toml. They must be the same string: a `rust-version` looser than
@@ -267,7 +265,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # touches is an input the compiler is handed through `--prefabs`.
 #
 # `DW0735` says a state that omits a shape-carrying property drops the geometry
-# the property assembles; the library sweep (`crates/admit/tests/library.rs`)
+# the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
 sha = "a8c3f98831735aa370908a43d37db85d09fae25c"
@@ -283,7 +281,7 @@ sha = "a8c3f98831735aa370908a43d37db85d09fae25c"
 # `schematic-mesher` (its `animation::glb` names exports 0.2.0 lacks); 0.10.14
 # is the newest that builds and passes the render crate's whole test suite,
 # the GPU tests included. MIT.
-# Consumed by: crates/render/Cargo.toml (`nucleation = { version = "=…" }`).
+# Consumed by: crates/delvec/Cargo.toml (`nucleation = { version = "=…" }`).
 nucleation_version = "0.10.14"
 nucleation_license = "MIT"
 
@@ -293,7 +291,7 @@ nucleation_license = "MIT"
 # 1.21.x needs a snapshot core (stable stops at 1.20.4); this is the snapshot the
 # spike verified. `java -jar ChunkyLauncher.jar --update snapshot` self-installs
 # it into ~/.chunky/lib.
-# Consumed by: crates/compiler (scene emission targets this scene format) +
+# Consumed by: crates/delvec/src/compiler (scene emission targets this scene format) +
 # README + docs/reference/tools.md §4a.
 chunky_core = "chunky-core-2.5.0-SNAPSHOT.474.g156e2bb"
 chunky_update_url = "https://chunkyupdate.lemaik.de"
@@ -303,7 +301,7 @@ chunky_license = "GPL-3.0"
 # deepslate (MIT) — the rendering core of the prefab review page
 # (`delvec viewer`, ADR-0021 §4). Unlike Chunky it IS bundled: the page is
 # one self-contained file, so the renderer ships inside it as
-# `crates/compiler/src/view/viewer/deepslate.bundle.js`. Vendored, never forked — the
+# `crates/delvec/src/compiler/view/viewer/deepslate.bundle.js`. Vendored, never forked — the
 # bundle carries one local patch, of two block-entity texture ids upstream points
 # at paths no Minecraft version ships.
 #
@@ -312,10 +310,10 @@ chunky_license = "GPL-3.0"
 # version without updating this file, is a red. Rebuild with
 # `tools/build-deepslate-bundle.sh` (which pins the same versions) and update the
 # digest in the same commit.
-# Consumed by: tools/build-deepslate-bundle.sh + crates/compiler/src/view/viewer/.
+# Consumed by: tools/build-deepslate-bundle.sh + crates/delvec/src/compiler/view/viewer/.
 deepslate_version = "0.26.0"
 deepslate_license = "MIT"
-deepslate_bundle = "crates/compiler/src/view/viewer/deepslate.bundle.js"
+deepslate_bundle = "crates/delvec/src/compiler/view/viewer/deepslate.bundle.js"
 deepslate_bundle_sha256 = "0d9496f187600b479bb83d015e49eccbf70997c5886f0c70b101ca4595bb2c46"
 gl_matrix_version = "3.4.4"
 esbuild_version = "0.28.2"

@@ -19,7 +19,7 @@ relation to each other, so a number taken from one says nothing about the other.
 
 ## 0. Which back end
 
-**The box-split grammar back end** (`crates/grammar`, spec-0027). It is the
+**The box-split grammar back end** (`crates/delvec/src/grammar`, spec-0027). It is the
 default and this procedure is written for it.
 
 When the scene is not a grammar scene, the route is decided by this table —
@@ -612,13 +612,13 @@ Each of these was established by running it, except the two marked otherwise:
     valley at every re-entrant corner and both ridges at one height, at any
     size (idiom 3).
 
-  *Read from `crates/grammar/src/orient.rs`, and the exceptions are demonstrated
+  *Read from `crates/delvec/src/grammar/orient.rs`, and the exceptions are demonstrated
   by `idiom-shape` and `idiom-mirror`.*
 - **No terrain** — no noise, no heightfield; height variation comes from splits
   and recursion. *Same source.*
 - **No craft gate.** spec-0027 §4's palette-role budget, gradient and depth rules
   are still not built, and what blocks them is named in
-  `crates/grammar/src/gates.rs`: the budget is defined per *material family* and
+  `crates/delvec/src/grammar/gates.rs`: the budget is defined per *material family* and
   nothing here can decide what family a block is in. Until it exists, monoculture
   and flatness are caught by looking (§5), not by the machine.
 
@@ -799,7 +799,7 @@ reader uses that type; nothing declares a local copy of the shape.
 
 It lives in the DSL crate because `delvec` is published to crates.io and may only
 depend on published crates, so that is the one crate every reader can reach.
-`delvewright_schem::prefab` re-exports it under the path the asset-pipeline tools
+`delvec::schem::prefab` re-exports it under the path the asset-pipeline tools
 use.
 
 ### Fields
@@ -911,7 +911,7 @@ licensed to replace an anchor whole, which deletes the `dispenser` cell and
 `trigger_block` a trap's hardware lives on, the `resolves_to` the exporter
 derived from the piece's own contract, and any anchor key the tool does not
 model — none of which the operator typed and all of which is the anchor's.
-`crates/admit/tests/metadata_preservation.rs` holds every step to the paths it
+`crates/delvec/tests/prefab_metadata_preservation.rs` holds every step to the paths it
 declares, on a real export carrying each field at risk, and refuses to classify
 a subcommand it has never been told about.
 
@@ -953,7 +953,7 @@ edit.
 | `delvec prefab` | the whole document, read-modify-write |
 | `delvec grammar` | writes it (single template) and the tile-set manifest (several) |
 | `delvec render` | a narrow view — `anchors`, `connectors`, `lighting` — built from the document's own leaf types, because it must also read a tile-set manifest, which names `structure_set` instead of `structure` |
-| `delvewright_schem::split` | one key, `structure_set`, to tell the two shapes apart |
+| `delvec::schem::split` | one key, `structure_set`, to tell the two shapes apart |
 | `prefabs/*-generator` | write it, serialize-only (separate Cargo workspaces; they never read a prefab back) |
 
 ## 10. Hand-written Rust generators

@@ -17,10 +17,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{RawCampaign, parse_campaign};
 
 /// Vanilla's night-vision wind-down, in seconds (`GameRenderer` ramps below
@@ -36,7 +36,7 @@ fn read(dir: &std::path::Path, name: &str) -> String {
 fn world_with_mitigation() -> String {
     let w = read(&common::hello_world_dir(), "world.json");
     let mut v: serde_json::Value = serde_json::from_str(&w).unwrap();
-    v["dsl_version"] = serde_json::json!("0.21.0");
+    v["dsl_version"] = serde_json::json!("0.21.1");
     v["content"]["areas"][0]["mitigation"] = serde_json::json!("night-vision");
     serde_json::to_string(&v).unwrap()
 }

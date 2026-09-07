@@ -870,7 +870,7 @@ pub fn near_anchor(anchors: &[(&'static str, AnchorJson)], x: i32, z: i32, rad: 
 }
 
 /// Whether a cell is PASSABLE to a walker under the current nav model
-/// (`crates/compiler/src/assembled.rs`): air, or one of the blocks the model
+/// (`crates/delvec/src/compiler/assembled.rs`): air, or one of the blocks the model
 /// deliberately leaves walk-through — the trap triggers (so nav can route a
 /// player ONTO a plate; load-bearing for `DW0342`) and sub-half-block decoration.
 /// Everything else, including stairs and every unlisted block, is a full cube.
@@ -889,7 +889,7 @@ pub fn passable(g: &Grid, c: [i32; 3]) -> bool {
 }
 
 /// Every declared route cell must be standable under the CURRENT nav model
-/// (`crates/compiler/src/nav.rs`): the feet cell and the cell above are passable,
+/// (`crates/delvec/src/compiler/nav.rs`): the feet cell and the cell above are passable,
 /// with a **solid** block directly below (water is never a floor).
 pub fn standable(g: &Grid, c: [i32; 3]) -> bool {
     g.inb(c[0], c[1], c[2])

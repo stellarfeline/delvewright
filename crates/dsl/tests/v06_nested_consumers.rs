@@ -3,7 +3,7 @@
 //! (`DW0143`) or unknown-block (`DW0193`) reference nested inside a `sequence` step
 //! (or a lifecycle bundle) is caught by the deep consumer scan, not shipped
 //! unvalidated. The compiler-side sound (`DW0326`) / art-glyph (`DW0328`) halves are
-//! in `crates/compiler/tests/v06.rs` (they run in the compiler's validate stage).
+//! in `crates/delvec/tests/v06.rs` (they run in the compiler's validate stage).
 
 mod common;
 
@@ -14,7 +14,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 fn quests_with_sequence(seq_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
