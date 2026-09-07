@@ -3567,10 +3567,14 @@ verifies this catalog is bidirectionally exact against source (CI docs job).
 **Test-coverage gated** (CLAUDE.md Conventions). The same
 script also fails CI if any documented, landed code has no test asserting it —
 either the literal code string or a symbolic diagnostic-code constant (e.g.
-`DW_STRIP`) that resolves to it, scoped per crate to avoid cross-crate name
-collisions (`DW_INPUT` names a different code in `delvec schem`, `delvec render`,
-and `delvec prefab`) — appearing in `crates/<crate>/tests/**/*.rs` or a
-`#[cfg(test)]` module in `crates/<crate>/src/**/*.rs`. A code that is
+`DW_STRIP`) that resolves to it — resolved per module, the way the compiler
+resolves it: through the `use` line that imports it, a `use super::*` of the
+module that declares it, or a qualified path, with `pub use` re-exports
+followed, because modules of the one engine crate reuse a constant name for
+different codes (`DW_INPUT` names a different code in `delvec::schem::diag`,
+`delvec::compiler::view::diag` and `delvec::admit::diag`) — appearing in
+`crates/<crate>/tests/**/*.rs` or a `#[cfg(test)]` module in
+`crates/<crate>/src/**/*.rs`. A code that is
 genuinely unreachable without external resources (e.g. `DW0720`, which needs a
 GPU adapter + the never-committed 1.21.11 client jar) may be declared in the
 script's `ALLOWLIST` with a one-line justification — kept minimal; writing the
