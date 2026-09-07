@@ -349,7 +349,7 @@ fn critical_path_shape_and_commands() {
     let cp: serde_json::Value =
         serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
 
-    assert_eq!(cp["version"], "0.21.1");
+    assert_eq!(cp["version"], "0.21.2");
     assert_eq!(cp["campaign_id"], "hello-world");
     let steps = cp["steps"].as_array().unwrap();
     assert_eq!(steps.len(), 4);
@@ -537,7 +537,7 @@ fn completion_marker_channel_is_anchored_and_per_objective() {
         cp["format_version"],
         delvec::compiler::plan::CRITICAL_PATH_FORMAT_VERSION
     );
-    assert_eq!(cp["version"], "0.21.1");
+    assert_eq!(cp["version"], "0.21.2");
 
     let steps = cp["steps"].as_array().unwrap();
     // Every objective-bearing step names its objective; the framing steps do not.
@@ -607,7 +607,7 @@ fn critical_path_waypoints_artifact_shape() {
     )
     .unwrap();
 
-    assert_eq!(wp["version"], "0.21.1");
+    assert_eq!(wp["version"], "0.21.2");
     assert_eq!(wp["campaign_id"], "hello-world");
     let legs = wp["legs"].as_array().expect("legs is an array");
     assert!(!legs.is_empty(), "hello-world has at least one walked leg");

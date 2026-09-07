@@ -15,8 +15,8 @@ Methodology; CI enforces the DW-code subset — see `tools/check-dw-codes.py`).
   `delvec prefab`, `delvec grammar`, `delvec render`, `delvec harvest` — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.3.0`, `dsl 0.21.1`, `mc 1.21.11`.
-  `dsl 0.21.1` is the **one** `dsl_version` this engine accepts (ADR-0024): every
+- Versions (as of this doc): `delvec 1.3.0`, `dsl 0.21.2`, `mc 1.21.11`.
+  `dsl 0.21.2` is the **one** `dsl_version` this engine accepts (ADR-0024): every
   stage document, map-pipeline document and l10n sidecar declares it, and any
   other number is refused at the envelope with `DW0102`, which names it. The
   number says which surface a document was written against and promises
@@ -3750,7 +3750,7 @@ to a list of codes.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.21.1`; the message names it (ADR-0024). Raised per stage document by `dsl::validate::envelope`, and for an l10n sidecar under `DW0180`. |
+| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.21.2`; the message names it (ADR-0024). Raised per stage document by `dsl::validate::envelope`, and for an l10n sidecar under `DW0180`. |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). **The message names the form of the type it rejected**, derived from that id type's own `PREFIX` — `` `dlg/<kebab>` `` for a dialogue node, `` `class/<kebab>` `` for a class — rather than restating the general rule beside three fixed examples. One macro in `dsl::validate::syntax` is the single path every id type's syntax refusal goes through, so the answer comes from the type at every site: `ids::syntax_form`. The per-section refusals that spell their own prefix by hand (`wave/`, `trigger/`, `trap/`, `shortcut/`, `ambush/`, `timed-gate/`, `loot/`) are the same fact copied, which is why the general path did not have it. |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |

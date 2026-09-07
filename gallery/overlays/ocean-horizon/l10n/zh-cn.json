@@ -116,7 +116,7 @@
     "world.outro": "厅中每一只展柜都已读过。",
     "world.title": "陈列厅"
   },
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "kind": "l10n",
   "lang": "zh-cn"
 }

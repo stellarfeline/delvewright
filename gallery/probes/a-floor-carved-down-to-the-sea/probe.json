@@ -1,28 +1,48 @@
 {
   "code": "DW0344",
   "patch": [
-    { "doc": "world.json", "op": "add", "path": "/content/horizon", "value": "ocean" },
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/horizon",
+      "value": "ocean"
+    },
     {
       "doc": "world-edits.json",
       "op": "add",
       "path": "/content/batches/-",
       "value": {
-        "id": "batch/sink-the-floor",
         "area": "area/hall",
-        "note": "One course of the hall's plinth, taken out after the piece is placed.",
         "edits": [
           {
-            "verb": "select",
             "name": "region/sink",
             "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/gallery-hall" },
-              "min": [12, 2, 12],
-              "max": [14, 2, 14]
-            }
+              "max": [
+                14,
+                2,
+                14
+              ],
+              "min": [
+                12,
+                2,
+                12
+              ]
+            },
+            "verb": "select"
           },
-          { "verb": "carve", "region": "region/sink" }
-        ]
+          {
+            "region": "region/sink",
+            "verb": "carve"
+          }
+        ],
+        "id": "batch/sink-the-floor",
+        "note": "One course of the hall's plinth, taken out after the piece is placed."
       }
     }
   ],

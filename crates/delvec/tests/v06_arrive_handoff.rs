@@ -57,7 +57,7 @@ fn npcs_deferred() -> String {
 fn quests_doc(on_arrive: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

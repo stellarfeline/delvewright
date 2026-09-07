@@ -61,7 +61,7 @@ const FORCED_CLEAR: &str = r#", { "type": "clear-region",
 fn quests_doc(forced_extra: &str, traps: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
