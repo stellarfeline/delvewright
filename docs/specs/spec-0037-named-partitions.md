@@ -201,9 +201,10 @@ added. Probes are in §5.
 
 ## 5. The probes — every red and green, reproducible
 
-Programs in `docs/specs/spec-0037-probes/`; run with `delvec grammar` from
-this tree. All expansions seed 1; all programs deterministic (guard-only),
-so the seed is recorded, not load-bearing.
+Programs in `crates/delvec/tests/fixtures/named-partition-probes/`; run with
+`delvec grammar` from this tree. Nothing runs them automatically. All expansions
+seed 1; all programs deterministic (guard-only), so the seed is recorded, not
+load-bearing.
 
 | # | Program | Region | Measured |
 |---|---|---|---|

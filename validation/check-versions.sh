@@ -19,7 +19,6 @@ TOOL_DF="$ROOT/validation/Dockerfile.toolserver"
 COMPOSE="$ROOT/validation/compose.yaml"
 HARNESS_PKG="$ROOT/harness/package.json"
 CI_WF="$ROOT/.github/workflows/ci.yml"
-RELEASE_WF="$ROOT/.github/workflows/release.yml"
 ENGINE_RELEASE_WF="$ROOT/.github/workflows/engine-release.yml"
 SKIN_REQ="$ROOT/tools/skin/requirements.txt"
 SKIN_PYPROJECT="$ROOT/tools/skin/pyproject.toml"
@@ -466,9 +465,8 @@ all_stated() { # <label> <extended-regex> <expected-literal> <expected-count> <f
 }
 
 echo "== CI toolchain ([ci], [skin]) =="
-# Node runtime for the harness and the storybook jobs.
+# Node runtime for the harness job and for the `rust` job's node --test suites.
 all_stated "node -> ci.yml"      'node-version: *"[^"]*"' "node-version: \"$NODE_VERSION\"" 2 "$CI_WF"
-all_stated "node -> release.yml" 'node-version: *"[^"]*"' "node-version: \"$NODE_VERSION\"" 3 "$RELEASE_WF"
 
 # Python is the one value in this section that is NOT one value: two interpreter
 # lines, for two disjoint dependency sets. So the binding is over the whole set —

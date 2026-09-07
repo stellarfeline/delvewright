@@ -1,0 +1,21 @@
+# The `uses:` steps below are LOCAL action paths on purpose: an `owner/repo@ref`
+# anywhere in this tree is a pin the registry must hold (`tools/check-pins.py`),
+# and a fixture is not a place this repository fetches anything from.
+name: fixture — the environment is a mapping, and the run has a prelude
+on: { push: { branches: [main] } }
+jobs:
+  publish:
+    name: publish (owner approval)
+    runs-on: ubuntu-latest
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/delvec
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: the gate actually bound
+        run: |
+          set -euo pipefail
+          # Shell options and comments may lead; nothing else may.
+          bash tools/assert-run-approved.sh crates-io
+      - name: the irreversible act
+        run: bash tools/does-the-thing.sh
