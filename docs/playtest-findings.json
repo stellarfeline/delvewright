@@ -2371,6 +2371,30 @@
       "note": "Reproduced before repair: with the engine at 0.21.0 and the gallery's 34 documents bumped with it, `delvec build site-plan` exited 1 at DW0841 and tools/gallery-build.py refused, so no committed act could produce the tree a re-walk needs. Denominator: one walk-record.json per walked campaign, and 3 of 3 records in this tree (the site-plan overlay and the two probes that carry one) were re-keyed by the instrument with their verdicts unchanged.",
       "round": null,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "campaign": "gallery",
+      "carrier": {
+        "code": "DW0886",
+        "kind": "dw"
+      },
+      "finding": "a campaign that seats the shipped cave, keep or island pools cannot be built on any horizon base the engine declares, because the three horizon diagnostics each name a remedy another one refuses: under `ocean` DW0344 refuses a piece whose box reaches the sea plane with no declared waterline and names `void`; under `void` DW0885 refuses an outward face standing in the air the party walks in and names `valley`; under `valley` DW0855 refuses a surround with no declared region and names a site plan, which DW0839 then refuses because the campaign already places with `areas[]`; and DW0344's own second remedy, raising the piece clear of the sea, is unreachable because the check reads the placement box minimum, which is the area origin whatever the piece's bytes hold",
+      "general_form": "a horizon and a piece set are a pair, and the pairing is refused before any piece is placed (DW0886, validation tier), stating per pool which members can be seated on the declared base and why; every remedy a horizon diagnostic names is reachable from the state that names it, with a test that builds the campaign each move produces and asserts it reaches a different verdict; and a declared waterline is a claim about the piece's bytes that the engine reads (DW0887) rather than a field the placement arithmetic trusts",
+      "id": "gal-02",
+      "note": "Reproduced before writing, on engine c2a90ac2 with a --release delvec, over the gallery primary campaign with one added `areas[]` element seating each pool and prefabs = the prefabs/gallery-generator output merged with campaigns/prefabs. Denominator: 4 pools of the 4 in campaigns/prefabs/pools.json against 3 bases of the 3 `delvec schema --stage world` exports, 12 of 12 cells built, 2 green (stone-keep and vertical-keep on `void`); cave-shore reds DW0885 on `void` and island reds DW0318 on `void` and DW0885 on `ocean`. The waterline half was measured twice by instruments sharing no configuration (a standalone NBT reader and `delvec palette`): 36 prefab documents, 5 declaring `waterline_y`, 2 of those 5 borne out by a water block at the declared plane. The binding probe was run with this gate's own `probe()` and is non-zero on every campaign that seats pieces through `areas[]` — 3 on the reproduction carrier, 2 on the gallery's ocean point, 2 on nobodys-cave-island, 1 on hollow-vigil, and a self-measuring 0 on the site-plan point, which places no area at all. The general form is spec-0060; DW0886 is allocated there and does not exist in this engine, so this row is MISSING-CHECK until it lands.",
+      "round": null,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

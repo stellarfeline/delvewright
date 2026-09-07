@@ -16,8 +16,8 @@
   horizon) and **DW0887** (a declared waterline that is not in the piece's
   bytes) are allocated to this spec. Both were verified free across all 83
   remote refs at writing, as was the number 0060.
-- **Adopts**: spec-0026 §2 (the per-area datum) by citation, and re-decides
-  the two numbers that section left provisional — see §9.
+- **Adopts**: spec-0026 §2 (the per-area datum) by citation, and re-allocates
+  the codes that section left provisional — see §9.
 - **Non-goals**: the three horizon bases spec-0026 proposes and nobody has
   built (`sky`, `flatland`, `summit`); any content work in the content
   repository (§8 names it and stops); the surround generator; the boundary
@@ -28,9 +28,10 @@
 Every rule in this section is **cited** — from the engine at `c2a90ac2`, by
 running it.
 
-A campaign that seats the shipped cave library, and a campaign that seats the
-shipped keep library, cannot be built on the horizon they were authored for,
-and the refusals form a cycle:
+A campaign that seats the shipped cave library, or the shipped island library,
+cannot be built on **any** base the engine declares; a campaign that seats
+either keep library builds on `void` alone, and on nothing else. The refusals
+form a cycle, and each one names as its remedy a base the next refuses:
 
 - `horizon: ocean` → **DW0344** (exit 3): *"its box reaches down to y=60 — at
   or below this world's sea plane (y=62) — and its prefab metadata declares no
@@ -86,7 +87,7 @@ Two readings of that table are wrong and are recorded so they are not made:
   off the edge forever. An island piece **belongs** to an ocean. That is the
   whole subject of this spec stated by a diagnostic.
 
-### 1.2 One of the moves cannot be taken
+### 1.2 One of the moves cannot be taken, and the reason is the quantifier
 
 DW0344's second move tells the author to *"RAISE the piece clear of the sea,
 so its box starts above y=62 … a piece whose lower courses are solid plinth up
@@ -97,6 +98,15 @@ every piece in the world whatever its bytes contain. No plinth moves it. The
 move is unreachable as written, and the gallery's own ocean point does not take
 it: its four pieces satisfy DW0344 by move (1), declaring a waterline that is
 true, and its build reports `waterline binding: 4 of 4`.
+
+The box is a proxy, and it is the wrong one. What makes a delve wrong is a
+**walk cell** under the sea — a party wading its critical path — and that is
+the rule spec-0026 §2 wrote (*"any walk cell at or below flood level"*). A
+piece's box reaches under the sea whenever its lowest course does, which is
+every piece that has a floor; under the per-area datum of §3 it is every piece
+in every ocean world, including the ones standing perfectly dry. So the second
+arm of DW0344 over-refuses by construction, and no amount of authoring answers
+it. §5 moves the quantifier onto the cells the rule is about.
 
 ### 1.3 Three of the five declarations are fictions
 
@@ -276,8 +286,10 @@ Raised once per (area, pool) pair that cannot be seated on the declared base,
 with the reason per member. Its shapes:
 
 - a member declares no `walk_y` (any base);
-- the base is `ocean` and a member neither declares a true `waterline_y` nor
-  can be seated with its whole box clear of the sea plane;
+- the base is `ocean` and a member's declared `walk_y` would put one of its own
+  walk cells at or below the sea plane — the piece would be seated wading;
+- the base is `ocean` and a member authors water in the sea's plane and
+  declares no `waterline_y`, so nothing states where it meets the sea;
 - the base is `void` and a member authors fluid that would run off an
   unburied face (the static form of DW0318's finding);
 - the base builds terrain and the campaign states no `region` — the case
@@ -291,9 +303,18 @@ whole library, from one shared implementation. It is a property of the prefab
 document and its `.nbt`, so it binds wherever those two are read together and
 in no other way.
 
-The three build-tier checks are unchanged. DW0344, DW0885 and DW0318 keep
-judging the assembled world, because the assembled world is what they read;
-DW0886 exists so that a creator never reaches them by a road that has no exit.
+**DW0344 keeps its number and moves its quantifier.** Its first arm is
+unchanged: a piece that declares a waterline lands with that waterline on the
+sea plane. Its second arm stops asking whether the placement **box** reaches
+the sea (§1.2, an over-refusal no author can answer) and asks the question
+spec-0026 §2 wrote: is any **walk cell** of this placed piece at or below the
+sea plane. That is a fact about the assembled world, so it stays at build tier,
+where it is the backstop for whatever DW0886 could not know from the documents
+alone — a piece the campaign edits after placement, above all.
+
+DW0885 and DW0318 are unchanged. All three keep judging the assembled world,
+because the assembled world is what they read; DW0886 exists so that a creator
+never reaches them by a road that has no exit.
 
 **Every remedy each of the four names becomes reachable**, and that is a
 check, not a promise — §10.3.
@@ -400,11 +421,12 @@ reader who lands there is not left with two documents deciding one thing.
 Its provisional numbers are **not** taken: spec-0026 wrote *"Provisional codes
 DW0364–DW0368; numbers may shift at implementation"*, and DW0364..DW0368 are
 long since allocated elsewhere. DW0367's rule (a piece with no `walk_y` on a
-non-void horizon) becomes a shape of DW0886. DW0364's rule (a walk cell at or
-below the flood level, with no exemption for pieces that declare no
-waterline) is what DW0344's second arm already implements at `c2a90ac2`; it
-keeps DW0344's number and gains DW0887 beside it for the half nobody built —
-that the declaration is true.
+non-void horizon) becomes a shape of DW0886. DW0364's rule — a walk cell at or
+below the flood level, with no exemption for a piece that declares no
+waterline — becomes DW0344's second arm, which today asks the coarser
+box question (§1.2) and is corrected under this spec's number rather than
+gaining one; and DW0887 stands beside it for the half nobody built, that the
+declaration is true.
 
 ## 10. Acceptance criteria
 
