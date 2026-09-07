@@ -21,9 +21,9 @@ use crate::grammar::block::BlockState;
 use crate::grammar::geom::Box3;
 use crate::grammar::model::VoxelModel;
 use crate::grammar::settle;
-use delvewright_schem::fluid;
-use delvewright_schem::split::TilePart;
-use delvewright_schem::stairs;
+use crate::schem::fluid;
+use crate::schem::split::TilePart;
+use crate::schem::stairs;
 
 use crate::admit::diag::Diagnostic;
 use crate::admit::structure::Structure;

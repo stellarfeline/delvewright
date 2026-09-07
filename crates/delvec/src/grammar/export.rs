@@ -9,7 +9,7 @@
 //! metadata are the ones that produced the bytes beside it, because there was no
 //! opportunity for them to be anything else.
 //!
-//! The `.nbt` bytes come from [`delvewright_schem::convert::build_region`], the
+//! The `.nbt` bytes come from [`delvec::schem::convert::build_region`], the
 //! same emitter the `.schem` asset pipeline uses, so a grammar prefab and a
 //! hand-built one are byte-shaped identically: sorted palette, `x`→`y`→`z` block
 //! order, gzip with a pinned mtime (ADR-0006).
@@ -32,7 +32,7 @@
 //!
 //! The cut positions are not this module's invention. `delvec schem` has tiled
 //! oversize `.schem` imports since spec-0007, so
-//! [`delvewright_schem::split::plan_split`] is *the* tiling of this project, and
+//! [`delvec::schem::split::plan_split`] is *the* tiling of this project, and
 //! grammar export calls it. Two paths that tile the same volume the same way
 //! need one reassembler, not two.
 //!
@@ -56,12 +56,12 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-use delvewright_schem::convert::{self, DATA_VERSION};
-use delvewright_schem::schematic::{BlockState as SchemBlockState, ParsedSchematic};
+use crate::schem::convert::{self, DATA_VERSION};
+use crate::schem::schematic::{BlockState as SchemBlockState, ParsedSchematic};
 /// The tiling contract, defined once in the crate that owns tiling and re-exported
 /// here so a manifest writer and a manifest reader can never drift apart.
-pub use delvewright_schem::split::{TilePart, TileSet};
-use delvewright_schem::split::{part_filename, plan_split};
+pub use crate::schem::split::{TilePart, TileSet};
+use crate::schem::split::{part_filename, plan_split};
 
 use crate::grammar::expand::{ExpandError, ExpandOptions, Expansion, Overrides, expand};
 use crate::grammar::geom::Box3;
@@ -79,7 +79,7 @@ pub const GENERATOR: &str = "crates/delvec/src/grammar";
 /// measurement, and declaring nothing would be indistinguishable from legacy
 /// metadata that predates the field — so the export declares `unmeasured`, which
 /// is the true statement, and admission to a campaign still runs the probe.
-pub const LIGHTING_PROFILE: &str = delvewright_schem::prefab::UNMEASURED;
+pub const LIGHTING_PROFILE: &str = crate::schem::prefab::UNMEASURED;
 
 /// Vanilla caps a structure template at 48 blocks per axis.
 ///
@@ -119,14 +119,14 @@ pub fn program_hash(program: &Program) -> String {
 // Metadata
 // ---------------------------------------------------------------------------
 
-// The metadata document's shape is `delvewright_schem::prefab` — the crate that
+// The metadata document's shape is `crate::schem::prefab` — the crate that
 // also writes the `.nbt` half of the pair. This module produces the document; it
 // does not define it. A private definition here would mean the admission tools
 // that read the file back parse it through a *different* type, and a type that
 // models fewer fields deletes the rest the first time it writes: that is exactly
 // how `license.generated_by` — the ADR-0006 row this whole module exists to emit
 // — got dropped by the next documented step in the procedure.
-pub use delvewright_schem::prefab::{
+pub use crate::schem::prefab::{
     Anchor as AnchorMetadata, AnchorRole, Connector, ContractBar, ContractEdge, ContractFace,
     ContractNoBody, ContractSpace, ContractVolume, ContractWay, GeneratedBy,
     License as LicenseMetadata, Lighting as LightingMetadata, PrefabMeta as PrefabMetadata,
@@ -335,14 +335,14 @@ pub enum ExportError {
         gates: Vec<String>,
     },
     /// The model contains block states omitting shape-carrying (multipart)
-    /// properties (`DW0735`, `delvewright_schem::blocks::DW_SHAPE_OMITTED`).
+    /// properties (`DW0735`, `delvec::schem::blocks::DW_SHAPE_OMITTED`).
     ShapeOmissions {
         /// One line per offending block state, with the cells it covers.
         reasons: Vec<String>,
     },
     /// The expansion filled orientation-sensitive block states into scopes
     /// whose frame turns or reflects them, with no `orientation` guard
-    /// (`DW0736`, `delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED`).
+    /// (`DW0736`, `delvec::schem::blocks::DW_ORIENTED_FILL_UNGUARDED`).
     UnguardedOrientedFills {
         /// One line per finding.
         reasons: Vec<String>,
@@ -380,7 +380,7 @@ impl fmt::Display for ExportError {
             ExportError::UnknownBlocks { reasons } => write!(
                 f,
                 "the expanded model paints block states Minecraft {} does not have: {}",
-                delvewright_schem::blocks::MC_VERSION,
+                crate::schem::blocks::MC_VERSION,
                 reasons.join("; ")
             ),
             ExportError::Contract { gates } => write!(
@@ -396,7 +396,7 @@ impl fmt::Display for ExportError {
                 "{}: the expanded model paints block states that omit shape-carrying \
                  (multipart) properties, which place disconnected — a wall with no \
                  connection state written is an isolated post: {}",
-                delvewright_schem::blocks::DW_SHAPE_OMITTED,
+                crate::schem::blocks::DW_SHAPE_OMITTED,
                 reasons.join("; ")
             ),
             ExportError::UnguardedOrientedFills { reasons } => write!(
@@ -406,7 +406,7 @@ impl fmt::Display for ExportError {
                  literal facing/axis/connections land however the scope was framed: {}. \
                  Write one alternative per frame, each guarded with the `orientation` \
                  cond and carrying the matching state",
-                delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED,
+                crate::schem::blocks::DW_ORIENTED_FILL_UNGUARDED,
                 reasons.join("; ")
             ),
         }
@@ -953,7 +953,7 @@ fn refuse_unknown_states(model: &VoxelModel, palette: &ZonePalette) -> Result<()
         cells_per_state[palette.index_of[&state.to_string()] as usize] += 1;
     }
 
-    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
     let unknown: Vec<String> = palette
         .states
         .iter()

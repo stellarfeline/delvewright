@@ -6,9 +6,9 @@
 //!
 //! - a stair's `shape`, which vanilla recomputes from the stair's neighbours on
 //!   every horizontal block update at that cell
-//!   ([`delvewright_schem::stairs`]);
+//!   ([`delvec::schem::stairs`]);
 //! - a body of fluid, which runs the moment the chunk ticks
-//!   ([`delvewright_schem::fluid`]).
+//!   ([`delvec::schem::fluid`]).
 //!
 //! Both fail in the same, worst way. Nothing upstream of the server disagrees:
 //! the `.nbt` carries the authored state, the review render draws it, the
@@ -27,9 +27,9 @@
 //! is, how wide a channel runs — is a claim about that zone's design and stays
 //! there.
 
-use delvewright_schem::blocks::BlockRegistry;
-use delvewright_schem::fluid::{self, Wetness};
-use delvewright_schem::stairs::{self, Facing, Half, Shape, Stair};
+use crate::schem::blocks::BlockRegistry;
+use crate::schem::fluid::{self, Wetness};
+use crate::schem::stairs::{self, Facing, Half, Shape, Stair};
 
 use crate::grammar::model::VoxelModel;
 
@@ -217,7 +217,7 @@ pub struct FluidAudit {
 ///   that heals no longer matches the bytes that built it).
 /// - **contained**: no source has an open cell beside or below it. Open means
 ///   air, and only air: a block written `waterlogged=false` is a wall, which is
-///   measured rather than assumed ([`delvewright_schem::fluid`]).
+///   measured rather than assumed ([`delvec::schem::fluid`]).
 ///
 /// Fluid never runs upward, so a body's open top is not a leak — an authored
 /// pool is a pool.

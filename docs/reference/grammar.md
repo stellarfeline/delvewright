@@ -1257,7 +1257,7 @@ its minimum region.
 
 Every block state the export writes is checked against the pinned 1.21.11
 block-state registry (`crates/dsl/data/blocks-1.21.11.json`, 1166 blocks,
-via `delvewright_schem::blocks`) — the id, every property name, and every
+via `delvec::schem::blocks`) — the id, every property name, and every
 property value. An unknown state is `ExportError::UnknownBlocks`, a refusal, with
 the cell count and a suggested rename.
 
@@ -3030,7 +3030,7 @@ A structure template is local-coordinate, so the region's **origin** does not
 reach the output; its **size** does, and is the declared `structure.size`.
 
 The metadata is the hand-built shape, minus what expansion cannot know. Its
-shape is defined once, in `delvewright_schem::prefab` — the crate that also
+shape is defined once, in `delvec::schem::prefab` — the crate that also
 writes the `.nbt` half — and every tool that produces or edits a prefab reads and
 writes it through that one type, so an admission step cannot drop the parts it
 does not itself model:
@@ -3153,7 +3153,7 @@ expansion produced all of it.
   blocks through `templates()` without asking which shape it was handed.
 - `offset` is **zone-relative**: add it to a tile-local cell to get the zone
   cell. That is the only transform reassembly needs.
-- The cuts come from `delvewright_schem::split::plan_split`, the same function
+- The cuts come from `delvec::schem::split::plan_split`, the same function
   that tiles an oversize `.schem` import — one tiling, so one reassembly rule
   reads both. They are a pure function of the region and the cap: no RNG, no
   clock, no dependence on the program, the seed or the blocks, so the tiles and
@@ -3162,7 +3162,7 @@ expansion produced all of it.
   whole expansion, the block-legality check runs over the whole model, and both
   the anchors and every diagnostic position are in zone coordinates. Binding
   counts stay zone-level.
-- `TileSet` (`delvewright_schem::split`) is the contract, `Serialize` for the
+- `TileSet` (`delvec::schem::split`) is the contract, `Serialize` for the
   writer and `Deserialize` for the readers — one struct, so the halves cannot
   drift. `TileSet::validate` refuses a manifest whose parts do not tile the zone
   exactly, so a truncated one is a refusal and not a building with a hole.

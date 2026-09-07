@@ -25,7 +25,7 @@ use crate::admit::settling;
 use crate::admit::socket::{self, SocketDecl};
 use crate::admit::spatial::Door;
 use crate::admit::structure::Structure;
-use delvewright_schem::split::{TilePart, TileSet, fragment_refusal, tile_evidence};
+use crate::schem::split::{TilePart, TileSet, fragment_refusal, tile_evidence};
 
 const EXIT_FAIL: u8 = 1;
 const EXIT_INPUT: u8 = 2;
@@ -207,7 +207,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
 /// a second copy of "open the files the manifest names and check they are the
 /// export it describes" is a second place for the two to disagree.
 fn read_zone(manifest: &Path) -> Result<(TileSet, Vec<(TilePart, Structure)>), String> {
-    let Some(set) = delvewright_schem::split::read_tile_set(manifest)? else {
+    let Some(set) = crate::schem::split::read_tile_set(manifest)? else {
         return Err(format!(
             "{} is a single-template prefab's metadata, not a tile-set manifest — pass the \
              `.nbt` beside it",

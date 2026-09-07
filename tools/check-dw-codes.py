@@ -397,7 +397,7 @@ def crate_test_scope_texts(crate: str) -> list[str]:
     return texts
 
 
-# `use delvewright_schem::diag::{DW_INPUT, Diagnostic};` / `use delvewright_dsl::DwCode;`
+# `use delvec::schem::diag::{DW_INPUT, Diagnostic};` / `use delvewright_dsl::DwCode;`
 # — the crate a test imports a symbol from, so the symbol resolves against THAT
 # crate's table rather than the test's own. The crate directory is the library
 # name minus its `delvewright_` prefix; `delvewright_compiler` is `crates/delvec/src/compiler`.

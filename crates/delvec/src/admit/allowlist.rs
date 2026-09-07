@@ -32,7 +32,7 @@
 
 use std::collections::BTreeSet;
 
-use delvewright_schem::blocks::{BlockRegistry, LoadedId};
+use crate::schem::blocks::{BlockRegistry, LoadedId};
 use serde::Deserialize;
 
 use crate::admit::structure::PaletteEntry;

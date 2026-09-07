@@ -2,7 +2,7 @@
 //! it.
 //!
 //! The document's shape is not defined here. It is
-//! [`delvewright_schem::prefab`], the crate that also writes the `.nbt` half of
+//! [`delvec::schem::prefab`], the crate that also writes the `.nbt` half of
 //! the pair, so an admitted external piece and a generated one are the same
 //! document produced by two tools — and, more to the point, so that an admission
 //! step that reads a prefab, edits one block of it and writes it back cannot
@@ -15,7 +15,7 @@
 //! [`crate::admit::light::LightProbe`] — a type the shared crate has no reason to know —
 //! into a `lighting` block.
 
-pub use delvewright_schem::prefab::{
+pub use crate::schem::prefab::{
     Anchor, AnchorEdit, AnchorRole, Connector, GeneratedBy, License, Lighting, LightingProfile,
     PieceTemplate, PrefabMeta, Region, StructureMeta,
 };

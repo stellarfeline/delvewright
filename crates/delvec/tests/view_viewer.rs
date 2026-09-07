@@ -293,19 +293,19 @@ fn an_unresolvable_blockstate_is_dw0790_with_its_cell_count() {
 /// wrong. A gate whose fixture is a live bug expires the moment the bug is
 /// fixed; this one cannot.
 ///
-/// The bytes come through `delvewright_schem::convert`, the same path an
+/// The bytes come through `delvec::schem::convert`, the same path an
 /// imported `.schem` takes, which carries a palette through unchanged — writing
 /// the connection properties here would destroy the fixture.
 fn under_specified_prefab(dir: &Path) -> PathBuf {
-    let schem = delvewright_schem::fixtures::build_v2(
+    let schem = delvec::schem::fixtures::build_v2(
         [3, 1, 1],
         &["minecraft:stone", "minecraft:iron_bars"],
         &|x, _, _| usize::from(x == 1),
         &[],
     );
-    let converted = delvewright_schem::convert(&schem, "under-specified", 48)
+    let converted = delvec::schem::convert(&schem, "under-specified", 48)
         .expect("the hand-built schematic parses");
-    let delvewright_schem::ConvertOutput::Single(bytes) = converted.output else {
+    let delvec::schem::ConvertOutput::Single(bytes) = converted.output else {
         panic!("a 3x1x1 fixture is under the tiling cap");
     };
     let path = dir.join("under-specified.nbt");
@@ -467,9 +467,9 @@ fn a_real_prefab_page_is_small() {
 /// building sliced at a packaging boundary passes and means nothing.
 #[test]
 fn a_tiled_zone_is_one_building_on_the_page() {
-    use delvewright_schem::convert::{self, DATA_VERSION};
-    use delvewright_schem::schematic::{BlockState, ParsedSchematic};
-    use delvewright_schem::split::{TilePart, TileSet};
+    use delvec::schem::convert::{self, DATA_VERSION};
+    use delvec::schem::schematic::{BlockState, ParsedSchematic};
+    use delvec::schem::split::{TilePart, TileSet};
 
     let dir = tmp("tiled");
     let zone = dir.join("zone");

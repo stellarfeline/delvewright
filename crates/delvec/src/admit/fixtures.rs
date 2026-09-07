@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use delvewright_schem::nbt::Nbt;
+use crate::schem::nbt::Nbt;
 
 use crate::admit::structure::{PaletteEntry, Structure, synth};
 

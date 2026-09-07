@@ -11,9 +11,9 @@ use delvec::compiler::view::meta::PrefabMeta;
 use delvec::compiler::view::tileset::{PieceInput, load_piece};
 use delvec::render::occupancy::Clearance;
 use delvec::render::shots;
-use delvewright_schem::convert::{self, DATA_VERSION};
-use delvewright_schem::schematic::{BlockState, ParsedSchematic};
-use delvewright_schem::split::{TilePart, TileSet};
+use delvec::schem::convert::{self, DATA_VERSION};
+use delvec::schem::schematic::{BlockState, ParsedSchematic};
+use delvec::schem::split::{TilePart, TileSet};
 
 /// The block at a zone cell, in the toy zone these tests tile: a pattern that
 /// varies on every axis, so a tile placed at the wrong offset (or with a

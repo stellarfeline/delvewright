@@ -27,10 +27,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_schem::blocks::{DW_SHAPE_OMITTED, DW_STATE_PRE_PIN, LoadedId, StateJudgement};
-use delvewright_schem::convert::{forbidden_nbt, strip_ns};
-use delvewright_schem::nbt::Nbt;
-use delvewright_schem::split::TilePart;
+use crate::schem::blocks::{DW_SHAPE_OMITTED, DW_STATE_PRE_PIN, LoadedId, StateJudgement};
+use crate::schem::convert::{forbidden_nbt, strip_ns};
+use crate::schem::nbt::Nbt;
+use crate::schem::split::TilePart;
 use serde::Serialize;
 
 // ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ impl FootprintVerdict {
 /// contract door's finding (`DW0783`) and not restated here — two diagnostics for
 /// one defect is what a second reader of the same absence produces.
 pub fn footprint_class(meta_path: &std::path::Path) -> FootprintVerdict {
-    let Ok(Some(meta)) = delvewright_schem::prefab::PrefabMeta::read(meta_path) else {
+    let Ok(Some(meta)) = crate::schem::prefab::PrefabMeta::read(meta_path) else {
         return FootprintVerdict {
             finding: None,
             declared: 0,
@@ -93,7 +93,7 @@ pub fn footprint_class(meta_path: &std::path::Path) -> FootprintVerdict {
         };
     }
     let mut reads = delvewright_dsl::metrics::Reads::new();
-    let finding = delvewright_schem::prefab::check_footprint_class(
+    let finding = crate::schem::prefab::check_footprint_class(
         &meta,
         "prefabs",
         &meta_path.display().to_string(),
@@ -108,7 +108,7 @@ pub fn footprint_class(meta_path: &std::path::Path) -> FootprintVerdict {
         let code = if d.code == delvewright_dsl::metrics::DW_METRIC_UNKNOWN {
             delvewright_dsl::metrics::DW_METRIC_UNKNOWN.id()
         } else {
-            delvewright_schem::prefab::DW_FOOTPRINT_CLASS.id()
+            crate::schem::prefab::DW_FOOTPRINT_CLASS.id()
         };
         Diagnostic::error(code, d.message)
     });
@@ -174,7 +174,7 @@ pub struct AuditReport {
     pub unknown_blocks: usize,
     /// Count of palette block states the pin does not have in a **pre-pin**
     /// template: the game's DataFixerUpper is expected to migrate them on
-    /// load (`DW0734`, a warning — see `delvewright_schem::blocks`).
+    /// load (`DW0734`, a warning — see `delvec::schem::blocks`).
     pub pre_pin_unknown: usize,
     /// Count of palette entries omitting a shape-carrying property (`DW0735`):
     /// a wall/fence/pane/vine whose connection properties are unwritten loads
@@ -315,7 +315,7 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
     let mut unknown_blocks = 0usize;
     let mut pre_pin_unknown = 0usize;
     let mut underspecified = 0usize;
-    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
 
     // --- Palette allowlist: report each offending palette entry once, at the
     // first cell that uses it (deterministic: blocks are in file order). ---
@@ -424,7 +424,7 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
                                  migrate this state — verify in-game that it does, because \
                                  an id no fixer maps (a typo) still loads as air",
                                 s.data_version,
-                                delvewright_schem::blocks::PIN_DATA_VERSION
+                                crate::schem::blocks::PIN_DATA_VERSION
                             ),
                         )
                         .at(b.pos),

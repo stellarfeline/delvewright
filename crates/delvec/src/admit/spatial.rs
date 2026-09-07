@@ -20,7 +20,7 @@ use crate::grammar::block::BlockState;
 use crate::grammar::contract::{ContractReport, check};
 use crate::grammar::geom::Box3;
 use crate::grammar::model::VoxelModel;
-use delvewright_schem::prefab::PrefabMeta;
+use crate::schem::prefab::PrefabMeta;
 
 use crate::admit::diag::{DW_CONTRACT, DW_UNJUDGED, Diagnostic};
 use crate::admit::structure::Structure;

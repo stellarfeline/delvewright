@@ -436,7 +436,7 @@ fn unknown_knobs_are_refused_rather_than_ignored() {
 /// green that examined zero block states would be vacuous (CLAUDE.md).
 #[test]
 fn every_library_program_paints_only_blocks_that_exist() {
-    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let registry = delvec::schem::blocks::BlockRegistry::v1_21_11();
     let mut examined = 0usize;
     let mut bad: Vec<String> = Vec::new();
     for (program, region) in programs() {

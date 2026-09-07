@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use delvewright_schem::stairs::{Facing, Half, Shape, Stair, derive_shape};
+use delvec::schem::stairs::{Facing, Half, Shape, Stair, derive_shape};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -53,7 +53,7 @@ fn every_measured_cell_agrees_with_the_derivation() {
     let obs = observations();
     assert_eq!(
         obs.minecraft_version,
-        delvewright_schem::blocks::MC_VERSION,
+        delvec::schem::blocks::MC_VERSION,
         "the field was measured on a different Minecraft than the pin"
     );
 
@@ -128,11 +128,11 @@ fn every_measured_cell_agrees_with_the_derivation() {
 fn the_stair_set_is_the_same_set_by_two_derivations() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../compiler/data/block-classification-1.21.11.json"
+        "/data/block-classification-1.21.11.json"
     );
     let text = std::fs::read_to_string(path).expect("the pinned block classification");
     let doc: serde_json::Value = serde_json::from_str(&text).expect("classification parses");
-    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let registry = delvec::schem::blocks::BlockRegistry::v1_21_11();
 
     let mut by_tag: Vec<String> = Vec::new();
     let mut by_property: Vec<String> = Vec::new();

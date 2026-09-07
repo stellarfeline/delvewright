@@ -143,7 +143,6 @@ crate = "delvec"
 # either here, `delvec`, or the DSL crate — a new crate is a decision),
 # tools/check-publishable.sh, tools/crates-io-publish.sh.
 crates = [
-    "delvewright-schem",
 ]
 
 # `delvewright-dsl` is a real dependency of every engine crate, so it must exist

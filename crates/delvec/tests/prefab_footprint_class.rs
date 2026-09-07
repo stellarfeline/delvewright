@@ -53,7 +53,7 @@ fn scratch(tag: &str) -> PathBuf {
 const STATES: [&str; 2] = ["minecraft:stone_bricks", "minecraft:air"];
 
 fn judge_the_palette() {
-    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let registry = delvec::schem::blocks::BlockRegistry::v1_21_11();
     let none: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     for name in STATES {
         let verdict = registry.validate(name, &none);

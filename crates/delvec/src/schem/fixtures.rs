@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use flate2::{Compression, GzBuilder};
 use std::io::Write as _;
 
-use crate::nbt::Nbt;
+use crate::schem::nbt::Nbt;
 
 /// A block entity to embed in a fixture.
 pub struct FixtureBe {

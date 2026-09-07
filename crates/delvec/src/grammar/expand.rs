@@ -297,7 +297,7 @@ pub struct ResolvedContract {
 }
 
 /// One orientation-unguarded fill: the `DW0736` finding
-/// (`delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED`).
+/// (`delvec::schem::blocks::DW_ORIENTED_FILL_UNGUARDED`).
 ///
 /// A frame permutes and reflects the *geometry* a rule describes and never
 /// rewrites block-state properties ([`crate::grammar::orient`]); the intended mechanism
@@ -324,7 +324,7 @@ pub struct OrientedFinding {
 }
 
 /// One fill the `DW0736` predicate could not judge here: the
-/// `DW0742` record (`delvewright_schem::blocks::DW_ORIENTED_FILL_UNDECIDED`).
+/// `DW0742` record (`delvec::schem::blocks::DW_ORIENTED_FILL_UNDECIDED`).
 ///
 /// A world-frame state standing in the identity frame, in a scope whose frame
 /// is **not a constant of the program** — its reachable set
@@ -625,7 +625,7 @@ pub enum ExpandError {
     },
     /// A local-frame paint carried a property the pinned vocabulary cannot map
     /// onto the world frame the scope was given
-    /// (`delvewright_schem::blocks::DW_LOCAL_FRAME_UNRESOLVABLE`).
+    /// (`delvec::schem::blocks::DW_LOCAL_FRAME_UNRESOLVABLE`).
     LocalFrameUnresolvable {
         /// The rule being expanded.
         symbol: String,
@@ -810,7 +810,7 @@ impl fmt::Display for ExpandError {
                  direction whose image is not a legal value of the block has nowhere to land. \
                  Write the state in the world frame under an `orientation` guard for the frames \
                  it must cover, or keep the scope's vertical on the world's and unreflected",
-                delvewright_schem::blocks::DW_LOCAL_FRAME_UNRESOLVABLE
+                crate::schem::blocks::DW_LOCAL_FRAME_UNRESOLVABLE
             ),
             ExpandError::PaletteFull { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
         }
@@ -1551,7 +1551,7 @@ impl<'a> Expander<'a> {
         states: &States,
         state: &ScopeState<'_>,
     ) -> Result<States, ExpandError> {
-        let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+        let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
         let perm = [
             state.orient.axis(Axis::X).index(),
             state.orient.axis(Axis::Y).index(),
@@ -1577,7 +1577,7 @@ impl<'a> Expander<'a> {
     /// Record what one fill means for the `DW0736` audit.
     ///
     /// The predicate itself —
-    /// [`delvewright_schem::blocks::BlockRegistry::oriented_mismatch`] — lives
+    /// [`delvec::schem::blocks::BlockRegistry::oriented_mismatch`] — lives
     /// with the block-state model, derived from the registry's own value
     /// vocabulary, so this method only supplies the two facts the expander
     /// alone knows: the scope's frame — **both** halves of it, the permutation
@@ -1601,7 +1601,7 @@ impl<'a> Expander<'a> {
         if state.pinned == Some(state.orient) {
             return; // the guard proved the author wrote these for this frame
         }
-        let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+        let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
         let perm = [
             state.orient.axis(Axis::X).index(),
             state.orient.axis(Axis::Y).index(),

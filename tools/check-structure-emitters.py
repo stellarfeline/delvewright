@@ -130,14 +130,14 @@ NOT_EMITTERS = {
         "registry that describes 1.21.11 alone and has no authority over it — the same "
         "scoping DW0734 already states."
     ),
-    "crates/schem/src/convert.rs": (
+    "crates/delvec/src/schem/convert.rs": (
         "converter, not an emitter: `build_region` re-serialises the states it read out of an "
         "input `.schem`, so the palette is the input's and not this file's. The id verdict "
         "belongs to whoever admits the result — `delvec prefab audit` (DW0733/DW0734) for an "
         "imported piece, `refuse_unknown_states` for a grammar expansion — and both judge "
         "against the DataVersion the piece declares, which this function does not know."
     ),
-    "crates/schem/src/fixtures.rs": (
+    "crates/delvec/src/schem/fixtures.rs": (
         "input fixtures: builds Sponge `.schem` bytes for the round-trip tests, deliberately "
         "including under-specified states, which are the red half of the emitter's own proof."
     ),
@@ -301,7 +301,7 @@ def emitter_scope(rel: str, text: str) -> list[str]:
     marker is looked for through the file's own `mod` declarations. Deliberately
     not "everything in the directory" and not "everything in the crate": a
     neighbour's judgement is not this file's, and widening the scope that far
-    would let `crates/schem/src/fixtures.rs` inherit `convert.rs`'s guard.
+    would let `crates/delvec/src/schem/fixtures.rs` inherit `convert.rs`'s guard.
     """
     scope = [text]
     here = (ROOT / rel).parent

@@ -427,7 +427,7 @@ fn a_tiled_zone_carries_its_contract_on_the_manifest() {
 /// still read and written unchanged — absent means legacy, not empty.
 #[test]
 fn the_metadata_block_round_trips_and_its_absence_is_preserved() {
-    use delvewright_schem::prefab::PrefabMeta;
+    use delvec::schem::prefab::PrefabMeta;
 
     let export = export_prefab(
         &spatial_contract(),

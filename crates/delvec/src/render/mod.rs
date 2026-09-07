@@ -43,7 +43,7 @@ pub mod render;
 pub mod shots;
 pub mod view;
 
-// One definition, two spellings — the same arrangement `delvewright_schem` has
+// One definition, two spellings — the same arrangement `delvec::schem` has
 // for `prefab`. These modules moved into `delvec` with the CPU surface; naming
 // them here keeps `crate::render::nbt` / `crate::render::diag` / `crate::render::meta` inside this
 // crate's own modules resolving to that one definition rather than to a copy.

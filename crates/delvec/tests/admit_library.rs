@@ -35,8 +35,8 @@ use std::path::PathBuf;
 use delvec::admit::allowlist::Allowlist;
 use delvec::admit::spatial::{self, Door};
 use delvec::admit::structure::Structure;
-use delvewright_schem::blocks::{BlockRegistry, StateJudgement};
-use delvewright_schem::convert::DATA_VERSION as PINNED_DATA_VERSION;
+use delvec::schem::blocks::{BlockRegistry, StateJudgement};
+use delvec::schem::convert::DATA_VERSION as PINNED_DATA_VERSION;
 
 /// The shipped prefab library. Lives in the content repo
 /// (`delvewright-campaigns`), reached at `campaigns/prefabs` — the `campaigns/`

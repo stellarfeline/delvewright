@@ -40,7 +40,7 @@
 //! A blockout box is a shell: six faces of one uniform block around a volume of
 //! air. Packaged as a `.nbt` it is tens of thousands of cells, mostly air, split
 //! across tiles because vanilla's structure template caps at 48 per axis — and
-//! the compiler would need a template WRITER, which lives in `delvewright-schem`
+//! the compiler would need a template WRITER, which lives in `delvec::schem`
 //! and is unreachable from here (`delvec` publishes to crates.io and may depend
 //! only on published crates, and `schem` is `publish = false`).
 //!

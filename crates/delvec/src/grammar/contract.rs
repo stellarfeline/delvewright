@@ -52,7 +52,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use delvewright_schem::prefab::{Region as MetaRegion, SpatialContract};
+use crate::schem::prefab::{Region as MetaRegion, SpatialContract};
 
 use crate::grammar::block::BlockState;
 use crate::grammar::gates::{Gate, verdict};
@@ -205,7 +205,7 @@ fn is_traversal(class: &str) -> bool {
 /// whose deck is missing is a transit volume in exactly the way a stair's
 /// treads are, and letting it declare an opening on a shared boundary instead
 /// would put the laid cells inside a room.
-fn is_transit(edge: &delvewright_schem::prefab::ContractEdge) -> bool {
+fn is_transit(edge: &crate::schem::prefab::ContractEdge) -> bool {
     matches!(edge.class.as_str(), "stair" | "drop") || edge.way.is_some()
 }
 
@@ -287,7 +287,7 @@ impl Contingency {
 /// A `laid` way whose block does not parse resolves to air, which cannot open
 /// anything; `well_formed` refuses the string before any of that matters, so
 /// this never has to decide what an unparseable block means.
-fn contingency_of(edge: &delvewright_schem::prefab::ContractEdge) -> Option<Contingency> {
+fn contingency_of(edge: &crate::schem::prefab::ContractEdge) -> Option<Contingency> {
     if let Some(way) = &edge.way {
         return Some(Contingency {
             name: way.region.clone(),
@@ -821,7 +821,7 @@ fn way_well_formed(
     ix: &Index,
     model: &VoxelModel,
     i: usize,
-    edge: &delvewright_schem::prefab::ContractEdge,
+    edge: &crate::schem::prefab::ContractEdge,
     site: &str,
     exterior: bool,
     bad: &mut Vec<String>,

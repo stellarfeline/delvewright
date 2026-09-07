@@ -3,7 +3,7 @@
 //!
 //! # Where the walk lives
 //!
-//! The walk itself is not here. It is [`delvewright_schem::nav`], because "can a
+//! The walk itself is not here. It is [`delvec::schem::nav`], because "can a
 //! body stand on this cell, and can it walk from that one to this one" is the
 //! same question over a grammar expansion, over a structure template read off
 //! disk, and over a zone reassembled from tiles — one question, one
@@ -35,12 +35,12 @@
 
 use std::collections::BTreeSet;
 
+use crate::schem::nav::Voxels;
 use delvewright_dsl::blockshape::Collision;
-use delvewright_schem::nav::Voxels;
 
 use crate::grammar::model::VoxelModel;
 
-pub use delvewright_schem::nav::{components, connected, reachable_from};
+pub use crate::schem::nav::{components, connected, reachable_from};
 
 /// What a body may occupy, what it may stand on, and how high that floor is —
 /// **asked, not decided, here**.
@@ -147,42 +147,42 @@ pub fn passable(model: &VoxelModel, pos: [i32; 3]) -> bool {
 /// difference is a drowned citadel, where the whole ward is one and not the
 /// other.
 pub fn solid(model: &VoxelModel, pos: [i32; 3]) -> bool {
-    delvewright_schem::nav::solid(model, pos)
+    crate::schem::nav::solid(model, pos)
 }
 
 /// A cell a player can stand in: two cells of clearance over a floor — a floor
 /// being what [`Voxels::floor`] says it is, which is not the complement of
 /// passable and is never a fluid.
 pub fn standable(model: &VoxelModel, pos: [i32; 3]) -> bool {
-    delvewright_schem::nav::standable(model, pos)
+    crate::schem::nav::standable(model, pos)
 }
 
 /// Every standable cell of the model.
 pub fn standable_cells(model: &VoxelModel) -> BTreeSet<[i32; 3]> {
-    delvewright_schem::nav::standable_cells(model)
+    crate::schem::nav::standable_cells(model)
 }
 
 /// [`connected`]'s ±1-step walk, plus a one-way **fall** — see
-/// [`delvewright_schem::nav::reachable_with_fall`].
+/// [`delvec::schem::nav::reachable_with_fall`].
 pub fn reachable_with_fall(
     model: &VoxelModel,
     cells: &BTreeSet<[i32; 3]>,
     from: &BTreeSet<[i32; 3]>,
     to: &BTreeSet<[i32; 3]>,
 ) -> bool {
-    delvewright_schem::nav::reachable_with_fall(model, cells, from, to)
+    crate::schem::nav::reachable_with_fall(model, cells, from, to)
 }
 
 /// Where a body walks in: the standable cells on the region's four **vertical**
-/// boundary faces, at grade. See [`delvewright_schem::nav::ground_entry`].
+/// boundary faces, at grade. See [`delvec::schem::nav::ground_entry`].
 pub fn ground_entry(model: &VoxelModel) -> BTreeSet<[i32; 3]> {
-    delvewright_schem::nav::ground_entry(model)
+    crate::schem::nav::ground_entry(model)
 }
 
 /// Is anything solid over this cell, inside the region?
-/// See [`delvewright_schem::nav::sheltered`].
+/// See [`delvec::schem::nav::sheltered`].
 pub fn sheltered(model: &VoxelModel, pos: [i32; 3]) -> bool {
-    delvewright_schem::nav::sheltered(model, pos)
+    crate::schem::nav::sheltered(model, pos)
 }
 
 /// The standable cells at each end of the model's local travel axis: the entry
@@ -335,7 +335,7 @@ mod tests {
     }
 
     /// A waterlogged block is a block. It has a collision box, it holds its own
-    /// water and spreads none (`delvewright_schem::fluid`), and a body stands
+    /// water and spreads none (`delvec::schem::fluid`), and a body stands
     /// on it — so the rule keys on the block id and deliberately never on the
     /// `waterlogged` property.
     #[test]
@@ -503,7 +503,7 @@ mod tests {
             "on the stone, and on top of each slab"
         );
         assert!(
-            delvewright_schem::nav::connected(
+            crate::schem::nav::connected(
                 &m,
                 &cells,
                 &BTreeSet::from([[0, 1, 0]]),
@@ -523,7 +523,7 @@ mod tests {
         full.set([0, 3, 0], &stone).unwrap();
         let full_cells = standable_cells(&full);
         assert!(
-            !delvewright_schem::nav::connected(
+            !crate::schem::nav::connected(
                 &full,
                 &full_cells,
                 &BTreeSet::from([[0, 1, 0]]),

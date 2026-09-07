@@ -416,11 +416,10 @@ fn run_batch(
         }
         // The pool declaration is the one `.json` in a prefab library
         // that is not a prefab document.
-        if path.file_name().and_then(|n| n.to_str()) == Some(delvewright_schem::prefab::POOLS_FILE)
-        {
+        if path.file_name().and_then(|n| n.to_str()) == Some(crate::schem::prefab::POOLS_FILE) {
             continue;
         }
-        match delvewright_schem::split::read_tile_set(path) {
+        match crate::schem::split::read_tile_set(path) {
             Ok(Some(set)) => {
                 for part in &set.parts {
                     claimed.insert(path.with_file_name(&part.file));

@@ -11,11 +11,11 @@
 //! decides whether a body of fluid in a piece is walled, and carries its own
 //! `FLUIDS` list to do it.
 //!
-//! **That duplication is over** (spec-0056). Its stated reason — `delvec` is
-//! published and may not depend on `delvewright-schem`, so no edge can collapse
-//! the two — was a true fact about the wrong edge: both crates already depend on
-//! `delvewright-dsl`, and that is where the block-shape table lives now. Both
-//! predicates delegate to `delvewright_dsl::blockshape::is_fluid`.
+//! **That duplication is over** (spec-0056). Its stated reason — the two
+//! predicates lived in two crates with no edge between them, so nothing could
+//! collapse the two — was a true fact about the wrong edge: both already
+//! depended on `delvewright-dsl`, and that is where the block-shape table lives
+//! now. Both predicates delegate to `delvewright_dsl::blockshape::is_fluid`.
 //!
 //! So this file no longer asks whether two lists agree. It asks whether the
 //! delegation is real, over the whole pinned registry, from the one crate that
@@ -72,11 +72,11 @@ fn both_fluid_predicates_agree_on_every_pinned_block_id() {
         ] {
             examined += 1;
             let compiler = delvec::compiler::assembled::is_fluid(&spelling);
-            let schem = delvewright_schem::fluid::is_fluid(&spelling);
+            let schem = delvec::schem::fluid::is_fluid(&spelling);
             if compiler != schem {
                 disagreements.push(format!(
                     "{spelling}: delvec::compiler::assembled::is_fluid={compiler}, \
-                     delvewright_schem::fluid::is_fluid={schem}"
+                     delvec::schem::fluid::is_fluid={schem}"
                 ));
             }
             if compiler && spelling == *id {
@@ -111,9 +111,9 @@ fn both_fluid_predicates_agree_on_every_pinned_block_id() {
 
 /// **The place the two used to differ, now closed.**
 ///
-/// `delvec` accepted an id with its state suffix attached
+/// The compiler accepted an id with its state suffix attached
 /// (`minecraft:water[level=3]`) because a DSL `fill-region` block is one
-/// hand-written string classified whole; `delvewright-schem` saw only palette
+/// hand-written string classified whole; `delvec::schem` saw only palette
 /// entries, which never carry a suffix, and answered `false` for the same water.
 /// One table, one parser, so both answer for the block rather than for the
 /// spelling their own caller happened to hand them.
@@ -125,7 +125,7 @@ fn a_suffixed_spelling_is_the_same_block_to_both() {
         "minecraft:lava[level=1]",
     ] {
         assert!(delvec::compiler::assembled::is_fluid(name), "{name}");
-        assert!(delvewright_schem::fluid::is_fluid(name), "{name}");
+        assert!(delvec::schem::fluid::is_fluid(name), "{name}");
     }
 
     // And neither is fooled by a block whose name merely contains a fluid's.
@@ -135,6 +135,6 @@ fn a_suffixed_spelling_is_the_same_block_to_both() {
         "minecraft:waterlogged",
     ] {
         assert!(!delvec::compiler::assembled::is_fluid(id), "{id}");
-        assert!(!delvewright_schem::fluid::is_fluid(id), "{id}");
+        assert!(!delvec::schem::fluid::is_fluid(id), "{id}");
     }
 }

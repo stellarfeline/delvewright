@@ -185,7 +185,7 @@ rather than listed — `python3 tools/check-json-canonical.py`, one command on a
 fresh clone. Add a directory of authored JSON and it is swept the moment it is
 committed, with nothing to edit.
 
-## 2. `delvec schem` — schematic import (`crates/schem`) · agent
+## 2. `delvec schem` — schematic import (`crates/delvec/src/schem`) · agent
 
 Converts a Sponge schematic (`.schem`, v2/v3) into a vanilla structure `.nbt`.
 Step 1 of prefab admission. Output is stamped at the pinned game's `DataVersion`
@@ -1359,7 +1359,7 @@ they run down first and then sideways, on the server's own clock, before any
 player arrives, and no other gate here looks. `cave-shore.nbt` shipped a 33-cell
 sea written one block *proud* of the beach it laps, with seven ways out into the
 air over the sand — every tool in the repo drew it as still water. The block
-knowledge is not restated: `crates/schem/src/fluid.rs` is source-included by the
+knowledge is not restated: `crates/delvec/src/schem/fluid.rs` is source-included by the
 same mechanism, so the emitters and `delvec prefab audit` read one rule. A run
 direction that leaves the piece's own outer face is counted and never failed
 here (what is beyond a face is not in these bytes — the compiler's `DW0318`
@@ -1481,8 +1481,8 @@ on a recalled reading of vanilla.
 
 A field of 758 random stairs (two stair blocks, both halves, all four facings,
 air holes) is placed, settled and read back cell by cell; the result rides in
-`observations.json` and `crates/schem/tests/stair_shape_measured.rs` **replays
-every cell of it** against `delvewright_schem::stairs::derive_shape` in CI, with
+`observations.json` and `crates/delvec/tests/schem_stair_shape_measured.rs` **replays
+every cell of it** against `delvec::schem::stairs::derive_shape` in CI, with
 no server. Nine water rigs decide what "a body of fluid stays where it was
 written" has to mean: a source sealed, a source with one open cell, a source
 against a `waterlogged=false` stair (both orientations) and a grate, a source

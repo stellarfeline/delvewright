@@ -506,7 +506,6 @@ dependencies = [
  "clap",
  "crc32fast",
  "delvewright-dsl",
- "delvewright-schem",
  "fastnbt",
  "flate2",
  "image 0.24.9",
@@ -525,18 +524,6 @@ version = "0.21.0"
 dependencies = [
  "jsonschema",
  "schemars",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "delvewright-schem"
-version = "1.2.0"
-dependencies = [
- "clap",
- "delvewright-dsl",
- "fastnbt",
- "flate2",
  "serde",
  "serde_json",
 ]

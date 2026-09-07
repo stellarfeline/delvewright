@@ -20,7 +20,7 @@ use delvec::grammar::block::BlockState;
 use delvec::grammar::contract::{check, exterior_faces};
 use delvec::grammar::geom::Box3;
 use delvec::grammar::model::VoxelModel;
-use delvewright_schem::prefab::{
+use delvec::schem::prefab::{
     ContractBar, ContractEdge, ContractNoBody, ContractSpace, ContractVolume, ContractWay, Region,
     SpatialContract,
 };

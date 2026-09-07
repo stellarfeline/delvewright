@@ -7,7 +7,7 @@ use delvec::admit::fixtures;
 use delvec::admit::meta::{License, PrefabMeta};
 use delvec::admit::socket::{self, SocketDecl};
 use delvec::admit::structure::Structure;
-use delvewright_schem::split::TilePart;
+use delvec::schem::split::TilePart;
 
 /// Pair a structure with the manifest entry that would describe it.
 fn tile(index: i32, offset: [i32; 3], s: Structure) -> (TilePart, Structure) {
@@ -285,7 +285,7 @@ fn the_allowlist_judges_the_id_the_game_loads_and_still_refuses_a_dead_one() {
     // 2. The SAME id at the pin resolves to nothing — no fixer runs — so it is
     //    still refused, and by both rules.
     let mut at_pin = fixtures::renamed_block_piece();
-    at_pin.data_version = delvewright_schem::blocks::PIN_DATA_VERSION;
+    at_pin.data_version = delvec::schem::blocks::PIN_DATA_VERSION;
     let (rep, _) = audit("bell-tower", &at_pin, &Allowlist::default_building());
     assert!(!rep.is_pass());
     assert_eq!(rep.unknown_blocks, 1);

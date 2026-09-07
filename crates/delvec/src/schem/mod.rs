@@ -8,7 +8,7 @@
 //! NBT, and gzip mtime pinned to 0.
 //!
 //! A prefab is the `.nbt` plus the sibling metadata JSON that describes it, so
-//! this crate reaches both halves of that pair: [`convert`] writes the bytes and
+//! this module reaches both halves of that pair: [`convert`] writes the bytes and
 //! [`prefab`] is the document, re-exported from
 //! [`delvewright_dsl::prefab`] where it is defined. Every tool that produces,
 //! reads or edits a prefab — the grammar back end, the hand-written generators,
@@ -44,7 +44,7 @@ pub mod stairs;
 // for the same reason `prefab` does: `delvec` is published to crates.io and may
 // only depend on published crates, and the CPU render surface it now carries
 // (ADR-0021 §1) reads both. They are re-exported here, unchanged, so that
-// `delvewright_schem::blocks` and `delvewright_schem::split` keep naming the one
+// `crate::schem::blocks` and `crate::schem::split` keep naming the one
 // definition every emitter already checks against — one authority, two spellings,
 // which is the same arrangement `prefab` has had since spec-0007.
 pub use delvewright_dsl::{blocks, split};

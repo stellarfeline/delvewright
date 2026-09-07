@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 
-use delvewright_schem::nbt::Nbt;
+use crate::schem::nbt::Nbt;
 
 use crate::admit::meta::{Connector, PrefabMeta};
 use crate::admit::structure::{PaletteEntry, Structure};

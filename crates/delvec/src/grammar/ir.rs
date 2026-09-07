@@ -515,7 +515,7 @@ impl States {
 /// read in the scope's own axis names and resolved into the world's at fill
 /// time, through the *same* transform the `oriented-fills` diagnostic uses to
 /// decide that an unframed state landed wrong
-/// (`delvewright_schem::blocks::BlockRegistry::permuted_properties`). One rule
+/// (`delvec::schem::blocks::BlockRegistry::permuted_properties`). One rule
 /// therefore works at every orientation, which is what a palette role — one
 /// name, one binding — could not previously carry.
 ///

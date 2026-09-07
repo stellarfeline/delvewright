@@ -12,9 +12,9 @@ use std::io::Write as _;
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 
-use crate::diag::{DW_STRIP, Diagnostic};
-use crate::nbt::Nbt;
-use crate::schematic::{BlockState, ParsedSchematic};
+use crate::schem::diag::{DW_STRIP, Diagnostic};
+use crate::schem::nbt::Nbt;
+use crate::schem::schematic::{BlockState, ParsedSchematic};
 
 /// MC 1.21.11 structure `DataVersion` (ADR-0009; verified against
 /// `crates/delvec/data/PROVENANCE.md` and the committed `hello-room.nbt`).
@@ -118,7 +118,7 @@ pub fn build_region(
     let [w, h, l] = size;
 
     // Position-keyed block entities for O(1) lookup by source cell.
-    let be_by_pos: std::collections::HashMap<[i32; 3], &crate::schematic::SchemBlockEntity> =
+    let be_by_pos: std::collections::HashMap<[i32; 3], &crate::schem::schematic::SchemBlockEntity> =
         schem.block_entities.iter().map(|be| (be.pos, be)).collect();
 
     // First pass: decide the final state + carried nbt for each local cell,

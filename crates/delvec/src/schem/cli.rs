@@ -11,8 +11,8 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use crate::diag::{DW_INPUT, Diagnostic};
-use crate::{ConvertOutput, convert};
+use crate::schem::diag::{DW_INPUT, Diagnostic};
+use crate::schem::{ConvertOutput, convert};
 use clap::{Args, Subcommand};
 
 const EXIT_INPUT: u8 = 2;

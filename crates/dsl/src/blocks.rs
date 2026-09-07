@@ -19,7 +19,7 @@
 //! So this module is the block half of the command rule. It lives here, beside
 //! the other pinned registries, because the registry is a fact about the pinned
 //! game rather than about any one reader of it: the structure-template writer
-//! (`delvewright_schem`, which re-exports this module), the grammar back end,
+//! (`delvec::schem`, which re-exports this module), the grammar back end,
 //! the admission audit and the compiler's own render surface all check against
 //! this one table. And no crate is the only site that turns a palette into
 //! `.nbt` bytes — reasoning as though one were is what left the sixth emitter
@@ -495,7 +495,7 @@ impl BlockRegistry {
     /// takes vanilla's five stair values, and nothing else in the game has one.
     ///
     /// The derivation matters because the property it feeds
-    /// (`delvewright_schem::stairs::derive_shape`) tests *any* stair against *any* other
+    /// (`delvec::schem::stairs::derive_shape`) tests *any* stair against *any* other
     /// — an oak stair mitres against a stone-brick one — so a hand-kept list
     /// would be wrong the day a version adds a stair, in the silent direction.
     pub fn is_stairs(&self, name: &str) -> bool {

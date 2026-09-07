@@ -35,4 +35,4 @@ pub mod structure;
 
 /// The deterministic NBT value type (re-exported from `delvec schem`) for callers
 /// and tests that build block-entity payloads.
-pub use delvewright_schem::nbt::Nbt;
+pub use crate::schem::nbt::Nbt;

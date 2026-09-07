@@ -1609,7 +1609,7 @@ fn prefabs_with_a_yaw_invariant_piece() -> PathBuf {
         ),
         ("minecraft:oak_log", &[("axis", "y")]),
     ];
-    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let registry = delvec::schem::blocks::BlockRegistry::v1_21_11();
     for (name, props) in states {
         let props: BTreeMap<String, String> = props
             .iter()

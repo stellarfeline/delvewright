@@ -799,7 +799,7 @@ reader uses that type; nothing declares a local copy of the shape.
 
 It lives in the DSL crate because `delvec` is published to crates.io and may only
 depend on published crates, so that is the one crate every reader can reach.
-`delvewright_schem::prefab` re-exports it under the path the asset-pipeline tools
+`delvec::schem::prefab` re-exports it under the path the asset-pipeline tools
 use.
 
 ### Fields
@@ -953,7 +953,7 @@ edit.
 | `delvec prefab` | the whole document, read-modify-write |
 | `delvec grammar` | writes it (single template) and the tile-set manifest (several) |
 | `delvec render` | a narrow view — `anchors`, `connectors`, `lighting` — built from the document's own leaf types, because it must also read a tile-set manifest, which names `structure_set` instead of `structure` |
-| `delvewright_schem::split` | one key, `structure_set`, to tell the two shapes apart |
+| `delvec::schem::split` | one key, `structure_set`, to tell the two shapes apart |
 | `prefabs/*-generator` | write it, serialize-only (separate Cargo workspaces; they never read a prefab back) |
 
 ## 10. Hand-written Rust generators

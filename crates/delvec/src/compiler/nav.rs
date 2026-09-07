@@ -954,7 +954,7 @@ pub struct World {
 ///
 /// The **rule** they express comes from the same place, and no longer from here:
 /// [`step_allowed`] is what [`World::neighbors_fp`] asks. It moved there because
-/// this engine had a second answer to the same question — `delvewright-schem`'s
+/// this engine had a second answer to the same question — `delvec::schem`'s
 /// box-of-cells walk, which a prefab's admission gate proves over — and a rule
 /// with two implementations is a rule two gates can disagree about. What stays
 /// this module's is the **measurement** of a rise: real collision tops, water,
@@ -2137,7 +2137,7 @@ impl World {
     ///   a 1.5-block rise the old model proved as an ordinary `+1` step.
     ///
     /// Those three arms are [`step_allowed`], in `delvewright-dsl`, and are asked
-    /// rather than restated: `delvewright-schem`'s walk asks the same function of
+    /// rather than restated: `delvec::schem`'s walk asks the same function of
     /// the same rise, so the admission gate and this router cannot answer the
     /// question differently.
     ///

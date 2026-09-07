@@ -219,13 +219,13 @@ def test_a_bare_code_literal_counts_in_every_idiom_the_repo_uses(gate):
 def test_a_symbolic_constant_counts_but_a_bare_import_does_not(gate):
     """A symbol comparison is a real assertion; an import alone is not a use."""
     _rs(gate, "schem", "diag.rs", 'pub const DW_STRIP: &str = "DW0700";')
-    _test_rs(gate, "schem", "imports.rs", "use delvewright_schem::diag::DW_STRIP;\n")
+    _test_rs(gate, "schem", "imports.rs", "use delvec::schem::diag::DW_STRIP;\n")
     assert "DW0700" not in gate.tested_codes()
     _test_rs(
         gate,
         "schem",
         "imports.rs",
-        "use delvewright_schem::diag::DW_STRIP;\n"
+        "use delvec::schem::diag::DW_STRIP;\n"
         "#[test]\nfn t() { assert_eq!(err.code, DW_STRIP); }\n",
     )
     assert "DW0700" in gate.tested_codes()

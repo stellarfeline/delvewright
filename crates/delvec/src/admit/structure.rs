@@ -12,8 +12,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read as _, Write as _};
 
-use delvewright_schem::convert::{self, DATA_VERSION};
-use delvewright_schem::nbt::Nbt;
+use crate::schem::convert::{self, DATA_VERSION};
+use crate::schem::nbt::Nbt;
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 

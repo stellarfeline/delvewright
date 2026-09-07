@@ -89,17 +89,17 @@
 //! (`DW0752`), never a pass: a sealed pitch-black crypt binds zero cells, and
 //! the one thing this probe must never do is call that lit.
 //!
-//! The walk and the standability predicate are [`delvewright_schem::nav`]'s, not
+//! The walk and the standability predicate are [`delvec::schem::nav`]'s, not
 //! this module's: they are the same question the grammar back end asks of an
 //! expansion, and the seventh private copy of them was here.
 
 use std::collections::BTreeMap;
 
 use crate::compiler::light::{LightModel, effective_sky};
+use crate::schem::nav::{self, Voxels};
+use crate::schem::split::TilePart;
 use delvewright_dsl::blockshape;
 use delvewright_dsl::{WorldTime, WorldWeather};
-use delvewright_schem::nav::{self, Voxels};
-use delvewright_schem::split::TilePart;
 
 use crate::admit::structure::Structure;
 

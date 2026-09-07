@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 use std::io::Read as _;
 
-use crate::nbt::Nbt;
+use crate::schem::nbt::Nbt;
 
 /// A parsed block state: `minecraft:oak_stairs[facing=north,half=bottom]`.
 #[derive(Debug, Clone, PartialEq, Eq)]

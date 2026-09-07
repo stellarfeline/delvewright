@@ -9,9 +9,10 @@ this file is their provenance too — one record for one pinned game version,
 rather than a second copy that can fall a version behind. `blocks-1.21.11.json`,
 `blockstate-shape-props-1.21.11.json` and `block-defaults-1.21.11.json` sit
 beside the module that reads them (`delvewright_dsl::blocks`, re-exported as
-`delvewright_schem::blocks`), because `delvec` is published to crates.io and may
-only depend on published crates — and the CPU render surface it carries reads the
-block registry. `entity-tags-1.21.11.json` sits there for the sibling reason:
+`delvec::schem::blocks`): a module can only `include_str!` a file its own crate
+ships, and that module is the format's — read by the engine, the CPU render
+surface included, and source-included by the prefab generator workspaces.
+`entity-tags-1.21.11.json` sits there for the sibling reason:
 both validation tiers ask which entity types do X, and the DSL crate cannot
 `include_str!` a file it does not ship. Every reproduce command below names the
 path it writes.
@@ -65,7 +66,7 @@ not third-party reconstructions.
   emitted **block** against nothing. `minecraft:chain` was renamed
   `minecraft:iron_chain` in 1.21.11 and kept being emitted; a structure template
   loads an unknown block as AIR, so the piece ships with the feature silently
-  missing. Consumed by `delvewright_schem::blocks` (the grammar export and
+  missing. Consumed by `delvec::schem::blocks` (the grammar export and
   `delvec prefab audit`'s `DW0733`) and by `prefabs/invariants.rs` +
   `prefabs/connections.rs` (every `prefabs/*-generator` workspace,
   source-included).
@@ -98,7 +99,7 @@ not third-party reconstructions.
   The script pins the jar's `version.json` to `1.21.11` / DataVersion 4671 and
   cross-checks every derived property against `blocks-1.21.11.json` — a
   selector naming a property the registry does not define is a refusal.
-  Consumed by `delvewright_schem::blocks` (`shape_carrying` /
+  Consumed by `delvec::schem::blocks` (`shape_carrying` /
   `omitted_shape_carrying`), which serves `delvec prefab audit` and the grammar
   back end's `shape-complete` gate + export refusal, and by
   `prefabs/connections.rs`, which fills the properties this table names from the
@@ -118,7 +119,7 @@ not third-party reconstructions.
   different block, and a review page that guessed drew a solid cube where a wall
   post stands. Distinct from `blockstate-shape-props-1.21.11.json`, which says
   WHICH properties the model is assembled from: this says what each of them means
-  when it is not written. Consumed by `delvewright_schem::blocks`
+  when it is not written. Consumed by `delvec::schem::blocks`
   (`default_state` / `unwritten`) and through it by the prefab review page.
   **Reproduce it**: `python3 tools/extract-block-defaults.py
   <blocks/data.min.json> crates/dsl/data/block-defaults-1.21.11.json`. The

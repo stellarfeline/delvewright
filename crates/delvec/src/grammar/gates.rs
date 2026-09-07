@@ -558,7 +558,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     let mut findings = Vec::new();
 
     // --- Gate: every block state exists in the pinned version. -------------
-    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
     let mut bad = Vec::new();
     for state in model.palette() {
         if let Err(e) = registry.validate(&state.name, &state.properties) {
@@ -575,7 +575,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             format!(
                 "{} block state(s), all present in Minecraft {}",
                 model.palette().len(),
-                delvewright_schem::blocks::MC_VERSION
+                crate::schem::blocks::MC_VERSION
             )
         } else {
             bad.join("; ")
@@ -623,7 +623,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                 "{}: {} — these properties assemble the block's model, so the omitted \
                  default drops geometry (a wall reads as an isolated post). Write the \
                  connection state the design means",
-                delvewright_schem::blocks::DW_SHAPE_OMITTED,
+                crate::schem::blocks::DW_SHAPE_OMITTED,
                 omissions.join("; ")
             )
         },
@@ -670,7 +670,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                 "{}: {} — a state that omits a property means whatever a 1.21.11 server \
                  decides, and no reader upstream of the server can know which. Write the \
                  property the design means, including when it is the block's default",
-                delvewright_schem::blocks::DW_STATE_UNDER_SPECIFIED,
+                crate::schem::blocks::DW_STATE_UNDER_SPECIFIED,
                 under.join("; ")
             )
         },
@@ -714,7 +714,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                 "{}: {} — write one alternative per orientation, each guarded with the \
                  `orientation` cond and carrying the facing that matches it (the guard \
                  mechanism `Cond::Orientation` exists for exactly this)",
-                delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED,
+                crate::schem::blocks::DW_ORIENTED_FILL_UNGUARDED,
                 audit
                     .unguarded
                     .iter()
@@ -737,7 +737,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                  resolved at fill time, or pin the frame with an `orientation` guard. Neither \
                  the verdict nor the artifact is refused on this — the program may be right, and \
                  nothing it could do would make THIS region say so",
-                delvewright_schem::blocks::DW_ORIENTED_FILL_UNDECIDED,
+                crate::schem::blocks::DW_ORIENTED_FILL_UNDECIDED,
                 audit.fills,
                 audit.carrying,
                 audit.resolved,

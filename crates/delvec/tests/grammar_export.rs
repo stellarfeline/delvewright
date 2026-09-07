@@ -213,7 +213,7 @@ fn the_tiles_reassemble_into_exactly_the_expansion() {
                 part.size[axis]
             );
         }
-        let view = delvewright_schem::convert::read_structure(&tile.nbt).unwrap();
+        let view = delvec::schem::convert::read_structure(&tile.nbt).unwrap();
         assert_eq!(view.size, part.size, "{}", part.file);
         for x in 0..part.size[0] {
             for y in 0..part.size[1] {
@@ -474,7 +474,7 @@ fn the_structure_matches_the_size_the_metadata_declares() {
         "grammar-temple",
     )
     .unwrap();
-    let view = delvewright_schem::convert::read_structure(&export.nbt).unwrap();
+    let view = delvec::schem::convert::read_structure(&export.nbt).unwrap();
     assert_eq!(view.size, export.metadata.size());
     assert_eq!(view.data_version, export.metadata.data_version().unwrap());
 

@@ -6,6 +6,7 @@
 //! - [`compiler`]: the compiler — staged campaign documents in, a deterministic datapack, world and server assets out, with the CPU render arms (`delvec validate|analyze|build` and the top-level verbs).
 //! - [`grammar`]: the box-split grammar prefab back end — a typed rule program in, a deterministic structure template out (`delvec grammar`).
 //! - [`orchestrator`]: playtest harvesting — a server log plus the creator overlay's layout manifest in, a versioned playtest report out (`delvec harvest`).
+//! - [`schem`]: Sponge schematic to vanilla structure-template conversion, the template writer and the cell walk the prefab pipeline shares (`delvec schem`).
 //! - [`render`]: the GPU render arms — per-prefab shot sets and the missing-texture fidelity gate through Nucleation and wgpu (`delvec render`).
 //! - [`admit`]: prefab admission — palette audit, jigsaw sockets, anchors, lighting, catalog cards and the gallery world (`delvec prefab`).
 
@@ -14,3 +15,4 @@ pub mod compiler;
 pub mod grammar;
 pub mod orchestrator;
 pub mod render;
+pub mod schem;

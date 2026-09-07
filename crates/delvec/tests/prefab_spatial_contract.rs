@@ -420,7 +420,7 @@ fn pier_on_disk(tag: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 
-    let cells: Vec<([i32; 3], PaletteEntry, Option<delvewright_schem::nbt::Nbt>)> = pier_cells()
+    let cells: Vec<([i32; 3], PaletteEntry, Option<delvec::schem::nbt::Nbt>)> = pier_cells()
         .into_iter()
         .map(|c| (c, PaletteEntry::simple("minecraft:stone_bricks"), None))
         .collect();
@@ -466,7 +466,7 @@ fn the_second_door_agrees_on_a_region_that_is_part_facade_and_part_sealed() {
     for cell in pier_cells() {
         model.set(cell, &brick).unwrap();
     }
-    let contract: delvewright_schem::prefab::SpatialContract =
+    let contract: delvec::schem::prefab::SpatialContract =
         serde_json::from_value(pier_contract()).unwrap();
     let first = delvec::grammar::contract::check(&model, &contract, &Default::default());
     assert!(first.is_pass(), "{:#?}", first.gates);

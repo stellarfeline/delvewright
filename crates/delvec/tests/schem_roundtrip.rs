@@ -1,14 +1,14 @@
 //! Round-trip, strip, determinism, and split/reassembly tests over the in-code
-//! reference schematics (`delvewright_schem::fixtures`).
+//! reference schematics (`delvec::schem::fixtures`).
 
 use std::collections::BTreeMap;
 
-use delvewright_schem::convert::{DATA_VERSION, read_structure};
-use delvewright_schem::diag::{DW_DATAVERSION, DW_SPLIT, DW_STRIP};
-use delvewright_schem::fixtures;
-use delvewright_schem::nbt::Nbt;
-use delvewright_schem::split::{part_filename, plan_split};
-use delvewright_schem::{ConvertOutput, convert};
+use delvec::schem::convert::{DATA_VERSION, read_structure};
+use delvec::schem::diag::{DW_DATAVERSION, DW_SPLIT, DW_STRIP};
+use delvec::schem::fixtures;
+use delvec::schem::nbt::Nbt;
+use delvec::schem::split::{part_filename, plan_split};
+use delvec::schem::{ConvertOutput, convert};
 
 fn single(bytes: &[u8]) -> Vec<u8> {
     match convert(bytes, "test", 48).unwrap().output {
@@ -219,8 +219,11 @@ fn oversize_splits_and_reassembles() {
 fn wrong_data_version_is_dw0702_warning() {
     let result = convert(&fixtures::v2_wrong_data_version(), "test", 48).unwrap();
     assert!(
-        result.diagnostics.iter().any(|d| d.code == DW_DATAVERSION
-            && d.severity == delvewright_schem::diag::Severity::Warning),
+        result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == DW_DATAVERSION
+                && d.severity == delvec::schem::diag::Severity::Warning),
         "expected a DW0702 warning for a mismatched source DataVersion: {:?}",
         result.diagnostics
     );

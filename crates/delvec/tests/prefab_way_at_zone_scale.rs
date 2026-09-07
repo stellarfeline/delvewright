@@ -165,7 +165,7 @@ fn tiled(tag: &str, program: &Program) -> Zone {
         .write_to_dir(&dir)
         .unwrap();
     let manifest = dir.join("zone.json");
-    let set = delvewright_schem::split::read_tile_set(&manifest)
+    let set = delvec::schem::split::read_tile_set(&manifest)
         .expect("the manifest reads")
         .expect("the export tiled");
     assert!(
@@ -178,7 +178,7 @@ fn tiled(tag: &str, program: &Program) -> Zone {
 struct Zone {
     dir: PathBuf,
     manifest: PathBuf,
-    set: delvewright_schem::split::TileSet,
+    set: delvec::schem::split::TileSet,
 }
 
 impl Zone {

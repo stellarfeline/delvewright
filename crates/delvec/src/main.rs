@@ -273,7 +273,7 @@ enum Command {
     /// card, gallery world, curation.
     Prefab(delvec::admit::cli::PrefabArgs),
     /// An outside schematic: convert a Sponge `.schem` into a structure `.nbt`.
-    Schem(delvewright_schem::cli::SchemArgs),
+    Schem(delvec::schem::cli::SchemArgs),
     /// A playtest log: pair `[DelveNote]` stamps with the creator's notes into
     /// `playtest-report.json` (and `[DelveShot]` stamps into a rehearsal report).
     Harvest(delvec::orchestrator::cli::HarvestArgs),
@@ -422,7 +422,7 @@ fn main() -> ExitCode {
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
         Command::Prefab(args) => delvec::admit::cli::run(args.clone(), cli.json),
-        Command::Schem(args) => delvewright_schem::cli::run(args.clone(), cli.json),
+        Command::Schem(args) => delvec::schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvec::orchestrator::cli::run(args.clone()),
         Command::Render(args) => delvec::render::cli::run(args.clone(), cli.json),
     }
