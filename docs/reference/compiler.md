@@ -14,7 +14,7 @@ Methodology; CI enforces the DW-code subset — see `tools/check-dw-codes.py`).
   `delvec prefab`, `delvec grammar`, `delvec render`, `delvec harvest` — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.20.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.2.0`, `dsl 0.20.0`, `mc 1.21.11`.
   `dsl 0.20.0` is the **one** `dsl_version` this engine accepts (ADR-0024): every
   stage document, map-pipeline document and l10n sidecar declares it, and any
   other number is refused at the envelope with `DW0102`, which names it. The
