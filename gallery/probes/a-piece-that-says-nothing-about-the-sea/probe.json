@@ -1,0 +1,29 @@
+{
+  "code": "DW0344",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/horizon",
+      "value": "ocean"
+    },
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/areas/-",
+      "value": {
+        "id": "area/quay",
+        "name": "The Quay",
+        "prefab": "prefab/gallery-yard"
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/area.quay.name",
+      "value": "码头"
+    }
+  ],
+  "units": [],
+  "why": "A piece standing in the sea with nothing to say about where it meets it. `horizon: ocean` puts every area origin at y=60 under a sea at 62, so a piece whose box starts there is in the water; `prefab/gallery-yard` is a detail piece that authors no water and declares no `waterline_y`, which is exactly the state a deleted declaration leaves behind and exactly the state a piece that never needed one is in. The two need opposite answers and the declaration cannot tell them apart, so the refusal is taken from geometry instead: the box reaches the sea plane. This was a warning until a two-scene delve shipped green with both of its objectives standing in shin-deep sea, and the reason given for the warning — that a refusal would be demanding a fiction, because nothing lifts a piece clear of the water — was wrong about where the lever is. It is the piece: the gallery's own pieces stand on two courses of plinth with a tide pool at the sea's plane, which is why the ocean point reports `1 of 1` rather than this. It declares no unit, because `HorizonBase::ocean` is bound on the ocean-horizon overlay, where the pieces answer the question."
+}

@@ -578,6 +578,12 @@ pub fn build_with_warnings(
         if let Some(b) = &plan.blockout {
             eprintln!("{}", b.binding.line());
         }
+        // What the ocean-datum invariant (`DW0344`) examined: how many placed
+        // pieces declare a waterline, how many stand in the sea, and how many of
+        // those were held to it. Printed on every build, ocean or not, because a
+        // check that only speaks when it finds something cannot be told from one
+        // that never ran.
+        eprintln!("{}", plan.waterline.line());
         // What the horizon built, and — the half that matters — which authority
         // stated the rectangle it built around. A surround that ringed the
         // placed footprint and one that ringed the declared region look
@@ -896,13 +902,12 @@ pub fn build_with_warnings(
             // cannot disagree with it because the measurement is pure and reads
             // the same sets. A pass owes the numbers as much as a failure does —
             // `contact_face_cells: 0` is a watertight hull saying so.
-            sea_seepage_ledger = Some(
-                crate::compiler::nav::measure_sea_seepage(
-                    &world,
-                    &world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan)),
-                )
-                .ledger(),
+            let seepage = crate::compiler::nav::measure_sea_seepage(
+                &world,
+                &world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan)),
             );
+            eprintln!("{}", seepage.line());
+            sea_seepage_ledger = Some(seepage.ledger());
 
             // **The surround bounds the map, proven rather than promised**
             // (`DW0854`). The generator guarantees that no surround column

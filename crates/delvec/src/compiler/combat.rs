@@ -2001,6 +2001,7 @@ mod tests {
             use_gates: BTreeSet::new(),
             flooded: BTreeSet::new(),
             partial: BTreeMap::new(),
+            waterloggable: BTreeSet::new(),
         }
     }
 

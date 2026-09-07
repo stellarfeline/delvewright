@@ -56,6 +56,15 @@ fn prefabs_arg() -> String {
     common::prefabs_dir().display().to_string()
 }
 
+/// The same, for a fixture that declares `horizon: ocean`: the library with
+/// `hello-room` rebuilt as a piece that can stand on a sea
+/// (`common::ocean_prefabs_dir`). The shipped room's walk plane is a block under
+/// the surface and its own gate bars flood it, so an ocean fixture built from it
+/// is a world `DW0344` and `DW0851` both refuse — correctly.
+fn ocean_prefabs_arg(tag: &str, room: common::OceanRoom) -> String {
+    common::ocean_prefabs_dir(tag, room).display().to_string()
+}
+
 /// A private mutable copy of the v06-edits fixture (whole dir, incl. the
 /// stage-7 script — `materialize_from` copies only the six base stages).
 fn edits_copy(name: &str) -> PathBuf {
@@ -317,7 +326,7 @@ fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
         "-o",
         out.to_str().unwrap(),
         "--prefabs",
-        &prefabs_arg(),
+        &ocean_prefabs_arg("edit-ocean-select", common::OceanRoom::Shore),
     ]);
     let stdout = format!(
         "{}{}",
@@ -380,7 +389,7 @@ fn edit_ocean_breach_lets_the_sea_into_the_walk_region_dw0851() {
             "-o",
             out.to_str().unwrap(),
             "--prefabs",
-            &prefabs_arg(),
+            &ocean_prefabs_arg("edit-ocean-breach", common::OceanRoom::Cellar),
         ]);
         let stdout = format!(
             "{}{}",
@@ -401,16 +410,25 @@ fn edit_ocean_breach_lets_the_sea_into_the_walk_region_dw0851() {
             "names the batch at dsl {version}:\n{stdout}"
         );
         assert!(
-            stdout.contains("HEAD cell under water"),
+            stdout.contains("hold WATER once the world loads"),
             "names what is wrong with the cells at dsl {version}:\n{stdout}"
         );
-        // The binding counts travel with the verdict: what was examined, not only
-        // what was found. A message that says "50 cells" and nothing about the
-        // 77-cell walk region it drew them from is a finding without a denominator.
+        // It names the objectives, not only the coordinates. The field case was
+        // a delve whose two objectives stood in the sea and whose artifact said
+        // `pass`; a reader acts on `obj/exit`, not on `[5, 61, 8]`.
         assert!(
-            stdout.contains("50 reachable standable cell(s)")
-                && stdout.contains("walk region of 77 cell(s)")
-                && stdout.contains("27 are wet to the feet only"),
+            stdout.contains("`obj/talk` at [5, 61, 4]")
+                && stdout.contains("`obj/exit` at [5, 61, 8]"),
+            "names the objectives standing in the water at dsl {version}:\n{stdout}"
+        );
+        // The binding counts travel with the verdict: what was examined, not only
+        // what was found. A message that says "81 cells" and nothing about the
+        // walk region it drew them from is a finding without a denominator.
+        assert!(
+            stdout.contains("81 of the 81 cell(s) a body was proved to stand on")
+                && stdout.contains("81 cell(s), of which 2 are named by the critical path")
+                && stdout.contains("6 cell(s) of open contact face")
+                && stdout.contains("0 block(s) the sea waterlogs at placement"),
             "states its binding counts and denominator at dsl {version}:\n{stdout}"
         );
         // The whole point of the ordering: the stranding proof must not get to
@@ -454,7 +472,7 @@ fn edit_ocean_unbreached_hull_is_green_and_says_what_it_examined() {
         "-o",
         out.to_str().unwrap(),
         "--prefabs",
-        &prefabs_arg(),
+        &ocean_prefabs_arg("edit-ocean-hull", common::OceanRoom::Shore),
     ]);
     let stdout = format!(
         "{}{}",

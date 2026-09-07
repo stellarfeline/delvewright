@@ -1342,12 +1342,16 @@ fn metadata() -> serde_json::Value {
 }
 
 fn write_piece(out: &Path) {
-    let mut s = build();
-    resolve_connections(ID, &mut s);
-    assert_anchors_are_standable(&s);
+    let mut room = build();
+    resolve_connections(ID, &mut room);
+    assert_anchors_are_standable(&room);
     assert_the_muster_clears_the_pits();
     assert_the_lane_keeps_off_the_muster();
-    assert_the_flight_is_broken(&s);
+    assert_the_flight_is_broken(&room);
+    // The room is designed against its own floor and then stands on the plinth
+    // the sea needs: every proof above is about the room, every proof below is
+    // about the piece that ships.
+    let (s, meta) = to_shore(ID, &room, &metadata(), &HALL_POOL);
     let cells = invariant_cells(&s);
     invariants::assert_distress_never_stacks(ID, &cells);
     invariants::assert_blocks_are_real(ID, &cells);
@@ -1367,7 +1371,7 @@ fn write_piece(out: &Path) {
         .unwrap_or_else(|e| panic!("write {}: {e}", nbt_path.display()));
 
     let meta_path = out.join(format!("{ID}.json"));
-    let mut meta = serde_json::to_string_pretty(&metadata()).expect("metadata serializes");
+    let mut meta = serde_json::to_string_pretty(&meta).expect("metadata serializes");
     meta.push('\n');
     std::fs::write(&meta_path, meta.as_bytes())
         .unwrap_or_else(|e| panic!("write {}: {e}", meta_path.display()));
@@ -1455,6 +1459,211 @@ fn skin_png(base: [u8; 3], belt: [u8; 3]) -> Vec<u8> {
     png.extend_from_slice(&png_chunk(b"IDAT", &idat));
     png.extend_from_slice(&png_chunk(b"IEND", &[]));
     png
+}
+
+/// **The shore variants**: the same pieces, built to stand on an ocean.
+///
+/// `horizon: ocean` puts every area origin at `SEA_LEVEL - 2` (the compiler's
+/// `OCEAN_BASE_Y`, 60, under a sea at 62), because that is the datum the island
+/// convention needs: a shore piece authors its water up to local y=2 and stands
+/// its land plane at local y=3, one block clear of the sea. A piece built with
+/// its floor at local y=0 — which is every piece in this file — puts its walk
+/// plane at world y=61, a block UNDER the surface, and vanilla then floods it:
+/// `/place template` hands each waterloggable block the water already in the
+/// cell, so the hall's own gate bars and chests come out `waterlogged=true` and
+/// spread. Measured on the pinned server, booting this gallery's own
+/// `ocean-horizon` point: 10 waterlogged blocks and 367 water cells across the
+/// walk plane, under a `sea-seepage.json` that said `pass`.
+///
+/// So the ocean point does not build from the same bytes. It builds from these:
+/// each piece lifted onto [`SHORE_PLINTH`] courses of solid plinth, with a tide
+/// pool cut into its floor course so the piece's own top water block lands
+/// exactly on the sea plane, and `waterline_y` declared to say so. The primary
+/// (void) point still builds from the unlifted pieces, byte for byte.
+const SHORE_PLINTH: i32 = 2;
+
+/// The hall's tide pool, in ROOM-space `(x, z)` — cut out of the floor course,
+/// which the lift puts at local y=[`SHORE_PLINTH`], so its water surface is the
+/// sea's own plane.
+///
+/// Against the west wall and away from every anchor: the nearest is
+/// `anchor/west-pit` at `[2, 1, 3]`, nine cells north of it, and
+/// [`assert_the_pool_is_clear_of_every_anchor`] is what keeps that true rather
+/// than this sentence.
+const HALL_POOL: [(i32, i32); 4] = [(1, 12), (1, 13), (2, 12), (2, 13)];
+
+/// The same, one cell, in each annex tile: the interior corner opposite the
+/// tile's own anchor at `[3, 1, 3]`.
+const ANNEX_POOL: [(i32, i32); 1] = [(1, 1)];
+
+/// Lift a built structure onto its plinth and cut the tide pool into its floor
+/// course.
+///
+/// Everything the piece already is moves up by [`SHORE_PLINTH`]; the courses
+/// underneath are solid stone; and `pool` names the floor cells that become
+/// water. Because the lift happens after [`resolve_connections`], the connector
+/// shapes the tile set resolved are carried through untouched.
+fn lift_to_shore(s: &Structure, pool: &[(i32, i32)]) -> Structure {
+    let mut palette = s.palette.clone();
+    let mut idx = |name: &str| -> i32 {
+        let e = PaletteEntry {
+            name: name.to_string(),
+            properties: None,
+        };
+        match palette.iter().position(|x| *x == e) {
+            Some(i) => i as i32,
+            None => {
+                palette.push(e);
+                (palette.len() - 1) as i32
+            }
+        }
+    };
+    let stone = idx("minecraft:stone");
+    let water = idx("minecraft:water");
+    let mut blocks: Vec<BlockEntry> =
+        Vec::with_capacity(s.blocks.len() + (s.size[0] * SHORE_PLINTH * s.size[2]) as usize);
+    for y in 0..SHORE_PLINTH {
+        for x in 0..s.size[0] {
+            for z in 0..s.size[2] {
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: stone,
+                });
+            }
+        }
+    }
+    for b in &s.blocks {
+        let pos = [b.pos[0], b.pos[1] + SHORE_PLINTH, b.pos[2]];
+        let state = if pos[1] == SHORE_PLINTH && pool.contains(&(pos[0], pos[2])) {
+            water
+        } else {
+            b.state
+        };
+        blocks.push(BlockEntry { pos, state });
+    }
+    let cut = blocks.iter().filter(|b| b.state == water).count();
+    assert_eq!(
+        cut,
+        pool.len(),
+        "the tide pool cut {cut} cell(s) where {} were named — a waterline declared over water \
+         the piece does not author is the fiction DW0344 exists to refuse",
+        pool.len()
+    );
+    Structure {
+        data_version: s.data_version,
+        size: [s.size[0], s.size[1] + SHORE_PLINTH, s.size[2]],
+        palette,
+        blocks,
+        entities: Vec::new(), // the gallery's pieces carry none, and a lift invents none
+    }
+}
+
+/// The same lift applied to the piece's metadata: every declared position rises
+/// with the blocks, the extent grows, and the piece declares the `waterline_y`
+/// its new floor course actually authors.
+///
+/// The keys are named rather than inferred. A blind walk over "every array of
+/// three integers" would also lift `structure.size`, which is an extent and not
+/// a place, and the piece would claim a box it does not fill.
+fn lift_metadata(meta: &serde_json::Value) -> serde_json::Value {
+    fn walk(v: &mut serde_json::Value) {
+        match v {
+            serde_json::Value::Object(map) => {
+                for (k, child) in map.iter_mut() {
+                    if matches!(k.as_str(), "pos" | "local_pos" | "from" | "to") {
+                        if let Some(a) = child.as_array_mut() {
+                            if a.len() == 3 {
+                                let y = a[1].as_i64().expect("a position's y is an integer");
+                                a[1] = serde_json::json!(y + SHORE_PLINTH as i64);
+                                continue;
+                            }
+                        }
+                    }
+                    walk(child);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for child in items.iter_mut() {
+                    walk(child);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut m = meta.clone();
+    walk(&mut m);
+    let sy = m["structure"]["size"][1]
+        .as_i64()
+        .expect("the declared extent has a y");
+    m["structure"]["size"][1] = serde_json::json!(sy + SHORE_PLINTH as i64);
+    // The declaration `DW0344` binds to: the local y of the top authored water
+    // block. It is the plinth height by construction — the pool is cut into the
+    // course the lift put there — so the two cannot drift.
+    m["waterline_y"] = serde_json::json!(SHORE_PLINTH);
+    m
+}
+
+/// Every anchor stands clear of the tide pool, and the pool is where the
+/// declaration says the water is.
+///
+/// The first half is the standability proof the lift could break: a pool cut
+/// under an anchor would put a body in the water. The second is the one that
+/// makes `waterline_y` a measurement — the top water block is at local
+/// y=[`SHORE_PLINTH`] and there is none above it.
+fn assert_the_shore_is_standable(id: &str, s: &Structure, meta: &serde_json::Value) {
+    let water: Vec<[i32; 3]> = s
+        .blocks
+        .iter()
+        .filter(|b| s.palette[b.state as usize].name == "minecraft:water")
+        .map(|b| b.pos)
+        .collect();
+    assert!(
+        !water.is_empty(),
+        "{id}: a shore piece with no authored water declares a waterline it cannot show"
+    );
+    let top = water.iter().map(|p| p[1]).max().expect("water exists");
+    assert_eq!(
+        top,
+        meta["waterline_y"].as_i64().expect("declared") as i32,
+        "{id}: the declared waterline is not the top authored water block"
+    );
+    let anchors = meta["anchors"].as_object().expect("an anchor inventory");
+    let mut examined = 0usize;
+    for (name, a) in anchors {
+        let Some(pos) = a.get("pos").and_then(|p| p.as_array()) else {
+            continue; // a region anchor (a gate) stands nowhere
+        };
+        let cell = [
+            pos[0].as_i64().unwrap() as i32,
+            pos[1].as_i64().unwrap() as i32,
+            pos[2].as_i64().unwrap() as i32,
+        ];
+        examined += 1;
+        for probe in [cell, [cell[0], cell[1] - 1, cell[2]]] {
+            assert!(
+                !water.contains(&probe),
+                "{id}: anchor `{name}` stands in or on the tide pool at {probe:?}"
+            );
+        }
+    }
+    assert!(
+        examined > 0,
+        "{id}: the shore proof examined ZERO anchors — a universally quantified assertion over \
+         an empty set is vacuous, not a pass"
+    );
+}
+
+/// Lift one piece onto its plinth, prove the result, and hand back both halves.
+fn to_shore(
+    id: &str,
+    s: &Structure,
+    meta: &serde_json::Value,
+    pool: &[(i32, i32)],
+) -> (Structure, serde_json::Value) {
+    let lifted = lift_to_shore(s, pool);
+    let meta = lift_metadata(meta);
+    assert_the_shore_is_standable(id, &lifted, &meta);
+    (lifted, meta)
 }
 
 fn write_skins(out: &Path) {
@@ -1809,10 +2018,11 @@ fn annex_pool() -> serde_json::Value {
 fn write_annex(out: &Path) {
     let mut anchors_proven = 0usize;
     for t in ANNEX_TILES {
-        let mut s = build_annex(t);
-        resolve_connections(t.id, &mut s);
-        assert_annex_anchor_stands(t, &s);
+        let mut room = build_annex(t);
+        resolve_connections(t.id, &mut room);
+        assert_annex_anchor_stands(t, &room);
         anchors_proven += 1;
+        let (s, tile_meta) = to_shore(t.id, &room, &annex_metadata(t), &ANNEX_POOL);
         let cells = invariant_cells(&s);
         invariants::assert_distress_never_stacks(t.id, &cells);
         invariants::assert_blocks_are_real(t.id, &cells);
@@ -1829,8 +2039,7 @@ fn write_annex(out: &Path) {
         std::fs::write(out.join(format!("{}.nbt", t.id)), &framed)
             .unwrap_or_else(|e| panic!("write {}.nbt: {e}", t.id));
 
-        let mut meta =
-            serde_json::to_string_pretty(&annex_metadata(t)).expect("metadata serializes");
+        let mut meta = serde_json::to_string_pretty(&tile_meta).expect("metadata serializes");
         meta.push('\n');
         std::fs::write(out.join(format!("{}.json", t.id)), meta.as_bytes())
             .unwrap_or_else(|e| panic!("write {}.json: {e}", t.id));
