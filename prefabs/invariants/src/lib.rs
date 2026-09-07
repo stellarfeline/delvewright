@@ -1,14 +1,17 @@
 //! **The rules every prefab generator obeys before it writes bytes.**
 //!
-//! Three modules, one authority each, and each of them a gate rather than a
+//! Four modules, one authority each, and each of them a gate rather than a
 //! convenience: [`invariants`] is the `assert!`-shaped record of every
 //! debugging lesson a tileset has cost — route walkability, stair-flank
 //! sealing, anchor sanity, gravity substrate, sightlines, fluid containment —
 //! [`connections`] is the derivation those gates are stated over, which
 //! computes each shape-carrying property from the blocks beside the cell and
 //! **refuses**, by panic, a face vanilla publishes no answer for — and
-//! [`walkplane`] is the one measurement every generator writes into the
-//! document it emits, the piece's own `walk_y`.
+//! [`walkplane`] and [`waterline`] are the two measurements every generator
+//! writes into the document it emits, the piece's own `walk_y` and, where it
+//! authors a shore, its own `waterline_y`. Neither is ever typed: a number a
+//! generator states rather than reads is a claim its own bytes may already have
+//! stopped bearing out, and `DW0887` is where a library learns it did.
 //!
 //! This is a crate because the alternative was seven copies. Every generator
 //! used to reach these two files by `#[path = "../../invariants.rs"]`, a source
@@ -24,3 +27,4 @@
 pub mod connections;
 pub mod invariants;
 pub mod walkplane;
+pub mod waterline;

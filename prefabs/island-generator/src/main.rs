@@ -58,7 +58,7 @@ use std::path::Path;
 /// The cross-tileset invariants and the connection derivation, shared as a
 /// crate so the rule is compiled once and its own tests run with the
 /// generators' (`prefabs/invariants`).
-use prefab_invariants::{connections, invariants, walkplane};
+use prefab_invariants::{connections, invariants, walkplane, waterline};
 
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
@@ -66,10 +66,15 @@ use serde::Serialize;
 const DATA_VERSION: i32 = 4671; // MC 1.21.11
 const GENERATOR: &str = "prefabs/island-generator (island-prefab-gen)";
 const MEASURED_DATE: &str = "2026-08-01";
-/// The island convention's waterline (`../island-tileset.md`): the top authored
-/// water block is local y=2, the walkable land plane local y=3. Declared in every
-/// piece's metadata as `waterline_y`, which the compiler pins to world sea level
-/// when it places an ocean-horizon area (`DW0344`).
+/// The island convention's waterline (`../island-tileset.md`): this generator
+/// lays its top water course at local y=2 and its walkable land plane at local
+/// y=3.
+///
+/// A **construction** datum and nothing else. What each document declares as
+/// `waterline_y` is read back out of the blocks
+/// (`prefab_invariants::waterline`), never taken from here: a constant in the
+/// metadata is a claim about bytes that nothing measured, and this one had
+/// already outlived three pieces of this library that author no water at all.
 const WATERLINE_Y: i32 = 2;
 
 // ---------------------------------------------------------------------------
@@ -407,10 +412,16 @@ struct MetaJson {
     /// `None` only for a piece a body cannot stand in at all.
     #[serde(skip_serializing_if = "Option::is_none")]
     walk_y: Option<i32>,
-    /// Local y of the top authored water block (the island convention's waterline).
-    /// The compiler's ocean-horizon placement invariant (`DW0344`) requires this to
-    /// land at world sea level (y=62) — see `prefabs/island-tileset.md`.
-    waterline_y: i32,
+    /// **The piece's own waterline, measured** (spec-0060 §4): the local y of
+    /// its top authored water block, read back out of the blocks this generator
+    /// just laid (`prefab_invariants::waterline`). The compiler's ocean-horizon
+    /// placement invariant (`DW0344`) puts that plane on world sea level, and
+    /// `DW0887` holds the declaration to the bytes — so a constant here would be
+    /// a claim the piece can stop bearing out with nothing to say it had.
+    /// `None`, and no key at all, for a piece that authors no water: a piece
+    /// with no shore has no waterline to state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    waterline_y: Option<i32>,
     anchors: BTreeMap<String, AnchorJson>,
     connectors: Vec<ConnectorJson>,
     lighting: LightingJson,
@@ -1134,7 +1145,7 @@ fn write_piece(out: &Path, spec: &Spec) {
             data_version: DATA_VERSION,
             generator: GENERATOR.into(),
         },
-        waterline_y: WATERLINE_Y,
+        waterline_y: waterline::measure_waterline_y(&cells),
         anchors,
         connectors,
         lighting: LightingJson {

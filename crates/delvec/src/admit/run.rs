@@ -125,6 +125,22 @@ pub fn run(args: PrefabArgs, prefabs_dir: &Path, json: bool) -> ExitCode {
 /// 3. **It is the same code the compiler runs.** One implementation, two entry
 ///    points, so a library can never be seatable according to the tool and
 ///    refused by the build.
+///
+/// Property 3 is the one this command was measured FAILING, and the failure is
+/// worth stating because "same code" was true of the member checks and false of
+/// the only question a pool has. Every member of `pool/island` and every member
+/// of `pool/cave-shore` answered every per-piece question, so both printed
+/// `SEATABLE` — and both were refused at build by `DW0886`, because the members'
+/// declared walk planes disagree with one another and one origin cannot be
+/// derived from two. That rule lived in `compiler::plan::area_base_y` alone.
+/// [`crate::compiler::seating::set_walk_plane`] holds it now, and this command,
+/// the validation check and the build derivation all read it.
+///
+/// Under `--json` the whole verdict is one object per line on stdout: the
+/// per-pool verdicts, the reasons with their codes and shapes, and the binding
+/// counts. The flag was accepted and ignored, which is worse than refusing it —
+/// a caller that asked for machine output got a table it could not parse and no
+/// signal that it had not been heard.
 fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
     let base = match horizon {
         "void" => delvewright_dsl::HorizonBase::Void,
@@ -170,6 +186,7 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
     let mut members_total = 0usize;
     let mut pools_seatable = 0usize;
     let mut lines: Vec<String> = Vec::new();
+    let mut pool_json: Vec<serde_json::Value> = Vec::new();
     for pool in &pools {
         let mut ids: Vec<String> = registry
             .pool(pool)
@@ -180,11 +197,28 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
         members_total += ids.len();
         let mut seatable = 0usize;
         let mut reasons: Vec<String> = Vec::new();
+        let mut reason_json: Vec<serde_json::Value> = Vec::new();
+        let record = |about: &str, r: &crate::compiler::seating::Reason| {
+            serde_json::json!({
+                "about": about,
+                "code": r.code.id(),
+                "shape": format!("{:?}", r.shape),
+                "short": r.short,
+                "detail": r.full,
+            })
+        };
         for id in &ids {
             let Some(f) = library.pieces.get(id) else {
                 reasons.push(format!(
                     "  {id:<28} no document or no readable `.nbt` in this library"
                 ));
+                reason_json.push(serde_json::json!({
+                    "about": id,
+                    "code": DW_INPUT,
+                    "shape": "Unreadable",
+                    "short": "no document or no readable `.nbt` in this library",
+                    "detail": "no document or no readable `.nbt` in this library",
+                }));
                 continue;
             };
             let mut why = crate::compiler::seating::seating_reasons(base, f);
@@ -198,9 +232,28 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
             for r in why {
                 let short = id.strip_prefix("prefab/").unwrap_or(id);
                 reasons.push(format!("  {short:<28} {} ({})", r.short, r.code.id()));
+                reason_json.push(record(id, &r));
             }
         }
-        let verdict = if seatable == ids.len() && !ids.is_empty() {
+        // **The question the pool has and no member of it can answer**: one
+        // origin per area, derived from one walk plane. A pool every member of
+        // which is individually perfect is refused here when they disagree, and
+        // this is where the command stopped agreeing with the build.
+        let declared: Vec<(String, Option<i32>)> = ids
+            .iter()
+            .map(|id| (id.clone(), library.pieces.get(id).and_then(|f| f.walk_y)))
+            .collect();
+        let mut set_refused = false;
+        if let crate::compiler::seating::SetPlane::Refused(rs) =
+            crate::compiler::seating::set_walk_plane(base, pool, &declared)
+        {
+            set_refused = true;
+            for r in &rs {
+                reasons.push(format!("  {:<28} {} ({})", "(the pool)", r.short, r.code.id()));
+                reason_json.push(record(pool, r));
+            }
+        }
+        let verdict = if seatable == ids.len() && !ids.is_empty() && !set_refused {
             pools_seatable += 1;
             "SEATABLE"
         } else {
@@ -211,13 +264,17 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
             ids.len()
         ));
         lines.extend(reasons);
-    }
-    for line in &lines {
-        println!("{line}");
+        pool_json.push(serde_json::json!({
+            "pool": pool,
+            "verdict": verdict.trim(),
+            "members": ids.len(),
+            "members_seatable": seatable,
+            "reasons": reason_json,
+        }));
     }
 
     let (declared, borne_out) = library.waterline_census();
-    println!(
+    let binding = format!(
         "seating binding: horizon base `{horizon}`; {pools_seatable} pool(s) seatable of \
          {pool_count} in this library, examined over {members_total} member(s); \
          {documents} document(s) read, {opened} `.nbt` opened; {declared} waterline \
@@ -226,6 +283,34 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
         documents = library.documents,
         opened = library.nbt_opened,
     );
+    if json {
+        // One object, on stdout, carrying exactly what the table carries — the
+        // per-pool verdicts, every reason with its code and its shape, and every
+        // binding count. A `--shape` string rather than a substring of the
+        // message, so a caller narrowing this set says which member of it it
+        // means.
+        let doc = serde_json::json!({
+            "check": "seating",
+            "horizon_base": horizon,
+            "pools": pool_json,
+            "binding": {
+                "pools": pools.len(),
+                "pools_seatable": pools_seatable,
+                "members": members_total,
+                "documents_read": library.documents,
+                "nbt_opened": library.nbt_opened,
+                "waterlines_declared": declared,
+                "waterlines_borne_out": borne_out,
+                "line": binding,
+            },
+        });
+        println!("{}", serde_json::to_string(&doc).expect("the verdict serializes"));
+    } else {
+        for line in &lines {
+            println!("{line}");
+        }
+        println!("{binding}");
+    }
 
     // The vacuity guard, stated over the objects rather than over an intention:
     // a run that examined no pool has judged nothing, and one that read fewer

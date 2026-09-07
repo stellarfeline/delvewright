@@ -35,7 +35,7 @@ use std::path::Path;
 /// The cross-tileset invariants and the connection derivation, shared as a
 /// crate so the rule is compiled once and its own tests run with the
 /// generators' (`prefabs/invariants`).
-use prefab_invariants::{connections, invariants, walkplane};
+use prefab_invariants::{connections, invariants, walkplane, waterline};
 
 use flate2::{Compression, GzBuilder};
 
@@ -48,11 +48,6 @@ struct Spec {
     id: &'static str,
     size: [i32; 3],
     doors: Vec<Door>,
-    /// Only the pieces that author sea declare `waterline_y` — the barrow shore
-    /// and (r5) the bell tower's ferry pier, both on the shore datum. Every
-    /// other piece omits it so `DW0344` does not demand it land at sea level
-    /// (the keep RISES).
-    waterline_y: Option<i32>,
     build: fn(&mut Grid, u64),
     anchors: fn() -> Vec<(&'static str, AnchorJson)>,
     light: Light,
@@ -73,7 +68,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-barrow-field",
             size: [barrow::SX, barrow::SY, barrow::SZ],
             doors: vec![(North, SHORE_FLOOR_Y, 24)],
-            waterline_y: Some(SHORE_FLOOR_Y),
             build: barrow::build,
             anchors: barrow::anchors,
             light: Light::OpenAir,
@@ -83,7 +77,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-gatehouse",
             size: [gatehouse::SX, gatehouse::SY, gatehouse::SZ],
             doors: vec![(South, SHORE_FLOOR_Y, 14), (North, KEEP_FLOOR_Y, 14)],
-            waterline_y: None,
             build: gatehouse::build,
             anchors: gatehouse::anchors,
             light: Light::Measured(gatehouse::light_regions, None),
@@ -93,7 +86,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-wall-walk",
             size: [wallwalk::SX, wallwalk::SY, wallwalk::SZ],
             doors: vec![(South, KEEP_FLOOR_Y, 7), (North, KEEP_FLOOR_Y, 7)],
-            waterline_y: None,
             build: wallwalk::build,
             anchors: wallwalk::anchors,
             light: Light::OpenAir,
@@ -103,7 +95,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-courtyard-chapel",
             size: [courtyard::SX, courtyard::SY, courtyard::SZ],
             doors: vec![(South, KEEP_FLOOR_Y, 23), (East, KEEP_FLOOR_Y, 23)],
-            waterline_y: None,
             build: courtyard::build,
             anchors: courtyard::anchors,
             light: Light::Measured(courtyard::light_regions, None),
@@ -113,7 +104,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-cistern",
             size: [cistern::SX, cistern::SY, cistern::SZ],
             doors: vec![(West, KEEP_FLOOR_Y, 19), (East, KEEP_FLOOR_Y, 19)],
-            waterline_y: None,
             build: cistern::build,
             anchors: cistern::anchors,
             light: Light::Measured(
@@ -133,7 +123,6 @@ fn specs() -> Vec<Spec> {
             id: "tk-bell-tower",
             size: [belltower::SX, belltower::SY, belltower::SZ],
             doors: vec![(West, KEEP_FLOOR_Y, 13)],
-            waterline_y: Some(SHORE_FLOOR_Y),
             build: belltower::build,
             anchors: belltower::anchors,
             light: Light::Measured(belltower::light_regions, None),
@@ -258,7 +247,14 @@ fn write_piece(out: &Path, spec: &Spec) {
             generator: GENERATOR.into(),
         },
         walk_y: walkplane::walk_y(spec.size, &cells),
-        waterline_y: spec.waterline_y,
+        // **Measured, never stated** (spec-0060 §4). The pieces that author sea
+        // — the barrow shore and the bell tower's ferry pier — get the local y
+        // of their own top water block; every other piece authors none and
+        // writes no key, which is what keeps `DW0344` from demanding a keep
+        // that RISES land its waterline on sea level. This was a per-spec
+        // `Option<i32>` a person set beside the geometry, and a number set
+        // beside geometry is a number the geometry can leave behind.
+        waterline_y: waterline::measure_waterline_y(&cells),
         anchors,
         connectors,
         lighting: LightingJson {

@@ -37,7 +37,7 @@ use serde::Serialize;
 /// The cross-tileset invariants and the connection derivation, shared as a
 /// crate so the rule is compiled once and its own tests run with the
 /// generators' (`prefabs/invariants`).
-use prefab_invariants::{connections, invariants, walkplane};
+use prefab_invariants::{connections, invariants, walkplane, waterline};
 
 /// MC 1.21.11 data version (ADR-0009).
 const DATA_VERSION: i32 = 4671;
@@ -1559,8 +1559,9 @@ fn lift_to_shore(s: &Structure, pool: &[(i32, i32)]) -> Structure {
 }
 
 /// The same lift applied to the piece's metadata: every declared position rises
-/// with the blocks, the extent grows, and the piece declares the `waterline_y`
-/// its new floor course actually authors.
+/// with the blocks and the extent grows. The waterline is NOT stated here —
+/// [`declare_waterline_y`] reads it back off the lifted bytes, beside
+/// [`declare_walk_y`].
 ///
 /// The keys are named rather than inferred. A blind walk over "every array of
 /// three integers" would also lift `structure.size`, which is an extent and not
@@ -1596,11 +1597,32 @@ fn lift_metadata(meta: &serde_json::Value) -> serde_json::Value {
         .as_i64()
         .expect("the declared extent has a y");
     m["structure"]["size"][1] = serde_json::json!(sy + SHORE_PLINTH as i64);
-    // The declaration `DW0344` binds to: the local y of the top authored water
-    // block. It is the plinth height by construction — the pool is cut into the
-    // course the lift put there — so the two cannot drift.
-    m["waterline_y"] = serde_json::json!(SHORE_PLINTH);
     m
+}
+
+/// **The piece's own waterline, measured off the bytes about to be written**
+/// (spec-0060 §4) — [`declare_walk_y`]'s pair.
+///
+/// The declaration `DW0344` binds to is the local y of the top authored water
+/// block, and `DW0887` holds the document to it. The tide pool this generator
+/// cuts puts that block on `SHORE_PLINTH` by construction, and writing the
+/// constant was therefore *correct* — which is exactly why it is the shape to
+/// remove: it is correct until the cut moves, and nothing here would say. Every
+/// generator in this workspace reads the number back out of its own blocks
+/// through one rule (`prefab_invariants::waterline`), and a piece that authors
+/// no water writes no key at all.
+fn declare_waterline_y(s: &Structure, meta: &mut serde_json::Value) {
+    let cells = invariant_cells(s);
+    match waterline::measure_waterline_y(&cells) {
+        Some(y) => {
+            meta["waterline_y"] = serde_json::json!(y);
+        }
+        None => {
+            meta.as_object_mut()
+                .expect("prefab metadata is an object")
+                .remove("waterline_y");
+        }
+    }
 }
 
 /// **Every anchor stands clear of the tide pool** — the standability proof the
@@ -1674,6 +1696,7 @@ fn to_shore(
 ) -> (Structure, serde_json::Value) {
     let lifted = lift_to_shore(s, pool);
     let mut meta = lift_metadata(meta);
+    declare_waterline_y(&lifted, &mut meta);
     assert_the_shore_is_standable(id, &lifted, &meta);
     declare_walk_y(id, &lifted, &mut meta);
     (lifted, meta)

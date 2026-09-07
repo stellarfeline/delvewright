@@ -100,65 +100,44 @@ pub const SEA_FLOOR_TOP_Y: i32 = SEA_LEVEL - OCEAN_WATER_LAYERS;
 /// every fallback IS the retired constant. The refusal is `DW0886`, and it has
 /// normally already been raised at validation — this is the build-tier backstop
 /// for a campaign that reached a build anyway.
+///
+/// # The rule is not written here
+///
+/// It was, and this function was the site of the defect that fact caused.
+/// `delvec prefab seating` computes its verdict from exactly these documents and
+/// never asked this question, so the shipped island and cave pools passed the
+/// command that exists to answer *can this library stand on this base* and were
+/// then refused by the build — a pairing failure inside the mechanism built to
+/// end pairing failures. [`crate::compiler::seating::set_walk_plane`] is the one
+/// implementation; this is one of its three callers, and the other two run
+/// before anything is placed.
 pub fn area_base_y(
     campaign: &Campaign,
     area: &delvewright_dsl::Area,
     prefabs: &PrefabRegistry,
 ) -> Result<i32, PlanError> {
+    use crate::compiler::seating::SetPlane;
+
     let base = crate::compiler::horizon::base_of(campaign);
     let Some(walk_ref) = crate::compiler::horizon::walk_ref_y(base) else {
         return Ok(BASE_Y);
     };
-    let members = crate::compiler::seating::area_members(area, prefabs);
-    let mut planes: BTreeSet<i32> = BTreeSet::new();
-    let mut silent: Vec<&str> = Vec::new();
-    for id in &members {
-        match prefabs.get(id).and_then(|m| m.walk_y) {
-            Some(w) => {
-                planes.insert(w);
-            }
-            // A member with no metadata at all is `DW0300`'s finding, raised
-            // where the piece is bound; it is not this rule's to restate.
-            None if prefabs.get(id).is_some() => silent.push(id.as_str()),
-            None => {}
-        }
-    }
-    if !silent.is_empty() {
-        return Err(PlanError::new(
-            crate::compiler::seating::DW_UNSEATABLE,
+    // A member with no metadata at all is `DW0300`'s finding, raised where the
+    // piece is bound; it is not this rule's to restate, so it is not offered.
+    let declared: Vec<(String, Option<i32>)> = crate::compiler::seating::area_members(area, prefabs)
+        .into_iter()
+        .filter_map(|id| prefabs.get(&id).map(|m| (id, m.walk_y)))
+        .collect();
+    match crate::compiler::seating::set_walk_plane(base, area.id.as_str(), &declared) {
+        SetPlane::Agreed(w) => Ok(walk_ref - w),
+        SetPlane::NotDerived => Ok(BASE_Y),
+        SetPlane::Refused(reasons) => Err(PlanError::new(
+            reasons[0].code,
             format!(
-                "area `{area}` is seated on a `{base}` horizon, whose datum is a WALK PLANE at \
-                 y={walk_ref} — one block above the sea — so the area's origin is derived from \
-                 the piece set's own `walk_y`. {n} of its {total} member(s) declare none: {list}. \
-                 There is no default to fall back on and there deliberately is not one: a \
-                 default is one tileset's authoring convention promoted to a world constant, and \
-                 it is why every piece of every other library used to land with its floor under \
-                 the sea. DECLARE `walk_y` on each piece named above — it is a measurement of \
-                 the piece, written by the generator that built it",
+                "area `{area}` cannot be seated on a `{base}` horizon: {full}",
                 area = area.id.as_str(),
                 base = base.token(),
-                n = silent.len(),
-                total = members.len(),
-                list = silent.join(", "),
-            ),
-        ));
-    }
-    match planes.len() {
-        0 => Ok(BASE_Y),
-        1 => Ok(walk_ref - planes.iter().next().copied().expect("one plane")),
-        _ => Err(PlanError::new(
-            crate::compiler::seating::DW_UNSEATABLE,
-            format!(
-                "area `{area}` draws from a piece set whose members do not agree about their own \
-                 walk plane — `walk_y` values {values:?} across {total} member(s) — and a `{base}` \
-                 horizon derives ONE origin per area from that number. Whichever the solver drew, \
-                 the others would stand their walk planes at the wrong height above the sea. \
-                 Split the pool so each one seats pieces built to one walk plane, or rebuild the \
-                 odd members against the plane the rest share",
-                area = area.id.as_str(),
-                base = base.token(),
-                values = planes.iter().copied().collect::<Vec<_>>(),
-                total = members.len(),
+                full = reasons[0].full,
             ),
         )),
     }
