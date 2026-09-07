@@ -15,11 +15,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::eclipse::{DW_AFFORDANCE_CONTEST, DW_BODY_ECLIPSE};
-use delvewright_compiler::emit::{self, BuildFailure};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::eclipse::{DW_AFFORDANCE_CONTEST, DW_BODY_ECLIPSE};
+use delvec::compiler::emit::{self, BuildFailure};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
 
 /// The hello-room prefab's anchors: `anchor/keeper-stand` at local `[5, 1, 4]`,
@@ -323,7 +323,7 @@ fn the_affordance_contest_states_what_it_examined() {
         })
         .expect("campaign parses");
         let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-        delvewright_compiler::eclipse::affordance_contest_binding(&plan)
+        delvec::compiler::eclipse::affordance_contest_binding(&plan)
             .into_iter()
             .map(|(kind, label, _cell)| format!("{kind} {label}"))
             .collect::<Vec<_>>()
@@ -449,7 +449,7 @@ fn contest_binding(quests: &str, quest_plan: &str) -> Vec<(&'static str, String,
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    delvewright_compiler::eclipse::affordance_contest_binding(&plan)
+    delvec::compiler::eclipse::affordance_contest_binding(&plan)
 }
 
 /// A quests document with TWO quests, each carrying one `interact` objective on

@@ -30,8 +30,7 @@ use serde_json::json;
 /// The parsed campaign at `dir` — the predicate below is asked of a `Campaign`,
 /// not of a directory.
 fn campaign_at(dir: &Path) -> delvewright_dsl::Campaign {
-    let loaded =
-        delvewright_compiler::load::load_campaign_dir(dir).expect("the campaign is readable");
+    let loaded = delvec::compiler::load::load_campaign_dir(dir).expect("the campaign is readable");
     delvewright_dsl::parse_campaign(&loaded.raw).expect("the campaign parses")
 }
 

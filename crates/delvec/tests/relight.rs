@@ -11,12 +11,12 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::light;
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::light;
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{AreaLighting, Campaign, Fixture, WorldTime, WorldWeather, parse_campaign};
 
 /// Parse the real hello-world campaign (a single lit prefab area).

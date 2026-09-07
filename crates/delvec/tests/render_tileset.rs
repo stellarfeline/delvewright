@@ -7,10 +7,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use delvec::compiler::view::meta::PrefabMeta;
+use delvec::compiler::view::tileset::{PieceInput, load_piece};
 use delvec::render::occupancy::Clearance;
 use delvec::render::shots;
-use delvewright_compiler::view::meta::PrefabMeta;
-use delvewright_compiler::view::tileset::{PieceInput, load_piece};
 use delvewright_schem::convert::{self, DATA_VERSION};
 use delvewright_schem::schematic::{BlockState, ParsedSchematic};
 use delvewright_schem::split::{TilePart, TileSet};

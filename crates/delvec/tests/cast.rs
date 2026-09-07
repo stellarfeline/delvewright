@@ -8,7 +8,7 @@
 
 mod common;
 
-use delvewright_compiler::cast;
+use delvec::compiler::cast;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn hw(name: &str) -> String {

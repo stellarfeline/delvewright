@@ -21,7 +21,7 @@ Two checks, each driven by a PINNED artifact rather than a list somebody typed:
 
 2. **A `gamerule` line names a rule the pinned server actually has.** The
    accepted identifiers are read out of the vendored 1.21.11 Brigadier tree
-   (`crates/compiler/data/commands-1.21.11.json`) — the same artifact the
+   (`crates/delvec/data/commands-1.21.11.json`) — the same artifact the
    compiler validates every emitted line against — so this cannot drift from the
    pin, and it needs no maintained list of "the bad old names".
 
@@ -38,7 +38,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-COMMAND_TREE = ROOT / "crates/compiler/data/commands-1.21.11.json"
+COMMAND_TREE = ROOT / "crates/delvec/data/commands-1.21.11.json"
 
 # The only two files allowed to name `rcon-cli`: they ARE the shared rule.
 CHANNELS = {"tools/lib/rcon.sh", "tools/lib/rcon.mjs"}
@@ -182,7 +182,7 @@ def check_gamerules(
                     f"    The pin renamed the whole registry to snake_case and reworded "
                     f"several rules; the old spelling answers \"Incorrect argument for "
                     f"command\" and changes nothing. The accepted names are the literal "
-                    f"children of `gamerule` in crates/compiler/data/commands-1.21.11.json."
+                    f"children of `gamerule` in crates/delvec/data/commands-1.21.11.json."
                 )
     return findings, bound, exemptions
 

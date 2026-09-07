@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate `crates/compiler/data/damage-types-1.21.11.json` — the vendored
+"""Regenerate `crates/delvec/data/damage-types-1.21.11.json` — the vendored
 `damage type -> {bypasses_armor, scaling}` table the spec-0023 incoming-damage
 arithmetic reads (`DW0473`).
 
@@ -26,7 +26,7 @@ stdlib). Same provenance discipline as `extract-item-stack-sizes.py`.
 ## Sources
 
 Both republished verbatim by misode/mcmeta from Mojang's generated data
-(`crates/compiler/data/PROVENANCE.md`). Fetch them once:
+(`crates/delvec/data/PROVENANCE.md`). Fetch them once:
 
     curl -sSL -o damage_type.min.json \
       https://raw.githubusercontent.com/misode/mcmeta/1.21.11-summary/data/damage_type/data.min.json
@@ -49,7 +49,7 @@ sweep rejects would leave no green state. `scaling` is copied verbatim from
 Mojang's field; a type missing it is an error, never a defaulted guess.
 
     python3 tools/extract-damage-types.py damage_type.min.json \
-      damage_type_tags.min.json crates/compiler/data/damage-types-1.21.11.json
+      damage_type_tags.min.json crates/delvec/data/damage-types-1.21.11.json
 """
 
 import hashlib
@@ -74,7 +74,7 @@ def checked(path: pathlib.Path, expected: str, label: str) -> bytes:
             f"{label} SHA-256 mismatch\n  expected {expected}\n  got      {got}\n"
             "This table is pinned to MC 1.21.11 (ADR-0009). Re-fetch the 1.21.11-summary\n"
             "file, or — if the MC pin genuinely moved — update the pin here AND in\n"
-            "crates/compiler/data/PROVENANCE.md in the same commit.\n"
+            "crates/delvec/data/PROVENANCE.md in the same commit.\n"
         )
         raise SystemExit(2)
     return raw

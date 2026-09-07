@@ -187,7 +187,7 @@ def build_tree(root: Path, **kw) -> Path:
         "docs/reference/prefab-procedure.md": procedure_md(
             kw.get("procedure_techniques", "three")
         ),
-        "crates/compiler/tests/fixtures/light/emission-1.21.11.tsv": emission_tsv(
+        "crates/delvec/tests/fixtures/light/emission-1.21.11.tsv": emission_tsv(
             rows=kw.get("emission_rows", 3), states=kw.get("emission_states", 30)
         ),
         "docs/reference/compiler.md": compiler_md(

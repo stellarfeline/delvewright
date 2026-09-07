@@ -5,8 +5,8 @@
 
 mod common;
 
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, EnvTrigger, parse_campaign, validate_campaign_with};
 
 /// The `souls-shortcut` fixture: a doorway slab sealed from world-load, opened

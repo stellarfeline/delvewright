@@ -23,11 +23,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_compiler::traversal::{
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::compiler::traversal::{
     DW_BARRIER_SURMOUNTED, DW_TRAVERSAL_IMPOSSIBLE, Locomotion, Traversal,
 };
 use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};

@@ -24,10 +24,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc carrying the stage-5 puppet plus a caller-supplied
@@ -361,7 +361,7 @@ fn the_walk_reaches_all_five_roots_in_the_fixed_order() {
     let c = parse_hw(FIVE_ROOT_QUESTS, Some(FIVE_ROOT_DIALOGUE));
     assert_validates(&c);
     let plan = Plan::build(&c, &prefabs()).expect("plan builds");
-    let roots: Vec<&str> = delvewright_compiler::timeline::walk(&plan)
+    let roots: Vec<&str> = delvec::compiler::timeline::walk(&plan)
         .into_iter()
         .filter_map(|(e, _)| match &e.verb {
             delvewright_dsl::Verb::Narrate { text, .. } => text.strip_prefix("root: "),

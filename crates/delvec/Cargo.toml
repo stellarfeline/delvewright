@@ -1,13 +1,17 @@
 [package]
-# `delvec` — the delve creator: the ONE binary the engine ships (ADR-0023 §3).
-# This crate is the executable and nothing else: `src/main.rs` is the clap root
-# that mounts every library crate's command line as a subcommand, and `tests/`
-# is where every test that runs the binary lives (`CARGO_BIN_EXE_delvec` is set
-# only for this package's own integration tests).
+# `delvec` — the delve creator: the ONE binary the engine ships (ADR-0023 §3)
+# and the one package the engine is (ADR-0025). `src/lib.rs` is the engine as a
+# library — the compiler, the grammar back end, schematic conversion, prefab
+# admission, playtest harvesting and the GPU render arms, one module each —
+# and `src/main.rs` is the clap root that mounts every module's command line as
+# a subcommand. `tests/` holds every integration test (`CARGO_BIN_EXE_delvec`
+# is set only for this package's own).
 #
 # The PACKAGE is `delvec` because `cargo install` resolves by CRATE name, never
 # by binary name. ADR-0016 names the engine `delvec`; this makes the registry
-# agree with the ADR.
+# agree with the ADR. Nothing else is ever published beside it except the
+# campaign format, `delvewright-dsl`, on its own version line: a feature adds a
+# module here, never a crate.
 name = "delvec"
 version.workspace = true
 edition.workspace = true
@@ -31,9 +35,8 @@ name = "delvec"
 path = "src/main.rs"
 
 [dependencies]
-# Every library crate the binary is assembled from, each on the engine version
-# line through `[workspace.dependencies]` (`=` requirements, ADR-0023 §6).
-delvewright-compiler.workspace = true
+# The campaign format, on its own version line through
+# `[workspace.dependencies]` (`=` requirement, ADR-0023 §6 as ADR-0025 leaves it).
 delvewright-dsl.workspace = true
 delvewright-grammar.workspace = true
 delvewright-schem.workspace = true
@@ -41,6 +44,23 @@ delvewright-orchestrator.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
+# Datapack hashing (`manifest.json`, the emitted tree's SHA-256 index) and the
+# grammar back end's provenance row. MIT/Apache-2.0.
+sha2 = "0.10"
+
+# `walk-record.json` is the one document a campaign author writes by hand that
+# is not a stage document, so it has no `Stage` and cannot reach
+# `delvewright_dsl::schema`. It gets its schema derived from its own struct
+# here instead — the same crate the rest of the DSL's schemas come from, so
+# there is no second schema generator and no hand-written copy of the form.
+# MIT.
+schemars = "1"
+
+# `crc32fast` supplies the CRC-32 the per-delve NPC-skin resource pack zip needs
+# (spec-0009 bake). The zip is hand-written with the STORE method and fixed zero
+# timestamps so its bytes — and thus its sha1 — are deterministic (ADR-0006).
+# MIT/Apache-2.0.
+crc32fast = "1"
 
 # Vanilla structure templates are gzip-framed Java NBT: `fastnbt` reads and
 # writes the NBT, `flate2` supplies the gzip container (mtime pinned to 0 for
@@ -80,5 +100,3 @@ pollster = "0.4"
 # unioned across the graph and this is the crate that needs it. MIT/Apache-2.0.
 blake3 = { version = "1", features = ["pure"] }
 
-[dev-dependencies]
-sha2 = "0.10"

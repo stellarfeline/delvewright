@@ -6,7 +6,7 @@
 //!
 //! ## Composition, not duplication
 //!
-//! The note stamp/emit functions reproduce the proven `crates/compiler/src/creator.rs`
+//! The note stamp/emit functions reproduce the proven `crates/delvec/src/compiler/creator.rs`
 //! pattern, but with **per-asset AABBs** so a note resolves `area=<asset-id>`. The
 //! gallery emits a `gallery-layout.json` that is shape-compatible with the
 //! orchestrator's `Layout`, so `curate` reuses the **exact** `delvec harvest` server-log
@@ -19,7 +19,7 @@
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::{CommandError, CommandTree};
+use crate::compiler::commands::{CommandError, CommandTree};
 use delvewright_orchestrator::{Layout, harvest};
 use serde::Serialize;
 

@@ -17,7 +17,7 @@ use crate::nbt::Nbt;
 use crate::schematic::{BlockState, ParsedSchematic};
 
 /// MC 1.21.11 structure `DataVersion` (ADR-0009; verified against
-/// `crates/compiler/data/PROVENANCE.md` and the committed `hello-room.nbt`).
+/// `crates/delvec/data/PROVENANCE.md` and the committed `hello-room.nbt`).
 pub const DATA_VERSION: i32 = 4671;
 
 /// Block names (namespace-stripped) removed unconditionally by the conversion

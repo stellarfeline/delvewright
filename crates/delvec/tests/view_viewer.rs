@@ -42,12 +42,12 @@ fn png_bytes() -> Vec<u8> {
 
 /// Every block id a prefab's palette names.
 fn blocks_in(nbt: &Path) -> BTreeSet<String> {
-    let st = delvewright_compiler::view::nbt::parse_structure(nbt).expect("parse prefab");
+    let st = delvec::compiler::view::nbt::parse_structure(nbt).expect("parse prefab");
     st.palette
         .iter()
-        .filter(|s| !delvewright_compiler::view::blockcolor::is_air(s))
+        .filter(|s| !delvec::compiler::view::blockcolor::is_air(s))
         .map(|s| {
-            let (ns, id) = delvewright_compiler::view::blockcolor::base_id(s);
+            let (ns, id) = delvec::compiler::view::blockcolor::base_id(s);
             format!("{ns}:{id}")
         })
         .collect()
@@ -727,8 +727,8 @@ fn the_page_carries_the_shared_control_table_and_only_that_one() {
 /// out from the one this file's neighbours exist to catch.
 #[test]
 fn ci_runs_every_javascript_test_beside_this_one() {
-    // The page's node tests live beside the compiler library that owns the page.
-    let here = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../compiler/tests");
+    // The page's node tests live beside this file.
+    let here = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
     let ci = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows/ci.yml");
     let Ok(text) = std::fs::read_to_string(&ci) else {
         panic!("cannot read {}", ci.display());
@@ -748,7 +748,7 @@ fn ci_runs_every_javascript_test_beside_this_one() {
         here.display()
     );
     for name in &found {
-        let invocation = format!("node --test crates/compiler/tests/{name}");
+        let invocation = format!("node --test crates/delvec/tests/{name}");
         assert!(
             text.contains(&invocation),
             "ci.yml does not run {name}: expected a step invoking `{invocation}`"

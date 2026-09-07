@@ -25,7 +25,7 @@
 
 mod common;
 
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, EffectRootKind, RawCampaign, parse_campaign};
 
 // ---------------------------------------------------------------------------

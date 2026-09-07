@@ -20,7 +20,7 @@ engine's own measured behaviour, or reasoned from a cited rule without a source 
 under the darkest reachable `(time, weather)` sky, with no `lighting` and no `mitigation`
 declaration. `DW0211` is its declared-relight sibling.
 
-The model is `crates/compiler/src/light.rs` — the **one** authority for emission, opacity and the
+The model is `crates/delvec/src/compiler/light.rs` — the **one** authority for emission, opacity and the
 flood. `crates/delvec/src/admit`'s prefab probe and spec-0010's assembled gate both read it rather than
 keeping a copy; a private second copy is what once left the prefab probe with no sky term at all
 and reported daylit colonnades as pitch black.
@@ -257,7 +257,7 @@ either readable.
 
 ## 4. The emitter table
 
-Emission values **mirror** `emission()` in `crates/compiler/src/light.rs`, which is the authority
+Emission values **mirror** `emission()` in `crates/delvec/src/compiler/light.rs`, which is the authority
 and carries a per-block wiki citation for each entry. If this table and that function disagree,
 the function is right. The other columns are what a designer needs and the engine does not model;
 they are read from each block's own page on `minecraft.wiki`. **[cited]**

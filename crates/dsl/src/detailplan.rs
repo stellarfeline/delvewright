@@ -16,7 +16,7 @@
 //! constructor every world-reaching verb goes through.
 //!
 //! This is the same tooth the blockout's is (`crate::siteplan`, and
-//! `delvewright_compiler::blockout`'s module docs): inversion is not forbidden,
+//! `delvec::compiler::blockout`'s module docs): inversion is not forbidden,
 //! it is **uncompilable**. A part that wants different traversal takes the one
 //! escalation path there is — a site-plan revision, which moves the plan hash,
 //! which re-opens the walk gate, which re-runs the whole's walk.

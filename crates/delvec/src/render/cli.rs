@@ -20,6 +20,8 @@ use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
 
+use crate::compiler::view::cli::{fail, resolve_textures};
+use crate::compiler::view::tileset;
 use crate::render::detect;
 use crate::render::diag::{DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RENDER, Diagnostic, exit};
 use crate::render::fidelity;
@@ -27,8 +29,6 @@ use crate::render::meta::PrefabMeta;
 use crate::render::render::{self, RenderParams};
 use crate::render::shots;
 use crate::render::view::View;
-use delvewright_compiler::view::cli::{fail, resolve_textures};
-use delvewright_compiler::view::tileset;
 
 /// `delvec render`: the command line, as a type. `--textures` and `--size` are
 /// global to the three arms, so `delvec render piece x -o y --size 640` and

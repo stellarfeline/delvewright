@@ -52,7 +52,7 @@ sandstone mix for calcite and polished diorite moves the mean **13.5 RGB units**
 statistic that moved.
 
 Classification — form, material family, gravity, technical, biome-tinted — needs
-no jar and comes from `crates/compiler/data/block-classification-1.21.11.json`
+no jar and comes from `crates/delvec/data/block-classification-1.21.11.json`
 (`tools/extract-block-classification.py`).
 
 ## What a report binds to
@@ -146,7 +146,7 @@ TINTED_EXACT = {
 }
 
 # Blocks that fall when unsupported (vanilla `FallingBlock`). NOT a second
-# opinion: this is the set `crates/compiler/src/assembled.rs::is_falling_block`
+# opinion: this is the set `crates/delvec/src/compiler/assembled.rs::is_falling_block`
 # owns for `DW0313`, and `tools/tests/test_block_appearance.py` reads that
 # function's own source and fails if the two ever disagree — so the palette layer
 # cannot drift into a private gravity model.

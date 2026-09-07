@@ -12,10 +12,10 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::{Plan, RegionWrite};
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::{Plan, RegionWrite};
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn hw(name: &str) -> String {

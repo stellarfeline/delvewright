@@ -10,10 +10,10 @@
 //! corpus program that declares a contract, loaded back through the engine's own
 //! `PrefabRegistry`, and placed the way a campaign places them.
 
-use delvewright_compiler::faces;
-use delvewright_compiler::plan::{AreaPlacement, PiecePlacement, PlacedTemplate};
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_compiler::solver::Rotation;
+use delvec::compiler::faces;
+use delvec::compiler::plan::{AreaPlacement, PiecePlacement, PlacedTemplate};
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::compiler::solver::Rotation;
 use delvewright_grammar::library::spatial_contract::spatial_contract;
 use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
 

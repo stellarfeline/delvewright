@@ -133,14 +133,14 @@ ALLOWLIST: dict[str, str] = {
     # both of which require a real GPU adapter + the 1.21.11 client jar (never
     # committed — EULA) to actually render a frame first. The detection
     # *algorithm* it wraps (`detect::scan_default`) is unit-tested directly in
-    # `crates/compiler/src/view/detect.rs`'s `#[cfg(test)]` module; the CLI wiring that
+    # `crates/delvec/src/compiler/view/detect.rs`'s `#[cfg(test)]` module; the CLI wiring that
     # emits DW0720 from a real render is exercised by
     # `crates/delvec/tests/render_gpu.rs::detector_catches_heavy_core_when_included`,
     # `#[ignore]`d because no GPU/jar is available in CI or this dev sandbox.
     "DW0720": (
         "requires a GPU adapter + the never-committed 1.21.11 client jar "
         "(see crates/delvec/tests/render_gpu.rs, #[ignore]d); the detector algorithm "
-        "it wraps is unit-tested in crates/compiler/src/view/detect.rs"
+        "it wraps is unit-tested in crates/delvec/src/compiler/view/detect.rs"
     ),
 }
 
@@ -400,7 +400,7 @@ def crate_test_scope_texts(crate: str) -> list[str]:
 # `use delvewright_schem::diag::{DW_INPUT, Diagnostic};` / `use delvewright_dsl::DwCode;`
 # — the crate a test imports a symbol from, so the symbol resolves against THAT
 # crate's table rather than the test's own. The crate directory is the library
-# name minus its `delvewright_` prefix; `delvewright_compiler` is `crates/compiler`.
+# name minus its `delvewright_` prefix; `delvewright_compiler` is `crates/delvec/src/compiler`.
 IMPORT_RE = re.compile(r"^\s*use\s+delvewright_(\w+)::(?:([\w:]+)::)?(?:\{([^}]*)\}|(\w+))\s*;", re.MULTILINE)
 
 
@@ -411,7 +411,7 @@ def imported_symbols(
 
     Returns (constant name -> DW code) for every diagnostic constant imported by
     name, and (module name -> crate) for every module imported — `use
-    delvewright_compiler::atmos;` or `watch::{self, …}` — so that a
+    delvec::compiler::atmos;` or `watch::{self, …}` — so that a
     `module::NAME` reference in the test body resolves against THAT crate's
     table, exactly as the compiler resolves it."""
     names_out: dict[str, str] = {}

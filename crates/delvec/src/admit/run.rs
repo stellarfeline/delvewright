@@ -736,7 +736,7 @@ fn run_gallery(dir: &Path, out: &Path, id: Option<String>, cols: usize, json: bo
                     DW_GALLERY,
                     format!(
                         "emitted command is not valid on Minecraft {}: `{}` — {}",
-                        delvewright_compiler::MC_VERSION,
+                        crate::compiler::MC_VERSION,
                         e.line.trim(),
                         e.reason
                     ),

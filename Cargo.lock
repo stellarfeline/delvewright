@@ -504,7 +504,7 @@ version = "1.2.0"
 dependencies = [
  "blake3",
  "clap",
- "delvewright-compiler",
+ "crc32fast",
  "delvewright-dsl",
  "delvewright-grammar",
  "delvewright-orchestrator",
@@ -514,22 +514,6 @@ dependencies = [
  "image 0.24.9",
  "nucleation",
  "pollster",
- "serde",
- "serde_json",
- "sha2",
- "zip",
-]
-
-[[package]]
-name = "delvewright-compiler"
-version = "1.2.0"
-dependencies = [
- "clap",
- "crc32fast",
- "delvewright-dsl",
- "fastnbt",
- "flate2",
- "image 0.24.9",
  "schemars",
  "serde",
  "serde_json",

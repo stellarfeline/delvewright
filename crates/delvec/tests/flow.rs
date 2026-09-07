@@ -22,10 +22,10 @@ mod common;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::analyze::analyze_campaign;
-use delvewright_compiler::flow::{Flow, PathStep, Playthrough};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::analyze::analyze_campaign;
+use delvec::compiler::flow::{Flow, PathStep, Playthrough};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, parse_campaign};
 
 fn branch_endings_dir() -> PathBuf {
@@ -625,9 +625,9 @@ fn a_legitimately_optional_beat_passes() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let d = delvewright_dsl::validate_campaign_with(
         &c,
-        &delvewright_compiler::registry::FullItemRegistry::v1_21_11(),
+        &delvec::compiler::registry::FullItemRegistry::v1_21_11(),
         &prefabs,
-        &delvewright_compiler::registry::FullEntityRegistry::v1_21_11(),
+        &delvec::compiler::registry::FullEntityRegistry::v1_21_11(),
     );
     assert!(
         !d.iter().any(|x| x.code == "DW0191"),

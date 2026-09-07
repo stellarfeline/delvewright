@@ -10,7 +10,7 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::textfit::{
+use delvec::compiler::textfit::{
     self, BUTTON_LABEL_BUDGET, DIALOG_BUTTON_WIDTH, DW_OPTION_LABEL_SCROLLS,
 };
 use delvewright_dsl::{
@@ -266,7 +266,7 @@ fn every_engine_fixture_fits_its_buttons() {
             .collect();
         dirs.sort();
         for dir in dirs {
-            let loaded = delvewright_compiler::load::load_campaign_dir(&dir)
+            let loaded = delvec::compiler::load::load_campaign_dir(&dir)
                 .unwrap_or_else(|e| panic!("{} loads: {e:?}", dir.display()));
             let Ok(c) = parse_campaign(&loaded.raw) else {
                 continue; // patch-style / deliberately-invalid fixtures are not ours

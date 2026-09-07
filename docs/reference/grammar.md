@@ -8,7 +8,7 @@ It is a library **and** a tool: `delvec grammar` ([`tools.md`](tools.md) §2a) i
 its entry point, and the procedure that drives it is
 [`prefab-procedure.md`](prefab-procedure.md). Nothing here is reachable from
 `delvec` and nothing ships in a delve — generation-time only (ADR-0003). The
-engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
+engine depends on it nowhere; `crates/delvec/src/compiler` names it as a *dev*-dependency
 only, to test the export seam of §7 from both sides.
 
 Two library modules exist for the tool and are public for it:
@@ -474,7 +474,7 @@ Marks collect into `Expansion::anchors` (a `BTreeMap`, keyed by exported name),
 the block grid would change what `canonical_bytes` means. The export writes them
 into the prefab metadata's `anchors` map in the hand-built `{pos, facing}` shape,
 `pos` local to the structure; `PrefabRegistry` reads a grammar prefab's anchors
-with the same code path as a hand-built one (`crates/compiler/tests/grammar_prefab.rs`).
+with the same code path as a hand-built one (`crates/delvec/tests/grammar_prefab.rs`).
 
 Refusals: a non-kebab stem is a `Program::validate` error (before any expansion);
 a mark aimed outside its own scope, an underivable facing, and two marks
@@ -1186,7 +1186,7 @@ double-**export** test over the three ported programs of §5 at four seeds
 compares the `.nbt` and the metadata JSON byte for byte (§6). The §5b staging
 rules and the §5c zone programs are **not** in that suite — `tests/export.rs`
 carries `temple` / `castle` / `church` and nothing else; what covers the staging
-rules is the registry round trip (`crates/compiler/tests/grammar_prefab.rs`),
+rules is the registry round trip (`crates/delvec/tests/grammar_prefab.rs`),
 which exports once and reads back, not twice and compares.
 
 ## 4. Failure is loud
@@ -1898,7 +1898,7 @@ JSON round trip, palette-swap-moves-no-block over **every** role each binds, and
 the double-expand determinism gate over model bytes *and* anchors
 (`tests/library.rs`, `tests/determinism.rs`). Their anchors — including generated
 `-<i>` names nobody hand-listed, and `store_room`'s seeded tell position —
-round-trip through `PrefabRegistry` (`crates/compiler/tests/grammar_prefab.rs`).
+round-trip through `PrefabRegistry` (`crates/delvec/tests/grammar_prefab.rs`).
 
 ### `boulder_stair` — the worn-tread tell (W), and the side pockets (S)
 
@@ -2350,7 +2350,7 @@ Gates (`tests/staging.rs`), each with its binding count:
 `drop_shaft`, `dumbwaiter`, `far_side_bar`, `tee_passage`, `causeway`,
 `elite_ground`, `stair_flight` and `lift_shaft` carry the same generic-suite and
 registry-round-trip promises as the eight above (`tests/library.rs`,
-`tests/determinism.rs`, `crates/compiler/tests/grammar_prefab.rs`).
+`tests/determinism.rs`, `crates/delvec/tests/grammar_prefab.rs`).
 
 Three anchor names are shared across rules — `anchor/elite` (`causeway`,
 `elite_ground`), `anchor/gate` (`watch_bay`, `far_side_bar`) and
@@ -3193,7 +3193,7 @@ passed — and the verdict is printed only once the prefab is on disk, so no
 `pass` line ever sits above a refusal.
 
 `PrefabRegistry` (the engine's reader) loads the result with no diagnostics;
-`crates/compiler/tests/grammar_prefab.rs` tests that seam from both sides.
+`crates/delvec/tests/grammar_prefab.rs` tests that seam from both sides.
 
 ## 7. Not built yet
 

@@ -15,11 +15,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::gates;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::gates;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, Diagnostic, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc at `dsl_version`, opening `anchor/door` on the talk

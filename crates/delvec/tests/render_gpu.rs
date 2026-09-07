@@ -20,11 +20,11 @@
 
 use std::path::{Path, PathBuf};
 
+use delvec::compiler::view::nbt;
 use delvec::render::detect;
 use delvec::render::fidelity;
 use delvec::render::render::{self, RenderParams};
 use delvec::render::shots;
-use delvewright_compiler::view::nbt;
 
 /// Resolve textures the way the CLI does; `None` → skip the test.
 fn textures() -> Option<String> {
@@ -270,7 +270,7 @@ fn piece_double_render_is_stable() {
         return;
     }
     let st = nbt::parse_structure(&p).expect("parse");
-    let meta = delvewright_compiler::view::meta::PrefabMeta::beside_nbt(&p).expect("meta");
+    let meta = delvec::compiler::view::meta::PrefabMeta::beside_nbt(&p).expect("meta");
     let plan = shots::plan_piece(&st, meta.as_ref(), &[]).unwrap();
     for shot in &plan.shots {
         let params = RenderParams {

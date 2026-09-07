@@ -31,10 +31,10 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::{self, Plan};
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::plan::{self, Plan};
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 use serde_json::{Value, json};
 
@@ -59,7 +59,7 @@ fn fixture(tag: &str, patch: impl FnOnce(&Path)) -> PathBuf {
 }
 
 fn plan_of(dir: &Path) -> Result<(delvewright_dsl::Campaign, PrefabRegistry), String> {
-    let loaded = delvewright_compiler::load::load_campaign_dir(dir).expect("fixture loads");
+    let loaded = delvec::compiler::load::load_campaign_dir(dir).expect("fixture loads");
     let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("library loads");
     Ok((campaign, prefabs))
@@ -76,7 +76,7 @@ fn refusal(dir: &Path) -> Result<(), (String, String)> {
 
 /// Plan **and emit** the fixture — the whole ladder an author runs.
 fn build(dir: &Path) -> Result<BuildOutput, BuildFailure> {
-    let loaded = delvewright_compiler::load::load_campaign_dir(dir).expect("fixture loads");
+    let loaded = delvec::compiler::load::load_campaign_dir(dir).expect("fixture loads");
     let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("library loads");
     let plan = Plan::build(&campaign, &prefabs).map_err(|e| BuildFailure::Diagnostic {
@@ -295,7 +295,7 @@ fn a_first_beat_across_the_yard_is_dw0873() {
 #[test]
 fn the_first_leg_is_counted() {
     let count = |dir: &Path| -> (usize, usize) {
-        let loaded = delvewright_compiler::load::load_campaign_dir(dir).expect("loads");
+        let loaded = delvec::compiler::load::load_campaign_dir(dir).expect("loads");
         let campaign = parse_campaign(&loaded.raw).expect("parses");
         let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
         let plan = Plan::build(&campaign, &prefabs).expect("plans");
@@ -307,10 +307,7 @@ fn the_first_leg_is_counted() {
             "{dir:?} must cross no areas for this count to be objectives-many"
         );
         let objectives = plan.objective_steps.len();
-        (
-            objectives,
-            delvewright_compiler::nav::critical_leg_count(&plan),
-        )
+        (objectives, delvec::compiler::nav::critical_leg_count(&plan))
     };
     let hello = count(&common::hello_world_dir());
     let trial = count(&common::keep_trial_dir());

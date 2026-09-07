@@ -24,7 +24,7 @@ mod common;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::load::{
+use delvec::compiler::load::{
     DETAIL_PLAN_FILE, GEOMETRY_BRIEF_FILE, LAYOUT_GRAPH_FILE, LoadedCampaign, SITE_PLAN_FILE,
     STAGE_FILES, WALK_RECORD_FILE, WORLD_EDITS_FILE, load_campaign_dir,
 };

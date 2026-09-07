@@ -16,7 +16,7 @@
 
 mod common;
 
-use delvewright_compiler::registry::{
+use delvec::compiler::registry::{
     DW_PREFAB_META_INVALID, DW_PREFAB_META_UNKNOWN_KEY, PrefabRegistry,
 };
 

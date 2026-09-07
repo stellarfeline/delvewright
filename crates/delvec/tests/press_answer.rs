@@ -62,11 +62,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, EnvTrigger, parse_campaign};
 
 /// The `souls-shortcut` fixture: a doorway slab sealed from world-load, opened
@@ -483,7 +483,7 @@ fn the_hitbox_contest_proof_binds_to_the_door_too() {
     let c = fixture();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
-    let binding = delvewright_compiler::eclipse::pressable_body_binding(&plan);
+    let binding = delvec::compiler::eclipse::pressable_body_binding(&plan);
     assert_eq!(
         binding,
         vec![("shortcut door", "anchor/door".to_string(), 6)],

@@ -6,11 +6,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 
 /// The i18n key inventory is derived from the stage docs (player-visible strings
@@ -535,7 +535,7 @@ fn completion_marker_channel_is_anchored_and_per_objective() {
     // ledger moves, and reads as a fact until someone checks it.
     assert_eq!(
         cp["format_version"],
-        delvewright_compiler::plan::CRITICAL_PATH_FORMAT_VERSION
+        delvec::compiler::plan::CRITICAL_PATH_FORMAT_VERSION
     );
     assert_eq!(cp["version"], "0.21.0");
 
@@ -1172,17 +1172,17 @@ mod gravity_despawn {
         }
 
         assert_eq!(
-            delvewright_compiler::assembled::DW_GRAVITY_DESPAWN,
+            delvec::compiler::assembled::DW_GRAVITY_DESPAWN,
             "DW0313",
             "the gravity-despawn diagnostic's code is part of its contract"
         );
-        let msg = delvewright_compiler::assembled::gravity_despawn_error(&plan, &bad)
+        let msg = delvec::compiler::assembled::gravity_despawn_error(&plan, &bad)
             .expect("an unsupported sand floor must raise the gravity-despawn error");
         assert!(msg.contains("despawn") && msg.contains("substrate"));
         assert!(msg.contains("Do NOT swap the floor palette"));
 
         assert!(
-            delvewright_compiler::assembled::gravity_despawn_error(&plan, &good).is_none(),
+            delvec::compiler::assembled::gravity_despawn_error(&plan, &good).is_none(),
             "a substrate-supported sand floor must pass"
         );
     }

@@ -52,7 +52,7 @@ written once and the build moves.
 
 ## The same claims, on the pages a stranger reads
 
-`crates/compiler/README.md` and `crates/dsl/README.md` are rendered VERBATIM as
+`crates/delvec/README.md` and `crates/dsl/README.md` are rendered VERBATIM as
 the crates.io front pages of `delvec` and `delvewright-dsl`, and each states the
 Minecraft version, the `dsl_version` and the minimum Rust — the three
 facts that decide whether a visitor can use the crate at all. Those were the

@@ -25,10 +25,10 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{AnchorRole, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{AnchorRole, PrefabRegistry};
 use delvewright_dsl::parse_campaign;
 use delvewright_grammar::ir::Node;
 use delvewright_grammar::{Box3, ExpandOptions, Mark, MarkAt, Program, export_prefab};
@@ -181,7 +181,7 @@ fn library_moving_the_role(tag: &str, piece: &str, from: &str, to: &str) -> Path
 // ---------------------------------------------------------------------------
 
 fn with_plan<T>(prefabs_dir: &Path, f: impl FnOnce(&Plan) -> T) -> T {
-    let loaded = delvewright_compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
+    let loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(prefabs_dir).unwrap();
     assert_eq!(
@@ -197,7 +197,7 @@ fn with_plan<T>(prefabs_dir: &Path, f: impl FnOnce(&Plan) -> T) -> T {
 /// Build, and hand back whatever came of it — a datapack or the diagnostic that
 /// stopped it.
 fn build_with(prefabs_dir: &Path) -> Result<BuildOutput, BuildFailure> {
-    let loaded = delvewright_compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
+    let loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(prefabs_dir).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
@@ -401,10 +401,9 @@ fn no_source_file_outside_the_resolver_matches_an_entry_anchor_name() {
         ),
     ];
 
-    // The compiler library's sources and this binary's own.
+    // The package's sources: the compiler and the binary that mounts it.
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
-    collect_rs(&here.join("../compiler/src"), &mut files);
     collect_rs(&here.join("src"), &mut files);
     assert!(
         files.len() > 20,
@@ -491,7 +490,7 @@ fn two_declared_entries_in_one_area_are_refused() {
             ("cave-shore.json", "anchor/exit"),
         ],
     );
-    let loaded = delvewright_compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
+    let loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).unwrap();
     let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
     let Err(err) = Plan::build(&campaign, &prefabs) else {

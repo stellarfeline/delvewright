@@ -39,9 +39,9 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use delvewright_compiler::analyze::analyze_campaign;
-use delvewright_compiler::flow::gate_flags;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::analyze::analyze_campaign;
+use delvec::compiler::flow::gate_flags;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 // ---------------------------------------------------------------------------

@@ -12,10 +12,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc whose `obj/talk` completion fires `effects` (a raw
@@ -514,17 +514,17 @@ fn a_single_objective_campaign_assembles_a_world_for_its_first_leg() {
         "fixture must declare no waves, or the world is being assembled for something else"
     );
     assert!(
-        !delvewright_compiler::clearance::has_bodies(&plan),
+        !delvec::compiler::clearance::has_bodies(&plan),
         "fixture must carry no NPC or actor body, or the world is being assembled for \
          something else"
     );
     assert_eq!(
-        delvewright_compiler::nav::critical_leg_count(&plan),
+        delvec::compiler::nav::critical_leg_count(&plan),
         1,
         "one objective, one leg: the party's move from the campaign spawn to it"
     );
     assert!(
-        delvewright_compiler::nav::needs_world(&plan),
+        delvec::compiler::nav::needs_world(&plan),
         "that one leg has to be proven over geometry, so the world is assembled"
     );
 }

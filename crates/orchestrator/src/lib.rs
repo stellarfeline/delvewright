@@ -6,7 +6,7 @@
 //!
 //! - **stamp lines** — the overlay's `[DelveNote] pos=[x,y,z] area=… quests=…
 //!   nearest_npc=…`, emitted via `say` (so they land in the server log; see
-//!   `crates/compiler/src/creator.rs`);
+//!   `crates/delvec/src/compiler/creator.rs`);
 //! - **creator chat lines** — normal player chat (`<name> text`), any language.
 //!
 //! It **pairs** each stamp with the creator's note, resolves DSL context via the

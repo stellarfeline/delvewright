@@ -9,7 +9,7 @@
 //       probed side by side for each of void / fall / drown / lava / mob:
 //         (a) the engine's own edge — the vanilla `deathCount` scoreboard
 //             criterion (`dw.deaths` vs `dw.death_ack`, see
-//             crates/compiler/src/emit.rs `emit_checkpoint_functions`);
+//             crates/delvec/src/compiler/emit.rs `emit_checkpoint_functions`);
 //         (b) an advancement on `minecraft:entity_killed_player`
 //             (`dwspike:killed_by_entity`);
 //         (c) an advancement on `minecraft:entity_hurt_player`

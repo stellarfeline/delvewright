@@ -7925,7 +7925,7 @@ fn check_enchantments(
 /// (cap 1) shipped an empty chest slot in the-drowned-bell round 2 — exactly the
 /// silent-failure class `DW0431` exists for, one tier too late. The cap comes from
 /// Mojang's own item-components data, vendored per MC pin
-/// (`crates/compiler/data/item-stack-sizes-1.21.11.json`), never a hand table.
+/// (`crates/delvec/data/item-stack-sizes-1.21.11.json`), never a hand table.
 ///
 /// Skipped when the registry does not carry stack sizes (the small vendored DSL-side
 /// subset) or the item id is unknown — the latter is already `DW0143`, and stacking

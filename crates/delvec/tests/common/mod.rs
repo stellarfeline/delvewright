@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// The six stage filenames (matching `delvewright_compiler::load::STAGE_FILES`).
+/// The six stage filenames (matching `delvec::compiler::load::STAGE_FILES`).
 pub const STAGE_FILES: [&str; 6] = [
     "world.json",
     "npcs.json",
@@ -17,7 +17,7 @@ pub const STAGE_FILES: [&str; 6] = [
     "dialogue.json",
 ];
 
-/// Repo root (two levels up from `crates/compiler`).
+/// Repo root (two levels up from `crates/delvec/src/compiler`).
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -146,7 +146,7 @@ pub fn prefabs_dir() -> PathBuf {
     static CHECKED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     let dir = repo_root().join("campaigns/prefabs");
     CHECKED.get_or_init(|| {
-        let Ok(reg) = delvewright_compiler::registry::PrefabRegistry::load_dir(&dir) else {
+        let Ok(reg) = delvec::compiler::registry::PrefabRegistry::load_dir(&dir) else {
             // An unreadable directory is the caller's own problem and every call
             // site already fails clearly on it; only the PARSE case impersonates
             // something else.
@@ -236,7 +236,7 @@ pub fn materialize(patch: &serde_json::Value, dst: &Path) {
 /// shipping one language. A test that builds a campaign declaring `languages`
 /// must pass this instead of an empty map.
 pub fn campaign_inputs(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
-    delvewright_compiler::load::load_campaign_dir(dir)
+    delvec::compiler::load::load_campaign_dir(dir)
         .expect("campaign dir loads")
         .inputs
 }
@@ -281,9 +281,9 @@ pub fn objective_effects<'a>(
 /// prints and derives its exit code from (`compiler::main`).
 pub fn validation_diagnostics(
     c: &delvewright_dsl::Campaign,
-    items: &delvewright_compiler::registry::FullItemRegistry,
-    prefabs: &delvewright_compiler::registry::PrefabRegistry,
-    entities: &delvewright_compiler::registry::FullEntityRegistry,
+    items: &delvec::compiler::registry::FullItemRegistry,
+    prefabs: &delvec::compiler::registry::PrefabRegistry,
+    entities: &delvec::compiler::registry::FullEntityRegistry,
 ) -> Vec<delvewright_dsl::Diagnostic> {
     delvewright_dsl::validate_campaign_with(c, items, prefabs, entities)
 }

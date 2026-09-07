@@ -71,11 +71,11 @@ fn both_fluid_predicates_agree_on_every_pinned_block_id() {
             format!("{bare}[level=3]"),
         ] {
             examined += 1;
-            let compiler = delvewright_compiler::assembled::is_fluid(&spelling);
+            let compiler = delvec::compiler::assembled::is_fluid(&spelling);
             let schem = delvewright_schem::fluid::is_fluid(&spelling);
             if compiler != schem {
                 disagreements.push(format!(
-                    "{spelling}: delvewright_compiler::assembled::is_fluid={compiler}, \
+                    "{spelling}: delvec::compiler::assembled::is_fluid={compiler}, \
                      delvewright_schem::fluid::is_fluid={schem}"
                 ));
             }
@@ -124,7 +124,7 @@ fn a_suffixed_spelling_is_the_same_block_to_both() {
         "water[level=0]",
         "minecraft:lava[level=1]",
     ] {
-        assert!(delvewright_compiler::assembled::is_fluid(name), "{name}");
+        assert!(delvec::compiler::assembled::is_fluid(name), "{name}");
         assert!(delvewright_schem::fluid::is_fluid(name), "{name}");
     }
 
@@ -134,7 +134,7 @@ fn a_suffixed_spelling_is_the_same_block_to_both() {
         "minecraft:lava_cauldron",
         "minecraft:waterlogged",
     ] {
-        assert!(!delvewright_compiler::assembled::is_fluid(id), "{id}");
+        assert!(!delvec::compiler::assembled::is_fluid(id), "{id}");
         assert!(!delvewright_schem::fluid::is_fluid(id), "{id}");
     }
 }

@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{AnchorRegistry, LightingProfile, PrefabId};
 use delvewright_grammar::library::{
     ambush_door, castle, causeway, cliff_path, drop_shaft, dumbwaiter, elite_ground, far_side_bar,
@@ -109,7 +109,7 @@ fn a_grammar_temple_lands_in_the_prefab_library_and_loads() {
     // decoder reads back cell for cell.
     let nbt = std::fs::read(dir.join(meta.templates()[0].file)).unwrap();
     let cells: BTreeMap<[i32; 3], String> =
-        delvewright_compiler::assembled::structure_cells_stateful(&nbt)
+        delvec::compiler::assembled::structure_cells_stateful(&nbt)
             .into_iter()
             .map(|(pos, state, _)| (pos, state))
             .collect();

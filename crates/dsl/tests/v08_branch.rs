@@ -4,7 +4,7 @@
 //! This file owns the **structural** half — the
 //! ordinary id/reference rules a branch declaration obeys like every other
 //! declaration in the DSL. The proofs *about* branches (`DW0480`–`DW0485`) are
-//! compiler-tier and live in `crates/compiler/tests/branch.rs`.
+//! compiler-tier and live in `crates/delvec/tests/branch.rs`.
 
 use delvewright_dsl::{Diagnostic, RawCampaign, check_campaign};
 

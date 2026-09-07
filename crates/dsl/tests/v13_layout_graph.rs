@@ -123,7 +123,7 @@ fn validate(graph: Option<String>) -> Vec<String> {
 /// closure's own verdict from the rest of the validation battery `validate`
 /// above runs. Both are the same tier now: `layout::check` is the only caller
 /// of `reachability`, and the compiler side of that binding is
-/// `crates/compiler/tests/layout_graph.rs`.
+/// `crates/delvec/tests/layout_graph.rs`.
 fn reachability(graph: Option<String>) -> Vec<String> {
     let raw = campaign(graph, Some(BRIEF.to_string()));
     let c = delvewright_dsl::parse_campaign(&raw).expect("the fixture parses");

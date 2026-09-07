@@ -349,7 +349,7 @@ pub fn synthesized_anchors(c: &Campaign) -> BTreeSet<String> {
 /// which place is exactly the two-functions-agreeing-about-spelling drift that
 /// note exists to remove.
 ///
-/// `crates/compiler/tests/blockout.rs`'s
+/// `crates/delvec/tests/blockout.rs`'s
 /// `the_owed_anchors_partition_the_synthesized_set` proves the two PARTITION
 /// rather than merely overlap: every synthesized name is owed by exactly one
 /// place or is a gate region no place owes. A name in neither would be one a

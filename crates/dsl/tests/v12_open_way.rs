@@ -6,7 +6,7 @@
 //! three is a campaign-side claim — they are read from the carrying piece's
 //! exported metadata — so nothing at this layer can state them and nothing at
 //! this layer can be wrong about them. The compiler's own tests
-//! (`crates/compiler/tests/open_way.rs`) are where the reference is resolved
+//! (`crates/delvec/tests/open_way.rs`) are where the reference is resolved
 //! against a placed world.
 
 use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign};

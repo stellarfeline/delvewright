@@ -230,7 +230,7 @@ pub const DW_FOOTPRINT_CLASS: crate::DwCode = crate::DwCode::new("DW0848", crate
 ///
 /// One authority with two doors, on the pattern spec-0036 §1c fixed for the
 /// spatial contract: `delvec prefab audit` asks it at the admission event, where
-/// the library's integrity lives, and `delvewright_compiler::detail` asks it
+/// the library's integrity lives, and `delvec::compiler::detail` asks it
 /// again wherever a `detail-plan` row consumes the piece. Two implementations
 /// that agreed until they did not is the failure this shape removes.
 ///

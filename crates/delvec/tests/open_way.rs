@@ -20,10 +20,10 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 use delvewright_grammar::ir::{
     Contract, EXTERIOR, EdgeClass, Envelope, Mark, MarkAt, Node, Opens, Program, Reorient,
@@ -549,7 +549,7 @@ fn campaign_with(world: String, quests: String, tower: bool) -> Campaign {
 /// instead. Returns the ERROR rather than the plan, because a `Plan` has no
 /// `Debug` to unwrap against — and because every caller here is asserting a
 /// refusal.
-fn plan_err(c: &Campaign, dir: &Path, expected: &str) -> delvewright_compiler::plan::PlanError {
+fn plan_err(c: &Campaign, dir: &Path, expected: &str) -> delvec::compiler::plan::PlanError {
     let prefabs = PrefabRegistry::load_dir(dir).unwrap();
     match Plan::build(c, &prefabs) {
         Ok(_) => panic!("{expected}: the campaign built instead"),

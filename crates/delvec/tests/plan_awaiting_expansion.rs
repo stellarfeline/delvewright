@@ -80,8 +80,8 @@ fn codes(quests: &str) -> Vec<String> {
     let c = campaign(quests);
     delvewright_dsl::validate_campaign(&c)
         .into_iter()
-        .chain(delvewright_compiler::cast::check_cast(&c))
-        .chain(delvewright_compiler::branch::check_branches(&c))
+        .chain(delvec::compiler::cast::check_cast(&c))
+        .chain(delvec::compiler::branch::check_branches(&c))
         .map(|d| d.code)
         .collect()
 }

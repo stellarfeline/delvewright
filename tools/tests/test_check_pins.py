@@ -825,7 +825,7 @@ def test_a_dockerfile_directive_wrapped_into_rust_prose_is_not_a_fetch_site(
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/compiler/src/nav.rs",
+        "crates/delvec/src/compiler/nav.rs",
         'pub const SOFT_LOCK: &str = "\\\n'
         "             What this red claims is what declarations can carry: \\\n"
         "             NOTHING THIS CAMPAIGN DECLARES SEPARATES THIS RETRY \\\n"
@@ -840,7 +840,7 @@ def test_a_workflow_directive_quoted_in_rust_is_not_a_fetch_site(repo: Path) -> 
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/compiler/src/docs.rs",
+        "crates/delvec/src/compiler/docs.rs",
         "/// The shape a workflow step takes:\n"
         'pub const STEP: &str = r#"\n'
         "    - uses: " + ACTION + "\n"
@@ -856,7 +856,7 @@ def test_a_cargo_dependency_line_quoted_in_rust_is_not_a_fetch_site(
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/compiler/src/manifest.rs",
+        "crates/delvec/src/compiler/manifest.rs",
         'pub const EXAMPLE: &str = r#"\n'
         '    delvewright-grammar = { git = "https://example.invalid/g" }\n'
         '"#;\n',
@@ -935,7 +935,7 @@ def test_the_fetch_verb_enumeration_states_what_it_examined(repo: Path) -> None:
     change is meant to be looked at rather than absorbed.
     """
     write_registry(repo, COMPLETE)
-    add_file(repo, "crates/compiler/src/nav.rs", "pub fn nav() {}\n")
+    add_file(repo, "crates/delvec/src/compiler/nav.rs", "pub fn nav() {}\n")
     r = run(repo)
     assert r.returncode == 0, r.stdout + r.stderr
     line = next(

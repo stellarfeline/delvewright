@@ -10,10 +10,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn hw(name: &str) -> String {
@@ -504,8 +504,8 @@ fn a_lethal_volume_build_is_byte_identical_across_runs() {
 /// the CI step can never quietly stop having a volume to prove.
 #[test]
 fn the_ci_fixture_validates_and_emits_its_template() {
-    use delvewright_compiler::load::load_campaign_dir;
-    use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry};
+    use delvec::compiler::load::load_campaign_dir;
+    use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry};
 
     let dir = common::compiler_fixtures_dir().join("lethal-volume");
     let loaded = load_campaign_dir(&dir).unwrap();

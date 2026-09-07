@@ -1,5 +1,5 @@
 // Scripted-teardown death classification (2026-08-06 island triage). The
-// compiler's despawn-actor `style: vanish` idiom (crates/compiler/src/emit.rs,
+// compiler's despawn-actor `style: vanish` idiom (crates/delvec/src/compiler/emit.rs,
 // `emit_despawn_actor`) relocates an actor far below the floor and then kills
 // it — `execute as … at @s run tp @s ~ -128 ~` followed by `kill` — so the
 // server broadcasts the SAME "<name> died" line a real combat loss would. The

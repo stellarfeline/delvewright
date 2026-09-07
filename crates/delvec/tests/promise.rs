@@ -13,7 +13,7 @@
 
 mod common;
 
-use delvewright_compiler::promise;
+use delvec::compiler::promise;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn hw(name: &str) -> String {

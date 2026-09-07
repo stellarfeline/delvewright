@@ -6,7 +6,7 @@ Every worker that skips them hits the same two failures.
 
 ## 1. `campaigns` symlink (untracked)
 
-`crates/compiler/tests/analyze.rs` (via `common::prefabs_dir()`) and every
+`crates/delvec/tests/analyze.rs` (via `common::prefabs_dir()`) and every
 campaign build resolve content through the `campaigns` symlink at the repo
 root (target: a `delvewright-campaigns` checkout). A fresh worktree lacks it —
 symptom: exactly two `analyze.rs` test failures that look like a broken
@@ -16,7 +16,7 @@ compiler.
 override — `$DELVEWRIGHT_CAMPAIGNS_DIR` is read by no code, so exporting it
 produces exactly the two failures this file exists to prevent. The path is
 constructed literally in five places (`crates/delvec/tests/common/mod.rs`,
-`crates/delvec/src/main.rs`'s `--prefabs` default, `crates/compiler/src/view/nbt.rs`,
+`crates/delvec/src/main.rs`'s `--prefabs` default, `crates/delvec/src/compiler/view/nbt.rs`,
 `crates/delvec/tests/render_gpu.rs`, `.github/workflows/release.yml`); making an
 override real means all five sites or none.
 

@@ -3,7 +3,7 @@
 //! Upstream reaches for Python's global `random` module; ADR-0006 forbids that
 //! shape outright. Every draw here comes from a caller-supplied `u64` seed
 //! through splitmix64 — the same generator the compiler's layout solver uses
-//! (`crates/compiler/src/solver.rs`), duplicated rather than shared because this
+//! (`crates/delvec/src/compiler/solver.rs`), duplicated rather than shared because this
 //! crate sits below the compiler and must not depend on it.
 //!
 //! Nothing else in the crate may consume entropy: no wall clock, no hash order,

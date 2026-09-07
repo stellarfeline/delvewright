@@ -12,7 +12,7 @@
 //! gate nobody has watched fail proves nothing.
 //!
 //! The sightline walk below is deliberately the same shape as the compiler's
-//! `DW0388` proof (`crates/compiler/src/nav.rs`: eye at 1.62 over the watch
+//! `DW0388` proof (`crates/delvec/src/compiler/nav.rs`: eye at 1.62 over the watch
 //! cell, target at 1.0 over the observed cell, Amanatides–Woo cell traversal,
 //! both endpoint cells exempt). It is a *generator-level* guarantee — the
 //! campaign-level proof still runs on the assembled world with real hazard
@@ -226,7 +226,7 @@ fn sees(model: &VoxelModel, watch: [i32; 3], target: [i32; 3]) -> Result<(), [i3
 
 /// Walk every unit cell the segment `a → b` passes through, in order, returning
 /// the first for which `hit` holds. Amanatides–Woo voxel traversal, ported in
-/// shape from `crates/compiler/src/nav.rs` so the generator's idea of a
+/// shape from `crates/delvec/src/compiler/nav.rs` so the generator's idea of a
 /// sightline and the compiler's cannot drift apart.
 fn walk_cells(a: [f64; 3], b: [f64; 3], hit: impl Fn([i32; 3]) -> bool) -> Option<[i32; 3]> {
     let mut cell = [

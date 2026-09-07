@@ -20,7 +20,7 @@ fn tmp(tag: &str) -> PathBuf {
 }
 
 fn render_plan_mini() -> &'static [u8] {
-    include_bytes!("../../compiler/tests/fixtures/view/render-plan-mini.json")
+    include_bytes!("fixtures/view/render-plan-mini.json")
 }
 
 #[test]

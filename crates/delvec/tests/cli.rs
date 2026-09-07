@@ -2561,7 +2561,7 @@ fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
     // Same contract the harness parses — the version fields the bot checks first.
     assert_eq!(
         bolt["format_version"],
-        delvewright_compiler::plan::CRITICAL_PATH_FORMAT_VERSION
+        delvec::compiler::plan::CRITICAL_PATH_FORMAT_VERSION
     );
     assert_eq!(bolt["campaign_id"], "hello-world");
     let steps = bolt["steps"].as_array().unwrap();

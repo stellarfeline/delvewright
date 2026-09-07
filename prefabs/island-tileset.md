@@ -35,7 +35,7 @@ PackTests all derive from placement — and ships as an island floating above an
 inescapable sea.
 
 **Why the walk plane is one above the waterline.** The compiler flood
-(`crates/compiler/src/assembled.rs`) is a conservative superset of vanilla water
+(`crates/delvec/src/compiler/assembled.rs`) is a conservative superset of vanilla water
 flow: it spreads horizontally (7-decay) and downward but **never climbs**. A y=3
 walk surface sitting on solid-at-y=2 land therefore can never be reached by the
 sea — dry standable cells are dry *by construction*, not by keeping their

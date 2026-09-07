@@ -35,7 +35,7 @@
 //!
 //! ## What the union asserts
 //!
-//! 1. **The rule has one home** — [`delvewright_compiler::reach::reach_completion`].
+//! 1. **The rule has one home** — [`delvec::compiler::reach::reach_completion`].
 //!    The v0.3+ half-extent is a **floor** over the ±1 that closed `hv-01`
 //!    (`max(1, radius)`), not a constant instead of it, and the pre-v0.3 sphere is
 //!    untouched.
@@ -57,13 +57,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_compiler::nav::{SNAP_RADIUS, World};
-use delvewright_compiler::plan::{Plan, Step};
-use delvewright_compiler::reach::{
+use delvec::compiler::nav::{SNAP_RADIUS, World};
+use delvec::compiler::plan::{Plan, Step};
+use delvec::compiler::reach::{
     DW_REACH_OFF_FLOOR, DW_REACH_UNCOMPLETABLE, ReachCompletion, check_reach_footprint,
     judge_reach_completion, reach_completion, sites,
 };
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 // ============================================================ unit fixtures ==

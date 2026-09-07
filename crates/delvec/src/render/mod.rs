@@ -27,7 +27,7 @@
 //! spelling: [`diag`] (the shared `DW072x`/`DW079x` catalog), [`meta`] (prefab
 //! metadata — sockets and anchors) and [`nbt`] (the vanilla structure reader).
 //! Everything else the CPU surface owns is reached as
-//! `delvewright_compiler::view::…` at its use site, so that a reader can always
+//! `delvec::compiler::view::…` at its use site, so that a reader can always
 //! tell which side of the shelf split a thing is on.
 
 /// The frame detectors — **defined in `delvec`**, named here.
@@ -35,7 +35,7 @@
 /// ADR-0021 §1: the shared render surface is one definition and this crate
 /// names it. `is_featureless` and `is_magenta` are pure pixel math with no GPU
 /// in them, and the CPU arms produce frames that need the same verdicts.
-pub use delvewright_compiler::view::detect;
+pub use crate::compiler::view::detect;
 pub mod cli;
 pub mod fidelity;
 pub mod occupancy;
@@ -47,4 +47,4 @@ pub mod view;
 // for `prefab`. These modules moved into `delvec` with the CPU surface; naming
 // them here keeps `crate::render::nbt` / `crate::render::diag` / `crate::render::meta` inside this
 // crate's own modules resolving to that one definition rather than to a copy.
-pub use delvewright_compiler::view::{diag, meta, nbt};
+pub use crate::compiler::view::{diag, meta, nbt};

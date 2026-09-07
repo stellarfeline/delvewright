@@ -89,7 +89,7 @@ CONNECTION_RULE_MARKERS = ("connections::resolve(",)
 # Named individually and printed on every run, for the same reason NOT_EMITTERS
 # is: a class exemption is what hid the sixth emitter.
 NOT_CONNECTION_EMITTERS = {
-    "crates/compiler/src/surround.rs": (
+    "crates/delvec/src/compiler/surround.rs": (
         "the horizon surround generator, and the only NON-fixture entry here. Its vocabulary is "
         "rock, ground, logs, leaves and ground cover, and not one of those carries a "
         "shape-carrying property — so there is nothing beside a cell for a connection to be "
@@ -141,7 +141,7 @@ NOT_EMITTERS = {
         "input fixtures: builds Sponge `.schem` bytes for the round-trip tests, deliberately "
         "including under-specified states, which are the red half of the emitter's own proof."
     ),
-    "crates/compiler/src/assembled.rs": (
+    "crates/delvec/src/compiler/assembled.rs": (
         "`#[cfg(test)]` fixture: hand-frames a template to feed `structure_cells`. Emits "
         "nothing; reads its own bytes back in the same function."
     ),

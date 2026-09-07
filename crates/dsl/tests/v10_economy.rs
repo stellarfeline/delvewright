@@ -4,8 +4,8 @@
 //! The geometric half — where a stake lands, whether the party can walk back to it,
 //! whether the ground under it is ground the runtime rewrites — is deliberately not
 //! here. Those are questions about the solved layout, which this crate does not
-//! have; they live in `crates/compiler/src/stake.rs` and are exercised by
-//! `crates/compiler/tests/v10_economy.rs`, exactly as a lethal volume's geometry is.
+//! have; they live in `crates/delvec/src/compiler/stake.rs` and are exercised by
+//! `crates/delvec/tests/v10_economy.rs`, exactly as a lethal volume's geometry is.
 
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign};
 

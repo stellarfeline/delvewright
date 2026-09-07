@@ -11,10 +11,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit;
-use delvewright_compiler::plan::{Plan, Step};
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit;
+use delvec::compiler::plan::{Plan, Step};
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
 
 /// hello-world's quests stage with one `collect`, parameterised on the adoption

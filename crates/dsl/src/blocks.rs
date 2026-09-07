@@ -56,7 +56,7 @@ const REGISTRY_JSON: &str = include_str!("../data/blocks-1.21.11.json");
 /// The shape-carrying properties per block: the properties named by `multipart`
 /// selectors in the block's own blockstate definition, derived from the 1.21.11
 /// client jar by `tools/extract-shape-properties.py` (see
-/// `crates/compiler/data/PROVENANCE.md`). A `variants` property picks one
+/// `crates/delvec/data/PROVENANCE.md`). A `variants` property picks one
 /// complete model, so omitting it renders the author's default; a `multipart`
 /// property *assembles* the model, so omitting it drops geometry — wall arms,
 /// pane connections, vine faces. That is the class line `DW0735` fires on.
@@ -90,7 +90,7 @@ const DEFAULTS_JSON: &str = include_str!("../data/block-defaults-1.21.11.json");
 /// because `minecraft:chain` is not a name at the pin.
 ///
 /// Derived from Mojang's own published data by
-/// `tools/extract-block-renames.py` (see `crates/compiler/data/PROVENANCE.md`):
+/// `tools/extract-block-renames.py` (see `crates/delvec/data/PROVENANCE.md`):
 /// which ids left the registry and when, from the per-version block registries;
 /// what each became, from the crafting recipe whose ingredient side is
 /// unchanged across the version step. A removal the recipe graph cannot pair is

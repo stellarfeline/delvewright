@@ -2,7 +2,6 @@
 resolver = "3"
 members = [
     "crates/dsl",
-    "crates/compiler",
     "crates/grammar",
     "crates/schem",
     "crates/orchestrator",
@@ -38,7 +37,6 @@ repository = "https://github.com/stellarfeline/delvewright"
 # `[engine] dsl_crate_req` in versions.toml.
 [workspace.dependencies]
 delvewright-dsl = { path = "crates/dsl", version = "=0.21.0" }
-delvewright-compiler = { path = "crates/compiler", version = "=1.2.0" }
 delvewright-grammar = { path = "crates/grammar", version = "=1.2.0" }
 delvewright-schem = { path = "crates/schem", version = "=1.2.0" }
 delvewright-orchestrator = { path = "crates/orchestrator", version = "=1.2.0" }
@@ -52,7 +50,7 @@ delvewright-orchestrator = { path = "crates/orchestrator", version = "=1.2.0" }
 # `opt-level = 1` is the setting that makes the pitfall stop existing instead of
 # documenting it (CLAUDE.md debug doctrine: a tooling default beats a doc line).
 # It is nearly free on the loop that actually matters — an incremental rebuild of
-# `crates/compiler` costs 1.8s at opt-level 1 vs 1.9s at opt-level 0, because the
+# `crates/delvec/src/compiler` costs 1.8s at opt-level 1 vs 1.9s at opt-level 0, because the
 # cost is codegen for the crate that changed, not the whole graph. `--release`
 # stays available and is still the fastest binary, but it costs 20s per
 # incremental rebuild, so it is the wrong default for an edit-compile-run loop.
@@ -92,7 +90,7 @@ delvewright-orchestrator = { path = "crates/orchestrator", version = "=1.2.0" }
 # `incremental` is deliberately NOT set, and that is measured too. It reads as the
 # obvious next saving — a cold build is 38.5s CPU cheaper without it and `target/`
 # 43% smaller — but a cold build is not the population. One function added to
-# `crates/compiler` and rebuilt costs 60.8s CPU with incremental and 265.7s
+# `crates/delvec/src/compiler` and rebuilt costs 60.8s CPU with incremental and 265.7s
 # without, so the cold saving is repaid after 0.19 rebuilds and every rebuild
 # after that is a loss; this profile exists for the edit-compile-run loop. Nor
 # would it reach CI, where the cold builds actually are: all 12 jobs across the

@@ -10,7 +10,7 @@
 //!
 //! Emitted through `say` — the only vanilla command whose output reaches the
 //! server stdout log the harvester reads (`tellraw` does not; see
-//! `crates/compiler/src/creator.rs`). Every value is an **integer block cell**:
+//! `crates/delvec/src/compiler/creator.rs`). Every value is an **integer block cell**:
 //! that is the DSL's own granularity for a camera waypoint (`anchor + integer
 //! offset`), so the proposal → report → patch round trip is lossless, and it is
 //! the only NBT numeric type a function macro substitutes without a type suffix.

@@ -3,7 +3,7 @@
 //!
 //! The sightline walk is the compiler's: eye at 1.62 over the watch cell, target
 //! at 1.0 over the observed cell, Amanatides–Woo cell traversal, both endpoint
-//! cells exempt (`crates/compiler/src/nav.rs`, which `DW0388` uses). The
+//! cells exempt (`crates/delvec/src/compiler/nav.rs`, which `DW0388` uses). The
 //! generator's idea of a sightline and the compiler's must not drift apart, so
 //! the shape is copied rather than reinvented.
 //!

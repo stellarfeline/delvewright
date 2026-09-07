@@ -19,8 +19,8 @@
 //! The demonstration is a campaign whose graph strands a body, put through each
 //! entry point with nothing else touched.
 
-use delvewright_compiler::analyze::analyze_campaign;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::analyze::analyze_campaign;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::validate::validate_campaign;
 use delvewright_dsl::{RawCampaign, parse_campaign};
 

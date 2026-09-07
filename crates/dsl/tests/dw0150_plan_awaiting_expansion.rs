@@ -21,7 +21,7 @@
 //! The claim the grouped message makes about there being no cheaper way out —
 //! that the schema-minimal stage-5 quest is refused again by `DW0481` and
 //! `DW0460` — is a claim about the compiler tier and is established there:
-//! `crates/compiler/tests/plan_awaiting_expansion.rs`.
+//! `crates/delvec/tests/plan_awaiting_expansion.rs`.
 
 mod common;
 

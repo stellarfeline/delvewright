@@ -18,7 +18,7 @@
 
 mod common;
 
-use delvewright_compiler::continuity::check_npc_continuity;
+use delvec::compiler::continuity::check_npc_continuity;
 use delvewright_dsl::{Campaign, RawCampaign, Severity, parse_campaign};
 
 fn read_hw(name: &str) -> String {

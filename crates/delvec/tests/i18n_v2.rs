@@ -492,7 +492,7 @@ fn dw0183_reserves_the_translation_tag_block() {
 /// requires a defective emitter to exist is a test that only runs once.
 #[test]
 fn dw0185_catches_an_authored_string_emitted_as_a_literal() {
-    use delvewright_compiler::emit;
+    use delvec::compiler::emit;
     let mut out: emit::BuildOutput = BTreeMap::new();
     out.insert(
         "datapack/data/x/function/leak.mcfunction".to_string(),

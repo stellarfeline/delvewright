@@ -4,7 +4,7 @@
 //! (`docs/notes/td-routing-spike.md`). The DSL layer owns the five that are
 //! decidable from the declaration alone; lane *geometry* (standable, walkable,
 //! spaced > 10) and ring *occupancy* are build-tier proofs over the assembled
-//! world (`DW0386`/`DW0387`, `crates/compiler/tests/souls_td_lanes.rs`).
+//! world (`DW0386`/`DW0387`, `crates/delvec/tests/souls_td_lanes.rs`).
 
 mod common;
 

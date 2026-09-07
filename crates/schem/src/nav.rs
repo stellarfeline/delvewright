@@ -429,7 +429,7 @@ mod tests {
     }
 
     /// The geometry the compiler's step rule refuses
-    /// (`delvewright_compiler::nav`, `step_up_needs_head_clearance_to_jump`),
+    /// (`delvec::compiler::nav`, `step_up_needs_head_clearance_to_jump`),
     /// stated here so the two answers can be read side by side. Feet at
     /// `[0,1,0]`, a floor one course higher at `x = 1,2`, and — when
     /// `low_ceiling` — a block on the cell the jumping body's head sweeps

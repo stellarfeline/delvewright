@@ -296,11 +296,12 @@ for m, mani in members.items():
 (ok if bins == [(e["crate"], "delvec")] else bad)(
     f"exactly one [[bin]] in the workspace, `delvec` in package {e['crate']!r} (found: {bins})")
 
-# 3. The compiler library target keeps its name: every `use` path spells it.
-_, compiler = by_name.get("delvewright-compiler", (None, {}))
-lib_name = compiler.get("lib", {}).get("name")
-(ok if lib_name == "delvewright_compiler" else bad)(
-    f"compiler lib target name {lib_name!r} (must stay 'delvewright_compiler')")
+# 3. The engine's library target is the package's own name: every `use` path
+#    in the binary and the tests spells `delvec::…` (ADR-0025).
+_, engine = by_name.get(e["crate"], (None, {}))
+lib_name = engine.get("lib", {}).get("name")
+(ok if lib_name == e["crate"] else bad)(
+    f"{e['crate']} lib target name {lib_name!r} (must be {e['crate']!r})")
 
 # 4. Every in-tree dependency is declared ONCE, in `[workspace.dependencies]`,
 #    with the `=` requirement that is the only binding left once `path` is

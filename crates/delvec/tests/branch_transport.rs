@@ -18,11 +18,11 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::{self, Plan};
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::{self, Plan};
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 use serde_json::{Value, json};
 

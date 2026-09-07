@@ -342,7 +342,7 @@ cannot collide with another ladder or with a live owner session.
 tier 2's ~2-min budget. Every-push coverage of the mechanism already lives in tier 1
 — the harvester's parsing/pairing/report logic (`crates/orchestrator` unit tests,
 incl. Chinese note text) and the overlay emission + byte-determinism
-(`crates/compiler` tests). Only the live wiring is deferred to tier 3.
+(`crates/delvec/src/compiler` tests). Only the live wiring is deferred to tier 3.
 
 ## What the stack does today
 

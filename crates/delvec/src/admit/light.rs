@@ -12,7 +12,7 @@
 //! # The light model is the compiler's, not this module's
 //!
 //! Block light, sky light, the 1.21.11 emitter table and the opacity table are
-//! [`delvewright_compiler::light`]'s — the same model spec-0010 measures the
+//! [`delvec::compiler::light`]'s — the same model spec-0010 measures the
 //! *assembled* world with (`DW0210`/`DW0211`). This module contributes the one
 //! thing that model cannot know about a prefab: which sky the piece stands under.
 //! For a piece that stands in open air the box handed to
@@ -41,7 +41,7 @@
 //! bare `dark` says neither. So the probe floods the piece at **both ends of the
 //! sky table the piece admits** ([`SkyClaim::night_sky`] and
 //! [`SkyClaim::daylight_sky`], which read
-//! [`delvewright_compiler::light::effective_sky`] rather than restating a number)
+//! [`delvec::compiler::light::effective_sky`] rather than restating a number)
 //! and reports both:
 //!
 //! * the **profile** is taken at the darkest sky this piece can meet — a clear
@@ -95,7 +95,7 @@
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::light::{LightModel, effective_sky};
+use crate::compiler::light::{LightModel, effective_sky};
 use delvewright_dsl::blockshape;
 use delvewright_dsl::{WorldTime, WorldWeather};
 use delvewright_schem::nav::{self, Voxels};
@@ -220,7 +220,7 @@ impl SkyClaim {
 }
 
 /// The darkest sky the engine models: a clear night. The profile is taken here,
-/// which is where [`delvewright_compiler::light::darkest_effective_sky`] bottoms
+/// which is where [`delvec::compiler::light::darkest_effective_sky`] bottoms
 /// out — so the probe can never call an interior `lit` that the compiler's own
 /// darkness proof would call dark.
 ///

@@ -19,11 +19,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_compiler::seeding;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::compiler::seeding;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn parse_dir(dir: &std::path::Path) -> Campaign {
