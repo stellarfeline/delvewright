@@ -1383,7 +1383,9 @@ fn read_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
 /// versions; the v0.6 gate keys off `world`).
 #[test]
 fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
-    let pf = common::prefabs_dir();
+    // An ocean fixture stands on a shore, not in the sea: see
+    // `common::ocean_prefabs_dir`.
+    let pf = common::ocean_prefabs_dir("v06-ocean-prefabs", common::OceanRoom::Shore);
     let camp = tmp("v06-ocean");
     copy_dir(&common::hello_world_dir(), &camp);
     let world = r#"{
@@ -1634,7 +1636,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
 /// unchanged at y=64 — the byte-identity guarantee for every existing campaign.
 #[test]
 fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
-    let pf = common::prefabs_dir();
+    let pf = common::ocean_prefabs_dir("datum-ocean-prefabs", common::OceanRoom::Shore);
 
     let place_line = |horizon: Option<&str>, name: &str| -> String {
         let camp = tmp(name);
@@ -1891,46 +1893,40 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     );
 }
 
-/// `DW0344`'s **zero binding**: an ocean world in which the invariant examined
-/// **nothing** reports under the invariant's own code, never under a second one.
+/// `DW0344` **refuses a piece that stands in the sea and says nothing about it**,
+/// and states its binding count either way.
 ///
-/// This is the shape of the failure `DW0344` cannot have on its own: it is keyed
-/// off an optional metadata field, so a piece that loses that field does not fail
-/// the check, it silently leaves it. That is exactly what the admission tool did
-/// to `waterline_y` — it read prefab metadata through a type that did not model
-/// the field and wrote the document back without it — and the world it deleted
-/// the field from would have gone on building green with `DW0344` binding to zero
-/// pieces.
+/// The invariant is keyed off an optional metadata field, so a piece that loses
+/// that field does not fail the check — it silently leaves it. That is exactly
+/// what the admission tool did to `waterline_y`: it read prefab metadata through
+/// a type that did not model the field and wrote the document back without it.
+/// The answer used to be a zero-binding REPORT, because a refusal was held to be
+/// undemandable: the only discharge an author could offer was the deleted
+/// declaration under another name, and the geometric one — "no piece reaches the
+/// sea" — looked unsatisfiable while every ocean area sits at `OCEAN_BASE_Y` = 60
+/// under a sea at 62.
 ///
-/// There is deliberately no discharge: the only one an author could offer
-/// ("this piece needs no waterline") is the deleted declaration under another
-/// name, and the only geometric one ("no piece reaches the sea") is
-/// unsatisfiable while every ocean area sits at `OCEAN_BASE_Y` = 60 under a sea
-/// at 62.
-///
-/// **The tripwire.** That last fact is asserted here rather than assumed. A
-/// binding of zero earns a refusal, and the only reason this reports instead is
-/// that the same global datum leaves an author no lever to satisfy one — the
-/// piece really is in the water and nothing in the DSL can lift it out, so a
-/// refusal would be demanding a fiction. The day a per-area datum makes a dry
-/// ocean piece authorable, the sea-plane assertion below reds and the severity
-/// question is reopened by this test rather than by anyone remembering a
-/// comment.
+/// It was satisfiable all along, and the field case is what cost the delay: a
+/// two-scene delve built its whole critical path in a keep whose walk plane sits
+/// at y=61, shipped green, and was played standing in the water. The lever is the
+/// piece, not the datum — a piece whose lower courses are solid to local y=2
+/// stands its walk plane at y=63, one clear of the sea, which is the island
+/// convention read forwards. So the report is a refusal, and the discharge is
+/// geometry.
 ///
 /// Both directions, because a one-directional gate proves nothing: with the
-/// declaration present the build says nothing, with it gone the build names
-/// what it examined and out of how many. And a non-ocean world raises nothing
-/// either way — "does not apply" and "applies and examined nothing" are
-/// different states.
+/// declaration present the build is green and the binding line says 1 of 1; with
+/// it gone the build is REFUSED and names the three moves an author has. A
+/// non-ocean world raises nothing either way — "does not apply" and "applies and
+/// examined nothing" are different states.
 #[test]
-fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
-    let prefabs_copy = tmp("dw0364-prefabs");
-    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
+fn an_ocean_world_that_declares_no_waterline_is_refused_dw0344() {
+    let prefabs_copy = common::ocean_prefabs_dir("dw0344-prefabs", common::OceanRoom::Shore);
     let meta_path = prefabs_copy.join("hello-room.json");
     let mut meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
 
-    let ocean_camp = tmp("dw0364-camp");
+    let ocean_camp = tmp("dw0344-camp");
     copy_dir(&common::hello_world_dir(), &ocean_camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(ocean_camp.join("world.json")).unwrap())
@@ -1955,8 +1951,8 @@ fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
             "--prefabs",
             prefabs_copy.to_str().unwrap(),
         ]);
-        // Both streams: an advisory is written to stdout beside the build, a
-        // refusal to stderr, and this test asserts across that boundary.
+        // Both streams: the binding line is written beside the build, a refusal
+        // to stderr, and this test asserts across that boundary.
         (
             code(&r),
             format!(
@@ -1967,53 +1963,52 @@ fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
         )
     };
 
-    // Bound: the placed piece declares the convention waterline, so the datum is
+    // Bound: the placed piece declares the convention waterline, the datum is
     // really checked, the binding count is 1 of 1, and the build is green.
-    meta["waterline_y"] = serde_json::json!(2);
-    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
     let (bound_code, bound) = build("dw0344-bound-out", &ocean_camp);
     assert_eq!(
         bound_code, 0,
         "a bound ocean datum at the convention waterline must build:\n{bound}"
     );
     assert!(
-        !bound.contains("the ocean-datum check examined ZERO"),
-        "a check that examined a piece must not report itself unbound:\n{bound}"
+        bound.contains("waterline binding: 1 of 1 placed piece(s) declare a `waterline_y`"),
+        "the binding count is stated on a green build too — a count only says \
+         something when the run that found nothing prints it:\n{bound}"
+    );
+    assert!(
+        bound.contains("1 piece(s) have a box reaching at or below the sea plane"),
+        "and how many pieces stand in the sea:\n{bound}"
     );
 
     // Unbound: the declaration is gone — which is precisely what an admission
-    // step that did not model the field left behind. The check now binds to
-    // zero pieces, and a check that examined nothing has proved nothing.
+    // step that did not model the field left behind. The build is refused where
+    // the piece is placed.
     meta.as_object_mut().unwrap().remove("waterline_y");
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
     let (unbound_code, unbound) = build("dw0344-unbound-out", &ocean_camp);
-    assert_eq!(
+    assert_ne!(
         unbound_code, 0,
-        "the zero binding reports beside the build today:\n{unbound}"
+        "a piece standing in the sea with no waterline is refused:\n{unbound}"
     );
     assert!(
         unbound.contains("DW0344"),
-        "the zero binding answers under the invariant's own code, not a second \
-         code of its own:\n{unbound}"
+        "under the invariant's own code, not a second code of its own:\n{unbound}"
     );
     assert!(
-        unbound.contains("the ocean-datum check examined ZERO of 1 placed piece(s)"),
-        "it must state what it examined and out of how many:\n{unbound}"
+        unbound.contains("prefab `prefab/hello-room` at y=60")
+            && unbound.contains("declares no `waterline_y`"),
+        "it names the piece and what is missing:\n{unbound}"
     );
-    // The tripwire. This is the fact that makes a refusal undemandable rather
-    // than merely unchosen: the piece really is in the water, and under the
-    // single global ocean datum an author has no lever to lift it out. When a
-    // per-area datum lands and a dry ocean piece becomes authorable, this
-    // assertion reds — which is the point. Do not relax it; take it as the
-    // signal to raise this zero binding to a refusal.
-    assert!(
-        unbound.contains("1 of those piece(s) stand at or below the sea plane"),
-        "it must state how many pieces stand in the sea:\n{unbound}"
-    );
+    // A diagnostic that refuses owes the author a move, and there are three.
+    for move_ in ["(1) DECLARE", "(2) RAISE", "(3) CHOOSE another horizon"] {
+        assert!(
+            unbound.contains(move_),
+            "the refusal names the move `{move_}`:\n{unbound}"
+        );
+    }
 
     // A world with no ocean horizon is not in scope at all: "does not apply" and
-    // "applies and examined nothing" are different states, and only the second
-    // refuses.
+    // "applies and examined nothing" are different states, and the line says which.
     let void_camp = tmp("dw0344-void-camp");
     copy_dir(&common::hello_world_dir(), &void_camp);
     let (void_code, void) = build("dw0344-void-out", &void_camp);
@@ -2022,8 +2017,8 @@ fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
         "a world with no ocean horizon has no datum to bind to:\n{void}"
     );
     assert!(
-        !void.contains("the ocean-datum check examined ZERO"),
-        "a non-ocean world must not report an unbound ocean datum:\n{void}"
+        void.contains("this world declares no ocean horizon"),
+        "a non-ocean world says the invariant does not apply:\n{void}"
     );
 }
 

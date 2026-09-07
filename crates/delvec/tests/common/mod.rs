@@ -668,6 +668,132 @@ pub fn write_tiled_zone(
     .unwrap();
 }
 
+/// Which ocean-legitimate `hello-room` a fixture wants.
+pub enum OceanRoom {
+    /// The shore: two courses of solid plinth with a tide pool cut into the
+    /// floor course, so the walk plane stands at local y=3 — one block clear of
+    /// the sea, which is the island convention. Nothing the sea does reaches it.
+    Shore,
+    /// The cellar: the same declared waterline, and a room whose floor is the
+    /// piece's own local y=0, so its walk plane is a block UNDER the surface.
+    /// A legal piece — `DW0344` is satisfied, the waterline really is where the
+    /// declaration says — and the shape `DW0851` exists for: open a face and the
+    /// sea is on the walk plane.
+    Cellar,
+}
+
+/// A copy of the prefab library in which `hello-room` is a piece that can stand
+/// on an ocean, for every fixture that declares `horizon: ocean`.
+///
+/// The shipped `hello-room` cannot. `horizon: ocean` puts an area origin at
+/// y=60 under a sea at 62, and a piece with its floor at local y=0 then stands
+/// its walk plane at y=61 — a block under the surface — while declaring nothing
+/// about where it meets the sea. That is not a modelling nicety: the room
+/// carries four iron bars at local y=1 and 2, `/place template` hands each of
+/// them the water already in the cell, and the delivered room floods from its
+/// own gate. `DW0344` refuses the placement and `DW0851` refuses the flood, both
+/// correctly.
+///
+/// So an ocean fixture gets a piece built for an ocean: the same room and the
+/// same anchor names, with a tide pool whose surface is the sea's own plane, so
+/// `waterline_y: 2` is a measurement rather than a fiction. [`OceanRoom`]
+/// chooses whether its walk plane stands above that plane or below it.
+///
+/// Returns the directory, which is a temp copy: nothing here touches the library.
+pub fn ocean_prefabs_dir(tag: &str, room: OceanRoom) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(tag);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    copy_dir_all(&prefabs_dir(), &dir);
+    let plinth = match room {
+        OceanRoom::Shore => 3,  // solid to local y=2; the walk plane is y=3
+        OceanRoom::Cellar => 1, // solid to local y=0; the walk plane is y=1
+    };
+    let size = [11, plinth + 6, 11];
+    let floor = plinth; // the first air course: where a body's feet go
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..size[0] {
+        for z in 0..size[2] {
+            for y in 0..plinth {
+                // The shore's tide pool is a cell of the floor course; the
+                // cellar has no floor course above the sea, so its water is a
+                // sealed well in the corner buttress below.
+                let pool = matches!(room, OceanRoom::Shore) && [x, y, z] == [1, 2, 1];
+                cells.push((
+                    [x, y, z],
+                    if pool {
+                        "minecraft:water"
+                    } else {
+                        "minecraft:stone"
+                    },
+                ));
+            }
+            // Walls and roof around the room the anchors stand in. Four
+            // glowstones in the roof: a dark room is `DW0210`, and a fixture
+            // that trips a check it is not about proves nothing about the one
+            // it is.
+            let lamp = matches!((x, z), (3, 3) | (3, 7) | (7, 3) | (7, 7));
+            for y in floor..size[1] {
+                if x == 0 || x == size[0] - 1 || z == 0 || z == size[2] - 1 || y == size[1] - 1 {
+                    let roof = y == size[1] - 1;
+                    cells.push((
+                        [x, y, z],
+                        if roof && lamp {
+                            "minecraft:glowstone"
+                        } else {
+                            "minecraft:stone"
+                        },
+                    ));
+                }
+            }
+        }
+    }
+    if let OceanRoom::Cellar = room {
+        // The well: one water cell at local y=2 — the sea's plane, which is what
+        // `waterline_y` declares — sealed on every face by the corner buttress,
+        // so it is the piece's own water and not a leak (`DW0318`).
+        for c in [[1, 1, 1], [1, 3, 1], [2, 2, 1], [1, 2, 2]] {
+            cells.push((c, "minecraft:stone"));
+        }
+        cells.push(([1, 2, 1], "minecraft:water"));
+    }
+    std::fs::write(dir.join("hello-room.nbt"), structure_nbt(size, &cells)).unwrap();
+    let meta = serde_json::json!({
+        "prefab_id": "prefab/hello-room",
+        "structure": {
+            "file": "hello-room.nbt",
+            "id": "hello-room",
+            "size": size,
+            "data_version": 4671,
+            "generator": "crates/delvec/tests/common::ocean_prefabs_dir",
+        },
+        "waterline_y": 2,
+        "anchors": {
+            "spawn": { "pos": [5, floor, 2], "facing": "south", "role": "entry" },
+            "anchor/keeper-stand": { "pos": [5, floor, 4], "facing": "north" },
+            "anchor/exit": { "pos": [5, floor, 8] },
+            "anchor/door": {
+                "region": { "from": [4, floor, 6], "to": [5, floor + 2, 6] },
+                "block": "minecraft:iron_bars"
+            },
+        },
+        "connectors": [],
+        "lighting": { "profile": "lit", "measured_min_light": 8, "measured": "2026-08-15" },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Test fixture.",
+            "provenance": "Synthesised by crates/delvec/tests/common::ocean_prefabs_dir."
+        }
+    });
+    std::fs::write(
+        dir.join("hello-room.json"),
+        serde_json::to_string_pretty(&meta).unwrap() + "\n",
+    )
+    .unwrap();
+    dir
+}
+
 /// Write a single-template prefab into `dir`: one `.nbt` plus its metadata.
 ///
 /// The companion of [`write_tiled_zone`] on the other packaging, so a test that
