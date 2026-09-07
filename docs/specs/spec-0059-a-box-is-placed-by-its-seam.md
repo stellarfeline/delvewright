@@ -167,7 +167,7 @@ writing fresh pays, and it is not committed because it moves the baseline.
 | `DW0826` | unchanged: a derived corner is judged against the region exactly as a typed one; the message names the box and how its corner was obtained. |
 | `DW0829`, `DW0830`, `DW0831` | unchanged: judged on the derived cells and the derived sill. The sill-step half of `DW0829` reads `max(floor(a), floor(b)) - floor(source)`, so a walk between planes more than a step apart is refused as today and the remedy is the same (a stair). |
 | `DW0843`, `DW0844` | unchanged: the frame handed to a detail piece is the derived box; the openings it must answer are the derived crossings. |
-| `DW0841` | unchanged rule; the plan's hash is over its canonical bytes, so the form change moves every walk record once, in the adopting change. |
+| `DW0841` | unchanged rule; what the freshness key is over is spec-0050 §2's, and this form change moves every walk record once, in the adopting change. |
 
 No refusal is weakened. A plan that was refused before is refused after with
 the same code; a plan that is refused after was, in the old form, a plan the
