@@ -41,8 +41,8 @@
 //!
 //! # What this test holds
 //!
-//! Not that the loop passes — a server and a bot decide that, and
-//! `.github/workflows/release.yml` runs them. What it holds is the property that
+//! Not that the loop passes — a server and a bot decide that, and only a hand
+//! run of `validation/bot-run.sh` does. What it holds is the property that
 //! makes the loop *reachable at all*, and which nothing else in the repo asserts:
 //! this campaign compiles to a mandatory encounter whose governing checkpoint is
 //! set by an EARLIER step. Without it the fixture could quietly drift back into

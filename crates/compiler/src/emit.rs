@@ -14575,7 +14575,7 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// compiler pins instead is everything damage is a function of — `NoGravity` so
 /// the flight path is the proven straight segment, `crit:0b` so the roll is not
 /// random, and the exact `Motion` magnitude — leaving the landed-damage check to
-/// the tier-3 bot playthrough.
+/// the bot playthrough (`validation/bot-run.sh`).
 fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &PayloadPlans) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);

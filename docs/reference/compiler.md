@@ -5282,8 +5282,9 @@ client into every declared lethal volume, dies there, and asserts the volume's
 wording, the declared forfeit, the stake's presence at the table's own anchor, the
 walk back, an exact restore under a double right-click in one tick, the retirement
 of the collected hardware, and the respawn seat — all against
-`validation/death-plan.json`, never against the emission. `.github/workflows/release.yml`
-runs it over `crates/delvec/tests/fixtures/economy`.
+`validation/death-plan.json`, never against the emission. No CI job runs it; it is
+run by hand, `EULA=TRUE validation/bot-run.sh --project dw-death-loop --output
+./delve-output-economy` over a build of `crates/delvec/tests/fixtures/economy`.
 
 **And the die-retry loop, which had never run.** That stage — death → respawn at
 the governing checkpoint → walk back → re-engage — needs an ARMED checkpoint

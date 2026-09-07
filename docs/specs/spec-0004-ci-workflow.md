@@ -56,6 +56,10 @@ May later move to a self-hosted runner if hosted minutes/latency become a proble
 - [ ] A seeded nondeterminism fixture fails the determinism gate *(gate is green;
       the negative fixture is deferred with the M2 fixture-matrix work)*.
 
+## Departures
+
+- The tier-3 line above is history: this repository's `release.yml` was deleted having never run once, and the release ladder is the CONTENT repository's `release` workflow on a `release/<campaign>/v<semver>` tag, per spec-0024 §1.
+
 ## Notes for the future (packaging/release spec)
 
 - The delve image's world-gen env in `Dockerfile.delve` is hand-mirrored from the
