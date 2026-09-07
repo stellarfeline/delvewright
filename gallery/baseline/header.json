@@ -6,7 +6,7 @@
     "units_unaccounted": 0
   },
   "delvec_version": "1.2.0",
-  "dsl_version": "0.21.0",
-  "gallery_source_sha256": "f47271ca26dd53fb298e58c1768599ba4eb61bc02a6f5657f19fcd7b8151eea0",
+  "dsl_version": "0.20.0",
+  "gallery_source_sha256": "5eb6b535515ddc24e682ad8ae5b6276bb881991356db8a416ecf1b6c99d3108a",
   "generator_input_sha256": "65a1663d522f4c8415fd1b88a2caf9f7754f0a63adcad7ed9239609d273de0a5"
 }
