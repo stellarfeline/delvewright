@@ -127,7 +127,7 @@ mineflayer = "4.37.1"
 #
 # The number lives in the root Cargo.toml's `[workspace.package] version`, which
 # the engine crate inherits; check-versions.sh holds the two equal.
-version = "1.2.0"
+version = "1.3.0"
 
 # crates.io identity of the ONE binary (ADR-0023 §3) and of the whole engine
 # (ADR-0025): `cargo install` resolves by CRATE name, never by binary name, so
