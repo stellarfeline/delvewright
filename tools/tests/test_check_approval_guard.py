@@ -38,7 +38,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
+import random
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -150,6 +152,14 @@ def undo_resolution(document: object) -> object:
             for k, v in document.items()
         }
     return document
+
+
+class _Hang(Exception):
+    """Raised by the fuzz test's alarm when one `load` has not terminated."""
+
+
+def _alarm(*_args) -> None:
+    raise _Hang
 
 
 ruby_present = pytest.mark.skipif(
@@ -317,11 +327,51 @@ def test_our_parser_agrees_with_psych_on_every_live_workflow():
         ("jobs:\n\ta: 1\n", "tab"),
         ("jobs:\n  a: 1\n     b: 2\n", "unexpected indent"),
         ("jobs:\n  a: { unterminated: 1\n", "flow collection"),
+        # `[x::y]` left the flow scanner standing on a `:` neither branch
+        # consumes, and the loop appended an empty item forever. A parser that
+        # HANGS is worse than one that refuses: the CI step never reports at all,
+        # and a job that never finishes reads as a slow runner. Found by fuzzing
+        # this parser with random punctuation, not by reading it.
+        ("a: [x::y]\n", "a flow entry with no separator after it"),
     ],
 )
 def test_the_parser_refuses_constructs_it_does_not_implement(text, why):
     with pytest.raises(wy.WorkflowYamlError):
         wy.load(text)
+
+
+def test_the_parser_ends_in_a_verdict_on_random_punctuation():
+    """Every input reaches an answer or a refusal — never a crash, never a loop.
+
+    Both bugs this pins were found by fuzzing and neither by reading. `a: [x::y]`
+    left the flow scanner standing on a `:` that neither branch consumed, and the
+    loop appended an empty item FOREVER; `-` followed by trailing spaces indexed
+    an empty string. A parser that hangs is worse than one that refuses: the CI
+    step never reports at all, and a job that never finishes reads as a slow
+    runner rather than as a defect. Seeded, so the corpus is the same every run.
+    """
+    random.seed(20260907)
+    alphabet = list("abc: -[]{}\"'#|>&*!?\n\t01,.")
+    deadline = hasattr(signal, "SIGALRM")
+    if deadline:
+        signal.signal(signal.SIGALRM, _alarm)
+    try:
+        for _ in range(4000):
+            text = "".join(random.choice(alphabet) for _ in range(random.randint(1, 60)))
+            if deadline:
+                signal.setitimer(signal.ITIMER_REAL, 2.0)
+            try:
+                wy.load(text)
+            except (wy.WorkflowYamlError, RecursionError):
+                pass
+            except _Hang:
+                pytest.fail(f"the parser did not terminate on {text!r}")
+            finally:
+                if deadline:
+                    signal.setitimer(signal.ITIMER_REAL, 0)
+    finally:
+        if deadline:
+            signal.signal(signal.SIGALRM, signal.SIG_DFL)
 
 
 def test_a_refused_workflow_file_is_a_finding_not_a_skip(gate, tmp_path):

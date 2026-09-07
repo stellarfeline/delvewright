@@ -1,3 +1,6 @@
+# The `uses:` steps below are LOCAL action paths on purpose: an `owner/repo@ref`
+# anywhere in this tree is a pin the registry must hold (`tools/check-pins.py`),
+# and a fixture is not a place this repository fetches anything from.
 name: fixture — the environment name cannot be read out of the declaration
 on: { push: { branches: [main] } }
 jobs:
@@ -7,6 +10,6 @@ jobs:
     environment:
       url: https://crates.io/crates/delvec
     steps:
-      - uses: actions/checkout@v4
+      - uses: ./.github/actions/fixture-checkout
       - name: the gate actually bound
         run: bash tools/assert-run-approved.sh crates-io

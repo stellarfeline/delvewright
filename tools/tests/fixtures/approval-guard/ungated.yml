@@ -1,3 +1,6 @@
+# The `uses:` steps below are LOCAL action paths on purpose: an `owner/repo@ref`
+# anywhere in this tree is a pin the registry must hold (`tools/check-pins.py`),
+# and a fixture is not a place this repository fetches anything from.
 name: fixture — no job declares an environment
 on: { push: { branches: [main] } }
 jobs:
@@ -5,5 +8,5 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: ./.github/actions/fixture-checkout
       - run: cargo build --workspace

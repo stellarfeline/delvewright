@@ -203,13 +203,15 @@ class _Parser:
             body = line.lstrip(" ")
             if not (body == "-" or body.startswith("- ")):
                 return out
-            if body == "-":
+            after = body[2:] if body != "-" else ""
+            content_col = here + 2 + (len(after) - len(after.lstrip(" ")))
+            content = after.lstrip(" ")
+            # `-` alone, and `-` followed only by trailing spaces, are the same
+            # entry: the node is whatever is indented under it.
+            if content == "":
                 self.i += 1
                 out.append(self._parse_block_child(indent))
                 continue
-            after = body[2:]
-            content_col = here + 2 + (len(after) - len(after.lstrip(" ")))
-            content = after.lstrip(" ")
             if self._looks_like_key(content):
                 # Rewrite `  - uses: x` into `    uses: x` and let the mapping
                 # parser own it; the entry's keys continue at `content_col`.
@@ -221,6 +223,8 @@ class _Parser:
         # unreachable
 
     def _looks_like_key(self, content: str) -> bool:
+        if content == "":
+            return False
         if content[0] in "'\"":
             try:
                 _, offset = self._scan_quoted(content)
@@ -394,6 +398,17 @@ class _Parser:
                 pairs[str(value)] = inner
             else:
                 items.append(value)
+            # An entry must be followed by a separator or the closing bracket.
+            # Without this the scanner can stand still — `[x::y]` leaves `pos` on
+            # a `:` that neither branch consumes, and the loop appends an empty
+            # item forever. A parser that hangs is worse than one that refuses:
+            # the CI step never reports at all.
+            while pos < len(s) and s[pos] == " ":
+                pos += 1
+            if pos >= len(s) or s[pos] not in ("," + closer):
+                self._die(
+                    f"a flow collection this parser cannot read, at {s[pos:pos + 12]!r}"
+                )
 
     def _scan_flow_scalar(self, s: str, pos: int) -> tuple[Any, int]:
         if s[pos] in "{[":

@@ -7,7 +7,7 @@
           "runs-on": "ubuntu-latest",
           "steps": [
             {
-              "uses": "actions/checkout@v4"
+              "uses": "./.github/actions/fixture-checkout"
             },
             {
               "name": "decide",
@@ -26,7 +26,7 @@
           "runs-on": "ubuntu-latest",
           "steps": [
             {
-              "uses": "actions/checkout@v4"
+              "uses": "./.github/actions/fixture-checkout"
             },
             {
               "env": {
@@ -36,7 +36,7 @@
               "run": "bash tools/assert-run-approved.sh crates-io"
             },
             {
-              "uses": "Swatinem/rust-cache@v2",
+              "uses": "./.github/actions/fixture-cache",
               "with": {
                 "key": "fixture"
               }
@@ -71,7 +71,7 @@
           "runs-on": "ubuntu-latest",
           "steps": [
             {
-              "uses": "actions/checkout@v4"
+              "uses": "./.github/actions/fixture-checkout"
             },
             {
               "name": "the gate actually bound",
@@ -103,7 +103,7 @@
           "runs-on": "ubuntu-latest",
           "steps": [
             {
-              "uses": "actions/checkout@v4"
+              "uses": "./.github/actions/fixture-checkout"
             },
             {
               "name": "the gate actually bound",
@@ -129,7 +129,7 @@
           "runs-on": "ubuntu-latest",
           "steps": [
             {
-              "uses": "actions/checkout@v4"
+              "uses": "./.github/actions/fixture-checkout"
             },
             {
               "name": "package first, ask afterwards",
@@ -163,7 +163,7 @@
           "runs-on": "ubuntu-latest",
           "steps": [
             {
-              "uses": "actions/checkout@v4"
+              "uses": "./.github/actions/fixture-checkout"
             },
             {
               "name": "the irreversible act",
@@ -189,12 +189,12 @@
           "runs-on": "ubuntu-latest",
           "steps": [
             {
-              "uses": "actions/checkout@v4"
+              "uses": "./.github/actions/fixture-checkout"
             },
             {
-              "uses": "some/publishing-action@v1",
+              "uses": "./.github/actions/fixture-publish",
               "with": {
-                "token": "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+                "token": "${{ secrets.FIXTURE_TOKEN }}"
               }
             }
           ]
@@ -234,7 +234,7 @@
           "runs-on": "ubuntu-latest",
           "steps": [
             {
-              "uses": "actions/checkout@v4"
+              "uses": "./.github/actions/fixture-checkout"
             },
             {
               "run": "cargo build --workspace"
@@ -259,7 +259,7 @@
           "runs-on": "ubuntu-latest",
           "steps": [
             {
-              "uses": "actions/checkout@v4"
+              "uses": "./.github/actions/fixture-checkout"
             },
             {
               "name": "the gate actually bound",
