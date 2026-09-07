@@ -924,20 +924,36 @@ pub fn build_with_warnings(
             // proved to stand in. `Plan::build` cannot answer it — it runs
             // before a single `.nbt` byte is read, so it knows where the boxes
             // are and nothing about which of their boundary cells are solid.
-            let exposure = crate::compiler::burial::check(
+            // The binding line is printed BEFORE the refusal is raised, and the
+            // ordering is the vacuity rule rather than a nicety: the run that
+            // finds something owes its reader the same counts as the run that
+            // finds nothing, and a check whose line appears only on a pass is one
+            // whose denominator nobody can read at the moment it matters.
+            let (exposure, findings) = crate::compiler::burial::check(
                 plan,
                 prefabs,
                 &blocks,
                 structures,
                 &world,
                 &party_walk,
-            )
-            .map_err(|e| BuildFailure::Diagnostic {
-                code: crate::compiler::burial::DW_PIECE_EXPOSED,
-                message: e.message,
-            })?;
+            );
             eprintln!("{}", exposure.line());
             piece_exposure_ledger = Some(exposure.to_json());
+            if let Some((first, rest)) = findings.split_first() {
+                // Every piece this world stands unanswered, not only the one
+                // that stops the build. The failure channel carries one message
+                // (`BuildFailure`), which is the compiler's contract and does
+                // not move; what would otherwise be lost is that a placement
+                // defect is routinely several pieces at once, so the rest print
+                // here and the first travels as the refusal.
+                for extra in rest {
+                    eprintln!("{} [error] build: {}", extra.code, extra.message);
+                }
+                return Err(BuildFailure::Diagnostic {
+                    code: crate::compiler::burial::DW_PIECE_EXPOSED,
+                    message: first.message.clone(),
+                });
+            }
 
             // **The surround bounds the map, proven rather than promised**
             // (`DW0854`). The generator guarantees that no surround column

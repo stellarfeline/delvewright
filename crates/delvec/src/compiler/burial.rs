@@ -295,7 +295,7 @@ pub fn check(
     structures: &BTreeMap<String, Vec<u8>>,
     world: &World,
     reachable: &BTreeSet<[i32; 3]>,
-) -> Result<ExposureBinding, Diagnostic> {
+) -> (ExposureBinding, Vec<Diagnostic>) {
     let ambient = Ambient::of_plan(plan);
     let mut binding = ExposureBinding {
         horizon: ambient.name(),
@@ -316,21 +316,24 @@ pub fn check(
             if let Some(meta) = meta {
                 for side in &meta.shown_faces {
                     let Some(local) = dir_vector(side) else {
-                        return Err(Diagnostic::error(
-                            DW_PIECE_EXPOSED,
-                            "world",
-                            "/areas",
-                            format!(
-                                "prefab `{}` declares `shown_faces: [\"{side}\"]`, and `{side}` is \
+                        return (
+                            binding,
+                            vec![Diagnostic::error(
+                                DW_PIECE_EXPOSED,
+                                "world",
+                                "/areas",
+                                format!(
+                                    "prefab `{}` declares `shown_faces: [\"{side}\"]`, and `{side}` is \
                                  not a side of a piece. A side is one of `east`, `west`, `up`, \
                                  `down`, `north`, `south` — the same six words the face contract \
                                  spells a direction with (spec-0036 §2.8). Nothing can be judged \
                                  against a side that does not exist, so this is refused where it \
                                  is written rather than counted as a declaration that binds to \
                                  nothing",
-                                placement.prefab_id,
-                            ),
-                        ));
+                                    placement.prefab_id,
+                                ),
+                            )],
+                        );
                     };
                     shown.push(rotate_dir(placement.rotation, local));
                     shown_local.push(side.clone());
@@ -351,13 +354,21 @@ pub fn check(
         }
     }
     if pieces.is_empty() {
-        return Ok(binding);
+        return (binding, Vec::new());
     }
 
     // ---- the air the party can be in ---------------------------------------
     let (air, cut_off) = party_air(&pieces, blocks, &ambient, reachable);
     binding.air = air.len();
     binding.cut_off = cut_off;
+
+    // Every piece is walked, and every finding collected. Refusing at the first
+    // one would tell an author to repair a face and hand them the next on the
+    // following run: one placement defect is routinely several pieces, and a
+    // report naming one sends a creator round the loop as many times as the
+    // world has walls (the shape `blockout::check` already fixed for its own
+    // battery). The caller raises the first and prints the rest.
+    let mut findings: Vec<Diagnostic> = Vec::new();
 
     // ---- every outward-facing solid boundary cell, one piece at a time ------
     //
@@ -426,7 +437,8 @@ pub fn check(
                 continue;
             }
             let at = witness[dir];
-            return Err(Diagnostic::error(
+            let horizon = binding.horizon;
+            findings.push(Diagnostic::error(
                 DW_PIECE_EXPOSED,
                 "world",
                 "/areas",
@@ -447,7 +459,7 @@ pub fn check(
                     y = at[1],
                     z = at[2],
                     declared = declared_phrase(piece),
-                    moves = moves(binding.horizon),
+                    moves = moves(horizon),
                 ),
             ));
         }
@@ -470,15 +482,15 @@ pub fn check(
             if piece.own_sides.contains(dir) {
                 continue;
             }
-            return Err(Diagnostic::error(
+            findings.push(Diagnostic::error(
                 DW_PIECE_EXPOSED,
                 "world",
                 "/areas",
                 format!(
                     "area `{area}` places `{prefab}`, whose prefab document declares \
                      `shown_faces: [\"{local}\"]`, and that side of the piece is empty: not one \
-                     cell of its own {side} face holds a block. A side is finished exterior surface \
-                     or it is nothing, and there is nothing here to be finished — so the \
+                     cell of its own {side} face holds a block. A side is finished exterior \
+                     surface or it is nothing, and there is nothing here to be finished — so the \
                      declaration says something about a face this piece does not have. Drop it \
                      from `shown_faces`, or build the side it claims",
                     area = piece.area,
@@ -489,7 +501,7 @@ pub fn check(
         }
     }
 
-    Ok(binding)
+    (binding, findings)
 }
 
 /// `declares no side shown` / ``declares `up`, `north` shown`` — what the piece
