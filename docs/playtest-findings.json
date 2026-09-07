@@ -5,6 +5,7 @@
     "One row per finding. `finding` is impersonal English (CLAUDE.md Conventions: no verbatim personal speech in repo artifacts).",
     "`carrier` names the CHECK that carries the finding's general form; `binding` is how many objects of the class that check quantifies over exist on the campaign being staged.",
     "`carrier: null` is a red unless `disposition` + a substantive `justification` declare why no machine form is possible (playtest-methodology.md rule 2's one escape).",
+    "A row whose `binding` selects its object class by IDENTITY (`eq`/`in`/`prefix` only) declares its own applicability by shape: the gate measures the precondition off that binding (`staging-gate.py::probe_is_self_measuring`) and `load_ledger` refuses an `applies_when` that would restate it. Only a declaration-shaped binding (`has`/`has_any`, a `contains` glob, an `artifact` or `out` probe) owes one.",
     "APPEND, never rewrite. A row is removed only when the finding is shown never to have been a finding.",
     "Sources this ledger was reconstructed from are listed in docs/reference/playtest-methodology.md, rule 7, including what could NOT be recovered."
   ],
@@ -157,6 +158,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "dlg/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "dialogue.json"
@@ -176,6 +188,7 @@
       "finding": "two dialogue option labels overflowed the fixed-width dialog button and vanilla scrolled them",
       "general_form": "an option label -- English source or any sidecar rendition -- renders within the 146 usable font px of the button",
       "id": "hv-07",
+      "note": "applies_when added: the binding counts an option `label`, which is a DECLARATION inside a dialogue node, so its zero is ambiguous by itself and the row owed a precondition. The carriers of a label are the dialogue nodes DW0331 reads (`dlg/<kebab>`, the id form DW0110 enforces). Nodes declared with no option carrying a label = UNBOUND, correctly: a dialogue that offers no choice has no button to overrun. No dialogue node anywhere = the class measures zero.",
       "round": 2,
       "triage": "capability"
     },
@@ -1055,6 +1068,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "quest/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "quests.json"
@@ -1074,6 +1098,7 @@
       "finding": "NPCs offered premise questions from the opening scene after the finale had already played",
       "general_form": "every quest declares where its live cast is and what they offer, and the declaration is proven against the replayed effect history",
       "id": "isl-35",
+      "note": "applies_when added: `cast` is a declaration ON a quest, so the binding's zero is ambiguous and the row owed a precondition. The precondition counts the quests themselves (`quest/<kebab>`, the id form DW0110 enforces). Quests declared with no cast ledger = UNBOUND, which is exactly the island before round 13 — quests existed the whole time and the declaration DW0460 reads did not. No quest at all = the class measures zero.",
       "round": 12,
       "triage": "capability"
     },
@@ -1306,6 +1331,17 @@
       "triage": "content"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "quest/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "quests.json"
@@ -1325,6 +1361,7 @@
       "finding": "a body that should have held its position after a scripted escape wandered off it",
       "general_form": "where a body is after each beat is declared and proven against the replayed effect history",
       "id": "isl-46",
+      "note": "applies_when added: same shape as isl-35 — a cast ledger is a declaration on a quest, so the precondition counts the quests DW0461 replays the effect history of.",
       "round": 13,
       "triage": "capability"
     },
@@ -1352,6 +1389,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "dlg/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "dialogue.json"
@@ -1371,6 +1419,7 @@
       "finding": "twenty-seven dialogue option labels overran the button they were drawn on and scrolled",
       "general_form": "an option label -- English source or any sidecar rendition -- renders within the 146 usable font px of the button",
       "id": "isl-49",
+      "note": "applies_when added: same carrier and same shape as hv-07 — an option label is a declaration inside a dialogue node, so the precondition counts the nodes.",
       "round": 14,
       "triage": "capability"
     },
@@ -1508,6 +1557,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "dlg/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "dialogue.json"
@@ -1527,6 +1587,7 @@
       "finding": "an optional side encounter gated the mainline, so skipping it soft-locked the delve",
       "general_form": "the button that completes a mainline objective is not already on screen at an earlier point of the participation-minimal walk",
       "id": "isl-55",
+      "note": "applies_when added: the button DW0205 walks is a dialogue option, so the binding is declaration-shaped and the precondition is the dialogue nodes those options live in. Nodes with no labelled option = UNBOUND; no dialogue node anywhere = the class measures zero, and a campaign whose objectives complete without a button cannot carry this defect.",
       "round": 16,
       "triage": "capability"
     },
@@ -1654,7 +1715,7 @@
       "finding": "the shipped release notes advertised a player count and a playtime that the delve did not have, and a host-facing instruction named a version that was no longer current",
       "general_form": "release notes are rendered from the storybook, and a release refuses when storybook and campaign disagree",
       "id": "isl-60",
-      "note": "This row declares no `applies_when` and must not be given one. The storybook is `campaigns/<id>/README.md` — a FILE, not a declaration — so the only probe that could answer \"does this campaign publish release notes\" is the binding itself, which `load_ledger` refuses as an exemption a row grants itself. The binding is instead self-measuring by shape (`probe_is_self_measuring`): a campaign-source file glob with no `contains` counts the object class itself. On an assembled campaign its zero is still UNBOUND; only the twice-measured pre-detail blockout reads it OUT-OF-STAGE, which is the stage at which the storybook has not been written yet (skill-workflow step 14 follows the step-9 walk).",
+      "note": "This row declares no `applies_when` and must not be given one. The storybook is `campaigns/<id>/README.md` — a FILE, not a declaration — so the only probe that could answer \"does this campaign publish release notes\" is the binding itself, which `load_ledger` refuses as an exemption a row grants itself. The binding is instead self-measuring by shape (`probe_is_self_measuring`): a campaign-source file glob with no `contains` counts the object class itself. On an assembled campaign its zero is INAPPLICABLE — a measured zero, still a red, still a class the owner is not protected from; only the twice-measured pre-detail blockout reads it OUT-OF-STAGE, which is the stage at which the storybook has not been written yet (skill-workflow step 14 follows the step-9 walk).",
       "round": "post-release-2026-08-06",
       "triage": "capability"
     },
@@ -2009,6 +2070,23 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "talk-to",
+              "reach-anchor",
+              "kill",
+              "collect",
+              "interact"
+            ]
+          }
+        }
+      },
       "binding": {
         "files": [
           "quests.json"
@@ -2037,7 +2115,7 @@
       "finding": "an on-screen prompt told the party to return to one place while the objective it described completed somewhere else",
       "general_form": "an objective's prompt names the place and the act that actually complete it",
       "id": "bell-13",
-      "note": "Closed WEAKER than the general form as written. DW0862 refuses a `hint` authored on an objective with no `title`: the activation announcement is emitted only for a titled objective and the hint's line is nested inside that guard, so the prose is inventoried, translated into every sidecar, and never put on a screen - the necessary condition for a prompt to name anything. It does NOT prove that the prompt names the right place: a machine cannot read prose for that. The stronger reading was built and measured before being rejected - keying the place to the objective's quest's declared `area` finds three objectives on a live campaign and all three are correct, because a quest's area is where the beat is booked and not where each objective completes. A sound reading needs each objective's own anchor resolved to an area.",
+      "note": "Closed WEAKER than the general form as written. DW0862 refuses a `hint` authored on an objective with no `title`: the activation announcement is emitted only for a titled objective and the hint's line is nested inside that guard, so the prose is inventoried, translated into every sidecar, and never put on a screen - the necessary condition for a prompt to name anything. It does NOT prove that the prompt names the right place: a machine cannot read prose for that. The stronger reading was built and measured before being rejected - keying the place to the objective's quest's declared `area` finds three objectives on a live campaign and all three are correct, because a quest's area is where the beat is booked and not where each objective completes. A sound reading needs each objective's own anchor resolved to an area. applies_when added: the binding pairs the five completable objective types with `has: [id]`, which is what stops it matching a sub-node that happens to carry one of those `type` values — and it is also what makes the probe declaration-shaped, so its zero could not be classified. The precondition counts the objective types alone: a campaign that declares no objective a prompt could mislead the party about cannot carry this defect, while a node of one of those types with no id is a real anomaly and reds UNBOUND.",
       "round": 6,
       "triage": "capability"
     },

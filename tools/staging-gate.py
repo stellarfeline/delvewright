@@ -44,10 +44,18 @@ would be the fourth way.
   and never off the filesystem, because a directory or an unreadable file
   standing where a document belongs is exactly what a broken campaign looks
   like. Such a campaign does not build, so it has no manifest to present.
-- `UNBOUND` — the check exists and matched **zero objects** on this campaign.
-  The bot's combat floor gate examined zero enemies for nineteen island rounds
-  because `floor_gate.covered`, `.not_covered` and `actors[]` were all empty at
-  once and nothing counted them.
+- `UNBOUND` — the check exists and matched **zero objects** on this campaign,
+  and the objects that could have carried the defect are there. The bot's
+  combat floor gate examined zero enemies for nineteen island rounds because
+  `floor_gate.covered`, `.not_covered` and `actors[]` were all empty at once
+  and nothing counted them.
+- `INAPPLICABLE` — the check matched zero objects **and** the class's own
+  precondition measured zero: this campaign declares none of the objects the
+  class needs. Equally a red, split out because the remedy is nothing the
+  engine can do. A zero is put in this class only by a MEASUREMENT — a
+  declared `applies_when`, or the binding probe's own shape where that probe
+  counts the object class itself. A zero neither of those reached stays
+  `UNBOUND`, whose detail says in as many words that nobody looked.
 
 Plus one the ledger's own shape can produce:
 
@@ -91,8 +99,9 @@ The precondition may be a declared `applies_when`, or the binding probe's own
 shape where that probe COUNTS THE OBJECT CLASS ITSELF: an identity-shaped
 `dsl` predicate, or a campaign-source file glob with no `contains`, where the
 file is the object and no stage document declares that a campaign has one. See
-`probe_is_self_measuring` — the second clause is a bounded loosening and states
-its bound there.
+`probe_is_self_measuring`, which states what that recognition can and cannot
+buy: on any subject it decides WHICH red a zero is; only the twice-measured
+blockout turns one of those reds into `OUT-OF-STAGE`.
 
 What the mechanism demands, and why the defect it exists to catch cannot
 supply it: "this build has no combat" is proven by two measured zeros over
@@ -612,14 +621,23 @@ def probe_is_self_measuring(binding: dict, subj: Subject) -> bool:
       those, which kind of zero it is must be measured by `applies_when`,
       never inferred.
 
-    **The `campaign` branch is a LOOSENING and this is its bound.** Its only
-    caller is inside the pre-detail blockout branch of `adjudicate`, so nothing
-    outside a twice-measured blockout changes: the same zero on an assembled
-    campaign is still `UNBOUND`. What it stops catching is a future row bound
-    to a campaign-source file class that ought to exist BEFORE the walk — a
-    design-approval image set, say — which would go quiet on a blockout instead
-    of redding. What it still refuses is in `tools/tests/test_staging_gate.py`,
-    driven in both directions per clause.
+    **What this recogniser can and cannot buy, stated as its bound.** It names
+    a zero; it never excuses one. On an assembled campaign a self-measuring
+    zero is `INAPPLICABLE` — a red, in the refusal list, in the admission
+    token, in the round summary as a class the owner is not protected from —
+    exactly as a declared `applies_when` measuring zero already was. The only
+    non-red it can reach is `OUT-OF-STAGE`, and that is gated on
+    `subj.pre_detail`, which is measured twice off the campaign and the
+    compiler's own manifest and can be presented by no defect. So the whole
+    effect of recognising a shape here is WHICH red is printed, and with it
+    whether the report says the class was measured or says nobody looked.
+
+    What the recogniser deliberately does not reach is the ambiguous shapes
+    below: a `has`/`has_any` predicate, a `contains` glob, an `artifact` or
+    `out` probe. Those stay `UNBOUND` with "never measured", which is the
+    demand that the ROW declare an `applies_when`. What each clause still
+    refuses is in `tools/tests/test_staging_gate.py`, driven in both
+    directions per clause.
 
     Fail closed on the `is_file()` trap: a directory, or a broken symlink,
     standing where the file class belongs answers an honest `False` to
@@ -822,27 +840,39 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
     # is not protected on — that is a fact for the round summary, not a pass.
     aw = row.get("applies_when")
     if aw is None:
-        # No declared precondition probe. Where the probe COUNTS THE OBJECT
-        # CLASS ITSELF — an identity-shaped predicate over the declared
-        # design, or a campaign-source file class where the file is the
-        # object — it measures its own precondition, and on a pre-detail
-        # blockout that measured double zero is OUT-OF-STAGE. Everywhere else,
-        # and for every declaration- or derivation-shaped probe, the gate keeps
+        # No DECLARED precondition probe — which is not the same as no
+        # precondition MEASUREMENT. Where the probe COUNTS THE OBJECT CLASS
+        # ITSELF — an identity-shaped predicate over the declared design, or a
+        # campaign-source file class where the file is the object — the row's
+        # own binding is its precondition, measured on this campaign, and
+        # `load_ledger` refuses an `applies_when` that would restate it. Such a
+        # zero is INAPPLICABLE (red, the class is not here) and not UNBOUND
+        # (red, the class is here and the check is inert): saying "which kind
+        # of zero this is was never measured" over a probe that measured it is
+        # the gate reporting its own ignorance where it has a number. The
+        # blockout reading of the same double zero — OUT-OF-STAGE — still
+        # requires `subj.pre_detail`, twice-measured, and nothing here reaches
+        # it. For every declaration- or derivation-shaped probe the gate keeps
         # refusing to guess.
-        if subj.pre_detail and probe_is_self_measuring(row["binding"], subj):
+        if probe_is_self_measuring(row["binding"], subj):
             why = (
                 "the probe counts a campaign-source file class, where the file "
                 "IS the object and no declaration stands behind it"
                 if row["binding"].get("kind") == "campaign"
                 else "the probe selects the object class by identity"
             )
+            tail = (
+                "of a pre-detail blockout — this walk cannot exercise the "
+                "class, and this build does not claim to be the build that "
+                "could"
+                if subj.pre_detail
+                else "— nothing this campaign declares can exercise the class"
+            )
             out["precondition"] = 0
-            out["verdict"] = "OUT-OF-STAGE"
+            out["verdict"] = "OUT-OF-STAGE" if subj.pre_detail else "INAPPLICABLE"
             out["detail"] = (
                 f"{detail}; {why}, so its zero is the class measuring zero "
-                "across the declared design of a pre-detail blockout — this "
-                "walk cannot exercise the class, and this build does not claim "
-                "to be the build that could"
+                f"across the declared design {tail}"
             )
             return out
         out["verdict"] = "UNBOUND"
