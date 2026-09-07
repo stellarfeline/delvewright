@@ -66,9 +66,9 @@ not third-party reconstructions.
   `minecraft:iron_chain` in 1.21.11 and kept being emitted; a structure template
   loads an unknown block as AIR, so the piece ships with the feature silently
   missing. Consumed by `delvewright_schem::blocks` (the grammar export and
-  `delvec prefab audit`'s `DW0733`) and by `prefabs/invariants.rs` +
-  `prefabs/connections.rs` (every `prefabs/*-generator` workspace,
-  source-included).
+  `delvec prefab audit`'s `DW0733`) and by `prefabs/invariants/src/invariants.rs` +
+  `prefabs/invariants/src/connections.rs` (the `prefab-invariants` crate every
+  `prefabs/*-generator` depends on).
   **Note on the nearest existing check**: `DW0193` validates DSL-authored block
   ids against the *item* registry plus five technical ids
   (`ItemBackedBlockRegistry`). Measured against this registry, that proxy has
@@ -101,7 +101,7 @@ not third-party reconstructions.
   Consumed by `delvewright_schem::blocks` (`shape_carrying` /
   `omitted_shape_carrying`), which serves `delvec prefab audit` and the grammar
   back end's `shape-complete` gate + export refusal, and by
-  `prefabs/connections.rs`, which fills the properties this table names from the
+  `prefabs/invariants/src/connections.rs`, which fills the properties this table names from the
   piece's own neighbours before a generator writes its bytes.
 
 - **`block-defaults-1.21.11.json`** — every 1.21.11 block's **default state**: the
@@ -230,7 +230,7 @@ not third-party reconstructions.
   recipe graph in the same summary. 1166 blocks → **788 families**, 128
   multi-member covering 506 blocks, largest **20** (deepslate). Consumed by
   `tools/block-appearance.py`'s screen and mix report (spec-0035), and by
-  `prefabs/connections.rs`, whose `fence` / `pane` / `wall` connection classes
+  `prefabs/invariants/src/connections.rs`, whose `fence` / `pane` / `wall` connection classes
   are this table's `form` rather than a name-matched list of its own.
   **Why it exists**: palette selection needed to answer "what shape is this" and
   "what material is this derived from", and the only alternative was name

@@ -1600,7 +1600,7 @@ fn serialize_tile(
 /// because the operator running the tool does not run `cargo test`. The states
 /// are compiler constants no author can reach, so a failure is an engine defect
 /// and dies loudly rather than resolving to a diagnostic — the same shape
-/// `prefabs/invariants.rs` uses for the seven generator workspaces, which cannot
+/// `prefabs/invariants/src/invariants.rs` uses for the seven generator workspaces, which cannot
 /// depend on this crate and reach the identical registry another way.
 ///
 /// Property names and values are judged too, not just ids: the flora tables
@@ -1629,9 +1629,9 @@ fn assert_palette_is_real(palette: &[PaletteEntry], cells_per_state: &[usize]) {
         // without them is not an unopinionated state — it is an explicit
         // disconnection, a lone post where a run of fencing was meant
         // (`DW0735`). The derivation that answers it computes each property
-        // from the blocks beside the cell and lives in `prefabs/connections.rs`,
-        // source-included by the seven generator workspaces and unreachable from
-        // this crate.
+        // from the blocks beside the cell and lives in
+        // `prefabs/invariants/src/connections.rs`, a crate in the `prefabs/`
+        // workspace and unreachable from this one.
         //
         // This generator's vocabulary is rock, ground, logs, leaves and ground
         // cover — not one of them carries a shape-carrying property — so there
@@ -1648,7 +1648,7 @@ fn assert_palette_is_real(palette: &[PaletteEntry], cells_per_state: &[usize]) {
              shape-carrying propert(ies) {omitted:?}, which vanilla will fill with the \
              DISCONNECTION nobody meant. This module has no connection derivation, because \
              its vocabulary has never had a connection class in it; the derivation lives in \
-             `prefabs/connections.rs` and this crate cannot reach it. Either drop the block \
+             `prefabs/invariants/src/connections.rs` and this crate cannot reach it. Either drop the block \
              from this module's tables, or give the surround a real derivation — never write \
              the default state.",
             entry.name,

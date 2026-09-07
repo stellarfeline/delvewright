@@ -22,17 +22,18 @@ pub mod convert;
 pub mod diag;
 pub mod fixtures;
 /// **What a block state does to a body** — `delvewright_dsl::blockshape`,
-/// re-exported here so [`fluid`] can reach it as `super::blockshape`.
-///
-/// That spelling is load-bearing rather than stylistic. `fluid` is source-included
-/// by every prefab generator (`prefabs/invariants.rs`), and those are separate
-/// Cargo workspaces with no dependency on this one — an absolute
-/// `delvewright_dsl::` path inside it does not resolve there. `super::` resolves
-/// in both, because the generator includes the authority beside it under the same
-/// name.
+/// re-exported here because this crate's readers spell it `delvewright_schem::`.
 pub use delvewright_dsl::blockshape;
 
-pub mod fluid;
+/// **What a cell does when there is fluid beside it** — `delvewright_dsl::fluid`,
+/// re-exported here for the same reason.
+///
+/// It lives in the DSL crate rather than here because the prefab generators
+/// need it too and may not depend on this one: block knowledge belongs in the
+/// crate every reader of a block fact can reach, which is the same reason
+/// `blocks` and `blockshape` are there.
+pub use delvewright_dsl::fluid;
+
 pub mod nav;
 pub mod nbt;
 pub mod prefab;

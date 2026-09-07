@@ -23,9 +23,9 @@
 //! the admission audit and the compiler's own render surface all check against
 //! this one table. And no crate is the only site that turns a palette into
 //! `.nbt` bytes — reasoning as though one were is what left the sixth emitter
-//! unguarded. The six `prefabs/*-generator` workspaces cannot
-//! depend on this crate at all and reach the same rule through
-//! `prefabs/invariants.rs`. Which sites owe it is therefore not remembered: it
+//! unguarded. The seven `prefabs/*-generator` packages may not depend on
+//! `delvec` and reach the same rule through `prefab-invariants`, which depends
+//! on this crate. Which sites owe it is therefore not remembered: it
 //! is discovered from the ingredient by `tools/check-structure-emitters.py`,
 //! which treats every tracked file that calls the NBT serialiser as a
 //! candidate, and requires each to name the rule or declare why it need not.
@@ -47,9 +47,9 @@ use std::sync::OnceLock;
 
 /// The pinned registry's JSON text, vendored beside the other 1.21.11 data.
 ///
-/// A source include rather than a crate dependency: the file is one authority
-/// shared by this crate, the grammar back end and the five out-of-workspace
-/// prefab generators (`prefabs/invariants.rs`), none of which may depend on
+/// One authority, shared by this crate, the grammar back end and the
+/// out-of-workspace prefab generators, which read the same file
+/// (`prefabs/invariants/src/invariants.rs`) because none of them may depend on
 /// `delvec`. A moved data file is a compile error, which is the loud failure.
 const REGISTRY_JSON: &str = include_str!("../data/blocks-1.21.11.json");
 
@@ -435,7 +435,7 @@ impl BlockRegistry {
     /// forever — the shape rule (`DW0735`) and its whole library sweep would go
     /// green by ceasing to bind, over a library whose walls are still isolated
     /// posts. What an emitter owes instead is the connection derived from the
-    /// blocks beside the cell (`prefabs/connections.rs`), and
+    /// blocks beside the cell (`prefabs/invariants/src/connections.rs`), and
     /// `tools/check-structure-emitters.py` is what holds every emitter to it.
     pub fn default_state(&self, name: &str) -> Option<&BTreeMap<String, String>> {
         self.defaults.get(namespace(name).as_ref())

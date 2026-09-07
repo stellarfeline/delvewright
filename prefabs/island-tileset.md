@@ -112,8 +112,8 @@ than moored to a specific beach.
 
 ## Terrain pieces (greenfield + mountain)
 
-Built by the sibling `prefabs/island-terrain-generator` (its own `[workspace]`),
-these complete the contiguous island: the connectors between the beach camp and the
+Built by the sibling `prefabs/island-terrain-generator` (a member of the
+`prefabs/` workspace), these complete the contiguous island: the connectors between the beach camp and the
 mountain, and the mountain terminal with its cavern. All adopt the island convention
 above (`island:socket` at `floor_y=2`, walk plane y=3) — built at the ground datum,
 then lifted +2 onto a solid substrate so every socket/anchor lands on the shared

@@ -11,6 +11,15 @@ members = [
     "crates/delvec",
 ]
 
+# The prefab generators and the rules they share are their own workspace
+# (`prefabs/Cargo.toml`). They are EXCLUDED rather than merely unlisted, so that
+# the property their isolation exists for is stated here, where the shipped
+# binary's dependency graph is decided: nothing under `prefabs/` can enter
+# `delvec`'s resolution. That property used to be established by giving each
+# generator its own `[workspace]` table — seven of them, seven lockfiles, and
+# one shared rule file compiled seven times.
+exclude = ["prefabs"]
+
 # The ENGINE version line (ADR-0016 line 2, ADR-0023 §6): every crate under
 # `crates/` except `delvewright-dsl` inherits this one number, and it is the
 # number the git tag, the crates.io versions and the skill's `requires.delvec`

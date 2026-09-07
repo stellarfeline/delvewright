@@ -335,14 +335,15 @@ jobs:
       - name: every shelf target compiles
         run: bash tools/build-release-binaries.sh --check-only
 
-  # The prefab generators are separate workspaces OUTSIDE `crates/` (so they never
-  # enter the shipped `delvec`), which until now meant `cargo …--workspace` never
-  # saw them and nothing in CI compiled, ran or checked them at all. Their whole
-  # design is that every debugging lesson is pinned as an ASSERT — route
-  # walkability, stair-flank sealing, anchor sanity, gravity substrate, sightlines
-  # — so simply running each generator IS the gate: it either emits or panics.
-  # Wired after the drowned-bell shipped a tileset with 132 reversed stair blocks
-  # (`DW0430`) through a green pipeline.
+  # The prefab generators are ONE workspace outside `crates/` (`prefabs/`, which
+  # the root workspace excludes, so nothing here can enter the shipped `delvec`),
+  # which until it was wired meant `cargo …--workspace` never saw them and nothing
+  # in CI compiled, ran or checked them at all. Their whole design is that every
+  # debugging lesson is pinned as an ASSERT — route walkability, stair-flank
+  # sealing, anchor sanity, gravity substrate, sightlines — so simply running each
+  # generator IS the gate: it either emits or panics. Wired after the drowned-bell
+  # shipped a tileset with 132 reversed stair blocks (`DW0430`) through a green
+  # pipeline.
   prefab-generators:
     name: prefab generators (invariants + determinism)
     runs-on: ubuntu-latest
@@ -350,32 +351,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            prefabs/generator
-            prefabs/cave-generator
-            prefabs/gallery-generator
-            prefabs/hello-room-generator
-            prefabs/island-generator
-            prefabs/island-terrain-generator
-            prefabs/tidal-keep-generator
-      # `fmt` for these seven is NOT here any more, and that is the point of the
-      # change that moved it: it lived in a hand-written list of generator names,
-      # so a person's `cargo fmt --all` could not reach it and only a pull request
-      # could tell them. It is now one sweep in `rust (fmt, clippy, test)` running
+          workspaces: prefabs
+      # `fmt` is NOT here, and that is the point of the change that moved it: it
+      # lived in a hand-written list of generator names, so a person's
+      # `cargo fmt --all` could not reach it and only a pull request could tell
+      # them. It is one sweep in `rust (fmt, clippy, test)` running
       # `tools/fmt-workspaces.sh --check` — the same script a person runs, over a
       # population derived from `git ls-files` rather than typed here.
       #
-      # `clippy -D warnings` is deliberately NOT wired for these workspaces yet:
-      # the oldest generator (`prefabs/generator`) carries two pre-existing style
-      # lints, and silencing them belongs in its own PR rather than riding along
-      # with a stair fix. Tracked as a follow-up; the correctness gate below is
-      # the one that matters and it covers every generator workspace.
-      # `prefabs/invariants.rs` is source-included by every generator, so one
-      # workspace's `cargo test` compiles and runs the shared gate's own unit
-      # tests once — including the cases that prove it FAILS (a rock stacked on a
-      # stair tread), which running the generators can only prove by not firing.
+      # `clippy -D warnings` IS here now. It was held back while the oldest
+      # generator carried two pre-existing style lints; those are fixed, and one
+      # workspace means one invocation covers every generator and the shared
+      # crate rather than seven that could each be forgotten.
+      - name: the generators and the rules they share are clippy-clean
+        run: |
+          cargo clippy --locked --manifest-path prefabs/Cargo.toml \
+            --workspace --all-targets -- -D warnings
+      # `prefab-invariants` is the crate every generator depends on, so this one
+      # `cargo test` compiles and runs the shared gate's own unit tests —
+      # including the cases that prove it FAILS (a rock stacked on a stair
+      # tread), which running the generators can only prove by not firing.
       - name: shared generator invariants — unit tests
-        run: cargo test --locked --manifest-path prefabs/island-terrain-generator/Cargo.toml
+        run: cargo test --locked --manifest-path prefabs/Cargo.toml --workspace
       # Running the generator twice into different trees proves BOTH halves at
       # once: the invariants (a panic fails the job) and ADR-0006 byte-identity.
       - name: run every generator twice — invariants hold, output is identical
@@ -386,9 +383,9 @@ jobs:
             echo "::group::$g"
             rm -rf "/tmp/$g-a" "/tmp/$g-b"
             mkdir -p "/tmp/$g-a" "/tmp/$g-b"
-            cargo run --release --manifest-path "prefabs/$g/Cargo.toml" \
+            cargo run --locked --release --manifest-path "prefabs/$g/Cargo.toml" \
               -- "/tmp/$g-a" > /dev/null
-            cargo run --release --manifest-path "prefabs/$g/Cargo.toml" \
+            cargo run --locked --release --manifest-path "prefabs/$g/Cargo.toml" \
               -- "/tmp/$g-b" > /dev/null
             diff -r "/tmp/$g-a" "/tmp/$g-b"
             echo "::endgroup::"
