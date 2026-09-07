@@ -39,7 +39,7 @@
           }
         ],
         "id": "batch/annex-take-it-off",
-        "note": "And it comes off again. Removals come BEFORE rewires in an area's script \u2014 removing shifts the indices every later rewire is written against."
+        "note": "And it comes off again. Removals come BEFORE rewires in an area's script — removing shifts the indices every later rewire is written against."
       },
       {
         "area": "area/annex",
@@ -65,7 +65,7 @@
           }
         ],
         "id": "batch/annex-seal-a-way",
-        "note": "A mated socket is sealed shut \u2014 the other half of the socket vocabulary."
+        "note": "A mated socket is sealed shut — the other half of the socket vocabulary."
       },
       {
         "area": "area/annex",
@@ -79,7 +79,7 @@
           }
         ],
         "id": "batch/annex-open-a-way",
-        "note": "And the entry's own side of that join is opened again. `rewire-socket open` clears an UNMATED socket's seal, so it can only ever be written on a socket with nothing mated to it \u2014 and the cell one step past such an opening lies outside every placed tile. In a world with nothing outside, that is a bottomless column, and `DW0322` refuses the doorway: a way out onto nothing is a fall nobody survives. The one unmated socket that does NOT face the void is the one the batch above just severed, because the partner's own plane is still walled. So this opens the near side of a bricked-up doorway and leaves the far side brick \u2014 which is what the verb draws, and it is laid last because the socket is mated until then."
+        "note": "And the entry's own side of that join is opened again. `rewire-socket open` clears an UNMATED socket's seal, so it can only ever be written on a socket with nothing mated to it — and the cell one step past such an opening lies outside every placed tile. In a world with nothing outside, that is a bottomless column, and `DW0322` refuses the doorway: a way out onto nothing is a fall nobody survives. The one unmated socket that does NOT face the void is the one the batch above just severed, because the partner's own plane is still walled. So this opens the near side of a bricked-up doorway and leaves the far side brick — which is what the verb draws, and it is laid last because the socket is mated until then."
       },
       {
         "area": "area/hall",
@@ -146,7 +146,7 @@
           }
         ],
         "id": "batch/stamp-the-shards",
-        "note": "One stamp of the same shard per rotation \u2014 four placements rather than one, because a rotation is a property of the PLACEMENT. Kept off the critical path on purpose: a shard is solid, and blocking the route makes the build's render plan longer than the one `snapshot` derives, which is a divergence this campaign is the first thing to have provoked (see README)."
+        "note": "One stamp of the same shard per rotation — four placements rather than one, because a rotation is a property of the PLACEMENT. Kept off the critical path on purpose: a shard is solid, and blocking the route makes the build's render plan longer than the one `snapshot` derives, which is a divergence this campaign is the first thing to have provoked (see README)."
       },
       {
         "area": "area/hall",
@@ -444,7 +444,7 @@
           }
         ],
         "id": "batch/open-the-vault",
-        "note": "The stone canopy over the east bay is thinned before it is brought down. Exercises `carve` and `morph`/`lower` \u2014 on the CANOPY rather than the floor, because carving walkable ground opens a void drop and `DW0322` refuses the world it leaves."
+        "note": "The stone canopy over the east bay is thinned before it is brought down. Exercises `carve` and `morph`/`lower` — on the CANOPY rather than the floor, because carving walkable ground opens a void drop and `DW0322` refuses the world it leaves."
       },
       {
         "area": "area/hall",

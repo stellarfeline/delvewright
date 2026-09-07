@@ -12,7 +12,7 @@
       "npcs.json": "da877f5796426b53c04a73a9956de60470fa545648a21b40fbc9603d2afc4ef1",
       "quest-plan.json": "4d67de733d37a7b2df2af8a4b3a8300a4e87e4243947006ea63003c74eb2d561",
       "quests.json": "6d5bca7fcd7a7d0f35deca7cf8e55f28ea706dc299a99cb402acb080d19fe7fd",
-      "world-edits.json": "b5fd96e0d02a554b4c66f8d9210ceb5e613281c5cc8c23afb96513518b0d5fb3",
+      "world-edits.json": "eb510170058c7abb630ac4cbb3e0e444d9c960bca2929cde34eaccf52d631db2",
       "world.json": "4ae754d7a70e96278020da1a5b8466424ea7c520abfff9e461c1efecc060a993"
     },
     "mc_version": "1.21.11",
@@ -562,7 +562,7 @@
       "npcs.json": "da877f5796426b53c04a73a9956de60470fa545648a21b40fbc9603d2afc4ef1",
       "quest-plan.json": "4d67de733d37a7b2df2af8a4b3a8300a4e87e4243947006ea63003c74eb2d561",
       "quests.json": "6d5bca7fcd7a7d0f35deca7cf8e55f28ea706dc299a99cb402acb080d19fe7fd",
-      "world-edits.json": "b5fd96e0d02a554b4c66f8d9210ceb5e613281c5cc8c23afb96513518b0d5fb3",
+      "world-edits.json": "eb510170058c7abb630ac4cbb3e0e444d9c960bca2929cde34eaccf52d631db2",
       "world.json": "8f2102cb1c18c081e8b4259c7671c7459cc539f1d557ffaef4dbae082237d1a5"
     },
     "mc_version": "1.21.11",
@@ -1112,7 +1112,7 @@
       "npcs.json": "da877f5796426b53c04a73a9956de60470fa545648a21b40fbc9603d2afc4ef1",
       "quest-plan.json": "4d67de733d37a7b2df2af8a4b3a8300a4e87e4243947006ea63003c74eb2d561",
       "quests.json": "6d5bca7fcd7a7d0f35deca7cf8e55f28ea706dc299a99cb402acb080d19fe7fd",
-      "world-edits.json": "b5fd96e0d02a554b4c66f8d9210ceb5e613281c5cc8c23afb96513518b0d5fb3",
+      "world-edits.json": "eb510170058c7abb630ac4cbb3e0e444d9c960bca2929cde34eaccf52d631db2",
       "world.json": "ca4ef0ecbc71520700e34efff73ec935c94c33d2936737cf8a3f99ab9a6a01d0"
     },
     "mc_version": "1.21.11",
@@ -1662,7 +1662,7 @@
       "npcs.json": "da877f5796426b53c04a73a9956de60470fa545648a21b40fbc9603d2afc4ef1",
       "quest-plan.json": "4d67de733d37a7b2df2af8a4b3a8300a4e87e4243947006ea63003c74eb2d561",
       "quests.json": "6d5bca7fcd7a7d0f35deca7cf8e55f28ea706dc299a99cb402acb080d19fe7fd",
-      "world-edits.json": "b5fd96e0d02a554b4c66f8d9210ceb5e613281c5cc8c23afb96513518b0d5fb3",
+      "world-edits.json": "eb510170058c7abb630ac4cbb3e0e444d9c960bca2929cde34eaccf52d631db2",
       "world.json": "2cf1751849eb0277c23c859ab4f49f13611de137b7dd8da2c19d924064eb5207"
     },
     "mc_version": "1.21.11",
@@ -2212,7 +2212,7 @@
       "npcs.json": "da877f5796426b53c04a73a9956de60470fa545648a21b40fbc9603d2afc4ef1",
       "quest-plan.json": "4d67de733d37a7b2df2af8a4b3a8300a4e87e4243947006ea63003c74eb2d561",
       "quests.json": "6d5bca7fcd7a7d0f35deca7cf8e55f28ea706dc299a99cb402acb080d19fe7fd",
-      "world-edits.json": "b5fd96e0d02a554b4c66f8d9210ceb5e613281c5cc8c23afb96513518b0d5fb3",
+      "world-edits.json": "eb510170058c7abb630ac4cbb3e0e444d9c960bca2929cde34eaccf52d631db2",
       "world.json": "2cf1751849eb0277c23c859ab4f49f13611de137b7dd8da2c19d924064eb5207"
     },
     "language": "zh-cn",
@@ -3066,7 +3066,7 @@
       "npcs.json": "da877f5796426b53c04a73a9956de60470fa545648a21b40fbc9603d2afc4ef1",
       "quest-plan.json": "4d67de733d37a7b2df2af8a4b3a8300a4e87e4243947006ea63003c74eb2d561",
       "quests.json": "6d5bca7fcd7a7d0f35deca7cf8e55f28ea706dc299a99cb402acb080d19fe7fd",
-      "world-edits.json": "b5fd96e0d02a554b4c66f8d9210ceb5e613281c5cc8c23afb96513518b0d5fb3",
+      "world-edits.json": "eb510170058c7abb630ac4cbb3e0e444d9c960bca2929cde34eaccf52d631db2",
       "world.json": "a3c2af261f3c63c00a954d4c6a19b4353244dfdcb8b47de8d481138a533060d3"
     },
     "mc_version": "1.21.11",
