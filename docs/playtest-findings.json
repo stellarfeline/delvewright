@@ -5,9 +5,9 @@
     "One row per finding. `finding` is impersonal English (CLAUDE.md Conventions: no verbatim personal speech in repo artifacts).",
     "`carrier` names the CHECK that carries the finding's general form; `binding` is how many objects of the class that check quantifies over exist on the campaign being staged.",
     "`carrier: null` is a red unless `disposition` + a substantive `justification` declare why no machine form is possible (playtest-methodology.md rule 2's one escape).",
+    "A row whose `binding` selects its object class by IDENTITY (`eq`/`in`/`prefix` only) declares its own applicability by shape: the gate measures the precondition off that binding (`staging-gate.py::probe_is_self_measuring`) and `load_ledger` refuses an `applies_when` that would restate it. Only a declaration-shaped binding (`has`/`has_any`, a `contains` glob, an `artifact` or `out` probe) owes one.",
     "APPEND, never rewrite. A row is removed only when the finding is shown never to have been a finding.",
-    "Sources this ledger was reconstructed from are listed in docs/reference/playtest-methodology.md, rule 7, including what could NOT be recovered.",
-    "A row whose `binding` selects its object class by IDENTITY (`eq`/`in`/`prefix` only) declares its own applicability by shape: the gate measures the precondition off that binding (`staging-gate.py::probe_is_self_measuring`) and `load_ledger` refuses an `applies_when` that would restate it. Only a declaration-shaped binding (`has`/`has_any`, a `contains` glob, an `artifact` or `out` probe) owes one."
+    "Sources this ledger was reconstructed from are listed in docs/reference/playtest-methodology.md, rule 7, including what could NOT be recovered."
   ],
   "findings": [
     {
