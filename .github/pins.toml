@@ -368,7 +368,6 @@ sites = [
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
     ".github/workflows/infra-images.yml",
-    ".github/workflows/release.yml",
 ]
 policy = "floating"
 why = "GitHub's own checkout action, held at its major tag."
@@ -381,7 +380,6 @@ sites = [
     ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
-    ".github/workflows/release.yml",
 ]
 policy = "floating"
 why = "Cargo cache action, held at its major tag. Affects build time, not output."
@@ -389,7 +387,7 @@ why = "Cargo cache action, held at its major tag. Affects build time, not output
 [[pin]]
 id = "action-setup-node"
 value = "actions/setup-node@v4"
-sites = [".github/workflows/ci.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/ci.yml"]
 policy = "floating"
 why = "GitHub's Node toolchain action, held at its major tag."
 
@@ -424,28 +422,28 @@ why = "Link checker, held at its major tag; runs --offline so it fetches nothing
 [[pin]]
 id = "action-docker-qemu"
 value = "docker/setup-qemu-action@v3"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "arm64 emulation for the multi-arch build (ADR-0010), held at its major tag."
 
 [[pin]]
 id = "action-docker-buildx"
 value = "docker/setup-buildx-action@v3"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "buildx setup, held at its major tag."
 
 [[pin]]
 id = "action-docker-login"
 value = "docker/login-action@v3"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "GHCR login, held at its major tag."
 
 [[pin]]
 id = "action-docker-build-push"
 value = "docker/build-push-action@v6"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "Image build/push, held at its major tag."
 
@@ -464,16 +462,15 @@ id = "ci-node"
 value = "24"
 sites = [
     ".github/workflows/ci.yml",
-    ".github/workflows/release.yml",
     "versions.toml",
 ]
 policy = "floating"
 bound_by = "validation/check-versions.sh"
 bound_key = "node_version"
 why = """
-The Node runtime five CI jobs select: the harness (`npm ci`, typecheck, tests),
-the viewer's stdlib `node --test` control suite, and the three storybook jobs in
-release.yml.
+The Node runtime two CI jobs select: `harness (typecheck, test)` (`npm ci`,
+typecheck, tests) and `rust (fmt, clippy, test)`'s stdlib `node --test` control
+suites for the viewer.
 
 HELD FOR the runtime, and NOT for the dependency set — `harness/package-lock.json`
 is what fixes the packages, and mineflayer is pinned separately in versions.toml
@@ -486,14 +483,14 @@ tag, and the trust boundary is the publisher. Registered so that the count of
 deliberately-unfrozen selections is a number somebody can see instead of a habit.
 Not `immutable`: that is for a value naming fixed bytes, and this one names a
 line that moves. It may move to another major line as an ordinary reviewed edit;
-what it may not do is disagree between the five sites, which is what the binder
-below refuses.
+what it may not do is disagree between the sites, which is what the binder below
+refuses.
 
 BOUND because nothing discovers a restatement. check-versions.sh reads
-[ci].node_version and asserts that EVERY `node-version:` line in both workflows
-states it — two in ci.yml and three in release.yml, counted, because presence is
-not the property: the drift is one of five moving while the other four sit still,
-and a `grep -q` stops at the first and calls that agreement.
+[ci].node_version and asserts that EVERY `node-version:` line in ci.yml states
+it — two of them, counted, because presence is not the property: the drift is one
+site moving while the other sits still, and a `grep -q` stops at the first and
+calls that agreement.
 """
 
 [[pin]]

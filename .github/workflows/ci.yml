@@ -1,8 +1,10 @@
 name: CI (tiers 1 + 2)
 
 # spec-0004: tier 1 (unit + static analysis) on every push/PR; tier 2 (delve
-# datapack-load check + PackTest suite) on PRs. Tier 3 (bot playthrough +
-# multi-arch image push) lives in release.yml, on rc-* tags.
+# datapack-load check + PackTest suite) on PRs. Tier 3 — the release-tier bot
+# ladder plus the multi-arch image push — belongs to the CONTENT repository
+# (`stellarfeline/delvewright-campaigns`), on a `release/<campaign>/v<semver>`
+# tag (spec-0024 §1); this repository publishes no delve.
 # push is limited to main so PR branches don't run every job twice
 # (push + pull_request) — a duplicate run is a second set of statuses reporting
 # on one tree, and the pair race the `concurrency` cancel. This used to cite
@@ -604,8 +606,9 @@ jobs:
       # This is the step that binds it to the event: every push to `main` and
       # every pull request. The other entry point is the tagged tree a release
       # publishes from, which this workflow never sees — `engine-release.yml`'s
-      # `crates-preflight` runs the same gate there. `release.yml` is NOT a third
-      # site: it ships a world and an image, and carries no repository prose.
+      # `crates-preflight` runs the same gate there. Those two are the whole set:
+      # the content repository's delve release ships a world and an image and
+      # carries no prose from this repository.
       # Deterministic, offline, stdlib-only python3.
       - name: no artifact carries an identifier a reader cannot resolve
         run: python3 tools/check-unsanctioned-identifiers.py

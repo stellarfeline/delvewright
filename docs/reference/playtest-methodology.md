@@ -303,13 +303,13 @@ to be remembered. The record went stale twice more.
 
 **A doc line is not an invocation.** So the staging surface requires the gate's
 output rather than asking for it. The surface is exactly the set of paths that
-put a build in front of the owner, and every one is covered:
+put a build in front of the owner:
 
 | Staging path | How the gate is bound to it |
 |---|---|
 | `tools/playtest-server.sh up` (throwaway `docker run`, binds 25565 — the one she actually runs) | runs the gate itself between `delvec build` and `docker run`; a refusal dies before any container exists |
 | `docker compose -f compose.yaml -f validation/owner-play.yaml --profile play\|playtest up` (the other sanctioned 25565 binder) | `owner-play.yaml` adds a `staging-admission` service that both port-publishing services `depends_on: service_completed_successfully` |
-| `.github/workflows/release.yml` → multi-arch delve image to GHCR (she runs it on the Pi) | the gate runs before the GHCR login, so a refusal publishes nothing |
+| The content repository's `release` workflow (`stellarfeline/delvewright-campaigns`, on a `release/<campaign>/v<semver>` tag, spec-0024 §1) → multi-arch delve image to GHCR + a GitHub Release (she runs the image on the Pi) | **NOT BOUND.** That workflow runs its own ladder and publishes without ever calling this gate. To bind it, add a step in the content repository between `delvec build` and its `docker/login-action` that runs `python3 <engine checkout>/tools/staging-gate.py --campaign <campaign dir> --build <build tree>` — the engine is already checked out there, at the revision `versions.toml` pins |
 
 The compose path cannot run the gate itself — the gate needs the campaign
 SOURCE, which the build tree does not carry, and Python, which the delve image
