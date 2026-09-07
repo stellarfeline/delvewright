@@ -32,7 +32,8 @@ use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::nav::{self, World};
 use delvewright_compiler::plan::{Plan, ResolvedAnchor};
 use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::parse_campaign;
+use delvewright_compiler::timeline;
+use delvewright_dsl::{Verb, parse_campaign};
 use serde_json::json;
 
 /// The destination `move-npc` already walks to in `talkto-cast-pos`'s
@@ -45,8 +46,17 @@ const TO_ANCHOR: &str = "anchor/exit";
 /// makeable — a crossing rides on the completion of the objective the party
 /// leaves from, spec-0008 addendum), everything else byte-for-byte the base
 /// fixture.
-fn fixture() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join("dw-move-npc-beat-scope");
+///
+/// `guard` additionally puts a `when` on the very `move-npc` under test, with
+/// the `set-flag` that opens it one effect earlier in the same bundle. That is
+/// the cross-feature case: one guard on the effect, a destination scoped to the
+/// beat.
+fn fixture(guard: bool) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(if guard {
+        "dw-move-npc-beat-scope-guarded"
+    } else {
+        "dw-move-npc-beat-scope"
+    });
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(
         &common::compiler_fixtures_dir().join("talkto-cast-pos"),
@@ -70,6 +80,17 @@ fn fixture() -> std::path::PathBuf {
         for x in quests.iter_mut() {
             if x["id"] == "quest/ask" {
                 x["trigger"] = json!({ "type": "quest-complete", "quest": "quest/arrive" });
+                if guard {
+                    let effs = x["on_objective_complete"]["obj/ask"]
+                        .as_array_mut()
+                        .expect("quest/ask's obj/ask bundle");
+                    let mv = effs
+                        .iter_mut()
+                        .find(|e| e["type"] == "move-npc")
+                        .expect("the bundle's move-npc");
+                    mv["when"] = json!({ "requires_flags": ["flag/asked"] });
+                    effs.insert(0, json!({ "type": "set-flag", "flag": "flag/asked" }));
+                }
             }
         }
         quests.insert(
@@ -117,12 +138,14 @@ fn fixture() -> std::path::PathBuf {
     dir
 }
 
-fn build_plan() -> (
+fn build_plan(
+    guard: bool,
+) -> (
     std::path::PathBuf,
     delvewright_dsl::Campaign,
     PrefabRegistry,
 ) {
-    let dir = fixture();
+    let dir = fixture(guard);
     let loaded = load_campaign_dir(&dir).expect("fixture campaign loads");
     let campaign = parse_campaign(&loaded.raw).expect("fixture campaign parses");
     let reg = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("library loads");
@@ -145,7 +168,7 @@ fn build_plan() -> (
 /// connected by a real walk (`DW0872`: a change of area is never one).
 #[test]
 fn move_npc_asks_the_beat_area_before_home() {
-    let (dir, campaign, reg) = build_plan();
+    let (dir, campaign, reg) = build_plan(false);
     let plan = Plan::build(&campaign, &reg).expect("fixture plans");
 
     let keep_pos = plan
@@ -220,4 +243,78 @@ fn an_unperturbed_move_still_resolves_in_the_shared_home_and_beat_area() {
         "the base fixture's own move must still resolve in `area/keep`: {}",
         err.message
     );
+}
+
+/// **The cross-feature pair.** `nav::plan_moves` is the one loop where this
+/// branch's guard and `move_target`'s beat scope meet: it destructures
+/// `Verb::MoveNpc` out of `eff.verb`, reads the branch condition off `eff.when`
+/// (through [`nav::gate_key`], which is what names the walk driver), and asks
+/// `move_target` for the destination with the beat the same walk yielded.
+///
+/// Either half can break while the other passes. A guard read from the wrong
+/// place leaves the leg ungated — one driver for two branches, which is the
+/// island's Eurylochus defect [`BranchGate`] exists for — and a destination
+/// resolved by the npc's home rather than by the beat walks the body to the
+/// wrong `anchor/exit`. So they are asserted together, on ONE effect.
+///
+/// The fixture is [`fixture`]'s perturbation plus a `when` on that very
+/// `move-npc`. Nothing about a guard touches which area answers `anchor/exit`,
+/// so the beat-scoped resolution is what must still happen.
+#[test]
+fn a_guarded_move_is_gated_and_still_resolves_in_its_beat_area() {
+    let (dir, campaign, reg) = build_plan(true);
+    let plan = Plan::build(&campaign, &reg).expect("the guarded fixture plans");
+
+    let cell = |r: &ResolvedAnchor| match r {
+        ResolvedAnchor::Point { pos, .. } => *pos,
+        ResolvedAnchor::Gate { from, .. } => *from,
+    };
+    let annex_pos = cell(
+        plan.anchors
+            .get(&("area/annex".to_string(), TO_ANCHOR.to_string()))
+            .expect("area/annex provides anchor/exit"),
+    );
+    let keep_pos = cell(
+        plan.anchors
+            .get(&("area/keep".to_string(), TO_ANCHOR.to_string()))
+            .expect("area/keep provides anchor/exit"),
+    );
+    assert_ne!(keep_pos, annex_pos, "the perturbation must still bite");
+
+    // Half one: the guard is a property of the EFFECT, and the walk driver reads
+    // it there. Read out of `timeline::walk` — the enumeration `plan_moves`
+    // itself walks — rather than by searching the campaign a second way.
+    let moves: Vec<_> = timeline::walk(&plan)
+        .into_iter()
+        .map(|(e, _)| e)
+        .filter(|e| matches!(e.verb, Verb::MoveNpc { .. }))
+        .collect();
+    assert_eq!(moves.len(), 1, "the fixture declares exactly one move-npc");
+    assert_eq!(
+        moves[0].requires_flags().len(),
+        1,
+        "the guard is read through the one accessor, off `when` and not off the verb"
+    );
+    assert!(
+        !nav::gate_key(moves[0]).is_empty(),
+        "a `when` on the effect must reach the walk driver's branch key — an empty \
+         key is one driver for both branches"
+    );
+
+    // Half two: the destination is still the beat's area, not the npc's home.
+    let world = World::from_solid_cells(BTreeSet::new());
+    let err = nav::plan_moves(&plan, &world)
+        .expect_err("an empty world makes every destination fail the standable-floor check");
+    assert!(
+        err.message.contains(&format!("{annex_pos:?}")),
+        "a guarded move resolves in the beat's area exactly as an unguarded one does: {}",
+        err.message
+    );
+    assert!(
+        !err.message.contains(&format!("{keep_pos:?}")),
+        "home must not win over the beat because the effect gained a guard: {}",
+        err.message
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

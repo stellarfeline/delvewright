@@ -14,7 +14,7 @@
 //! * a `sequence` reached through `move-npc.on_arrive` inside another `sequence`
 //!   is `DW0329`, exactly as through `move-actor.on_arrive`;
 //! * the stable `Debug` rendering: an effect using none of the new fields prints
-//!   byte-identically to the pre-addition derive (the `seq_<hash>` content key).
+//!   byte-identically to the pre-addition derive (`payload_verb_key`'s content key).
 
 mod common;
 

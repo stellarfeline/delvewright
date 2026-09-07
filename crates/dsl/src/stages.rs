@@ -5579,12 +5579,12 @@ impl CameraSubject {
 }
 
 /// `Debug` is hand-written because it is a **stable content-key rendering**:
-/// the compiler's `sequence_key` (FNV over `{steps:?}`) names generated
-/// `seq_<hash>` functions from it, so a shot that uses none of the v0.6 style
-/// fields must render byte-identically to the pre-style struct (`seconds`
-/// prints its inner value; absent style fields print nothing) — otherwise
-/// every existing sequence containing a cutscene would silently churn its
-/// function names on a purely additive schema change.
+/// the compiler's `payload_verb_key` (FNV over a verb's own `{:?}`) names the
+/// generated `volley_`, `collapse_` and `teleport_` functions from it, so a shot
+/// that uses none of the v0.6 style fields must render byte-identically to the
+/// pre-style struct (`seconds` prints its inner value; absent style fields print
+/// nothing) — otherwise a purely additive schema change would silently churn the
+/// content key of every payload that carries a cutscene.
 impl std::fmt::Debug for CameraShot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut d = f.debug_struct("CameraShot");

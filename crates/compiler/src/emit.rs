@@ -9591,7 +9591,7 @@ fn collapse_fn(eff: &QuestEffect) -> String {
 /// A named function rather than an inline line, for the same reason `volley` and
 /// `collapse` have one: **the body is compiler-PROVEN geometry** — a box resolved
 /// through `Plan::zone_box` and a destination resolved to a literal cell — and a
-/// body that only ever exists spliced into a `seq_<hash>` beside four other
+/// body that only ever exists spliced into a `seq_<root>_<n>` beside four other
 /// effects is a body no runtime test can call. The generated PackTest calls
 /// exactly this function, so the runtime proof of totality binds to the emission
 /// rather than to a command the test re-typed for itself.

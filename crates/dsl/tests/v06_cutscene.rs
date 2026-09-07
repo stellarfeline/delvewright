@@ -242,8 +242,8 @@ fn unknown_subject_npc_is_dangling_ref() {
 
 /// `CameraShot`'s hand-written `Debug` is a stable content-key rendering: a
 /// pre-style shot renders **byte-identically** to the pre-style derived struct
-/// (the compiler's `sequence_key` hashes `{steps:?}`, so any drift would churn
-/// every `seq_<hash>` function name in shipped campaigns).
+/// (the compiler's `payload_verb_key` hashes a verb's own `{:?}`, so any drift
+/// would churn every `volley_`/`collapse_`/`teleport_` function name).
 #[test]
 fn pre_style_shot_debug_rendering_is_stable() {
     let shot: delvewright_dsl::CameraShot = serde_json::from_str(
