@@ -435,7 +435,21 @@ def check_generators_are_wired() -> tuple[list[str], int]:
 
     # The build cache names the ONE workspace. A list of package directories here
     # would be the old defect in a new place: seven names to keep equal to disk.
-    cached = set(re.findall(r"^\s+workspaces:\s*(\S+)\s*$", body, re.M))
+    # Both YAML spellings are read — the inline scalar and a `|` block — because
+    # the shape that must red is *a list of package directories*, and reading
+    # only the inline form would report the block form as the literal `|` and
+    # name nothing the reader could act on.
+    cached: set[str] = set()
+    for m in re.finditer(r"^(\s+)workspaces:[ \t]*(.*)$", body, re.M):
+        indent, value = m.group(1), m.group(2).strip()
+        if value and value != "|":
+            cached.add(value)
+            continue
+        for line in body[m.end() :].splitlines()[1:]:
+            if line.strip() and len(line) - len(line.lstrip()) > len(indent):
+                cached.add(line.strip())
+            else:
+                break
     if cached != {"prefabs"}:
         findings.append(
             f"the prefab-generators job's build cache names {sorted(cached) or 'nothing'}; it "

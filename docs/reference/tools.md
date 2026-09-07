@@ -1369,9 +1369,8 @@ judges it at placement, against the campaign's horizon), and every piece prints 
 binding — sources examined, cells held `waterlogged`, runs at the edge — so a
 piece that quietly lost its water does not read like a piece that holds it.
 
-The shared crate carries its own unit tests — 43 of them, including the cases
-that prove each gate *fails* — and `cargo test` over the `prefabs/` workspace
-runs them. The `blockshape` and `fluid` tests are not among them: those modules
+The shared crate carries its own unit tests — including the cases that prove
+each gate *fails* — and `cargo test` over the `prefabs/` workspace runs them. The `blockshape` and `fluid` tests are not among them: those modules
 belong to `delvewright-dsl` and are tested there, once.
 
 **Connections are derived, never defaulted.**
