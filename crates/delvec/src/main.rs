@@ -143,8 +143,9 @@ enum Command {
         /// Which document. A numbered stage `1..7`; a named map-pipeline stage
         /// document `geometry-brief` | `layout-graph` | `site-plan` |
         /// `detail-plan`; `walk-record` for the hand-written walk record
-        /// (a campaign artifact, not a stage document); or `all` for every
-        /// stage document at once.
+        /// (a campaign artifact, not a stage document); `prefab-metadata` for a
+        /// prefab library asset's sibling `<prefab-id>.json` (a library asset,
+        /// not a stage document); or `all` for every stage document at once.
         #[arg(long)]
         stage: String,
     },
@@ -2645,6 +2646,20 @@ fn run_schema(stage: &str) -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
+        // `<prefab-id>.json` is not a stage document either — it is a library
+        // ASSET's metadata, reachable here for the same reason the walk record
+        // is. Deliberately absent from `all`: the gallery's coverage gate
+        // enumerates its units from that export, and a library-asset document
+        // folded into it would demand a stage-document binding for every field
+        // of a file no stage document contains (`PrefabMeta::schema`'s note).
+        "prefab-metadata" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&delvewright_dsl::prefab::PrefabMeta::schema())
+                    .unwrap()
+            );
+            return ExitCode::SUCCESS;
+        }
         "all" => Stage::ALL.to_vec(),
         other => {
             let names: Vec<String> = Stage::ALL
@@ -2654,7 +2669,8 @@ fn run_schema(stage: &str) -> ExitCode {
             eprintln!(
                 "unknown document `{other}`. Want `1`..`7` (the campaign DSL's numbered \
                  stages), any stage by name — {names} — `walk-record` for the hand-written \
-                 walk record, or `all` for every stage document at once.",
+                 walk record, `prefab-metadata` for a prefab library asset's sibling \
+                 `<prefab-id>.json`, or `all` for every stage document at once.",
                 names = names.join(", "),
             );
             return ExitCode::from(EXIT_INTERNAL);

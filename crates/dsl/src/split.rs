@@ -15,6 +15,7 @@
 
 use std::path::Path;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// One grid cell of a split.
@@ -98,7 +99,7 @@ pub fn manifest_filename(base: &str) -> String {
 /// why. It is `Serialize` **and** `Deserialize` on purpose — the producer and
 /// the consumer share one definition, so a field cannot be added on one side and
 /// missed on the other.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TileSet {
     /// The filename stem every tile is named from.
     pub base: String,
@@ -118,7 +119,7 @@ pub struct TileSet {
 }
 
 /// One tile of a [`TileSet`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TilePart {
     /// The `.nbt` filename, relative to the manifest.
     pub file: String,

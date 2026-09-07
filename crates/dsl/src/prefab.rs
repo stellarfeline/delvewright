@@ -70,6 +70,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::registry::Lighting;
@@ -86,8 +87,46 @@ use crate::split::TileSet;
 /// file.
 pub const POOLS_FILE: &str = "pools.json";
 
+/// What the exported prefab-metadata schema tells its reader the document IS —
+/// stated on the schema rather than only in a reference document, because the
+/// schema is what an author actually opens.
+const SCHEMA_DESCRIPTION: &str = "\
+A prefab's sibling metadata file, `<prefab-id>.json`, beside the structure \
+`.nbt` in a prefab library.
+
+A LIBRARY ASSET, NOT A CAMPAIGN STAGE DOCUMENT. It carries no `dsl_version`, no \
+`campaign_id` and no `stage`; it is not authored against the campaign DSL's \
+staging (ADR-0002) and is therefore absent from `--stage all`.
+
+Three of its declarations are the piece's claims about its own outside, and \
+they are different claims rather than one claim written three ways \
+(spec-0060 §4):
+
+  `walk_y`       the piece's own walk plane, in local y. Owed on every base. \
+It is the number an area's origin is DERIVED from where the horizon's datum is \
+a walk plane, so it has no default: a default would be right for the tileset it \
+was copied from and silently wrong for every other. Missing, a campaign that \
+seats the piece is refused with `DW0886`.
+
+  `waterline_y`  the local y of the piece's TOP AUTHORED WATER BLOCK. Owed only \
+where the piece really writes water that meets a sea. It is a claim about the \
+bytes and is checked against them (`DW0887`), and its placement is checked \
+against sea level (`DW0344`). A piece that authors no water has no waterline to \
+state, and writing one anyway is a fiction the engine refuses.
+
+  `shown_faces`  which of the piece's six sides are finished exterior surface. \
+Absent means NO side is shown, which is the strict answer: a piece authored to \
+be buried writes nothing here, and what discharges its obligation is the world \
+burying it (`DW0885`).
+
+Keys this engine does not model are KEPT and written back out, so a newer \
+producer meeting an older reader is a `DW0543` warning rather than a parse \
+failure. The `lighting` block is the one exception and refuses a key it does \
+not know.
+";
+
 /// A prefab's sibling metadata file.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PrefabMeta {
     /// The DSL prefab id, `prefab/<id>`.
     pub prefab_id: String,
@@ -146,11 +185,42 @@ pub struct PrefabMeta {
     /// Licence, provenance prose, and the machine-readable provenance row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<License>,
+    /// **The local y of this piece's own walk plane** — the cell a body's feet
+    /// occupy when it stands on the piece's principal floor (spec-0060 §4).
+    ///
+    /// This is the number an area's origin is DERIVED from on a horizon whose
+    /// datum is a walk plane: an `ocean` world's walk plane is `SEA_LEVEL + 1`,
+    /// so an area seating this piece is placed at `walk_ref_y - walk_y` and the
+    /// piece stands one block above the sea, which is the vanilla-normal beach
+    /// relationship. A keep interior declaring `1` is seated at 62 and stands
+    /// dry at 63; an island piece declaring `3` is seated at 60.
+    ///
+    /// **It has no default, and that is the decision** (spec-0060 §4.1). A
+    /// default is the retired global datum wearing a different name: it would
+    /// be right for the one tileset it was copied from and silently wrong for
+    /// every other, and the piece that lands under the sea because of it floods
+    /// on boot with nothing looking. A piece a campaign seats without one is
+    /// `DW0886`.
+    ///
+    /// It is a MEASUREMENT of the piece, so it is written by the generator that
+    /// built the piece and never typed by hand
+    /// (`CLAUDE.md`: a census derivable from the object is never hand-written).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_y: Option<i32>,
     /// The local y of this piece's **top authored water block** — its waterline
     /// — for open-air pieces built to a tileset convention that authors a sea.
-    /// Consumed by the ocean-horizon placement invariant (`DW0344`): in a
-    /// `horizon: ocean` world the declared waterline must land at world sea
-    /// level. Absent for pieces that author no sea, which are then not checked.
+    ///
+    /// Two rules read it, and they ask different questions. `DW0887` asks
+    /// whether the claim is TRUE — whether the piece's own bytes put a water
+    /// block at that plane and none above it — and refuses a declaration that
+    /// is a fiction wherever the document and its `.nbt` are read together.
+    /// `DW0344` asks whether the PLACEMENT honours it: in a `horizon: ocean`
+    /// world the declared waterline must land at world sea level.
+    ///
+    /// Absent for pieces that author no sea, which neither rule then judges. A
+    /// piece that authors water and declares nothing is not refused by
+    /// `DW0887`; under `ocean` its placement is `DW0344`'s subject and under
+    /// `void` its runoff is `DW0318`'s.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waterline_y: Option<i32>,
     /// **The sides of this piece the player is meant to see** — the piece's own
@@ -217,7 +287,7 @@ pub struct PrefabMeta {
 /// produced. That is also what lets a hand-built piece carry the same block: it
 /// has no parameters to resolve, so the two routes write the same shape and one
 /// reader serves both.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SpatialContract {
     /// The space a body enters at.
     pub entry: String,
@@ -346,7 +416,7 @@ pub fn check_footprint_class(
 }
 
 /// One face of the piece's face contract.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractFace {
     /// The space the way in or out belongs to.
     pub space: String,
@@ -361,7 +431,7 @@ pub struct ContractFace {
 }
 
 /// One entry of `spatial_contract.spaces`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractSpace {
     /// `enclosed` | `open_top` | `open`.
     pub envelope: String,
@@ -370,7 +440,7 @@ pub struct ContractSpace {
 }
 
 /// One entry of `spatial_contract.no_body`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractNoBody {
     /// Why these cells are out of play, in the author's words. Which exemption
     /// the region qualifies for is a fact about the blocks and is not recorded
@@ -381,7 +451,7 @@ pub struct ContractNoBody {
 }
 
 /// One entry of `spatial_contract.edges`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractEdge {
     /// A declared space name, or `exterior`.
     pub a: String,
@@ -415,7 +485,7 @@ pub struct ContractEdge {
 /// an existing piece's metadata says `bar` and keeps saying `bar`. The
 /// **checker** normalises the two into one prover; the document keeps both
 /// spellings, so nothing already written moves a byte.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractWay {
     /// `laid` — the region is empty as built and opening fills it with
     /// [`block`](ContractWay::block); or `cleared` — the region stands in
@@ -450,7 +520,7 @@ pub struct ContractWay {
 }
 
 /// An edge's own volume — an opening, a stair's treads, a fall column.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractVolume {
     /// The region's name, which is what content binds to.
     pub region: String,
@@ -459,7 +529,7 @@ pub struct ContractVolume {
 }
 
 /// A `barred` edge's bar: the region that stands in the way, and its block.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractBar {
     /// The region's name.
     pub region: String,
@@ -470,7 +540,7 @@ pub struct ContractBar {
 }
 
 /// The `structure` block: which file, how big, for which MC version.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct StructureMeta {
     /// The `.nbt` filename, relative to this metadata file.
     pub file: String,
@@ -521,7 +591,9 @@ pub struct PieceTemplate<'a> {
 /// Distinct from [`ContractWay::role`], which is a *palette* role in a
 /// program's own vocabulary and means nothing outside it. This one is the
 /// engine's vocabulary, which is exactly why it is closed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum AnchorRole {
     /// **The cell a body arrives at when it enters the area this piece is
@@ -589,7 +661,7 @@ impl std::fmt::Display for AnchorRole {
 /// prefab pre-wired for it. All of those are the same object class — a named
 /// place in a piece — so they live in one type and each writes only the keys it
 /// means.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Anchor {
     /// Local cell `[x, y, z]`, relative to the structure origin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -795,7 +867,7 @@ pub struct AnchorEdit {
 }
 
 /// An inclusive local cell range.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Region {
     /// Low corner `[x, y, z]`.
     pub from: [i32; 3],
@@ -809,7 +881,7 @@ pub struct Region {
 /// prefab's local coordinates; `facing` is the cardinal direction the opening
 /// faces outward. Two sockets mate by placing the child so its socket sits one
 /// block beyond the parent's, facing the opposite way.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Connector {
     /// Jigsaw `name`.
     pub name: String,
@@ -829,7 +901,7 @@ pub struct Connector {
 pub const UNMEASURED: &str = "unmeasured";
 
 /// The `license` block: the human half and the machine half of provenance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct License {
     /// Where the asset came from (`original`, or a named upstream).
     pub source: String,
@@ -855,7 +927,7 @@ pub struct License {
 /// re-expansion from that set produces a different artifact while the document
 /// claims byte reproducibility. The set is the source program, the overrides
 /// applied to it, the region and the seed.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratedBy {
     /// The back end that produced the bytes.
     pub generator: String,
@@ -1021,6 +1093,37 @@ impl PrefabMeta {
         serde_json::to_string_pretty(self).expect("prefab metadata serializes") + "\n"
     }
 
+    /// The JSON Schema of this document, for `delvec schema --stage
+    /// prefab-metadata`.
+    ///
+    /// **Deliberately not part of `--stage all`.** `all` is the campaign DSL's
+    /// staged documents, and the gallery's coverage gate enumerates its units
+    /// from exactly that export: a library-asset document folded into it would
+    /// demand a gallery *stage-document* binding for every field of a file no
+    /// stage document contains. A prefab's declarations are proven where they
+    /// are read — `shown_faces` by the exposure ledger, `walk_y` and
+    /// `waterline_y` by the seating and waterline bindings — which is a binding
+    /// a schema unit could not give them.
+    ///
+    /// It is exported anyway, and for the reason the walk record is: this is
+    /// the command an author is told to run to see the shape of a document they
+    /// must write, and a piece's metadata is one of those.
+    pub fn schema() -> serde_json::Value {
+        let mut v = serde_json::to_value(schemars::schema_for!(PrefabMeta))
+            .expect("the prefab-metadata schema serializes to JSON");
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert(
+                "title".into(),
+                serde_json::Value::String("<prefab-id>.json (prefab metadata)".into()),
+            );
+            obj.insert(
+                "description".into(),
+                serde_json::Value::String(SCHEMA_DESCRIPTION.into()),
+            );
+        }
+        v
+    }
+
     /// Every key of this document — top level and per anchor — that this version
     /// does not model, as `(where, key)` pairs in a stable order.
     ///
@@ -1066,6 +1169,13 @@ impl PrefabMeta {
                 ..Lighting::unmeasured()
             }),
             license: Some(license),
+            // A freshly admitted piece states no walk plane, for the reason
+            // `walk_y` has no default: the number is a measurement of the piece
+            // its generator made, and the admission step that converts a
+            // stranger's `.nbt` did not build the piece and has no walk plane
+            // to report. A campaign that seats such a piece on a horizon whose
+            // datum needs one is `DW0886`, which is where the author learns.
+            walk_y: None,
             waterline_y: None,
             // A freshly admitted piece shows nothing, for the same reason it
             // claims no size class: which of its sides are finished surface is

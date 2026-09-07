@@ -1,12 +1,14 @@
 //! **The rules every prefab generator obeys before it writes bytes.**
 //!
-//! Two modules, one authority each, and both of them gates rather than
-//! conveniences: [`invariants`] is the `assert!`-shaped record of every
+//! Three modules, one authority each, and each of them a gate rather than a
+//! convenience: [`invariants`] is the `assert!`-shaped record of every
 //! debugging lesson a tileset has cost — route walkability, stair-flank
 //! sealing, anchor sanity, gravity substrate, sightlines, fluid containment —
-//! and [`connections`] is the derivation those gates are stated over, which
+//! [`connections`] is the derivation those gates are stated over, which
 //! computes each shape-carrying property from the blocks beside the cell and
-//! **refuses**, by panic, a face vanilla publishes no answer for.
+//! **refuses**, by panic, a face vanilla publishes no answer for — and
+//! [`walkplane`] is the one measurement every generator writes into the
+//! document it emits, the piece's own `walk_y`.
 //!
 //! This is a crate because the alternative was seven copies. Every generator
 //! used to reach these two files by `#[path = "../../invariants.rs"]`, a source
@@ -21,3 +23,4 @@
 
 pub mod connections;
 pub mod invariants;
+pub mod walkplane;
