@@ -620,6 +620,15 @@ pub struct LicenseJson {
 pub struct MetaJson {
     pub prefab_id: String,
     pub structure: StructureJson,
+    /// **The piece's own walk plane, measured** (spec-0060 §4): the local y of
+    /// the cell a body's feet occupy on this piece's principal floor, and the
+    /// number an ocean area's origin is derived from. Read back out of the
+    /// blocks the generator just laid, through the one rule every producer
+    /// spells (`prefab_invariants::walkplane`), because a `walk_y` nobody
+    /// measured is one tileset's convention wearing the name of a measurement.
+    /// `None` only for a piece a body cannot stand in at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub walk_y: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub waterline_y: Option<i32>,
     pub anchors: BTreeMap<String, AnchorJson>,

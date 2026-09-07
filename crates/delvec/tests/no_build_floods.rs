@@ -98,6 +98,52 @@ fn placed_ys(out: &Path) -> Vec<i32> {
         .collect()
 }
 
+/// A shore room with no water in it at all: three courses of solid plinth, a
+/// floor at local y=3, walls and a lit roof.
+///
+/// Waterless on purpose. A piece that authors water and states no waterline is
+/// `DW0886`'s unstated shore — correctly — so a fixture about anything ELSE on
+/// an ocean has to be a piece with no shore to state.
+fn waterless_shore(dir: &Path) {
+    let size = [11, 9, 11];
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..size[0] {
+        for z in 0..size[2] {
+            for y in 0..3 {
+                cells.push(([x, y, z], "minecraft:stone"));
+            }
+            let lamp = matches!((x, z), (3, 3) | (3, 7) | (7, 3) | (7, 7));
+            for y in 3..size[1] {
+                if x == 0 || x == size[0] - 1 || z == 0 || z == size[2] - 1 || y == size[1] - 1 {
+                    let roof = y == size[1] - 1;
+                    cells.push((
+                        [x, y, z],
+                        if roof && lamp {
+                            "minecraft:glowstone"
+                        } else {
+                            "minecraft:stone"
+                        },
+                    ));
+                }
+            }
+        }
+    }
+    std::fs::write(
+        dir.join("hello-room.nbt"),
+        common::structure_nbt(size, &cells),
+    )
+    .unwrap();
+    let path = dir.join("hello-room.json");
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    {
+        let obj = doc.as_object_mut().unwrap();
+        obj.remove("waterline_y");
+        obj["structure"]["size"] = serde_json::json!(size);
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
+}
+
 /// **Every ocean campaign this tree can build stands its walk plane above the
 /// sea, and the two proofs that would see otherwise both report zero.**
 #[test]
@@ -112,44 +158,7 @@ fn no_ocean_build_puts_a_walk_cell_at_or_below_the_sea() {
             // A shore whose tide pool is gone: no water, so no waterline to
             // declare, and the piece is seated by its walk plane alone. That is
             // the case the retired global datum could not express at all.
-            let path = dir.join("hello-room.json");
-            let mut doc: serde_json::Value =
-                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-            doc.as_object_mut().unwrap().remove("waterline_y");
-            std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
-            let size = [11, 9, 11];
-            let mut cells: Vec<([i32; 3], &str)> = Vec::new();
-            for x in 0..size[0] {
-                for z in 0..size[2] {
-                    for y in 0..3 {
-                        cells.push(([x, y, z], "minecraft:stone"));
-                    }
-                    let lamp = matches!((x, z), (3, 3) | (3, 7) | (7, 3) | (7, 7));
-                    for y in 3..size[1] {
-                        if x == 0
-                            || x == size[0] - 1
-                            || z == 0
-                            || z == size[2] - 1
-                            || y == size[1] - 1
-                        {
-                            let roof = y == size[1] - 1;
-                            cells.push((
-                                [x, y, z],
-                                if roof && lamp {
-                                    "minecraft:glowstone"
-                                } else {
-                                    "minecraft:stone"
-                                },
-                            ));
-                        }
-                    }
-                }
-            }
-            std::fs::write(
-                dir.join("hello-room.nbt"),
-                common::structure_nbt(size, &cells),
-            )
-            .unwrap();
+            waterless_shore(&dir);
         }
         let camp = ocean_campaign(tag);
         let (code, text, out) = build(tag, &camp, &dir);
@@ -290,5 +299,47 @@ fn a_pool_that_cannot_be_seated_is_refused_at_analyze_having_placed_nothing() {
     assert!(
         !text.contains("place template"),
         "having placed nothing:\n{text}"
+    );
+}
+
+/// **`walk_y` reaches the surface it changes** (spec-0060 §10.9): perturb one
+/// piece's declared walk plane and an emitted byte moves.
+///
+/// The byte is the `place template` line's y, which is the whole point of the
+/// declaration: an ocean area's origin IS `walk_ref_y - walk_y`, so a piece that
+/// says its floor is one course lower is seated one block higher, and the
+/// datapack says so. A declaration that moved no emitted byte would be a field
+/// the engine reads and the world does not.
+///
+/// The waterline is removed first, deliberately: with one declared, moving the
+/// walk plane moves the waterline off the sea and `DW0344`'s first arm refuses
+/// before anything is emitted — which is that rule working, and would leave this
+/// one nothing to measure.
+#[test]
+fn perturbing_a_pieces_walk_plane_moves_an_emitted_byte() {
+    let seat_at = |tag: &str, walk_y: i64| -> Vec<i32> {
+        let dir = common::ocean_prefabs_dir(&format!("walk-moves-{tag}"), common::OceanRoom::Shore);
+        waterless_shore(&dir);
+        let path = dir.join("hello-room.json");
+        let mut doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        doc.as_object_mut()
+            .unwrap()
+            .insert("walk_y".into(), serde_json::json!(walk_y));
+        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
+        let camp = ocean_campaign(tag);
+        let (code, text, out) = build(tag, &camp, &dir);
+        assert_eq!(code, 0, "`{tag}` builds:\n{text}");
+        placed_ys(&out)
+    };
+
+    let three = seat_at("walk3", 3);
+    let two = seat_at("walk2", 2);
+    assert_eq!(three, vec![WALK_REF_Y - 3], "declared 3, seated at 60");
+    assert_eq!(two, vec![WALK_REF_Y - 2], "declared 2, seated at 61");
+    assert_ne!(
+        three, two,
+        "the declaration moved and the emitted placement did not — a field the engine reads \
+         and the world does not"
     );
 }
