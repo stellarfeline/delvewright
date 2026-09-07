@@ -96,10 +96,21 @@
 #
 # `--only <crate>` narrows the run to ONE crate the manifest names, and then this
 # script packages that crate itself (`cargo package -p <crate>` into the same
-# `target/package-verify` the full gate writes to, so both paths hash the same
+# `package-verify` the full gate writes to, so both paths hash the same
 # artifact). That is what the DSL crate's two automatic sites need: the crate's
 # version IS the `dsl_version`, so it moves on `main` rather than on a release
 # tag, and neither of those sites has a whole-shelf packaging run to piggyback on.
+#
+# THE FULL SET TRUSTS THE GATE'S OWN PROOF, NOT JUST ITS BYTES
+#
+# For the full (non-`--only`) set, `local_cksum` refuses a tarball whose
+# CURRENT sha256 does not match the sha256 `tools/check-publishable.sh` wrote
+# beside it the moment every one of its checks passed — a hash written by one
+# script and re-read by the other is what makes "the gate packaged it, the plan
+# reads it" one artifact instead of two scripts that happen to agree on a path.
+# `--only` skips that check: it packages the one crate it is about to read in
+# the very same process, so there is no gate boundary between the two bytes to
+# assert.
 #
 # Every mode prints one machine-readable line, `crates-io-publish: TO_PUBLISH=…`,
 # holding the names it decided to upload (empty when the registry already has
@@ -124,6 +135,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/versions.toml"
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found" >&2; exit 2; }
+
+. "$ROOT/tools/lib/checksum.sh"
+. "$ROOT/tools/lib/package-verify.sh"
 
 USAGE="usage: ${BASH_SOURCE[0]} (--plan|--publish) [--only <crate>] [--allow-dirty]"
 MODE=""
@@ -155,7 +169,16 @@ print('ENGINE_CRATES=' + repr(" ".join(e["crates"])).replace("'", '"'))
 PY
 )"
 
-INDEX="https://index.crates.io"
+# `DW_CRATES_INDEX` overrides the sparse-index base for a test or a local
+# dry-run against a fixture index rather than the real crates.io — nothing
+# under `.github/` ever sets it, and it never touches `--publish`'s upload
+# path (`cargo publish` still resolves crates.io on its own). Named, and
+# printed the moment it fires, so an override can never survive silently into
+# a real plan: `tools/tests/test_publish_gate_order.py` is the one caller.
+INDEX="${DW_CRATES_INDEX:-https://index.crates.io}"
+if [ "$INDEX" != "https://index.crates.io" ]; then
+  echo "crates-io-publish: DW_CRATES_INDEX=$INDEX — NOT the real crates.io index" >&2
+fi
 POLL_TIMEOUT=180   # seconds
 POLL_INTERVAL=5    # seconds
 
@@ -203,17 +226,49 @@ PY
 }
 
 # Where tools/check-publishable.sh packages, and where `--only` packages: its
-# verify target directory. One statement of the path, because two things read it.
+# verify target directory. One statement of the path, because two things read
+# it — `tools/lib/package-verify.sh` says why it sits beside `target/`, not
+# under it.
 local_crate_path() { # <crate-name> <version>
-  printf '%s\n' "$ROOT/target/package-verify/package/$1-$2.crate"
+  printf '%s\n' "$ROOT/package-verify/package/$1-$2.crate"
+}
+
+# The sha256 `tools/check-publishable.sh` wrote beside the tarball, right after
+# proving it builds standing alone — the file that makes the pair one artifact.
+local_crate_hash_path() { # <crate-name> <version>
+  printf '%s\n' "$(local_crate_path "$1" "$2").sha256"
 }
 
 local_cksum() { # <crate-name> <version>
   local f
   f="$(local_crate_path "$1" "$2")"
   [ -f "$f" ] || { echo "crates-io-publish: no packaged tarball at $f — run tools/check-publishable.sh first" >&2; exit 2; }
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$f" | cut -d' ' -f1
-  else shasum -a 256 "$f" | cut -d' ' -f1; fi
+  # `--only` packages the ONE selected crate itself, right above, in the same
+  # process that is about to read it back — there is no gate boundary to cross
+  # and nothing yet to check it against. The full set has no such run in front
+  # of it EXCEPT `tools/check-publishable.sh`, so THAT boundary is real: the
+  # bytes at `$f` must still be the ones it verified, not a stale leftover or a
+  # tree tampered with between the gate and this plan. A mismatch here errors
+  # rather than silently trusting whatever sits at the path now.
+  if [ -z "$ONLY" ]; then
+    local hash_file expected actual
+    hash_file="$(local_crate_hash_path "$1" "$2")"
+    [ -f "$hash_file" ] || {
+      echo "crates-io-publish: no verified sha256 at $hash_file — run tools/check-publishable.sh first" >&2
+      echo "  (it writes this file beside the tarball only once every check passes)" >&2
+      exit 2
+    }
+    expected="$(cat "$hash_file")"
+    actual="$(dw_sha256_file "$f")"
+    if [ "$actual" != "$expected" ]; then
+      echo "crates-io-publish: $f now hashes $actual, but tools/check-publishable.sh verified $expected." >&2
+      echo "  That proof (the standalone build, the --help surface) was made about DIFFERENT bytes than what is on disk now. Refusing." >&2
+      exit 2
+    fi
+    printf '%s\n' "$expected"
+    return 0
+  fi
+  dw_sha256_file "$f"
 }
 
 # The registry's own `.crate`, fetched and CHECKED against the index sha256
@@ -222,8 +277,7 @@ local_cksum() { # <crate-name> <version>
 fetch_registry_crate() { # <crate-name> <version> <expected-sha256> <dest-file>
   curl -fsSL "https://static.crates.io/crates/$1/$1-$2.crate" -o "$4"
   local got
-  if command -v sha256sum >/dev/null 2>&1; then got="$(sha256sum "$4" | cut -d' ' -f1)"
-  else got="$(shasum -a 256 "$4" | cut -d' ' -f1)"; fi
+  got="$(dw_sha256_file "$4")"
   if [ "$got" != "$3" ]; then
     echo "crates-io-publish: the .crate downloaded for $1 $2 hashes $got, but the index says $3." >&2
     echo "  Nothing below can be decided from bytes the registry does not vouch for. Refusing." >&2
@@ -351,10 +405,16 @@ if [ -n "$ONLY" ]; then
   # no such run in front of it, so it is packaged here, into the SAME directory,
   # by the same command shape. Output is not redirected: a packaging failure is
   # the finding, and it belongs in the log of whatever invoked this.
-  mkdir -p "$ROOT/target"
-  echo "== cargo package -p $only_name (into target/package-verify) =="
-  (cd "$ROOT" && CARGO_TARGET_DIR="$ROOT/target/package-verify" \
+  echo "== cargo package -p $only_name (into package-verify) =="
+  (cd "$ROOT" && CARGO_TARGET_DIR="$ROOT/package-verify" \
       cargo package -p "$only_name" ${DIRTY_FLAG[@]+"${DIRTY_FLAG[@]}"})
+  # Same lifetime rule as tools/check-publishable.sh's own packaging: keep the
+  # tarball, drop the extracted source tree (its nested `tests/` fixtures were
+  # the ENOENT class `tools/lib/package-verify.sh` documents) and everything
+  # else `cargo package` leaves alongside it. This run has no sha256 to write —
+  # `local_cksum` above skips the gate check for `--only`, because there is no
+  # gate in front of it to check against.
+  dw_prune_package_verify "$ROOT/package-verify"
   echo
 fi
 

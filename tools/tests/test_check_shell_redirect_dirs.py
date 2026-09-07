@@ -37,6 +37,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 CHECKER = REPO / "tools" / "check-shell-redirect-dirs.py"
 PREFLIGHT = REPO / "tools" / "check-publishable.sh"
+LIB = REPO / "tools" / "lib"
 
 FIXTURE_DRIVER = """
 import importlib.util, pathlib, sys
@@ -62,9 +63,11 @@ def preflight_tree(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     Deliberately has NO `target/` directory — that is the runner state the
     release hit, and the state the script must survive.
     """
-    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "lib").mkdir(parents=True)
     shutil.copy(PREFLIGHT, tmp_path / "tools" / "check-publishable.sh")
     shutil.copy(REPO / "versions.toml", tmp_path / "versions.toml")
+    shutil.copy(LIB / "checksum.sh", tmp_path / "tools" / "lib" / "checksum.sh")
+    shutil.copy(LIB / "package-verify.sh", tmp_path / "tools" / "lib" / "package-verify.sh")
 
     binpath = tmp_path / "bin"
     binpath.mkdir()
