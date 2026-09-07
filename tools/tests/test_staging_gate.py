@@ -200,9 +200,14 @@ def test_the_same_artifact_binds_once_the_build_emits_it(gate, tmp_path):
 
 def test_a_check_that_matches_nothing_is_red(gate, tmp_path):
     """The island's floor gate examined zero enemies for nineteen rounds and
-    was green every time."""
+    was green every time.
+
+    This row selects its class by identity, so the zero is MEASURED and the
+    red it earns is named `INAPPLICABLE`. Which red a zero is, is the two
+    tests below; that it is one is this one."""
     r = run(gate, tmp_path, BOUND_ROW, objectives=[{"type": "narrate"}])
-    assert r["verdict"] == "UNBOUND"
+    assert r["verdict"] in gate.RED_VERDICTS
+    assert r["verdict"] == "INAPPLICABLE"
     assert r["binding"] == 0
 
 
@@ -310,11 +315,77 @@ def test_an_identity_zero_on_a_blockout_is_out_of_stage_not_red(gate, tmp_path):
 
 
 def test_the_same_zero_on_an_assembled_campaign_stays_red(gate, tmp_path):
-    """Absence on a build that claims to be finished is the news, exactly as
-    before this verdict existed. Assembled adjudication is byte-for-byte the
-    old behaviour."""
+    """Absence on a build that claims to be finished is the news. The stage is
+    the only thing that moves: `OUT-OF-STAGE` needs the twice-measured
+    blockout and this subject is not one, so the same measured double zero is
+    the red `INAPPLICABLE` — and never `UNBOUND`, whose whole content is that
+    nobody looked."""
     r = run(gate, tmp_path, IDENTITY_ZERO_ROW, objectives=[{"type": "talk-to"}])
+    assert r["verdict"] in gate.RED_VERDICTS
+    assert r["verdict"] == "INAPPLICABLE"
+    assert (r["binding"], r["precondition"]) == (0, 0)
+    assert "never measured" not in r["detail"]
+
+
+def test_an_identity_zero_on_an_assembled_campaign_is_measured_not_guessed(gate, tmp_path):
+    """The defect this branch closes, driven both ways.
+
+    A deliberately small campaign contains none of a past finding's objects.
+    The row's probe COUNTED that — an identity predicate over the declared
+    design has nothing standing behind it for a precondition probe to find —
+    so reporting `UNBOUND`, whose detail says *which kind of zero this is was
+    never measured*, was the gate stating its own ignorance where it held the
+    number. Declaring one object of the class turns the same row green, which
+    is what makes the zero a fact about the campaign."""
+    absent = run(gate, tmp_path, IDENTITY_ZERO_ROW, objectives=[{"type": "talk-to"}])
+    assert absent["verdict"] == "INAPPLICABLE"
+    assert absent["verdict"] in gate.RED_VERDICTS
+    assert (absent["binding"], absent["precondition"]) == (0, 0)
+    assert "selects the object class by identity" in absent["detail"]
+
+    present = run(gate, tmp_path, IDENTITY_ZERO_ROW, objectives=[{"type": "volley"}])
+    assert present["verdict"] == "BOUND"
+    assert present["binding"] == 1
+
+
+def test_a_declaration_shaped_zero_on_an_assembled_campaign_still_says_nobody_looked(
+    gate, tmp_path
+):
+    """The bound, on the subject where it matters most. A `has` predicate can
+    be narrower than its carriers, so its zero is the island's floor gate and
+    the gate must keep demanding a probe — on an assembled campaign exactly as
+    on a blockout. Perturbed the only way this branch could answer wrongly:
+    the same binding, the same campaign, one declared `applies_when`, and the
+    zero becomes classifiable."""
+    row = dict(
+        IDENTITY_ZERO_ROW,
+        id="decl-assembled",
+        binding={"kind": "dsl", "files": ["quests.json"], "match": {"has": ["container"]}},
+    )
+    r = run(gate, tmp_path, row, objectives=[{"type": "collect"}])
     assert r["verdict"] == "UNBOUND"
+    assert "never measured" in r["detail"]
+
+    carriers_exist = dict(
+        row,
+        applies_when={
+            "kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "collect"}},
+        },
+    )
+    r = run(gate, tmp_path, carriers_exist, objectives=[{"type": "collect"}])
+    assert r["verdict"] == "UNBOUND"
+    assert r["precondition"] == 1
+    assert "never measured" not in r["detail"]
+
+    class_absent = dict(
+        row,
+        applies_when={
+            "kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "volley"}},
+        },
+    )
+    r = run(gate, tmp_path, class_absent, objectives=[{"type": "collect"}])
+    assert r["verdict"] == "INAPPLICABLE"
+    assert r["precondition"] == 0
 
 
 def test_a_detail_plan_document_ends_the_blockout_stage(gate, tmp_path):
@@ -323,7 +394,8 @@ def test_a_detail_plan_document_ends_the_blockout_stage(gate, tmp_path):
     camp = make_blockout_campaign(tmp_path, detail_plan=True)
     build = make_blockout_build(tmp_path)
     r = adjudicate_on(gate, camp, build, IDENTITY_ZERO_ROW)
-    assert r["verdict"] == "UNBOUND"
+    assert r["verdict"] in gate.RED_VERDICTS
+    assert r["verdict"] == "INAPPLICABLE"
 
 
 def test_a_manifest_not_compiled_from_the_site_plan_fails_closed(gate, tmp_path):
@@ -333,7 +405,9 @@ def test_a_manifest_not_compiled_from_the_site_plan_fails_closed(gate, tmp_path)
     camp = make_blockout_campaign(tmp_path)
     build = make_blockout_build(tmp_path, inputs=("quests.json",))
     r = adjudicate_on(gate, camp, build, IDENTITY_ZERO_ROW)
-    assert r["verdict"] == "UNBOUND"
+    assert r["verdict"] != "OUT-OF-STAGE"
+    assert r["verdict"] in gate.RED_VERDICTS
+    assert r["verdict"] == "INAPPLICABLE"
 
 
 def test_a_nonzero_precondition_stays_red_on_a_blockout(gate, tmp_path):
@@ -429,16 +503,22 @@ def test_an_absent_campaign_file_class_on_a_blockout_is_out_of_stage(gate, tmp_p
 
 
 def test_the_same_missing_storybook_on_an_assembled_campaign_stays_red(gate, tmp_path):
-    """A finished campaign owes its storybook; absence there is the news."""
+    """A finished campaign owes its storybook; absence there is the news. The
+    file class is self-measuring on every subject, so the red is the measured
+    `INAPPLICABLE`; only the blockout stage turns that same pair of zeros into
+    `OUT-OF-STAGE`."""
     camp = make_campaign(tmp_path, objectives=[{"type": "talk-to"}])
     build = make_build(tmp_path)
-    assert adjudicate_on(gate, camp, build, STORYBOOK_ROW)["verdict"] == "UNBOUND"
+    r = adjudicate_on(gate, camp, build, STORYBOOK_ROW)
+    assert r["verdict"] in gate.RED_VERDICTS
+    assert r["verdict"] == "INAPPLICABLE"
 
 
 def test_the_storybook_reverts_to_red_once_the_campaign_details(gate, tmp_path):
     camp = make_blockout_campaign(tmp_path, detail_plan=True)
     r = adjudicate_on(gate, camp, make_blockout_build(tmp_path), STORYBOOK_ROW)
-    assert r["verdict"] == "UNBOUND"
+    assert r["verdict"] in gate.RED_VERDICTS
+    assert r["verdict"] == "INAPPLICABLE"
 
 
 def test_a_contains_glob_with_candidates_present_stays_red_on_a_blockout(gate, tmp_path):
@@ -890,6 +970,117 @@ def test_the_live_difficulty_precondition_binds_on_a_declaring_world(gate, tmp_p
     # build emitted no PackTest for it is the check going quiet over an object
     # it should have something to say about.
     assert adjudicate_on(gate, declaring, build, row)["verdict"] == "UNBOUND"
+
+
+def dialogue_campaign(tmp_path, where, nodes):
+    d = tmp_path / where
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "dialogue.json").write_text(
+        json.dumps(
+            {
+                "dsl_version": "0.21.1",
+                "stage": "dialogue",
+                "content": {"dialogues": [{"npc": "npc/a", "root": "dlg/r", "nodes": nodes}]},
+            }
+        )
+    )
+    return d
+
+
+def test_the_live_label_precondition_binds_on_a_dialogue_node(gate, tmp_path):
+    """`DW0331` and `DW0205` both read an option `label`, which is a
+    declaration INSIDE a dialogue node — so the zero is ambiguous and the rows
+    owed a precondition. The carriers are the nodes themselves, whose id form
+    `dlg/<kebab>` is what `DW0110` enforces. Driven both ways, then through
+    the verdict that matters: a campaign with dialogue whose options carry no
+    label is the check going quiet over objects it should have something to
+    say about."""
+    rows = live_rows(gate, {"hv-07", "isl-49", "isl-55"})
+    aw = rows["hv-07"]["applies_when"]
+    assert all(r["applies_when"] == aw for r in rows.values()), "one class, one precondition"
+
+    labelled = dialogue_campaign(
+        tmp_path, "yes", [{"id": "dlg/r", "text": "t", "options": [{"label": "go"}]}]
+    )
+    unlabelled = dialogue_campaign(tmp_path, "mute", [{"id": "dlg/r", "text": "t"}])
+    silent = dialogue_campaign(tmp_path, "none", [])
+    build = make_build(tmp_path)
+    counts = {
+        w: gate.probe(aw, gate.Subject(d, build))[0]
+        for w, d in (("yes", labelled), ("mute", unlabelled), ("none", silent))
+    }
+    assert counts == {"yes": 1, "mute": 1, "none": 0}, counts
+
+    for r in rows.values():
+        assert adjudicate_on(gate, labelled, build, r)["verdict"] == "BOUND"
+        assert adjudicate_on(gate, unlabelled, build, r)["verdict"] == "UNBOUND"
+        assert adjudicate_on(gate, silent, build, r)["verdict"] == "INAPPLICABLE"
+
+
+def test_the_live_cast_precondition_binds_on_a_declared_quest(gate, tmp_path):
+    """`DW0460`/`DW0461` read the `cast` ledger, a declaration ON a quest. The
+    precondition counts the quests — and its UNBOUND direction is the island
+    before round 13 verbatim: three quests, no cast ledger, nothing counting
+    them."""
+    rows = live_rows(gate, {"isl-35", "isl-46"})
+    aw = rows["isl-35"]["applies_when"]
+    assert rows["isl-46"]["applies_when"] == aw, "one class, one precondition"
+
+    build = make_build(tmp_path)
+
+    def quests(where, quest_nodes):
+        d = tmp_path / where
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "quests.json").write_text(
+            json.dumps(
+                {"dsl_version": "0.21.1", "stage": 5, "content": {"quests": quest_nodes}}
+            )
+        )
+        return d
+
+    with_cast = quests("cast", [{"id": "quest/a", "cast": {"npc/a": {"at": "anchor/a"}}}])
+    no_cast = quests("nocast", [{"id": "quest/a", "objectives": []}])
+    no_quest = quests("noquest", [])
+    counts = {
+        w: gate.probe(aw, gate.Subject(d, build))[0]
+        for w, d in (("cast", with_cast), ("nocast", no_cast), ("noquest", no_quest))
+    }
+    assert counts == {"cast": 1, "nocast": 1, "noquest": 0}, counts
+
+    for r in rows.values():
+        assert adjudicate_on(gate, with_cast, build, r)["verdict"] == "BOUND"
+        assert adjudicate_on(gate, no_cast, build, r)["verdict"] == "UNBOUND"
+        assert adjudicate_on(gate, no_quest, build, r)["verdict"] == "INAPPLICABLE"
+
+
+def test_the_live_prompt_precondition_binds_on_a_completable_objective(gate, tmp_path):
+    """`DW0862` refuses a `hint` on an objective with no `title`, so the class
+    is the objectives a prompt can be authored on. The binding pairs those
+    five types with `has: [id]` — which is what keeps it off a sub-node that
+    happens to carry a `type`, and also what makes the probe
+    declaration-shaped. The precondition counts the types alone: a campaign
+    that declares none of them cannot mislead anybody about one."""
+    row = live_rows(gate, {"bell-13"})["bell-13"]
+    aw = row["applies_when"]
+    build = make_build(tmp_path)
+
+    for sub in ("a", "b", "c"):
+        (tmp_path / sub).mkdir()
+    completable = make_campaign(tmp_path / "a", objectives=[{"id": "obj/a", "type": "collect"}])
+    only_beats = make_campaign(tmp_path / "b", objectives=[{"id": "obj/a", "type": "narrate"}])
+    n_yes = gate.probe(aw, gate.Subject(completable, build))[0]
+    n_no = gate.probe(aw, gate.Subject(only_beats, build))[0]
+    assert (n_yes, n_no) == (1, 0)
+
+    assert adjudicate_on(gate, completable, build, row)["verdict"] == "BOUND"
+    assert adjudicate_on(gate, only_beats, build, row)["verdict"] == "INAPPLICABLE"
+
+    # The UNBOUND direction the `has: [id]` guard exists for: a node of one of
+    # those types that carries no id is an anomaly, not an absence.
+    anomalous = make_campaign(tmp_path / "c", objectives=[{"type": "collect"}])
+    r = adjudicate_on(gate, anomalous, build, row)
+    assert r["verdict"] == "UNBOUND"
+    assert r["precondition"] == 1
 
 
 def test_every_live_precondition_can_measure_non_zero(gate):
