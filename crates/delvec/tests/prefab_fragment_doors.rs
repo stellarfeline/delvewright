@@ -131,6 +131,10 @@ const NOT_PIECE_DOORS: &[(&[&str], &str)] = &[
         &["curate-merge"],
         "takes a curation report and a catalog directory, and edits cards",
     ),
+    (
+        &["seating"],
+        "names no piece at all: it takes a horizon base and reads the WHOLE library the global          `--prefabs` points at, so there is no author-named file for a lone tile to arrive as.          Its own denominators are what guard it — a run that opened fewer `.nbt` than it read          documents, or examined no pool, exits non-zero",
+    ),
 ];
 
 /// Every leaf command the parser has, as the words an author types.

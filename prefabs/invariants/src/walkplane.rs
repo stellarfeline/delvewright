@@ -4,7 +4,7 @@
 //! by the seating derivation, and refused by `DW0886` when it is absent — and a
 //! measurement taken seven times is seven measurements.
 
-use crate::invariants::{Cells, blockshape};
+use crate::invariants::{blockshape, Cells};
 
 /// **The local y of this piece's walk plane** — the number the prefab document
 /// declares as `walk_y`, and the number a walk-plane horizon derives an area's

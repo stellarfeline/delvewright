@@ -422,7 +422,7 @@ fn main() -> ExitCode {
         } => run_calibrate(report, layout, out, cli.json),
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
-        Command::Prefab(args) => delvec::admit::cli::run(args.clone(), cli.json),
+        Command::Prefab(args) => delvec::admit::cli::run(args.clone(), &cli.prefabs, cli.json),
         Command::Schem(args) => delvec::schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvec::orchestrator::cli::run(args.clone()),
         Command::Render(args) => delvec::render::cli::run(args.clone(), cli.json),

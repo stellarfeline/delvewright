@@ -491,6 +491,12 @@ impl PrefabRegistry {
         self.by_id.iter()
     }
 
+    /// **Every pool this library declares**, in id order — the population a
+    /// library-wide verdict states its denominator over.
+    pub fn pool_ids(&self) -> Vec<String> {
+        self.pool_members.keys().cloned().collect()
+    }
+
     /// The member pieces of a prefab pool (`pool/<name>`), if declared.
     pub fn pool(&self, pool_id: &str) -> Option<&[PoolMember]> {
         self.pool_members.get(pool_id).map(|v| v.as_slice())
