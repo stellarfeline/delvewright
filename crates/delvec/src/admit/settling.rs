@@ -64,6 +64,41 @@ pub fn zone_grid(zone_size: [i32; 3], tiles: &[(TilePart, Structure)]) -> VoxelM
     model
 }
 
+/// **A whole piece as one grid, read from its library files** — whichever of
+/// the two packagings its blocks arrived in.
+///
+/// The same reassembly [`zone_grid`] performs, reached from a piece's own
+/// metadata rather than from a `.json` path an author typed: a caller that has
+/// a [`PrefabMeta`] and the directory it came from should not have to know
+/// whether the piece is one template or nine, because packaging is not part of
+/// what the piece IS. `PrefabMeta::templates` is the flattener both cases go
+/// through, and its `offset` is already the whole-piece offset.
+///
+/// Returns the grid and the number of `.nbt` files opened, because a reader
+/// that says "I examined this piece" owes its denominator: a manifest whose
+/// tiles are missing yields a grid of air and would otherwise answer
+/// confidently about nothing.
+pub fn piece_grid(
+    meta: &delvewright_dsl::prefab::PrefabMeta,
+    dir: &std::path::Path,
+) -> Result<(VoxelModel, usize), String> {
+    let size = meta.size();
+    let mut model = VoxelModel::new(Box3::at_origin([
+        size[0].max(0) as u32,
+        size[1].max(0) as u32,
+        size[2].max(0) as u32,
+    ]));
+    let mut opened = 0usize;
+    for t in meta.templates() {
+        let path = dir.join(t.file);
+        let bytes = std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let s = Structure::read(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        blit(&mut model, &s, t.offset);
+        opened += 1;
+    }
+    Ok((model, opened))
+}
+
 /// What the two rules examined in one piece, and what they found.
 ///
 /// The counts are carried rather than printed because they belong in the

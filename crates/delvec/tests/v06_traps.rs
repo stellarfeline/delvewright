@@ -61,7 +61,7 @@ fn patched_prefabs(name: &str, trigger_block: Option<&str>) -> PathBuf {
 
 fn world_v06() -> serde_json::Value {
     serde_json::json!({
-        "dsl_version": "0.21.1",
+        "dsl_version": "0.21.2",
         "campaign_id": "hello-world",
         "stage": "world",
         "content": {
@@ -77,7 +77,7 @@ fn world_v06() -> serde_json::Value {
 
 fn quests_v06(trap: serde_json::Value) -> serde_json::Value {
     serde_json::json!({
-        "dsl_version": "0.21.1",
+        "dsl_version": "0.21.2",
         "campaign_id": "hello-world",
         "stage": "quests",
         "content": {

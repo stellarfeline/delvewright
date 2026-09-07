@@ -35,7 +35,7 @@ use std::path::Path;
 /// The cross-tileset invariants and the connection derivation, shared as a
 /// crate so the rule is compiled once and its own tests run with the
 /// generators' (`prefabs/invariants`).
-use prefab_invariants::{connections, invariants};
+use prefab_invariants::{connections, invariants, walkplane};
 
 use flate2::{Compression, GzBuilder};
 
@@ -257,6 +257,7 @@ fn write_piece(out: &Path, spec: &Spec) {
             data_version: DATA_VERSION,
             generator: GENERATOR.into(),
         },
+        walk_y: walkplane::walk_y(spec.size, &cells),
         waterline_y: spec.waterline_y,
         anchors,
         connectors,

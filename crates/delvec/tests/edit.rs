@@ -57,10 +57,11 @@ fn prefabs_arg() -> String {
 }
 
 /// The same, for a fixture that declares `horizon: ocean`: the library with
-/// `hello-room` rebuilt as a piece that can stand on a sea
-/// (`common::ocean_prefabs_dir`). The shipped room's walk plane is a block under
-/// the surface and its own gate bars flood it, so an ocean fixture built from it
-/// is a world `DW0344` and `DW0851` both refuse — correctly.
+/// `hello-room` rebuilt as a piece that declares its own walk plane and a
+/// waterline its bytes bear out (`common::ocean_prefabs_dir`). The shipped room
+/// declares neither, so an ocean campaign that seats it is `DW0886` before
+/// anything is placed — correctly, and that is what `common::OceanRoom`
+/// exists to give a fixture a way past.
 fn ocean_prefabs_arg(tag: &str, room: common::OceanRoom) -> String {
     common::ocean_prefabs_dir(tag, room).display().to_string()
 }
@@ -76,7 +77,7 @@ fn edits_copy(name: &str) -> PathBuf {
 /// Overwrite the copy's `world-edits.json` content with the given batches.
 fn set_batches(dir: &Path, batches: serde_json::Value) {
     let doc = serde_json::json!({
-        "dsl_version": "0.21.1",
+        "dsl_version": "0.21.2",
         "campaign_id": "hello-world",
         "stage": "world-edits",
         "content": { "batches": batches }
@@ -290,7 +291,7 @@ fn set_ocean_horizon_at(dir: &Path, dsl_version: &str) {
 /// The world-stage version floor for `horizon` (spec-0013) and the current
 /// `DSL_VERSION` — the two ends every `horizon: ocean` proof is driven
 /// at.
-const OCEAN_VERSIONS: [&str; 2] = ["0.21.1", "0.21.1"];
+const OCEAN_VERSIONS: [&str; 2] = ["0.21.2", "0.21.2"];
 
 fn set_ocean_horizon(dir: &Path) {
     set_ocean_horizon_at(dir, OCEAN_VERSIONS[0]);
@@ -337,33 +338,30 @@ fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
     assert!(!stdout.contains("DW0322"), "no boundary error:\n{stdout}");
 }
 
-/// **The sea comes in through the breach** (`DW0851`) — and it gets there before
-/// anybody is stranded.
+/// **An edit script that carves a walk cell down to the sea plane is refused**
+/// (`DW0344`, second arm) — the backstop for what the documents could not know.
 ///
-/// This scenario used to be asserted as `DW0322` stranding, on the premise that
-/// "a player who walks out of the breach is in open water with no shoreline to
-/// climb back onto". That premise was reading half the world. `prefab/hello-room`
-/// sits with its walk plane at y=61 — *entirely under* the sea level of 62 — so
-/// carving its wall does not open a door onto the sea, it opens the sea into the
-/// room. All 77 walkable cells go under: 50 of them head-deep, the other 27 wet
-/// to the feet. The player never reaches the breach to be stranded at it.
+/// This scenario used to be a flood: `prefab/hello-room` sat with its walk plane
+/// at y=61, *entirely under* a sea at 62, so carving its wall did not open a
+/// door onto the sea, it opened the sea into the room, and `DW0851` refused the
+/// result. That seating is now unreachable. An ocean area's origin is DERIVED
+/// from the piece set's own walk plane (spec-0060 §3.2), so a piece's declared
+/// walk plane stands at y=63 whatever its internal convention is, and the sea —
+/// which tops out at 62 and cannot rise — has nothing to flow into. The old
+/// fixture was not a scenario the engine had failed to catch; it was the global
+/// datum putting a room in the water, and that datum is gone.
 ///
-/// The engine could not say so, because the ambient sea reached exactly one
-/// predicate (`World::ambient_water`, read only by the stranding proof's sea
-/// surface) and never reached the occupancy model, so every cell it was about to
-/// fill was proved standable and dry. `DW0851` is that gap closed, and this test
-/// is why it runs BEFORE the stranding proof rather than after: a stranding
-/// verdict taken over a walk region that is already the sea prescribes a
-/// shoreline step for a room nobody can walk in.
+/// What remains reachable, and is what this now pins, is the half `DW0886`
+/// cannot know from the documents: a campaign that **edits the piece after it is
+/// placed**. The carve below takes three cells out of the shore piece's plinth,
+/// which leaves a body standing at y=62 — the sea's own plane — in a world whose
+/// every declaration was honest. `DW0344`'s second arm asks exactly that
+/// question, of the assembled world, and refuses before the boundary proof gets
+/// to describe the pit as a stranding.
 ///
-/// `DW0322`'s ocean branch keeps its own red demos — four of them, over solid
-/// island plates whose walk planes are above the waterline, in `nav`'s unit tests
-/// — so nothing is lost by this fixture telling the truth about itself.
-///
-/// Driven at both ends of the range `horizon` has existed over (`OCEAN_VERSIONS`):
-/// and this is what makes that a measurement.
+/// Driven at both ends of the range `horizon` has existed over (`OCEAN_VERSIONS`).
 #[test]
-fn edit_ocean_breach_lets_the_sea_into_the_walk_region_dw0851() {
+fn edit_ocean_a_carve_that_puts_a_walk_cell_under_the_sea_is_refused_dw0344() {
     for version in OCEAN_VERSIONS {
         let dir = edits_copy(&format!("edits-ocean-breach-{version}"));
         set_ocean_horizon_at(&dir, version);
@@ -373,10 +371,14 @@ fn edit_ocean_breach_lets_the_sea_into_the_walk_region_dw0851() {
                 "id": "batch/breach-wall",
                 "area": "area/keep",
                 "edits": [
+                    // The plinth course the shore piece stands its floor on.
+                    // Local y=2 is world y=62 once the area is seated at 60,
+                    // and the course under it is solid — so this is a pit a
+                    // body stands in at exactly the sea plane.
                     { "verb": "select", "name": "region/breach", "shape": {
                         "kind": "box",
                         "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
-                        "min": [4, 1, 0], "max": [6, 2, 0]
+                        "min": [4, 2, 4], "max": [6, 2, 6]
                     }},
                     { "verb": "carve", "region": "region/breach" }
                 ]
@@ -389,7 +391,7 @@ fn edit_ocean_breach_lets_the_sea_into_the_walk_region_dw0851() {
             "-o",
             out.to_str().unwrap(),
             "--prefabs",
-            &ocean_prefabs_arg("edit-ocean-breach", common::OceanRoom::Cellar),
+            &ocean_prefabs_arg("edit-ocean-breach", common::OceanRoom::Shore),
         ]);
         let stdout = format!(
             "{}{}",
@@ -402,40 +404,24 @@ fn edit_ocean_breach_lets_the_sea_into_the_walk_region_dw0851() {
             "build-tier failure at dsl {version}:\n{stdout}"
         );
         assert!(
-            stdout.contains("DW0851"),
-            "expected DW0851 at dsl {version}:\n{stdout}"
+            stdout.contains("DW0344"),
+            "expected DW0344 at dsl {version}:\n{stdout}"
         );
         assert!(
-            stdout.contains("batch/breach-wall"),
-            "names the batch at dsl {version}:\n{stdout}"
-        );
-        assert!(
-            stdout.contains("hold WATER once the world loads"),
+            stdout.contains("where a body's feet go") && stdout.contains("at or below"),
             "names what is wrong with the cells at dsl {version}:\n{stdout}"
         );
-        // It names the objectives, not only the coordinates. The field case was
-        // a delve whose two objectives stood in the sea and whose artifact said
-        // `pass`; a reader acts on `obj/exit`, not on `[5, 61, 8]`.
+        // The binding travels with the verdict: what was judged, out of what.
         assert!(
-            stdout.contains("`obj/talk` at [5, 61, 4]")
-                && stdout.contains("`obj/exit` at [5, 61, 8]"),
-            "names the objectives standing in the water at dsl {version}:\n{stdout}"
+            stdout.contains("sea walk-plane binding: horizon base `ocean`")
+                && stdout.contains("walk cell(s) lie inside a placed piece"),
+            "states its binding count and denominator at dsl {version}:\n{stdout}"
         );
-        // The binding counts travel with the verdict: what was examined, not only
-        // what was found. A message that says "81 cells" and nothing about the
-        // walk region it drew them from is a finding without a denominator.
-        assert!(
-            stdout.contains("81 of the 81 cell(s) a body was proved to stand on")
-                && stdout.contains("81 cell(s), of which 2 are named by the critical path")
-                && stdout.contains("6 cell(s) of open contact face")
-                && stdout.contains("0 block(s) the sea waterlogs at placement"),
-            "states its binding counts and denominator at dsl {version}:\n{stdout}"
-        );
-        // The whole point of the ordering: the stranding proof must not get to
-        // speak first about a room that is under the sea.
+        // Ordering: the stranding proof must not get to speak first about a pit
+        // whose floor is the sea's own plane.
         assert!(
             !stdout.contains("DW0322"),
-            "the sea in the room is not a stranding finding at dsl {version}:\n{stdout}"
+            "a walk cell at the sea plane is not a stranding finding at dsl {version}:\n{stdout}"
         );
     }
 }
@@ -995,7 +981,7 @@ fn set_quests_v06(dir: &Path, content: serde_json::Value) {
         let path = dir.join(file);
         let mut v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        v["dsl_version"] = serde_json::json!("0.21.1");
+        v["dsl_version"] = serde_json::json!("0.21.2");
         if doc == "quests" {
             v["content"] = content.clone();
         }

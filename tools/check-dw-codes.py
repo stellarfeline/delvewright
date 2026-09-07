@@ -650,6 +650,97 @@ def tested_codes() -> set[str]:
     return found
 
 
+# ---------------------------------------------------------------------------
+# A remedy a message names owes a check that it is reachable (spec-0060 §10.3)
+# ---------------------------------------------------------------------------
+
+# The test that takes each move and asserts it reaches a different verdict.
+REMEDY_TEST = REPO_ROOT / "crates" / "delvec" / "tests" / "remedy_reachability.rs"
+
+# **What makes a sentence a MOVE rather than an explanation.**
+#
+# The rule is spec-0060 §10.3's own quantifier: a message that names *a base or a
+# document* as a move. So the marker is the pair — an imperative the message
+# addresses to the author, standing near a base name or a file the author edits.
+# A message that merely mentions `void` while describing what a horizon is does
+# not match, and a move that names neither is not the kind of remedy this gate is
+# about (it prescribes nothing an author has to go and find).
+MOVE_VERB_RE = re.compile(
+    # The numbered form every multi-move message uses...
+    r"\((?:1|2|3)\)\s+(?:BURY|PLACE|DECLARE|CHOOSE|RAISE|CORRECT|DELETE|AUTHOR|SEAL)\b"
+    # ...and the plain imperative a single-move message uses instead. Both are
+    # here because the quantifier is what the message SAYS to do, not how it
+    # numbers it: DW0855 names two moves in one sentence and would otherwise
+    # have escaped this obligation while being exactly the code that motivated
+    # it.
+    r"|(?:Give the campaign|[Ss]et `horizon` to|[Rr]e-?author|[Ss]plit the pool)"
+)
+MOVE_SUBJECT_RE = re.compile(
+    r"`(?:void|ocean|valley)`|`horizon`|site plan|`[a-z0-9-]+\.json`|\{base\}\.json|"
+    r"`\{base_file\}\.json`|`\{file\}\.json`"
+)
+
+# How far after a constant's name a message is still that constant's message.
+# Generous on purpose: over-reaching pulls a code into the obligation, which is a
+# red somebody reads, while under-reaching drops one silently.
+MOVE_WINDOW = 6000
+
+
+def codes_that_prescribe_a_move() -> dict[str, set[str]]:
+    """`DW code -> {file:line}` for every message that names a base or a document
+    as a move.
+
+    Resolved through the code's own constant rather than by looking for a
+    `DWxxxx` literal near the text: a diagnostic's message never repeats its own
+    number, so a literal-based reading would bind to nothing and report a clean
+    zero.
+    """
+    consts = declared_constants()
+    by_name: dict[str, str] = {}
+    for code, pairs in consts.items():
+        for _crate, name in pairs:
+            by_name[name] = code
+    found: dict[str, set[str]] = {}
+    for rs in sorted(CRATES_DIR.rglob("*.rs")):
+        raw = rs.read_text(encoding="utf-8")
+        text = strip_comments(raw)
+        for name, code in by_name.items():
+            for m in re.finditer(r"\b" + re.escape(name) + r"\b", text):
+                window = text[m.end() : m.end() + MOVE_WINDOW]
+                # Stop at the next code constant: a window that runs into the
+                # next diagnostic would attribute its moves to this one.
+                # The window is ONE diagnostic's message. It ends at whatever
+                # comes first: the next code constant, or the construction of
+                # the next diagnostic — because a window that runs past either
+                # attributes another rule's moves to this one, which is how
+                # DW0320 first appeared in this set.
+                cut = len(window)
+                for other in by_name:
+                    if other == name:
+                        continue
+                    hit = window.find(other)
+                    if hit != -1:
+                        cut = min(cut, hit)
+                for boundary in (
+                    "Diagnostic::error(",
+                    "Diagnostic::warning(",
+                    "PlanError::new(",
+                    "Failure {",
+                ):
+                    hit = window.find(boundary)
+                    if hit != -1:
+                        cut = min(cut, hit)
+                window = window[:cut]
+                if MOVE_VERB_RE.search(window) and MOVE_SUBJECT_RE.search(window):
+                    # The constant's NAME, not a line number: the offsets above
+                    # are into comment-stripped source, so a line taken from
+                    # them names a line in a file nobody has. A name resolves.
+                    found.setdefault(code, set()).add(
+                        f"{rs.relative_to(REPO_ROOT)} ({name})"
+                    )
+    return found
+
+
 def main() -> int:
     if not DOC_PATH.is_file():
         print(f"error: reference doc not found: {DOC_PATH}", file=sys.stderr)
@@ -772,6 +863,35 @@ def main() -> int:
             f"{', '.join(stale_allowlist)}"
         )
 
+    # --- a named remedy owes a check that it is reachable -------------------
+    #
+    # `CLAUDE.md`: *a gate that names a remedy owes a check that the remedy is
+    # reachable*. Nothing held that check, and the cost was the cycle spec-0060
+    # §1 walks — three gates each naming as its remedy a base the next refuses.
+    # So a message that names a base or a document as a move owes a row in
+    # `remedy_reachability.rs`, which builds the campaign that takes the move and
+    # asserts it reaches a different verdict.
+    prescribing = codes_that_prescribe_a_move()
+    if not prescribing:
+        errors.append(
+            "the remedy cross-check matched ZERO diagnostics that name a base or a document "
+            "as a move. That is not a pass: this repository has several, so a zero here means "
+            "the reader stopped matching them (tools/check-dw-codes.py, MOVE_VERB_RE)"
+        )
+    remedy_text = REMEDY_TEST.read_text(encoding="utf-8") if REMEDY_TEST.is_file() else ""
+    if not remedy_text:
+        errors.append(
+            f"the remedy-reachability test is missing: {REMEDY_TEST.relative_to(REPO_ROOT)}"
+        )
+    unproven = sorted(c for c in prescribing if c not in codes_in(remedy_text))
+    if unproven:
+        errors.append(
+            "DW codes whose message names a base or a document as a MOVE, with no row in "
+            f"{REMEDY_TEST.relative_to(REPO_ROOT)} taking that move and asserting a different "
+            "verdict — a remedy nobody has ever taken is a remedy nobody knows is reachable: "
+            + ", ".join(f"{c} ({', '.join(sorted(prescribing[c]))})" for c in unproven)
+        )
+
     tested = tested_codes()
     requires_test = doc - PENDING
     untested = sorted(requires_test - tested - set(ALLOWLIST))
@@ -800,6 +920,8 @@ def main() -> int:
         f"{len(PENDING)} approved-landing (pending); "
         f"{len(requires_test)} require tests, all covered "
         f"({len(ALLOWLIST)} allowlisted); "
+        f"{len(prescribing)} code(s) name a base or a document as a move, all with a row in "
+        f"{REMEDY_TEST.name}; "
         f"{len(tiers)} exit tiers declared, "
         f"{len([c for c, x in tiers.items() if x == 'Analysis'])} of them analysis "
         f"tier, matching {tier_rows} documented row(s)."

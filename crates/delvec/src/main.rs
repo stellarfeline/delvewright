@@ -143,8 +143,9 @@ enum Command {
         /// Which document. A numbered stage `1..7`; a named map-pipeline stage
         /// document `geometry-brief` | `layout-graph` | `site-plan` |
         /// `detail-plan`; `walk-record` for the hand-written walk record
-        /// (a campaign artifact, not a stage document); or `all` for every
-        /// stage document at once.
+        /// (a campaign artifact, not a stage document); `prefab-metadata` for a
+        /// prefab library asset's sibling `<prefab-id>.json` (a library asset,
+        /// not a stage document); or `all` for every stage document at once.
         #[arg(long)]
         stage: String,
     },
@@ -421,7 +422,7 @@ fn main() -> ExitCode {
         } => run_calibrate(report, layout, out, cli.json),
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
-        Command::Prefab(args) => delvec::admit::cli::run(args.clone(), cli.json),
+        Command::Prefab(args) => delvec::admit::cli::run(args.clone(), &cli.prefabs, cli.json),
         Command::Schem(args) => delvec::schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvec::orchestrator::cli::run(args.clone()),
         Command::Render(args) => delvec::render::cli::run(args.clone(), cli.json),
@@ -791,6 +792,21 @@ fn validate_loaded(
             diags.extend(delvec::compiler::cast::check_shared_cast_anchor(
                 &campaign, &prefabs,
             ));
+            // **`DW0886` / `DW0887`: a horizon and a piece set are a pair**
+            // (spec-0060). Refused here rather than at the build, on `DW0855`'s
+            // own precedent: the verdict is a fact about the documents and the
+            // library — the declared base, the pools the world names, each
+            // member's metadata and its bytes — so nothing has to be placed to
+            // know it, and a creator should not spend a build to learn that the
+            // pieces they chose cannot stand where they put them. It opens the
+            // `.nbt`, because a verdict from declarations alone reports a
+            // library of fictions as seatable. The binding line states what it
+            // examined, zeroes included.
+            {
+                let (bind, sd) = delvec::compiler::seating::check(&campaign, &prefabs, prefabs_dir);
+                examined.push(bind.line());
+                diags.extend(sd);
+            }
             // An objective keeps the promise its prompt makes (DW0860-DW0863):
             // a failure clock armed before its own prompt could be read, an
             // adopted container nothing distinguishes from the scenery beside
@@ -2645,6 +2661,20 @@ fn run_schema(stage: &str) -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
+        // `<prefab-id>.json` is not a stage document either — it is a library
+        // ASSET's metadata, reachable here for the same reason the walk record
+        // is. Deliberately absent from `all`: the gallery's coverage gate
+        // enumerates its units from that export, and a library-asset document
+        // folded into it would demand a stage-document binding for every field
+        // of a file no stage document contains (`PrefabMeta::schema`'s note).
+        "prefab-metadata" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&delvewright_dsl::prefab::PrefabMeta::schema())
+                    .unwrap()
+            );
+            return ExitCode::SUCCESS;
+        }
         "all" => Stage::ALL.to_vec(),
         other => {
             let names: Vec<String> = Stage::ALL
@@ -2654,7 +2684,8 @@ fn run_schema(stage: &str) -> ExitCode {
             eprintln!(
                 "unknown document `{other}`. Want `1`..`7` (the campaign DSL's numbered \
                  stages), any stage by name — {names} — `walk-record` for the hand-written \
-                 walk record, or `all` for every stage document at once.",
+                 walk record, `prefab-metadata` for a prefab library asset's sibling \
+                 `<prefab-id>.json`, or `all` for every stage document at once.",
                 names = names.join(", "),
             );
             return ExitCode::from(EXIT_INTERNAL);

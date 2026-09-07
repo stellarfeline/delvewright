@@ -915,6 +915,27 @@ pub fn build_with_warnings(
             eprintln!("{}", seepage.line());
             sea_seepage_ledger = Some(seepage.ledger());
 
+            // **`DW0344`, second arm: no walk cell of a placed piece stands at
+            // or below the sea plane.** The static half of this rule is
+            // `DW0886`, asked of the library before anything is placed; this is
+            // the backstop for what the documents could not know — a floor a
+            // stage-7 edit script carved after placement above all. Bound here
+            // because this is the first point at which the walk region and the
+            // placed boxes are both in hand, and printed before it is raised,
+            // for the same vacuity reason the exposure line is.
+            let (sea_walk, sea_walk_findings) =
+                crate::compiler::plan::check_ocean_walk_plane(plan, prefabs, &party_walk);
+            eprintln!("{}", sea_walk.line());
+            if let Some((first, rest)) = sea_walk_findings.split_first() {
+                for extra in rest {
+                    eprintln!("{} [error] build: {}", extra.code, extra.message);
+                }
+                return Err(BuildFailure::Diagnostic {
+                    code: crate::compiler::plan::DW_OCEAN_WATERLINE,
+                    message: first.message.clone(),
+                });
+            }
+
             // **`DW0885`: a piece's outside answers for itself, or the world
             // buries it.** Bound here because this is the one function that
             // turns a plan into a datapack AND the first point at which the

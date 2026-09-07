@@ -1,0 +1,29 @@
+{
+  "code": "DW0886",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/horizon",
+      "value": "ocean"
+    },
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/areas/-",
+      "value": {
+        "id": "area/quarry",
+        "name": "The Quarry",
+        "prefab": "prefab/gallery-shard"
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/area.quarry.name",
+      "value": "采石场"
+    }
+  ],
+  "units": [],
+  "why": "A piece asked to stand on a horizon that seats pieces by their own walk plane, when the piece has none. `prefab/gallery-shard` is a three-cube of solid material — a fragment source something later stamps into a wall, never a place a party stands — so the generator that writes it measures no walk plane and the document honestly says nothing. On `void` and `valley` an area's origin is a fixed datum and the silence costs nothing; on `ocean` the origin IS `walk_ref_y - walk_y`, so there is no number to derive it from and no default to fall back on. The default is precisely what this refusal exists to keep out: the retired global ocean datum was one tileset's authoring convention promoted to a world constant, right for the pieces it was copied from and silently wrong for every other, and the piece that landed under the sea because of it flooded on boot with nothing looking. The refusal comes at VALIDATION, exit 1, before a block is placed, on `DW0855`'s own precedent — the whole verdict is a fact about the documents and the library, so a creator should not spend a build to learn that the piece they chose cannot stand where they put it. Its move is the only one there is: declare `walk_y`, which is a measurement of the piece and is written by the generator that built it. It declares no unit: `walk_y` is prefab metadata rather than a stage schema unit, and `HorizonBase::ocean` is bound on the ocean-horizon overlay."
+}

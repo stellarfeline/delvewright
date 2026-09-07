@@ -25,10 +25,26 @@ pub struct PrefabArgs {
 
 #[derive(Clone, Subcommand)]
 pub enum PrefabCommand {
+    /// **Can this library stand on this horizon** (spec-0060 §6): per pool, the
+    /// verdict and the reason, with a numerator and a denominator at pool,
+    /// member and declaration level.
+    ///
+    /// It reads a library and a base and answers the pairing question BEFORE a
+    /// campaign is authored against either. Same implementation as the
+    /// compiler's own validation check, so a library can never be seatable
+    /// according to the tool and refused by the build.
+    Seating {
+        /// The horizon base to seat against — a base `delvec schema --stage
+        /// world` declares (`void`, `ocean`, `valley`).
+        #[arg(long)]
+        horizon: String,
+    },
     /// Mechanical NBT palette audit (CI gate): allowlist + code-injection forbid.
     Audit {
-        /// Input structure `.nbt`, or the `.json` manifest of a zone that ships
-        /// as a tile set — which audits every tile and returns ONE zone verdict.
+        /// Input structure `.nbt`; the `.json` manifest of a zone that ships as
+        /// a tile set, which audits every tile and returns ONE zone verdict; or
+        /// a prefab LIBRARY DIRECTORY, which sweeps every document in it for a
+        /// declared waterline its own bytes do not bear out (`DW0887`).
         nbt: PathBuf,
         /// A JSON allowlist override (replaces the built-in default).
         #[arg(long)]

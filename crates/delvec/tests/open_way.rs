@@ -406,7 +406,7 @@ fn hw(name: &str) -> String {
 /// Hello-world's world with a second area holding the way-carrying piece.
 fn world_doc() -> String {
     r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -431,7 +431,7 @@ fn world_doc() -> String {
 fn quest_plan_doc(tower: bool) -> String {
     if !tower {
         return r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -446,7 +446,7 @@ fn quest_plan_doc(tower: bool) -> String {
         .to_string();
     }
     r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -522,7 +522,7 @@ fn quests_doc(opening: Opening, tower: bool) -> String {
         }));
     }
     let doc = serde_json::json!({
-      "dsl_version": "0.21.1",
+      "dsl_version": "0.21.2",
       "campaign_id": "hello-world",
       "stage": "quests",
       "content": { "on_death": on_death, "quests": quests }
@@ -1007,7 +1007,7 @@ fn an_open_way_naming_no_staged_way_is_dw0547() {
 fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     let dir = common::prefabs_dir();
     let plain = r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {

@@ -12,7 +12,7 @@ mod common;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

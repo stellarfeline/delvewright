@@ -104,7 +104,7 @@ fn version_line() {
     // workaround the version exists to remove. No committed document carries
     // either surface, so every campaign that compiled before compiles
     // byte-identically.
-    assert!(s.contains("dsl 0.21.1"), "{s}");
+    assert!(s.contains("dsl 0.21.2"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 
@@ -1192,7 +1192,7 @@ fn move_unroutable_exits_3_with_dw0307() {
     let camp = tmp("mv-cross-void");
     copy_dir(&common::keep_crawl_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.21.1");
+        d["dsl_version"] = serde_json::json!("0.21.2");
         common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
             "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/objective"
         }));
@@ -1228,7 +1228,7 @@ fn move_actor_unroutable_exits_3_with_dw0325() {
     let camp = tmp("ma-cross-void");
     copy_dir(&common::keep_crawl_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.21.1");
+        d["dsl_version"] = serde_json::json!("0.21.2");
         common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
             "type": "move-actor", "actor": "actor/beast", "to_anchor": "anchor/objective"
         }));
@@ -1292,7 +1292,7 @@ fn cutscene_over_angular_budget_exits_3_with_dw0347() {
     // Halve the duration and add a `look_at` (v0.6 surface) the pan cannot
     // reach inside the budget.
     let camp = showcase_with_quests_patch("cs-spin", |d| {
-        d["dsl_version"] = serde_json::json!("0.21.1");
+        d["dsl_version"] = serde_json::json!("0.21.2");
         let cs = showcase_cutscene(d);
         cs["seconds"] = serde_json::json!(1);
         cs["look_at"] = serde_json::json!({ "anchor": "anchor/objective", "offset": [1, 2, 1] });
@@ -1389,7 +1389,7 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
     let camp = tmp("v06-ocean");
     copy_dir(&common::hello_world_dir(), &camp);
     let world = r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -1540,7 +1540,7 @@ fn v06_actor_datapack_emits_the_mechanics() {
     let camp = tmp("v06-actors");
     copy_dir(&common::hello_world_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.21.1");
+        d["dsl_version"] = serde_json::json!("0.21.2");
         common::objective_effects(d, 0, "obj/talk").extend([
             serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
             serde_json::json!({
@@ -1645,7 +1645,7 @@ fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
             serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap())
                 .unwrap();
         if let Some(h) = horizon {
-            world["dsl_version"] = serde_json::json!("0.21.1");
+            world["dsl_version"] = serde_json::json!("0.21.2");
             let content = world["content"].as_object_mut().unwrap();
             content.insert("horizon".into(), serde_json::json!(h));
             content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -1703,7 +1703,7 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
             serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         f(&mut doc);
         if ocean {
-            doc["dsl_version"] = serde_json::json!("0.21.1");
+            doc["dsl_version"] = serde_json::json!("0.21.2");
         }
         std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
     };
@@ -1743,6 +1743,22 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
     // of its sides are finished surface; this fixture is about where its water
     // goes. See `common::shown_prefabs_dir`.
     let pf = common::shown_prefabs_dir("dw0318");
+    // **The island tileset's own walk plane**, written onto this fixture's
+    // private copy rather than measured: `prefabs/island-tileset.md` states the
+    // convention (water to local y=2, the land plane one block above it at 3),
+    // and the shipped documents do not yet carry the field — that is
+    // spec-0060 §8's content round. The general helper writes the LOWEST
+    // standable cell, which on this piece is a single beach cell down at the
+    // waterline itself; the number below is the piece's claim about what it is,
+    // and the second half of this test is what the engine then says about the
+    // difference between the two.
+    {
+        let path = pf.join("island-beach-camp.json");
+        let mut doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        doc["walk_y"] = serde_json::json!(3);
+        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    }
 
     // --- void: the water runs out of the world ------------------------------
     let camp = beach_camp_campaign("dw0318-void", false);
@@ -1760,18 +1776,44 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
         String::from_utf8_lossy(&r.stdout),
         String::from_utf8_lossy(&r.stderr)
     );
-    assert_eq!(code(&r), 3, "build-tier failure:\n{log}");
-    assert!(log.contains("DW0318"), "expected DW0318:\n{log}");
+    // Refused at VALIDATION, before a block is placed: that this piece's water
+    // runs off a `void` world is a fact about the piece's own bytes and the
+    // declared base, so `DW0886` says it at the document tier rather than
+    // letting the author spend a build to reach `DW0318`'s finding about the
+    // assembled world. `DW0318` keeps judging that world — see
+    // `integration_pairs::a_leaking_world_gets_no_boundary_verdict_through_the_entry_point`,
+    // which reaches it with a piece whose water is contained in its own bytes.
+    assert_eq!(code(&r), 1, "refused at validation:\n{log}");
+    assert!(log.contains("DW0886"), "expected DW0886:\n{log}");
     assert!(
         log.contains("prefab/island-beach-camp"),
         "names the piece the water came from:\n{log}"
     );
     assert!(
-        log.contains("Examined") && log.contains("fluid cell(s) across"),
-        "states its binding count, not only its finding:\n{log}"
+        log.contains("run direction(s)") && log.contains("DW0318"),
+        "states its count and names the build-tier rule it stands in front of:\n{log}"
+    );
+    assert!(
+        !log.contains("place template"),
+        "and nothing was placed:\n{log}"
     );
 
-    // --- ocean: the same water meets the sea --------------------------------
+    // --- ocean: the sea would hold the water, and the piece still cannot be
+    //     seated — for a different and equally correct reason ----------------
+    //
+    // This half used to build. It cannot any more, and the reason is the whole
+    // subject of spec-0060 rather than a regression: an ocean seats a piece by
+    // the piece's OWN walk plane, so `island-beach-camp` declaring `walk_y: 3`
+    // is placed at y=60 and stands its land at 63 — and its bytes stand a body
+    // in one more cell, down at local y=2, which lands at world y=62. That is
+    // the sea's own plane, a cell vanilla floods from the ocean beside it, and
+    // a party would be standing in it. Under the retired global datum the whole
+    // piece sat there and nothing said so.
+    //
+    // So this is a MEASURED FINDING against the shipped library, pinned here so
+    // that the content round which repairs it (spec-0060 §8) has a red to turn
+    // green, and so that "this piece is seatable on an ocean" cannot be claimed
+    // by anything until it is.
     let camp = beach_camp_campaign("dw0318-ocean", true);
     let out = tmp("dw0318-ocean-out");
     let r = delvec(&[
@@ -1787,48 +1829,53 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
         String::from_utf8_lossy(&r.stdout),
         String::from_utf8_lossy(&r.stderr)
     );
-    assert_eq!(code(&r), 0, "an ocean horizon holds this water:\n{log}");
-    assert!(!log.contains("DW0318"), "no finding under ocean:\n{log}");
-
-    // The binding ledger ships either way, and says what was examined.
-    let ledger: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(out.join("validation/fluid-escape.json"))
-            .expect("every assembled world emits the fluid-escape ledger"),
-    )
-    .unwrap();
-    assert_eq!(ledger["horizon"], "ocean");
-    assert_eq!(ledger["verdict"], "pass");
-    assert_eq!(ledger["pieces_examined"], 1);
-    let examined = ledger["fluid_cells_examined"].as_u64().unwrap();
-    let outside = ledger["cells_outside_built_volume"].as_u64().unwrap();
+    assert_eq!(code(&r), 1, "refused at validation under ocean:\n{log}");
+    assert!(log.contains("DW0886"), "expected DW0886:\n{log}");
     assert!(
-        examined > 0 && outside > 0 && outside < examined,
-        "the binding count is the world's water, not the finding list: {ledger}"
+        log.contains("`walk_y: 3`") && log.contains("local y=2"),
+        "it names the declared plane and the cell that stands under it:\n{log}"
+    );
+    assert!(
+        log.contains("world y=62"),
+        "and where that cell lands in the world:\n{log}"
+    );
+    // The water itself is not the finding here: under an ocean there IS a sea
+    // for it to meet, which is what the void half proved there is not.
+    assert!(
+        !log.contains("run direction(s)"),
+        "the ocean puts a sea against the face the void left open:\n{log}"
     );
 }
 
-/// `DW0344`: in an `ocean` world, a placed piece whose metadata declares a
-/// waterline that does not land at sea level (y=62) is a build error — the piece
+/// `DW0344`, **first arm**: in an `ocean` world a placed piece whose declared
+/// waterline does not land at sea level (y=62) is a build error — the piece
 /// would float above the sea (an unclimbable shore) or drown under it. Nothing
-/// downstream can catch this: nav, boundary, POV and PackTest all derive from the
-/// very placement that is wrong. Uses a private copy of the real prefabs dir.
+/// downstream can catch this: nav, boundary, POV and PackTest all derive from
+/// the very placement that is wrong.
+///
+/// The perturbation is the piece's **walk plane**, and that is what makes this
+/// arm reachable at all. An ocean area's origin is derived as
+/// `walk_ref_y - walk_y` (spec-0060 §3.2), and a shore stands its walk plane one
+/// block above its own waterline; so a piece that declares a waterline of 2 and
+/// a walk plane of 3 lands its water exactly on the sea, and the same piece
+/// declaring a walk plane of 2 lands it one block over. The two declarations are
+/// claims about one building and this is the rule that holds them to each other.
 #[test]
 fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
-    let prefabs_copy = tmp("dw0344-prefabs");
-    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
-    // hello-room is not an island piece; declaring a waterline one block off the
-    // convention is exactly the mis-authored-datum case the check exists for.
+    let prefabs_copy = common::ocean_prefabs_dir("dw0344-arm1-prefabs", common::OceanRoom::Shore);
     let meta_path = prefabs_copy.join("hello-room.json");
-    let mut meta: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
-    meta["waterline_y"] = serde_json::json!(3);
-    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    let read_meta = || -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap()
+    };
+    let write_meta = |m: &serde_json::Value| {
+        std::fs::write(&meta_path, serde_json::to_string_pretty(m).unwrap()).unwrap();
+    };
 
-    let camp = tmp("dw0344-camp");
+    let camp = tmp("dw0344-arm1-camp");
     copy_dir(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.21.1");
+    world["dsl_version"] = serde_json::json!("0.21.2");
     let content = world["content"].as_object_mut().unwrap();
     content.insert("horizon".into(), serde_json::json!("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -1838,48 +1885,61 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     )
     .unwrap();
 
-    let out = tmp("dw0344-out");
-    let b = delvec(&[
-        "build",
-        camp.to_str().unwrap(),
-        "-o",
-        out.to_str().unwrap(),
-        "--prefabs",
-        prefabs_copy.to_str().unwrap(),
-        "--json",
-    ]);
-    assert_eq!(code(&b), 3, "off-level waterline should exit 3");
-    let stdout = String::from_utf8_lossy(&b.stdout);
-    assert!(stdout.contains("DW0344"), "expected DW0344:\n{stdout}");
+    let build = |tag: &str| -> (i32, String) {
+        let out = tmp(tag);
+        let r = delvec(&[
+            "build",
+            camp.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            prefabs_copy.to_str().unwrap(),
+        ]);
+        (
+            code(&r),
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&r.stdout),
+                String::from_utf8_lossy(&r.stderr)
+            ),
+        )
+    };
 
-    // The same piece declaring the island convention (local y=2) lands its
-    // waterline exactly at sea level and builds clean.
-    meta["waterline_y"] = serde_json::json!(2);
-    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-    let out_ok = tmp("dw0344-out-ok");
-    let ok = delvec(&[
-        "build",
-        camp.to_str().unwrap(),
-        "-o",
-        out_ok.to_str().unwrap(),
-        "--prefabs",
-        prefabs_copy.to_str().unwrap(),
-    ]);
-    assert_eq!(
-        code(&ok),
-        0,
-        "convention waterline must build: {}",
-        String::from_utf8_lossy(&ok.stderr)
+    // Green: the shore piece's two declarations agree, so its water lands on the
+    // sea and the build states the binding it was held to.
+    let (ok, log) = build("dw0344-arm1-ok");
+    assert_eq!(ok, 0, "a consistent shore must build:\n{log}");
+    assert!(
+        log.contains("waterline binding: horizon base `ocean`; 1 of 1 placed piece(s) declare a `waterline_y`"),
+        "the binding count is stated on a green build too — a count only says \
+         something when the run that found nothing prints it:\n{log}"
     );
 
-    // A `void` world is not an ocean, so the same metadata is not checked there.
-    let void_camp = tmp("dw0344-void-camp");
+    // Red: the same bytes, one declaration moved. The piece now claims a walk
+    // plane one course lower, so the area is seated one block higher and the
+    // waterline the piece really authors hangs a block over the sea.
+    let mut meta = read_meta();
+    meta["walk_y"] = serde_json::json!(2);
+    write_meta(&meta);
+    let (bad, log) = build("dw0344-arm1-bad");
+    assert_eq!(bad, 3, "off-level waterline should exit 3:\n{log}");
+    assert!(log.contains("DW0344"), "expected DW0344:\n{log}");
+    assert!(
+        log.contains("blocks above the ocean sea level"),
+        "it says which way and by how much:\n{log}"
+    );
+    // The remedy names the number that would make it right, so the move is one
+    // an author can take rather than one they have to derive.
+    assert!(
+        log.contains("`walk_y: 3`"),
+        "the refusal names the walk plane that seats this waterline on the sea:\n{log}"
+    );
+
+    // A `void` world has no sea for a waterline to miss, so the same metadata is
+    // not checked there.
+    let void_camp = tmp("dw0344-arm1-void-camp");
     copy_dir(&common::hello_world_dir(), &void_camp);
-    let mut m2: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
-    m2["waterline_y"] = serde_json::json!(3);
-    std::fs::write(&meta_path, serde_json::to_string_pretty(&m2).unwrap()).unwrap();
-    let out_void = tmp("dw0344-void-out");
+    let out_void = tmp("dw0344-arm1-void-out");
     let v = delvec(&[
         "build",
         void_camp.to_str().unwrap(),
@@ -1896,45 +1956,39 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     );
 }
 
-/// `DW0344` **refuses a piece that stands in the sea and says nothing about it**,
-/// and states its binding count either way.
+/// **A shore that says nothing about where it meets the sea is refused before
+/// anything is placed** (`DW0886`), and the run states its binding count either
+/// way.
 ///
-/// The invariant is keyed off an optional metadata field, so a piece that loses
-/// that field does not fail the check — it silently leaves it. That is exactly
-/// what the admission tool did to `waterline_y`: it read prefab metadata through
-/// a type that did not model the field and wrote the document back without it.
-/// The answer used to be a zero-binding REPORT, because a refusal was held to be
-/// undemandable: the only discharge an author could offer was the deleted
-/// declaration under another name, and the geometric one — "no piece reaches the
-/// sea" — looked unsatisfiable while every ocean area sits at `OCEAN_BASE_Y` = 60
-/// under a sea at 62.
-///
-/// It was satisfiable all along, and the field case is what cost the delay: a
-/// two-scene delve built its whole critical path in a keep whose walk plane sits
-/// at y=61, shipped green, and was played standing in the water. The lever is the
-/// piece, not the datum — a piece whose lower courses are solid to local y=2
-/// stands its walk plane at y=63, one clear of the sea, which is the island
-/// convention read forwards. So the report is a refusal, and the discharge is
-/// geometry.
+/// This was `DW0344`'s second arm, and it asked the wrong question: does the
+/// placement BOX reach the sea plane. The box's minimum y is the area origin, so
+/// under one global ocean datum that was true of every piece in every ocean
+/// world whatever its bytes held, and the refusal's own second remedy — raise
+/// the piece clear of the sea — could not be performed by any amount of
+/// authoring (spec-0060 §1.2). The question the rule was always about is
+/// whether the piece states where its own water meets the world's, and that is
+/// a fact about the document and its `.nbt`: nothing has to be placed to know
+/// it, so it is refused at validation.
 ///
 /// Both directions, because a one-directional gate proves nothing: with the
-/// declaration present the build is green and the binding line says 1 of 1; with
-/// it gone the build is REFUSED and names the three moves an author has. A
-/// non-ocean world raises nothing either way — "does not apply" and "applies and
-/// examined nothing" are different states.
+/// declaration present the build is green and the seating line says what it
+/// examined; with it gone the campaign is REFUSED at exit 1, having placed
+/// nothing, and names the number the bytes hold. A non-ocean world raises
+/// nothing either way — "does not apply" and "applies and examined nothing" are
+/// different states.
 #[test]
-fn an_ocean_world_that_declares_no_waterline_is_refused_dw0344() {
-    let prefabs_copy = common::ocean_prefabs_dir("dw0344-prefabs", common::OceanRoom::Shore);
+fn an_ocean_world_whose_shore_declares_no_waterline_is_refused_dw0886() {
+    let prefabs_copy = common::ocean_prefabs_dir("dw0886-prefabs", common::OceanRoom::Shore);
     let meta_path = prefabs_copy.join("hello-room.json");
     let mut meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
 
-    let ocean_camp = tmp("dw0344-camp");
+    let ocean_camp = tmp("dw0886-camp");
     copy_dir(&common::hello_world_dir(), &ocean_camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(ocean_camp.join("world.json")).unwrap())
             .unwrap();
-    world["dsl_version"] = serde_json::json!("0.21.1");
+    world["dsl_version"] = serde_json::json!("0.21.2");
     let content = world["content"].as_object_mut().unwrap();
     content.insert("horizon".into(), serde_json::json!("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
@@ -1954,8 +2008,6 @@ fn an_ocean_world_that_declares_no_waterline_is_refused_dw0344() {
             "--prefabs",
             prefabs_copy.to_str().unwrap(),
         ]);
-        // Both streams: the binding line is written beside the build, a refusal
-        // to stderr, and this test asserts across that boundary.
         (
             code(&r),
             format!(
@@ -1966,61 +2018,59 @@ fn an_ocean_world_that_declares_no_waterline_is_refused_dw0344() {
         )
     };
 
-    // Bound: the placed piece declares the convention waterline, the datum is
-    // really checked, the binding count is 1 of 1, and the build is green.
-    let (bound_code, bound) = build("dw0344-bound-out", &ocean_camp);
+    // Bound: the placed piece declares the waterline its bytes hold, the datum
+    // is really checked, and the build is green.
+    let (bound_code, bound) = build("dw0886-bound-out", &ocean_camp);
     assert_eq!(
         bound_code, 0,
-        "a bound ocean datum at the convention waterline must build:\n{bound}"
+        "a bound ocean datum at the piece's own waterline must build:\n{bound}"
     );
     assert!(
-        bound.contains("waterline binding: 1 of 1 placed piece(s) declare a `waterline_y`"),
-        "the binding count is stated on a green build too — a count only says \
-         something when the run that found nothing prints it:\n{bound}"
-    );
-    assert!(
-        bound.contains("1 piece(s) have a box reaching at or below the sea plane"),
-        "and how many pieces stand in the sea:\n{bound}"
+        bound.contains("seating binding: horizon base `ocean`")
+            && bound.contains("1 waterline declaration(s) examined, 1 borne out by the bytes"),
+        "the seating line states its denominators on a green run too:\n{bound}"
     );
 
     // Unbound: the declaration is gone — which is precisely what an admission
-    // step that did not model the field left behind. The build is refused where
-    // the piece is placed.
+    // step that did not model the field left behind. The campaign is refused
+    // before a single piece is placed.
     meta.as_object_mut().unwrap().remove("waterline_y");
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-    let (unbound_code, unbound) = build("dw0344-unbound-out", &ocean_camp);
-    assert_ne!(
-        unbound_code, 0,
-        "a piece standing in the sea with no waterline is refused:\n{unbound}"
+    let (unbound_code, unbound) = build("dw0886-unbound-out", &ocean_camp);
+    assert_eq!(
+        unbound_code, 1,
+        "refused at validation, not at the build:\n{unbound}"
     );
     assert!(
-        unbound.contains("DW0344"),
-        "under the invariant's own code, not a second code of its own:\n{unbound}"
+        unbound.contains("DW0886"),
+        "under the pairing's own code:\n{unbound}"
     );
     assert!(
-        unbound.contains("prefab `prefab/hello-room` at y=60")
-            && unbound.contains("declares no `waterline_y`"),
+        !unbound.contains("place template"),
+        "and nothing was placed:\n{unbound}"
+    );
+    assert!(
+        unbound.contains("prefab/hello-room") && unbound.contains("declares no `waterline_y`"),
         "it names the piece and what is missing:\n{unbound}"
     );
-    // A diagnostic that refuses owes the author a move, and there are three.
-    for move_ in ["(1) DECLARE", "(2) RAISE", "(3) CHOOSE another horizon"] {
-        assert!(
-            unbound.contains(move_),
-            "the refusal names the move `{move_}`:\n{unbound}"
-        );
-    }
+    // A diagnostic that refuses owes the author a move, and this one's is the
+    // number its own bytes hold.
+    assert!(
+        unbound.contains("DECLARE `waterline_y: 2`"),
+        "the move names the local y this piece's top water block stands at:\n{unbound}"
+    );
 
     // A world with no ocean horizon is not in scope at all: "does not apply" and
     // "applies and examined nothing" are different states, and the line says which.
-    let void_camp = tmp("dw0344-void-camp");
+    let void_camp = tmp("dw0886-void-camp");
     copy_dir(&common::hello_world_dir(), &void_camp);
-    let (void_code, void) = build("dw0344-void-out", &void_camp);
+    let (void_code, void) = build("dw0886-void-out", &void_camp);
     assert_eq!(
         void_code, 0,
         "a world with no ocean horizon has no datum to bind to:\n{void}"
     );
     assert!(
-        void.contains("this world declares no ocean horizon"),
+        void.contains("horizon base `void` has no sea"),
         "a non-ocean world says the invariant does not apply:\n{void}"
     );
 }
@@ -2255,7 +2305,7 @@ fn dw0330_warning_reports_but_does_not_fail_the_build() {
     )
     .unwrap();
     // `narrate` is a v0.4 effect; the hello-world fixture is v0.3.
-    quests["dsl_version"] = serde_json::json!("0.21.1");
+    quests["dsl_version"] = serde_json::json!("0.21.2");
     // An on-screen title far wider than any screen renders.
     quests["content"]["quests"][0]["on_complete"]
         .as_array_mut()
@@ -2317,7 +2367,7 @@ fn a_missing_skin_png_is_dw0309() {
         &std::fs::read_to_string(common::hello_world_dir().join("npcs.json")).unwrap(),
     )
     .unwrap();
-    npcs["dsl_version"] = "0.21.1".into();
+    npcs["dsl_version"] = "0.21.2".into();
     npcs["content"]["npcs"][0]["skin"] =
         serde_json::json!({ "texture_id": "keeper", "model": "wide" });
     common::materialize_from(
@@ -2350,7 +2400,7 @@ fn actor_skin_campaign(name: &str) -> std::path::PathBuf {
     let camp = tmp(name);
     copy_dir(&common::hello_world_dir(), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.21.1");
+        d["dsl_version"] = serde_json::json!("0.21.2");
         common::objective_effects(d, 0, "obj/talk").push(serde_json::json!({
             "type": "spawn-actor", "actor": "actor/giant"
         }));
@@ -2415,7 +2465,7 @@ fn every_declared_skin_is_baked_into_the_pack() {
     let camp = actor_skin_campaign("actor-skin-baked");
     // Give the stage-2 npc a skin too, so one build carries one of each class.
     common::patch_file(&camp.join("npcs.json"), |d| {
-        d["dsl_version"] = serde_json::json!("0.21.1");
+        d["dsl_version"] = serde_json::json!("0.21.2");
         d["content"]["npcs"][0]["skin"] =
             serde_json::json!({ "texture_id": "keeper", "model": "slim" });
     });

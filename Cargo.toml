@@ -40,7 +40,7 @@ repository = "https://github.com/stellarfeline/delvewright"
 # and no other. The number is the format's own (`dsl_version`), bound to
 # `[engine] dsl_crate_req` in versions.toml by check-versions.sh.
 [workspace.dependencies]
-delvewright-dsl = { path = "crates/dsl", version = "=0.21.1" }
+delvewright-dsl = { path = "crates/dsl", version = "=0.21.2" }
 
 # An unoptimized `delvec` is unusable on a real campaign, and nothing used to say
 # so: `cargo build` hands you `target/debug/delvec`, and on `nobodys-cave-island`

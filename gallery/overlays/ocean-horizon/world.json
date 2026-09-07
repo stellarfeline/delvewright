@@ -24,6 +24,12 @@
           "min": 3
         },
         "prefab_pool": "pool/gallery-annex"
+      },
+      {
+        "id": "area/quay",
+        "mitigation": "night-vision",
+        "name": "The Quay",
+        "prefab": "prefab/gallery-quay"
       }
     ],
     "boundary": {
@@ -45,6 +51,6 @@
     "title": "The Gallery",
     "weather": "clear"
   },
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "stage": "world"
 }

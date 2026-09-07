@@ -31,9 +31,12 @@ const EXIT_FAIL: u8 = 1;
 const EXIT_INPUT: u8 = 2;
 const EXIT_OUTPUT: u8 = 3;
 
-/// Run `delvec prefab`. `json` is `delvec`'s global diagnostics flag.
-pub fn run(args: PrefabArgs, json: bool) -> ExitCode {
+/// Run `delvec prefab`. `json` is `delvec`'s global diagnostics flag, and
+/// `prefabs_dir` its global `--prefabs`, which is the library a command that
+/// takes a whole library rather than one file reads.
+pub fn run(args: PrefabArgs, prefabs_dir: &Path, json: bool) -> ExitCode {
     match args.command {
+        PrefabCommand::Seating { horizon } => run_seating(&horizon, prefabs_dir, json),
         PrefabCommand::Audit {
             nbt,
             allowlist,
@@ -100,7 +103,248 @@ pub fn run(args: PrefabArgs, json: bool) -> ExitCode {
 
 // -------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// The pairing (spec-0060 §6)
+// ---------------------------------------------------------------------------
+
+/// **`delvec prefab seating --horizon <base>`**: can this library stand on this
+/// base, per pool, with the reason and the numbers.
+///
+/// Three properties are load-bearing and each is asserted rather than described:
+///
+/// 1. **It opens the bytes.** A verdict computed from declarations alone would
+///    report a pool of waterline fictions as seatable, which is exactly the
+///    green this command exists to end; the `.nbt`-opened count is printed
+///    beside the document count and a run where the first is smaller than the
+///    second exits non-zero.
+/// 2. **It states a numerator and a denominator at every level** — pools of
+///    pools, members of members, declarations borne out of declarations
+///    examined — because a seating report with no denominator is the vacuity
+///    `CLAUDE.md` forbids, and because a library that has lost a field must read
+///    as a red rather than as a small number.
+/// 3. **It is the same code the compiler runs.** One implementation, two entry
+///    points, so a library can never be seatable according to the tool and
+///    refused by the build.
+fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
+    let base = match horizon {
+        "void" => delvewright_dsl::HorizonBase::Void,
+        "ocean" => delvewright_dsl::HorizonBase::Ocean,
+        "valley" => delvewright_dsl::HorizonBase::Valley,
+        other => {
+            return input_err(
+                &format!(
+                    "unknown horizon base `{other}`. The bases this engine declares are the \
+                     ones `delvec schema --stage world` exports: `void`, `ocean`, `valley`"
+                ),
+                json,
+            );
+        }
+    };
+    let registry = match crate::compiler::registry::PrefabRegistry::load_dir(dir) {
+        Ok(r) => r,
+        Err(e) => {
+            return input_err(
+                &format!("cannot read prefabs dir {}: {e}", dir.display()),
+                json,
+            );
+        }
+    };
+    // A document this engine cannot parse is ABSENT from the registry, so a
+    // sweep that did not say so would report a smaller library as a clean one.
+    let unparsed = registry
+        .load_diagnostics()
+        .iter()
+        .filter(|d| d.severity == delvewright_dsl::Severity::Error)
+        .count();
+    for d in registry.load_diagnostics() {
+        if d.severity == delvewright_dsl::Severity::Error {
+            eprintln!("{} [error] {}", d.code, d.message);
+        }
+    }
+    let library = crate::compiler::seating::Library::read(&registry, dir);
+    for line in &library.unreadable {
+        Diagnostic::error(DW_INPUT, line.clone()).print(json);
+    }
+
+    let pools = registry.pool_ids();
+    let mut members_total = 0usize;
+    let mut pools_seatable = 0usize;
+    let mut lines: Vec<String> = Vec::new();
+    for pool in &pools {
+        let mut ids: Vec<String> = registry
+            .pool(pool)
+            .map(|m| m.iter().map(|m| m.prefab.clone()).collect())
+            .unwrap_or_default();
+        ids.sort();
+        ids.dedup();
+        members_total += ids.len();
+        let mut seatable = 0usize;
+        let mut reasons: Vec<String> = Vec::new();
+        for id in &ids {
+            let Some(f) = library.pieces.get(id) else {
+                reasons.push(format!(
+                    "  {id:<28} no document or no readable `.nbt` in this library"
+                ));
+                continue;
+            };
+            let mut why = crate::compiler::seating::seating_reasons(base, f);
+            if let Some(w) = crate::compiler::seating::waterline_reason(f) {
+                why.push(w);
+            }
+            if why.is_empty() {
+                seatable += 1;
+                continue;
+            }
+            for r in why {
+                let short = id.strip_prefix("prefab/").unwrap_or(id);
+                reasons.push(format!("  {short:<28} {} ({})", r.short, r.code.id()));
+            }
+        }
+        let verdict = if seatable == ids.len() && !ids.is_empty() {
+            pools_seatable += 1;
+            "SEATABLE"
+        } else {
+            "REFUSED "
+        };
+        lines.push(format!(
+            "{pool:<24} {verdict} {seatable} of {} member(s) seatable",
+            ids.len()
+        ));
+        lines.extend(reasons);
+    }
+    for line in &lines {
+        println!("{line}");
+    }
+
+    let (declared, borne_out) = library.waterline_census();
+    println!(
+        "seating binding: horizon base `{horizon}`; {pools_seatable} pool(s) seatable of \
+         {pool_count} in this library, examined over {members_total} member(s); \
+         {documents} document(s) read, {opened} `.nbt` opened; {declared} waterline \
+         declaration(s) examined, {borne_out} borne out by the bytes.",
+        pool_count = pools.len(),
+        documents = library.documents,
+        opened = library.nbt_opened,
+    );
+
+    // The vacuity guard, stated over the objects rather than over an intention:
+    // a run that examined no pool has judged nothing, and one that read fewer
+    // `.nbt` than it read documents has judged a library it could not open.
+    if pools.is_empty() {
+        Diagnostic::error(
+            DW_UNBOUND,
+            format!(
+                "the seating verdict examined ZERO pools in {} — a green verdict over an empty \
+                 population is the unbound vacuity mode, not a pass. A prefab library declares \
+                 its pools in `pools.json`",
+                dir.display()
+            ),
+        )
+        .print(json);
+        return ExitCode::from(EXIT_FAIL);
+    }
+    if library.nbt_opened < library.documents || !library.unreadable.is_empty() || unparsed > 0 {
+        Diagnostic::error(
+            DW_UNBOUND,
+            format!(
+                "{} document(s) read ({unparsed} unparseable) but only {} `.nbt` opened: this \
+                 verdict was computed from declarations for at least one piece, which is exactly \
+                 the reading that reports a library of fictions as seatable",
+                library.documents, library.nbt_opened
+            ),
+        )
+        .print(json);
+        return ExitCode::from(EXIT_FAIL);
+    }
+    if pools_seatable == pools.len() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(EXIT_FAIL)
+    }
+}
+
+/// **`delvec prefab audit <library dir>`**: `DW0887` over every document in a
+/// library, from the compiler's own implementation.
+///
+/// The per-file arm of this command answers a question about one piece's
+/// palette; this arm answers the one question that needs the whole library at
+/// once, because the defect it looks for is a declaration nobody ever checked
+/// against the bytes beside it. The census is printed on every run, including
+/// the run that finds nothing.
+fn run_library_audit(dir: &Path, report: Option<&Path>, json: bool) -> ExitCode {
+    let registry = match crate::compiler::registry::PrefabRegistry::load_dir(dir) {
+        Ok(r) => r,
+        Err(e) => {
+            return input_err(
+                &format!("cannot read prefabs dir {}: {e}", dir.display()),
+                json,
+            );
+        }
+    };
+    let library = crate::compiler::seating::Library::read(&registry, dir);
+    for line in &library.unreadable {
+        Diagnostic::error(DW_INPUT, line.clone()).print(json);
+    }
+    let mut refused: Vec<serde_json::Value> = Vec::new();
+    for facts in library.pieces.values() {
+        if let Some(r) = crate::compiler::seating::waterline_reason(facts) {
+            Diagnostic::error(r.code.id(), r.full.clone()).print(json);
+            refused.push(serde_json::json!({
+                "prefab_id": facts.id,
+                "declared_waterline_y": facts.declared_waterline,
+                "top_authored_water_y": facts.top_water_y,
+                "water_cells": facts.water_cells,
+                "reason": r.short,
+            }));
+        }
+    }
+    let (declared, borne_out) = library.waterline_census();
+    let rep = serde_json::json!({
+        "asset": dir.display().to_string(),
+        "check": "waterline-in-the-bytes",
+        "code": crate::compiler::seating::DW_WATERLINE_FICTION.id(),
+        "verdict": if refused.is_empty() && library.unreadable.is_empty() { "pass" } else { "fail" },
+        "documents_read": library.documents,
+        "nbt_opened": library.nbt_opened,
+        "waterlines_declared": declared,
+        "waterlines_borne_out": borne_out,
+        "waterlines_refused": refused.len(),
+        "refused": refused,
+    });
+    let text = serde_json::to_string_pretty(&rep).expect("the report serializes") + "\n";
+    match report {
+        Some(p) => {
+            if let Err(e) = std::fs::write(p, &text) {
+                return output_err(&format!("write {}: {e}", p.display()), json);
+            }
+        }
+        None => print!("{text}"),
+    }
+    eprintln!(
+        "waterline audit binding: {documents} document(s) read, {opened} `.nbt` opened; \
+         {declared} waterline declaration(s) examined, {borne_out} borne out by the bytes, \
+         {refused} refused (DW0887).",
+        documents = library.documents,
+        opened = library.nbt_opened,
+        refused = refused.len(),
+    );
+    if refused.is_empty() && library.unreadable.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(EXIT_FAIL)
+    }
+}
+
 fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: bool) -> ExitCode {
+    // **A whole library sweeps rather than audits one file.** `DW0887` is a
+    // property of a prefab document and its `.nbt` read together, so it binds
+    // wherever those two are opened and in no other way — and the place they
+    // are opened for every piece at once is a library. Same implementation as
+    // the compiler's validation check (`compiler::seating`), because a
+    // declaration cannot be a fiction to one reader and a fact to another.
+    if nbt.is_dir() {
+        return run_library_audit(nbt, report, json);
+    }
     let allow = match allowlist {
         Some(p) => match std::fs::read_to_string(p)
             .map_err(|e| e.to_string())

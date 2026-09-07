@@ -64,7 +64,7 @@ fn massing_copy(name: &str) -> PathBuf {
 
 fn set_batches(dir: &Path, campaign_id: &str, batches: serde_json::Value) {
     let doc = serde_json::json!({
-        "dsl_version": "0.21.1",
+        "dsl_version": "0.21.2",
         "campaign_id": campaign_id,
         "stage": "world-edits",
         "content": { "batches": batches }

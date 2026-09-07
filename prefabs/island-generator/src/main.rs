@@ -58,7 +58,7 @@ use std::path::Path;
 /// The cross-tileset invariants and the connection derivation, shared as a
 /// crate so the rule is compiled once and its own tests run with the
 /// generators' (`prefabs/invariants`).
-use prefab_invariants::{connections, invariants};
+use prefab_invariants::{connections, invariants, walkplane};
 
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
@@ -398,6 +398,15 @@ struct LicenseJson {
 struct MetaJson {
     prefab_id: String,
     structure: StructureJson,
+    /// **The piece's own walk plane, measured** (spec-0060 §4): the local y of
+    /// the cell a body's feet occupy on this piece's principal floor, and the
+    /// number an ocean area's origin is derived from. Read back out of the
+    /// blocks this generator just laid, through the one rule every producer
+    /// spells (`prefab_invariants::walkplane`), because a `walk_y` nobody
+    /// measured is one tileset's convention wearing the name of a measurement.
+    /// `None` only for a piece a body cannot stand in at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    walk_y: Option<i32>,
     /// Local y of the top authored water block (the island convention's waterline).
     /// The compiler's ocean-horizon placement invariant (`DW0344`) requires this to
     /// land at world sea level (y=62) — see `prefabs/island-tileset.md`.
@@ -1117,6 +1126,7 @@ fn write_piece(out: &Path, spec: &Spec) {
 
     let meta = MetaJson {
         prefab_id: format!("prefab/{}", spec.id),
+        walk_y: walkplane::walk_y(structure.size, &cells),
         structure: StructureJson {
             file: format!("{}.nbt", spec.id),
             id: spec.id.into(),

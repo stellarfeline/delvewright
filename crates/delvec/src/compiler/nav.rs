@@ -938,6 +938,9 @@ pub struct World {
     /// walkability sets, so routing, standability and every other proof stay
     /// byte-identical.
     ambient: Ambient,
+    /// The base the campaign declared, beside the ambient it resolves to — see
+    /// [`Premises::base`].
+    base: &'static str,
     /// **Where the content ends** ([`built_volume`]): every placed piece's
     /// prefab id and inclusive world AABB. Empty on a synthetic test world,
     /// which is the fail-CLOSED direction for [`measure_fluid_escape`] — a
@@ -1006,6 +1009,16 @@ use delvewright_dsl::metrics::{FULL_16, PLAYER_WIDTH, step_allowed};
 #[derive(Clone, Debug)]
 pub struct Premises {
     ambient: Ambient,
+    /// **The base the campaign declared**, beside the ambient it resolves to.
+    ///
+    /// The two are not the same word and a reader cannot tell an unbound check
+    /// from a mislabelled one: `valley` resolves to [`Ambient::Void`], because
+    /// its ground is placed blocks rather than a generator fact, so every
+    /// binding line keyed to the ambient alone said ``horizon `void``` about a
+    /// world whose author wrote `valley`. Every line that prints a horizon
+    /// prints this, and says "ambient" where it reports the other
+    /// (spec-0060 §10.7).
+    base: &'static str,
     built: Vec<BuiltPiece>,
     lethal_regions: Vec<LethalRegion>,
     world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
@@ -1031,6 +1044,7 @@ impl Premises {
     pub fn of_plan(plan: &Plan, seals: Vec<crate::compiler::assembled::GateSeal>) -> Self {
         Premises {
             ambient: Ambient::of_plan(plan),
+            base: delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon).token(),
             built: built_volume(plan),
             lethal_regions: plan
                 .lethal_volumes
@@ -1070,6 +1084,9 @@ impl Premises {
     pub fn geometry_only() -> Self {
         Premises {
             ambient: Ambient::Void,
+            // A synthetic world declares nothing; `void` is what a campaign
+            // that writes no horizon gets, so it is what such a world is.
+            base: "void",
             built: Vec::new(),
             lethal_regions: Vec::new(),
             world_load_seals: Vec::new(),
@@ -1190,6 +1207,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            base: self.base,
             built: self.built.clone(),
         }
     }
@@ -1258,6 +1276,7 @@ impl World {
             flood_written: BTreeSet::new(),
             flood_regions: Vec::new(),
             ambient: premises.ambient,
+            base: premises.base,
             built: premises.built,
             objective_cells: premises.objective_cells,
         }
@@ -1280,6 +1299,13 @@ impl World {
     /// build* and *which columns are those* — and a call site that declared the
     /// first without the second is how a void world came to have no idea where
     /// its own content ended.
+    /// **The base the campaign declared** — the word its author wrote, not the
+    /// ambient it resolves to. Every binding line that prints a horizon prints
+    /// this (spec-0060 §10.7).
+    pub fn base(&self) -> &'static str {
+        self.base
+    }
+
     pub fn with_ambient(mut self, ambient: Ambient, built: Vec<BuiltPiece>) -> Self {
         self.ambient = ambient;
         self.built = built;
@@ -1370,6 +1396,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            base: self.base,
             built: self.built.clone(),
         }
     }
@@ -1409,6 +1436,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            base: self.base,
             built: self.built.clone(),
         };
         for c in extra {
@@ -1456,6 +1484,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            base: self.base,
             built: self.built.clone(),
         };
         for c in extra {
@@ -1506,6 +1535,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            base: self.base,
             built: self.built.clone(),
         };
         for c in extra {
@@ -1580,6 +1610,7 @@ impl World {
             flood_written: BTreeSet::new(),
             flood_regions: Vec::new(),
             ambient: self.ambient.clone(),
+            base: self.base,
             built: self.built.clone(),
         };
         for c in &self.flood_written {
@@ -1648,6 +1679,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            base: self.base,
             built: self.built.clone(),
         }
     }
@@ -7620,8 +7652,16 @@ pub const DW_FLUID_LEAVES_WORLD: DwCode = DwCode::new("DW0318", ExitTier::Build)
 /// zero examined nothing, and says so.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FluidEscape {
-    /// The horizon the verdict is stated against — `"void"` or `"ocean"`.
+    /// The **ambient** the verdict is stated against — `"void"` or `"ocean"`.
     pub horizon: &'static str,
+    /// **The base the campaign declared**, beside the ambient it resolves to.
+    ///
+    /// `valley` resolves to a `void` ambient — its ground is placed blocks
+    /// rather than a generator fact — so a line keyed to the ambient alone said
+    /// ``horizon `void``` about a world whose author wrote `valley`, and a
+    /// reader cannot tell an unbound check from a mislabelled one
+    /// (spec-0060 §10.7).
+    pub base: &'static str,
     /// Placed pieces forming the built volume ([`World::built`]).
     pub pieces: usize,
     /// Every fluid cell in the assembled world: prefab-authored sources plus the
@@ -7673,6 +7713,7 @@ pub fn measure_fluid_escape(world: &World) -> FluidEscape {
     }
     FluidEscape {
         horizon: world.ambient.name(),
+        base: world.base,
         pieces: world.built.len(),
         fluid_cells: world.flooded.len(),
         outside,
@@ -7739,6 +7780,7 @@ impl FluidEscape {
     /// check nobody notices did nothing.
     pub fn ledger(&self) -> serde_json::Value {
         serde_json::json!({
+            "horizon_base": self.base,
             "horizon": self.horizon,
             "pieces_examined": self.pieces,
             "fluid_cells_examined": self.fluid_cells,
@@ -7845,8 +7887,16 @@ pub const DW_SEA_ENTERS_WALK: DwCode = DwCode::new("DW0851", ExitTier::Build);
 /// there is no ambient sea to come in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeaSeepage {
-    /// The horizon the verdict is stated against — `"void"` or `"ocean"`.
+    /// The **ambient** the verdict is stated against — `"void"` or `"ocean"`.
     pub horizon: &'static str,
+    /// **The base the campaign declared**, beside the ambient it resolves to.
+    ///
+    /// `valley` resolves to a `void` ambient — its ground is placed blocks
+    /// rather than a generator fact — so a line keyed to the ambient alone said
+    /// ``horizon `void``` about a world whose author wrote `valley`, and a
+    /// reader cannot tell an unbound check from a mislabelled one
+    /// (spec-0060 §10.7).
+    pub base: &'static str,
     /// Placed pieces forming the built volume ([`World::built`]).
     pub pieces: usize,
     /// Cells inside the built volume that the ambient sea is directly touching
@@ -7912,6 +7962,7 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
         .count();
     let empty = |horizon| SeaSeepage {
         horizon,
+        base: world.base,
         pieces: world.built.len(),
         contact_cells: 0,
         sea_waterlogged: 0,
@@ -7998,6 +8049,7 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
     if seeds.is_empty() {
         return SeaSeepage {
             horizon: "ocean",
+            base: world.base,
             pieces: world.built.len(),
             contact_cells: 0,
             sea_waterlogged: 0,
@@ -8052,6 +8104,7 @@ pub fn measure_sea_seepage(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Sea
         .collect();
     SeaSeepage {
         horizon: "ocean",
+        base: world.base,
         pieces: world.built.len(),
         contact_cells: contact.len(),
         sea_waterlogged: waterlogged.len(),
@@ -8141,10 +8194,12 @@ impl SeaSeepage {
     /// nothing prints it too.
     pub fn line(&self) -> String {
         format!(
-            "sea-seepage binding: horizon `{h}`; {walk} walk cell(s) examined, of which {obj} are named by \
-             the critical path; {sub} submerged and {wade} wading, over {wet} cell(s) the sea reaches \
-             inside {pieces} placed piece(s) from {contact} cell(s) of open contact face and {logged} \
-             block(s) the placement waterlogs.",
+            "sea-seepage binding: horizon base `{b}` (ambient `{h}`); {walk} walk cell(s) \
+             examined, of which {obj} are named by the critical path; {sub} submerged and {wade} \
+             wading, over {wet} cell(s) the sea reaches inside {pieces} placed piece(s) from \
+             {contact} cell(s) of open contact face and {logged} block(s) the placement \
+             waterlogs.",
+            b = self.base,
             h = self.horizon,
             walk = self.walk_cells,
             obj = self.objective_cells,
@@ -8162,6 +8217,7 @@ impl SeaSeepage {
     /// so, and one that wades says how far and where.
     pub fn ledger(&self) -> serde_json::Value {
         serde_json::json!({
+            "horizon_base": self.base,
             "horizon": self.horizon,
             "pieces_examined": self.pieces,
             "contact_face_cells": self.contact_cells,

@@ -56,6 +56,7 @@
 //! - [`render_plan`]: `render-plan.json` emission.
 //! - [`resourcepack`]: the per-delve skin resource pack.
 //! - [`respawn`]: what separates a retry from a soft-lock — the evidence `DW0478` accepts.
+//! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this pool (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`snapshot`]: `delvec snapshot` — the voxel raycaster and scene manifest an authoring agent looks at its own build through.
 //! - [`solver`]: the jigsaw layout solver.
@@ -122,6 +123,7 @@ pub mod rehearsal;
 pub mod render_plan;
 pub mod resourcepack;
 pub mod respawn;
+pub mod seating;
 pub mod seeding;
 pub mod snapshot;
 pub mod solver;

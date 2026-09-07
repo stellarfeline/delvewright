@@ -767,6 +767,13 @@ pub fn ocean_prefabs_dir(tag: &str, room: OceanRoom) -> PathBuf {
             "data_version": 4671,
             "generator": "crates/delvec/tests/common::ocean_prefabs_dir",
         },
+        // The piece's own walk plane (spec-0060 §4), which is exactly the
+        // number this fixture already computes as `floor`: the first air
+        // course, where a body's feet go. An ocean area seating it is placed at
+        // `63 - walk_y`, so the shore lands at 60 and the cellar at 62 — and
+        // the second is what makes `OceanRoom::Cellar` a piece whose declared
+        // waterline cannot meet the sea, which is what it is for.
+        "walk_y": floor,
         "waterline_y": 2,
         "anchors": {
             "spawn": { "pos": [5, floor, 2], "facing": "south", "role": "entry" },
@@ -907,6 +914,14 @@ pub fn shown_prefabs_dir(tag: &str) -> PathBuf {
         // of. The sides are read off the piece's own bytes, the same way the
         // compiler reads them.
         declare_shown_faces_at(&path);
+        // And its own walk plane, measured the same way — off the piece's own
+        // bytes, by the engine's own standable rule. `walk_y` is what an ocean
+        // area's origin is derived from (spec-0060 §3.2) and it has no default;
+        // the shipped library declares none, because writing it is the content
+        // repository's own adoption of the field (spec-0060 §8), so a fixture
+        // that seats a library piece on a sea would meet `DW0886` instead of
+        // the check it is about.
+        declare_walk_y_at(&path);
         patched += 1;
     }
     // The binding count of the helper itself: a copy that patched nothing is a
@@ -918,6 +933,35 @@ pub fn shown_prefabs_dir(tag: &str) -> PathBuf {
         dir.display()
     );
     dir
+}
+
+/// **Declare, on the prefab document at `dir/<id>.json`, the walk plane its own
+/// bytes stand a body on** (spec-0060 §4) — the measurement the generator that
+/// built the piece writes, taken here for a fixture's private copy of a library
+/// that predates the field.
+///
+/// It is a MEASUREMENT and not a per-tileset constant, and it is taken through
+/// the engine's own reader, so the number a fixture gets and the number the
+/// seating derivation expects cannot be two rules that agree. A piece with no
+/// standable cell gets no key: that piece has no walk plane, and `DW0886` is
+/// where a campaign that seats it on a sea learns so.
+pub fn declare_walk_y(dir: &Path, id: &str) {
+    declare_walk_y_at(&dir.join(format!("{id}.json")));
+}
+
+fn declare_walk_y_at(path: &Path) {
+    let dir = path.parent().expect("a prefab document has a directory");
+    let text = std::fs::read_to_string(path).unwrap();
+    let meta = delvewright_dsl::prefab::PrefabMeta::from_json(&text)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let facts = delvec::compiler::seating::PieceFacts::read(&meta, dir)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let Some(walk) = facts.lowest_standable else {
+        return;
+    };
+    let mut doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    doc["walk_y"] = serde_json::json!(walk);
+    std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
 }
 
 /// **Declare, on the prefab document at `dir/<id>.json`, exactly the sides its

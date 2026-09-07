@@ -12,7 +12,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// Stage 2 with a deferred second NPC.
 const NPCS: &str = r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "npcs",
   "content": {
@@ -56,7 +56,7 @@ const NPCS: &str = r#"{
 
 /// Stage 4: two quests, `quest/second` depending on `quest/open-the-door`.
 const QUEST_PLAN: &str = r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -86,7 +86,7 @@ const QUEST_PLAN: &str = r#"{
 
 /// Stage 6: a tree per NPC (`DW0152`), the latecomer's completing its `talk-to`.
 const DIALOGUE: &str = r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -123,7 +123,7 @@ const DIALOGUE: &str = r#"{
 
 /// Stage 5: quest 1 spawns the latecomer when the door opens; quest 2 talks to her.
 const QUESTS: &str = r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -242,7 +242,7 @@ fn talk_to_before_spawn_in_dag_is_dw0198() {
     // the whole quest (including the talk-to) is done... to make the DAG order
     // unambiguous, put the talk-to in quest 1 and the spawn in quest 2.
     let swapped = r#"{
-  "dsl_version": "0.21.1",
+  "dsl_version": "0.21.2",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

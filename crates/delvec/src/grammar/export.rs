@@ -511,6 +511,14 @@ pub fn export_prefab(
             &options.overrides,
             None,
         )),
+        // **The piece's own walk plane, measured** (spec-0060 §4). A grammar
+        // program says where its floors are and the expansion says where a body
+        // can stand on them, so the number is read back out of the model the
+        // export just froze rather than typed beside it. `None` only where the
+        // model offers no standable cell at all — a program that expanded to
+        // solid rock or open air has no walk plane, and inventing one for it
+        // would be the default this field exists to refuse.
+        walk_y: measured_walk_y(&expansion),
         waterline_y: None,
         // The export declares no shown side (`DW0885`). A program says what a
         // building IS; which of its sides a player is meant to look at is a
@@ -644,6 +652,14 @@ pub fn export_zone(
             &options.overrides,
             Some((plan.grid, tiles.len())),
         )),
+        // **The piece's own walk plane, measured** (spec-0060 §4). A grammar
+        // program says where its floors are and the expansion says where a body
+        // can stand on them, so the number is read back out of the model the
+        // export just froze rather than typed beside it. `None` only where the
+        // model offers no standable cell at all — a program that expanded to
+        // solid rock or open air has no walk plane, and inventing one for it
+        // would be the default this field exists to refuse.
+        walk_y: measured_walk_y(&expansion),
         waterline_y: None,
         // The export declares no shown side (`DW0885`). A program says what a
         // building IS; which of its sides a player is meant to look at is a
@@ -673,6 +689,32 @@ pub fn export_zone(
         tiles,
         expansion,
     }))
+}
+
+/// **The exported piece's own walk plane** (spec-0060 §4): the lowest local y
+/// that holds a standable cell.
+///
+/// The same definition every generator writes and the seating derivation
+/// reads — a body's feet cell, over a floor, clear above — taken here from
+/// [`crate::schem::nav::standable_cells`], which is the engine's own standable
+/// rule rather than a second copy of it.
+///
+/// **Model-local, not region-local.** An expansion's cells carry the region's
+/// origin and a structure template is local-coordinate: the same building
+/// exported from a box at y=64 and from one at y=0 must declare the same
+/// number, because it is the same building. So the model origin is subtracted,
+/// exactly as `part_nbt` does when it writes the cells.
+///
+/// `None` for a model with no standable cell — a program that expanded to solid
+/// rock or to open air has no walk plane, and inventing one for it is the
+/// default this field exists to refuse.
+fn measured_walk_y(expansion: &Expansion) -> Option<i32> {
+    use crate::schem::nav::Voxels as _;
+    let origin_y = expansion.model.origin()[1];
+    crate::schem::nav::standable_cells(&expansion.model)
+        .iter()
+        .map(|c| c[1] - origin_y)
+        .min()
 }
 
 /// The anchors an expansion declared, in the metadata shape. Zone-relative in
