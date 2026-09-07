@@ -78,6 +78,7 @@ const DOES_NOT_WRITE_METADATA: &[&str] = &[
     "gallery",        // reads metadata, writes a world
     "curate",         // reads a server log, writes a report
     "curate-merge",   // writes catalog cards, a different document
+    "seating",        // reads every document and its bytes, writes only a verdict
     "help",
 ];
 
@@ -87,6 +88,7 @@ const DOES_NOT_WRITE_METADATA: &[&str] = &[
 /// proving nothing.
 const AT_RISK: &[&[&str]] = &[
     &["license", "generated_by"],
+    &["walk_y"],
     &["waterline_y"],
     &["spatial_contract"],
     &["from_the_future"],

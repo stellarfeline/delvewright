@@ -198,8 +198,16 @@ pub struct ExposureBinding {
     /// Whether that flood reached the outer rim of the examined skin, which is
     /// where it was cut off rather than where it ended.
     pub cut_off: bool,
-    /// The horizon's own name, so the line can say which moves exist.
+    /// The **ambient**'s own name, so the line can say which moves exist.
     pub horizon: &'static str,
+    /// **The base the campaign declared**, beside the ambient it resolves to.
+    ///
+    /// `valley` resolves to a `void` ambient — its ground is placed blocks
+    /// rather than a generator fact — so a line keyed to the ambient alone said
+    /// ``horizon `void``` about a world whose author wrote `valley`, and a
+    /// reader cannot tell an unbound check from a mislabelled one
+    /// (spec-0060 §10.7).
+    pub base: &'static str,
 }
 
 impl ExposureBinding {
@@ -207,10 +215,12 @@ impl ExposureBinding {
     #[must_use]
     pub fn line(&self) -> String {
         format!(
-            "piece-exposure binding: horizon `{}`; {} of {} placed piece(s) examined, putting {} \
+            "piece-exposure binding: horizon base `{}` (ambient `{}`); {} of {} placed piece(s) \
+             examined, putting {} \
              solid cell(s) on their own box boundaries, of which {} have nothing in front of them \
              and {} stand in air the party can be in ({}); {} side(s) of a piece are seen that \
              way, against {} `shown_faces` declaration(s) of which {} are bound.",
+            self.base,
             self.horizon,
             self.examined,
             self.placed,
@@ -236,6 +246,7 @@ impl ExposureBinding {
     #[must_use]
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
+            "horizon_base": self.base,
             "horizon": self.horizon,
             "placed": self.placed,
             "examined": self.examined,
@@ -299,6 +310,7 @@ pub fn check(
     let ambient = Ambient::of_plan(plan);
     let mut binding = ExposureBinding {
         horizon: ambient.name(),
+        base: world.base(),
         ..ExposureBinding::default()
     };
     let _ = world;
@@ -741,6 +753,7 @@ mod tests {
             judged: 0,
             air: 90,
             horizon: "void",
+            base: "void",
             ..ExposureBinding::default()
         };
         let line = b.line();
