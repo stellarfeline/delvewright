@@ -19,7 +19,7 @@ relation to each other, so a number taken from one says nothing about the other.
 
 ## 0. Which back end
 
-**The box-split grammar back end** (`crates/grammar`, spec-0027). It is the
+**The box-split grammar back end** (`crates/delvec/src/grammar`, spec-0027). It is the
 default and this procedure is written for it.
 
 When the scene is not a grammar scene, the route is decided by this table —
@@ -612,13 +612,13 @@ Each of these was established by running it, except the two marked otherwise:
     valley at every re-entrant corner and both ridges at one height, at any
     size (idiom 3).
 
-  *Read from `crates/grammar/src/orient.rs`, and the exceptions are demonstrated
+  *Read from `crates/delvec/src/grammar/orient.rs`, and the exceptions are demonstrated
   by `idiom-shape` and `idiom-mirror`.*
 - **No terrain** — no noise, no heightfield; height variation comes from splits
   and recursion. *Same source.*
 - **No craft gate.** spec-0027 §4's palette-role budget, gradient and depth rules
   are still not built, and what blocks them is named in
-  `crates/grammar/src/gates.rs`: the budget is defined per *material family* and
+  `crates/delvec/src/grammar/gates.rs`: the budget is defined per *material family* and
   nothing here can decide what family a block is in. Until it exists, monoculture
   and flatness are caught by looking (§5), not by the machine.
 

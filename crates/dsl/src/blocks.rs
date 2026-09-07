@@ -566,7 +566,7 @@ impl BlockRegistry {
     /// names; `reflected[i]` says local axis `i` runs *backwards* along it. A
     /// grammar frame permutes and reflects the *geometry* a rule describes and
     /// never touches block-state properties
-    /// (`crates/grammar/src/orient.rs`), so a literal `facing`/`axis`/
+    /// (`crates/delvec/src/grammar/orient.rs`), so a literal `facing`/`axis`/
     /// connection property is correct only if the frame fixes the direction it
     /// names. The check transforms the state through the frame — mapping
     /// direction-valued properties, axis-valued properties, direction-*named*
@@ -639,7 +639,7 @@ impl BlockRegistry {
     /// judged at all*. Telling those apart is not a question about the state
     /// alone either — it is a question about which frames the scope could have
     /// stood in, which is why the caller supplies them
-    /// (`delvewright_grammar::orient::FrameSet`).
+    /// (`delvec::grammar::orient::FrameSet`).
     ///
     /// The answer is the union of what `oriented_mismatch` reports over
     /// `frames`, so the two can never disagree about what frame-sensitivity

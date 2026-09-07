@@ -4,7 +4,7 @@
 //!
 //! # The artifacts are real
 //!
-//! The way-carrying piece is exported by `crates/grammar` from a program built
+//! The way-carrying piece is exported by `crates/delvec/src/grammar` from a program built
 //! here — the corpus contract piece with its doorway's threshold course claimed
 //! as `deck` and left empty, and the door declared a `walk` whose way is `laid`.
 //! As built the two rooms are severed: a body cannot stand on a threshold that
@@ -24,12 +24,12 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
-use delvewright_grammar::ir::{
+use delvec::grammar::ir::{
     Contract, EXTERIOR, EdgeClass, Envelope, Mark, MarkAt, Node, Opens, Program, Reorient,
     Rounding, Size, Split, Way,
 };
-use delvewright_grammar::{Axis, BlockState, Box3, ExpandOptions, export_prefab};
+use delvec::grammar::{Axis, BlockState, Box3, ExpandOptions, export_prefab};
+use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// The vault is `9 x 8 x 11`: a low room, a raised room, a flight between them
 /// whose treads are missing, and a shaft through the roof.

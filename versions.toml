@@ -144,7 +144,6 @@ crate = "delvec"
 # tools/check-publishable.sh, tools/crates-io-publish.sh.
 crates = [
     "delvewright-schem",
-    "delvewright-grammar",
     "delvewright-orchestrator",
 ]
 

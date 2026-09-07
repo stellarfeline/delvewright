@@ -57,7 +57,7 @@ EXPLICIT_LONG_RE = re.compile(r'long\s*=\s*"(?P<name>[^"]+)"')
 SUBCOMMAND_ATTR_RE = re.compile(r"^\s*#\[command\(subcommand\)\]")
 NESTED_TYPE_RE = re.compile(r":\s*(?:Option<)?(?P<name>[A-Z]\w*)")
 # A mounted surface: a tuple variant whose payload is an `Args` struct, not
-# preceded by `#[command(flatten)]` — `Grammar(delvewright_grammar::cli::GrammarArgs),`.
+# preceded by `#[command(flatten)]` — `Grammar(delvec::grammar::cli::GrammarArgs),`.
 MOUNTED_VARIANT_RE = re.compile(r"^    (?P<name>[A-Z]\w*)\((?P<ty>[\w:]+)\),?\s*$")
 # An `Args` struct: `#[derive(Clone, Args)]` / `#[derive(clap::Args)]`, any
 # further attribute lines (`#[group(...)]`), then the struct. Its body carries

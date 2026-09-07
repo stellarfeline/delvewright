@@ -126,7 +126,7 @@ jobs:
       # it?") has two answers here, and neither is a doc line:
       #   * an IR change cannot COMPILE past it. The construct list is assigned
       #     by exhaustive matches over `Node`/`Cond`/`Paint`
-      #     (`crates/grammar/src/coverage.rs`), so a new variant reds `cargo
+      #     (`crates/delvec/src/grammar/coverage.rs`), so a new variant reds `cargo
       #     build`, `clippy`, `test` and this step alike until it is classified,
       #     and it then begins life at zero bindings.
       #   * a CORPUS change cannot be pushed past it. The same assertion is a
@@ -902,7 +902,7 @@ jobs:
       - uses: actions/checkout@v4
       # LFS off: neither step below reads a prefab `.nbt` BODY — the pin check
       # is git history, and the zone-program audit expands the IR geometrically
-      # (`crates/grammar`'s `expand`), never touching a file under
+      # (`crates/delvec/src/grammar`'s `expand`), never touching a file under
       # `prefabs/`. Text-only gate, same reasoning as `campaign storybooks`.
       - uses: ./.github/actions/checkout-content
         with:

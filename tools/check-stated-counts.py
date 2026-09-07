@@ -187,7 +187,7 @@ def section_of(text: str, heading: str) -> str:
 
 # --------------------------------------------------------------------- oracles
 
-_LIBRARY_MOD = "crates/grammar/src/library/mod.rs"
+_LIBRARY_MOD = "crates/delvec/src/grammar/library/mod.rs"
 _GRAMMAR_MD = "docs/reference/grammar.md"
 _INDEX_SECTION = r"^## 2c\. "
 _COMPILER_MD = "docs/reference/compiler.md"

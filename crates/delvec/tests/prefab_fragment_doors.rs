@@ -194,7 +194,7 @@ fn stage(name: &str) -> (PathBuf, PathBuf, PathBuf) {
                 "part_max": 48,
                 "grid": [1, 1, 2],
                 "data_version": room.data_version,
-                "generator": "crates/grammar",
+                "generator": "crates/delvec/src/grammar",
                 "parts": parts,
             },
             "connectors": [],

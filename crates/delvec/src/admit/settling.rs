@@ -4,7 +4,7 @@
 //! `delvec grammar expand` judges an expansion before it freezes it; this is the
 //! other end, where a hand-built or ingested `.nbt` arrives with no program
 //! behind it. Both doors call the same implementation
-//! ([`delvewright_grammar::settle`]) over the same kind of argument — a block
+//! ([`delvec::grammar::settle`]) over the same kind of argument — a block
 //! grid — because two checkers over one rule agree right up until they do not,
 //! and the disagreement surfaces as a piece that admits clean and reds at
 //! expansion, or the other way round.
@@ -17,10 +17,10 @@
 //! tiling is packaging, and packaging must not change a verdict. The zone is
 //! reassembled into one grid and judged once.
 
-use delvewright_grammar::block::BlockState;
-use delvewright_grammar::geom::Box3;
-use delvewright_grammar::model::VoxelModel;
-use delvewright_grammar::settle;
+use crate::grammar::block::BlockState;
+use crate::grammar::geom::Box3;
+use crate::grammar::model::VoxelModel;
+use crate::grammar::settle;
 use delvewright_schem::fluid;
 use delvewright_schem::split::TilePart;
 use delvewright_schem::stairs;

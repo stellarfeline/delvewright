@@ -6,7 +6,7 @@
 //! is the pair that is wrong: one declares a way out on the face they share, and
 //! the piece on the other side of it does not answer.
 //!
-//! The artifacts are real. The prefabs are exported by `crates/grammar` from the
+//! The artifacts are real. The prefabs are exported by `crates/delvec/src/grammar` from the
 //! corpus program that declares a contract, loaded back through the engine's own
 //! `PrefabRegistry`, and placed the way a campaign places them.
 
@@ -14,8 +14,8 @@ use delvec::compiler::faces;
 use delvec::compiler::plan::{AreaPlacement, PiecePlacement, PlacedTemplate};
 use delvec::compiler::registry::PrefabRegistry;
 use delvec::compiler::solver::Rotation;
-use delvewright_grammar::library::spatial_contract::spatial_contract;
-use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
+use delvec::grammar::library::spatial_contract::spatial_contract;
+use delvec::grammar::{Box3, ExpandOptions, export_prefab};
 
 /// The region the corpus program is documented at.
 const PIECE: Box3 = Box3::at_origin([11, 6, 15]);

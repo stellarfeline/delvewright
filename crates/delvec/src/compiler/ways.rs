@@ -28,7 +28,7 @@
 //! The piece's own — the contract's declared graph, rooted at the `entry` space
 //! it declares, with `vision` edges excluded (a sightline is not a traversal
 //! claim) and a `drop` traversed forward only. That is deliberately the same
-//! reading `crates/grammar`'s reachability walk takes, because the claim being
+//! reading `crates/delvec/src/grammar`'s reachability walk takes, because the claim being
 //! consumed here is the piece's claim; a second, differently-rooted notion of
 //! "reachable" would be an instrument disagreeing with the one that proved the
 //! piece.

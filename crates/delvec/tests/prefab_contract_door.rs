@@ -36,9 +36,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use delvec::admit::structure::{PaletteEntry, Structure};
-use delvewright_grammar::export::export_zone;
-use delvewright_grammar::library::spatial_contract::spatial_contract;
-use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
+use delvec::grammar::export::export_zone;
+use delvec::grammar::library::spatial_contract::spatial_contract;
+use delvec::grammar::{Box3, ExpandOptions, export_prefab};
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {

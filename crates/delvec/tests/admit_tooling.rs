@@ -464,7 +464,7 @@ fn an_unmeasured_lighting_block_parses_the_way_the_generators_write_it() {
         "id": "arcade-undercroft",
         "size": [9, 6, 21],
         "data_version": 4671,
-        "generator": "crates/grammar"
+        "generator": "crates/delvec/src/grammar"
       },
       "anchors": { "anchor/undercroft-floor": { "pos": [4, 1, 10], "facing": "north" } },
       "lighting": { "profile": "unmeasured" },

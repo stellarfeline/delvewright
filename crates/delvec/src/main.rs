@@ -268,7 +268,7 @@ enum Command {
     View(delvec::compiler::view::cli::ViewCommand),
     /// Grammar programs: list the corpus, show or check one, expand it into a
     /// prefab, measure demonstration coverage, audit every program.
-    Grammar(delvewright_grammar::cli::GrammarArgs),
+    Grammar(delvec::grammar::cli::GrammarArgs),
     /// A prefab piece under admission: audit, socket, anchor, lighting, catalog
     /// card, gallery world, curation.
     Prefab(delvec::admit::cli::PrefabArgs),
@@ -420,7 +420,7 @@ fn main() -> ExitCode {
             out,
         } => run_calibrate(report, layout, out, cli.json),
         Command::View(cmd) => cmd.run(cli.json),
-        Command::Grammar(args) => delvewright_grammar::cli::run(args.clone()),
+        Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
         Command::Prefab(args) => delvec::admit::cli::run(args.clone(), cli.json),
         Command::Schem(args) => delvewright_schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvewright_orchestrator::cli::run(args.clone()),

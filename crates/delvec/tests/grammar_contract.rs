@@ -24,14 +24,14 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_grammar::export::{export_prefab, export_zone};
-use delvewright_grammar::ir::{
+use delvec::grammar::export::{export_prefab, export_zone};
+use delvec::grammar::ir::{
     Alternative, Bar, Contract, EXTERIOR, EdgeClass, Envelope, Mark, MarkAt, Node, Opens, Program,
     ProgramError, Reorient, Rounding, Size, Split, Way,
 };
-use delvewright_grammar::library::{self, spatial_contract::spatial_contract};
-use delvewright_grammar::version::{LATEST_PROGRAM_VERSION, WAY_SINCE};
-use delvewright_grammar::{Axis, Box3, ExpandOptions, Expansion, expand};
+use delvec::grammar::library::{self, spatial_contract::spatial_contract};
+use delvec::grammar::version::{LATEST_PROGRAM_VERSION, WAY_SINCE};
+use delvec::grammar::{Axis, Box3, ExpandOptions, Expansion, expand};
 
 /// `delvec grammar …`: the one binary, entered at the grammar program surface.
 fn grammar() -> Command {
@@ -610,10 +610,7 @@ fn spatial_contract_with_a_laid_way() -> Program {
             })
     };
     Program::new("mended-span", "all")
-        .role(
-            "plank",
-            delvewright_grammar::BlockState::simple("oak_planks"),
-        )
+        .role("plank", delvec::grammar::BlockState::simple("oak_planks"))
         .rule("all", nest(&["near", "far", "span", "planks"]))
         .contract(
             Contract::new("near")
@@ -714,13 +711,13 @@ fn a_way_built_from_a_weighted_mix_is_refused_like_a_bar() {
         .role_mix(
             "rubble",
             vec![
-                delvewright_grammar::ir::WeightedBlock {
+                delvec::grammar::ir::WeightedBlock {
                     weight: 1,
-                    block: delvewright_grammar::BlockState::simple("stone"),
+                    block: delvec::grammar::BlockState::simple("stone"),
                 },
-                delvewright_grammar::ir::WeightedBlock {
+                delvec::grammar::ir::WeightedBlock {
                     weight: 1,
-                    block: delvewright_grammar::BlockState::simple("air"),
+                    block: delvec::grammar::BlockState::simple("air"),
                 },
             ],
         )
@@ -786,7 +783,7 @@ fn an_unknown_version_is_refused() {
 
 fn shell(contract: Contract, body: Node) -> Program {
     Program::new("refs", "all")
-        .role("stone", delvewright_grammar::BlockState::simple("stone"))
+        .role("stone", delvec::grammar::BlockState::simple("stone"))
         .rule("all", body)
         .contract(contract)
 }
@@ -932,13 +929,13 @@ fn a_bar_names_a_bound_single_block_role() {
         .role_mix(
             "rubble",
             vec![
-                delvewright_grammar::ir::WeightedBlock {
+                delvec::grammar::ir::WeightedBlock {
                     weight: 1,
-                    block: delvewright_grammar::BlockState::simple("stone"),
+                    block: delvec::grammar::BlockState::simple("stone"),
                 },
-                delvewright_grammar::ir::WeightedBlock {
+                delvec::grammar::ir::WeightedBlock {
                     weight: 1,
-                    block: delvewright_grammar::BlockState::simple("air"),
+                    block: delvec::grammar::BlockState::simple("air"),
                 },
             ],
         )
@@ -1000,8 +997,8 @@ fn a_region_may_not_be_called_exterior() {
 /// boxes claimed in a different order resolve identically.
 #[test]
 fn claims_of_one_name_union_in_a_canonical_order() {
-    use delvewright_grammar::geom::Axis;
-    use delvewright_grammar::ir::{Size, Split};
+    use delvec::grammar::geom::Axis;
+    use delvec::grammar::ir::{Size, Split};
 
     fn two_thirds(first: &str, second: &str) -> Program {
         Program::new("union", "all")
@@ -1045,8 +1042,8 @@ fn claims_of_one_name_union_in_a_canonical_order() {
 /// than disappearing, so the zero is visible to whatever reads the contract.
 #[test]
 fn an_empty_scope_and_an_unreached_rule_leave_an_honest_zero() {
-    use delvewright_grammar::geom::Axis;
-    use delvewright_grammar::ir::{Size, Split};
+    use delvec::grammar::geom::Axis;
+    use delvec::grammar::ir::{Size, Split};
 
     let program = Program::new("thin", "all")
         .rule(
@@ -1120,7 +1117,7 @@ fn including_a_claiming_piece_qualifies_its_regions_and_says_so() {
             body: Box::new(Node::Void),
         },
     );
-    let composed = delvewright_grammar::include(zone, &piece, "west").unwrap();
+    let composed = delvec::grammar::include(zone, &piece, "west").unwrap();
     assert_eq!(
         composed.claimed_regions().keys().collect::<Vec<_>>(),
         vec!["west/room"]
@@ -1327,7 +1324,7 @@ fn no_corpus_piece_writes_a_way_and_every_bar_still_writes_bar() {
     for (id, size) in CORPUS {
         let program = library::by_id(id).unwrap_or_else(|| panic!("{id} is not in the library"));
         let expansion = run(&program, Box3::at_origin(*size), 1);
-        let Some(contract) = delvewright_grammar::export::contract_metadata(&expansion) else {
+        let Some(contract) = delvec::grammar::export::contract_metadata(&expansion) else {
             continue;
         };
         pieces += 1;
@@ -1548,7 +1545,7 @@ fn a_laid_way_exports_the_sign_and_the_block_it_will_be_filled_with() {
         "the two twins must be one DECLARATION apart and zero blocks apart"
     );
     match export_prefab(&undeclared, PIECE, &ExpandOptions::seeded(1), "piece") {
-        Err(delvewright_grammar::ExportError::Contract { gates }) => {
+        Err(delvec::grammar::ExportError::Contract { gates }) => {
             let joined = gates.join(" · ");
             assert!(joined.contains("contract-edge-proof"), "{joined}");
             assert!(joined.contains("contract-reachability"), "{joined}");

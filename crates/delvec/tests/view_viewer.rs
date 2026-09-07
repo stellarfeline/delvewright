@@ -517,7 +517,7 @@ fn a_tiled_zone_is_one_building_on_the_page() {
         part_max: 48,
         grid: [1, 1, 2],
         data_version: DATA_VERSION,
-        generator: "crates/grammar".to_string(),
+        generator: "crates/delvec/src/grammar".to_string(),
         parts,
     };
     std::fs::write(

@@ -29,9 +29,9 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{AnchorRole, PrefabRegistry};
+use delvec::grammar::ir::Node;
+use delvec::grammar::{Box3, ExpandOptions, Mark, MarkAt, Program, export_prefab};
 use delvewright_dsl::parse_campaign;
-use delvewright_grammar::ir::Node;
-use delvewright_grammar::{Box3, ExpandOptions, Mark, MarkAt, Program, export_prefab};
 use serde_json::Value;
 
 /// The landing's entry cell in world coordinates — where the bolt branch's

@@ -111,7 +111,7 @@ mod tests {
             "chapel-ward",
             [16, 9, 26],
             4671,
-            "crates/grammar",
+            "crates/delvec/src/grammar",
             License {
                 source: "original".to_string(),
                 spdx: "GPL-3.0-or-later".to_string(),
@@ -204,7 +204,7 @@ mod tests {
             "structure_set".to_string(),
             serde_json::json!({
                 "base": "chapel-ward", "size": [16, 9, 26], "part_max": 48,
-                "grid": [1, 1, 1], "data_version": 4671, "generator": "crates/grammar",
+                "grid": [1, 1, 1], "data_version": 4671, "generator": "crates/delvec/src/grammar",
                 "parts": []
             }),
         );

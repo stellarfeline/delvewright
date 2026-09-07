@@ -140,7 +140,7 @@ fi
 # The pin's ZONE INVENTORY is a consumer of this value like any other.
 # `.github/content-zone-corpus.json` names the campaigns the pin carries and how
 # many zone programs each declares; every number in it is checked against the
-# content checkout by crates/grammar/tests/campaign_zones.rs. That check is only
+# content checkout by crates/delvec/tests/grammar_campaign_zones.rs. That check is only
 # about the right corpus while the record and the pin agree, so a re-pin that
 # leaves the inventory behind is caught here, in tier 1, with no content checkout
 # needed — rather than measuring the new tree against the old pin's expectations.

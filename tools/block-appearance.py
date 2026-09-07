@@ -685,7 +685,7 @@ def split_outside_state(text: str, sep: str, what: str) -> list[str]:
     """Split on `sep`, ignoring every occurrence inside a `[...]` property list.
 
     A paint's members are separated by `,` and a member's weight by `=` — and a
-    block state is `name[key=value,key=value]` (`crates/grammar/src/block.rs`),
+    block state is `name[key=value,key=value]` (`crates/delvec/src/grammar/block.rs`),
     so BOTH separators also occur *inside* one. Splitting on every occurrence is
     not splitting on the separators: `deepslate[axis=y]=3` parsed that way asks
     for a weight of `y]=3`, so the more precisely a paint is written the more
@@ -850,7 +850,7 @@ def mix_report(name: str, members: list[tuple[str, float]], by_id: dict[str, dic
 def classify_paint(value) -> tuple[list[tuple[str, float]] | None, str | None]:
     """A paint as its area shares, or the reason this reader cannot read it.
 
-    The grammar it mirrors is `crates/grammar/src/ir.rs`, and nothing else: a
+    The grammar it mirrors is `crates/delvec/src/grammar/ir.rs`, and nothing else: a
     `Paint` is `World(States)` or `Local { local: States }`, and a `States` is
     one block-state string or a weighted list of `{block, weight}`. The frame is
     a declaration about which world DIRECTION a property names — it moves no

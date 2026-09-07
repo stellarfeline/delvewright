@@ -81,7 +81,7 @@ an emitterless detail piece was written `lit` on the strength of the night sky f
 
 ## 2. Where a lamp may physically go
 
-`crates/grammar/src/nav.rs` decides passability as **air, or a `*_skull`**. Every other block is
+`crates/delvec/src/grammar/nav.rs` decides passability as **air, or a `*_skull`**. Every other block is
 a full solid cube to the zone-program walk proof. A lantern, torch, candle or campfire dropped
 into a cell a body walks through therefore *removes that cell from the walk*, and a bed of a
 non-collidable block on a floor reads as a **new floor level**.

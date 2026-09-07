@@ -170,7 +170,7 @@ mod tests {
             part_max: 48,
             grid: [1, 1, 2],
             data_version: 4671,
-            generator: "crates/grammar".to_string(),
+            generator: "crates/delvec/src/grammar".to_string(),
             parts,
         }
     }

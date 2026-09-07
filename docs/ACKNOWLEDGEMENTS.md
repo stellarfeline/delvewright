@@ -79,16 +79,16 @@ upstream code was ingested. Attribution recorded here and in each prefab's metad
 |---|---|---|
 | [Niels-NTG GDMC 2024](https://github.com/Niels-NTG/gdmc2024) · [mxgmn/WaveFunctionCollapse](https://github.com/mxgmn/WaveFunctionCollapse) | MIT | Wave-function-collapse tiling over prefab modules (rotation/adjacency, single-threaded deterministic path only) for seamless interior/facade tiling |
 
-## Ported source — Box-Split Grammars (`crates/grammar`, spec-0027)
+## Ported source — Box-Split Grammars (`crates/delvec/src/grammar`, spec-0027)
 
 Unlike the section above, this is a **source port**, not a re-derivation: the
-upstream Python was read, and `crates/grammar` is a Rust translation of its
+upstream Python was read, and `crates/delvec/src/grammar` is a Rust translation of its
 grammar core. The licence permits exactly that, so nothing is gained by keeping
 a distance from it.
 
 | Source | License (verified) | What we ported |
 |---|---|---|
-| [yawgmoth/GDMC25](https://github.com/yawgmoth/GDMC25) (Slothlab, GDMC 2025) | BSD-3-Clause | The Box-Split Grammar core of `SplitGrammar.py` / `GrammarBox.py` — box representation, the `split` size algebra, reorientation, constraint evaluation and the rule interpreter — plus its three example grammars (`MakeTemple.py` / `Tetrastyle.py`, `MakeCastle.py`, `MakeChurch.py`) as `crates/grammar`'s rule library. Not ported: the settlement pipeline around it (buildsite location, road grids, houses, parks) and the Amulet world-writing layer, neither of which this project needs. |
+| [yawgmoth/GDMC25](https://github.com/yawgmoth/GDMC25) (Slothlab, GDMC 2025) | BSD-3-Clause | The Box-Split Grammar core of `SplitGrammar.py` / `GrammarBox.py` — box representation, the `split` size algebra, reorientation, constraint evaluation and the rule interpreter — plus its three example grammars (`MakeTemple.py` / `Tetrastyle.py`, `MakeCastle.py`, `MakeChurch.py`) as `crates/delvec/src/grammar`'s rule library. Not ported: the settlement pipeline around it (buildsite location, road grids, houses, parks) and the Amulet world-writing layer, neither of which this project needs. |
 
 **Licence check (verified 2026-08-04 by reading `LICENSE.txt` in a fresh clone
 at commit `fa993b9`, not the GitHub licence API).** The file is the unmodified
@@ -97,7 +97,7 @@ permitted provided the copyright notice, the conditions and the disclaimer are
 retained, and the copyright holder's name may not be used to endorse derived
 products. BSD-3-Clause is GPL-3.0-compatible, so the port may live in this
 GPL-3.0 repository. The retention obligation is met by
-[`crates/grammar/LICENSE-GDMC25`](../crates/grammar/LICENSE-GDMC25), a verbatim
+[`crates/delvec/LICENSE-GDMC25`](../crates/delvec/LICENSE-GDMC25), a verbatim
 copy of the upstream licence, plus a provenance note in every ported module. We
 do not claim or imply endorsement by Slothlab or its contributors.
 
@@ -112,7 +112,7 @@ Eger's, the church grammar is Janista Gitbumrungsin's.
 about the current code.** Upstream's orientation is an unsigned axis
 permutation. Ours carries a sign per local axis — the 48 signed axis maps rather
 than the 6 permutations — so a piece can be turned *round* as well as turned 90°
-(`crates/grammar/src/geom.rs`). That is original work, not a port: nothing
+(`crates/delvec/src/grammar/geom.rs`). That is original work, not a port: nothing
 upstream has it, and it is not part of the FDG '22 formulation.
 
 ## Evaluated, not adopted (NPC skin pipeline, spec-0009)

@@ -858,7 +858,7 @@ def test_a_cargo_dependency_line_quoted_in_rust_is_not_a_fetch_site(
         repo,
         "crates/delvec/src/compiler/manifest.rs",
         'pub const EXAMPLE: &str = r#"\n'
-        '    delvewright-grammar = { git = "https://example.invalid/g" }\n'
+        '    example-crate = { git = "https://example.invalid/g" }\n'
         '"#;\n',
     )
     r = run(repo)

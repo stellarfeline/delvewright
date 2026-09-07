@@ -16,10 +16,10 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use delvewright_grammar::block::BlockState;
-use delvewright_grammar::contract::{ContractReport, check};
-use delvewright_grammar::geom::Box3;
-use delvewright_grammar::model::VoxelModel;
+use crate::grammar::block::BlockState;
+use crate::grammar::contract::{ContractReport, check};
+use crate::grammar::geom::Box3;
+use crate::grammar::model::VoxelModel;
 use delvewright_schem::prefab::PrefabMeta;
 
 use crate::admit::diag::{DW_CONTRACT, DW_UNJUDGED, Diagnostic};

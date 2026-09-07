@@ -2,7 +2,6 @@
 resolver = "3"
 members = [
     "crates/dsl",
-    "crates/grammar",
     "crates/schem",
     "crates/orchestrator",
     "crates/delvec",
@@ -37,7 +36,6 @@ repository = "https://github.com/stellarfeline/delvewright"
 # `[engine] dsl_crate_req` in versions.toml.
 [workspace.dependencies]
 delvewright-dsl = { path = "crates/dsl", version = "=0.21.0" }
-delvewright-grammar = { path = "crates/grammar", version = "=1.2.0" }
 delvewright-schem = { path = "crates/schem", version = "=1.2.0" }
 delvewright-orchestrator = { path = "crates/orchestrator", version = "=1.2.0" }
 

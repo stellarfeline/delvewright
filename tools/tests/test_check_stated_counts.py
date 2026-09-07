@@ -173,7 +173,7 @@ def build_tree(root: Path, **kw) -> Path:
         ids.append("idiom-composition-arcade")
         ids += ["castle", "church"]  # non-idiom library programs
     files = {
-        "crates/grammar/src/library/mod.rs": library(
+        "crates/delvec/src/grammar/library/mod.rs": library(
             kw.get("library_ids", sorted(ids))
         ),
         "docs/reference/grammar.md": grammar_md(
@@ -327,7 +327,7 @@ def test_a_program_with_no_row_in_the_index_is_a_finding(
         [t[0] for t in TECHNIQUES]
         + ["idiom-composition-arcade", "idiom-light", "castle"]
     )
-    (root / "crates/grammar/src/library/mod.rs").write_text(
+    (root / "crates/delvec/src/grammar/library/mod.rs").write_text(
         library(ids), encoding="utf-8"
     )
     checker.ROOT = root
@@ -339,7 +339,7 @@ def test_a_program_with_no_row_in_the_index_is_a_finding(
 def test_a_row_naming_no_program_is_a_finding(checker, tmp_path, capsys):
     root = build_tree(tmp_path)
     ids = sorted([t[0] for t in TECHNIQUES] + ["castle", "church"])
-    (root / "crates/grammar/src/library/mod.rs").write_text(
+    (root / "crates/delvec/src/grammar/library/mod.rs").write_text(
         library(ids), encoding="utf-8"
     )
     checker.ROOT = root
@@ -376,7 +376,7 @@ def test_a_programs_table_that_yields_no_entries_is_a_finding(
     green parser reporting 33 programs as 0.
     """
     root = build_tree(tmp_path)
-    p = root / "crates/grammar/src/library/mod.rs"
+    p = root / "crates/delvec/src/grammar/library/mod.rs"
     p.write_text(
         p.read_text(encoding="utf-8").replace("    entry(", "    ("),
         encoding="utf-8",

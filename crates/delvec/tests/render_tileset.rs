@@ -98,7 +98,7 @@ fn stage(name: &str) -> (PathBuf, PathBuf, [i32; 3]) {
         part_max: 48,
         grid: [1, 1, 2],
         data_version: DATA_VERSION,
-        generator: "crates/grammar".to_string(),
+        generator: "crates/delvec/src/grammar".to_string(),
         parts,
     };
     let manifest = dir.join("zone.json");
@@ -264,7 +264,7 @@ fn stage_hollow(name: &str) -> (PathBuf, PathBuf) {
         part_max: 48,
         grid: [1, 1, 2],
         data_version: DATA_VERSION,
-        generator: "crates/grammar".to_string(),
+        generator: "crates/delvec/src/grammar".to_string(),
         parts,
     };
     let manifest = dir.join("hollow.json");

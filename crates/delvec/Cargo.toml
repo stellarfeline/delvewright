@@ -38,7 +38,6 @@ path = "src/main.rs"
 # The campaign format, on its own version line through
 # `[workspace.dependencies]` (`=` requirement, ADR-0023 §6 as ADR-0025 leaves it).
 delvewright-dsl.workspace = true
-delvewright-grammar.workspace = true
 delvewright-schem.workspace = true
 delvewright-orchestrator.workspace = true
 serde = { version = "1", features = ["derive"] }

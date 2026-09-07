@@ -34,12 +34,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use delvec::admit::structure::{PaletteEntry, Structure};
-use delvewright_grammar::export::export_zone;
-use delvewright_grammar::ir::{
+use delvec::grammar::export::export_zone;
+use delvec::grammar::ir::{
     EdgeClass, Mark, MarkAt, Node, Opens, Program, Reorient, Rounding, Size, Split, Way,
 };
-use delvewright_grammar::library::spatial_contract::spatial_contract;
-use delvewright_grammar::{Axis, Box3, ExpandOptions};
+use delvec::grammar::library::spatial_contract::spatial_contract;
+use delvec::grammar::{Axis, Box3, ExpandOptions};
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {
