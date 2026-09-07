@@ -331,10 +331,10 @@ textures = "minecraft-client-1.21.11.jar"
 # binds every consumer to the values below, and `.github/pins.toml` records what
 # each is held for and on what terms it may move.
 #
-# Node for the harness (`npm ci` + `node --test`) and for the storybook jobs.
+# Node for the harness (`npm ci`) and for the `rust` job's `node --test` suites.
 # A MAJOR line, resolved by actions/setup-node to its newest release: the harness
 # has a lockfile, so what this selects is the runtime, not the dependency set.
-# Consumed by: .github/workflows/ci.yml, .github/workflows/release.yml.
+# Consumed by: .github/workflows/ci.yml.
 node_version = "24"
 # The interpreter for the two Python tool suites (`tools/skin`, `tools/tests`),
 # and for every inline python `tools/build-release-binaries.sh` runs to read

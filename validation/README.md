@@ -337,12 +337,14 @@ It runs in its own per-invocation compose project (`dw-noteflow-$$`, overridable
 with `DW_COMPOSE_PROJECT`) on an **ephemeral** host port, so it needs no lock and
 cannot collide with another ladder or with a live owner session.
 
-**CI placement (spec-0006 acceptance).** This is a **tier-3 / local** test (wired in
-`release.yml`), not tier 2: it boots a full server *and* a bot (~2–3 min), beyond
-tier 2's ~2-min budget. Every-push coverage of the mechanism already lives in tier 1
-— the harvester's parsing/pairing/report logic (`crates/delvec/src/orchestrator` unit tests,
-incl. Chinese note text) and the overlay emission + byte-determinism
-(`crates/delvec/src/compiler` tests). Only the live wiring is deferred to tier 3.
+**CI placement (spec-0006 acceptance).** This is a **local** test, run by hand:
+**no CI job calls it.** It boots a full server *and* a bot (~2–3 min), beyond tier
+2's ~2-min budget. Every-push coverage of the mechanism already lives in tier 1 —
+the harvester's parsing/pairing/report logic (`crates/delvec/src/orchestrator` unit
+tests, incl. Chinese note text) and the overlay emission + byte-determinism
+(`crates/delvec/src/compiler` tests). The live wiring is proven only when somebody
+runs this script; wiring it into `ci.yml`'s `tier 2` job as a step (never a new job
+— every job name is a required status context) is the open work.
 
 ## What the stack does today
 
