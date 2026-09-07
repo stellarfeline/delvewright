@@ -1813,6 +1813,8 @@ pub fn place(c: &Campaign, prefabs: &PrefabRegistry) -> Detailing {
             pos,
             size: meta.size(),
             rotation: Rotation::None,
+            // A detail piece is handed a frozen frame, not mated to a neighbour.
+            mated: Vec::new(),
         });
         for (name, bound_to) in &row.anchors {
             let Some(a) = meta.anchors.get(bound_to) else {

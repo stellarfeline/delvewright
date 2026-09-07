@@ -151,13 +151,13 @@
       "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/areas",
-      "stage": "world"
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/dress-the-floor",
+      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {
@@ -333,13 +333,13 @@
       "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/areas",
-      "stage": "world"
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/dress-the-floor",
+      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {
@@ -515,13 +515,18 @@
       "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/areas",
+      "code": "DW0344",
+      "pointer": "/content/horizon",
       "stage": "world"
     },
     {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {
@@ -697,13 +702,13 @@
       "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/areas",
-      "stage": "world"
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/dress-the-floor",
+      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {
@@ -879,13 +884,13 @@
       "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/areas",
-      "stage": "world"
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/dress-the-floor",
+      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {
@@ -1108,13 +1113,13 @@
       "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/areas",
-      "stage": "world"
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
     },
     {
       "code": "DW0353",
-      "pointer": "/content/batches/batch/dress-the-floor",
+      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {

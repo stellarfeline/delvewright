@@ -328,6 +328,7 @@ fn build_surround(
                 max[2] - min[2] + 1,
             ],
             rotation: Rotation::None,
+            mated: Vec::new(),
         },
         structures,
         biome: valley.biome.clone(),
@@ -1018,6 +1019,13 @@ pub struct Plan<'a> {
     /// [`crate::compiler::assembled::placed_blocks`] through that iterator, and the
     /// biome paint in [`crate::compiler::emit`].
     pub surround: Option<SurroundPlan>,
+    /// **What the piece-mating check examined** (`DW0780`/`DW0781`), emitted as
+    /// `validation/piece-mating.json`.
+    ///
+    /// Carried out of `build` rather than recomputed at emission, because it is
+    /// a verdict about the placement this `Plan` IS — recomputing it would be a
+    /// second walk that could answer differently from the one that refused.
+    pub face_binding: crate::compiler::faces::FaceBinding,
 }
 
 /// A compiler-generated horizon surround, planned.
@@ -1157,6 +1165,21 @@ pub struct PiecePlacement {
     pub size: [i32; 3],
     /// Placement rotation (identity for single-prefab areas).
     pub rotation: Rotation,
+    /// **Which of this piece's jigsaw sockets the layout mated**, index-aligned
+    /// with the prefab's `connectors` — the solver's own claim about where this
+    /// piece joins another, carried out of the solver rather than recomputed.
+    ///
+    /// It is what makes a mated socket falsifiable at all. Every other consumer
+    /// reads it to decide whether to clear the doorway to air or seal it with
+    /// wall material (`solver::seal_layout`), and until it reached here nothing
+    /// ever asked the complementary question: **is the piece it says it mated to
+    /// actually there?** A layout that moved a piece off its seam still emits an
+    /// opened doorway, into whatever the world has at that plane.
+    ///
+    /// Empty for a piece nothing mated — a single-prefab area's lone piece, a
+    /// derived blockout box, a detail piece, the surround — which reads as *no
+    /// socket is mated*, and is the honest answer for each of them.
+    pub mated: Vec<bool>,
 }
 
 /// One structure template of a placed piece, in world space.
@@ -2531,6 +2554,9 @@ impl<'a> Plan<'a> {
                         pos: origin,
                         size: meta.size(),
                         rotation: Rotation::None,
+                        // A lone piece mates with nothing: every socket it has is
+                        // sealed, which is what `seals` above was just built from.
+                        mated: vec![false; meta.connectors.len()],
                     }],
                     seals,
                     mass: Vec::new(),
@@ -2641,6 +2667,7 @@ impl<'a> Plan<'a> {
                         pos: placed.pos,
                         size: meta.size(),
                         rotation: placed.rotation,
+                        mated: placed.mated.clone(),
                     });
                 }
                 AreaPlacement {
@@ -2760,10 +2787,14 @@ impl<'a> Plan<'a> {
             w.extend(e.warnings.clone());
             PlanError::new(e.failure.code, e.failure.message).with_warnings(w)
         })?;
-        if let Some(finding) = binding.finding(
-            crate::compiler::faces::placed_pieces(&areas),
-            campaign.site_plan.is_some(),
-        ) {
+        let placed = crate::compiler::faces::placed_pieces(&areas);
+        // Printed on every plan, found anything or not: the count this check
+        // owes its reader is a fraction of the PLACEMENT, and stating it only
+        // when it was zero is what let a build read `0 with a spatial contract`
+        // as an unremarkable advisory line rather than as a check that examined
+        // nothing.
+        eprintln!("{}", binding.line(placed));
+        if let Some(finding) = binding.finding(placed, campaign.site_plan.is_some()) {
             warnings.push(finding);
         }
 
@@ -2993,6 +3024,7 @@ impl<'a> Plan<'a> {
             blockout,
             surround,
             waterline,
+            face_binding: binding,
         })
     }
 

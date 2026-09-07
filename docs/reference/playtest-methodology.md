@@ -183,16 +183,33 @@ would be the seventh:
 |---|---|---|
 | `NO-GENERAL-FORM` | the instance was fixed, the class never built | rule 2's `DW0489`, eleven rounds late |
 | `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
-| `UNBOUND` | the check matched zero objects | rule 1's floor gate, nineteen rounds |
-| `INAPPLICABLE` | zero binding **and** zero precondition — the campaign declares none of the objects the class needs | the island has no trap, so no volley-saturation proof can say anything about it |
+| `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's floor gate, nineteen rounds |
+| `INAPPLICABLE` | zero binding **and** a MEASURED zero precondition — the campaign declares none of the objects the class needs | the island has no trap, so no volley-saturation proof can say anything about it |
 | `UNFENCED` | the campaign's `dsl_version` never reached the surface the check keys off | rule 1's branch proofs before round 19 |
 | `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | the drowned-bell remake today |
 
 `INAPPLICABLE` is a **red**, not an exemption. The temptation is to let a row
 excuse itself by declaring its own binding class as its own precondition, which
 is not a gate; and "this build cannot exercise the class" is exactly what the
-round summary must say rather than fold away. The `applies_when` probe names
-*which* zero a zero is; it never changes the verdict.
+round summary must say rather than fold away. Naming *which* zero a zero is
+never turns a red into a pass — the only non-reds are the two below.
+
+**Which zero it is, is always a measurement.** Two things can measure it. A
+declared `applies_when` probe, for a binding that counts a DECLARATION inside
+carriers that may exist anyway (a `has`/`has_any` predicate, a `contains`
+glob, an `artifact` or `out` probe over derived output) — that zero is
+genuinely ambiguous, it is the floor gate's shape, and a row of that shape
+owes a probe. Or the binding's OWN SHAPE, where the probe counts the object
+class itself and nothing stands one step behind it: a `dsl` predicate
+selecting by identity (`eq`/`in`/`prefix` only) across the declared design,
+and a `campaign` glob with no `contains`, where the file IS the object. Such a
+row may not declare an `applies_when` at all — it could only name its own
+binding, which the ledger loader refuses outright — so the gate reads the
+shape on every subject and reports the measured `INAPPLICABLE` rather than
+`UNBOUND`, whose whole content is that nobody looked. A campaign small enough
+to contain none of the ledger's object classes is still refused; every one of
+its zeros is a counted fact about the campaign, and the round summary can say
+so per class.
 
 **The first permitted non-red** is rule 2's own escape, no wider: a row may close
 `DECLARED-UNCOVERABLE` with a `disposition` (`no-machine-form` / `not-a-defect`)
@@ -217,23 +234,13 @@ determined by the object, never declared by the operator:
   build's **compiler-written manifest** lists the site plan among its inputs,
   and no `detail-plan.json` exists in campaign or manifest; any disagreement
   is not a blockout (fail closed);
-- the row's class **measures zero twice**: the binding probe counted zero, and
-  the precondition counted zero — via `applies_when` where declared, or by the
-  probe's own shape where the probe COUNTS THE OBJECT CLASS ITSELF, which is
-  true in exactly two cases. A `dsl` predicate selecting by identity
-  (`eq`/`in`/`prefix` only) counts the class across the declared design. And a
-  `campaign` glob with no `contains` counts files in the campaign SOURCE, where
-  the file IS the object: the storybook is `campaigns/<id>/README.md`, no stage
-  document declares that a campaign has one, so nothing stands behind it for a
-  precondition probe to count — a row asked for one could only name its own
-  binding, which the ledger loader refuses outright. Any non-file path matching
-  the glob withdraws that claim and reds, because `is_file()` answers an honest
-  `False` for a directory standing where the file belongs.
-  Everything else stays ambiguous and stays `UNBOUND`, blockout or not: a
-  `has`/`has_any` predicate, an `artifact` or `out` probe (derived output, one
-  step from a declaration), and a `contains` glob — which counts a declaration
-  inside carriers that exist, and is the floor gate's zero wearing a file's
-  clothes (the carriers were there; `tier` was not).
+- the row's class **measures zero twice**, by either instrument above: the
+  binding probe counted zero, and the precondition counted zero. Any non-file
+  path matching a `campaign` glob withdraws the self-measuring claim and reds,
+  because `is_file()` answers an honest `False` for a directory standing where
+  the file belongs. A binding whose zero is ambiguous and whose row declares no
+  `applies_when` reaches nothing here: it stays `UNBOUND`, blockout or not,
+  because a stage cannot answer a question nobody asked.
 
 What the opt-out demands, the defect cannot supply: *a build whose combat went
 missing* fails at least one measurement — declared objects make the binding

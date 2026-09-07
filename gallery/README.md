@@ -295,6 +295,22 @@ severed, because the partner's own plane stays walled — which is what
 `batch/annex-seal-a-way` and `batch/annex-open-a-way` do, in that order: a
 doorway bricked up on the far side and open on the near one.
 
+**The chain is what binds the piece-mating check.** A socket is one of the two
+places a prefab document says what a side of it is — the other is
+`spatial_contract.faces`, which the hall carries and no annex tile does — and
+`DW0780` reads both. Before it did, this chain was the shape that made the check
+report `0 with a spatial contract` and pass: three tiles mated end to end, four
+socket faces meeting across two seams, and nothing examining any of them. The
+build's binding line states it on every run, and the count is a fraction of the
+placement rather than of the declarations, so a world whose pieces stop touching
+reads as a zero rather than as a silence. What no campaign document here can
+reach is a `DW0780` refusal itself: areas stand `AREA_SPACING` apart and the
+solver computes every seated position, so an authored document has no surface on
+which to move a piece off its seam. The refusal is a self-check over the solver's
+own layout, and its perturbations live in `crates/delvec/tests/face_contract.rs`
+— a mated piece detached by one block, and a pair that touches and declares
+nothing across the plane it touches on.
+
 **A tile carved from one material renders as one material.** Each tile wears a
 `stone_bricks` panel around its socket openings and a `stone_bricks` floor under
 its stone walls, because a seam camera aimed down a corridor of nothing but
