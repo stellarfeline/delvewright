@@ -814,6 +814,24 @@ fn validate_loaded(
             // which is every campaign below 0.15.0, and the binding line states
             // that zero rather than going quiet.
             {
+                // **The three hashes, printed BEFORE the gate that demands
+                // them** (spec-0050 §2). A walk record names its subject and its
+                // instrument by these numbers, they exist nowhere but this
+                // engine's output — none of the three is a hash of a document —
+                // and `DW0841`'s repair is to copy them out of a build. They
+                // used to be printed by `emit`, which a refusal never reaches,
+                // so the one state that needs them was the one state that could
+                // not get them: a stale record refused the build, the build
+                // printed nothing, and the only way to re-record was to compute
+                // a hash by hand or to revert. Printed here, in the one funnel
+                // every subcommand's validation goes through, so `validate`,
+                // `analyze`, `allocation` and a REFUSED `build` all hand the
+                // creator the numbers. The engine is named by its REVISION,
+                // never by its version string — two engines a hundred commits
+                // apart report the same version.
+                if let Some(h) = delvewright_compiler::detail::Hashes::of(&campaign) {
+                    eprintln!("{}", h.line());
+                }
                 let (dd, dbind) = delvewright_compiler::detail::check(
                     &campaign,
                     &prefabs,
