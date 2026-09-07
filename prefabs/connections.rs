@@ -61,7 +61,7 @@ const SHAPE_PROPS_JSON: &str =
 /// tags. `fence`, `wall` and `pane` are the three connection classes whose
 /// members must be recognised by class rather than by name.
 const CLASSIFICATION_JSON: &str =
-    include_str!("../crates/compiler/data/block-classification-1.21.11.json");
+    include_str!("../crates/delvec/data/block-classification-1.21.11.json");
 
 fn registry() -> &'static BTreeMap<String, BTreeMap<String, Vec<String>>> {
     static R: OnceLock<BTreeMap<String, BTreeMap<String, Vec<String>>>> = OnceLock::new();

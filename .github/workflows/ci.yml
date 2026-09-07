@@ -126,7 +126,7 @@ jobs:
       # it?") has two answers here, and neither is a doc line:
       #   * an IR change cannot COMPILE past it. The construct list is assigned
       #     by exhaustive matches over `Node`/`Cond`/`Paint`
-      #     (`crates/grammar/src/coverage.rs`), so a new variant reds `cargo
+      #     (`crates/delvec/src/grammar/coverage.rs`), so a new variant reds `cargo
       #     build`, `clippy`, `test` and this step alike until it is classified,
       #     and it then begins life at zero bindings.
       #   * a CORPUS change cannot be pushed past it. The same assertion is a
@@ -152,7 +152,7 @@ jobs:
         with:
           node-version: "24"
       - name: the viewer's key and mouse mapping does what it says (node --test)
-        run: node --test crates/compiler/tests/controls.test.mjs
+        run: node --test crates/delvec/tests/controls.test.mjs
       # The second defect of this class reported from her hands: switching prefab
       # left the previous prefab's anchor labels drawn over the new one. Same
       # reason nothing caught it — the label pass runs only in a browser. This
@@ -160,7 +160,7 @@ jobs:
       # holds after the displayed model changes. A step for the same reason as
       # the line above.
       - name: a label belongs to the model that drew it (node --test)
-        run: node --test crates/compiler/tests/labels.test.mjs
+        run: node --test crates/delvec/tests/labels.test.mjs
       # Authored JSON has ONE canonical form, so an insertion is a one-line
       # diff instead of a whole-file rewrite
       # — a three-key insertion into a non-canonical zh-cn sidecar once produced
@@ -173,7 +173,7 @@ jobs:
       # shape CLAUDE.md rejects. As a step it gates from the moment it merges.
       #
       # The swept set is DERIVED, never listed. This step used to name two roots
-      # by hand — `crates/dsl/fixtures` and `crates/compiler/tests/fixtures` —
+      # by hand — `crates/dsl/fixtures` and `crates/delvec/tests/fixtures` —
       # which is the enumeration-somebody-remembered shape this repository
       # refuses elsewhere by name. It examined 240 of the 335 JSON files git
       # tracks, and 50 of the 95 it never looked at were not canonical, including
@@ -198,7 +198,7 @@ jobs:
       - name: the published crates would build standing alone
         run: bash tools/check-publishable.sh
       # The same crates ship a FRONT PAGE, and it is the only document in this
-      # repo whose reader has never seen this repo. `crates/compiler/README.md`
+      # repo whose reader has never seen this repo. `crates/delvec/README.md`
       # and `crates/dsl/README.md` are rendered verbatim on crates.io; the
       # `delvec` page may not open with "The deterministic compiler (spec-0002,
       # ADR-0001/0006/0011)", a citation a visitor cannot resolve. This gate is
@@ -902,7 +902,7 @@ jobs:
       - uses: actions/checkout@v4
       # LFS off: neither step below reads a prefab `.nbt` BODY — the pin check
       # is git history, and the zone-program audit expands the IR geometrically
-      # (`crates/grammar`'s `expand`), never touching a file under
+      # (`crates/delvec/src/grammar`'s `expand`), never touching a file under
       # `prefabs/`. Text-only gate, same reasoning as `campaign storybooks`.
       - uses: ./.github/actions/checkout-content
         with:

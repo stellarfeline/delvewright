@@ -23,11 +23,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_compiler::traversal::{
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::compiler::traversal::{
     DW_BARRIER_SURMOUNTED, DW_TRAVERSAL_IMPOSSIBLE, Locomotion, Traversal,
 };
 use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
@@ -40,7 +40,7 @@ fn read_hw(name: &str) -> String {
 /// keeper's stand to the room's exit — a straight north-south walk the barrier
 /// line below cuts across.
 const QUESTS_WALK: &str = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -69,7 +69,7 @@ const QUESTS_WALK: &str = r#"{
 /// fixture can put a chosen BODY on the route rather than only the keeper.
 fn quests_with_actor(entity: &str) -> String {
     serde_json::json!({
-        "dsl_version": "0.21.0",
+        "dsl_version": "0.21.1",
         "campaign_id": "hello-world",
         "stage": "quests",
         "content": {
@@ -108,7 +108,7 @@ fn dialogue_v06() -> String {
 /// cell (offset `[0, dy, 3]`) — the one place a body can cross.
 fn barrier_line(line: &str, middle: &str, middle_dy: i32) -> String {
     serde_json::json!({
-        "dsl_version": "0.21.0",
+        "dsl_version": "0.21.1",
         "campaign_id": "hello-world",
         "stage": "world-edits",
         "content": { "batches": [ {
@@ -142,7 +142,7 @@ fn barrier_line(line: &str, middle: &str, middle_dy: i32) -> String {
 /// declaration, exercised rather than asserted.
 fn npcs_declaring(base_entity: &str, locomotion: Option<&str>) -> String {
     let mut doc: serde_json::Value = serde_json::from_str(&read_hw("npcs.json")).unwrap();
-    doc["dsl_version"] = serde_json::json!("0.21.0");
+    doc["dsl_version"] = serde_json::json!("0.21.1");
     let npc = &mut doc["content"]["npcs"][0];
     npc["base_entity"] = serde_json::json!(base_entity);
     if let Some(l) = locomotion {
@@ -704,7 +704,7 @@ fn the_stage_5_actor_carries_the_same_declaration_and_the_same_proof() {
     let declared = |l: Option<&str>| {
         let mut doc: serde_json::Value =
             serde_json::from_str(&quests_with_actor("minecraft:sheep")).unwrap();
-        doc["dsl_version"] = serde_json::json!("0.21.0");
+        doc["dsl_version"] = serde_json::json!("0.21.1");
         if let Some(l) = l {
             doc["content"]["actors"][0]["traversal"] = serde_json::json!({ "locomotion": l });
         }

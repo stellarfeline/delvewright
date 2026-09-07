@@ -18,7 +18,7 @@
 
 mod common;
 
-use delvewright_compiler::continuity::check_npc_continuity;
+use delvec::compiler::continuity::check_npc_continuity;
 use delvewright_dsl::{Campaign, RawCampaign, Severity, parse_campaign};
 
 fn read_hw(name: &str) -> String {
@@ -59,7 +59,7 @@ fn parse(deferred: bool, quests: &str) -> Campaign {
 /// `obj/talk` completion bundle and the quest `on_complete` bundle.
 fn quests(talk_fx: &str, complete_fx: &str) -> String {
     r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

@@ -25,10 +25,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 const NS: &str = "hello-world";
@@ -91,7 +91,7 @@ fn build(quests: &str, dialogue: Option<&str>) -> BuildOutput {
 fn quests_doc(prelude: &str, effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -132,7 +132,7 @@ fn trap_prelude(effects: &str) -> String {
 fn respawn_dialogue(effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {{
@@ -316,7 +316,7 @@ fn a_set_flag_in_a_dialogue_respawn_bundle_gets_its_objective() {
 fn every_effect_root_declares_the_objectives_it_writes() {
     let quests = format!(
         r#"{{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

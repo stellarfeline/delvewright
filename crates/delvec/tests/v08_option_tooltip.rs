@@ -17,11 +17,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 
 /// The wine beat's shape: a caption on the button, the whole spoken line hovering.
@@ -66,7 +66,7 @@ fn hello_world_with_dialogue(
     let dpath = tmp.join("dialogue.json");
     let mut dlg: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&dpath).unwrap()).unwrap();
-    dlg["dsl_version"] = serde_json::json!("0.21.0");
+    dlg["dsl_version"] = serde_json::json!("0.21.1");
     mutate(&mut dlg);
     std::fs::write(&dpath, serde_json::to_string_pretty(&dlg).unwrap()).unwrap();
     tmp

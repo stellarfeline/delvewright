@@ -492,7 +492,7 @@ fn dw0183_reserves_the_translation_tag_block() {
 /// requires a defective emitter to exist is a test that only runs once.
 #[test]
 fn dw0185_catches_an_authored_string_emitted_as_a_literal() {
-    use delvewright_compiler::emit;
+    use delvec::compiler::emit;
     let mut out: emit::BuildOutput = BTreeMap::new();
     out.insert(
         "datapack/data/x/function/leak.mcfunction".to_string(),
@@ -848,7 +848,7 @@ fn renaming_one_body_makes_another_bodys_row_stale_dw0187() {
     // onward (`l10n::ACTOR_NAME_ENTRY`): the widening that inventoried
     // it landed over v0.6 surface. The
     // pair to this line is `an_actor_nameplate_is_not_demanded_below_0_10`.
-    q["dsl_version"] = serde_json::json!("0.21.0");
+    q["dsl_version"] = serde_json::json!("0.21.1");
     q["content"]["actors"] = serde_json::json!([
         { "id": "actor/ram-a", "entity": "minecraft:sheep",
           "name": "Ram of the Cave", "anchor": "anchor/hall" },

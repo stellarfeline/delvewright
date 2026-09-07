@@ -5,7 +5,7 @@
 //!
 //! The GPU arms' own CLI paths — texture resolution failing before any
 //! rendering is attempted, and `--view` spec parsing — stayed with the binary
-//! that has them, in `crates/render/tests/cli.rs`.
+//! that has them, in `crates/delvec/tests/render_cli.rs`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -20,7 +20,7 @@ fn tmp(tag: &str) -> PathBuf {
 }
 
 fn render_plan_mini() -> &'static [u8] {
-    include_bytes!("../../compiler/tests/fixtures/view/render-plan-mini.json")
+    include_bytes!("fixtures/view/render-plan-mini.json")
 }
 
 #[test]

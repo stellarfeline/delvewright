@@ -230,7 +230,7 @@ pub const DW_FOOTPRINT_CLASS: crate::DwCode = crate::DwCode::new("DW0848", crate
 ///
 /// One authority with two doors, on the pattern spec-0036 §1c fixed for the
 /// spatial contract: `delvec prefab audit` asks it at the admission event, where
-/// the library's integrity lives, and `delvewright_compiler::detail` asks it
+/// the library's integrity lives, and `delvec::compiler::detail` asks it
 /// again wherever a `detail-plan` row consumes the piece. Two implementations
 /// that agreed until they did not is the failure this shape removes.
 ///
@@ -1248,7 +1248,7 @@ mod tests {
     "id": "chapel-ward",
     "size": [16, 9, 26],
     "data_version": 4671,
-    "generator": "crates/grammar"
+    "generator": "crates/delvec/src/grammar"
   },
   "anchors": {
     "anchor/bell": { "pos": [3, 1, 4], "facing": "north" },
@@ -1437,7 +1437,7 @@ mod tests {
     "part_max": 48,
     "grid": [1, 1, 2],
     "data_version": 4671,
-    "generator": "crates/grammar",
+    "generator": "crates/delvec/src/grammar",
     "parts": [
       { "file": "notre-dame.x0y0z0.nbt", "id": "a", "grid_index": [0,0,0], "offset": [0,0,0], "size": [31,48,48] },
       { "file": "notre-dame.x0y0z1.nbt", "id": "b", "grid_index": [0,0,1], "offset": [0,0,48], "size": [31,48,45] }

@@ -54,8 +54,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 TOOL = REPO / "tools" / "block-appearance.py"
 EXTRACTOR = REPO / "tools" / "extract-block-classification.py"
-CLASSIFICATION = REPO / "crates" / "compiler" / "data" / "block-classification-1.21.11.json"
-ASSEMBLED = REPO / "crates" / "compiler" / "src" / "assembled.rs"
+CLASSIFICATION = REPO / "crates" / "delvec" / "data" / "block-classification-1.21.11.json"
+ASSEMBLED = REPO / "crates" / "delvec" / "src" / "compiler" / "assembled.rs"
 
 
 def load(path: Path):

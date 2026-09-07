@@ -21,11 +21,11 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use delvewright_grammar::Program;
-use delvewright_grammar::block::BlockState;
-use delvewright_grammar::ir::{Material, Node};
-use delvewright_grammar::library::{ambush_door, store_room};
-use delvewright_grammar::{AnchorRole, Mark, MarkAt};
+use delvec::grammar::Program;
+use delvec::grammar::block::BlockState;
+use delvec::grammar::ir::{Material, Node};
+use delvec::grammar::library::{ambush_door, store_room};
+use delvec::grammar::{AnchorRole, Mark, MarkAt};
 
 /// `delvec grammar …`: the one binary, entered at the grammar program surface.
 fn grammar() -> Command {

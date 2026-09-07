@@ -22,10 +22,10 @@
 
 mod common;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::{Plan, ResolvedAnchor, Step};
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::{Plan, ResolvedAnchor, Step};
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -227,7 +227,7 @@ fn one_provider_still_crosses_and_the_two_authorities_agree() {
             }
         }
     }
-    let out = delvewright_compiler::emit::build(
+    let out = delvec::compiler::emit::build(
         &plan,
         &BTreeMap::new(),
         &structures,

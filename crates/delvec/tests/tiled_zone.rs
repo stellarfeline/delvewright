@@ -19,10 +19,10 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::emit;
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::emit;
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Severity, parse_campaign};
 
 /// Where the corridor's anchors sit, in whole-zone coordinates. `exit` is past
@@ -91,7 +91,7 @@ fn build(root: &Path, id: &str) -> (Plan<'static>, emit::BuildOutput) {
         &plan,
         &loaded.inputs,
         &structures,
-        &delvewright_compiler::commands::CommandTree::v1_21_11(),
+        &delvec::compiler::commands::CommandTree::v1_21_11(),
         &prefabs,
         None,
         &BTreeMap::new(),
@@ -193,7 +193,7 @@ fn the_assembled_world_is_the_zone_the_cut_never_happened_to() {
         let bytes = std::fs::read(prefabs_dir.join(&template.structure_file)).unwrap();
         structures.insert(template.structure_file.clone(), bytes);
     }
-    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &structures);
     let origin = plan.areas[0].pieces[0].pos;
     let at = |x: i32, y: i32, z: i32| {
         blocks
@@ -226,7 +226,7 @@ fn the_assembled_world_is_the_zone_the_cut_never_happened_to() {
         .anchors
         .get(&("area/keep".to_string(), "anchor/exit".to_string()))
         .expect("anchor/exit resolves");
-    let delvewright_compiler::plan::ResolvedAnchor::Point { pos, .. } = exit else {
+    let delvec::compiler::plan::ResolvedAnchor::Point { pos, .. } = exit else {
         panic!("anchor/exit is a point anchor");
     };
     assert_eq!(*pos, [origin[0] + 4, origin[1] + 1, origin[2] + 55]);

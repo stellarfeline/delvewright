@@ -150,7 +150,7 @@ socket placements, anchors, and all metadata JSON are byte-identical — only th
   seabed depth profile, water, and scatter inside the basin are unchanged.
 
 Both are now caught at **compile time** by `DW0311` (critical-path walkability over
-the assembled geometry, `crates/compiler/src/nav.rs`), so this bug class fails the
+the assembled geometry, `crates/delvec/src/compiler/nav.rs`), so this bug class fails the
 build instead of a bot run: with the pre-fix `.nbt`, `delvec build nobodys-cave`
 fails `DW0311` on the entry→cavern leg; with the fixed `.nbt` it routes clean and no
 walkable cell borders the void.

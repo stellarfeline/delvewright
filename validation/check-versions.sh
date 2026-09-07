@@ -24,7 +24,7 @@ ENGINE_RELEASE_WF="$ROOT/.github/workflows/engine-release.yml"
 SKIN_REQ="$ROOT/tools/skin/requirements.txt"
 SKIN_PYPROJECT="$ROOT/tools/skin/pyproject.toml"
 SKIN_CATALOG="$ROOT/tools/skin/delve_skin/catalog.py"
-RENDER_CARGO="$ROOT/crates/render/Cargo.toml"
+DELVEC_CARGO="$ROOT/crates/delvec/Cargo.toml"
 BOOTSTRAP_SH="$ROOT/validation/server-bootstrap-cache.sh"
 
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found"; exit 2; }
@@ -140,7 +140,7 @@ fi
 # The pin's ZONE INVENTORY is a consumer of this value like any other.
 # `.github/content-zone-corpus.json` names the campaigns the pin carries and how
 # many zone programs each declares; every number in it is checked against the
-# content checkout by crates/grammar/tests/campaign_zones.rs. That check is only
+# content checkout by crates/delvec/tests/grammar_campaign_zones.rs. That check is only
 # about the right corpus while the record and the pin agree, so a re-pin that
 # leaves the inventory behind is caught here, in tier 1, with no content checkout
 # needed — rather than measuring the new tree against the old pin's expectations.
@@ -167,10 +167,10 @@ if [[ $NUCLEATION_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 else
   fail "render.nucleation_version '$NUCLEATION_VERSION' is not an exact x.y.z version"
 fi
-if [ -f "$RENDER_CARGO" ]; then
-  want_in "nucleation =version -> crates/render/Cargo.toml" "nucleation = { version = \"=$NUCLEATION_VERSION\"" "$RENDER_CARGO"
+if [ -f "$DELVEC_CARGO" ]; then
+  want_in "nucleation =version -> crates/delvec/Cargo.toml" "nucleation = { version = \"=$NUCLEATION_VERSION\"" "$DELVEC_CARGO"
 else
-  fail "crates/render/Cargo.toml missing (cannot verify the render dep pin)"
+  fail "crates/delvec/Cargo.toml missing (cannot verify the render dep pin)"
 fi
 # deepslate is BUNDLED, unlike every other renderer here, so the pin has to bind
 # to the bytes rather than to a version string: the page carries the renderer
@@ -213,7 +213,7 @@ fi
 echo "== Engine release line ([engine], ADR-0016 / ADR-0017 / ADR-0023) =="
 # ADR-0016 requires four numbers to be ONE number: the version compiled into the
 # binary, the git tag, the crates.io version, and the window the `/new-delve`
-# skill declares — and ADR-0023 §6 puts seven crates on that one number. Here
+# skill declares — and ADR-0025 puts one crate, `delvec`, on that one number. Here
 # they are bound; `.github/workflows/engine-release.yml` binds the git tag at release time
 # (it cannot be checked from a working tree), and the skill's window is bound in
 # the campaigns repository, by `tools/check-skill-version.py` there — the page
@@ -260,10 +260,15 @@ def resolved(pkg, key):
 
 members = {m: load_member(m) for m in ws["members"]}
 by_name = {mani["package"]["name"]: (m, mani) for m, mani in members.items()}
-engine_names = [e["crate"], *e["crates"]]
+# 0. The publish set is exactly the format crate, then the engine, in that
+#    order (ADR-0025). A third name here is a third crate, which is refused.
+publish_set = list(e["crates"])
+(ok if publish_set == [e["dsl_crate"], e["crate"]] else bad)(
+    f"[engine].crates == [dsl_crate, crate] in publish order (found: {publish_set})")
+engine_names = [n for n in publish_set if n != e["dsl_crate"]]
 
 # 1. The engine version line is ONE literal: `[workspace.package] version`,
-#    inherited by every engine crate (ADR-0023 §6). The DSL crate keeps its own.
+#    inherited by the engine crate (ADR-0025). The DSL crate keeps its own.
 (ok if ws_pkg.get("version") == e["version"] else bad)(
     f"root Cargo.toml [workspace.package] version {ws_pkg.get('version')!r} (manifest: {e['version']!r})")
 for name in engine_names:
@@ -296,19 +301,20 @@ for m, mani in members.items():
 (ok if bins == [(e["crate"], "delvec")] else bad)(
     f"exactly one [[bin]] in the workspace, `delvec` in package {e['crate']!r} (found: {bins})")
 
-# 3. The compiler library target keeps its name: every `use` path spells it.
-_, compiler = by_name.get("delvewright-compiler", (None, {}))
-lib_name = compiler.get("lib", {}).get("name")
-(ok if lib_name == "delvewright_compiler" else bad)(
-    f"compiler lib target name {lib_name!r} (must stay 'delvewright_compiler')")
+# 3. The engine's library target is the package's own name: every `use` path
+#    in the binary and the tests spells `delvec::…` (ADR-0025).
+_, engine = by_name.get(e["crate"], (None, {}))
+lib_name = engine.get("lib", {}).get("name")
+(ok if lib_name == e["crate"] else bad)(
+    f"{e['crate']} lib target name {lib_name!r} (must be {e['crate']!r})")
 
 # 4. Every in-tree dependency is declared ONCE, in `[workspace.dependencies]`,
 #    with the `=` requirement that is the only binding left once `path` is
-#    stripped on publish: `=<engine version>` for engine crates, the DSL
-#    crate's own `dsl_crate_req`. A member manifest may name a sibling only as
-#    `name.workspace = true`.
+#    stripped on publish — the DSL crate's own `dsl_crate_req`; nothing depends
+#    on the engine crate, so it has no entry. A member manifest may name a
+#    sibling only as `name.workspace = true`.
 n_req = 0
-for name in [e["dsl_crate"], *e["crates"]]:
+for name in [n for n in publish_set if n != e["crate"]]:
     spec = ws_deps.get(name)
     want = e["dsl_crate_req"] if name == e["dsl_crate"] else f"={e['version']}"
     req = spec.get("version") if isinstance(spec, dict) else None
@@ -326,13 +332,15 @@ for m, mani in members.items():
     "every in-tree dependency of every member goes through [workspace.dependencies]"
     if not stray else f"in-tree dependencies declared outside [workspace.dependencies]: {stray}")
 
-# 5. Publishability inventory, in BOTH directions (ADR-0023 §6): every member
-#    under `crates/` is on versions.toml's list and is publishable; the root
-#    excludes nothing under `crates/`. A crate added without a versions.toml row
-#    would otherwise be swept onto crates.io by the first `--workspace` anything,
+# 5. Publishability inventory, in BOTH directions (ADR-0025): every member
+#    under `crates/` is one of the two names versions.toml publishes and is
+#    publishable, both names are members, and the root excludes nothing under
+#    `crates/`. A third crate is refused here by name — the decision is taken:
+#    a feature adds a module to `delvec`. Without this a crate added beside the
+#    two would be swept onto crates.io by the first `--workspace` anything,
 #    irreversibly — or, with `publish = false`, would silently leave the binary
 #    with a dependency `cargo install delvec` cannot resolve.
-publishable = {e["crate"], e["dsl_crate"], *e["crates"]}
+publishable = set(publish_set)
 n_pub = 0
 for m, mani in members.items():
     name, flag = mani["package"]["name"], mani["package"].get("publish", True)
@@ -340,7 +348,7 @@ for m, mani in members.items():
         n_pub += 1
         (ok if flag is not False else bad)(f"{name} is publishable")
     else:
-        bad(f"{name} ({m}) is a workspace member versions.toml [engine] does not name — a new crate is a decision")
+        bad(f"{name} ({m}) is a workspace member versions.toml [engine].crates does not name — a third crate is refused (ADR-0025): add a module to delvec")
 missing = publishable - set(by_name)
 if missing:
     bad(f"versions.toml names crate(s) that are not workspace members: {sorted(missing)}")

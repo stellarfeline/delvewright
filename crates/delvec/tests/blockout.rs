@@ -22,9 +22,9 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::blockout::{self, Perturb};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::blockout::{self, Perturb};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::siteplan::PlacedBox;
 use delvewright_dsl::{Campaign, Severity};
 
@@ -34,7 +34,7 @@ fn fixture_dir() -> std::path::PathBuf {
 }
 
 fn campaign() -> Campaign {
-    let loaded = delvewright_compiler::load::load_campaign_dir(&fixture_dir())
+    let loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir())
         .expect("the blockout fixture is readable");
     delvewright_dsl::parse_campaign(&loaded.raw).expect("the blockout fixture parses")
 }
@@ -52,7 +52,7 @@ fn battery_under(perturb: Perturb) -> (blockout::Battery, Vec<String>) {
     let reg = prefabs();
     let plan = Plan::build_with(&c, &reg, perturb).expect("the blockout fixture plans");
     let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &structures);
     let battery = blockout::check(&plan, &blocks).expect("a site-plan campaign has a blockout");
     let codes = battery
         .findings
@@ -291,12 +291,12 @@ fn a_low_wall_reddens_dw0838() {
 
 /// The derived world of the unperturbed fixture, for tests that read blocks
 /// rather than findings.
-fn derived_world() -> (Vec<PlacedBox>, delvewright_compiler::nav::World) {
+fn derived_world() -> (Vec<PlacedBox>, delvec::compiler::nav::World) {
     let c = campaign();
     let reg = prefabs();
     let plan = Plan::build(&c, &reg).expect("the blockout fixture plans");
     let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    let world = delvewright_compiler::nav::World::from_plan(&plan, &structures);
+    let world = delvec::compiler::nav::World::from_plan(&plan, &structures);
     let boxes = plan
         .blockout
         .as_ref()
@@ -653,7 +653,10 @@ fn the_parameterised_derivation_has_exactly_one_production_caller() {
     let sites: Vec<&str> = callers.iter().map(|(f, _)| f.as_str()).collect();
     assert_eq!(
         sites,
-        vec!["crates/compiler/src/plan.rs", "crates/delvec/src/main.rs"],
+        vec![
+            "crates/delvec/src/compiler/plan.rs",
+            "crates/delvec/src/main.rs"
+        ],
         "the parameterised derivation acquired a caller: {callers:#?}"
     );
     assert!(
@@ -667,8 +670,8 @@ fn the_parameterised_derivation_has_exactly_one_production_caller() {
     assert_eq!(
         named_perturb.iter().map(String::as_str).collect::<Vec<_>>(),
         vec![
-            "crates/compiler/src/blockout.rs",
-            "crates/compiler/src/plan.rs",
+            "crates/delvec/src/compiler/blockout.rs",
+            "crates/delvec/src/compiler/plan.rs",
             "crates/delvec/src/main.rs",
         ],
         "binding: {} source file(s) scanned, {} call site(s) found",
@@ -700,7 +703,7 @@ fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
 /// exists and does nothing is a red rather than a pass.
 #[test]
 fn every_perturb_field_has_a_knob() {
-    use delvewright_compiler::blockout::Knob;
+    use delvec::compiler::blockout::Knob;
 
     let place = "node/exit";
     let mut seen = 0;
@@ -792,7 +795,7 @@ fn the_synthesized_vocabulary_carries_the_unchanged_quest_layer() {
         .anchors
         .entry_anchor(&area)
         .expect("the entry place carries the campaign's spawn");
-    let delvewright_compiler::plan::ResolvedAnchor::Point { pos, .. } = entry else {
+    let delvec::compiler::plan::ResolvedAnchor::Point { pos, .. } = entry else {
         panic!("an entry is a place to stand, not a region");
     };
     assert_eq!(*pos, [7, 64, 11], "the entry stands on the landing's floor");
@@ -805,7 +808,7 @@ fn the_synthesized_vocabulary_carries_the_unchanged_quest_layer() {
     // test green on the fallback and silently reinstate the folklore.
     assert_eq!(
         plan.anchors
-            .role_name(&area, delvewright_compiler::plan::AnchorRole::Entry),
+            .role_name(&area, delvec::compiler::plan::AnchorRole::Entry),
         Some(delvewright_dsl::ENTRY_ANCHOR),
         "the derivation declares what its entry anchor is FOR"
     );
@@ -834,7 +837,7 @@ fn the_synthesized_vocabulary_carries_the_unchanged_quest_layer() {
         .expect("the barred seam is a gate region");
     assert!(matches!(
         gate,
-        delvewright_compiler::plan::ResolvedAnchor::Gate { .. }
+        delvec::compiler::plan::ResolvedAnchor::Gate { .. }
     ));
 
     // And the DSL's own answer about which anchors exist agrees with what the
@@ -969,7 +972,7 @@ fn a_contact_leaves_exactly_its_span_open_on_the_shared_wall() {
     let reg = prefabs();
     let plan = Plan::build_with(&c, &reg, Perturb::none()).expect("the fixture plans");
     let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &structures);
     let bo = plan
         .blockout
         .as_ref()

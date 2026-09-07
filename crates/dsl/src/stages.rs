@@ -1430,7 +1430,7 @@ pub struct KitItem {
 ///
 /// Read off the pinned 1.21.11 `item_components` summary (SHA-256
 /// `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4`, the same
-/// misode/mcmeta ref `crates/compiler/data/PROVENANCE.md` pins): exactly these
+/// misode/mcmeta ref `crates/delvec/data/PROVENANCE.md` pins): exactly these
 /// four items declare the component, and on any other item the game drops the
 /// data on the floor.
 pub const POTION_BEARING_ITEMS: &[&str] = &[
@@ -4834,7 +4834,7 @@ pub enum Verb {
     /// **The selection is total over bodies.** Emission is a single `tp
     /// @e[<box>,tag=!dw_fixture] <cell>` with no `type=`, no `limit=` and no
     /// `sort=` — every body in the volume moves, and
-    /// `crates/compiler/tests/v10_teleport.rs` asserts that from the emitted
+    /// `crates/delvec/tests/v10_teleport.rs` asserts that from the emitted
     /// selector rather than from anyone's memory. A machinery-**type** exemption
     /// of the kind a `lethal_volumes[]` entry must carry was considered and
     /// **rejected**: an NPC is a body plus a co-located `minecraft:interaction`

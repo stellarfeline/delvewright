@@ -10,10 +10,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
 
 fn quests_doc(loot: &str) -> String {
@@ -23,7 +23,7 @@ fn quests_doc(loot: &str) -> String {
 fn quests_doc_with(loot: &str, actors: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

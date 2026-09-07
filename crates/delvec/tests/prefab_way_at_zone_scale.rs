@@ -33,13 +33,13 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_admit::structure::{PaletteEntry, Structure};
-use delvewright_grammar::export::export_zone;
-use delvewright_grammar::ir::{
+use delvec::admit::structure::{PaletteEntry, Structure};
+use delvec::grammar::export::export_zone;
+use delvec::grammar::ir::{
     EdgeClass, Mark, MarkAt, Node, Opens, Program, Reorient, Rounding, Size, Split, Way,
 };
-use delvewright_grammar::library::spatial_contract::spatial_contract;
-use delvewright_grammar::{Axis, Box3, ExpandOptions};
+use delvec::grammar::library::spatial_contract::spatial_contract;
+use delvec::grammar::{Axis, Box3, ExpandOptions};
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {
@@ -165,7 +165,7 @@ fn tiled(tag: &str, program: &Program) -> Zone {
         .write_to_dir(&dir)
         .unwrap();
     let manifest = dir.join("zone.json");
-    let set = delvewright_schem::split::read_tile_set(&manifest)
+    let set = delvec::schem::split::read_tile_set(&manifest)
         .expect("the manifest reads")
         .expect("the export tiled");
     assert!(
@@ -178,7 +178,7 @@ fn tiled(tag: &str, program: &Program) -> Zone {
 struct Zone {
     dir: PathBuf,
     manifest: PathBuf,
-    set: delvewright_schem::split::TileSet,
+    set: delvec::schem::split::TileSet,
 }
 
 impl Zone {

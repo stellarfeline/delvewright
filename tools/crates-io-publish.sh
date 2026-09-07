@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# ADR-0017 / ADR-0023 §6: publish every crate the engine is made of —
-# `delvewright-dsl`, the engine library crates and `delvec` — to crates.io from
-# CI, the only path there is. No human ever runs `cargo publish` for this
+# ADR-0017 / ADR-0025: publish the two crates the engine is made of —
+# `delvewright-dsl`, then `delvec` — to crates.io from CI, the only path there is. No human ever runs `cargo publish` for this
 # project. The set and its order come from `versions.toml [engine]`.
 #
 # THE ONE-WAY DOOR
@@ -14,7 +13,7 @@
 # WHY THIS IS IDEMPOTENT, AND WHY THAT IS NOT A SHORTCUT
 #
 # Every dependency must land before its dependent, so the sequence can
-# half-succeed: the dsl and the library crates uploaded, `delvec` rejected.
+# half-succeed: the dsl uploaded, `delvec` rejected.
 # Naively retried, the second run dies on "crate version already uploaded" and
 # those versions are burned. This script instead asks the registry what it
 # already holds:
@@ -165,7 +164,7 @@ sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-new
 e = tomllib.load(open(sys.argv[1], "rb"))["engine"]
 for k in ("version", "crate", "dsl_crate", "dsl_crate_version"):
     print(f'{k.upper()}={e[k]!r}'.replace("'", '"'))
-print('ENGINE_CRATES=' + repr(" ".join(e["crates"])).replace("'", '"'))
+print('PUBLISH_CRATES=' + repr(" ".join(e["crates"])).replace("'", '"'))
 PY
 )"
 
@@ -373,12 +372,15 @@ echo "  ok   serde 1.0.0 resolves to sha256 $probe"
 echo
 
 # ------------------------------------------------------------------- the plan
-# Dependency order, as versions.toml states it: the DSL crate, the engine
-# library crates, the binary last. bash 3.2 (macOS) has no `mapfile`.
-NAMES=("$DSL_CRATE")
-VERS=("$DSL_CRATE_VERSION")
-for n in $ENGINE_CRATES; do NAMES+=("$n"); VERS+=("$VERSION"); done
-NAMES+=("$CRATE"); VERS+=("$VERSION")
+# Publish order, as versions.toml states it: the format crate, then the engine
+# (ADR-0025); each name's version is its own line's. bash 3.2 (macOS) has no
+# `mapfile`.
+NAMES=()
+VERS=()
+for n in $PUBLISH_CRATES; do
+  NAMES+=("$n")
+  if [ "$n" = "$DSL_CRATE" ]; then VERS+=("$DSL_CRATE_VERSION"); else VERS+=("$VERSION"); fi
+done
 DECLARED="${#NAMES[@]}"
 
 # --only: one crate the manifest declares, and only one. A name it does not
@@ -527,6 +529,6 @@ echo
 if [ -n "$ONLY" ]; then
   echo "crates-io-publish: OK — $ONLY ${VERS[0]} is on crates.io ($DECLARED declared, 1 selected)"
 else
-  echo "crates-io-publish: OK — ${#NAMES[@]} crate(s) are on crates.io: $DSL_CRATE $DSL_CRATE_VERSION, and $CRATE $VERSION with its $((${#NAMES[@]} - 2)) library crates"
+  echo "crates-io-publish: OK — ${#NAMES[@]} crate(s) are on crates.io: $DSL_CRATE $DSL_CRATE_VERSION and $CRATE $VERSION"
   echo "crates-io-publish: \`cargo install $CRATE\` now resolves to $VERSION"
 fi

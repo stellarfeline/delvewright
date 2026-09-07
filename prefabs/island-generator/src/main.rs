@@ -21,7 +21,7 @@
 //!     base at world `sea_level-2` (y=60), the authored water meets the world
 //!     ocean seamlessly.
 //!   * The walkable land plane is **local y=3** — ONE block above the waterline.
-//!     Water (the conservative compiler flood, `crates/compiler/src/assembled.rs`)
+//!     Water (the conservative compiler flood, `crates/delvec/src/compiler/assembled.rs`)
 //!     spreads horizontally and downward but never CLIMBS, so a y=3 walk surface
 //!     over solid-at-y=2 land can never flood: dry standable cells are dry by
 //!     construction, not by distance. That is why the tutorial `surf-wave` anchor
