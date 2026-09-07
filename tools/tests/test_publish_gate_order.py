@@ -29,11 +29,18 @@ to reach a fake index at all (`DW_CRATES_INDEX` does not exist there — its bin
 test hits the real `https://index.crates.io`, unconditionally), so running IT
 offline is exactly the case the brief's fallback names: `test_red_on_the_
 original_gate_leaves_no_tarball_for_the_plan` runs only the base revision's
-`check-publishable.sh` (read via `git show`, never checked out in the working
-tree) and asserts the tarball-presence contract `crates-io-publish.sh`'s
+`check-publishable.sh`, frozen as
+`tools/tests/fixtures/check-publishable-d5908698.sh` (a `git show` at test time
+does not survive CI's shallow checkout — the required-status job running this
+suite hit exactly that, `git show d5908698:...` exiting 128 because the commit
+is not in the clone — and reaching into git history for a red instrument is the
+wrong shape regardless: a frozen measurement names its instrument by exact
+revision and CARRIES it, never through an indirection that can vanish).
+The test asserts the tarball-presence contract `crates-io-publish.sh`'s
 `local_crate_path` checks — the exact `.crate` path is gone after a run that
 printed OK, which is the release run's reported error one level down, without
-needing the network the old plan would otherwise demand.
+needing the network the old plan would otherwise demand and without invoking
+`git` at all.
 GREEN AFTER: `test_the_plan_reads_what_the_gate_packaged` runs the CURRENT two
 scripts, in sequence, through `DW_CRATES_INDEX`, and asserts `--plan` reports
 every engine crate (`delvewright-dsl 0.20.0` and `delvec 1.2.0` included) as
@@ -55,7 +62,16 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 LIB = REPO / "tools" / "lib"
-BASE_REV = "d5908698"  # the brief's named base revision — frozen history, not live tooling
+# `d5908698:tools/check-publishable.sh`, frozen — see the fixture's own header
+# comment for the revision and why it exists. Read as a committed file, never
+# via `git show`: CI's shallow checkout does not carry that commit at all (the
+# required-status job running this suite: `git show d5908698:...` exited 128,
+# "invalid object name"), and a red instrument reached through git history is
+# an indirection that can vanish out from under the test regardless of
+# checkout depth.
+FIXTURE_CHECK_PUBLISHABLE_D5908698 = (
+    Path(__file__).resolve().parent / "fixtures" / "check-publishable-d5908698.sh"
+)
 
 
 def _engine_crates(versions_toml: Path) -> list[tuple[str, str]]:
@@ -241,13 +257,7 @@ def test_the_plan_reads_what_the_gate_packaged(tmp_path: Path, fake_index: str) 
 
 
 def test_red_on_the_original_gate_leaves_no_tarball_for_the_plan(tmp_path: Path) -> None:
-    check_src = subprocess.run(
-        ["git", "show", f"{BASE_REV}:tools/check-publishable.sh"],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
+    check_src = FIXTURE_CHECK_PUBLISHABLE_D5908698.read_text(encoding="utf-8")
     # `versions.toml` at HEAD (dsl_crate_version 0.20.0) still names the
     # derivation the base script's own inline python reads, so this is the
     # crate/version set that revision would have decided about — not a frozen
