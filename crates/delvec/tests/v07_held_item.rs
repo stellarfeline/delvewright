@@ -32,7 +32,7 @@ const HINT: &str = "The bar does not shift for bare hands.";
 fn quests_doc(extra: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

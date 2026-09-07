@@ -77,7 +77,7 @@ fn codes(quests: &str) -> Vec<String> {
 #[test]
 fn the_status_effect_pair_validates_clean() {
     let q = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[
       { "type": "give-effect", "effect": "minecraft:blindness", "seconds": 6,
         "amplifier": 1, "hide_particles": true,
@@ -96,7 +96,7 @@ fn an_unknown_effect_id_is_dw0192() {
         r#"{ "type": "give-effect", "effect": "minecraft:courage", "seconds": 5 }"#,
         r#"{ "type": "clear-effect", "effect": "minecraft:courage" }"#,
     ] {
-        let q = quests_with("0.20.0", &format!("[{verb}]"));
+        let q = quests_with("0.21.0", &format!("[{verb}]"));
         assert!(
             codes(&q).contains(&"DW0192".to_string()),
             "unknown effect id must be DW0192 for {verb}"
@@ -112,14 +112,14 @@ fn an_unknown_effect_id_is_dw0192() {
 #[test]
 fn a_bare_effect_id_is_the_same_effect() {
     let bare = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[{ "type": "give-effect", "effect": "blindness", "seconds": 5 }]"#,
     );
     let d = check_campaign(&campaign_with(&bare));
     assert!(d.is_empty(), "a bare id is valid: {d:#?}");
 
     let mixed = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[
       { "type": "give-effect", "effect": "blindness", "seconds": 60 },
       { "type": "clear-effect", "effect": "minecraft:blindness" }
@@ -141,7 +141,7 @@ fn out_of_range_duration_or_amplifier_is_dw0541() {
         r#"{ "type": "give-effect", "effect": "minecraft:speed", "seconds": 5,
              "amplifier": 300 }"#,
     ] {
-        let q = quests_with("0.20.0", &format!("[{effect}]"));
+        let q = quests_with("0.21.0", &format!("[{effect}]"));
         assert!(
             codes(&q).contains(&"DW0541".to_string()),
             "expected DW0541 for {effect}, got {:#?}",
@@ -156,7 +156,7 @@ fn out_of_range_duration_or_amplifier_is_dw0541() {
 #[test]
 fn a_grant_removed_by_a_later_effect_in_the_same_sequence_is_dw0540() {
     let q = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[
       { "type": "sequence", "steps": [
         { "at_ticks": 0, "effects": [
@@ -183,7 +183,7 @@ fn a_grant_removed_by_a_later_effect_in_the_same_sequence_is_dw0540() {
 #[test]
 fn a_clear_all_also_triggers_dw0540() {
     let q = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[
       { "type": "sequence", "steps": [
         { "at_ticks": 0, "effects": [
@@ -200,7 +200,7 @@ fn a_clear_all_also_triggers_dw0540() {
 #[test]
 fn a_self_limiting_grant_is_clean() {
     let q = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[
       { "type": "sequence", "steps": [
         { "at_ticks": 0, "effects": [
@@ -221,7 +221,7 @@ fn a_self_limiting_grant_is_clean() {
 #[test]
 fn a_clear_after_the_duration_expires_is_not_dw0540() {
     let q = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[
       { "type": "sequence", "steps": [
         { "at_ticks": 0, "effects": [
@@ -243,7 +243,7 @@ fn a_clear_after_the_duration_expires_is_not_dw0540() {
 #[test]
 fn a_grant_and_clear_in_one_flat_bundle_is_dw0540() {
     let q = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[
       { "type": "give-effect", "effect": "minecraft:glowing", "seconds": 30 },
       { "type": "clear-effect", "effect": "minecraft:glowing" }
@@ -256,7 +256,7 @@ fn a_grant_and_clear_in_one_flat_bundle_is_dw0540() {
 #[test]
 fn a_clear_of_another_effect_is_clean() {
     let q = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[
       { "type": "give-effect", "effect": "minecraft:blindness", "seconds": 60 },
       { "type": "clear-effect", "effect": "minecraft:poison" }
@@ -274,7 +274,7 @@ fn a_clear_of_another_effect_is_clean() {
 #[test]
 fn the_removal_is_the_earliest_by_tick_not_by_declaration_order() {
     let q = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[
       { "type": "sequence", "steps": [
         { "at_ticks": 0, "effects": [
@@ -299,7 +299,7 @@ fn the_removal_is_the_earliest_by_tick_not_by_declaration_order() {
 #[test]
 fn a_clear_declared_above_the_grant_but_scheduled_after_it_is_dw0540() {
     let q = quests_with(
-        "0.20.0",
+        "0.21.0",
         r#"[
       { "type": "sequence", "steps": [
         { "at_ticks": 6, "effects": [
@@ -318,7 +318,7 @@ fn a_clear_declared_above_the_grant_but_scheduled_after_it_is_dw0540() {
 #[test]
 fn the_rule_reaches_every_effect_root() {
     let q = r#"{
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

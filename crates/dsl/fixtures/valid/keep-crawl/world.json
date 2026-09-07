@@ -23,6 +23,6 @@
     "theme": "A gatehouse on the moor, and the stone keep it guards.",
     "title": "The Keep Crawl"
   },
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "stage": "world"
 }

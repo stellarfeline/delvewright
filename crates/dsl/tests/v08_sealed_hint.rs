@@ -9,7 +9,7 @@ use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, parse_campaig
 
 /// A v0.8 quests document that seals `anchor/door` with an authored answer.
 const QUESTS_V08: &str = r#"{
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

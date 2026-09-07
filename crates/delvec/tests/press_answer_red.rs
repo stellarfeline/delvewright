@@ -64,7 +64,7 @@ const ANSWER: &str = r#"{ "id": "trigger/from-the-wrong-side", "at": "anchor/doo
 #[test]
 fn a_barred_door_with_nothing_to_say_is_refused() {
     let mut c = fixture();
-    c.quests.dsl_version = "0.20.0".to_string();
+    c.quests.dsl_version = "0.21.0".to_string();
     let diags = diagnostics(&c);
     assert!(
         diags.iter().any(|d| d.code == "DW0429"),
@@ -87,7 +87,7 @@ fn a_barred_door_with_nothing_to_say_is_refused() {
 fn an_unauthored_seal_is_refused_by_the_same_rule() {
     let hw = |n: &str| std::fs::read_to_string(common::hello_world_dir().join(n)).unwrap();
     let quests = r#"{
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -147,7 +147,7 @@ fn the_campaign_can_write_a_wrong_side_answer() {
         panic!("a campaign CANNOT express a wrong-side press answer on the general verb: {e}")
     });
     let mut c = fixture();
-    c.quests.dsl_version = "0.20.0".to_string();
+    c.quests.dsl_version = "0.21.0".to_string();
     c.quests.content.triggers.push(t);
     let diags = diagnostics(&c);
     assert!(

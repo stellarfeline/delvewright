@@ -62,7 +62,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// `play-sound` + `narrate style: art` validate clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(&quests_doc("0.20.0")));
+    let diags = check_campaign(&campaign_with_quests(&quests_doc("0.21.0")));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 surface, got: {diags:#?}"
