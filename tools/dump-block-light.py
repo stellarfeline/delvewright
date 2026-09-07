@@ -37,7 +37,7 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VERSIONS_TOML = ROOT / "versions.toml"
 JAVA_SRC = ROOT / "tools" / "blocklight" / "BlockLightDump.java"
-FIXTURE_DIR = ROOT / "crates" / "compiler" / "tests" / "fixtures" / "light"
+FIXTURE_DIR = ROOT / "crates" / "delvec" / "tests" / "fixtures" / "light"
 MANIFEST = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
 
 # The DEOBFUSCATED names the dumper needs, in the order BlockLightDump.java

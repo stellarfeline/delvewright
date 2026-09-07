@@ -92,7 +92,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 REGISTRY = REPO / "crates" / "dsl" / "data" / "blocks-1.21.11.json"
-CLASSIFICATION = REPO / "crates" / "compiler" / "data" / "block-classification-1.21.11.json"
+CLASSIFICATION = REPO / "crates" / "delvec" / "data" / "block-classification-1.21.11.json"
 
 # Generation-time working material only — gitignored, never shipped, and unable
 # to move a delve's bytes (ADR-0006) or carry a licence into one (ADR-0013).

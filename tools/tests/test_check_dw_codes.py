@@ -38,9 +38,10 @@ def gate(tmp_path, monkeypatch):
 
 
 def _rs(gate, crate: str, name: str, body: str) -> None:
-    src = gate.CRATES_DIR / crate / "src"
-    src.mkdir(parents=True, exist_ok=True)
-    (src / name).write_text(body, encoding="utf-8")
+    """A source file under `crates/<crate>/src/`; `name` may carry a module path."""
+    path = gate.CRATES_DIR / crate / "src" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
 
 
 def test_one_code_declared_by_two_constants_is_detected(gate):
@@ -218,17 +219,94 @@ def test_a_bare_code_literal_counts_in_every_idiom_the_repo_uses(gate):
 
 def test_a_symbolic_constant_counts_but_a_bare_import_does_not(gate):
     """A symbol comparison is a real assertion; an import alone is not a use."""
-    _rs(gate, "schem", "diag.rs", 'pub const DW_STRIP: &str = "DW0700";')
-    _test_rs(gate, "schem", "imports.rs", "use delvec::schem::diag::DW_STRIP;\n")
+    _rs(gate, "delvec", "schem/diag.rs", 'pub const DW_STRIP: &str = "DW0700";')
+    _test_rs(gate, "delvec", "imports.rs", "use delvec::schem::diag::DW_STRIP;\n")
     assert "DW0700" not in gate.tested_codes()
     _test_rs(
         gate,
-        "schem",
+        "delvec",
         "imports.rs",
         "use delvec::schem::diag::DW_STRIP;\n"
         "#[test]\nfn t() { assert_eq!(err.code, DW_STRIP); }\n",
     )
     assert "DW0700" in gate.tested_codes()
+
+
+def test_a_name_two_modules_declare_resolves_through_the_import_path(gate):
+    """`DW_INPUT` is `DW0710` in `schem::diag` and `DW0732` in `admit::diag`.
+    A test importing admit's credits admit's code and not schem's — a table
+    keyed by name alone would credit whichever module sorted last."""
+    _rs(gate, "delvec", "schem/diag.rs", 'pub const DW_INPUT: &str = "DW0710";')
+    _rs(gate, "delvec", "admit/diag.rs", 'pub const DW_INPUT: &str = "DW0732";')
+    _test_rs(
+        gate,
+        "delvec",
+        "audit.rs",
+        "use delvec::admit::diag::DW_INPUT;\n"
+        "#[test]\nfn t() { assert_eq!(d.code, DW_INPUT); }\n",
+    )
+    covered = gate.tested_codes()
+    assert "DW0732" in covered
+    assert "DW0710" not in covered
+
+
+def test_a_unit_test_sees_its_own_module_through_use_super_star(gate):
+    """A `#[cfg(test)] mod tests { use super::*; }` sees the constants of the
+    module that holds it — and only those, not a same-named one elsewhere."""
+    _rs(gate, "delvec", "schem/diag.rs", 'pub const DW_INPUT: &str = "DW0710";')
+    _rs(
+        gate,
+        "delvec",
+        "admit/diag.rs",
+        'pub const DW_INPUT: &str = "DW0732";\n'
+        "#[cfg(test)]\nmod tests {\n    use super::*;\n"
+        "    #[test]\n    fn t() { assert_eq!(d.code, DW_INPUT); }\n}\n",
+    )
+    covered = gate.tested_codes()
+    assert "DW0732" in covered
+    assert "DW0710" not in covered
+
+
+def test_a_name_nothing_imports_credits_nothing(gate):
+    """A bare name with no `use` line, no glob and no path is not in scope; the
+    old crate-wide table would have credited it."""
+    _rs(gate, "delvec", "schem/diag.rs", 'pub const DW_STRIP: &str = "DW0700";')
+    _test_rs(gate, "delvec", "loose.rs", "#[test]\nfn t() { assert_eq!(err.code, DW_STRIP); }\n")
+    assert "DW0700" not in gate.tested_codes()
+
+
+def test_a_pub_use_re_export_is_followed(gate):
+    """`render::diag` is `pub use crate::compiler::view::{diag}` and
+    `schem::blocks` is `pub use delvewright_dsl::{blocks}`: a test importing
+    through either path reaches the module that declares the constant, across
+    the crate boundary too."""
+    _rs(gate, "delvec", "compiler/view/diag.rs", 'pub const DW_OUTPUT: &str = "DW0721";')
+    _rs(gate, "delvec", "render/mod.rs", "pub use crate::compiler::view::{diag, meta};\n")
+    _rs(gate, "dsl", "blocks.rs", 'pub const DW_SHAPE_OMITTED: &str = "DW0735";')
+    _rs(gate, "delvec", "schem/mod.rs", "pub use delvewright_dsl::{blocks, split};\n")
+    _test_rs(
+        gate,
+        "delvec",
+        "render_cli.rs",
+        "use delvec::render::diag::DW_OUTPUT;\n"
+        "use delvec::schem::blocks::DW_SHAPE_OMITTED;\n"
+        "#[test]\nfn t() { assert_eq!(a, DW_OUTPUT); assert_eq!(b, DW_SHAPE_OMITTED); }\n",
+    )
+    assert {"DW0721", "DW0735"} <= gate.tested_codes()
+
+
+def test_a_qualified_path_in_the_body_resolves_without_an_import(gate):
+    """`crate::compiler::nav::DW_CAMERA_EYE_OCCLUDED` written out in a unit
+    test of another module names the constant as surely as an import."""
+    _rs(gate, "delvec", "compiler/nav.rs", 'pub const DW_CAMERA_EYE_OCCLUDED: &str = "DW0724";')
+    _rs(
+        gate,
+        "delvec",
+        "compiler/render_plan.rs",
+        "#[cfg(test)]\nmod tests {\n    #[test]\n"
+        "    fn t() { assert_eq!(d.code, crate::compiler::nav::DW_CAMERA_EYE_OCCLUDED); }\n}\n",
+    )
+    assert "DW0724" in gate.tested_codes()
 
 
 def test_comment_stripping_never_eats_a_rust_string(gate):

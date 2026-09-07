@@ -36,8 +36,8 @@ def delvec_bin():
 def fake_repo(tmp_path: Path, *, git: bool = True) -> Path:
     """A tree shaped like this repository's: tracked sources under `crates/`."""
     repo = tmp_path / "repo"
-    (repo / "crates" / "compiler" / "src").mkdir(parents=True)
-    (repo / "crates" / "compiler" / "src" / "main.rs").write_text("fn main() {}\n")
+    (repo / "crates" / "delvec" / "src").mkdir(parents=True)
+    (repo / "crates" / "delvec" / "src" / "main.rs").write_text("fn main() {}\n")
     (repo / "Cargo.toml").write_text("[workspace]\n")
     (repo / "Cargo.lock").write_text("version = 4\n")
     (repo / "target" / "debug").mkdir(parents=True)
