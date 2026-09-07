@@ -52,7 +52,7 @@ sandstone mix for calcite and polished diorite moves the mean **13.5 RGB units**
 statistic that moved.
 
 Classification — form, material family, gravity, technical, biome-tinted — needs
-no jar and comes from `crates/compiler/data/block-classification-1.21.11.json`
+no jar and comes from `crates/delvec/data/block-classification-1.21.11.json`
 (`tools/extract-block-classification.py`).
 
 ## What a report binds to
@@ -92,7 +92,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 REGISTRY = REPO / "crates" / "dsl" / "data" / "blocks-1.21.11.json"
-CLASSIFICATION = REPO / "crates" / "compiler" / "data" / "block-classification-1.21.11.json"
+CLASSIFICATION = REPO / "crates" / "delvec" / "data" / "block-classification-1.21.11.json"
 
 # Generation-time working material only — gitignored, never shipped, and unable
 # to move a delve's bytes (ADR-0006) or carry a licence into one (ADR-0013).
@@ -146,7 +146,7 @@ TINTED_EXACT = {
 }
 
 # Blocks that fall when unsupported (vanilla `FallingBlock`). NOT a second
-# opinion: this is the set `crates/compiler/src/assembled.rs::is_falling_block`
+# opinion: this is the set `crates/delvec/src/compiler/assembled.rs::is_falling_block`
 # owns for `DW0313`, and `tools/tests/test_block_appearance.py` reads that
 # function's own source and fails if the two ever disagree — so the palette layer
 # cannot drift into a private gravity model.
@@ -685,7 +685,7 @@ def split_outside_state(text: str, sep: str, what: str) -> list[str]:
     """Split on `sep`, ignoring every occurrence inside a `[...]` property list.
 
     A paint's members are separated by `,` and a member's weight by `=` — and a
-    block state is `name[key=value,key=value]` (`crates/grammar/src/block.rs`),
+    block state is `name[key=value,key=value]` (`crates/delvec/src/grammar/block.rs`),
     so BOTH separators also occur *inside* one. Splitting on every occurrence is
     not splitting on the separators: `deepslate[axis=y]=3` parsed that way asks
     for a weight of `y]=3`, so the more precisely a paint is written the more
@@ -850,7 +850,7 @@ def mix_report(name: str, members: list[tuple[str, float]], by_id: dict[str, dic
 def classify_paint(value) -> tuple[list[tuple[str, float]] | None, str | None]:
     """A paint as its area shares, or the reason this reader cannot read it.
 
-    The grammar it mirrors is `crates/grammar/src/ir.rs`, and nothing else: a
+    The grammar it mirrors is `crates/delvec/src/grammar/ir.rs`, and nothing else: a
     `Paint` is `World(States)` or `Local { local: States }`, and a `States` is
     one block-state string or a weighted list of `{block, weight}`. The frame is
     a declaration about which world DIRECTION a property names — it moves no

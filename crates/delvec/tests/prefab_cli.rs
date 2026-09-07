@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use delvewright_admit::fixtures;
-use delvewright_admit::meta::{AnchorRole, PrefabMeta};
+use delvec::admit::fixtures;
+use delvec::admit::meta::{AnchorRole, PrefabMeta};
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {
@@ -95,10 +95,7 @@ fn socket_and_lighting_write_metadata() {
     assert_eq!(meta.connectors.len(), 1);
     assert!(meta.anchors.contains_key("anchor/npc-stand"));
     let lighting = meta.lighting.expect("--write records the probe");
-    assert_eq!(
-        lighting.profile,
-        delvewright_admit::meta::LightingProfile::Lit
-    );
+    assert_eq!(lighting.profile, delvec::admit::meta::LightingProfile::Lit);
     assert!(lighting.method.as_deref().unwrap().contains("static"));
 
     std::fs::remove_dir_all(&dir).ok();
@@ -173,7 +170,7 @@ fn gallery_and_curate_merge_end_to_end() {
         .unwrap();
     assert!(status.success());
 
-    let merged = delvewright_admit::catalog::CatalogCard::from_json(
+    let merged = delvec::admit::catalog::CatalogCard::from_json(
         &std::fs::read_to_string(catalog_dir.join("gatehouse.json")).unwrap(),
     )
     .unwrap();

@@ -27,8 +27,8 @@
 
 mod common;
 
-use delvewright_compiler::gates;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::gates;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::prefab::PrefabMeta;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 

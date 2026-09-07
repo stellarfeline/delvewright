@@ -5,7 +5,7 @@
 
 `delvec fmt --check` reached CI over **two roots named by hand** in `ci.yml`:
 
-    delvec fmt --check crates/dsl/fixtures crates/compiler/tests/fixtures
+    delvec fmt --check crates/dsl/fixtures crates/delvec/tests/fixtures
 
 That is the enumeration-somebody-remembered shape this repository refuses
 elsewhere by name. It examined 240 of the 335 JSON files git tracks, and the
@@ -58,7 +58,7 @@ remove the need for the hatch rather than to secure it:
 That leaves one exemption, and it is not a judgement this file makes. It is a
 POINTER to a machine fact that already exists:
 
-    crates/compiler/tests/golden/
+    crates/delvec/tests/golden/
 
 Those files are RECORDINGS of emitter output, asserted byte-for-byte by
 `golden_scene_matches`; one of them is another program's schema in that
@@ -103,8 +103,8 @@ REPO = Path(__file__).resolve().parent.parent
 # the directory's membership. Both are asserted to still exist below: an
 # exemption whose proof has been deleted is an unbound exemption wearing a bound
 # one's clothes.
-GOLDEN_DIR = "crates/compiler/tests/golden/"
-GOLDEN_BINDING_FILE = "crates/compiler/src/view/scene.rs"
+GOLDEN_DIR = "crates/delvec/tests/golden/"
+GOLDEN_BINDING_FILE = "crates/delvec/src/compiler/view/scene.rs"
 GOLDEN_BINDINGS = ("golden_scene_matches", "every_golden_is_emitter_output")
 
 # `delvec fmt --check` takes the paths as arguments. Chunked so the population

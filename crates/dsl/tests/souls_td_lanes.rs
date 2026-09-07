@@ -4,7 +4,7 @@
 //! (`docs/notes/td-routing-spike.md`). The DSL layer owns the five that are
 //! decidable from the declaration alone; lane *geometry* (standable, walkable,
 //! spaced > 10) and ring *occupancy* are build-tier proofs over the assembled
-//! world (`DW0386`/`DW0387`, `crates/compiler/tests/souls_td_lanes.rs`).
+//! world (`DW0386`/`DW0387`, `crates/delvec/tests/souls_td_lanes.rs`).
 
 mod common;
 
@@ -12,7 +12,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 
 /// hello-world's quest stage at 0.6.0 with a raider lane and an aggro-edge wave.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

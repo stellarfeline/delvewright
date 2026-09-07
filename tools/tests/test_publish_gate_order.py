@@ -52,6 +52,7 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -75,11 +76,38 @@ FIXTURE_CHECK_PUBLISHABLE_D5908698 = (
 
 
 def _engine_crates(versions_toml: Path) -> list[tuple[str, str]]:
+    """The publish set both scripts derive: `[engine].crates` in order, the
+    format crate at its own version and the engine at the engine's (ADR-0025)."""
+    e = tomllib.loads(versions_toml.read_text(encoding="utf-8"))["engine"]
+    return [
+        (n, e["dsl_crate_version"] if n == e["dsl_crate"] else e["version"])
+        for n in e["crates"]
+    ]
+
+
+def _legacy_engine_crates(versions_toml: Path) -> list[tuple[str, str]]:
+    """The set the frozen `d5908698` instrument derives from a `versions.toml`
+    of ITS era: `dsl_crate`, then every name in `[engine].crates` (the library
+    crates, then), then `crate`."""
     e = tomllib.loads(versions_toml.read_text(encoding="utf-8"))["engine"]
     out = [(e["dsl_crate"], e["dsl_crate_version"])]
     out += [(n, e["version"]) for n in e["crates"]]
     out.append((e["crate"], e["version"]))
     return out
+
+
+def _legacy_versions_toml(head: Path, dest: Path) -> None:
+    """HEAD's `versions.toml` translated to the shape the frozen instrument
+    read, where `[engine].crates` listed the crates BETWEEN `dsl_crate` and
+    `crate` (ADR-0025 made it the publish set itself). Only the `crates` block
+    moves; every other value is HEAD's."""
+    text = head.read_text(encoding="utf-8")
+    e = tomllib.loads(text)["engine"]
+    between = [n for n in e["crates"] if n not in (e["dsl_crate"], e["crate"])]
+    block = re.search(r"^crates = \[\n(?:    \"[^\"]+\",\n)*\]", text, re.MULTILINE)
+    assert block is not None, "the [engine].crates block moved; this translation no longer reads it"
+    replacement = "crates = [\n" + "".join(f'    "{n}",\n' for n in between) + "]"
+    dest.write_text(text[: block.start()] + replacement + text[block.end() :], encoding="utf-8")
 
 
 class _FakeIndex(http.server.BaseHTTPRequestHandler):
@@ -258,16 +286,16 @@ def test_the_plan_reads_what_the_gate_packaged(tmp_path: Path, fake_index: str) 
 
 def test_red_on_the_original_gate_leaves_no_tarball_for_the_plan(tmp_path: Path) -> None:
     check_src = FIXTURE_CHECK_PUBLISHABLE_D5908698.read_text(encoding="utf-8")
-    # `versions.toml` at HEAD (dsl_crate_version 0.20.0) still names the
-    # derivation the base script's own inline python reads, so this is the
-    # crate/version set that revision would have decided about — not a frozen
-    # copy of an older `versions.toml`.
-    crates = _engine_crates(REPO / "versions.toml")
+    # `versions.toml` at HEAD, translated to the shape that revision's inline
+    # python read (`[engine].crates` listed the crates between `dsl_crate` and
+    # `crate`), so this is the crate/version set that revision would have
+    # decided about from today's numbers — not a frozen copy of an older file.
     tree = tmp_path / "clone"
     tree.mkdir()
     (tree / "tools").mkdir()
     (tree / "tools" / "check-publishable.sh").write_text(check_src, encoding="utf-8")
-    shutil.copy(REPO / "versions.toml", tree / "versions.toml")
+    _legacy_versions_toml(REPO / "versions.toml", tree / "versions.toml")
+    crates = _legacy_engine_crates(tree / "versions.toml")
     env = _install_fake_cargo(tree, crates)
 
     check = subprocess.run(

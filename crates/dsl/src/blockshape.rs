@@ -15,10 +15,12 @@
 //! The same argument that placed [`crate::metrics::step_allowed`], and it has two
 //! halves.
 //!
-//! *Reachability.* `delvec` is published to crates.io and may depend only on
-//! published crates, so the table cannot live in `delvewright-schem` or
-//! `delvewright-grammar`; `delvewright-dsl` is the one crate every consumer
-//! already resolves.
+//! *Reachability.* Two readers ask this table the same question and share no
+//! dependency edge: the engine (`delvec::schem`'s walk, `delvec::grammar`'s
+//! contract checker, the compiler's navigation model) and the prefab generator
+//! workspaces, which source-include this file beside their own invariants
+//! (`prefabs/invariants.rs`). `delvewright-dsl` is the one crate both already
+//! resolve, and a source include reaches a file, not a crate.
 //!
 //! *Object class.* A collision box is a fact about **a vanilla block state under
 //! the pinned game version** (ADR-0009, Minecraft Java 1.21.11) — the same kind of

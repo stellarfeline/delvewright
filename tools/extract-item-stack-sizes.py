@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate `crates/compiler/data/item-stack-sizes-1.21.11.json` from the pinned
+"""Regenerate `crates/delvec/data/item-stack-sizes-1.21.11.json` from the pinned
 MC 1.21.11 item-components summary — the vendored `item id -> max stack size`
 table `delvec` validates single-slot fills against (`DW0436`).
 
@@ -17,7 +17,7 @@ stdlib). Same shape and provenance discipline as `extract-sound-registry.py`.
 
 Mojang's generated **default item components** report, republished verbatim by
 misode/mcmeta (same provenance as the item/entity/sound registries — see
-`crates/compiler/data/PROVENANCE.md`). Fetch the pinned source once:
+`crates/delvec/data/PROVENANCE.md`). Fetch the pinned source once:
 
     curl -sSL -o item_components.min.json \
       https://raw.githubusercontent.com/misode/mcmeta/1.21.11-summary/item_components/data.min.json
@@ -35,7 +35,7 @@ the component explicitly, so nothing is defaulted or inferred here — a missing
 one is an error, not a silent 64.
 
     python3 tools/extract-item-stack-sizes.py item_components.min.json \
-      crates/compiler/data/item-stack-sizes-1.21.11.json
+      crates/delvec/data/item-stack-sizes-1.21.11.json
 """
 
 import hashlib

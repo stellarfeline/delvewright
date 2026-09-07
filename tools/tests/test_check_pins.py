@@ -320,7 +320,7 @@ why = "the judge"
         f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n"
         f"      - run: python3 tools/check-pins.py --online engine\n"
-        f"      - run: cargo build -p delvewright-admit --release\n",
+        f"      - run: cargo build -p delvec --release\n",
         encoding="utf-8",
     )
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
@@ -419,7 +419,7 @@ why = "judged the interval ending here; the admission rules it enforces did not 
         f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n"
         f"      - run: python3 tools/check-pins.py --online engine\n"
-        f"      - run: cargo build -p delvewright-admit --release\n",
+        f"      - run: cargo build -p delvec --release\n",
         encoding="utf-8",
     )
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
@@ -825,7 +825,7 @@ def test_a_dockerfile_directive_wrapped_into_rust_prose_is_not_a_fetch_site(
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/compiler/src/nav.rs",
+        "crates/delvec/src/compiler/nav.rs",
         'pub const SOFT_LOCK: &str = "\\\n'
         "             What this red claims is what declarations can carry: \\\n"
         "             NOTHING THIS CAMPAIGN DECLARES SEPARATES THIS RETRY \\\n"
@@ -840,7 +840,7 @@ def test_a_workflow_directive_quoted_in_rust_is_not_a_fetch_site(repo: Path) -> 
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/compiler/src/docs.rs",
+        "crates/delvec/src/compiler/docs.rs",
         "/// The shape a workflow step takes:\n"
         'pub const STEP: &str = r#"\n'
         "    - uses: " + ACTION + "\n"
@@ -856,9 +856,9 @@ def test_a_cargo_dependency_line_quoted_in_rust_is_not_a_fetch_site(
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/compiler/src/manifest.rs",
+        "crates/delvec/src/compiler/manifest.rs",
         'pub const EXAMPLE: &str = r#"\n'
-        '    delvewright-grammar = { git = "https://example.invalid/g" }\n'
+        '    example-crate = { git = "https://example.invalid/g" }\n'
         '"#;\n',
     )
     r = run(repo)
@@ -873,14 +873,14 @@ def test_a_rust_file_that_really_runs_docker_is_a_finding(repo: Path) -> None:
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/orchestrator/src/stage.rs",
+        "crates/delvec/src/orchestrator/stage.rs",
         "pub fn stage() {\n"
         '    Command::new("sh").arg("-c").arg("docker run --rm base:latest");\n'
         "}\n",
     )
     r = run(repo)
     assert r.returncode == 1
-    assert "crates/orchestrator/src/stage.rs" in r.stderr
+    assert "crates/delvec/src/orchestrator/stage.rs" in r.stderr
     assert "no FETCH_SITES pattern covers it" in r.stderr
 
 
@@ -888,14 +888,14 @@ def test_a_rust_file_that_clones_a_repository_is_a_finding(repo: Path) -> None:
     write_registry(repo, COMPLETE)
     add_file(
         repo,
-        "crates/orchestrator/src/fetch.rs",
+        "crates/delvec/src/orchestrator/fetch.rs",
         "pub fn fetch() {\n"
         '    Command::new("sh").arg("-c").arg("git clone https://example.invalid/r");\n'
         "}\n",
     )
     r = run(repo)
     assert r.returncode == 1
-    assert "crates/orchestrator/src/fetch.rs" in r.stderr
+    assert "crates/delvec/src/orchestrator/fetch.rs" in r.stderr
 
 
 def test_a_dockerfile_the_site_list_does_not_name_is_a_finding(repo: Path) -> None:
@@ -935,7 +935,7 @@ def test_the_fetch_verb_enumeration_states_what_it_examined(repo: Path) -> None:
     change is meant to be looked at rather than absorbed.
     """
     write_registry(repo, COMPLETE)
-    add_file(repo, "crates/compiler/src/nav.rs", "pub fn nav() {}\n")
+    add_file(repo, "crates/delvec/src/compiler/nav.rs", "pub fn nav() {}\n")
     r = run(repo)
     assert r.returncode == 0, r.stdout + r.stderr
     line = next(

@@ -12,12 +12,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_compiler::light::emission;
+use delvec::compiler::light::emission;
 
 /// Blocks whose entry is deliberately the MINIMUM over the states the world can
 /// drive them to, rather than the shipped blockstate's own value — so they are
 /// the only blocks allowed to measure below the game. Each reason is the one
-/// recorded on the entry in `crates/compiler/src/light.rs`.
+/// recorded on the entry in `crates/delvec/src/compiler/light.rs`.
 ///
 /// This set is the round-trip half of the gate: a future Minecraft version that
 /// adds an emitter the table does not know puts that block in here, and
@@ -56,7 +56,7 @@ fn base_id(name: &str) -> &str {
 fn fixture() -> (Vec<Row>, usize) {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../compiler/tests/fixtures/light/emission-1.21.11.tsv"
+        "/tests/fixtures/light/emission-1.21.11.tsv"
     );
     let text = std::fs::read_to_string(path).expect("the block-light fixture is missing");
     let mut claimed = 0usize;

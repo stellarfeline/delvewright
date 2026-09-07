@@ -19,8 +19,8 @@ use std::sync::OnceLock;
 /// The pinned 1.21.11 block-state registry, source-included the same way this
 /// file is: one authority, every generator, no dependency edge.
 ///
-/// `crates/schem` parses the identical file for the in-workspace emitters
-/// (`delvewright_schem::blocks`). Two readers of one file is not two authorities
+/// `crates/delvec/src/schem` parses the identical file for the in-workspace emitters
+/// (`delvec::schem::blocks`). Two readers of one file is not two authorities
 /// — the alternative here would be a *further* hand-maintained block list, which
 /// is the defect this gate exists to catch.
 const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/dsl/data/blocks-1.21.11.json");
@@ -31,8 +31,8 @@ const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/dsl/data/blocks-1.21.1
 /// registry above is.
 ///
 /// It sits beside [`fluid`] under this name deliberately: `fluid` reaches it as
-/// `super::blockshape`, which resolves inside `delvewright-schem` — where the
-/// crate root re-exports it — and here, where this module is its neighbour. An
+/// `super::blockshape`, which resolves inside `delvec::schem` — where the
+/// module root re-exports it — and here, where this module is its neighbour. An
 /// absolute `delvewright_dsl::` path would resolve in the workspace and not in a
 /// generator, and the include would break the day the two touched.
 #[path = "../crates/dsl/src/blockshape.rs"]
@@ -40,7 +40,7 @@ const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/dsl/data/blocks-1.21.1
 pub mod blockshape;
 
 /// **What a cell does when there is fluid beside it** — the same module the
-/// in-workspace auditor reads (`delvewright_schem::fluid`), source-included the
+/// in-workspace auditor reads (`delvec::schem::fluid`), source-included the
 /// same way the registry above is.
 ///
 /// Every fact in it was measured on the pinned server, and two of them are the
@@ -48,7 +48,7 @@ pub mod blockshape;
 /// `waterlogged=false` is a wall). Restating them here would be a second
 /// authority on a question that already has one, and the two would agree right
 /// up until they did not.
-#[path = "../crates/schem/src/fluid.rs"]
+#[path = "../crates/delvec/src/schem/fluid.rs"]
 #[allow(dead_code)]
 pub mod fluid;
 

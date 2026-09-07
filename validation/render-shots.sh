@@ -5,7 +5,7 @@
 #   1. the Chunky scene set  — `delvec scene`  (one free-camera scene JSON per
 #      shot; the first-person player-POV shots render here, since Nucleation is an
 #      orbit/turntable renderer and cannot place a free camera at eye height inside a
-#      room — see crates/render/README.md).
+#      room — see docs/reference/tools.md §4).
 #   2. the shot index        — `delvec index`  (image ↔ expect pairs, so a
 #      reviewing agent / vision model is handed pairs directly).
 #

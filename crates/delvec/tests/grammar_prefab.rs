@@ -1,7 +1,7 @@
 //! spec-0027 acceptance 4: a grammar program becomes a `.nbt` + metadata pair
 //! in a prefab-library directory, and the engine loads it.
 //!
-//! The point of this test is the seam, not the geometry. `crates/grammar` is
+//! The point of this test is the seam, not the geometry. `crates/delvec/src/grammar` is
 //! generation-time tooling that knows nothing about `delvec`; `PrefabRegistry`
 //! is the engine's reader and refuses anything it does not understand with
 //! `DW0346`. If the two ever disagree — an anchors map the engine requires and
@@ -11,20 +11,20 @@
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::{AnchorRegistry, LightingProfile, PrefabId};
-use delvewright_grammar::library::{
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::grammar::library::{
     ambush_door, castle, causeway, cliff_path, drop_shaft, dumbwaiter, elite_ground, far_side_bar,
     lift_shaft, rafter_hall, stair_flight, store_room, tee_passage, temple, watch_bay,
 };
-use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
+use delvec::grammar::{Box3, ExpandOptions, export_prefab};
+use delvewright_dsl::{AnchorRegistry, LightingProfile, PrefabId};
 // W3: the palette/prop family (W + S + M + X).
-use delvewright_grammar::library::{boulder_stair, broken_grate, threshold_motif};
+use delvec::grammar::library::{boulder_stair, broken_grate, threshold_motif};
 // The mechanism family: the rest point, the lure and the hazard control. Their
 // anchors are the whole reason they exist — a `bonfire{anchor}` and an
 // `EnvTrigger`'s `at` bind to them — so this seam is exactly where a rule that
 // stopped exporting one would have to show.
-use delvewright_grammar::library::{bait_stand, disarm_stand, hearth_ward};
+use delvec::grammar::library::{bait_stand, disarm_stand, hearth_ward};
 
 const REGION: Box3 = Box3::at_origin([13, 14, 21]);
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
@@ -87,7 +87,10 @@ fn a_grammar_temple_lands_in_the_prefab_library_and_loads() {
     assert_eq!(structure.id, "grammar-temple");
     assert_eq!(structure.size, [13, 14, 21]);
     assert_eq!(structure.data_version, 4671);
-    assert_eq!(structure.generator.as_deref(), Some("crates/grammar"));
+    assert_eq!(
+        structure.generator.as_deref(),
+        Some("crates/delvec/src/grammar")
+    );
 
     // Anchors-empty metadata is a *valid* prefab, not a broken one: it simply
     // offers no staging points yet. The registry must index it as such.
@@ -109,7 +112,7 @@ fn a_grammar_temple_lands_in_the_prefab_library_and_loads() {
     // decoder reads back cell for cell.
     let nbt = std::fs::read(dir.join(meta.templates()[0].file)).unwrap();
     let cells: BTreeMap<[i32; 3], String> =
-        delvewright_compiler::assembled::structure_cells_stateful(&nbt)
+        delvec::compiler::assembled::structure_cells_stateful(&nbt)
             .into_iter()
             .map(|(pos, state, _)| (pos, state))
             .collect();
@@ -357,7 +360,7 @@ fn metadata_the_engine_cannot_read_is_a_load_diagnostic_not_a_silent_skip() {
         r#"{
   "prefab_id": "prefab/faked",
   "structure": { "file": "faked.nbt", "id": "faked", "size": [3, 3, 3],
-                 "data_version": 4671, "generator": "crates/grammar" },
+                 "data_version": 4671, "generator": "crates/delvec/src/grammar" },
   "anchors": {},
   "lighting": { "profile": "unmeasured", "measured_min_light": 9 },
   "license": {}

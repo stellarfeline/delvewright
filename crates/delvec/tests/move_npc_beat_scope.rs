@@ -28,11 +28,11 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::nav::{self, World};
-use delvewright_compiler::plan::{Plan, ResolvedAnchor};
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_compiler::timeline;
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::nav::{self, World};
+use delvec::compiler::plan::{Plan, ResolvedAnchor};
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::compiler::timeline;
 use delvewright_dsl::{Verb, parse_campaign};
 use serde_json::json;
 

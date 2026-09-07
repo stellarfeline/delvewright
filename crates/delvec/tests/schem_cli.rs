@@ -4,9 +4,9 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use delvewright_schem::convert::read_structure;
-use delvewright_schem::diag::DW_INPUT;
-use delvewright_schem::fixtures;
+use delvec::schem::convert::read_structure;
+use delvec::schem::diag::DW_INPUT;
+use delvec::schem::fixtures;
 
 /// `delvec schem …`: the one binary, entered at the schematic surface.
 fn schem() -> Command {

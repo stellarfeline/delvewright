@@ -6,7 +6,7 @@
 //! three is a campaign-side claim — they are read from the carrying piece's
 //! exported metadata — so nothing at this layer can state them and nothing at
 //! this layer can be wrong about them. The compiler's own tests
-//! (`crates/compiler/tests/open_way.rs`) are where the reference is resolved
+//! (`crates/delvec/tests/open_way.rs`) are where the reference is resolved
 //! against a placed world.
 
 use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign};
@@ -93,7 +93,7 @@ fn open_way_carries_the_whole_gate() {
          "forbids_flags": ["flag/keeper-spoke"],
          "requires_state": []
        } }"#;
-    let c = parse_campaign(&raw(quests_doc("0.21.0", gated))).expect("it parses");
+    let c = parse_campaign(&raw(quests_doc("0.21.1", gated))).expect("it parses");
     let effects = &c.quests.content.quests[0]
         .on_objective_complete
         .iter()
@@ -125,7 +125,7 @@ fn an_open_way_has_no_region_no_block_and_no_direction() {
         let effect = format!(
             r#"{{ "type": "open-way", "piece": "prefab/hello-room", "way": "w", {extra} }}"#
         );
-        let found = codes(quests_doc("0.21.0", &effect));
+        let found = codes(quests_doc("0.21.1", &effect));
         assert!(
             found.iter().any(|c| c == "DW0100"),
             "`{extra}` was accepted or dropped rather than refused: {found:?}"

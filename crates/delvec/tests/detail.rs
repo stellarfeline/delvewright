@@ -27,10 +27,10 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::blockout::{self, Perturb};
-use delvewright_compiler::detail::{self, Allocation};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::blockout::{self, Perturb};
+use delvec::compiler::detail::{self, Allocation};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, NodeId, Severity};
 
 // ---------------------------------------------------------------------------
@@ -42,8 +42,7 @@ fn blockout_dir() -> PathBuf {
 }
 
 fn campaign_at(dir: &Path) -> Campaign {
-    let loaded =
-        delvewright_compiler::load::load_campaign_dir(dir).expect("the campaign is readable");
+    let loaded = delvec::compiler::load::load_campaign_dir(dir).expect("the campaign is readable");
     delvewright_dsl::parse_campaign(&loaded.raw).expect("the campaign parses")
 }
 
@@ -57,7 +56,7 @@ fn canonical_of(dir: &Path, file: &str) -> String {
 }
 
 fn walk_record_at(dir: &Path) -> Option<String> {
-    delvewright_compiler::load::load_campaign_dir(dir)
+    delvec::compiler::load::load_campaign_dir(dir)
         .expect("the campaign is readable")
         .walk_record
 }
@@ -281,7 +280,7 @@ fn write_detail_plan(dir: &Path, details: &[serde_json::Value]) {
             "palette": { "role/wall": "minecraft:stone_bricks", "role/floor": "minecraft:tuff" },
             "details": details,
         },
-        "dsl_version": "0.21.0",
+        "dsl_version": "0.21.1",
         "stage": "detail-plan",
     });
     std::fs::write(
@@ -1343,7 +1342,7 @@ fn dw0842_refuses_a_gate_station_bound_to_a_cell() {
     // Declare a gate station on the bound place and bind it to `seat0`, which
     // is a point: the piece has a cell where the campaign promised a volume.
     common::patch_file(&d.campaign.join("layout-graph.json"), |v| {
-        v["dsl_version"] = serde_json::json!("0.21.0");
+        v["dsl_version"] = serde_json::json!("0.21.1");
         for n in v["content"]["nodes"].as_array_mut().unwrap() {
             if n["id"] == "node/exit" {
                 n["stations"] = serde_json::json!([
@@ -1507,7 +1506,7 @@ fn battery_at(d: &Detailed) -> (blockout::Battery, Vec<String>) {
             }
         }
     }
-    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &structures);
     let battery = blockout::check(&plan, &blocks).expect("a site-plan campaign has a blockout");
     let codes = battery
         .findings
@@ -1575,7 +1574,7 @@ fn a_detail_pieces_anchor_overwrites_the_derivations_footing() {
     );
 
     let at = |plan: &Plan<'_>| match plan.anchors.get(&key) {
-        Some(delvewright_compiler::plan::ResolvedAnchor::Point { pos, .. }) => *pos,
+        Some(delvec::compiler::plan::ResolvedAnchor::Point { pos, .. }) => *pos,
         _ => panic!("a place's own anchor is a cell to stand on"),
     };
 
@@ -1631,7 +1630,7 @@ fn detailing_the_entry_place_moves_where_the_party_arrives() {
 
     assert_eq!(
         plan.anchors
-            .role_name(&area, delvewright_compiler::plan::AnchorRole::Entry),
+            .role_name(&area, delvec::compiler::plan::AnchorRole::Entry),
         Some(delvewright_dsl::ENTRY_ANCHOR),
         "a derived map declares what its entry anchor is for, detailed or not"
     );
@@ -1791,7 +1790,7 @@ fn a_detail_plan_cannot_state_a_coordinate() {
             v["content"]["details"][0][path] = value;
         });
         let loaded =
-            delvewright_compiler::load::load_campaign_dir(&d.campaign).expect("still readable");
+            delvec::compiler::load::load_campaign_dir(&d.campaign).expect("still readable");
         let Err(diags) = delvewright_dsl::parse_campaign(&loaded.raw) else {
             panic!("a detail row carrying `{path}` must not parse");
         };
@@ -2758,7 +2757,7 @@ fn check_and_expect(d: &Detailed, code: &str) -> String {
 }
 
 fn build_into(d: &Detailed, out: &Path) -> BTreeMap<String, Vec<u8>> {
-    let loaded = delvewright_compiler::load::load_campaign_dir(&d.campaign).unwrap();
+    let loaded = delvec::compiler::load::load_campaign_dir(&d.campaign).unwrap();
     let c = delvewright_dsl::parse_campaign(&loaded.raw).unwrap();
     let reg = PrefabRegistry::load_dir(&d.prefabs).unwrap();
     let plan = Plan::build(&c, &reg).expect("the detailed campaign plans");
@@ -2772,8 +2771,8 @@ fn build_into(d: &Detailed, out: &Path) -> BTreeMap<String, Vec<u8>> {
             }
         }
     }
-    let tree = delvewright_compiler::commands::CommandTree::v1_21_11();
-    let (built, _warn) = delvewright_compiler::emit::build_with_warnings(
+    let tree = delvec::compiler::commands::CommandTree::v1_21_11();
+    let (built, _warn) = delvec::compiler::emit::build_with_warnings(
         &plan,
         &loaded.inputs,
         &structures,
@@ -2925,7 +2924,7 @@ fn a_source_build_names_the_revision_it_was_built_from() {
     assert_ne!(
         rev,
         "unstamped",
-        "built from a git checkout at {}, so `crates/compiler/build.rs` should have \
+        "built from a git checkout at {}, so `crates/delvec/build.rs` should have \
          stamped the revision. `unstamped` here means the stamp stopped working and \
          every walk record written against this build carries a constant where a \
          measurement belongs.",

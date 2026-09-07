@@ -4,7 +4,7 @@
 //!
 //! # The artifacts are real
 //!
-//! The way-carrying piece is exported by `crates/grammar` from a program built
+//! The way-carrying piece is exported by `crates/delvec/src/grammar` from a program built
 //! here — the corpus contract piece with its doorway's threshold course claimed
 //! as `deck` and left empty, and the door declared a `walk` whose way is `laid`.
 //! As built the two rooms are severed: a body cannot stand on a threshold that
@@ -20,16 +20,16 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
-use delvewright_grammar::ir::{
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvec::grammar::ir::{
     Contract, EXTERIOR, EdgeClass, Envelope, Mark, MarkAt, Node, Opens, Program, Reorient,
     Rounding, Size, Split, Way,
 };
-use delvewright_grammar::{Axis, BlockState, Box3, ExpandOptions, export_prefab};
+use delvec::grammar::{Axis, BlockState, Box3, ExpandOptions, export_prefab};
+use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// The vault is `9 x 8 x 11`: a low room, a raised room, a flight between them
 /// whose treads are missing, and a shaft through the roof.
@@ -400,7 +400,7 @@ fn hw(name: &str) -> String {
 /// Hello-world's world with a second area holding the way-carrying piece.
 fn world_doc() -> String {
     r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -425,7 +425,7 @@ fn world_doc() -> String {
 fn quest_plan_doc(tower: bool) -> String {
     if !tower {
         return r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -440,7 +440,7 @@ fn quest_plan_doc(tower: bool) -> String {
         .to_string();
     }
     r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -516,7 +516,7 @@ fn quests_doc(opening: Opening, tower: bool) -> String {
         }));
     }
     let doc = serde_json::json!({
-      "dsl_version": "0.21.0",
+      "dsl_version": "0.21.1",
       "campaign_id": "hello-world",
       "stage": "quests",
       "content": { "on_death": on_death, "quests": quests }
@@ -549,7 +549,7 @@ fn campaign_with(world: String, quests: String, tower: bool) -> Campaign {
 /// instead. Returns the ERROR rather than the plan, because a `Plan` has no
 /// `Debug` to unwrap against — and because every caller here is asserting a
 /// refusal.
-fn plan_err(c: &Campaign, dir: &Path, expected: &str) -> delvewright_compiler::plan::PlanError {
+fn plan_err(c: &Campaign, dir: &Path, expected: &str) -> delvec::compiler::plan::PlanError {
     let prefabs = PrefabRegistry::load_dir(dir).unwrap();
     match Plan::build(c, &prefabs) {
         Ok(_) => panic!("{expected}: the campaign built instead"),
@@ -1001,7 +1001,7 @@ fn an_open_way_naming_no_staged_way_is_dw0547() {
 fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     let dir = common::prefabs_dir();
     let plain = r#"{
-  "dsl_version": "0.21.0",
+  "dsl_version": "0.21.1",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
