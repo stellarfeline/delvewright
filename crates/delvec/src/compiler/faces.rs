@@ -70,6 +70,18 @@
 //! naming both pieces and the plane, rather than passing quietly with a zero.
 //! `DW0781` is then what it says on the tin: a world in which nothing touches
 //! anything, so there was no pair to examine.
+//!
+//! # The layout's own claim, made falsifiable
+//!
+//! The solver records, per socket, whether it **mated** it — and `seal_layout`
+//! clears exactly those doorways to air and walls the rest. That flag is a claim
+//! about the placement the placement can contradict: a mated socket with no
+//! placed piece beyond it is an open hole in a wall, shipped, with nothing
+//! behind it. It is also the one contradiction a world can reach without any
+//! author writing anything, because it is what *moving a mated piece* looks like
+//! — the pair simply stops touching, and a check quantified over pairs that
+//! touch has nothing to say about two pieces that no longer do. So the flag is
+//! carried out of the solver and checked here.
 
 use delvewright_dsl::{Diagnostic, DwCode, ExitTier};
 
@@ -111,6 +123,14 @@ struct PlacedFace {
     /// The opening's world AABB, inclusive.
     min: [i32; 3],
     max: [i32; 3],
+    /// **The layout's own claim that this way joins another piece.** True only
+    /// for a jigsaw socket the solver mated, which is also the socket whose
+    /// doorway it clears to air rather than sealing with wall material.
+    ///
+    /// A face contract makes no such claim — it says a body may leave this way,
+    /// not that anything is out there — so it is never `mated`, and a front door
+    /// onto the outside stays what it has always been: not a finding.
+    mated: bool,
 }
 
 impl PlacedFace {
@@ -338,6 +358,33 @@ pub struct FaceBinding {
 }
 
 impl FaceBinding {
+    /// The same verdict as a machine-readable ledger
+    /// (`validation/piece-mating.json`).
+    ///
+    /// `examined` is the key the gallery's coverage gate reds on when it is
+    /// zero, and it is deliberately the count over the **placement** — abutting
+    /// pairs — rather than over the declarations. A ledger keyed on declarations
+    /// would have read `0` as an honest measurement of a library that declares
+    /// nothing, which is exactly the sentence this check used to print while
+    /// passing.
+    #[must_use]
+    pub fn to_json(&self, pieces: usize, allocated: bool) -> serde_json::Value {
+        serde_json::json!({
+            "placed": pieces,
+            "touching": self.touching,
+            "examined": self.pairs,
+            "judged": self.judged,
+            "faces_declared": self.declared,
+            "faces_bound": self.bound,
+            "by_contract": self.contracted,
+            "by_socket": self.socketed,
+            // Why a zero is a zero, for a reader who has only this file: a
+            // site-plan world's ways are allocated at stage 4 and proved by
+            // `DW0836`, so nothing in it was ever asked to mate.
+            "allocated": allocated,
+        })
+    }
+
     /// **The binding line this check owes its reader on every run**, found
     /// anything or not (the vacuity rule: a count only means something when the
     /// run that found nothing prints it too).
@@ -431,6 +478,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                         dir,
                         min: [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])],
                         max: [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])],
+                        mated: false,
                     });
                 }
             } else if let Some(meta) = meta {
@@ -438,7 +486,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                 // solver mated and sealed it with — one derivation, so a face
                 // this check compares cannot be in a different place from the
                 // opening the world actually gets.
-                for conn in &meta.connectors {
+                for (ci, conn) in meta.connectors.iter().enumerate() {
                     let Ok((wp, facing)) = socket_world(placement.pos, placement.rotation, conn)
                     else {
                         continue;
@@ -452,6 +500,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                         dir: [u[0], u[1], u[2]],
                         min: from,
                         max: to,
+                        mated: placement.mated.get(ci).copied().unwrap_or(false),
                     });
                 }
                 if !faces.is_empty() {
@@ -489,7 +538,41 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                         a == axis || (face.max[a] >= other.min[a] && face.min[a] <= other.max[a])
                     })
             }) else {
-                continue; // it opens onto the outside, which is what a front door does
+                // Nothing is out there. For a face contract that is a front door,
+                // and a box garden has an outside — not a finding.
+                //
+                // For a socket the LAYOUT MATED it is a contradiction, and the
+                // only one in this module that a placement can produce all by
+                // itself: the solver said this socket joins another piece, and
+                // `seal_layout` cleared its doorway to air on the strength of
+                // that, so the world ships an open hole looking at whatever
+                // happens to be at that plane. Detaching a mated piece by one
+                // block is exactly this shape, and until the flag reached here
+                // nothing could see it — the pair simply stopped touching, and a
+                // check quantified over pairs that touch has nothing to say
+                // about two pieces that no longer do.
+                if face.mated {
+                    return Err(PlanError::new(
+                        DW_FACE_MISMATCH,
+                        format!(
+                            "area `{}` places `{}` with a jigsaw socket the layout says is \
+                             MATED, and there is no placed piece on the other side of it. `{}` \
+                             declares {}; the cell(s) just beyond it at {} {} belong to no piece \
+                             in this world. A mated socket is not a claim about intent — it is \
+                             what `seal_layout` clears the doorway to air for, so this world \
+                             ships an open hole in a wall with nothing behind it. The layout and \
+                             the placement disagree about where this piece stands; do not seal \
+                             the socket to hide it",
+                            piece.area,
+                            piece.prefab,
+                            piece.prefab,
+                            face.describe(),
+                            ["x", "y", "z"][axis],
+                            plane,
+                        ),
+                    ));
+                }
+                continue;
             };
             let _ = j;
             bound += 1;
