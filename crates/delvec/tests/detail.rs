@@ -231,6 +231,11 @@ fn write_piece(dir: &Path, id: &str, a: &Allocation, cells: &[([i32; 3], String)
         serde_json::to_string_pretty(&meta).unwrap() + "\n",
     )
     .unwrap();
+    // A detail piece cut out of the derived massing stands in a site-plan world
+    // whose party gets outdoors, so `DW0885` asks it which of its sides are
+    // finished surface. These are free-standing boxes in a `void` world: every
+    // side that has a block on it is one the player would see.
+    common::declare_shown_faces(dir, id);
 }
 
 /// What a green stage-6 campaign looks like on disk.
@@ -403,7 +408,7 @@ fn a_bound_place_validates_and_states_its_binding() {
 #[test]
 fn a_campaign_with_no_detail_plan_binds_zero_and_states_it() {
     let c = campaign_at(&blockout_dir());
-    let reg = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let reg = PrefabRegistry::load_dir(&common::shown_prefabs_dir("detail")).unwrap();
     let (diags, binding) = detail::check(&c, &reg, None);
     assert!(diags.is_empty(), "{:?}", codes(&diags));
     assert_eq!(binding.rows, 0);

@@ -103,7 +103,7 @@ fn library_declaring_entry(tag: &str, with_role: bool) -> (PathBuf, String) {
     let (key, role) = grammar_declared_entry();
     let dir = std::env::temp_dir().join(format!("dw-entry-role-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    common::copy_dir_all(&common::prefabs_dir(), &dir);
+    common::copy_dir_all(&common::shown_prefabs_dir("entry-anchor"), &dir);
     for piece in ["hello-room.json", "cave-shore.json"] {
         let path = dir.join(piece);
         let mut meta: Value =
@@ -135,7 +135,7 @@ fn library_with_roles_on(tag: &str, sites: &[(&str, &str)]) -> PathBuf {
     let (_, role) = grammar_declared_entry();
     let dir = std::env::temp_dir().join(format!("dw-entry-dup-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    common::copy_dir_all(&common::prefabs_dir(), &dir);
+    common::copy_dir_all(&common::shown_prefabs_dir("entry-anchor"), &dir);
     for (piece, anchor) in sites {
         let path = dir.join(piece);
         let mut meta: Value =
@@ -157,7 +157,7 @@ fn library_moving_the_role(tag: &str, piece: &str, from: &str, to: &str) -> Path
     let (_, role) = grammar_declared_entry();
     let dir = std::env::temp_dir().join(format!("dw-entry-move-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    common::copy_dir_all(&common::prefabs_dir(), &dir);
+    common::copy_dir_all(&common::shown_prefabs_dir("entry-anchor"), &dir);
     let path = dir.join(piece);
     let mut meta: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     let anchors = meta["anchors"].as_object_mut().unwrap();
@@ -242,7 +242,8 @@ fn bolt_transport(out: &BuildOutput) -> Option<Value> {
 /// never crossed.
 #[test]
 fn the_shipped_library_promises_the_crossing() {
-    let out = build_with(&common::prefabs_dir()).expect("the shipped library builds");
+    let out =
+        build_with(&common::shown_prefabs_dir("entry-anchor")).expect("the shipped library builds");
     assert_eq!(
         bolt_transport(&out),
         Some(serde_json::json!(LANDING_ENTRY)),

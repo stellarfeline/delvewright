@@ -847,3 +847,239 @@ pub fn campaign_bound_to(dst: &Path, id: &str) -> PathBuf {
     });
     dst.to_path_buf()
 }
+
+/// **The prefab library, with every piece declaring its own outside** — a copy,
+/// for the fixtures that put the party outdoors.
+///
+/// `DW0885` asks a placed piece whether its outward solid boundary is buried or
+/// declared, and it asks only where the party's own air reaches: a fixture whose
+/// campaign is one sealed room never meets it. A fixture that opens a doorway
+/// onto the void, or stands a shore piece under an open sky, does — and the
+/// shipped library declares no `shown_faces`, because which of a piece's sides
+/// are finished exterior surface is a claim about the ASSET and belongs to the
+/// content repository's own adoption of the field.
+///
+/// So a fixture about daylight, or teleports, or a boundary drop, gets a library
+/// in which every piece says its sides are its own. It is the same move
+/// [`ocean_prefabs_dir`] makes for a different check, and for the reason stated
+/// there: *a fixture that trips a check it is not about proves nothing about the
+/// one it is.* The declaration is honest in these worlds — a free-standing box in
+/// a void is a box whose every side is what the player would see.
+///
+/// It is the whole library rather than a named piece so that a fixture drawing
+/// from a POOL, which cannot know which prefab the solver will seat, is covered
+/// by the same call.
+///
+/// Returns the directory, which is a temp copy: nothing here touches the library.
+pub fn shown_prefabs_dir(tag: &str) -> PathBuf {
+    // A fresh directory per CALL, not per tag. Tests in one binary run on
+    // several threads, and a helper that deletes and rewrites one shared path
+    // is two tests reading a library while a third is halfway through copying
+    // it — an intermittent red, which is an under-specified test rather than
+    // something to re-run.
+    static NTH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let nth = NTH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("shown-{tag}-{nth}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    copy_dir_all(&prefabs_dir(), &dir);
+    let mut patched = 0usize;
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        if path.file_name().and_then(|f| f.to_str()) == Some("pools.json") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let Some(obj) = doc.as_object_mut() else {
+            continue;
+        };
+        if !obj.contains_key("prefab_id") {
+            continue;
+        }
+        // Exactly the sides that have something on them. `DW0885`'s second arm
+        // refuses a `shown_faces` naming a face of pure air — a side that is all
+        // doorway is not a side a piece can finish — so a blanket six would be
+        // the fixture tripping the very check it is here to step out of the way
+        // of. The sides are read off the piece's own bytes, the same way the
+        // compiler reads them.
+        declare_shown_faces_at(&path);
+        patched += 1;
+    }
+    // The binding count of the helper itself: a copy that patched nothing is a
+    // library the fixtures below are not actually using, and it would look
+    // exactly like one that worked.
+    assert!(
+        patched > 0,
+        "shown_prefabs_dir patched no prefab document in {} — the copy is not the library",
+        dir.display()
+    );
+    dir
+}
+
+/// **Declare, on the prefab document at `dir/<id>.json`, exactly the sides its
+/// own bytes put a block on** (`DW0885`).
+///
+/// The companion of [`shown_prefabs_dir`] for a fixture that WRITES its own
+/// piece rather than copying the library's: same rule, same reading of the same
+/// bytes, one implementation.
+pub fn declare_shown_faces(dir: &Path, id: &str) {
+    declare_shown_faces_at(&dir.join(format!("{id}.json")));
+}
+
+fn declare_shown_faces_at(path: &Path) {
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let dir = path.parent().unwrap().to_path_buf();
+    let obj = doc.as_object_mut().unwrap();
+    let sides = solid_sides(&dir, obj);
+    assert!(
+        !sides.is_empty(),
+        "{} has no solid cell on any of its six sides",
+        path.display()
+    );
+    obj.insert("shown_faces".to_string(), serde_json::json!(sides));
+    std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
+}
+
+/// Which of a prefab's six sides carry at least one block, read off the piece's
+/// own `.nbt` bytes exactly as the compiler reads them — including a tiled piece,
+/// whose tiles are composed back into the one box they were cut out of.
+fn solid_sides(dir: &Path, meta: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+    let mut files: Vec<(String, [i64; 3])> = Vec::new();
+    let mut size = [0i64; 3];
+    if let Some(st) = meta.get("structure") {
+        size = read3(&st["size"]);
+        files.push((st["file"].as_str().unwrap().to_string(), [0, 0, 0]));
+    } else if let Some(set) = meta.get("structure_set") {
+        size = read3(&set["size"]);
+        for part in set["parts"].as_array().unwrap() {
+            files.push((
+                part["file"].as_str().unwrap().to_string(),
+                read3(&part["offset"]),
+            ));
+        }
+    }
+    let mut present = [[false; 2]; 3];
+    for (file, offset) in files {
+        let bytes = std::fs::read(dir.join(&file)).unwrap();
+        for (cell, name) in delvec::compiler::assembled::structure_named_cells(&bytes) {
+            if name == "minecraft:air" {
+                continue;
+            }
+            for axis in 0..3 {
+                let c = i64::from(cell[axis]) + offset[axis];
+                if c == 0 {
+                    present[axis][0] = true;
+                }
+                if c == size[axis] - 1 {
+                    present[axis][1] = true;
+                }
+            }
+        }
+    }
+    // The six words, in the order the compiler's own vocabulary spells them.
+    let names = [["west", "east"], ["down", "up"], ["north", "south"]];
+    let mut out: Vec<String> = Vec::new();
+    for axis in 0..3 {
+        for lo in 0..2 {
+            if present[axis][lo] {
+                out.push(names[axis][lo].to_string());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+fn read3(v: &serde_json::Value) -> [i64; 3] {
+    let a = v.as_array().unwrap();
+    [
+        a[0].as_i64().unwrap(),
+        a[1].as_i64().unwrap(),
+        a[2].as_i64().unwrap(),
+    ]
+}
+
+/// **A synthetic stone box as gzipped structure-template bytes**, lit from
+/// inside so the darkness gate never pre-empts whatever the caller is proving.
+///
+/// `open_x0` drops the whole `x == 0` slab — floor, wall and ceiling together.
+/// That one flag is the variable two different proofs turn: it makes the column
+/// beside the interior floor bottomless, so a body standing there is one step
+/// from leaving the world (`DW0322`), and it is also what lets the party's air
+/// out of the room, so the piece's own outside becomes something a body can be
+/// in front of (`DW0885`).
+///
+/// Shared rather than copied. It lived in `tests/boundary_assembled.rs` and was
+/// copied verbatim into a second file, which
+/// `tools/check-structure-emitters.py` caught in the only way it can: the copy
+/// was a new site naming `fastnbt::to_bytes` that judged no palette, and the
+/// repair the tool offers first is an exemption. Two fixtures framing the same
+/// box would have been two entries on an exclusion list, which is exactly the
+/// growth that check exists to refuse — so the function moved here, both call
+/// sites lost the ingredient, and the list got shorter instead.
+///
+/// The palette is three literal ids in this one function — air, stone,
+/// glowstone — and the bytes never leave the test that asks for them: they are
+/// handed to `emit::build` in memory and written into no prefab library, which
+/// is why this is a fixture and not an emitter.
+pub fn box_nbt(size: [i32; 3], open_x0: bool) -> Vec<u8> {
+    use fastnbt::Value;
+    let [sx, sy, sz] = size;
+    let mut blocks: Vec<Value> = Vec::new();
+    let mut push = |x: i32, y: i32, z: i32, state: i32| {
+        let mut c = std::collections::HashMap::new();
+        c.insert(
+            "pos".to_string(),
+            Value::List(vec![Value::Int(x), Value::Int(y), Value::Int(z)]),
+        );
+        c.insert("state".to_string(), Value::Int(state));
+        blocks.push(Value::Compound(c));
+    };
+    for x in 0..sx {
+        if open_x0 && x == 0 {
+            continue;
+        }
+        for y in 0..sy {
+            for z in 0..sz {
+                if y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1 {
+                    push(x, y, z, 1); // stone
+                }
+            }
+        }
+    }
+    // Interior glowstone: the lighting gate is not what these tests are about.
+    for x in [2, sx / 2, sx - 3] {
+        for z in [2, sz / 2, sz - 3] {
+            push(x, sy - 2, z, 2);
+        }
+    }
+    let palette = Value::List(vec![
+        box_pal_entry("minecraft:air"),
+        box_pal_entry("minecraft:stone"),
+        box_pal_entry("minecraft:glowstone"),
+    ]);
+    let mut root = std::collections::HashMap::new();
+    root.insert("DataVersion".to_string(), Value::Int(4671));
+    root.insert(
+        "size".to_string(),
+        Value::List(vec![Value::Int(sx), Value::Int(sy), Value::Int(sz)]),
+    );
+    root.insert("palette".to_string(), palette);
+    root.insert("blocks".to_string(), Value::List(blocks));
+    root.insert("entities".to_string(), Value::List(vec![]));
+    let raw = fastnbt::to_bytes(&Value::Compound(root)).unwrap();
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut gz, &raw).unwrap();
+    gz.finish().unwrap()
+}
+
+fn box_pal_entry(name: &str) -> fastnbt::Value {
+    let mut c = std::collections::HashMap::new();
+    c.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
+    fastnbt::Value::Compound(c)
+}

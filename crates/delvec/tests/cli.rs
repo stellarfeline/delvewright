@@ -1739,7 +1739,10 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
 
 #[test]
 fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_does_not() {
-    let pf = common::prefabs_dir();
+    // The shore piece stands under an open sky here, so `DW0885` asks it which
+    // of its sides are finished surface; this fixture is about where its water
+    // goes. See `common::shown_prefabs_dir`.
+    let pf = common::shown_prefabs_dir("dw0318");
 
     // --- void: the water runs out of the world ------------------------------
     let camp = beach_camp_campaign("dw0318-void", false);

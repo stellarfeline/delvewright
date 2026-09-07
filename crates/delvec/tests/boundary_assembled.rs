@@ -33,75 +33,18 @@ fn hello_world() -> Campaign {
     parse_campaign(&loaded.raw).expect("hello-world parses")
 }
 
-/// A synthetic gzipped structure `.nbt` for an `[sx,sy,sz]` stone box, lit from
-/// inside so the darkness gate (`DW0210`) never pre-empts the boundary proof.
-///
-/// `open_x0` drops the whole `x == 0` slab — floor, wall and ceiling together —
-/// which is what makes this a *boundary* fixture rather than a doorway one: the
-/// column beside the interior floor is then bottomless, and a player standing on
-/// that floor is one step from leaving the world.
-fn box_nbt(size: [i32; 3], open_x0: bool) -> Vec<u8> {
-    use fastnbt::Value;
-    let [sx, sy, sz] = size;
-    let mut blocks: Vec<Value> = Vec::new();
-    let mut push = |x: i32, y: i32, z: i32, state: i32| {
-        let mut c = std::collections::HashMap::new();
-        c.insert(
-            "pos".to_string(),
-            Value::List(vec![Value::Int(x), Value::Int(y), Value::Int(z)]),
-        );
-        c.insert("state".to_string(), Value::Int(state));
-        blocks.push(Value::Compound(c));
-    };
-    for x in 0..sx {
-        if open_x0 && x == 0 {
-            continue;
-        }
-        for y in 0..sy {
-            for z in 0..sz {
-                if y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1 {
-                    push(x, y, z, 1); // stone
-                }
-            }
-        }
-    }
-    // Interior glowstone: the lighting gate is not what these tests are about.
-    for x in [2, sx / 2, sx - 3] {
-        for z in [2, sz / 2, sz - 3] {
-            push(x, sy - 2, z, 2);
-        }
-    }
-    let palette = Value::List(vec![
-        pal_entry("minecraft:air"),
-        pal_entry("minecraft:stone"),
-        pal_entry("minecraft:glowstone"),
-    ]);
-    let mut root = std::collections::HashMap::new();
-    root.insert("DataVersion".to_string(), Value::Int(4671));
-    root.insert(
-        "size".to_string(),
-        Value::List(vec![Value::Int(sx), Value::Int(sy), Value::Int(sz)]),
-    );
-    root.insert("palette".to_string(), palette);
-    root.insert("blocks".to_string(), Value::List(blocks));
-    root.insert("entities".to_string(), Value::List(vec![]));
-    let raw = fastnbt::to_bytes(&Value::Compound(root)).unwrap();
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    std::io::Write::write_all(&mut gz, &raw).unwrap();
-    gz.finish().unwrap()
-}
-
-fn pal_entry(name: &str) -> fastnbt::Value {
-    let mut c = std::collections::HashMap::new();
-    c.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
-    fastnbt::Value::Compound(c)
-}
-
 /// Build hello-world through the real `emit::build` path against a synthetic
 /// structure. No edit script exists, so `edit_replay` is `None` and the ONLY
 /// boundary proof that runs is the stage-10 one over the assembled world.
 fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput, BuildFailure> {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    // This fixture hands `emit` its OWN structure bytes in place of the
+    // library's, so the sides the piece really has are the synthetic box's. Write
+    // them over the copy before the `shown_faces` declaration is read off them,
+    // or `DW0885` is judging a claim about a wall this world does not have.
+    let dir = common::shown_prefabs_dir("boundary");
+    std::fs::write(dir.join("hello-room.nbt"), &nbt).unwrap();
+    common::declare_shown_faces(&dir, "hello-room");
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
     let plan = Plan::build(campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
@@ -136,7 +79,7 @@ fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput
 #[test]
 fn an_editless_campaign_with_a_walkable_edge_over_void_is_dw0322() {
     let c = hello_world();
-    let err = build_with_structure(&c, box_nbt([11, 6, 11], true))
+    let err = build_with_structure(&c, common::box_nbt([11, 6, 11], true))
         .expect_err("an open-sided room is a walkable edge over the void");
     let BuildFailure::Diagnostic { code, message } = err else {
         panic!("expected a diagnostic failure");
@@ -160,7 +103,7 @@ fn an_editless_campaign_with_a_walkable_edge_over_void_is_dw0322() {
 #[test]
 fn the_same_campaign_with_the_wall_intact_is_clean() {
     let c = hello_world();
-    match build_with_structure(&c, box_nbt([11, 6, 11], false)) {
+    match build_with_structure(&c, common::box_nbt([11, 6, 11], false)) {
         Ok(_) => {}
         Err(BuildFailure::Diagnostic { code, message }) => {
             assert_ne!(code, "DW0322", "an enclosed room has a boundary: {message}");
@@ -246,6 +189,12 @@ fn doorway_nbt(landing: bool) -> Vec<u8> {
     let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     std::io::Write::write_all(&mut gz, &raw).unwrap();
     gz.finish().unwrap()
+}
+
+fn pal_entry(name: &str) -> fastnbt::Value {
+    let mut c = std::collections::HashMap::new();
+    c.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
+    fastnbt::Value::Compound(c)
 }
 
 /// **A door is not a breach, and a door onto nothing is.** A piece whose front

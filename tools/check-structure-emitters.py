@@ -150,13 +150,25 @@ NOT_EMITTERS = {
         "`#[cfg(test)]` fixture: hand-frames a template to feed `structure_cells`. Emits "
         "nothing; reads its own bytes back in the same function."
     ),
-    "crates/delvec/tests/boundary_assembled.rs": "test fixture for the assembled-world model.",
+    "crates/delvec/tests/boundary_assembled.rs": (
+        "test fixture for the assembled-world model. The plain stone box it used to frame here "
+        "moved to `common::box_nbt` when a second file needed it; what remains is this file's "
+        "own — a room with a doorway in one wall and an optional walled porch outside it, the "
+        "shape the door-onto-the-void case turns on. Its palette is the same three literal ids "
+        "in the same function, and the bytes go straight to `emit::build` in memory."
+    ),
     "crates/delvec/tests/common/mod.rs": (
-        "test fixture for the tiled-placement proof: synthesises a sealed corridor past the "
-        "48-per-axis cap as two tiles plus a manifest, into a per-test temp dir. Its whole "
-        "palette is two literal ids in the same function (`minecraft:stone`, "
-        "`minecraft:glowstone`), and nothing writes it into a prefab library — the bytes exist "
-        "to be read back by the same test that wrote them."
+        "the shared test fixture module, and the only place these tests frame a template. Two "
+        "synthesisers live here: the tiled-placement proof's sealed corridor past the "
+        "48-per-axis cap, written as two tiles plus a manifest into a per-test temp dir, and "
+        "`box_nbt`, the stone box the boundary and piece-exposure proofs both build their world "
+        "out of. Between them the palette is three literal ids named in the same functions "
+        "(`minecraft:air`, `minecraft:stone`, `minecraft:glowstone`), and nothing writes either "
+        "into a prefab library — the bytes exist to be read back by the same test that asked for "
+        "them. `box_nbt` arrived here because it was COPIED into a second test file, and this "
+        "check caught the copy as a new unjudged site: the repair was to share the one function "
+        "rather than to write a second exemption, so this list got shorter by one entry "
+        "(`crates/delvec/tests/boundary_assembled.rs`) instead of longer by one."
     ),
     "crates/delvec/tests/emit.rs": "test fixture for the emitted datapack.",
     "crates/delvec/tests/lava_floor.rs": (

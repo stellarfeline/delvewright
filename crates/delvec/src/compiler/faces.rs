@@ -189,7 +189,11 @@ impl PlacedFace {
     }
 }
 
-fn dir_name(dir: [i32; 3]) -> &'static str {
+///
+/// One vocabulary for the six sides of a piece, shared rather than copied: the
+/// face contract spells a direction with these words, `shown_faces` spells one
+/// with the same words, and `compiler::burial` reads both.
+pub(crate) fn dir_name(dir: [i32; 3]) -> &'static str {
     match dir {
         [1, 0, 0] => "east",
         [-1, 0, 0] => "west",
@@ -200,7 +204,7 @@ fn dir_name(dir: [i32; 3]) -> &'static str {
     }
 }
 
-fn dir_vector(name: &str) -> Option<[i32; 3]> {
+pub(crate) fn dir_vector(name: &str) -> Option<[i32; 3]> {
     Some(match name {
         "east" => [1, 0, 0],
         "west" => [-1, 0, 0],
@@ -757,7 +761,7 @@ fn world_cell(rotation: Rotation, pos: [i32; 3], local: [i32; 3]) -> [i32; 3] {
 
 /// A local outward direction, rotated. The pivot does not matter for a
 /// direction, so this is the same transform without the translation.
-fn rotate_dir(rotation: Rotation, dir: [i32; 3]) -> [i32; 3] {
+pub(crate) fn rotate_dir(rotation: Rotation, dir: [i32; 3]) -> [i32; 3] {
     rotation.transform(dir)
 }
 

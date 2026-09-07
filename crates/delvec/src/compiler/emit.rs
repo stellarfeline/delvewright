@@ -686,6 +686,13 @@ pub fn build_with_warnings(
     // assembles a world — a `horizon: void` one included, which then ships a
     // ledger saying `"horizon": "void"` and zeroes, rather than nothing at all.
     let mut sea_seepage_ledger: Option<serde_json::Value> = None;
+    // The piece-exposure binding ledger (`compiler::burial`, `DW0885`): how much
+    // solid boundary the placed pieces put on their own boxes, how much of it
+    // has nothing in front of it, and how much of THAT stands in air the party
+    // can be in. Filled by every campaign that assembles a world, zeroes
+    // included — a build whose party never gets outdoors ships a ledger saying
+    // so, which is a different artifact from one that never ran the question.
+    let mut piece_exposure_ledger: Option<serde_json::Value> = None;
     // The lethal-volume proofs' binding ledger (`compiler::lethal`), filled inside
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
@@ -902,12 +909,51 @@ pub fn build_with_warnings(
             // cannot disagree with it because the measurement is pure and reads
             // the same sets. A pass owes the numbers as much as a failure does —
             // `contact_face_cells: 0` is a watertight hull saying so.
-            let seepage = crate::compiler::nav::measure_sea_seepage(
-                &world,
-                &world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan)),
-            );
+            let party_walk =
+                world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan));
+            let seepage = crate::compiler::nav::measure_sea_seepage(&world, &party_walk);
             eprintln!("{}", seepage.line());
             sea_seepage_ledger = Some(seepage.ledger());
+
+            // **`DW0885`: a piece's outside answers for itself, or the world
+            // buries it.** Bound here because this is the one function that
+            // turns a plan into a datapack AND the first point at which the
+            // three things the question needs are all in hand: the assembled
+            // blocks (what the build really writes, a valley's terrain
+            // included), the placed boxes, and the walk region the party is
+            // proved to stand in. `Plan::build` cannot answer it — it runs
+            // before a single `.nbt` byte is read, so it knows where the boxes
+            // are and nothing about which of their boundary cells are solid.
+            // The binding line is printed BEFORE the refusal is raised, and the
+            // ordering is the vacuity rule rather than a nicety: the run that
+            // finds something owes its reader the same counts as the run that
+            // finds nothing, and a check whose line appears only on a pass is one
+            // whose denominator nobody can read at the moment it matters.
+            let (exposure, findings) = crate::compiler::burial::check(
+                plan,
+                prefabs,
+                &blocks,
+                structures,
+                &world,
+                &party_walk,
+            );
+            eprintln!("{}", exposure.line());
+            piece_exposure_ledger = Some(exposure.to_json());
+            if let Some((first, rest)) = findings.split_first() {
+                // Every piece this world stands unanswered, not only the one
+                // that stops the build. The failure channel carries one message
+                // (`BuildFailure`), which is the compiler's contract and does
+                // not move; what would otherwise be lost is that a placement
+                // defect is routinely several pieces at once, so the rest print
+                // here and the first travels as the refusal.
+                for extra in rest {
+                    eprintln!("{} [error] build: {}", extra.code, extra.message);
+                }
+                return Err(BuildFailure::Diagnostic {
+                    code: crate::compiler::burial::DW_PIECE_EXPOSED,
+                    message: first.message.clone(),
+                });
+            }
 
             // **The surround bounds the map, proven rather than promised**
             // (`DW0854`). The generator guarantees that no surround column
@@ -1817,6 +1863,14 @@ pub fn build_with_warnings(
     // only for a campaign that assembles no world at all.
     if let Some(ledger) = &sea_seepage_ledger {
         put_json(&mut out, "validation/sea-seepage.json", ledger);
+    }
+    // The piece-exposure binding ledger (`DW0885`): the horizon, the solid
+    // boundary the placed pieces carry, how much of it nothing stands in front
+    // of, how much of that the party's own air reaches, and how many
+    // `shown_faces` declarations were read and bound. `None` only for a campaign
+    // that assembles no world at all.
+    if let Some(ledger) = &piece_exposure_ledger {
+        put_json(&mut out, "validation/piece-exposure.json", ledger);
     }
     if let Some(ledger) = &gate_seal_ledger {
         put_json(&mut out, "validation/gate-seal.json", ledger);

@@ -356,6 +356,12 @@ fn library(tag: &str, deck_block: &str) -> Library {
     )
     .expect("the broken threshold exports green with its way declared");
     exported.write_to_dir(&dir).unwrap();
+    // The grammar exporter writes no `shown_faces` — which sides of a building
+    // are finished is a fact about where it is placed, and the exporter has no
+    // placement (`DW0885`). This tower stands alone under an open sky, so the
+    // fixture says what the piece is: a free-standing tower whose every built
+    // side is one the player walks up to.
+    common::declare_shown_faces(&dir, "broken-threshold");
     with_a_spawn(&dir, "broken-threshold");
 
     let meta: serde_json::Value =

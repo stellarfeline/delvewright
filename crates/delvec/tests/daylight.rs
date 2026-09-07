@@ -94,7 +94,7 @@ fn campaign_with(
 fn build(dir: &Path) -> Result<Vec<Diagnostic>, BuildFailure> {
     let loaded = load_campaign_dir(dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("daylight")).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
     let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);

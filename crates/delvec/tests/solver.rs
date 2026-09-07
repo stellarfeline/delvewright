@@ -19,7 +19,7 @@ use std::path::Path;
 fn build_campaign(dir: &Path) -> BuildOutput {
     let loaded = load_campaign_dir(dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
 
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -66,7 +66,7 @@ fn keep_crawl_build_is_deterministic() {
 fn keep_crawl_layout_stats_and_commands() {
     let loaded = load_campaign_dir(&common::keep_crawl_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).unwrap();
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let plan = Plan::build(&campaign, &prefabs).unwrap();
 
     // area 0 = single-prefab gatehouse; area 1 = the pool.
@@ -200,7 +200,7 @@ fn keep_trial_builds_all_verbs_and_is_deterministic() {
     // Layout: ≥7 pieces including a branch (tee/cross) and a corner room.
     let loaded = load_campaign_dir(&common::keep_trial_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).unwrap();
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let plan = Plan::build(&campaign, &prefabs).unwrap();
     let keep = &plan.areas[0];
     assert!(
@@ -350,7 +350,7 @@ fn keep_vertical_builds_vertical_and_is_deterministic() {
 
     let loaded = load_campaign_dir(&common::keep_vertical_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).unwrap();
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let plan = Plan::build(&campaign, &prefabs).unwrap();
     let keep = &plan.areas[0];
 
@@ -502,7 +502,7 @@ fn keep_trial_m2_presentation_fixes() {
 /// fully-consumed linear chain has no open sockets).
 #[test]
 fn open_socket_is_sealed_with_wall() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let mut stream = Splitmix64::new(solver::stream_seed(1, "area/test"));
     // Require only the gate (gate-room, a 2-socket through room). With no dead-end
     // terminal, the spine ends at the gate-room, leaving its far socket open.
@@ -548,7 +548,7 @@ fn open_socket_is_sealed_with_wall() {
 /// what this test measures.
 #[test]
 fn a_single_prefab_areas_lone_piece_seals_the_sockets_it_cannot_mate() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let meta = prefabs
         .get("prefab/cave-shore")
         .expect("the library carries prefab/cave-shore");
@@ -648,7 +648,7 @@ fn a_single_prefab_areas_lone_piece_seals_the_sockets_it_cannot_mate() {
 /// in the tree is of that shape.
 #[test]
 fn a_connectorless_single_prefab_area_still_gets_no_seals() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
@@ -679,7 +679,7 @@ fn a_connectorless_single_prefab_area_still_gets_no_seals() {
 /// collapse to one piece via coverage-reuse; see `objective_reuses_boss_hall`.)
 #[test]
 fn branching_two_terminals_both_placed() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let mut stream = Splitmix64::new(solver::stream_seed(20260730, "area/keep"));
     let layout = solver::solve_area(
         &prefabs,
@@ -735,7 +735,7 @@ fn branching_two_terminals_both_placed() {
 /// would fail. Guards against seed-dependent overlap flakiness.
 #[test]
 fn branching_solves_across_many_seeds() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let mut failures = 0;
     for seed in 0u64..200 {
         let mut s = Splitmix64::new(solver::stream_seed(seed, "area/keep"));
@@ -768,7 +768,7 @@ fn branching_solves_across_many_seeds() {
 /// Branching determinism: same seed → identical branching layout.
 #[test]
 fn branching_same_seed_same_layout() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let solve = || {
         let mut s = Splitmix64::new(solver::stream_seed(99, "area/keep"));
         solver::solve_area(
@@ -797,7 +797,7 @@ fn branching_same_seed_same_layout() {
 /// invariant beneath the byte-identity gate).
 #[test]
 fn solver_same_seed_same_layout() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let solve = || {
         let mut s = Splitmix64::new(solver::stream_seed(20260730, "area/keep"));
         solver::solve_area(
@@ -853,7 +853,7 @@ fn hollow_vigil_anchors() -> Vec<String> {
 /// one boss-hall, and no shrine are placed for the hollow-vigil shape.
 #[test]
 fn objective_reuses_boss_hall_and_no_duplicate_entry() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let mut s = Splitmix64::new(solver::stream_seed(7, "area/keep"));
     let layout = solver::solve_area(
         &prefabs,
@@ -892,7 +892,7 @@ fn objective_reuses_boss_hall_and_no_duplicate_entry() {
 /// sweep number is visible with `--nocapture`.)
 #[test]
 fn hollow_vigil_seed_sweep_meets_target() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let req = hollow_vigil_anchors();
     let mut ok = 0u32;
     for seed in 1u64..=40 {
@@ -921,7 +921,7 @@ fn hollow_vigil_seed_sweep_meets_target() {
 /// referencing `anchor/npc-stand` resolves ambiguously across the two.
 #[test]
 fn ambiguous_anchor_is_dw0305() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let mut s = Splitmix64::new(solver::stream_seed(1, "area/keep"));
     let err = solver::solve_area(
         &prefabs,
@@ -949,7 +949,7 @@ fn ambiguous_anchor_is_dw0305() {
 /// ≥2 elevation levels (distinct piece floor `y`s), and stays deterministic.
 #[test]
 fn vertical_pool_spans_multiple_levels() {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("solver")).unwrap();
     let solve = || {
         let mut s = Splitmix64::new(solver::stream_seed(20260731, "area/keep"));
         solver::solve_area(
