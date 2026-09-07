@@ -73,7 +73,7 @@ fn every_tier_keyword_validates_at_v07() {
     for tier in ["ordinary", "elite", "boss"] {
         let raw = raw_with_quests(quests_with_tier(
             &format!(",\n         \"tier\": \"{tier}\""),
-            "0.20.0",
+            "0.21.0",
         ));
         let d = check_campaign(&raw);
         assert!(d.is_empty(), "`{tier}` must validate clean: {d:#?}");

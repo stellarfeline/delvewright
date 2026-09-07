@@ -90,10 +90,10 @@ const GOOD: &str = r#",
         "offers": [
           { "label": "Bank an ember",
             "effects": [
-              { "type": "narrate", "text": "You have nothing left to give.",
-                "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] },
-              { "type": "add-state", "state": "state/embers", "amount": -1,
-                "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }
+              { "type": "narrate",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] }, "text": "You have nothing left to give." },
+              { "type": "add-state",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }, "state": "state/embers", "amount": -1 }
             ] }
         ] }
     ]"#;
@@ -101,9 +101,9 @@ const GOOD: &str = r#",
 #[test]
 fn a_well_formed_economy_validates_clean() {
     assert!(
-        codes(&campaign("0.20.0", GOOD)).is_empty(),
+        codes(&campaign("0.21.0", GOOD)).is_empty(),
         "{:#?}",
-        validate_campaign(&campaign("0.20.0", GOOD))
+        validate_campaign(&campaign("0.21.0", GOOD))
     );
 }
 
@@ -116,14 +116,14 @@ fn dw0520_a_stake_needs_a_player_scoped_datum() {
     let party = GOOD.replace(r#""scope": "player""#, r#""scope": "party""#);
     assert_ne!(party, GOOD);
     assert!(
-        codes(&campaign("0.20.0", &party)).contains(&"DW0520".to_string()),
+        codes(&campaign("0.21.0", &party)).contains(&"DW0520".to_string()),
         "a party-scoped purse is not a personal wager"
     );
 
     let missing = GOOD.replace(r#""state": "state/embers""#, r#""state": "state/ash""#);
     assert_ne!(missing, GOOD);
     assert!(
-        codes(&campaign("0.20.0", &missing)).contains(&"DW0520".to_string()),
+        codes(&campaign("0.21.0", &missing)).contains(&"DW0520".to_string()),
         "a stake whose datum the campaign never declares"
     );
 }
@@ -133,7 +133,7 @@ fn dw0520_a_stake_needs_a_player_scoped_datum() {
 fn dw0521_drop_stake_must_name_a_declared_stake() {
     let bad = GOOD.replace(r#""stake": "stake/embers" }"#, r#""stake": "stake/ash" }"#);
     assert_ne!(bad, GOOD);
-    let got = codes(&campaign("0.20.0", &bad));
+    let got = codes(&campaign("0.21.0", &bad));
     assert!(got.contains(&"DW0521".to_string()), "{got:?}");
 }
 
@@ -148,7 +148,7 @@ fn dw0522_a_stake_nothing_drops_is_a_finding() {
         "",
     );
     assert_ne!(orphan, GOOD);
-    let got = codes(&campaign("0.20.0", &orphan));
+    let got = codes(&campaign("0.21.0", &orphan));
     assert!(got.contains(&"DW0522".to_string()), "{got:?}");
 }
 
@@ -159,15 +159,15 @@ fn dw0522_a_stake_nothing_drops_is_a_finding() {
 fn dw0523_an_offer_that_cannot_answer_is_a_finding() {
     let inert = GOOD.replace(
         r#""effects": [
-              { "type": "narrate", "text": "You have nothing left to give.",
-                "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] },
-              { "type": "add-state", "state": "state/embers", "amount": -1,
-                "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }
+              { "type": "narrate",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] }, "text": "You have nothing left to give." },
+              { "type": "add-state",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }, "state": "state/embers", "amount": -1 }
             ]"#,
         r#""effects": []"#,
     );
     assert_ne!(inert, GOOD);
-    let got = codes(&campaign("0.20.0", &inert));
+    let got = codes(&campaign("0.21.0", &inert));
     assert!(got.contains(&"DW0523".to_string()), "{got:?}");
 
     // …and a shop with no offers at all is the same code, because vanilla's
@@ -178,7 +178,7 @@ fn dw0523_an_offer_that_cannot_answer_is_a_finding() {
     "shops": [ { "id": "shop/brazier", "anchor": "anchor/keeper-stand",
                  "title": "The brazier", "offers": [] } ]"#;
     assert!(
-        codes(&campaign("0.20.0", no_offers)).contains(&"DW0523".to_string()),
+        codes(&campaign("0.21.0", no_offers)).contains(&"DW0523".to_string()),
         "a shop with no offers is a dialog that cannot load"
     );
 }
@@ -192,7 +192,7 @@ fn dw0524_a_proportion_above_one_hundred_is_a_finding() {
         r#""forfeit": { "kind": "proportion", "percent": 150 }, "collected_message""#,
     );
     assert_ne!(over, GOOD);
-    let got = codes(&campaign("0.20.0", &over));
+    let got = codes(&campaign("0.21.0", &over));
     assert!(got.contains(&"DW0524".to_string()), "{got:?}");
 }
 
@@ -207,22 +207,22 @@ fn dw0524_a_proportion_above_one_hundred_is_a_finding() {
 #[test]
 fn dw0527_a_gate_read_after_a_conditional_write_is_a_finding() {
     let hazard = GOOD.replace(
-        r#"{ "type": "narrate", "text": "You have nothing left to give.",
-                "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] },
-              { "type": "add-state", "state": "state/embers", "amount": -1,
-                "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }"#,
-        r#"{ "type": "add-state", "state": "state/embers", "amount": -1,
-                "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] },
-              { "type": "narrate", "text": "You have nothing left to give.",
-                "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] }"#,
+        r#"{ "type": "narrate",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] }, "text": "You have nothing left to give." },
+              { "type": "add-state",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }, "state": "state/embers", "amount": -1 }"#,
+        r#"{ "type": "add-state",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }, "state": "state/embers", "amount": -1 },
+              { "type": "narrate",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] }, "text": "You have nothing left to give." }"#,
     );
     assert_ne!(hazard, GOOD, "the two orderings really are different text");
     assert!(
-        codes(&campaign("0.20.0", &hazard)).contains(&"DW0527".to_string()),
+        codes(&campaign("0.21.0", &hazard)).contains(&"DW0527".to_string()),
         "purchase-then-apology is the hazard"
     );
     assert!(
-        !codes(&campaign("0.20.0", GOOD)).contains(&"DW0527".to_string()),
+        !codes(&campaign("0.21.0", GOOD)).contains(&"DW0527".to_string()),
         "apology-then-purchase is correct and must not be diagnosed"
     );
 
@@ -235,12 +235,12 @@ fn dw0527_a_gate_read_after_a_conditional_write_is_a_finding() {
       { "id": "trigger/pay", "at": "anchor/door", "on": { "on": "use" },
         "effects": [
           { "type": "set-state", "state": "state/toll", "value": 0 },
-          { "type": "open-gate", "anchor": "anchor/door",
-            "requires_state": [ { "state": "state/toll", "op": "at-most", "value": 0 } ] }
+          { "type": "open-gate",
+            "when": { "requires_state": [ { "state": "state/toll", "op": "at-most", "value": 0 } ] }, "anchor": "anchor/door" }
         ] }
     ]"#;
     assert!(
-        !codes(&campaign("0.20.0", sequenced)).contains(&"DW0527".to_string()),
+        !codes(&campaign("0.21.0", sequenced)).contains(&"DW0527".to_string()),
         "an unconditional write is the sequenced idiom, not the hazard"
     );
 }
@@ -251,7 +251,7 @@ fn dw0527_a_gate_read_after_a_conditional_write_is_a_finding() {
 #[test]
 fn a_shop_offer_is_a_gate_consumer() {
     use delvewright_dsl::gate::{GateConsumer, for_each_gate};
-    let c = campaign("0.20.0", GOOD);
+    let c = campaign("0.21.0", GOOD);
     let mut priced = 0usize;
     let binding = for_each_gate(&c, &mut |site, gate| {
         if site.consumer == GateConsumer::ShopOffer && !gate.requires_state.is_empty() {
@@ -278,7 +278,7 @@ fn a_shop_offer_is_a_gate_consumer() {
 /// visiting the shop would not pass by finding nothing.
 #[test]
 fn every_new_player_visible_string_is_inventoried() {
-    let mut c = campaign("0.20.0", GOOD);
+    let mut c = campaign("0.21.0", GOOD);
     let mut keys: Vec<String> = Vec::new();
     delvewright_dsl::l10n::each_string(&mut c, &mut |k, _| keys.push(k.to_string()));
     for want in [

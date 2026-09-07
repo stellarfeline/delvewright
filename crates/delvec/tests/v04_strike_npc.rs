@@ -26,7 +26,7 @@ const NS: &str = "hello-world";
 fn quests_doc(triggers: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

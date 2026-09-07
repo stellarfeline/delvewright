@@ -3,6 +3,7 @@
 //! [`validate_campaign`] uses the vendored v0 registries; the compiler injects
 //! full registries via [`validate_campaign_with`].
 
+use crate::stages::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
@@ -490,7 +491,7 @@ fn read_after_write_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 d.push(Diagnostic::warning(
                     codes::STATE_READ_AFTER_WRITE,
                     site.stage,
-                    format!("{}/{i}/requires_state", site.path),
+                    format!("{}/{i}/when/requires_state", site.path),
                     format!(
                         "this `{}` compares `{}`, and effect {at} of the same bundle already \
                          changes `{}` behind a gate on `{}` itself — so this comparison is made \
@@ -503,7 +504,7 @@ fn read_after_write_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                          this: `set-state toll 0` and then a door gated on `toll at-most 0` \
                          plainly means the value the bundle just produced, and is not \
                          diagnosed.)",
-                        eff.verb(),
+                        eff.verb.tag(),
                         cmp.state.as_str(),
                         cmp.state.as_str(),
                         cmp.state.as_str()
@@ -658,7 +659,7 @@ fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // fires is a whole mechanism that binds to nothing.
     let mut dropped: BTreeSet<String> = BTreeSet::new();
     crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-        let crate::stages::QuestEffect::DropStake { stake, .. } = eff else {
+        let crate::stages::Verb::DropStake { stake, .. } = &eff.verb else {
             return;
         };
         if c.quests.content.stake_decl(stake.as_str()).is_none() {
@@ -1699,7 +1700,7 @@ fn mainline_key(c: &Campaign, optional: &BTreeSet<&str>, d: &mut Vec<Diagnostic>
     let mut disqualified: BTreeSet<&str> = BTreeSet::new();
 
     crate::stages::for_each_campaign_effect(c, &mut |_path, site, eff| {
-        let QuestEffect::SetFlag { flag, .. } = eff else {
+        let Verb::SetFlag { flag, .. } = &eff.verb else {
             return;
         };
         let flag = flag.as_str();
@@ -2377,8 +2378,8 @@ fn status_effect_bundle(
 fn effect_timeline<'a>(path: &str, list: &'a [QuestEffect]) -> Vec<(u32, String, &'a QuestEffect)> {
     let mut out = Vec::new();
     for (i, eff) in list.iter().enumerate() {
-        match eff {
-            QuestEffect::Sequence { steps } => {
+        match &eff.verb {
+            Verb::Sequence { steps } => {
                 for (s, step) in steps.iter().enumerate() {
                     for (k, inner) in step.effects.iter().enumerate() {
                         out.push((
@@ -2492,7 +2493,7 @@ fn check_one_status_effect(
                     "`{}` names status effect `{id}`, which is not in the pinned 1.21.11 \
                      `mob_effect` registry — use a valid namespaced effect id (e.g. \
                      `minecraft:blindness`)",
-                    eff.verb()
+                    eff.verb.tag()
                 ),
             ));
         }
@@ -2667,7 +2668,7 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 format!(
                     "`{}` writes `{}`, which the campaign never declares. Add it to the stage-5 \
                      `state` list, or fix the id",
-                    eff.verb(),
+                    eff.verb.tag(),
                     id.as_str()
                 ),
             )),
@@ -2783,7 +2784,7 @@ fn check_player_state_not_scheduled(
                              `sequence` step and a `move-npc`/`move-actor` `on_arrive`). There \
                              is no player to read the datum from. Declare it `party`-scoped, or \
                              move the comparison onto a beat a player completes",
-                            e.verb(),
+                            e.verb.tag(),
                             cmp.state.as_str()
                         ),
                     ));
@@ -2806,29 +2807,29 @@ fn check_player_state_not_scheduled(
                      acting player whose datum this would be, so the write would silently reach \
                      nobody. Declare the datum `party`-scoped, or move the write onto a beat a \
                      player completes",
-                    e.verb(),
+                    e.verb.tag(),
                     id.as_str()
                 ),
             ));
         }
-        match e {
+        match &e.verb {
             // Dispatched per player; they reset the latch.
-            QuestEffect::SetCheckpoint { on_respawn, .. } => {
+            Verb::SetCheckpoint { on_respawn, .. } => {
                 check_player_state_not_scheduled(on_respawn, declared, stage, path, false, d);
             }
-            QuestEffect::BeginStealth { on_caught, .. } => {
+            Verb::BeginStealth { on_caught, .. } => {
                 check_player_state_not_scheduled(on_caught, declared, stage, path, false, d);
             }
             // The scheduler-only seams (see `emit::Audience::Scheduled`).
-            QuestEffect::Sequence { steps } => {
+            Verb::Sequence { steps } => {
                 for st in steps {
                     check_player_state_not_scheduled(&st.effects, declared, stage, path, true, d);
                 }
             }
-            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
                 check_player_state_not_scheduled(on_arrive, declared, stage, path, true, d);
             }
-            QuestEffect::Bonfire { on_rest, .. } => {
+            Verb::Bonfire { on_rest, .. } => {
                 check_player_state_not_scheduled(on_rest, declared, stage, path, scheduled, d);
             }
             _ => {}
@@ -3031,9 +3032,9 @@ fn walk_effects_deep(effs: &[QuestEffect], f: &mut dyn FnMut(&QuestEffect)) {
 /// `on_arrive`) a `sequence` — the recursion `DW0329` forbids inside another
 /// sequence's steps.
 fn reaches_sequence(e: &QuestEffect) -> bool {
-    match e {
-        QuestEffect::Sequence { .. } => true,
-        QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+    match &e.verb {
+        Verb::Sequence { .. } => true,
+        Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
             on_arrive.iter().any(reaches_sequence)
         }
         _ => false,
@@ -3046,8 +3047,8 @@ fn reaches_sequence(e: &QuestEffect) -> bool {
 /// double-reporting).
 fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagnostic>) {
     for e in effs {
-        match e {
-            QuestEffect::Sequence { steps } => {
+        match &e.verb {
+            Verb::Sequence { steps } => {
                 for s in steps {
                     for inner in &s.effects {
                         if reaches_sequence(inner) {
@@ -3065,7 +3066,7 @@ fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagno
                     }
                 }
             }
-            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
                 check_no_nested_sequence(on_arrive, path, d);
             }
             _ => {}
@@ -3106,21 +3107,21 @@ fn check_carrier_one_not_scheduled(
                     .to_string(),
             ));
         }
-        match e {
+        match &e.verb {
             // These bundles ARE dispatched per player; they reset the latch.
-            QuestEffect::SetCheckpoint { on_respawn, .. } => {
+            Verb::SetCheckpoint { on_respawn, .. } => {
                 check_carrier_one_not_scheduled(on_respawn, path, false, d);
             }
-            QuestEffect::BeginStealth { on_caught, .. } => {
+            Verb::BeginStealth { on_caught, .. } => {
                 check_carrier_one_not_scheduled(on_caught, path, false, d);
             }
             // These are the scheduler-only seams (see `emit::Audience::Scheduled`).
-            QuestEffect::Sequence { steps } => {
+            Verb::Sequence { steps } => {
                 for st in steps {
                     check_carrier_one_not_scheduled(&st.effects, path, true, d);
                 }
             }
-            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
                 check_carrier_one_not_scheduled(on_arrive, path, true, d);
             }
             _ => {}
@@ -3254,7 +3255,7 @@ fn v06_checks(
                     ),
                 ));
             }
-            if let QuestEffect::MoveActor { to_anchor, .. } = e
+            if let Verb::MoveActor { to_anchor, .. } = &e.verb
                 && let Some(f) = station_kind_diag(
                     &providers,
                     to_anchor.as_str(),
@@ -3265,7 +3266,7 @@ fn v06_checks(
                 )
             {
                 d.push(f);
-            } else if let QuestEffect::MoveActor { to_anchor, .. } = e
+            } else if let Verb::MoveActor { to_anchor, .. } = &e.verb
                 && !providers.resolvable(to_anchor.as_str())
             {
                 d.push(Diagnostic::error(
@@ -3718,13 +3719,13 @@ fn anchors_and_items(
             // camera flies wherever the shot needs), so they resolve against the
             // union of every known area's anchors; every other effect anchor names
             // a world position the quest's own area must provide.
-            let cross_area = matches!(eff, QuestEffect::Cutscene { .. });
+            let cross_area = matches!(&eff.verb, Verb::Cutscene { .. });
             for (suffix, anchor, demands) in eff.anchor_refs() {
                 if let Some(f) = station_kind_diag(
                     &providers,
                     anchor.as_str(),
                     demands,
-                    &format!("`{}`", eff.verb()),
+                    &format!("`{}`", eff.verb.tag()),
                     "quests",
                     format!("/content/quests/{i}/{path}/{suffix}"),
                 ) {
@@ -3756,7 +3757,7 @@ fn anchors_and_items(
                             "use an anchor a prefab exposes (anchor names come from prefab \
                              metadata; do NOT invent one)"
                         ),
-                        verb = eff.verb(),
+                        verb = eff.verb.tag(),
                     ),
                 ));
             }
@@ -3776,7 +3777,7 @@ fn anchors_and_items(
                         &providers,
                         anchor.as_str(),
                         demands,
-                        &format!("`{}`", eff.verb()),
+                        &format!("`{}`", eff.verb.tag()),
                         "quests",
                         format!("/content/triggers/{ti}/{path}/{suffix}"),
                     ) {
@@ -3797,7 +3798,7 @@ fn anchors_and_items(
                                 "use an anchor a prefab exposes (anchor names come from prefab \
                                  metadata; do NOT invent one)"
                             ),
-                            verb = eff.verb(),
+                            verb = eff.verb.tag(),
                         ),
                     ));
                 }
@@ -4388,7 +4389,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/quests/{i}/{path}/requires_flags/{n}"),
+                        format!("/content/quests/{i}/{path}/when/requires_flags/{n}"),
                         format!(
                             "effect `requires_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
@@ -4403,7 +4404,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/quests/{i}/{path}/forbids_flags/{n}"),
+                        format!("/content/quests/{i}/{path}/when/forbids_flags/{n}"),
                         format!(
                             "effect `forbids_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — the gate can never suppress anything; add the \
@@ -4425,7 +4426,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/triggers/{i}/{path}/requires_flags/{n}"),
+                        format!("/content/triggers/{i}/{path}/when/requires_flags/{n}"),
                         format!(
                             "effect `requires_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
@@ -4439,7 +4440,7 @@ fn v03_checks(
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/triggers/{i}/{path}/forbids_flags/{n}"),
+                        format!("/content/triggers/{i}/{path}/when/forbids_flags/{n}"),
                         format!(
                             "effect `forbids_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — the gate can never suppress anything; add the \
@@ -5004,8 +5005,8 @@ fn v06_trap_checks(
         // other effect root gets.
         for_each_trap_payload_deep(t, |path, eff| {
             let base = format!("/content/traps/{i}/{path}");
-            match eff {
-                QuestEffect::Volley {
+            match &eff.verb {
+                Verb::Volley {
                     projectile,
                     salvos,
                     interval,
@@ -5055,7 +5056,7 @@ fn v06_trap_checks(
                         ));
                     }
                 }
-                QuestEffect::Collapse {
+                Verb::Collapse {
                     falling_block,
                     then_floor,
                     ..
@@ -5196,8 +5197,8 @@ fn check_effect_v04(
     d: &mut Vec<Diagnostic>,
 ) {
     check_cutscene_shape(eff, base_path, d);
-    match eff {
-        QuestEffect::SetBlock { block, .. } => {
+    match &eff.verb {
+        Verb::SetBlock { block, .. } => {
             check_block_field(
                 blocks,
                 block,
@@ -5210,7 +5211,7 @@ fn check_effect_v04(
         // The v0.10 region write (spec-0031) places the same kind of block over a
         // box instead of a cell, so it is the same `DW0193` check — the registry
         // belongs to "a block id an author wrote", not to `set-block`.
-        QuestEffect::FillRegion { block, .. } => {
+        Verb::FillRegion { block, .. } => {
             check_block_field(
                 blocks,
                 block,
@@ -5222,9 +5223,7 @@ fn check_effect_v04(
         }
         // NPC-lifecycle refs. `spawn-npc` (v0.6) joins the v0.4 `despawn-npc`/
         // `move-npc` family: an unknown npc id is the same `DW0112` dangling ref.
-        QuestEffect::DespawnNpc { npc, .. }
-        | QuestEffect::MoveNpc { npc, .. }
-        | QuestEffect::SpawnNpc { npc, .. }
+        Verb::DespawnNpc { npc, .. } | Verb::MoveNpc { npc, .. } | Verb::SpawnNpc { npc, .. }
             if !npc_ids.contains(npc.as_str()) =>
         {
             let verb = eff
@@ -5252,12 +5251,12 @@ fn check_effect_v04(
 /// ([`QuestEffect::cutscene_shots`]), so this is the one place the shape is
 /// policed; emission may then assume a non-empty, well-formed list.
 fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut Vec<Diagnostic>) {
-    let QuestEffect::Cutscene {
+    let Verb::Cutscene {
         shots,
         path,
         seconds,
         ..
-    } = eff
+    } = &eff.verb
     else {
         return;
     };
@@ -5352,10 +5351,10 @@ fn cutscene_style_checks(
     /// The sibling moves visible to a cutscene: `(is_actor, id)`.
     fn moves_in(list: &[QuestEffect], scope: &mut Vec<(bool, String)>) {
         for e in list {
-            match e {
-                QuestEffect::MoveNpc { npc, .. } => scope.push((false, npc.to_string())),
-                QuestEffect::MoveActor { actor, .. } => scope.push((true, actor.to_string())),
-                QuestEffect::Sequence { steps } => {
+            match &e.verb {
+                Verb::MoveNpc { npc, .. } => scope.push((false, npc.to_string())),
+                Verb::MoveActor { actor, .. } => scope.push((true, actor.to_string())),
+                Verb::Sequence { steps } => {
                     // A sequence launched from this list shares its timeline.
                     for st in steps {
                         moves_in(&st.effects, scope);
@@ -5404,7 +5403,7 @@ fn cutscene_style_checks(
         actor_ids: &BTreeSet<&str>,
         d: &mut Vec<Diagnostic>,
     ) {
-        let QuestEffect::Cutscene { shots, .. } = eff else {
+        let Verb::Cutscene { shots, .. } = &eff.verb else {
             return;
         };
         for (i, shot) in shots.iter().enumerate() {
@@ -5547,7 +5546,7 @@ fn cutscene_style_checks(
                 // A sequence step shares this timeline's scope; reaction lists
                 // (`on_arrive`/`on_caught`/`on_respawn`) fire at an unknowable
                 // time and start fresh.
-                let inherited: &[(bool, String)] = if matches!(e, QuestEffect::Sequence { .. }) {
+                let inherited: &[(bool, String)] = if matches!(&e.verb, Verb::Sequence { .. }) {
                     &scope
                 } else {
                     &[]
@@ -7264,21 +7263,21 @@ fn difficulty_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         .collect();
     for q in &c.quests.content.quests {
         for_each_effect_deep(q, |_, eff| {
-            if let QuestEffect::UnleashActor { actor, .. } = eff {
+            if let Verb::UnleashActor { actor, .. } = &eff.verb {
                 fighters.insert(actor.as_str().to_string());
             }
         });
     }
     for t in &c.quests.content.triggers {
         for_each_trigger_effect_deep(t, |_, eff| {
-            if let QuestEffect::UnleashActor { actor, .. } = eff {
+            if let Verb::UnleashActor { actor, .. } = &eff.verb {
                 fighters.insert(actor.as_str().to_string());
             }
         });
     }
     for t in &c.quests.content.traps {
         for_each_trap_payload_deep(t, |_, eff| {
-            if let QuestEffect::UnleashActor { actor, .. } = eff {
+            if let Verb::UnleashActor { actor, .. } = &eff.verb {
                 fighters.insert(actor.as_str().to_string());
             }
         });
@@ -8152,24 +8151,6 @@ fn loot_checks(
 // the bonfire rest interaction + the class-kit flask (spec-0016 §1)
 // ---------------------------------------------------------------------------
 
-/// The `happening` of an effect, for the eleven story-node verbs that carry one.
-pub(crate) fn effect_happening(eff: &QuestEffect) -> Option<&crate::stages::Happening> {
-    match eff {
-        QuestEffect::OpenGate { happening, .. }
-        | QuestEffect::CloseGate { happening, .. }
-        | QuestEffect::CampaignComplete { happening, .. }
-        | QuestEffect::SpawnWave { happening, .. }
-        | QuestEffect::DespawnNpc { happening, .. }
-        | QuestEffect::MoveNpc { happening, .. }
-        | QuestEffect::SpawnNpc { happening, .. }
-        | QuestEffect::SpawnActor { happening, .. }
-        | QuestEffect::DespawnActor { happening, .. }
-        | QuestEffect::MoveActor { happening, .. }
-        | QuestEffect::UnleashActor { happening, .. } => happening.as_ref(),
-        _ => None,
-    }
-}
-
 /// Structural validation of the stage-4 `branch_points` declaration (spec-0025).
 ///
 /// Everything here reuses the DSL's existing structural codes on purpose — a
@@ -8395,7 +8376,7 @@ fn happening_subject_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
     let mut effect_subjects: Vec<(String, String)> = Vec::new();
     crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-        if let Some(h) = effect_happening(eff)
+        if let Some(h) = eff.happening.as_ref()
             && let Some(s) = &h.subject
         {
             effect_subjects.push((format!("{path}/happening/subject"), s.clone()));
@@ -8427,9 +8408,9 @@ fn happening_subject_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 pub fn declared_endings(c: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     crate::stages::for_each_campaign_effect(c, &mut |_p, _site, eff| {
-        if let QuestEffect::CampaignComplete {
+        if let Verb::CampaignComplete {
             ending: Some(e), ..
-        } = eff
+        } = &eff.verb
         {
             out.insert(e.as_str().to_string());
         }
@@ -8461,7 +8442,7 @@ pub fn declared_endings(c: &Campaign) -> BTreeSet<String> {
 pub fn produced_flags(c: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     crate::stages::for_each_campaign_effect(c, &mut |_p, _site, eff| {
-        if let QuestEffect::SetFlag { flag, .. } = eff {
+        if let Verb::SetFlag { flag, .. } = &eff.verb {
             out.insert(flag.as_str().to_string());
         }
     });

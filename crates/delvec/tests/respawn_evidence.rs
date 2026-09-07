@@ -311,9 +311,9 @@ fn a_flag_gated_reset_is_not_a_reset() {
             "obj/shrine",
             json!([{
                 "type": "move-npc",
+                "when": { "requires_flags": ["flag/cleared"] },
                 "npc": "npc/keeper",
                 "to_anchor": "anchor/door",
-                "requires_flags": ["flag/cleared"],
                 "on_arrive": [
                     {"type": "despawn-actor", "actor": "actor/warden", "style": "vanish"}
                 ]

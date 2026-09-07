@@ -323,8 +323,10 @@ jobs:
         run: bash tools/assert-run-approved.sh crates-io
       - uses: Swatinem/rust-cache@v2
       # Re-package inside this job: `crates-io-publish.sh` hashes
-      # `target/package/*.crate`, and it must hash tarballs built here from the
-      # tagged tree, not artifacts handed over from another job.
+      # `package-verify/package/*.crate` (plus the sha256 this step writes
+      # beside each — tools/lib/package-verify.sh), and it must hash tarballs
+      # built here from the tagged tree, not artifacts handed over from
+      # another job.
       - name: package (and re-prove publishability) from the tagged tree
         run: bash tools/check-publishable.sh
       - name: publish

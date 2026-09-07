@@ -44,6 +44,6 @@
     "title": "The Gallery",
     "weather": "clear"
   },
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "stage": "world"
 }

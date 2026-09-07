@@ -89,6 +89,7 @@
 //! player never sees, so translating them is pointless and out of scope): world
 //! `theme`/`premise`, NPC `persona` fields, persona `relationships`.
 
+use crate::stages::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use schemars::JsonSchema;
@@ -103,15 +104,15 @@ use crate::stages::{NarrateStyle, QuestEffect};
 /// `narrate` line and a named `give-item`'s display name. `keybase` is the
 /// effect's stable position-derived key prefix.
 fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, &mut String)) {
-    match eff {
-        QuestEffect::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text),
-        QuestEffect::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
+    match &mut eff.verb {
+        Verb::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text),
+        Verb::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
         // spec-0016 §1: the bonfire's rest dialog is
         // read by the player like any other on-screen line, so its authored
         // strings translate like any other. Unauthored fields are absent from the
         // inventory — the compiler bakes its canonical English, exactly as
         // `world.boundary.message` does.
-        QuestEffect::Bonfire {
+        Verb::Bonfire {
             prompt,
             rest_label,
             save_label,
@@ -131,7 +132,7 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
         // off the actionbar exactly like a `narrate`, so it translates like one. An
         // unauthored hint is absent from the inventory — the compiler bakes its
         // canonical English, exactly as `world.boundary.message` does.
-        QuestEffect::CloseGate {
+        Verb::CloseGate {
             sealed_hint: Some(h),
             ..
         } => f(&format!("{keybase}.sealed_hint"), h),

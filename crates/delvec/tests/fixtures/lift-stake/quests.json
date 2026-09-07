@@ -37,28 +37,32 @@
             "anchor": "spawn",
             "on_respawn": [
               {
-                "requires_state": [
-                  {
-                    "op": "at-least",
-                    "state": "state/embers",
-                    "value": 1
-                  }
-                ],
                 "style": "chat",
                 "text": "You come to at the landing with your embers still on you.",
-                "type": "narrate"
+                "type": "narrate",
+                "when": {
+                  "requires_state": [
+                    {
+                      "op": "at-least",
+                      "state": "state/embers",
+                      "value": 1
+                    }
+                  ]
+                }
               },
               {
                 "amount": 1,
-                "requires_state": [
-                  {
-                    "op": "at-most",
-                    "state": "state/embers",
-                    "value": 0
-                  }
-                ],
                 "state": "state/embers",
-                "type": "add-state"
+                "type": "add-state",
+                "when": {
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/embers",
+                      "value": 0
+                    }
+                  ]
+                }
               }
             ],
             "type": "set-checkpoint"
@@ -385,6 +389,6 @@
       }
     ]
   },
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "stage": "quests"
 }

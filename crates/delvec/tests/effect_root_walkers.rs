@@ -55,6 +55,7 @@
 
 mod common;
 
+use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -110,8 +111,8 @@ fn probe_bundle(k: EffectRootKind) -> String {
     format!(
         r#"[
           {{ "type": "set-flag", "flag": "{flag}" }},
-          {{ "type": "narrate", "style": "chat", "text": "{text}",
-             "requires_flags": ["{flag}"] }}
+          {{ "type": "narrate",
+             "when": {{ "requires_flags": ["{flag}"] }}, "style": "chat", "text": "{text}" }}
         ]"#,
         flag = probe_flag(k),
         text = probe_text(k),
@@ -205,8 +206,8 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
     // Both stages are raised to the version the probe needs: `set-checkpoint`
     // (root 5) is v0.6 surface on the dialogue stage, `on_death` (root 7) is v0.10
     // on the quests stage. Raising a version never removes surface.
-    c.quests.dsl_version = "0.20.0".to_string();
-    c.dialogue.dsl_version = "0.20.0".to_string();
+    c.quests.dsl_version = "0.21.0".to_string();
+    c.dialogue.dsl_version = "0.21.0".to_string();
     match k {
         EffectRootKind::ObjectiveComplete => {
             let q = &mut c.quests.content.quests[0];
@@ -348,7 +349,7 @@ fn every_root_is_visited_by_every_walker() {
         // was a walk that could not REPRESENT a root, not one that skipped a list.
         let mut seen_site: Option<EffectSite> = None;
         delvewright_dsl::for_each_campaign_effect(&c, &mut |_path, site, eff| {
-            if let QuestEffect::Narrate { text, .. } = eff
+            if let Verb::Narrate { text, .. } = &eff.verb
                 && *text == probe_text(k)
             {
                 seen_site = Some(site.clone());

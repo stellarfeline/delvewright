@@ -48,6 +48,7 @@
 //! Everything here is validation metadata: nothing this module computes reaches
 //! the shipped datapack.
 
+use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{
@@ -433,7 +434,7 @@ fn chronicle_of(c: &Campaign, journal: &[JournalStep]) -> (Vec<ChronicleLine>, V
         if !matches!(site, EffectSite::Trigger { .. } | EffectSite::Trap { .. }) {
             return;
         }
-        if let Some(h) = delvewright_dsl_happening(eff) {
+        if let Some(h) = eff.happening.as_ref() {
             lines.push(ChronicleLine {
                 n: lines.len() + 1,
                 kind: "ambient",
@@ -454,7 +455,7 @@ fn record_effect(
     endings: &mut Vec<String>,
     push: &mut impl FnMut(&'static str, String, &Happening, &mut Vec<ChronicleLine>),
 ) {
-    if let QuestEffect::CampaignComplete { ending, .. } = eff {
+    if let Verb::CampaignComplete { ending, .. } = &eff.verb {
         endings.push(
             ending
                 .as_ref()
@@ -462,7 +463,7 @@ fn record_effect(
                 .unwrap_or_default(),
         );
     }
-    if let Some(h) = delvewright_dsl_happening(eff) {
+    if let Some(h) = eff.happening.as_ref() {
         push("effect", path.to_string(), h, lines);
     }
 }
@@ -529,12 +530,12 @@ fn fired_into<'a>(
         }
         let path = format!("{base}/{i}");
         out.push((path.clone(), e));
-        match e {
+        match &e.verb {
             // Reaction bundles fire at statically unknowable times — the
             // conservative stance `flow` and `continuity` already take.
-            QuestEffect::SetCheckpoint { .. }
-            | QuestEffect::Bonfire { .. }
-            | QuestEffect::BeginStealth { .. } => continue,
+            Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. } => {
+                continue;
+            }
             _ => {}
         }
         for (pseg, _k, list) in e.nested_effect_lists_labeled() {
@@ -543,40 +544,22 @@ fn fired_into<'a>(
     }
 }
 
-/// The `happening` of an effect, for the eleven story-node verbs that carry one.
-fn delvewright_dsl_happening(eff: &QuestEffect) -> Option<&Happening> {
-    match eff {
-        QuestEffect::OpenGate { happening, .. }
-        | QuestEffect::CloseGate { happening, .. }
-        | QuestEffect::CampaignComplete { happening, .. }
-        | QuestEffect::SpawnWave { happening, .. }
-        | QuestEffect::DespawnNpc { happening, .. }
-        | QuestEffect::MoveNpc { happening, .. }
-        | QuestEffect::SpawnNpc { happening, .. }
-        | QuestEffect::SpawnActor { happening, .. }
-        | QuestEffect::DespawnActor { happening, .. }
-        | QuestEffect::MoveActor { happening, .. }
-        | QuestEffect::UnleashActor { happening, .. } => happening.as_ref(),
-        _ => None,
-    }
-}
-
 /// Is this effect a **story node** — one of the eleven verbs that must declare a
 /// `happening` at 0.8.0?
 fn is_story_node(eff: &QuestEffect) -> bool {
     matches!(
-        eff,
-        QuestEffect::OpenGate { .. }
-            | QuestEffect::CloseGate { .. }
-            | QuestEffect::CampaignComplete { .. }
-            | QuestEffect::SpawnWave { .. }
-            | QuestEffect::DespawnNpc { .. }
-            | QuestEffect::MoveNpc { .. }
-            | QuestEffect::SpawnNpc { .. }
-            | QuestEffect::SpawnActor { .. }
-            | QuestEffect::DespawnActor { .. }
-            | QuestEffect::MoveActor { .. }
-            | QuestEffect::UnleashActor { .. }
+        &eff.verb,
+        Verb::OpenGate { .. }
+            | Verb::CloseGate { .. }
+            | Verb::CampaignComplete { .. }
+            | Verb::SpawnWave { .. }
+            | Verb::DespawnNpc { .. }
+            | Verb::MoveNpc { .. }
+            | Verb::SpawnNpc { .. }
+            | Verb::SpawnActor { .. }
+            | Verb::DespawnActor { .. }
+            | Verb::MoveActor { .. }
+            | Verb::UnleashActor { .. }
     )
 }
 
@@ -707,10 +690,8 @@ fn check_happenings(c: &Campaign, d: &mut Vec<Diagnostic>) {
             let delvewright_dsl::EffectSite::Trigger { trigger } = site else {
                 return false;
             };
-            let actor = match eff {
-                QuestEffect::SpawnActor { actor, .. } | QuestEffect::UnleashActor { actor, .. } => {
-                    actor.as_str()
-                }
+            let actor = match &eff.verb {
+                Verb::SpawnActor { actor, .. } | Verb::UnleashActor { actor, .. } => actor.as_str(),
                 _ => return false,
             };
             derived.contains(&(trigger.clone(), actor.to_string()))
@@ -718,11 +699,8 @@ fn check_happenings(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
         let mut sites: Vec<(String, String)> = Vec::new();
         for_each_campaign_effect(c, &mut |path, site, eff| {
-            if is_story_node(eff)
-                && delvewright_dsl_happening(eff).is_none()
-                && !generated_by_an_ambush(site, eff)
-            {
-                sites.push((format!("{path}/happening"), eff.verb().to_string()));
+            if is_story_node(eff) && eff.happening.is_none() && !generated_by_an_ambush(site, eff) {
+                sites.push((format!("{path}/happening"), eff.verb.tag().to_string()));
             }
         });
         for (path, verb) in sites {
@@ -931,7 +909,7 @@ fn check_leakage(c: &Campaign, flow: &Flow<'_>, r: &RealizedBranch, d: &mut Vec<
 fn flag_producers(c: &Campaign, flags: &BTreeSet<String>) -> Vec<String> {
     let mut out: BTreeSet<String> = BTreeSet::new();
     for_each_campaign_effect(c, &mut |path, _site, eff| {
-        if let QuestEffect::SetFlag { flag, .. } = eff
+        if let Verb::SetFlag { flag, .. } = &eff.verb
             && flags.contains(flag.as_str())
         {
             out.insert(format!("`{path}`"));

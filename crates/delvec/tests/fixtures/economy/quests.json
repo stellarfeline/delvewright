@@ -104,38 +104,44 @@
           {
             "effects": [
               {
-                "requires_state": [
-                  {
-                    "op": "at-most",
-                    "state": "state/embers",
-                    "value": 0
-                  }
-                ],
                 "text": "You have nothing left to give.",
-                "type": "narrate"
+                "type": "narrate",
+                "when": {
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/embers",
+                      "value": 0
+                    }
+                  ]
+                }
               },
               {
-                "requires_state": [
-                  {
-                    "op": "at-least",
-                    "state": "state/embers",
-                    "value": 1
-                  }
-                ],
                 "text": "The keeper takes an ember and nods.",
-                "type": "narrate"
+                "type": "narrate",
+                "when": {
+                  "requires_state": [
+                    {
+                      "op": "at-least",
+                      "state": "state/embers",
+                      "value": 1
+                    }
+                  ]
+                }
               },
               {
                 "amount": -1,
-                "requires_state": [
-                  {
-                    "op": "at-least",
-                    "state": "state/embers",
-                    "value": 1
-                  }
-                ],
                 "state": "state/embers",
-                "type": "add-state"
+                "type": "add-state",
+                "when": {
+                  "requires_state": [
+                    {
+                      "op": "at-least",
+                      "state": "state/embers",
+                      "value": 1
+                    }
+                  ]
+                }
               }
             ],
             "label": "Bank an ember",
@@ -186,6 +192,6 @@
       }
     ]
   },
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "stage": "quests"
 }

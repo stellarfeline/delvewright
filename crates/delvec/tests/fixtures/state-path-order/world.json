@@ -15,6 +15,6 @@
     "theme": "A muniment room whose door reads the ledger before it opens.",
     "title": "The Reading Room"
   },
-  "dsl_version": "0.20.0",
+  "dsl_version": "0.21.0",
   "stage": "world"
 }

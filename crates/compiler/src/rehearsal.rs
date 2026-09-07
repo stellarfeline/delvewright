@@ -29,6 +29,7 @@
 //! ids are assigned by that order. No RNG, no wall clock, no hash-order
 //! iteration (ADR-0006).
 
+use delvewright_dsl::Verb;
 use delvewright_dsl::{CameraShot, Campaign, QuestEffect};
 
 use crate::camera::{self, AimTrack, MoveCtx};
@@ -129,7 +130,7 @@ pub fn inventory(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan])
         let cutscenes: Vec<(String, &QuestEffect)> = found
             .into_iter()
             .filter(|(_, e)| {
-                matches!(e, QuestEffect::Cutscene { .. })
+                matches!(&e.verb, Verb::Cutscene { .. })
                     && e.cutscene_shots().is_some_and(|s| !s.is_empty())
             })
             .collect();
