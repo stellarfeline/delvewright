@@ -161,11 +161,6 @@
       "stage": "world-edits"
     },
     {
-      "code": "DW0353",
-      "pointer": "/content/batches/batch/rough-the-lane",
-      "stage": "world-edits"
-    },
-    {
       "code": "DW0453",
       "pointer": "/content/actors/1",
       "stage": "quests"
@@ -348,11 +343,6 @@
       "stage": "world-edits"
     },
     {
-      "code": "DW0353",
-      "pointer": "/content/batches/batch/rough-the-lane",
-      "stage": "world-edits"
-    },
-    {
       "code": "DW0453",
       "pointer": "/content/actors/1",
       "stage": "quests"
@@ -525,11 +515,6 @@
       "stage": "world"
     },
     {
-      "code": "DW0344",
-      "pointer": "/content/horizon",
-      "stage": "world"
-    },
-    {
       "code": "DW0781",
       "pointer": "/areas",
       "stage": "world"
@@ -537,11 +522,6 @@
     {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
-      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {
@@ -727,11 +707,6 @@
       "stage": "world-edits"
     },
     {
-      "code": "DW0353",
-      "pointer": "/content/batches/batch/rough-the-lane",
-      "stage": "world-edits"
-    },
-    {
       "code": "DW0453",
       "pointer": "/content/actors/1",
       "stage": "quests"
@@ -911,11 +886,6 @@
     {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
-      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {
@@ -1145,11 +1115,6 @@
     {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
-      "stage": "world-edits"
-    },
-    {
-      "code": "DW0353",
-      "pointer": "/content/batches/batch/rough-the-lane",
       "stage": "world-edits"
     },
     {
