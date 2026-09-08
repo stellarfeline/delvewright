@@ -108,7 +108,7 @@ resolves the hollow-statue false-dark class.
 
 ### Admission probe (spec-0007) demoted to advisory
 
-`delve-admit lighting` keeps measuring and classifying (lit/dim/dark) as a
+`delvec prefab lighting` keeps measuring and classifying (lit/dim/dark) as a
 **selection signal** on catalog cards/metadata only; it no longer feeds any
 gate. Its sealed-cavity limitation (counts unreachable interiors) is documented
 and accepted at that advisory tier.

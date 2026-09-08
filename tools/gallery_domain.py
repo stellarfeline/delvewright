@@ -314,6 +314,26 @@ def materialise(dest: Path, point: Path | None = None) -> int:
         for op in patch_ops(point):
             by_doc.setdefault(op.get("doc") or "", []).append(op)
         for rel, ops in by_doc.items():
+            # An edit may target an OVERLAY's document, named by its path under
+            # `overlays/<name>/`: that document is brought into the point as the
+            # campaign's own — the probe is then the primary plus that overlay
+            # document plus one declared edit, and nothing is a copy. Any other
+            # path is a document of the primary, or a refusal.
+            campaign_rel = _overlay_document(rel)
+            if campaign_rel is not None:
+                source = GALLERY / rel
+                if not source.is_file():
+                    raise PatchError(
+                        f"declares an edit to `{rel}`, and no overlay holds that document"
+                    )
+                if (Path(point) / campaign_rel).is_file():
+                    raise PatchError(
+                        f"declares an edit to `{rel}` and also ships `{campaign_rel}` — a copy "
+                        "of the document it edits, which nothing compares. Ship neither; the "
+                        "edit brings the overlay's document in"
+                    )
+                shutil.copy2(source, dest / campaign_rel)
+                rel = campaign_rel
             target = dest / rel
             if not rel or not target.is_file():
                 raise PatchError(
@@ -326,6 +346,18 @@ def materialise(dest: Path, point: Path | None = None) -> int:
                 raise PatchError(f"`{rel}`: {e}") from None
             target.write_text(json.dumps(doc, indent=2, ensure_ascii=False, sort_keys=True) + "\n")
     return sum(1 for p in dest.rglob("*") if p.is_file())
+
+
+def _overlay_document(rel: str) -> str | None:
+    """`overlays/<name>/<document>` -> `<document>`, or `None` for any other path.
+
+    Exactly one directory level under `overlays/`: an overlay is flat beside its
+    manifest, and a deeper path is not a shape a build point has.
+    """
+    parts = Path(rel).parts
+    if len(parts) == 3 and parts[0] == "overlays" and parts[2] not in POINT_MANIFESTS:
+        return parts[2]
+    return None
 
 
 def _refuse_dangerous_dest(dest: Path) -> None:

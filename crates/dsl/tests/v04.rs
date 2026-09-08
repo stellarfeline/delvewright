@@ -3,7 +3,7 @@
 //! `effects`, `set-block` block ids, environment triggers, and the
 //! despawned-npc `talk-to` guard. Each test bumps only the stage(s) that carry
 //! the v0.4 construct under test to `dsl_version 0.4.0` (avoiding an incidental
-//! `DW0141` reserved-feature diagnostic on an unrelated stage) and asserts the
+//! diagnostic on an unrelated stage) and asserts the
 //! expected code fires.
 //!
 //! Built on the hello-world fixture campaign (`crates/dsl/fixtures/valid/
@@ -27,6 +27,7 @@ fn campaign_with(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -41,7 +42,7 @@ fn valid_dialogue_v04() -> String {
 /// The hello-world quests document, at v0.4.0, with no v0.4 constructs — used as
 /// the base that individual tests inject one bad construct into.
 const QUESTS_BASE: &str = r#"{
-  "dsl_version": "0.4.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -124,7 +125,7 @@ fn all_completing_options_flag_gated_is_dw0191() {
 // ---------------------------------------------------------------------------
 
 const QUESTS_BAD_WAVE_EFFECT: &str = r#"{
-  "dsl_version": "0.4.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -195,7 +196,7 @@ fn unknown_set_block_id_is_dw0193() {
 // ---------------------------------------------------------------------------
 
 const QUESTS_BAD_TRIGGER: &str = r#"{
-  "dsl_version": "0.4.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -299,7 +300,7 @@ fn strike_trigger_on_an_npc_anchor_is_not_dw0350() {
 /// completes; `quest/second` (triggered by the first's completion, and the
 /// declared finale) has its own `talk-to` on the now-despawned `npc/keeper`.
 const QUEST_PLAN_TWO_QUESTS: &str = r#"{
-  "dsl_version": "0.2.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -328,7 +329,7 @@ const QUEST_PLAN_TWO_QUESTS: &str = r#"{
 }"#;
 
 const QUESTS_DESPAWNED_REF: &str = r#"{
-  "dsl_version": "0.4.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -364,7 +365,7 @@ const QUESTS_DESPAWNED_REF: &str = r#"{
 /// `quest/second`'s objective has a reachable completing option too — DW0195 is
 /// the deep despawn-ordering guard, not a dialogue-coverage gap).
 const DIALOGUE_TWO_OBJECTIVES: &str = r#"{
-  "dsl_version": "0.4.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -407,6 +408,7 @@ fn talk_to_targets_despawned_npc_is_dw0195() {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let diags = check_campaign(&raw);
     assert!(

@@ -93,7 +93,7 @@ result immediately:
 
 ## 4. Write-back
 
-- The **harvester** (`delve-harvest`) parses `[DelveShot]` lines into a
+- The **harvester** (`delvec harvest`) parses `[DelveShot]` lines into a
   versioned `rehearsal-report.json` beside `playtest-report.json`.
 - A converter (`delvec calibrate <report>`) snaps each proposal to the DSL
   vocabulary: nearest declared anchor (from the build's resolved-anchor

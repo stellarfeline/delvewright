@@ -40,8 +40,8 @@
     "--name-only` over that ref has no `design/programs/` path anywhere under",
     "`campaigns/the-drowned-bell-r2/`, and the branch history names the removal",
     "explicitly (11f1af7, \"the old map does not exist — the eight zone programs,",
-    "their pieces and their review sets are removed\"). `crates/grammar/tests/",
-    "campaign_zones.rs` itself refuses an `off_pin` entry with `zone_programs: 0`",
+    "their pieces and their review sets are removed\"). `crates/delvec/tests/",
+    "grammar_campaign_zones.rs` itself refuses an `off_pin` entry with `zone_programs: 0`",
     "(\"owes no zone programs, so it records nothing\"), so the entry is dropped",
     "rather than restated at zero; it returns when the branch declares zone",
     "programs again. This is a queued-campaign note nothing verifies: the test",
@@ -51,7 +51,7 @@
     "here unchallenged. `validation/check-versions.sh` does not read `off_pin`",
     "either; it only compares `content_sha` against `versions.toml`."
   ],
-  "content_sha": "42ee707db69b83d27534608b2758d8697ad2c46e",
+  "content_sha": "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb",
   "off_pin": [],
   "on_pin": [
     {

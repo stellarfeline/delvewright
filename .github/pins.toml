@@ -32,6 +32,18 @@
 #               major tag, or a toolchain held at a major/minor line the
 #               publisher advances. Registered so that the number of
 #               deliberately-unfrozen refs is visible instead of habitual.
+#   held      — a commit on the upstream default branch, for a site that BUILDS
+#               the pinned tool and is judged as one unit with it rather than
+#               re-pinned on every upstream merge. Drift from the default branch
+#               is never a finding — the online check prints the distance as
+#               information only. What makes the hold deliberate: the value is
+#               a real upstream commit, `judged_by` carries it as a literal, so
+#               the workflow really builds from the commit it claims to; carries
+#               `reviewed`, the upstream revision the judgement read, itself a
+#               real commit; and carries `why`. Any missing term is a red naming
+#               it. `builds = []` is not the same thing — that lies the moment
+#               the site's own `cargo build … -p <pkg>` names a package, and the
+#               offline check catches the lie same as it would for `track`.
 #
 # `builds` is the package names the site file builds out of the pinned checkout.
 # It is not a watch list an author writes: the online check derives the watched
@@ -80,7 +92,7 @@
 id = "rust-toolchain"
 value = "1.97.1"
 sites = [
-    "crates/compiler/Cargo.toml",
+    "Cargo.toml",
     "crates/dsl/Cargo.toml",
     "rust-toolchain.toml",
     "versions.toml",
@@ -92,9 +104,10 @@ why = """
 The Rust toolchain every artifact this project ships is built with. The channel
 in rust-toolchain.toml is the copy rustup obeys — it binds inside git worktrees
 too, and no workflow overrides it, so CI and a creator's own clone build on the
-same compiler. versions.toml restates it and both published manifests carry it as
-their `rust-version` floor; validation/check-versions.sh holds those four equal,
-and tools/check-reference-versions.py holds the two crate READMEs' "Rust 1.97.1
+same compiler. versions.toml restates it, the root manifest's `[workspace.package]` carries it
+as the `rust-version` floor every engine crate inherits, and the DSL crate's
+manifest carries its own; validation/check-versions.sh holds those four equal,
+and tools/check-reference-versions.py holds every crate README's "Rust 1.97.1
 or newer" line equal to them in turn.
 
 HELD FOR one instrument, constant across time and machines. ADR-0006's
@@ -149,12 +162,12 @@ facts and then that the value stands as a whole token at every site.
 
 [[pin]]
 id = "content-repo"
-value = "42ee707db69b83d27534608b2758d8697ad2c46e"
+value = "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb"
 sites = ["versions.toml"]
 repo = "stellarfeline/delvewright-campaigns"
 policy = "track"
 judged_by = ".github/workflows/ci.yml"
-reviewed = "42ee707db69b83d27534608b2758d8697ad2c46e"
+reviewed = "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb"
 builds = []
 why = """
 The content commit every reproducible build resolves the prefab library and
@@ -171,18 +184,18 @@ enforced separately by validation/check-versions.sh and
 # ---------------------------------------------------------------------------
 
 [[pin]]
-id = "nucleation-rev"
-value = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf"
-sites = ["crates/render/Cargo.toml", "versions.toml"]
+id = "nucleation-version"
+value = "0.10.14"
+sites = ["crates/delvec/Cargo.toml", "versions.toml"]
 policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "nucleation_version"
 why = """
-Nucleation (MIT), the per-prefab headless renderer, pinned by git rev because no
-crates.io release carries its `rendering` feature (versions.toml [render]). Its
-currency is deliberately NOT checked here: judging it would mean a full clone of
-a third-party repository inside a required job, which is the reach
-tools/check-workspace-git-deps.py exists to keep out of required jobs. It
-renders validation artifacts and decides no verdict, so its drift changes no
-gate's answer.
+Nucleation (MIT), the per-prefab headless renderer, from crates.io at exactly
+this version (versions.toml [render], ADR-0023 §5). It renders validation
+artifacts and decides no verdict, so its drift changes no gate's answer; a bump
+is an ordinary reviewed edit that re-runs the render crate's tests, the GPU
+ones included.
 """
 
 [[pin]]
@@ -351,10 +364,10 @@ value = "actions/checkout@v4"
 sites = [
     ".github/actions/checkout-content/action.yml",
     ".github/workflows/ci.yml",
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
     ".github/workflows/infra-images.yml",
-    ".github/workflows/release.yml",
 ]
 policy = "floating"
 why = "GitHub's own checkout action, held at its major tag."
@@ -364,9 +377,9 @@ id = "action-rust-cache"
 value = "Swatinem/rust-cache@v2"
 sites = [
     ".github/workflows/ci.yml",
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
-    ".github/workflows/release.yml",
 ]
 policy = "floating"
 why = "Cargo cache action, held at its major tag. Affects build time, not output."
@@ -374,14 +387,14 @@ why = "Cargo cache action, held at its major tag. Affects build time, not output
 [[pin]]
 id = "action-setup-node"
 value = "actions/setup-node@v4"
-sites = [".github/workflows/ci.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/ci.yml"]
 policy = "floating"
 why = "GitHub's Node toolchain action, held at its major tag."
 
 [[pin]]
 id = "action-setup-python"
 value = "actions/setup-python@v5"
-sites = [".github/workflows/ci.yml"]
+sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml"]
 policy = "floating"
 why = "GitHub's Python toolchain action, held at its major tag."
 
@@ -409,28 +422,28 @@ why = "Link checker, held at its major tag; runs --offline so it fetches nothing
 [[pin]]
 id = "action-docker-qemu"
 value = "docker/setup-qemu-action@v3"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "arm64 emulation for the multi-arch build (ADR-0010), held at its major tag."
 
 [[pin]]
 id = "action-docker-buildx"
 value = "docker/setup-buildx-action@v3"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "buildx setup, held at its major tag."
 
 [[pin]]
 id = "action-docker-login"
 value = "docker/login-action@v3"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "GHCR login, held at its major tag."
 
 [[pin]]
 id = "action-docker-build-push"
 value = "docker/build-push-action@v6"
-sites = [".github/workflows/infra-images.yml", ".github/workflows/release.yml"]
+sites = [".github/workflows/infra-images.yml"]
 policy = "floating"
 why = "Image build/push, held at its major tag."
 
@@ -449,16 +462,15 @@ id = "ci-node"
 value = "24"
 sites = [
     ".github/workflows/ci.yml",
-    ".github/workflows/release.yml",
     "versions.toml",
 ]
 policy = "floating"
 bound_by = "validation/check-versions.sh"
 bound_key = "node_version"
 why = """
-The Node runtime five CI jobs select: the harness (`npm ci`, typecheck, tests),
-the viewer's stdlib `node --test` control suite, and the three storybook jobs in
-release.yml.
+The Node runtime two CI jobs select: `harness (typecheck, test)` (`npm ci`,
+typecheck, tests) and `rust (fmt, clippy, test)`'s stdlib `node --test` control
+suites for the viewer.
 
 HELD FOR the runtime, and NOT for the dependency set — `harness/package-lock.json`
 is what fixes the packages, and mineflayer is pinned separately in versions.toml
@@ -471,33 +483,39 @@ tag, and the trust boundary is the publisher. Registered so that the count of
 deliberately-unfrozen selections is a number somebody can see instead of a habit.
 Not `immutable`: that is for a value naming fixed bytes, and this one names a
 line that moves. It may move to another major line as an ordinary reviewed edit;
-what it may not do is disagree between the five sites, which is what the binder
-below refuses.
+what it may not do is disagree between the sites, which is what the binder below
+refuses.
 
 BOUND because nothing discovers a restatement. check-versions.sh reads
-[ci].node_version and asserts that EVERY `node-version:` line in both workflows
-states it — two in ci.yml and three in release.yml, counted, because presence is
-not the property: the drift is one of five moving while the other four sit still,
-and a `grep -q` stops at the first and calls that agreement.
+[ci].node_version and asserts that EVERY `node-version:` line in ci.yml states
+it — two of them, counted, because presence is not the property: the drift is one
+site moving while the other sits still, and a `grep -q` stops at the first and
+calls that agreement.
 """
 
 [[pin]]
 id = "ci-python-tools"
 value = "3.12"
-sites = [".github/workflows/ci.yml", "versions.toml"]
+sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml", "versions.toml"]
 policy = "floating"
 bound_by = "validation/check-versions.sh"
 bound_key = "python_tools_version"
 why = """
 The interpreter the two Python tool suites run on: `tools/skin` (spec-0009
 composition + preview, whose test asserts byte-identical PNGs) and `tools/tests`
-(the stdlib-only tooling suite, whose network is blocked at `urlopen`).
+(the stdlib-only tooling suite, whose network is blocked at `urlopen`) — and,
+since release run 34069406209 (v1.2.0), the same interpreter
+`tools/build-release-binaries.sh` needs to read `versions.toml`: `ubuntu-22.04`
+and `ubuntu-22.04-arm` ship python3.10 by default, below stdlib `tomllib`'s
+floor, so both the release's shelf job (engine-release.yml) and the CI job that
+stands in for it (ci.yml's `engine-shelf`) now pin this line explicitly rather
+than trusting the runner image's default.
 
-HELD FOR one interpreter across both suites, which is what makes a determinism
-result from one month comparable to the next — the same argument the Rust
-toolchain pin makes, one language over. The floor is real and lower: both suites
-need >= 3.11 for stdlib `tomllib`, and `tools/skin`'s own manifest declares
-`requires-python >= 3.10`.
+HELD FOR one interpreter across every one of these, which is what makes a
+determinism result from one month comparable to the next — the same argument
+the Rust toolchain pin makes, one language over. The floor is real and lower:
+every consumer needs >= 3.11 for stdlib `tomllib`, and `tools/skin`'s own
+manifest declares `requires-python >= 3.10`.
 
 WHY IT DIFFERS from `ci-python-mecha`, since two interpreter lines in one
 workflow reads as drift and this pair is not: they carry disjoint dependency
@@ -511,10 +529,13 @@ POLICY `floating`: `3.12` is a MINOR line, resolved by actions/setup-python to
 its newest patch, so patch releases arrive without a pull request.
 
 BOUND by check-versions.sh, which reads [ci].python_tools_version and asserts the
-WHOLE SET rather than this value alone — every `python-version:` in ci.yml is one
-of the two declared lines, used exactly as many times as declared. A third value
-anywhere in the file breaks the sum and reds, which is the property a per-value
-presence check cannot give when one file legitimately holds two.
+WHOLE SET rather than this value alone — every `python-version:` in ci.yml is
+one of the two declared lines, used exactly as many times as declared (three of
+the tools line, one of the mecha line, since ci.yml's `engine-shelf` job joined
+the tools line), and engine-release.yml's single `python-version:` line is
+checked the same way. A third value anywhere in either file breaks its sum and
+reds, which is the property a per-value presence check cannot give when a file
+legitimately holds more than one occurrence.
 """
 
 [[pin]]
@@ -626,39 +647,6 @@ independently, from the release index. Pinning changed nothing that was running.
 
 POLICY `immutable`, on the same published-artifact argument as `mecha`. A bump is
 an ordinary reviewed edit; what it may not be is silent.
-"""
-
-[[pin]]
-id = "cargo-audit"
-value = "0.22.2"
-sites = [".github/workflows/ci.yml", "versions.toml"]
-policy = "immutable"
-bound_by = "validation/check-versions.sh"
-bound_key = "cargo_audit_version"
-why = """
-cargo-audit, the RustSec advisory check that `tools/check-advisories.py --cargo`
-drives over all ten cargo lockfiles this repository tracks. It runs as a step of
-`rust (fmt, clippy, test)`, a required status check, so it is an INSTRUMENT and
-is named literally for the same reason `beet` and `pytest` are: an unpinned
-instrument can move a required gate's verdict with nothing in any diff to show
-what moved.
-
-WHAT IT DOES NOT PIN, said plainly so nobody reads more into this entry than it
-holds: the advisory DATABASE is fetched live from RustSec on every run and is
-not pinned by anything here. That is the point of an advisory check — a frozen
-database would answer about the day it was frozen — and it is also the one live
-network reach this gate makes, which the step that makes it names.
-
-CHOSEN AS the version `cargo install cargo-audit --locked` resolves to, so
-pinning changed nothing that was running. At this version, over 1239 loaded
-advisories, all ten lockfiles are clean: zero vulnerabilities over 615 resolved
-crate dependencies, and two `unmaintained` warnings in `crates/render`
-(`bincode 1.3.3`, `paste 1.0.15`), which cargo-audit reports without failing and
-this gate prints by name rather than as a count.
-
-POLICY `immutable`, on the same published-artifact argument as `mecha`,
-`beet` and `pytest`. A bump is an ordinary reviewed edit; what it may not be is
-silent.
 """
 
 # ---------------------------------------------------------------------------

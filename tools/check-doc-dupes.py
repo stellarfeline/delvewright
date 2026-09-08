@@ -16,7 +16,16 @@ the DW-code gate passes (it only knows DW codes), and a human reading a
 vigilance (CLAUDE.md debug doctrine: preserve the lesson in the strongest
 available form — here, a tooling default).
 
-Three rules, over `docs/**/*.md` plus `README.md`:
+A second failure of the same family, from the field, is invisible to rule 1
+for a different reason: `docs/reference/tools.md`'s `validate` row carried a
+long passage TWICE, back to back, inside the SAME cell of the SAME physical
+line. A markdown table row is one line, `grep -c` counts lines and so reports
+1, and rule 1 only ever compares the FIRST cell across DIFFERENT rows — a
+duplicate that never touches the key column and never crosses a line boundary
+is invisible to it by construction. A renderer still shows the passage twice.
+That is rule 4, below.
+
+Four rules, over `docs/**/*.md` plus `README.md`:
 
 1. **No markdown table may carry two body rows with the same first-cell key.**
    The first cell of a doc table is its key column — a DSL field, a verb, a CLI
@@ -34,9 +43,31 @@ Three rules, over `docs/**/*.md` plus `README.md`:
    `=======` only while a conflict is open, so a setext `=======` underline is
    never mistaken for one.
 
-Fenced code blocks (``` and ~~~) are skipped for rules 1 and 2: a code sample
-may legitimately show a repeated pipe-table line or a `#` comment. Rule 3 scans
-every line — a conflict marker inside a fence is still a conflict marker.
+4. **No table row may repeat a passage within itself.** Comparison unit and
+   filtering both come from rule 1, extended to a finer grain rather than a new
+   invented one. Rule 1 never compares an arbitrary substring — it compares one
+   COMPLETE structural unit (a whole cell) — and `check-source-dupes.py`
+   (the same gate's twin over Rust source) measured why that discipline matters:
+   a raw N-line window produced 3930 false positives across the source tree,
+   against 0 for a bounded, human-declared unit. Prose has no cell boundary
+   inside a paragraph, but it has an equivalent bounded unit — one SENTENCE,
+   text ending in real terminal punctuation (`.`, `!`, `?`, allowing markdown's
+   own closing marks — `**`, `` ` ``, `"`, `)`, `]` — after it). A candidate is
+   normalized with rule 1's own `normalize_key` (markup stripped, casefolded)
+   and skipped under rule 1's own `FILLER_KEY_RE` exactly as a filler key is.
+   Requiring a COMPLETE sentence — never a bare fragment — is what keeps this
+   rule from firing on the idiom a short cell value produces: measured over the
+   live 116-file tree, dropping the completeness requirement produces 103 false
+   hits, every one of them a one-or-two-word cell VALUE repeated across the
+   columns of one comparison-matrix row (`yes`, `no`, a bare number) — never a
+   sentence. None of those ends in `.`/`!`/`?`, so requiring termination clears
+   every one of them and leaves exactly the 28 sentences of the one real
+   defect. No new length constant is introduced anywhere in this rule.
+
+Fenced code blocks (``` and ~~~) are skipped for rules 1, 2 and 4: a code
+sample may legitimately show a repeated pipe-table line or a `#` comment.
+Rule 3 scans every line — a conflict marker inside a fence is still a conflict
+marker.
 
 If a doc genuinely needs the same key twice in one table, **restructure the doc**
 (split the table, or qualify the keys) rather than allowlisting: a key column
@@ -72,6 +103,20 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$")
 LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 FILLER_KEY_RE = re.compile(r"^[-–—.…*_\s]*$")
+
+# Rule 4's sentence grain: split after a terminal mark followed by whitespace.
+# A false split at an abbreviation ("i.e. ") only ever lengthens the fragment
+# on one side of it — it does not manufacture a short standalone fragment,
+# because nothing after the abbreviation's own period is at THIS position.
+SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+# A candidate is a passage only if it actually ENDS in terminal punctuation,
+# markdown's own closing marks stripped first (`word.**`, `` `word.` ``,
+# `word."` all count). A fragment with nothing after the split point — the
+# tail end of a cell with no sentence-ending punctuation in it at all, e.g. a
+# bare table VALUE like `yes` or `8` — never passes this and is not a
+# candidate; see rule 4's docstring paragraph for the measurement.
+TRAILING_CLOSERS_RE = re.compile(r"[*`\"')\]]+$")
 
 
 def is_table_line(line: str) -> bool:
@@ -185,6 +230,67 @@ def duplicate_table_keys(path: str, lines: list[str]) -> list[str]:
     return errors
 
 
+def is_terminated_sentence(raw: str) -> bool:
+    """Whether `raw` ends in real terminal punctuation, markdown's own closing
+    marks stripped first. A bare table value (`yes`, `8`, `**1**`) never ends
+    this way and is never a rule-4 candidate."""
+    stripped = TRAILING_CLOSERS_RE.sub("", raw.strip())
+    return bool(stripped) and stripped[-1] in ".!?"
+
+
+def duplicate_passage_within_row(path: str, lines: list[str]) -> tuple[list[str], int, int]:
+    """Rule 4: a passage repeated twice inside ONE table row's own cells.
+
+    Reuses rule 1's `normalize_key` and `FILLER_KEY_RE` verbatim; the only new
+    thing is the comparison grain (one sentence instead of one whole cell) and
+    the completeness filter (`is_terminated_sentence`) that keeps a short cell
+    VALUE from reading as an idiom. See the module docstring's rule 4 for the
+    measurement behind both.
+
+    Returns `(errors, rows_examined, passages_compared)` — the binding this
+    rule states on every run, pass or fail.
+    """
+    errors: list[str] = []
+    rows_examined = 0
+    passages_compared = 0
+    for block in table_blocks(content_lines(lines)):
+        sep_index = next(
+            (
+                i
+                for i, (_, line) in enumerate(block)
+                if i > 0 and TABLE_SEPARATOR_RE.match(line.strip())
+            ),
+            None,
+        )
+        if sep_index is None:
+            continue
+        for n, line in block[sep_index + 1 :]:
+            cells = split_row(line)
+            if not cells:
+                continue
+            rows_examined += 1
+            seen: dict[str, str] = {}
+            for cell in cells:
+                for sentence in SENTENCE_SPLIT_RE.split(cell):
+                    if not is_terminated_sentence(sentence):
+                        continue
+                    key = normalize_key(sentence)
+                    if not key or FILLER_KEY_RE.match(key):
+                        continue
+                    passages_compared += 1
+                    if key in seen:
+                        first_words = " ".join(sentence.strip().split()[:12])
+                        errors.append(
+                            f"{path}:{n}: row {cells[0]!r} repeats a passage within "
+                            f"itself, starting {first_words!r} — duplicated inside "
+                            "one physical line, invisible to a per-line diff "
+                            "(delete the extra copy)"
+                        )
+                    else:
+                        seen[key] = sentence
+    return errors, rows_examined, passages_compared
+
+
 def duplicate_headings(path: str, lines: list[str]) -> list[str]:
     errors: list[str] = []
     seen: dict[str, int] = {}
@@ -252,14 +358,20 @@ def display_path(path: pathlib.Path) -> str:
         return path.as_posix()
 
 
-def check_file(path: pathlib.Path) -> list[str]:
+def check_file(path: pathlib.Path) -> tuple[list[str], int, int]:
+    """Errors, plus rule 4's own binding: (rows examined, passages compared)."""
     rel = display_path(path)
     lines = path.read_text(encoding="utf-8").splitlines()
-    return (
+    passage_errors, rows_examined, passages_compared = duplicate_passage_within_row(
+        rel, lines
+    )
+    errors = (
         conflict_markers(rel, lines)
         + duplicate_headings(rel, lines)
         + duplicate_table_keys(rel, lines)
+        + passage_errors
     )
+    return errors, rows_examined, passages_compared
 
 
 def main(argv: list[str]) -> int:
@@ -283,8 +395,13 @@ def main(argv: list[str]) -> int:
         return 2
 
     errors: list[str] = []
+    total_rows = 0
+    total_passages = 0
     for path in files:
-        errors.extend(check_file(path))
+        file_errors, rows_examined, passages_compared = check_file(path)
+        errors.extend(file_errors)
+        total_rows += rows_examined
+        total_passages += passages_compared
 
     # Report a stale allowlist entry rather than letting it rot into a licence
     # to duplicate: an entry that no longer suppresses anything must go.
@@ -293,6 +410,14 @@ def main(argv: list[str]) -> int:
     stale = sorted({p for p, _ in ALLOWLIST} - live)
     for p in stale:
         errors.append(f"ALLOWLIST entry for {p!r} names a file outside the scanned set — remove it")
+
+    # Rule 4's binding, stated on every run — pass or fail — so a zero here
+    # (no table rows at all under the given paths) is visible rather than
+    # silently indistinguishable from "checked and clean".
+    print(
+        f"-- rule 4 binding: {total_rows} table row(s) examined, "
+        f"{total_passages} passage(s) compared"
+    )
 
     if errors:
         print("documentation duplicate/merge-artifact check FAILED:", file=sys.stderr)

@@ -6,7 +6,7 @@
 // count zero go through `raw()` and parse the reply instead: a command whose
 // response nobody reads cannot fail.
 //
-// World facts (must match crates/compiler/src/horizon.rs): water top y=62,
+// World facts (must match crates/delvec/src/compiler/horizon.rs): water top y=62,
 // water layers y=55..62, sea floor (stone) top y=54.
 
 import { spawn } from "node:child_process";

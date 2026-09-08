@@ -20,6 +20,6 @@
       }
     ]
   },
-  "dsl_version": "0.3.0",
+  "dsl_version": "0.22.0",
   "stage": "npcs"
 }

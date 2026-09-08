@@ -1,6 +1,6 @@
 //! DSL v0.6 stage-1 area `mitigation` — the first-class darkness declaration that
 //! replaced the `DW0210` display-name heuristic. Validates under `dsl_version
-//! 0.6.0`, reserved (`DW0141`) earlier.
+//! 0.6.0`.
 
 mod common;
 
@@ -23,6 +23,8 @@ fn world_doc(version: &str, mitigation: bool) -> String {
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "areas": [
       {{
         "id": "area/keep",
@@ -48,26 +50,17 @@ fn campaign(world: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
 /// `mitigation: "night-vision"` validates clean under `dsl_version 0.6.0`.
 #[test]
 fn mitigation_validates_clean_at_0_6() {
-    let diags = check_campaign(&campaign(&world_doc("0.6.0", true)));
+    let diags = check_campaign(&campaign(&world_doc("0.22.0", true)));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 area mitigation, got: {diags:#?}"
-    );
-}
-
-/// `mitigation` under a pre-0.6 world stage is reserved → `DW0141`.
-#[test]
-fn mitigation_reserved_before_0_6() {
-    let diags = check_campaign(&campaign(&world_doc("0.5.0", true)));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "area `mitigation` must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }
 
@@ -75,7 +68,7 @@ fn mitigation_reserved_before_0_6() {
 /// pass — the enum is closed.
 #[test]
 fn unknown_mitigation_value_is_dw0100() {
-    let bad = world_doc("0.6.0", true).replace("night-vision", "renamed-potion");
+    let bad = world_doc("0.22.0", true).replace("night-vision", "renamed-potion");
     let diags = check_campaign(&campaign(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0100"),
@@ -86,7 +79,7 @@ fn unknown_mitigation_value_is_dw0100() {
 /// Absent `mitigation` (the pre-0.6 shape) still validates — the field is additive.
 #[test]
 fn absent_mitigation_is_unchanged() {
-    let diags = check_campaign(&campaign(&world_doc("0.6.0", false)));
+    let diags = check_campaign(&campaign(&world_doc("0.22.0", false)));
     assert!(
         diags.is_empty(),
         "absent mitigation must validate: {diags:#?}"

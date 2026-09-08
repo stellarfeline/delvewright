@@ -109,21 +109,21 @@ it.
 
 ## The tools
 
-One `cargo build --release --workspace` produces six binaries, plus
-`delve-render` from its own workspace. What each is for:
+One `cargo build --release --workspace` produces one binary, `delvec` — the
+delve creator. Everything you run is a subcommand of it:
 
 | tool | the question it answers |
 |---|---|
-| `delvec` | the compiler. `validate` · `analyze` · `build` · `fmt` — plus `schema`, which prints the exact shape of every campaign document |
+| `delvec` | `validate` · `analyze` · `build` · `fmt` — plus `schema`, which prints the exact shape of every campaign document |
 | `delvec viewer` | *what does this actually look like?* One self-contained web page you orbit, cut the roof off, and stand inside at eye height — every block drawn from the pinned version's own models |
 | `delvec panorama` · `scene` · `snapshot` | frames to look at: the whole-map hero shot, the player's-eye review shots, quick drafts |
 | `delvec contact-sheet` | *several candidate rooms, one slot* — all of them on one page to choose from |
 | `delvec allocation` | *what box does this part get?* The extents, datum and seams a piece must answer |
-| `delve-grammar` | *the library has no piece for this* — writes a new one from a rule program |
-| `delve-admit` | *is this piece fit to ship?* — admits a prefab into the library |
-| `delve-schem` | *I have a build from elsewhere* — converts an outside schematic |
-| `delve-render` | GPU renders of one piece or a whole directory |
-| `delve-harvest` | *what did the playtester write down?* — turns in-game notes into a report |
+| `delvec grammar` | *the library has no piece for this* — writes a new one from a rule program |
+| `delvec prefab` | *is this piece fit to ship?* — admits a prefab into the library |
+| `delvec schem` | *I have a build from elsewhere* — converts an outside schematic |
+| `delvec render` | GPU renders of one piece or a whole directory, and the texture fidelity gate |
+| `delvec harvest` | *what did the playtester write down?* — turns in-game notes into a report |
 | `tools/refimg.py` | draws the concept art the design gate is confirmed on |
 | `tools/staging-gate.py` | *is this build fit for a person to walk?* — it holds the only key to the play port |
 | Chunky | every frame that has to *look* like Minecraft |

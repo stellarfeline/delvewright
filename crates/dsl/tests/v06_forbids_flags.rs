@@ -12,7 +12,6 @@
 //! * validates clean under `0.6.0` everywhere `requires_flags` is accepted;
 //! * an unknown flag in `forbids_flags` gets the same `DW0172` treatment as in
 //!   `requires_flags`;
-//! * reserved (`DW0141`) under a pre-0.6 campaign, at every site;
 //! * a completing dialogue option gated only by `forbids_flags` counts as gated
 //!   for the `DW0191` deadlock guard (conservative: no temporal flag reasoning).
 
@@ -24,7 +23,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// effect, a trigger (trigger-level and effect-level). `flag/armed` and
 /// `flag/stood-down` are both produced by `set-flag` effects.
 const QUESTS_FORBIDS: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -40,7 +39,7 @@ const QUESTS_FORBIDS: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "set-flag", "flag": "flag/armed" },
-            { "type": "open-gate", "anchor": "anchor/door", "forbids_flags": ["flag/stood-down"] }
+            { "type": "open-gate", "when": { "forbids_flags": ["flag/stood-down"] }, "anchor": "anchor/door" }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -54,8 +53,8 @@ const QUESTS_FORBIDS: &str = r#"{
         "requires_flags": ["flag/armed"],
         "forbids_flags": ["flag/stood-down"],
         "effects": [
-          { "type": "set-flag", "flag": "flag/stood-down",
-            "forbids_flags": ["flag/stood-down"] }
+          { "type": "set-flag",
+            "when": { "forbids_flags": ["flag/stood-down"] }, "flag": "flag/stood-down" }
         ]
       }
     ]
@@ -75,6 +74,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -98,8 +98,7 @@ fn unknown_forbids_flag_is_dw0172_at_every_site() {
         ("objective", r#""forbids_flags": ["flag/stood-down"] }"#),
         (
             "effect",
-            r#""forbids_flags": ["flag/stood-down"] }
-          ]"#,
+            r#""when": { "forbids_flags": ["flag/stood-down"] }, "anchor": "anchor/door""#,
         ),
     ] {
         let broken =
@@ -127,29 +126,6 @@ fn unknown_forbids_flag_is_dw0172_at_every_site() {
     );
 }
 
-/// Every `forbids_flags` site is reserved (`DW0141`) under a pre-0.6 campaign.
-#[test]
-fn forbids_flags_reserved_before_0_6() {
-    let pre = QUESTS_FORBIDS.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    let reserved_paths: Vec<&str> = diags
-        .iter()
-        .filter(|d| d.code == "DW0141" && d.path.contains("forbids_flags"))
-        .map(|d| d.path.as_str())
-        .collect();
-    for expected in [
-        "/content/quests/0/objectives/1/forbids_flags",
-        "/content/quests/0/on_objective_complete/obj/talk/1/forbids_flags",
-        "/content/triggers/0/forbids_flags",
-        "/content/triggers/0/effects/0/forbids_flags",
-    ] {
-        assert!(
-            reserved_paths.contains(&expected),
-            "expected DW0141 at `{expected}`; got: {reserved_paths:#?} ({diags:#?})"
-        );
-    }
-}
-
 /// A `talk-to` whose only completing option is `forbids_flags`-gated is a
 /// `DW0191` deadlock risk: the option can be suppressed at any point, and the
 /// static analysis does no temporal reasoning about which flags end up set.
@@ -170,25 +146,5 @@ fn forbids_only_completing_option_is_dw0191() {
     assert!(
         diags.iter().any(|d| d.code == "DW0191"),
         "a forbids-only-gated completing option must be DW0191: {diags:#?}"
-    );
-}
-
-/// The same dialogue-option `forbids_flags` under a pre-0.6 dialogue stage is
-/// reserved (`DW0141`).
-#[test]
-fn dialogue_option_forbids_reserved_before_0_6() {
-    let dialogue = common::read_valid("dialogue.json").replacen(
-        r#""effects": ["#,
-        r#""forbids_flags": ["flag/armed"], "effects": ["#,
-        1,
-    );
-    let mut raw = campaign_with_quests(QUESTS_FORBIDS);
-    raw.dialogue = dialogue;
-    let diags = check_campaign(&raw);
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.code == "DW0141" && d.path.contains("forbids_flags")),
-        "dialogue option forbids_flags must be reserved under 0.2.0 (DW0141): {diags:#?}"
     );
 }

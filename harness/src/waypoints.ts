@@ -15,7 +15,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { SUPPORTED_DSL_VERSIONS, type Vec3Tuple } from "./critical-path.ts";
+import type { Vec3Tuple } from "./critical-path.ts";
 
 /** The sub-path of the waypoints artifact relative to `critical-path.json`'s dir. */
 const WAYPOINTS_SUBPATH = ["validation", "critical-path-waypoints.json"] as const;
@@ -201,12 +201,6 @@ export function parseWaypoints(raw: unknown): Waypoints {
     fail("", `must be an object, got ${describe(raw)}`);
   }
   const version = requireString(raw, "version", "");
-  if (!(SUPPORTED_DSL_VERSIONS as readonly string[]).includes(version)) {
-    fail(
-      "/version",
-      `unsupported version ${JSON.stringify(version)}; harness supports ${SUPPORTED_DSL_VERSIONS.join(", ")}`,
-    );
-  }
   const campaignId = requireString(raw, "campaign_id", "");
   const timedGates = parseTimedGates(raw);
   const gatesById = new Map(timedGates.map((g) => [g.id, g]));
@@ -343,9 +337,18 @@ export async function loadWaypointsForBranchPath(
 /** The result of an ordered leg match: the proven waypoint polyline to replay (or
  * `undefined` for single-goal fallback) and the advanced cursor. */
 export interface LegMatch {
+  /**
+   * Whether the leg at `cursor` IS this walk's leg. Distinct from
+   * `timedGates.length === 0`, which a matched leg crossing no gate reports too:
+   * "the compiler proved this route crosses nothing" and "there is no proven route
+   * for this walk at all" are different facts, and only the second leaves the
+   * campaign's declared gate table as the walk's authority (`gatesBindingWalk`).
+   */
+  readonly matched: boolean;
   readonly waypoints: readonly Vec3Tuple[] | undefined;
   /** The timed gates the matched leg's proven route crosses (empty when none, and
-   * when no leg matched — an unmatched walk gets no gate licence to retry). */
+   * when no leg matched — an unmatched walk has no proven route to narrow the
+   * campaign's declared table with). */
   readonly timedGates: readonly TimedGate[];
   readonly cursor: number;
 }
@@ -370,9 +373,14 @@ export function nextLegWaypoints(
 ): LegMatch {
   const leg = legs[cursor];
   if (leg && samePos(leg.to, pos)) {
-    return { waypoints: leg.waypoints, timedGates: leg.timedGates, cursor: cursor + 1 };
+    return {
+      matched: true,
+      waypoints: leg.waypoints,
+      timedGates: leg.timedGates,
+      cursor: cursor + 1,
+    };
   }
-  return { waypoints: undefined, timedGates: [], cursor };
+  return { matched: false, waypoints: undefined, timedGates: [], cursor };
 }
 
 /**

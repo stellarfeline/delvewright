@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 #
-# `publish-crates` declared `environment: crates-io`, its job name said
+# The release workflow's publishing job declared `environment: crates-io`, its name said
 # "(owner approval)", the workflow comment said "an environment with required
 # reviewers", and ADR-0017 §4 named that reviewer as THE control on the one-way
 # door. The environment existed and held CARGO_REGISTRY_TOKEN. It had

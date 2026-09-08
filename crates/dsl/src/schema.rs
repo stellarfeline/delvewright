@@ -5,6 +5,7 @@
 
 use schemars::schema_for;
 
+use crate::design::DesignContent;
 use crate::detailplan::DetailPlanContent;
 use crate::envelope::{Envelope, Stage};
 use crate::layout::{GeometryBriefContent, LayoutGraphContent};
@@ -28,6 +29,7 @@ pub fn stage_schema(stage: Stage) -> serde_json::Value {
         Stage::LayoutGraph => schema_for!(Envelope<LayoutGraphContent>),
         Stage::SitePlan => schema_for!(Envelope<SitePlanContent>),
         Stage::DetailPlan => schema_for!(Envelope<DetailPlanContent>),
+        Stage::Design => schema_for!(Envelope<DesignContent>),
     };
     serde_json::to_value(schema).expect("schema serializes to JSON")
 }

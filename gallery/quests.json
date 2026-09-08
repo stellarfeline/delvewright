@@ -173,41 +173,46 @@
     ],
     "on_death": [
       {
-        "forbids_flags": [
-          "flag/hall-sealed"
-        ],
-        "requires_flags": [],
-        "requires_state": [
-          {
-            "op": "at-most",
-            "state": "state/labels-read",
-            "value": 9
-          }
-        ],
         "stake": "stake/tokens",
-        "type": "drop-stake"
+        "type": "drop-stake",
+        "when": {
+          "forbids_flags": [
+            "flag/hall-sealed"
+          ],
+          "requires_state": [
+            {
+              "op": "at-most",
+              "state": "state/labels-read",
+              "value": 9
+            }
+          ]
+        }
       },
       {
-        "forbids_flags": [
-          "flag/hall-sealed"
-        ],
-        "requires_state": [
-          {
-            "op": "at-most",
-            "state": "state/labels-read",
-            "value": 9
-          }
-        ],
         "style": "actionbar",
         "text": "The hall puts you back at the hearth.",
-        "type": "narrate"
+        "type": "narrate",
+        "when": {
+          "forbids_flags": [
+            "flag/hall-sealed"
+          ],
+          "requires_state": [
+            {
+              "op": "at-most",
+              "state": "state/labels-read",
+              "value": 9
+            }
+          ]
+        }
       },
       {
-        "forbids_flags": [
-          "flag/hall-sealed"
-        ],
         "stake": "stake/relics",
-        "type": "drop-stake"
+        "type": "drop-stake",
+        "when": {
+          "forbids_flags": [
+            "flag/hall-sealed"
+          ]
+        }
       },
       {
         "stake": "stake/toll",
@@ -390,46 +395,50 @@
         "on_complete": [
           {
             "anchor": "anchor/gate-main",
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
             "happening": {
               "subject": "anchor/gate-main",
               "text": "The main gate goes up.",
               "verb": "opens"
             },
-            "requires_flags": [
-              "flag/hall-open"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
-            "type": "open-gate"
+            "type": "open-gate",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           },
           {
             "anchor": "anchor/hearth",
             "on_rest": [
               {
-                "forbids_flags": [
-                  "flag/hall-sealed"
-                ],
-                "requires_flags": [
-                  "flag/hall-open"
-                ],
-                "requires_state": [
-                  {
-                    "op": "at-most",
-                    "state": "state/labels-read",
-                    "value": 9
-                  }
-                ],
                 "style": "chat",
                 "text": "The hearth takes the chill off.",
-                "type": "narrate"
+                "type": "narrate",
+                "when": {
+                  "forbids_flags": [
+                    "flag/hall-sealed"
+                  ],
+                  "requires_flags": [
+                    "flag/hall-open"
+                  ],
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/labels-read",
+                      "value": 9
+                    }
+                  ]
+                }
               }
             ],
             "prompt": "Rest at the hearth",
@@ -447,26 +456,28 @@
             "type": "spawn-npc"
           },
           {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
             "happening": {
               "subject": "anchor/muster",
               "text": "The muster forms up beyond the wall.",
               "verb": "arrives"
             },
-            "requires_flags": [
-              "flag/hall-open"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
             "type": "spawn-wave",
-            "wave": "wave/muster"
+            "wave": "wave/muster",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           },
           {
             "happening": {
@@ -475,93 +486,98 @@
               "verb": "departs"
             },
             "npc": "npc/warden",
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
-            "type": "despawn-npc"
+            "type": "despawn-npc",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           }
         ],
         "on_objective_complete": {
           "obj/hear-the-curator": [
             {
               "amount": 1,
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "state": "state/labels-read",
-              "type": "add-state"
+              "type": "add-state",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "carrier": "all",
               "count": 1,
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "item": "minecraft:torch",
               "name": "Hall Torch",
-              "requires_flags": [],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "give-item"
+              "type": "give-item",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "carrier": "all",
               "count": 1,
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "item": "minecraft:iron_pickaxe",
               "name": "Case Key",
-              "requires_flags": [],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "give-item"
+              "type": "give-item",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "sound": "minecraft:block.note_block.chime",
               "style": "title",
               "text": "The Gallery",
-              "type": "narrate"
+              "type": "narrate",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             }
           ],
           "obj/press-the-case": [
             {
               "amplifier": 0,
               "effect": "minecraft:night_vision",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "hide_particles": true,
               "in": {
                 "anchor": "anchor/pedestal",
@@ -571,59 +587,68 @@
                   6
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "seconds": 30,
-              "type": "give-effect"
+              "type": "give-effect",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "anchor": "anchor/pedestal",
               "block": "minecraft:sea_lantern",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "set-block"
+              "type": "set-block",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "at": {
                 "anchor": "anchor/pedestal",
                 "at": "anchor"
               },
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "pitch": 1.2,
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "sound": "minecraft:block.chest.open",
               "type": "play-sound",
-              "volume": 0.8
+              "volume": 0.8,
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             }
           ],
           "obj/reach-the-counter": [
@@ -636,86 +661,96 @@
               "npc": "npc/curator",
               "on_arrive": [
                 {
-                  "forbids_flags": [
-                    "flag/hall-sealed"
-                  ],
-                  "requires_flags": [
-                    "flag/hall-open"
-                  ],
-                  "requires_state": [
-                    {
-                      "op": "at-most",
-                      "state": "state/labels-read",
-                      "value": 9
-                    }
-                  ],
                   "style": "chat",
                   "text": "\"Read the far side too,\" she says.",
-                  "type": "narrate"
-                }
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
+                  "type": "narrate",
+                  "when": {
+                    "forbids_flags": [
+                      "flag/hall-sealed"
+                    ],
+                    "requires_flags": [
+                      "flag/hall-open"
+                    ],
+                    "requires_state": [
+                      {
+                        "op": "at-most",
+                        "state": "state/labels-read",
+                        "value": 9
+                      }
+                    ]
+                  }
                 }
               ],
               "speed": 1.0,
               "to_anchor": "anchor/pedestal",
-              "type": "move-npc"
+              "type": "move-npc",
+              "when": {
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "time": "dusk",
-              "type": "set-time"
+              "type": "set-time",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "type": "set-weather",
-              "weather": "rain"
+              "weather": "rain",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "amount": 1,
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "state": "state/tokens",
-              "type": "add-state"
+              "type": "add-state",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "happening": {
@@ -731,22 +766,24 @@
           ],
           "obj/take-the-emeralds": [
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "state": "state/labels-read",
               "type": "set-state",
-              "value": 2
+              "value": 2,
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "steps": [
@@ -754,22 +791,24 @@
                   "at_ticks": 0,
                   "effects": [
                     {
-                      "forbids_flags": [
-                        "flag/hall-sealed"
-                      ],
-                      "requires_flags": [
-                        "flag/hall-open"
-                      ],
-                      "requires_state": [
-                        {
-                          "op": "at-most",
-                          "state": "state/labels-read",
-                          "value": 9
-                        }
-                      ],
                       "style": "actionbar",
                       "text": "The case closes behind them.",
-                      "type": "narrate"
+                      "type": "narrate",
+                      "when": {
+                        "forbids_flags": [
+                          "flag/hall-sealed"
+                        ],
+                        "requires_flags": [
+                          "flag/hall-open"
+                        ],
+                        "requires_state": [
+                          {
+                            "op": "at-most",
+                            "state": "state/labels-read",
+                            "value": 9
+                          }
+                        ]
+                      }
                     }
                   ]
                 },
@@ -781,26 +820,33 @@
                         "anchor": "anchor/pedestal",
                         "at": "anchor"
                       },
-                      "forbids_flags": [
-                        "flag/hall-sealed"
-                      ],
-                      "requires_flags": [
-                        "flag/hall-open"
-                      ],
-                      "requires_state": [
-                        {
-                          "op": "at-most",
-                          "state": "state/labels-read",
-                          "value": 9
-                        }
-                      ],
                       "sound": "minecraft:block.chest.close",
-                      "type": "play-sound"
+                      "type": "play-sound",
+                      "when": {
+                        "forbids_flags": [
+                          "flag/hall-sealed"
+                        ],
+                        "requires_flags": [
+                          "flag/hall-open"
+                        ],
+                        "requires_state": [
+                          {
+                            "op": "at-most",
+                            "state": "state/labels-read",
+                            "value": 9
+                          }
+                        ]
+                      }
                     }
                   ]
                 }
               ],
-              "type": "sequence"
+              "type": "sequence",
+              "when": {
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             }
           ]
         },
@@ -987,20 +1033,22 @@
         "on_complete": [
           {
             "flag": "flag/hall-sealed",
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "requires_flags": [
-              "flag/hall-open"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
-            "type": "set-flag"
+            "type": "set-flag",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           },
           {
             "anchor": "anchor/lectern",
@@ -1028,27 +1076,9 @@
               "text": "A lane opens down the far hall behind them.",
               "verb": "arrives"
             },
-            "requires_flags": [
-              "flag/hall-open"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
             "type": "spawn-wave",
-            "wave": "wave/lane"
-          }
-        ],
-        "on_objective_complete": {
-          "obj/clear-the-muster": [
-            {
-              "flag": "flag/muster-cleared",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
+            "wave": "wave/lane",
+            "when": {
               "requires_flags": [
                 "flag/hall-open"
               ],
@@ -1058,8 +1088,30 @@
                   "state": "state/labels-read",
                   "value": 9
                 }
-              ],
-              "type": "set-flag"
+              ]
+            }
+          }
+        ],
+        "on_objective_complete": {
+          "obj/clear-the-muster": [
+            {
+              "flag": "flag/muster-cleared",
+              "type": "set-flag",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "actor": "actor/hall-moth",
@@ -1068,7 +1120,15 @@
                 "text": "Something large comes off the rafters.",
                 "verb": "arrives"
               },
-              "type": "spawn-actor"
+              "type": "spawn-actor",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             },
             {
               "actor": "actor/hall-moth",
@@ -1077,7 +1137,15 @@
                 "text": "It stops circling and comes down.",
                 "verb": "believes"
               },
-              "type": "unleash-actor"
+              "type": "unleash-actor",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             },
             {
               "actor": "actor/standard-bearer",
@@ -1088,33 +1156,40 @@
               },
               "on_arrive": [
                 {
-                  "forbids_flags": [
-                    "flag/hall-sealed"
-                  ],
-                  "requires_flags": [
-                    "flag/hall-open"
-                  ],
-                  "requires_state": [
-                    {
-                      "op": "at-most",
-                      "state": "state/labels-read",
-                      "value": 9
-                    }
-                  ],
                   "style": "art",
                   "text": "THE FAR HALL",
-                  "type": "narrate"
+                  "type": "narrate",
+                  "when": {
+                    "forbids_flags": [
+                      "flag/hall-sealed"
+                    ],
+                    "requires_flags": [
+                      "flag/hall-open"
+                    ],
+                    "requires_state": [
+                      {
+                        "op": "at-most",
+                        "state": "state/labels-read",
+                        "value": 9
+                      }
+                    ]
+                  }
                 }
               ],
               "speed": 1.2,
               "to_anchor": "anchor/vantage",
-              "type": "move-actor"
+              "type": "move-actor",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             },
             {
               "block": "minecraft:polished_andesite",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "region": {
                 "anchor": "anchor/east-bay",
                 "extent": [
@@ -1123,22 +1198,24 @@
                   2
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "fill-region"
+              "type": "fill-region",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "region": {
                 "anchor": "anchor/west-bay",
                 "extent": [
@@ -1147,24 +1224,26 @@
                   2
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "clear-region"
+              "type": "clear-region",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "amount": 2,
               "damage_type": "magic",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "in": {
                 "anchor": "anchor/muster",
                 "extent": [
@@ -1173,23 +1252,25 @@
                   5
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "damage-players"
+              "type": "damage-players",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "effect": "minecraft:night_vision",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "in": {
                 "anchor": "anchor/muster",
                 "extent": [
@@ -1198,34 +1279,41 @@
                   5
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "clear-effect"
+              "type": "clear-effect",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "state": "state/labels-read",
-              "type": "clear-state"
+              "type": "clear-state",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "actor": "actor/standard-bearer",
@@ -1235,7 +1323,15 @@
                 "verb": "departs"
               },
               "style": "vanish",
-              "type": "despawn-actor"
+              "type": "despawn-actor",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             },
             {
               "happening": {
@@ -1244,43 +1340,44 @@
                 "verb": "loses"
               },
               "npc": "npc/factor",
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "despawn-npc"
+              "type": "despawn-npc",
+              "when": {
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "anchor": "anchor/gate-main",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "happening": {
                 "subject": "anchor/gate-main",
                 "text": "The main gate comes down again.",
                 "verb": "seals"
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "sealed_hint": "The main gate has come back down and will not lift from this side.",
-              "type": "close-gate"
+              "type": "close-gate",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "falling_block": "minecraft:gravel",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "region_anchor": {
                 "anchor": "anchor/east-vault",
                 "extent": [
@@ -1289,23 +1386,25 @@
                   3
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "then_floor": "minecraft:cobblestone",
-              "type": "collapse"
+              "type": "collapse",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "from_anchor": "anchor/muster",
               "interval": 20,
               "kill_zone": {
@@ -1317,23 +1416,25 @@
                 ]
               },
               "projectile": "minecraft:arrow",
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "salvos": 3,
-              "type": "volley"
+              "type": "volley",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "from": {
                 "anchor": "anchor/march",
                 "extent": [
@@ -1342,18 +1443,23 @@
                   1
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "to": "anchor/vantage",
-              "type": "teleport"
+              "type": "teleport",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "style": "chat",
@@ -1364,22 +1470,24 @@
               "grace_ticks": 120,
               "on_caught": [
                 {
-                  "forbids_flags": [
-                    "flag/hall-sealed"
-                  ],
-                  "requires_flags": [
-                    "flag/hall-open"
-                  ],
-                  "requires_state": [
-                    {
-                      "op": "at-most",
-                      "state": "state/labels-read",
-                      "value": 9
-                    }
-                  ],
                   "style": "subtitle",
                   "text": "Seen.",
-                  "type": "narrate"
+                  "type": "narrate",
+                  "when": {
+                    "forbids_flags": [
+                      "flag/hall-sealed"
+                    ],
+                    "requires_flags": [
+                      "flag/hall-open"
+                    ],
+                    "requires_state": [
+                      {
+                        "op": "at-most",
+                        "state": "state/labels-read",
+                        "value": 9
+                      }
+                    ]
+                  }
                 }
               ],
               "type": "begin-stealth",
@@ -1398,9 +1506,6 @@
               "type": "end-stealth"
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "look_at": {
                 "anchor": "anchor/exit"
               },
@@ -1417,33 +1522,25 @@
                   "anchor": "anchor/vantage"
                 }
               ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "seconds": 4,
-              "type": "cutscene"
+              "type": "cutscene",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "shots": [
                 {
                   "bearing": 45.0,
@@ -1576,14 +1673,26 @@
                   }
                 }
               ],
-              "type": "cutscene"
+              "type": "cutscene",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "amount": 1,
               "damage_type": "drown",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "in": {
                 "anchor": "anchor/march",
                 "extent": [
@@ -1592,24 +1701,26 @@
                   2
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "damage-players"
+              "type": "damage-players",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "amount": 1,
               "damage_type": "fire",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "in": {
                 "anchor": "anchor/march",
                 "extent": [
@@ -1618,24 +1729,26 @@
                   2
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "damage-players"
+              "type": "damage-players",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "amount": 1,
               "damage_type": "freeze",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "in": {
                 "anchor": "anchor/march",
                 "extent": [
@@ -1644,24 +1757,26 @@
                   2
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "damage-players"
+              "type": "damage-players",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "amount": 1,
               "damage_type": "generic",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "in": {
                 "anchor": "anchor/march",
                 "extent": [
@@ -1670,24 +1785,26 @@
                   2
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "damage-players"
+              "type": "damage-players",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "amount": 1,
               "damage_type": "lightning-bolt",
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "in": {
                 "anchor": "anchor/march",
                 "extent": [
@@ -1696,17 +1813,22 @@
                   2
                 ]
               },
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
-              "type": "damage-players"
+              "type": "damage-players",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "actor": "actor/rafter-spider",
@@ -1730,209 +1852,233 @@
               "type": "despawn-actor"
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "time": "dawn",
-              "type": "set-time"
+              "type": "set-time",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "time": "night",
-              "type": "set-time"
+              "type": "set-time",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "time": "midnight",
-              "type": "set-time"
+              "type": "set-time",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "type": "set-weather",
-              "weather": "thunder"
+              "weather": "thunder",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "at": {
                 "at": "players"
               },
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "sound": "minecraft:entity.wither.spawn",
-              "type": "play-sound"
+              "type": "play-sound",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "amount": 1,
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "state": "state/relics",
-              "type": "add-state"
+              "type": "add-state",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "amount": 1,
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "state": "state/toll",
-              "type": "add-state"
+              "type": "add-state",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
               "amount": 1,
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ],
               "state": "state/keepsake",
-              "type": "add-state"
+              "type": "add-state",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "happening": {
                 "subject": "npc/marshal",
                 "text": "The Marshal climbs the course and drops into the yard.",
                 "verb": "arrives"
               },
               "npc": "npc/marshal",
-              "requires_flags": [
-                "flag/hall-open"
-              ],
               "speed": 1.0,
               "to_anchor": "anchor/pocket",
-              "type": "move-npc"
+              "type": "move-npc",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "happening": {
                 "subject": "npc/marshal",
                 "text": "The Marshal leaves the yard once the muster is answered for.",
                 "verb": "departs"
               },
               "npc": "npc/marshal",
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "type": "despawn-npc"
+              "type": "despawn-npc",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             }
           ],
           "obj/take-the-bone": [
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "piece": "prefab/gallery-hall",
-              "requires_flags": [
-                "flag/muster-cleared"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-least",
-                  "state": "state/labels-read",
-                  "value": 0
-                }
-              ],
               "type": "open-way",
-              "way": "broken-flight"
+              "way": "broken-flight",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/muster-cleared"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-least",
+                    "state": "state/labels-read",
+                    "value": 0
+                  }
+                ]
+              }
             },
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/muster-cleared"
-              ],
               "state": "state/labels-read",
               "type": "set-state",
-              "value": 2
+              "value": 2,
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/muster-cleared"
+                ]
+              }
             }
           ]
         },
@@ -2011,16 +2157,18 @@
         "on_objective_complete": {
           "obj/look-in-the-east-bay": [
             {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
               "happening": {
                 "subject": "anchor/east-bay",
                 "text": "Something that was watching the east bay closes on it.",
                 "verb": "arrives"
               },
               "type": "spawn-wave",
-              "wave": "wave/edge"
+              "wave": "wave/edge",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ]
+              }
             }
           ]
         },
@@ -2040,18 +2188,20 @@
             "effects": [
               {
                 "count": 1,
-                "forbids_flags": [
-                  "flag/hall-sealed"
-                ],
                 "item": "minecraft:iron_pickaxe",
-                "requires_state": [
-                  {
-                    "op": "at-most",
-                    "state": "state/labels-read",
-                    "value": 9
-                  }
-                ],
-                "type": "give-item"
+                "type": "give-item",
+                "when": {
+                  "forbids_flags": [
+                    "flag/hall-sealed"
+                  ],
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/labels-read",
+                      "value": 9
+                    }
+                  ]
+                }
               }
             ],
             "label": "A case key, four emeralds",
@@ -2061,18 +2211,20 @@
             "effects": [
               {
                 "count": 2,
-                "forbids_flags": [
-                  "flag/hall-sealed"
-                ],
                 "item": "minecraft:bread",
-                "requires_state": [
-                  {
-                    "op": "at-most",
-                    "state": "state/labels-read",
-                    "value": 9
-                  }
-                ],
-                "type": "give-item"
+                "type": "give-item",
+                "when": {
+                  "forbids_flags": [
+                    "flag/hall-sealed"
+                  ],
+                  "requires_state": [
+                    {
+                      "op": "at-most",
+                      "state": "state/labels-read",
+                      "value": 9
+                    }
+                  ]
+                }
               }
             ],
             "forbids_flags": [
@@ -2120,22 +2272,24 @@
         "id": "shortcut/side-door",
         "on_unlock": [
           {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "requires_flags": [
-              "flag/hall-open"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
             "style": "chat",
             "text": "The side door is barred no longer.",
-            "type": "narrate"
+            "type": "narrate",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           }
         ],
         "unlock": "anchor/side-lever"
@@ -2269,19 +2423,21 @@
         "lethality": "harmful",
         "payload": [
           {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
             "style": "actionbar",
             "text": "A plate clicks under the flagstone.",
-            "type": "narrate"
+            "type": "narrate",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           }
         ],
         "reset": "rearm",
@@ -2298,9 +2454,6 @@
           {
             "amount": 6,
             "damage_type": "explosion",
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
             "in": {
               "anchor": "anchor/west-bay",
               "extent": [
@@ -2309,14 +2462,19 @@
                 3
               ]
             },
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
-            "type": "damage-players"
+            "type": "damage-players",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           }
         ],
         "requires_flags": [
@@ -2338,19 +2496,21 @@
         "lethality": "nonlethal",
         "payload": [
           {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
             "style": "chat",
             "text": "The chest was not the exhibit.",
-            "type": "narrate"
+            "type": "narrate",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           }
         ],
         "trigger": "trapped-chest"
@@ -2362,19 +2522,21 @@
         "audience": "presser",
         "effects": [
           {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
             "style": "chat",
             "text": "The label under the case reads: every surface, written once.",
-            "type": "narrate"
+            "type": "narrate",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           }
         ],
         "forbids_flags": [
@@ -2395,18 +2557,20 @@
               "anchor": "anchor/hearth",
               "at": "anchor"
             },
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
             "sound": "minecraft:block.campfire.crackle",
-            "type": "play-sound"
+            "type": "play-sound",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           }
         ],
         "forbids_flags": [
@@ -2427,19 +2591,21 @@
       {
         "effects": [
           {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
             "style": "chat",
             "text": "The Warden does not answer a blow.",
-            "type": "narrate"
+            "type": "narrate",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           }
         ],
         "forbids_flags": [
@@ -2455,19 +2621,21 @@
         "at": "anchor/vantage",
         "effects": [
           {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
             "style": "subtitle",
             "text": "From here the whole hall is one picture.",
-            "type": "narrate"
+            "type": "narrate",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           }
         ],
         "forbids_flags": [
@@ -2487,19 +2655,21 @@
         "audience": "presser",
         "effects": [
           {
-            "forbids_flags": [
-              "flag/hall-sealed"
-            ],
-            "requires_state": [
-              {
-                "op": "at-most",
-                "state": "state/labels-read",
-                "value": 9
-              }
-            ],
             "style": "actionbar",
             "text": "The side door is barred from the other side.",
-            "type": "narrate"
+            "type": "narrate",
+            "when": {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ]
+            }
           }
         ],
         "forbids_flags": [
@@ -2510,6 +2680,25 @@
           "on": "use"
         },
         "once": false
+      },
+      {
+        "at": "anchor/annex-second-bay",
+        "audience": "party",
+        "effects": [
+          {
+            "at": {
+              "anchor": "anchor/annex-second-bay",
+              "at": "anchor"
+            },
+            "sound": "minecraft:block.stone.step",
+            "type": "play-sound"
+          }
+        ],
+        "id": "trigger/stand-in-the-second-bay",
+        "on": {
+          "on": "approach",
+          "range": 3
+        }
       }
     ],
     "waves": [
@@ -2595,6 +2784,6 @@
       }
     ]
   },
-  "dsl_version": "0.12.0",
+  "dsl_version": "0.22.0",
   "stage": "quests"
 }

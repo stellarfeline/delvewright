@@ -387,7 +387,7 @@ through a green pipeline.
 
 ## Render notes
 
-`delve-render piece` (Nucleation) has **no blockstate for `minecraft:chain`**: a
+`delvec render piece` (Nucleation) has **no blockstate for `minecraft:chain`**: a
 chain-hung lamp reads as a lamp floating in mid-air in every review shot. Lamp
 stems are therefore masonry corbels; chain survives only in the bell tower's
 ropes, where it *is* the subject. In-game and in Chunky the chains render
@@ -408,5 +408,5 @@ cargo run --manifest-path prefabs/tidal-keep-generator/Cargo.toml --release -- \
 ```
 
 Byte-identical on every run (double-run hash-checked). The generator is a
-standalone crate with its own `[workspace]`, **outside** `crates/`, so it never
+member of the `prefabs/` workspace, **outside** `crates/`, so it never
 enters the shipped `delvec` binary and no existing `.nbt` output moves.

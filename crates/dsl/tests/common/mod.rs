@@ -33,6 +33,7 @@ pub fn valid_raw() -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -102,7 +103,7 @@ pub fn load_invalid() -> Vec<(String, InvalidFixture)> {
 /// Patch a JSON document **structurally**: parse the text, hand the closure the
 /// parsed value, and return it re-rendered in canonical form.
 ///
-/// See the twin in `crates/compiler/tests/common/mod.rs` for why this exists: a
+/// See the twin in `crates/delvec/tests/common/mod.rs` for why this exists: a
 /// `str::replace` that matches nothing returns its input unchanged, so a test
 /// built on textual splicing goes on to assert against an **unpatched**
 /// campaign and passes for the wrong reason. Canonical reformatting of the

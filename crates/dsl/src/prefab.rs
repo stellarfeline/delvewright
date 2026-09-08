@@ -6,8 +6,8 @@
 //! are, how lit it is, what it claims about the space inside it, and what
 //! regenerates it. Both halves are produced and consumed by several tools of
 //! several ages — the grammar back end and the hand-written generators write the
-//! pair from scratch, `delve-admit` reads it and writes it back after every
-//! admission step, `delvec` reads it to plan a world, `delve-render` reads it to
+//! pair from scratch, `delvec prefab` reads it and writes it back after every
+//! admission step, `delvec` reads it to plan a world, `delvec render` reads it to
 //! aim a camera — so the document's shape is defined once, here, and every one
 //! of them reads that definition instead of a copy of it.
 //!
@@ -70,6 +70,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::registry::Lighting;
@@ -79,15 +80,53 @@ use crate::split::TileSet;
 /// the pool declaration (`{"pools": {...}}`), read by the compiler's registry.
 ///
 /// Named once because more than one tool walks the library directory — the
-/// registry, `delvec view`'s page builder, `delve-render batch` — and each of
+/// registry, `delvec view`'s page builder, `delvec render batch` — and each of
 /// them opens every `.json` it finds. A walker that does not know this name
 /// hands a pool file to [`PrefabMeta::from_json`] and reports it as a malformed
 /// prefab, which is a true statement about the bytes and a wrong one about the
 /// file.
 pub const POOLS_FILE: &str = "pools.json";
 
+/// What the exported prefab-metadata schema tells its reader the document IS —
+/// stated on the schema rather than only in a reference document, because the
+/// schema is what an author actually opens.
+const SCHEMA_DESCRIPTION: &str = "\
+A prefab's sibling metadata file, `<prefab-id>.json`, beside the structure \
+`.nbt` in a prefab library.
+
+A LIBRARY ASSET, NOT A CAMPAIGN STAGE DOCUMENT. It carries no `dsl_version`, no \
+`campaign_id` and no `stage`; it is not authored against the campaign DSL's \
+staging (ADR-0002) and is therefore absent from `--stage all`.
+
+Three of its declarations are the piece's claims about its own outside, and \
+they are different claims rather than one claim written three ways \
+(spec-0060 §4):
+
+  `walk_y`       the piece's own walk plane, in local y. Owed on every base. \
+It is the number an area's origin is DERIVED from where the horizon's datum is \
+a walk plane, so it has no default: a default would be right for the tileset it \
+was copied from and silently wrong for every other. Missing, a campaign that \
+seats the piece is refused with `DW0886`.
+
+  `waterline_y`  the local y of the piece's TOP AUTHORED WATER BLOCK. Owed only \
+where the piece really writes water that meets a sea. It is a claim about the \
+bytes and is checked against them (`DW0887`), and its placement is checked \
+against sea level (`DW0344`). A piece that authors no water has no waterline to \
+state, and writing one anyway is a fiction the engine refuses.
+
+  `shown_faces`  which of the piece's six sides are finished exterior surface. \
+Absent means NO side is shown, which is the strict answer: a piece authored to \
+be buried writes nothing here, and what discharges its obligation is the world \
+burying it (`DW0885`).
+
+Keys this engine does not model are KEPT and written back out, so a newer \
+producer meeting an older reader is a `DW0543` warning rather than a parse \
+failure. The `lighting` block is the one exception and refuses a key it does \
+not know.
+";
+
 /// A prefab's sibling metadata file.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PrefabMeta {
     /// The DSL prefab id, `prefab/<id>`.
     pub prefab_id: String,
@@ -146,13 +185,68 @@ pub struct PrefabMeta {
     /// Licence, provenance prose, and the machine-readable provenance row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<License>,
+    /// **The local y of this piece's own walk plane** — the cell a body's feet
+    /// occupy when it stands on the piece's principal floor (spec-0060 §4).
+    ///
+    /// This is the number an area's origin is DERIVED from on a horizon whose
+    /// datum is a walk plane: an `ocean` world's walk plane is `SEA_LEVEL + 1`,
+    /// so an area seating this piece is placed at `walk_ref_y - walk_y` and the
+    /// piece stands one block above the sea, which is the vanilla-normal beach
+    /// relationship. A keep interior declaring `1` is seated at 62 and stands
+    /// dry at 63; an island piece declaring `3` is seated at 60.
+    ///
+    /// **It has no default, and that is the decision** (spec-0060 §4.1). A
+    /// default is the retired global datum wearing a different name: it would
+    /// be right for the one tileset it was copied from and silently wrong for
+    /// every other, and the piece that lands under the sea because of it floods
+    /// on boot with nothing looking. A piece a campaign seats without one is
+    /// `DW0886`.
+    ///
+    /// It is a MEASUREMENT of the piece, so it is written by the generator that
+    /// built the piece and never typed by hand
+    /// (`CLAUDE.md`: a census derivable from the object is never hand-written).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_y: Option<i32>,
     /// The local y of this piece's **top authored water block** — its waterline
     /// — for open-air pieces built to a tileset convention that authors a sea.
-    /// Consumed by the ocean-horizon placement invariant (`DW0344`): in a
-    /// `horizon: ocean` world the declared waterline must land at world sea
-    /// level. Absent for pieces that author no sea, which are then not checked.
+    ///
+    /// Two rules read it, and they ask different questions. `DW0887` asks
+    /// whether the claim is TRUE — whether the piece's own bytes put a water
+    /// block at that plane and none above it — and refuses a declaration that
+    /// is a fiction wherever the document and its `.nbt` are read together.
+    /// `DW0344` asks whether the PLACEMENT honours it: in a `horizon: ocean`
+    /// world the declared waterline must land at world sea level.
+    ///
+    /// Absent for pieces that author no sea, which neither rule then judges. A
+    /// piece that authors water and declares nothing is not refused by
+    /// `DW0887`; under `ocean` its placement is `DW0344`'s subject and under
+    /// `void` its runoff is `DW0318`'s.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waterline_y: Option<i32>,
+    /// **The sides of this piece the player is meant to see** — the piece's own
+    /// claim that a given face is finished exterior surface rather than the cut
+    /// edge of something that belongs inside a hill.
+    ///
+    /// Local side names, in the piece's own frame, from the same six-word
+    /// vocabulary [`ContractFace::dir`] uses: `east` `west` `up` `down` `south`
+    /// `north`. They turn with the placement, so a piece rotated a quarter turn
+    /// shows the side it was built to show.
+    ///
+    /// It is the third thing a piece says about its own outside, and the three
+    /// are different claims about the same object rather than one claim written
+    /// three ways: [`Self::waterline_y`] says where the piece meets the sea,
+    /// [`SpatialContract::faces`] says where a body crosses a side, and this
+    /// says which sides are finished. None of the others can stand in for it —
+    /// a cave with a mouth declares one `walk` face and is still a block of rock
+    /// on the other five — which is why `DW0885` reads this and not them.
+    ///
+    /// **Absent means no side is shown**, and that is the load-bearing default:
+    /// a piece authored to be buried is exactly a piece that writes nothing
+    /// here, so the silence has to be the strict answer or the defect declares
+    /// itself by omission. What discharges the obligation for such a piece is
+    /// the world burying it, which is geometry the declaration cannot fake.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shown_faces: Vec<String>,
     /// The piece's spatial contract, when it declares one.
     ///
     /// Absent means legacy metadata — the piece makes no spatial claim — exactly
@@ -193,7 +287,7 @@ pub struct PrefabMeta {
 /// produced. That is also what lets a hand-built piece carry the same block: it
 /// has no parameters to resolve, so the two routes write the same shape and one
 /// reader serves both.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SpatialContract {
     /// The space a body enters at.
     pub entry: String,
@@ -223,15 +317,14 @@ pub struct SpatialContract {
 }
 
 /// `DW0848`: a piece's declared footprint class disagrees with its bytes.
-pub const DW_FOOTPRINT_CLASS: crate::DwCode =
-    crate::DwCode::every_version("DW0848", crate::ExitTier::Build);
+pub const DW_FOOTPRINT_CLASS: crate::DwCode = crate::DwCode::new("DW0848", crate::ExitTier::Build);
 
 /// **Judge a piece's declared `footprint_class` against its own structure
 /// size.**
 ///
 /// One authority with two doors, on the pattern spec-0036 §1c fixed for the
-/// spatial contract: `delve-admit audit` asks it at the admission event, where
-/// the library's integrity lives, and `delvewright_compiler::detail` asks it
+/// spatial contract: `delvec prefab audit` asks it at the admission event, where
+/// the library's integrity lives, and `delvec::compiler::detail` asks it
 /// again wherever a `detail-plan` row consumes the piece. Two implementations
 /// that agreed until they did not is the failure this shape removes.
 ///
@@ -323,7 +416,7 @@ pub fn check_footprint_class(
 }
 
 /// One face of the piece's face contract.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractFace {
     /// The space the way in or out belongs to.
     pub space: String,
@@ -338,7 +431,7 @@ pub struct ContractFace {
 }
 
 /// One entry of `spatial_contract.spaces`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractSpace {
     /// `enclosed` | `open_top` | `open`.
     pub envelope: String,
@@ -347,7 +440,7 @@ pub struct ContractSpace {
 }
 
 /// One entry of `spatial_contract.no_body`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractNoBody {
     /// Why these cells are out of play, in the author's words. Which exemption
     /// the region qualifies for is a fact about the blocks and is not recorded
@@ -358,7 +451,7 @@ pub struct ContractNoBody {
 }
 
 /// One entry of `spatial_contract.edges`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractEdge {
     /// A declared space name, or `exterior`.
     pub a: String,
@@ -392,7 +485,7 @@ pub struct ContractEdge {
 /// an existing piece's metadata says `bar` and keeps saying `bar`. The
 /// **checker** normalises the two into one prover; the document keeps both
 /// spellings, so nothing already written moves a byte.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractWay {
     /// `laid` — the region is empty as built and opening fills it with
     /// [`block`](ContractWay::block); or `cleared` — the region stands in
@@ -427,7 +520,7 @@ pub struct ContractWay {
 }
 
 /// An edge's own volume — an opening, a stair's treads, a fall column.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractVolume {
     /// The region's name, which is what content binds to.
     pub region: String,
@@ -436,7 +529,7 @@ pub struct ContractVolume {
 }
 
 /// A `barred` edge's bar: the region that stands in the way, and its block.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContractBar {
     /// The region's name.
     pub region: String,
@@ -447,7 +540,7 @@ pub struct ContractBar {
 }
 
 /// The `structure` block: which file, how big, for which MC version.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct StructureMeta {
     /// The `.nbt` filename, relative to this metadata file.
     pub file: String,
@@ -498,7 +591,9 @@ pub struct PieceTemplate<'a> {
 /// Distinct from [`ContractWay::role`], which is a *palette* role in a
 /// program's own vocabulary and means nothing outside it. This one is the
 /// engine's vocabulary, which is exactly why it is closed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum AnchorRole {
     /// **The cell a body arrives at when it enters the area this piece is
@@ -519,6 +614,38 @@ impl AnchorRole {
             AnchorRole::Entry => "entry",
         }
     }
+
+    /// The terms a refusal lists, comma-separated — one rendering, so a message
+    /// written at a command line and a message written by the prefab registry
+    /// cannot name different vocabularies.
+    pub fn vocabulary() -> String {
+        AnchorRole::ALL
+            .iter()
+            .map(|r| format!("`{r}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// A role typed at a command line is the same closed vocabulary a role written
+/// into a document is, read from the same table — so `delvec prefab anchor
+/// --role` refuses exactly what deserialising the document refuses, by name,
+/// and the two cannot come to know different terms.
+impl std::str::FromStr for AnchorRole {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<AnchorRole, String> {
+        AnchorRole::ALL
+            .iter()
+            .copied()
+            .find(|r| r.as_str() == s)
+            .ok_or_else(|| {
+                format!(
+                    "unknown anchor role `{s}` — the engine's vocabulary is {}",
+                    AnchorRole::vocabulary()
+                )
+            })
+    }
 }
 
 impl std::fmt::Display for AnchorRole {
@@ -534,7 +661,7 @@ impl std::fmt::Display for AnchorRole {
 /// prefab pre-wired for it. All of those are the same object class — a named
 /// place in a piece — so they live in one type and each writes only the keys it
 /// means.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Anchor {
     /// Local cell `[x, y, z]`, relative to the structure origin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -706,7 +833,8 @@ fn one_box(boxes: &[Region]) -> Option<Region> {
     Some(Region { from, to })
 }
 
-/// Where an anchor is — the only part of an anchor an editing tool declares.
+/// Where an anchor is and what it is for — the parts of an anchor an editing
+/// tool declares.
 ///
 /// Deliberately a different type from [`Anchor`]: the whole anchor is what a
 /// caller must not be able to hand an editing step, because constructing one
@@ -722,10 +850,24 @@ pub struct AnchorEdit {
     pub region: Option<Region>,
     /// Block id filling a gate region.
     pub block: Option<String>,
+    /// **What the anchor is for** ([`Anchor::role`]), tri-state because the
+    /// place and the purpose are two properties and an edit may speak about
+    /// either without speaking about the other:
+    ///
+    /// * `None` — the edit says nothing about the role, so an existing one is
+    ///   kept. Moving a cell is not a statement that the piece stopped being
+    ///   the place a party arrives at, and silently answering it as one is the
+    ///   deletion this type exists to prevent.
+    /// * `Some(None)` — the edit says the anchor has **no** role, and an
+    ///   existing one is removed. This is the remedy `DW0804` prescribes when
+    ///   two anchors in one area both claim a role, and it is reachable here
+    ///   rather than only by hand-editing the document.
+    /// * `Some(Some(role))` — the anchor is declared to have that role.
+    pub role: Option<Option<AnchorRole>>,
 }
 
 /// An inclusive local cell range.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Region {
     /// Low corner `[x, y, z]`.
     pub from: [i32; 3],
@@ -739,7 +881,7 @@ pub struct Region {
 /// prefab's local coordinates; `facing` is the cardinal direction the opening
 /// faces outward. Two sockets mate by placing the child so its socket sits one
 /// block beyond the parent's, facing the opposite way.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Connector {
     /// Jigsaw `name`.
     pub name: String,
@@ -759,7 +901,7 @@ pub struct Connector {
 pub const UNMEASURED: &str = "unmeasured";
 
 /// The `license` block: the human half and the machine half of provenance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct License {
     /// Where the asset came from (`original`, or a named upstream).
     pub source: String,
@@ -779,16 +921,41 @@ pub struct License {
 }
 
 /// Everything needed to reproduce the `.nbt` byte for byte (ADR-0006).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// **Every input that reaches the bytes, and nothing that does not.** A record
+/// missing one of them is worse than no record: it names a set of inputs, and a
+/// re-expansion from that set produces a different artifact while the document
+/// claims byte reproducibility. The set is the source program, the overrides
+/// applied to it, the region and the seed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratedBy {
     /// The back end that produced the bytes.
     pub generator: String,
     /// The source program's name.
     pub program: String,
-    /// `sha256:<64 hex>` over the program's canonical JSON.
+    /// `sha256:<64 hex>` over the canonical JSON of the program **as expanded**
+    /// — the source document with [`Self::params`] and [`Self::roles`] already
+    /// applied. It is therefore the checksum of the reproduction rather than a
+    /// second statement of it: apply the overrides to the named document and
+    /// this is the hash you must get.
     pub program_hash: String,
     /// The expansion seed.
     pub seed: u64,
+    /// The region the program was expanded over, `[x, y, z]`. An independent
+    /// input: the same program at the same seed over a different box is a
+    /// different building.
+    pub region: [i32; 3],
+    /// Integer parameters overridden on the way in (`delvec grammar expand
+    /// --param`), by name. Empty — and absent from the document — where the
+    /// program was expanded as written.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, i64>,
+    /// Palette roles rebound on the way in (`--role`), by name, each the block
+    /// state as the caller wrote it. The axis frame is not recorded because it
+    /// is not an input: a rebind inherits the frame of the binding it replaces,
+    /// which the named source document already carries.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub roles: BTreeMap<String, String>,
 }
 
 impl PrefabMeta {
@@ -926,6 +1093,37 @@ impl PrefabMeta {
         serde_json::to_string_pretty(self).expect("prefab metadata serializes") + "\n"
     }
 
+    /// The JSON Schema of this document, for `delvec schema --stage
+    /// prefab-metadata`.
+    ///
+    /// **Deliberately not part of `--stage all`.** `all` is the campaign DSL's
+    /// staged documents, and the gallery's coverage gate enumerates its units
+    /// from exactly that export: a library-asset document folded into it would
+    /// demand a gallery *stage-document* binding for every field of a file no
+    /// stage document contains. A prefab's declarations are proven where they
+    /// are read — `shown_faces` by the exposure ledger, `walk_y` and
+    /// `waterline_y` by the seating and waterline bindings — which is a binding
+    /// a schema unit could not give them.
+    ///
+    /// It is exported anyway, and for the reason the walk record is: this is
+    /// the command an author is told to run to see the shape of a document they
+    /// must write, and a piece's metadata is one of those.
+    pub fn schema() -> serde_json::Value {
+        let mut v = serde_json::to_value(schemars::schema_for!(PrefabMeta))
+            .expect("the prefab-metadata schema serializes to JSON");
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert(
+                "title".into(),
+                serde_json::Value::String("<prefab-id>.json (prefab metadata)".into()),
+            );
+            obj.insert(
+                "description".into(),
+                serde_json::Value::String(SCHEMA_DESCRIPTION.into()),
+            );
+        }
+        v
+    }
+
     /// Every key of this document — top level and per anchor — that this version
     /// does not model, as `(where, key)` pairs in a stable order.
     ///
@@ -971,7 +1169,19 @@ impl PrefabMeta {
                 ..Lighting::unmeasured()
             }),
             license: Some(license),
+            // A freshly admitted piece states no walk plane, for the reason
+            // `walk_y` has no default: the number is a measurement of the piece
+            // its generator made, and the admission step that converts a
+            // stranger's `.nbt` did not build the piece and has no walk plane
+            // to report. A campaign that seats such a piece on a horizon whose
+            // datum needs one is `DW0886`, which is where the author learns.
+            walk_y: None,
             waterline_y: None,
+            // A freshly admitted piece shows nothing, for the same reason it
+            // claims no size class: which of its sides are finished surface is
+            // the author's claim about what the piece is FOR, and reading it off
+            // the bytes would be this document inferring intent from material.
+            shown_faces: Vec::new(),
             spatial_contract: None,
             // A freshly admitted piece makes no claim about which size class of
             // box it fills, and inventing one from its bytes would be the
@@ -981,8 +1191,8 @@ impl PrefabMeta {
         }
     }
 
-    /// Annotate a named anchor's **place**, creating the anchor when it is not
-    /// there yet.
+    /// Annotate a named anchor's **place and purpose**, creating the anchor
+    /// when it is not there yet.
     ///
     /// An anchor is an object, not a value. A tool that names where the anchor
     /// is has said nothing about the hardware the prefab wired at it
@@ -996,12 +1206,20 @@ impl PrefabMeta {
     /// The place itself is one property expressed two ways — a cell or a region
     /// — so an edit redeclares all four of its fields together and a `pos` does
     /// supersede a stale `region`.
+    ///
+    /// The **role** is a fifth field and not a fifth way of saying where: what
+    /// an anchor is for is a property of the anchor, so it is written when the
+    /// edit speaks about it, cleared when the edit says it has none, and left
+    /// alone when the edit says nothing ([`AnchorEdit::role`]).
     pub fn edit_anchor(&mut self, name: &str, edit: AnchorEdit) {
         let anchor = self.anchors.entry(name.to_string()).or_default();
         anchor.pos = edit.pos;
         anchor.facing = edit.facing;
         anchor.region = edit.region;
         anchor.block = edit.block;
+        if let Some(role) = edit.role {
+            anchor.role = role;
+        }
     }
 
     /// **The ONE authority on the region and block a gate anchor names**, in
@@ -1169,7 +1387,7 @@ mod tests {
     "id": "chapel-ward",
     "size": [16, 9, 26],
     "data_version": 4671,
-    "generator": "crates/grammar"
+    "generator": "crates/delvec/src/grammar"
   },
   "anchors": {
     "anchor/bell": { "pos": [3, 1, 4], "facing": "north" },
@@ -1186,7 +1404,8 @@ mod tests {
       "generator": "grammar",
       "program": "bell_chapel_ward",
       "program_hash": "sha256:00",
-      "seed": 1
+      "seed": 1,
+      "region": [11, 6, 13]
     }
   },
   "waterline_y": 2
@@ -1357,7 +1576,7 @@ mod tests {
     "part_max": 48,
     "grid": [1, 1, 2],
     "data_version": 4671,
-    "generator": "crates/grammar",
+    "generator": "crates/delvec/src/grammar",
     "parts": [
       { "file": "notre-dame.x0y0z0.nbt", "id": "a", "grid_index": [0,0,0], "offset": [0,0,0], "size": [31,48,48] },
       { "file": "notre-dame.x0y0z1.nbt", "id": "b", "grid_index": [0,0,1], "offset": [0,0,48], "size": [31,48,45] }
@@ -1372,7 +1591,13 @@ mod tests {
     "spdx": "GPL-3.0-or-later",
     "note": "n",
     "provenance": "p",
-    "generated_by": { "generator": "grammar", "program": "nd", "program_hash": "sha256:00", "seed": 1 }
+    "generated_by": {
+      "generator": "grammar",
+      "program": "nd",
+      "program_hash": "sha256:00",
+      "seed": 1,
+      "region": [3, 3, 3]
+    }
   },
   "a_key_no_engine_models": { "kept": true }
 }
@@ -1493,7 +1718,7 @@ mod tests {
             "ingested",
             [3, 3, 3],
             4671,
-            "delve-admit (external admission)",
+            "delvec prefab (external admission)",
             License {
                 source: "unknown".to_string(),
                 spdx: "UNKNOWN".to_string(),
@@ -1583,5 +1808,68 @@ mod tests {
             serde_json::to_string(&Anchor::point([1, 2, 3], "north").with_role(AnchorRole::Entry))
                 .unwrap();
         assert!(declared.contains(r#""role":"entry""#), "{declared}");
+    }
+
+    /// A role typed at a command line goes through the **same** closed table a
+    /// role written into a document does, so the two cannot come to know
+    /// different terms — and a term the engine does not know is refused with
+    /// both the term and the vocabulary in the message.
+    #[test]
+    fn a_role_parsed_from_a_word_is_the_same_vocabulary_as_a_role_read_from_a_document() {
+        for role in AnchorRole::ALL {
+            assert_eq!(role.as_str().parse::<AnchorRole>(), Ok(*role));
+        }
+        let err = "dispenser".parse::<AnchorRole>().expect_err("not a term");
+        assert!(err.contains("dispenser"), "{err}");
+        for role in AnchorRole::ALL {
+            assert!(err.contains(role.as_str()), "{err}");
+        }
+        // The name the compiler once matched is a name and has never been a
+        // role, so it is refused here exactly as it is refused by `serde`.
+        assert!("spawn".parse::<AnchorRole>().is_err());
+    }
+
+    /// `edit_anchor`'s role is TRI-state, and the middle state is the one that
+    /// matters: an edit that says nothing about the role keeps it. A tool that
+    /// moved an anchor's cell would otherwise delete the piece's entry point,
+    /// which is the silent deletion [`AnchorEdit`] exists to prevent.
+    #[test]
+    fn an_edit_that_says_nothing_about_the_role_keeps_it() {
+        let mut meta = PrefabMeta::skeleton(
+            "x",
+            [3, 3, 3],
+            4671,
+            "test",
+            License {
+                source: "original".to_string(),
+                spdx: "GPL-3.0-or-later".to_string(),
+                note: String::new(),
+                provenance: String::new(),
+                generated_by: None,
+            },
+        );
+        let place = |role| AnchorEdit {
+            pos: Some([1, 1, 1]),
+            role,
+            ..AnchorEdit::default()
+        };
+
+        meta.edit_anchor("anchor/a", place(Some(Some(AnchorRole::Entry))));
+        assert_eq!(meta.anchors["anchor/a"].role, Some(AnchorRole::Entry));
+
+        // Silent: kept.
+        meta.edit_anchor(
+            "anchor/a",
+            AnchorEdit {
+                pos: Some([2, 1, 1]),
+                ..AnchorEdit::default()
+            },
+        );
+        assert_eq!(meta.anchors["anchor/a"].pos, Some([2, 1, 1]));
+        assert_eq!(meta.anchors["anchor/a"].role, Some(AnchorRole::Entry));
+
+        // Said to have none: removed — the remedy `DW0804` prescribes.
+        meta.edit_anchor("anchor/a", place(Some(None)));
+        assert_eq!(meta.anchors["anchor/a"].role, None);
     }
 }

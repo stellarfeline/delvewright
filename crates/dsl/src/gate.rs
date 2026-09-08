@@ -309,7 +309,10 @@ impl GateConsumer {
 pub struct GateSite {
     /// The object class carrying the gate.
     pub consumer: GateConsumer,
-    /// JSON pointer to the carrying object within its stage document.
+    /// JSON pointer, within its stage document, to the object that declares the
+    /// gate's fields — so `<path>/requires_flags/0` is where an author would look.
+    /// For every consumer but the effect that is the consumer object itself; an
+    /// effect declares its gate in one `when`, and the pointer names it.
     pub path: String,
 }
 
@@ -427,7 +430,7 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
     crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
         visit(
             GateConsumer::Effect,
-            path.to_string(),
+            format!("{path}/when"),
             eff.gate(),
             &mut sites,
             &mut gated,

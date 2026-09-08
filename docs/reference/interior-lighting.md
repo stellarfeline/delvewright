@@ -20,8 +20,8 @@ engine's own measured behaviour, or reasoned from a cited rule without a source 
 under the darkest reachable `(time, weather)` sky, with no `lighting` and no `mitigation`
 declaration. `DW0211` is its declared-relight sibling.
 
-The model is `crates/compiler/src/light.rs` — the **one** authority for emission, opacity and the
-flood. `crates/admit`'s prefab probe and spec-0010's assembled gate both read it rather than
+The model is `crates/delvec/src/compiler/light.rs` — the **one** authority for emission, opacity and the
+flood. `crates/delvec/src/admit`'s prefab probe and spec-0010's assembled gate both read it rather than
 keeping a copy; a private second copy is what once left the prefab probe with no sky term at all
 and reported daylit colonnades as pitch black.
 
@@ -72,7 +72,7 @@ lights itself), so no plan-level `lighting` reaches them, and that paragraph nam
 piece bound to it, and the darkest cell in the piece's own coordinates — where the author has to go
 and hang something.
 
-The same rule reaches the piece one stage earlier: `delve-admit lighting` measures a piece whose
+The same rule reaches the piece one stage earlier: `delvec prefab lighting` measures a piece whose
 spatial contract declares every space `enclosed` under **no sky**, because such a piece will stand
 inside a plan's box under the whole's roof and meets none. A piece declaring an `open` or
 `open_top` space, or no contract at all, is measured standing in open air as before. Without that,
@@ -81,7 +81,7 @@ an emitterless detail piece was written `lit` on the strength of the night sky f
 
 ## 2. Where a lamp may physically go
 
-`crates/grammar/src/nav.rs` decides passability as **air, or a `*_skull`**. Every other block is
+`crates/delvec/src/grammar/nav.rs` decides passability as **air, or a `*_skull`**. Every other block is
 a full solid cube to the zone-program walk proof. A lantern, torch, candle or campfire dropped
 into a cell a body walks through therefore *removes that cell from the walk*, and a bed of a
 non-collidable block on a floor reads as a **new floor level**.
@@ -257,7 +257,7 @@ either readable.
 
 ## 4. The emitter table
 
-Emission values **mirror** `emission()` in `crates/compiler/src/light.rs`, which is the authority
+Emission values **mirror** `emission()` in `crates/delvec/src/compiler/light.rs`, which is the authority
 and carries a per-block wiki citation for each entry. If this table and that function disagree,
 the function is right. The other columns are what a designer needs and the engine does not model;
 they are read from each block's own page on `minecraft.wiki`. **[cited]**
