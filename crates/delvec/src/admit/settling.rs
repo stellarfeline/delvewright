@@ -82,21 +82,121 @@ pub fn piece_grid(
     meta: &delvewright_dsl::prefab::PrefabMeta,
     dir: &std::path::Path,
 ) -> Result<(VoxelModel, usize), String> {
+    let (grid, facts) = piece_bytes(meta, dir)?;
+    Ok((grid, facts.opened))
+}
+
+/// The block a jigsaw socket IS. Spelled once, for the same reason the
+/// waterline's water is: the carver that writes one, the reader that finds one
+/// and the check that holds a declaration to one must all mean the same block.
+pub const JIGSAW: &str = "minecraft:jigsaw";
+
+/// **A jigsaw block as the bytes hold it** — the socket a piece really has.
+///
+/// Every field is what the `.nbt` says, never what a document says: the block
+/// state's `orientation` property and the strings its block entity carries. A
+/// connector declaration is judged against this and against nothing else.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Jigsaw {
+    /// The block state's `orientation` property (`north_up`, …), when it writes
+    /// one.
+    pub orientation: Option<String>,
+    /// The block entity's `name`.
+    pub name: Option<String>,
+    /// The block entity's `target`.
+    pub target: Option<String>,
+    /// The block entity's `joint`.
+    pub joint: Option<String>,
+}
+
+/// **What a piece's own files say about themselves**, beside the grid of blocks
+/// they assemble into.
+///
+/// A [`VoxelModel`] carries neither a `DataVersion` nor a block entity, so two
+/// facts a document makes claims about are not in it: which game version its
+/// templates were written for, and what the jigsaw markers in them say. They are
+/// collected here, at the one read, so a checker never has to open a template a
+/// second time and no two readers of one piece can come to different answers
+/// about it.
+///
+/// The piece's own EXTENT is deliberately not among them: `DW0803` is the one
+/// authority on the declared size against the bytes, and a second measurement
+/// carried here is a second answer waiting to be given.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ByteFacts {
+    /// `.nbt` templates opened. A denominator: a piece whose tiles are missing
+    /// cannot be reported as examined.
+    pub opened: usize,
+    /// Each opened template's own `DataVersion`, in template order.
+    pub data_versions: Vec<i32>,
+    /// Every `minecraft:jigsaw` block the piece authors, by piece-local cell.
+    pub jigsaws: std::collections::BTreeMap<[i32; 3], Jigsaw>,
+}
+
+impl ByteFacts {
+    /// Read the facts off structures a caller has already parsed, each with the
+    /// piece-local offset it sits at (`[0, 0, 0]` for a single template).
+    pub fn of(templates: &[([i32; 3], &Structure)]) -> ByteFacts {
+        let mut facts = ByteFacts::default();
+        for (offset, s) in templates {
+            facts.opened += 1;
+            facts.data_versions.push(s.data_version);
+            for b in &s.blocks {
+                let entry = &s.palette[b.state as usize];
+                if entry.name != JIGSAW {
+                    continue;
+                }
+                let be = b.nbt.as_ref().and_then(crate::schem::nbt::Nbt::as_compound);
+                let field = |k: &str| {
+                    be.and_then(|c| c.get(k))
+                        .and_then(crate::schem::nbt::Nbt::as_str)
+                        .map(str::to_string)
+                };
+                facts.jigsaws.insert(
+                    [
+                        b.pos[0] + offset[0],
+                        b.pos[1] + offset[1],
+                        b.pos[2] + offset[2],
+                    ],
+                    Jigsaw {
+                        orientation: entry.properties.get("orientation").cloned(),
+                        name: field("name"),
+                        target: field("target"),
+                        joint: field("joint"),
+                    },
+                );
+            }
+        }
+        facts
+    }
+}
+
+/// **A whole piece, read once**: the assembled grid and the facts its own files
+/// carry.
+///
+/// [`piece_grid`] is this without the facts, kept because most callers want only
+/// the blocks; both go through here, so a piece is never opened twice with two
+/// answers about how big it is.
+pub fn piece_bytes(
+    meta: &delvewright_dsl::prefab::PrefabMeta,
+    dir: &std::path::Path,
+) -> Result<(VoxelModel, ByteFacts), String> {
     let size = meta.size();
     let mut model = VoxelModel::new(Box3::at_origin([
         size[0].max(0) as u32,
         size[1].max(0) as u32,
         size[2].max(0) as u32,
     ]));
-    let mut opened = 0usize;
+    let mut read: Vec<([i32; 3], Structure)> = Vec::new();
     for t in meta.templates() {
         let path = dir.join(t.file);
         let bytes = std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
         let s = Structure::read(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         blit(&mut model, &s, t.offset);
-        opened += 1;
+        read.push((t.offset, s));
     }
-    Ok((model, opened))
+    let borrowed: Vec<([i32; 3], &Structure)> = read.iter().map(|(o, s)| (*o, s)).collect();
+    Ok((model, ByteFacts::of(&borrowed)))
 }
 
 /// What the two rules examined in one piece, and what they found.

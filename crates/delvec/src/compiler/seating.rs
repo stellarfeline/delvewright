@@ -121,14 +121,24 @@ pub struct PieceFacts {
     /// `.nbt` files opened for this piece. A denominator, so a piece whose
     /// tiles are missing cannot be reported as examined.
     pub nbt_opened: usize,
+    /// **Everything else this document claims about these same bytes**, held to
+    /// them at the same read (`DW0888`, [`crate::compiler::claims`]).
+    ///
+    /// It rides here because it is answered from exactly the two things a
+    /// `PieceFacts` already has — the document and the grid its templates
+    /// assemble into — and because every door that asks the seating question
+    /// (the library sweep, `delvec prefab seating`, the campaign's own check)
+    /// owes the same answer about the same piece. A second read for a second
+    /// rule is a second chance for the two to disagree.
+    pub claims: crate::compiler::claims::ClaimVerdict,
 }
 
 impl PieceFacts {
     /// Read one piece: its declarations from `meta`, its measurements from the
     /// `.nbt` files beside it in `dir`.
     pub fn read(meta: &PrefabMeta, dir: &Path) -> Result<PieceFacts, String> {
-        let (grid, nbt_opened) = crate::admit::settling::piece_grid(meta, dir)?;
-        Ok(PieceFacts::measure(meta, &grid, nbt_opened))
+        let (grid, bytes) = crate::admit::settling::piece_bytes(meta, dir)?;
+        Ok(PieceFacts::measure(meta, &grid, &bytes))
     }
 
     /// The same measurements, over a grid the caller already has.
@@ -142,7 +152,7 @@ impl PieceFacts {
     pub fn measure(
         meta: &PrefabMeta,
         grid: &crate::grammar::model::VoxelModel,
-        nbt_opened: usize,
+        bytes: &crate::admit::settling::ByteFacts,
     ) -> PieceFacts {
         use crate::schem::nav::standable_cells;
 
@@ -175,7 +185,8 @@ impl PieceFacts {
             lowest_standable,
             standable_below_walk,
             fluid_at_edge,
-            nbt_opened,
+            nbt_opened: bytes.opened,
+            claims: crate::compiler::claims::check_piece(meta, grid, bytes),
         }
     }
 }
@@ -617,6 +628,11 @@ pub struct Library {
     /// One line per document this could not read, with why. A library that
     /// cannot be opened is a red, never a small number.
     pub unreadable: Vec<String>,
+    /// **Every byte-asserting declaration in the library**, held to the bytes at
+    /// the same read (`DW0888`).
+    pub claims: crate::compiler::claims::ClaimBinding,
+    /// The declarations the bytes deny, in prefab-id order.
+    pub denied_claims: Vec<crate::compiler::claims::Claim>,
 }
 
 impl Library {
@@ -627,12 +643,16 @@ impl Library {
             documents: 0,
             nbt_opened: 0,
             unreadable: Vec::new(),
+            claims: crate::compiler::claims::ClaimBinding::default(),
+            denied_claims: Vec::new(),
         };
         for (id, meta) in prefabs.all() {
             lib.documents += 1;
             match PieceFacts::read(meta, dir) {
                 Ok(f) => {
                     lib.nbt_opened += f.nbt_opened;
+                    lib.claims.add(&f.claims.binding);
+                    lib.denied_claims.extend(f.claims.denied.iter().cloned());
                     lib.pieces.insert(id.clone(), f);
                 }
                 Err(e) => lib.unreadable.push(format!("{id}: {e}")),
@@ -682,6 +702,9 @@ pub struct SeatingBinding {
     pub waterlines_declared: usize,
     /// Of those, the ones the bytes bear out.
     pub waterlines_borne_out: usize,
+    /// **The rest of what these same documents claim about these same bytes**
+    /// (`DW0888`), examined at the same read.
+    pub claims: crate::compiler::claims::ClaimBinding,
 }
 
 impl SeatingBinding {
@@ -699,7 +722,8 @@ impl SeatingBinding {
             opened = self.nbt_opened,
             wl = self.waterlines_declared,
             ok = self.waterlines_borne_out,
-        )
+        ) + " "
+            + &self.claims.line()
     }
 }
 
@@ -734,22 +758,16 @@ pub fn area_members(area: &delvewright_dsl::Area, prefabs: &PrefabRegistry) -> V
 /// Returns the binding beside the diagnostics: a check that refuses nothing
 /// still owes the numbers it refused nothing over.
 ///
-/// # The one shape that is not yet raised here, and why
+/// # The walk plane is owed on every base
 ///
-/// `walk_y` is owed on **every** base (spec-0060 §4.1), and
-/// [`seating_reasons`] computes that shape on every base — `delvec prefab
-/// seating` reports it for `void` and `valley` exactly as it does for `ocean`.
-/// What this campaign-tier refusal raises today is the ocean's half, where the
-/// area origin is DERIVED from the number and a build genuinely cannot proceed
-/// without it.
-///
-/// The reason is named rather than hidden: the shipped content library declares
-/// `walk_y` on none of its 36 documents, and that work is spec-0060 §8's, in
-/// the content repository. Raising the `void` and `valley` halves before that
-/// lands would refuse every campaign in the tree for a fact about a library
-/// this round does not own. It is a recorded debt with one move: once the
-/// content round declares the field and the content pin moves,
-/// [`WALK_Y_BINDS_ON_EVERY_BASE`] becomes `true` and this filter goes.
+/// `walk_y` is owed on **every** base (spec-0060 §4.1) and refused on every
+/// base here, from the one rule [`seating_reasons`] states — so a campaign is
+/// refused for a silent walk plane wherever `delvec prefab seating` reports one,
+/// and the command and the campaign give a creator one answer rather than two.
+/// The ocean is where the number is also CONSUMED, because the area origin is
+/// derived from it (spec-0060 §3.2); `void` and `valley` state their own datum
+/// and still owe the declaration, because a piece with no walk plane is a piece
+/// nothing can say a body stands on.
 pub fn check(
     campaign: &Campaign,
     prefabs: &PrefabRegistry,
@@ -785,9 +803,6 @@ pub fn check(
                 binding.waterlines_declared += 1;
             }
             let mut reasons = seating_reasons(base, f);
-            if !WALK_Y_BINDS_ON_EVERY_BASE && base != HorizonBase::Ocean {
-                reasons.retain(|r| r.shape != Shape::NoWalkPlane);
-            }
             if let Some(w) = waterline_reason(f) {
                 reasons.push(w);
             } else if f.declared_waterline.is_some() {
@@ -838,17 +853,33 @@ pub fn check(
             }
         }
     }
+
+    // **And everything else these documents claim about these same bytes**
+    // (`DW0888`), reported once per PIECE rather than once per seating.
+    //
+    // A piece two areas draw from is one library asset with one set of
+    // declarations: the fiction is in the library, not in the area that happened
+    // to name it, so reporting it per area would print the same defect as many
+    // times as the campaign used the piece. The path names the piece for the
+    // same reason.
+    for facts in read.values().filter_map(Option::as_ref) {
+        binding.claims.add(&facts.claims.binding);
+        for c in &facts.claims.denied {
+            diags.push(Diagnostic::error(
+                crate::compiler::claims::DW_CLAIM_DENIED,
+                "world",
+                format!("/prefabs/{}", facts.base),
+                format!(
+                    "this campaign seats `{member}`, and its prefab document says something its \
+                     own bytes deny: {full}.",
+                    member = c.member,
+                    full = c.full,
+                ),
+            ));
+        }
+    }
     (binding, diags)
 }
-
-/// Whether the missing-`walk_y` shape is raised as a campaign refusal on a base
-/// that does not derive its origin from the number.
-///
-/// `false` is a **recorded debt**, not a decision: see [`check`]. The rule is
-/// written once in [`seating_reasons`] and reported on every base by
-/// `delvec prefab seating`; this constant governs only whether the campaign is
-/// refused for it on `void` and `valley`.
-pub const WALK_Y_BINDS_ON_EVERY_BASE: bool = false;
 
 /// What every `DW0886` message ends with: the base a campaign cannot reach from
 /// here, so that this refusal and `DW0855` read as one answer rather than two.
@@ -876,6 +907,7 @@ mod tests {
             standable_below_walk: 0,
             fluid_at_edge: 0,
             nbt_opened: 1,
+            claims: crate::compiler::claims::ClaimVerdict::default(),
         }
     }
 

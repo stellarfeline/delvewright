@@ -377,6 +377,11 @@ jobs:
         run: cargo test --locked --manifest-path prefabs/Cargo.toml --workspace
       # Running the generator twice into different trees proves BOTH halves at
       # once: the invariants (a panic fails the job) and ADR-0006 byte-identity.
+      #
+      # The list is written out rather than derived, and it is not a list
+      # somebody has to remember: `tools/check-structure-emitters.py` holds it
+      # equal to the generators on disk in both directions, so a generator added
+      # to the workspace and not named here is a red rather than a silence.
       - name: run every generator twice — invariants hold, output is identical
         run: |
           set -euo pipefail
@@ -392,6 +397,16 @@ jobs:
             diff -r "/tmp/$g-a" "/tmp/$g-b"
             echo "::endgroup::"
           done
+      # And the other half of what a re-run must not do: DELETE a key it did not
+      # write. The generators merge through
+      # `prefab_invariants::document::write_preserving`; this plants the kinds of
+      # key a later step adds — an anchor a campaign binds, an entry role, a
+      # shown face, a spatial contract, a key this engine does not model — and
+      # refuses if a re-generation loses one.
+      - name: a generator deletes nothing it did not write
+        run: |
+          python3 tools/check-generator-preservation.py \
+            --scratch "$RUNNER_TEMP/generator-preservation"
 
   harness:
     name: harness (typecheck, test)
