@@ -141,6 +141,11 @@
       "stage": "quests"
     },
     {
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
+    },
+    {
       "code": "DW0813",
       "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
@@ -316,6 +321,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
     },
     {
       "code": "DW0813",
@@ -495,6 +505,11 @@
       "stage": "quests"
     },
     {
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
+    },
+    {
       "code": "DW0813",
       "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
@@ -672,6 +687,11 @@
       "stage": "quests"
     },
     {
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
+    },
+    {
       "code": "DW0813",
       "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
@@ -847,6 +867,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
     },
     {
       "code": "DW0813",
@@ -1071,6 +1096,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
     },
     {
       "code": "DW0813",

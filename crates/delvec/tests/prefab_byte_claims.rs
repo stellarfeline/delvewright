@@ -300,6 +300,12 @@ const DOES_NOT: &[(&[&str], &str)] = &[
          validation, where the bytes are read as a whole",
     ),
     (
+        &["anchors"],
+        "reads the pool declarations and each member's `anchors` map to answer which anchors a \
+         pool guarantees, and opens no `.nbt` at all: what it reports is a property of the \
+         LAYOUT over declarations, so there are no bytes for a claim of its to deny",
+    ),
+    (
         &["planes"],
         "MEASURES `walk_y`/`waterline_y` off the bytes and writes what it measured, so it cannot \
          produce a declaration the bytes deny",
