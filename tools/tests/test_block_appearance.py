@@ -54,8 +54,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 TOOL = REPO / "tools" / "block-appearance.py"
 EXTRACTOR = REPO / "tools" / "extract-block-classification.py"
-CLASSIFICATION = REPO / "crates" / "compiler" / "data" / "block-classification-1.21.11.json"
-ASSEMBLED = REPO / "crates" / "compiler" / "src" / "assembled.rs"
+CLASSIFICATION = REPO / "crates" / "delvec" / "data" / "block-classification-1.21.11.json"
+ASSEMBLED = REPO / "crates" / "delvec" / "src" / "compiler" / "assembled.rs"
 
 
 def load(path: Path):
@@ -1331,7 +1331,7 @@ def test_a_missing_registry_is_a_named_refusal_not_a_traceback(monkeypatch, tmp_
     message = str(excinfo.value)
     assert "no block registry at" in message
     # The refusal must name the fallback, or it turns a mandatory step optional.
-    assert "delve-grammar" in message
+    assert "delvec grammar" in message
     assert "not optional" in message
 
 

@@ -115,6 +115,7 @@ import {
   gateRegionCells,
   gateRetryBudgetMs,
   gateWindowWaitMs,
+  gatesBindingWalk,
   gatesCrossedByHop,
   insideGate,
   nearCell,
@@ -3032,9 +3033,15 @@ export class MineflayerExecutor implements StepExecutor {
       // as walked; a non-matching walk (a sub-walk, or a post-transport step) does
       // not consume and falls back to the single destination goal.
       let legWaypoints: readonly Vec3Tuple[] | undefined;
-      // spec-0016 §4: the timed gates this leg's proven route walks
-      // THROUGH. Only a marked leg is allowed the window wait below.
-      let legGates: readonly TimedGate[] = [];
+      // spec-0016 §4: the timed gates that bind THIS walk. A gate is a world fact
+      // the compiler exports for the whole campaign; a proven leg's `timed_gates`
+      // narrows that table to the subset its route crosses. A walk with no proven
+      // leg — a death-loop approach or walk back, a die-retry return, a mob or actor
+      // chase — cannot narrow it and takes the declared table, so every walk crosses
+      // a gate by the same rule instead of the unproven ones reading a shut gate as
+      // broken geometry. See `gatesBindingWalk` for the crush withholding.
+      const declaredGates = this.waypoints?.timedGates ?? [];
+      let walkGates: readonly TimedGate[] = [];
       if (this.waypoints) {
         const match = nextLegWaypoints(this.waypoints.legs, this.legCursor, [
           pos[0],
@@ -3042,13 +3049,25 @@ export class MineflayerExecutor implements StepExecutor {
           pos[2],
         ]);
         legWaypoints = match.waypoints;
-        legGates = match.timedGates;
         this.legCursor = match.cursor;
-      }
-      if (legGates.length > 0) {
-        process.stderr.write(
-          `[timed-gate] ${label}: proven route crosses ${describeGates(legGates)}\n`,
-        );
+        const binding = gatesBindingWalk(match.matched, match.timedGates, declaredGates);
+        walkGates = binding.gates;
+        // Stated binding count, once per walk, for every campaign that declares a
+        // gate at all: how many of the declared gates bind this walk, which they
+        // are, what said so, and what was withheld. A zero here is a reader's
+        // finding, not something to be inferred from the absence of a line.
+        if (declaredGates.length > 0) {
+          process.stderr.write(
+            `[timed-gate] ${label}: ${binding.gates.length} of ${declaredGates.length} ` +
+              `declared gate(s) bind this walk, from ${binding.source}` +
+              (binding.gates.length > 0 ? ` — ${describeGates(binding.gates)}` : "") +
+              (binding.withheld.length > 0
+                ? `; withheld (crush — staging needs a compiler-pinned mouth this walk ` +
+                  `does not have): ${binding.withheld.map((g) => g.id).join(", ")}`
+                : "") +
+              `\n`,
+          );
+        }
       }
       // Drop proven waypoints the bot cannot physically stand on. The compiler models
       // every non-air block as a full 1×1×1 solid, so a leg may be proven by standing
@@ -3083,9 +3102,9 @@ export class MineflayerExecutor implements StepExecutor {
         // through the health it needs for the next fight.
         (spec, glabel) => this.gotoDefended(spec, glabel, sneak),
         (target) => this.unstickToward(target),
-        legGates.length > 0
+        walkGates.length > 0
           ? {
-              gates: legGates,
+              gates: walkGates,
               // Both raw phases race the death signal: a bot
               // that dies mid-wait or mid-dash respawns at world spawn, and an
               // un-raced loop reads that as "clear of the fill" and marches the

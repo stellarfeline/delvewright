@@ -36,16 +36,10 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 
-/// Cross-tileset generator invariants, shared by source include so a lesson
-/// learned in one tileset does not have to be re-learned in the other four
-/// (the generators are separate Cargo workspaces on purpose).
-#[path = "../../invariants.rs"]
-mod invariants;
-
-/// The connection derivation, shared the same way: what a fence, a wall, a pane
-/// or a lichen joins is computed from the blocks beside it, at the emitter.
-#[path = "../../connections.rs"]
-mod connections;
+/// The cross-tileset invariants and the connection derivation, shared as a
+/// crate so the rule is compiled once and its own tests run with the
+/// generators' (`prefabs/invariants`).
+use prefab_invariants::{connections, document, invariants, walkplane, waterline};
 
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
@@ -53,11 +47,22 @@ use serde::Serialize;
 const DATA_VERSION: i32 = 4671; // MC 1.21.11
 const GENERATOR: &str = "prefabs/island-terrain-generator (island-terrain-gen)";
 const MEASURED_DATE: &str = "2026-08-01";
-/// The island convention's waterline datum (`../island-tileset.md`): sea surface at
-/// local y=2, walk plane at local y=3. Inland terrain pieces author no water, but
-/// they are lifted onto the same datum (`lift_substrate`) so their walk plane mates
-/// with the beach camp's — declaring it makes the compiler's ocean-horizon
-/// placement invariant (`DW0344`) cover the whole tileset, not just the shore.
+/// The island convention's waterline datum (`../island-tileset.md`): sea surface
+/// at local y=2, walk plane at local y=3. Every piece here is lifted onto that
+/// datum (`lift_substrate`) so its walk plane mates with the beach camp's.
+///
+/// A **construction** datum. Nothing declares it: what each document states as
+/// `waterline_y` is read back out of that piece's own blocks
+/// (`prefab_invariants::waterline`), and every piece this generator writes is
+/// INLAND and authors no water, so every one of them now states no waterline at
+/// all. Declaring the datum here regardless is what put three fictions into the
+/// library — `island-greenfield`, `island-greenfield-bend` and
+/// `island-mountain`, each claiming a waterline over a piece with no water
+/// block anywhere in it (`DW0887`). What makes the tileset seat on an ocean is
+/// `walk_y`, which is measured; a piece with no shore has no waterline to
+/// state.
+///
+/// It survives as the lift `write_piece` applies, and as nothing else.
 const WATERLINE_Y: i32 = 2;
 const SOCKET_NAME: &str = "island:socket";
 const SOCKET_POOL: &str = "island:pool";
@@ -508,9 +513,23 @@ struct LicenseJson {
 struct MetaJson {
     prefab_id: String,
     structure: StructureJson,
-    /// Local y of the island waterline datum (see [`WATERLINE_Y`]); the compiler
-    /// pins it to world sea level when placing an ocean-horizon area (`DW0344`).
-    waterline_y: i32,
+    /// **The piece's own walk plane, measured** (spec-0060 §4): the local y of
+    /// the cell a body's feet occupy on this piece's principal floor, and the
+    /// number an ocean area's origin is derived from. Read back out of the
+    /// blocks this generator just laid, through the one rule every producer
+    /// spells (`prefab_invariants::walkplane`), because a `walk_y` nobody
+    /// measured is one tileset's convention wearing the name of a measurement.
+    /// `None` only for a piece a body cannot stand in at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    walk_y: Option<i32>,
+    /// **The piece's own waterline, measured** (spec-0060 §4): the local y of
+    /// its top authored water block, read back out of the blocks this generator
+    /// just laid (`prefab_invariants::waterline`). `None`, and no key at all,
+    /// for a piece that authors no water — which is every piece here, because
+    /// this generator writes inland terrain. `DW0887` is what a declaration the
+    /// bytes do not bear out meets.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    waterline_y: Option<i32>,
     anchors: BTreeMap<String, AnchorJson>,
     connectors: Vec<ConnectorJson>,
     lighting: LightingJson,
@@ -1063,7 +1082,7 @@ fn greenfield_scatter(spec: &Spec, g: &mut Grid, seed: u64) {
     // The quantity floor, asserted as a number over the WHOLE meadow rather than
     // eyeballed on a render (`invariants::assert_scatter_reaches_its_target`).
     invariants::assert_scatter_reaches_its_target(
-        &spec.id,
+        spec.id,
         "meadow oak",
         G_OAK_TARGET,
         planted.len(),
@@ -1157,6 +1176,19 @@ fn corridor_lean(x: i32, z: i32, reach: i32, on_walk: &impl Fn(i32, i32) -> bool
 ///
 /// No leaf is ever skipped for being over the corridor, so no oak is left vertically
 /// sheared. `assert_greenfield_corridor_clear` is the generator-side proof.
+///
+/// # The box has to be tall enough to hold the whole tree
+///
+/// `g.inb` silently drops a cell outside the piece, so a canopy the box cannot
+/// hold was cut at the lid rather than refused: `island-greenfield` shipped one
+/// `oak_leaves` alone on its top layer, at local (6,9,4), because an arched oak
+/// puts its crown at `G_WALK_Y + G_CANOPY_CLEARANCE + 3` = 7 in a box eight
+/// courses tall. A leaf is not a finished exterior face — the piece-exposure
+/// check read that cell as an unfinished `up` face, and it was right — and a
+/// tree sheared by the lid is the very cut the corridor rule above forbids over
+/// a path. So the requirement is stated as an assert against the box, in the one
+/// place that knows the tree's full extent, and the spec that sizes the box has
+/// to answer it.
 fn place_oak(g: &mut Grid, x: i32, z: i32, seed: u64, on_walk: &impl Fn(i32, i32) -> bool) {
     // 1. Lean away from the corridor; keep the small-oak height when that clears it.
     let (lean_x, lean_z) = corridor_lean(x, z, CANOPY_RAD + 1, on_walk);
@@ -1167,6 +1199,21 @@ fn place_oak(g: &mut Grid, x: i32, z: i32, seed: u64, on_walk: &impl Fn(i32, i32
         let natural = 2 + (value_noise(seed, x, 0, z, 0.6, 43) > 0.5) as i32; // base 2 or 3
         (x + lean_x, z + lean_z, natural)
     };
+    // The crown is the tree's topmost cell, and the lid (`size[1] - 1`) is the
+    // piece's own exterior face: an oak that reaches it is one this box cannot
+    // hold whole.
+    let crown = base + 3;
+    assert!(
+        crown < g.size[1] - 1,
+        "oak at ({x},{z}): its crown leaf would stand at local y={crown}, on or over this \
+         piece's top layer (y={lid}) — the box is {h} course(s) tall and this tree needs at \
+         least {need}. A canopy is grown whole or not at all; `inb` would drop the crown and \
+         ship a sheared tree with one leaf on the lid, which is not a finished exterior face. \
+         Raise the piece's `size[1]`, or plant no oak that has to arch here",
+        lid = g.size[1] - 1,
+        h = g.size[1],
+        need = crown + 2,
+    );
     let h = base + 1; // trunk top sits inside the blob's mid layer
     for y in G_WALK_Y..=h {
         g.blk(x, y, z, "minecraft:oak_log", Some(vec![("axis", "y")]));
@@ -1922,7 +1969,7 @@ fn write_piece(out: &Path, spec: &Spec) {
     // piece to the shared island datum (walk = 3, socket floor_y = 2) with a solid
     // substrate under the base (island-tileset.md). `yoff` tracks the emitted Ys.
     let grid0 = build(spec);
-    let yoff = 2;
+    let yoff = WATERLINE_Y;
 
     let min_light = spec
         .light_region
@@ -2000,6 +2047,7 @@ fn write_piece(out: &Path, spec: &Spec) {
 
     let meta = MetaJson {
         prefab_id: format!("prefab/{}", spec.id),
+        walk_y: walkplane::walk_y(structure.size, &cells),
         structure: StructureJson {
             file: format!("{}.nbt", spec.id),
             id: spec.id.into(),
@@ -2007,7 +2055,7 @@ fn write_piece(out: &Path, spec: &Spec) {
             data_version: DATA_VERSION,
             generator: GENERATOR.into(),
         },
-        waterline_y: WATERLINE_Y,
+        waterline_y: waterline::measure_waterline_y(&cells),
         anchors,
         connectors,
         lighting: LightingJson {
@@ -2024,8 +2072,11 @@ fn write_piece(out: &Path, spec: &Spec) {
             provenance: "Generated deterministically by prefabs/island-terrain-generator (island-terrain-gen), ADR-0006; regenerating yields byte-identical NBT.",
         },
     };
-    let json = serde_json::to_string_pretty(&meta).expect("json") + "\n";
-    std::fs::write(out.join(format!("{}.json", spec.id)), json).expect("write json");
+    // The generator owns what it measures and nothing else: a key a later step
+    // added — an anchor a campaign binds, an entry role, a shown face, a
+    // lighting verdict measured at admission — survives this write
+    // (`prefab_invariants::document`).
+    document::write_preserving(&out.join(format!("{}.json", spec.id)), &meta);
     println!(
         "wrote {} ({} nbt bytes, profile {}, min-light {})",
         spec.id,
@@ -2042,7 +2093,12 @@ fn specs() -> Vec<Spec> {
         Spec {
             id: "island-greenfield",
             kind: Kind::Greenfield,
-            size: [17, 8, 15],
+            // Nine courses, not eight: an oak that has to arch over the walk
+            // corridor stands its crown at G_WALK_Y + G_CANOPY_CLEARANCE + 3 = 7,
+            // and `place_oak` refuses a box whose lid that reaches. At eight the
+            // crown WAS the lid, and the emitted piece carried one leaf alone on
+            // its top face.
+            size: [17, 9, 15],
             doors: vec![(South, 0), (North, 0)],
             anchors: vec![
                 ("anchor/meadow", a_pos([8, 1, 7], "north")),
@@ -2056,7 +2112,9 @@ fn specs() -> Vec<Spec> {
         Spec {
             id: "island-greenfield-bend",
             kind: Kind::Greenfield,
-            size: [17, 8, 15],
+            // The same nine, and for the same reason: this piece plants from the
+            // same scatter and no oak of it happens to arch today.
+            size: [17, 9, 15],
             doors: vec![(South, 0), (East, 0)],
             anchors: vec![
                 ("anchor/meadow", a_pos([8, 1, 9], "north")),

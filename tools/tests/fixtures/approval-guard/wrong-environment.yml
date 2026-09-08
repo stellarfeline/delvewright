@@ -1,0 +1,16 @@
+# The `uses:` steps below are LOCAL action paths on purpose: an `owner/repo@ref`
+# anywhere in this tree is a pin the registry must hold (`tools/check-pins.py`),
+# and a fixture is not a place this repository fetches anything from.
+name: fixture — the guard asserts somebody else's approval
+on: { push: { branches: [main] } }
+jobs:
+  publish:
+    name: publish (owner approval)
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: the gate actually bound
+        run: bash tools/assert-run-approved.sh staging
+      - name: the irreversible act
+        run: bash tools/does-the-thing.sh

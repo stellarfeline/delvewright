@@ -1,5 +1,5 @@
 //! DSL v0.6 `damage-players` (spec-0014): the stealth/souls consequence verb.
-//! Validates under `dsl_version 0.6.0`, reserved (`DW0141`) earlier; an unknown
+//! Validates under `dsl_version 0.6.0`; an unknown
 //! `damage_type` is a schema rejection (`DW0100`); an `in` filter-zone anchor the
 //! prefab does not provide is `DW0142`; per-effect `requires_flags` is allowed
 //! (it is a per-`@s` verb) and resolves against declared flags (`DW0172`).
@@ -11,7 +11,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 quests document that damages the party (lethal, generic) on the exit
 /// beat — the "consequence" the verb exists for.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -48,6 +48,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -58,17 +59,6 @@ fn damage_players_validates_clean() {
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 damage-players, got: {diags:#?}"
-    );
-}
-
-/// `damage-players` under a pre-0.6 quests version is reserved → `DW0141`.
-#[test]
-fn damage_players_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "damage-players must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }
 
@@ -112,8 +102,8 @@ fn damage_players_requires_flags_resolves() {
     );
     let gated = gated.replace(
         r#"{ "type": "damage-players", "amount": 40, "damage_type": "wither" }"#,
-        r#"{ "type": "damage-players", "amount": 40, "damage_type": "wither",
-             "requires_flags": ["flag/doomed"] }"#,
+        r#"{ "type": "damage-players",
+             "when": { "requires_flags": ["flag/doomed"] }, "amount": 40, "damage_type": "wither" }"#,
     );
     let diags = check_campaign(&campaign_with_quests(&gated));
     assert!(

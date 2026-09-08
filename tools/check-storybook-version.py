@@ -20,7 +20,7 @@ One line, near the top of the README, in exactly this form:
   only falsify it: a version NEWER than the engine's own `DELVEC_VERSION` names
   a compiler that does not exist. `DELVEC_VERSION` is `env!("CARGO_PKG_VERSION")`
   at compile time, so this script reads the identical number straight from
-  `crates/compiler/Cargo.toml`'s `[package] version` — one source, never a
+  the root `Cargo.toml`'s `[workspace.package] version` — one source, never a
   second hand-typed copy.
 - **`on Minecraft Java <Z>`** is the game the delve runs on: `versions.toml`
   `[minecraft] version`, read through `lib/versions.py`. It carries equality,
@@ -123,9 +123,9 @@ root:
 they resolve through the local `campaigns` symlink and through CI's
 `.github/actions/checkout-content`. The content repo's own campaign CI can run
 this same script against a pinned engine checkout, exactly as
-`.github/workflows/prefab-audit.yml` there already builds `delve-admit` from
-one; the only engine state read here is `crates/compiler/Cargo.toml`'s
-`[package] version` (== `DELVEC_VERSION`) and `versions.toml` `[minecraft]
+`.github/workflows/prefab-audit.yml` there already builds `delvec prefab` from
+one; the only engine state read here is the root `Cargo.toml`'s
+`[workspace.package] version` (== `DELVEC_VERSION`) and `versions.toml` `[minecraft]
 version`, both of them from the engine checkout the script is run out of.
 
 Exit 0 = every storybook marker present and true and no other version literal
@@ -145,7 +145,9 @@ from versions import minecraft_version  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_CAMPAIGNS_ROOT = REPO_ROOT / "campaigns" / "campaigns"
-COMPILER_CARGO_TOML = REPO_ROOT / "crates" / "compiler" / "Cargo.toml"
+# The engine version: the root manifest's `[workspace.package] version`, which
+# every engine crate inherits.
+ROOT_CARGO_TOML = REPO_ROOT / "Cargo.toml"
 
 # The six staged DSL documents (ADR-0002). `world.json` is also the marker of a
 # campaign directory — a directory without one is not a campaign.
@@ -236,14 +238,14 @@ def version_key(version: str) -> tuple[int, ...]:
 
 
 def delvec_version() -> str:
-    """The compiler's release version, read from `crates/compiler/Cargo.toml`'s
+    """The compiler's release version, read from the root `Cargo.toml`'s
     `[package] version` — the same single source `DELVEC_VERSION` derives from
     (`env!("CARGO_PKG_VERSION")`), so this script never carries its own copy."""
-    text = COMPILER_CARGO_TOML.read_text(encoding="utf-8")
+    text = ROOT_CARGO_TOML.read_text(encoding="utf-8")
     match = CARGO_VERSION_RE.search(text)
     if match is None:
         raise SystemExit(
-            f"could not read `version` from {COMPILER_CARGO_TOML} — the "
+            f"could not read `version` from {ROOT_CARGO_TOML} — the "
             "[package] version field moved or changed shape; fix this check, "
             "do not drop the gate"
         )

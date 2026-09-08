@@ -32,6 +32,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -41,7 +42,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 fn quests_doc(effects: &str, triggers: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -179,7 +180,7 @@ fn trigger_effect_on_a_real_anchor_validates_clean() {
 fn two_quest_doc(despawn: &str) -> (String, String) {
     let quests = format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -209,7 +210,7 @@ fn two_quest_doc(despawn: &str) -> (String, String) {
 }}"#
     );
     let plan = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -239,6 +240,7 @@ fn check_two_quest(despawn: &str) -> Vec<delvewright_dsl::Diagnostic> {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     })
 }
 
@@ -265,8 +267,8 @@ fn nested_despawn_npc_still_yields_dw0195() {
 fn flag_gated_nested_despawn_is_not_dw0195() {
     let despawn = r#"{ "type": "sequence", "steps": [
         { "at_ticks": 0, "effects": [
-            { "type": "despawn-npc", "npc": "npc/keeper",
-              "requires_flags": ["flag/fled"] } ] } ] }"#;
+            { "type": "despawn-npc",
+              "when": { "requires_flags": ["flag/fled"] }, "npc": "npc/keeper" } ] } ] }"#;
     let diags = check_two_quest(despawn);
     assert!(
         !diags.iter().any(|d| d.code == "DW0195"),

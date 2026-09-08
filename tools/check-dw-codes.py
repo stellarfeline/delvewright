@@ -53,9 +53,15 @@ one test in `crates/<crate>/tests/**/*.rs` or inside a `#[cfg(test)]` module in
   `stderr.contains("DW0322")`, an array/tuple table a loop asserts over);
 - a **symbolic** diagnostic-code constant (e.g. `pub const DW_STRIP: &str =
   "DW0700";`) referenced somewhere other than a `use` line. Symbol resolution is
-  scoped per-crate: two crates may (and do) reuse a constant name for different
-  codes (`DW_INPUT` names `DW0710` in `delve-schem` and `DW0732` in
-  `delve-admit`), so a name resolves only against the crate that defines it.
+  scoped per MODULE, the way `rustc` resolves it: modules of the one engine
+  crate reuse a constant name for different codes (`DW_INPUT` names `DW0710` in
+  `delvec::schem::diag`, `DW0721` in `delvec::compiler::view::diag` and
+  `DW0732` in `delvec::admit::diag`), so a name resolves only through the path
+  that brings it into scope — the `use delvec::<module>::…::NAME` (or
+  `use delvewright_dsl::…`) line in an integration test, a `use super::*` or
+  `use crate::…` in a `#[cfg(test)]` module, or a qualified path in the body —
+  and `pub use` re-exports are followed. A name nothing imports is not in
+  scope and credits nothing.
 
 What deliberately does **not** count, and why the matcher is shaped this way:
 
@@ -94,16 +100,13 @@ from lib import mdtable  # noqa: E402
 CODE_RE = re.compile(r"DW[0-9]{4}")
 # A diagnostic-code constant, in either shape the workspace uses:
 #
-#   pub const L10N_MISSING: DwCode = DwCode::every_version("DW0180");
-#   pub const DW_HAPPENING_MISSING: DwCode = DwCode::since("DW0481", 8);
+#   pub const L10N_MISSING: DwCode = DwCode::new("DW0180", ExitTier::Build);
 #   pub const DW_STRIP: &str = "DW0700";
 #
-# The `DwCode` form is the campaign-facing one: it carries the version at which
-# the rule starts binding a campaign (`dsl::diagnostic::Binds`), which is what
-# makes an unfenced obligation impossible to add. The bare `&str` form remains in
-# `delve-schem` / `delve-admit` / `delve-render`, whose diagnostics are about
-# prefabs, schematics and renders — artifacts that carry no `dsl_version`, so
-# there is nothing for a fence to grandfather against.
+# The `DwCode` form is the campaign-facing one: it carries the exit tier and the
+# subject of the rule. The bare `&str` form remains in `delvec schem` /
+# `delvec prefab` / `delvec render`, whose diagnostics are about prefabs,
+# schematics and renders.
 #
 # Matching BOTH is load-bearing, not tidiness: this regex is how a symbol name is
 # resolved to its code, so a form it does not know silently drops every code
@@ -111,7 +114,7 @@ CODE_RE = re.compile(r"DW[0-9]{4}")
 # exactly that — 20 codes reported uncovered that were covered all along).
 CONST_RE = re.compile(
     r'const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:&(?:\'static\s+)?str|DwCode)\s*=\s*'
-    r'(?:DwCode::(?:every_version|since)\(\s*)?"(DW[0-9]{4})"'
+    r'(?:DwCode::new\(\s*)?"(DW[0-9]{4})"'
 )
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOC_PATH = REPO_ROOT / "docs" / "reference" / "compiler.md"
@@ -127,18 +130,19 @@ PENDING: set[str] = set()
 # one-line justification; prefer writing the test (see module docstring).
 ALLOWLIST: dict[str, str] = {
     # The fidelity gate's missing-texture (magenta) hard-fail is only
-    # constructed in `delve-render`'s `run_piece`/`run_fidelity_gate` (main.rs),
+    # constructed in `delvec render`'s `run_piece`/`run_fidelity_gate`
+    # (crates/delvec/src/render/cli.rs),
     # both of which require a real GPU adapter + the 1.21.11 client jar (never
     # committed — EULA) to actually render a frame first. The detection
     # *algorithm* it wraps (`detect::scan_default`) is unit-tested directly in
-    # `crates/render/src/detect.rs`'s `#[cfg(test)]` module; the CLI wiring that
+    # `crates/delvec/src/compiler/view/detect.rs`'s `#[cfg(test)]` module; the CLI wiring that
     # emits DW0720 from a real render is exercised by
-    # `crates/render/tests/gpu.rs::detector_catches_heavy_core_when_included`,
+    # `crates/delvec/tests/render_gpu.rs::detector_catches_heavy_core_when_included`,
     # `#[ignore]`d because no GPU/jar is available in CI or this dev sandbox.
     "DW0720": (
         "requires a GPU adapter + the never-committed 1.21.11 client jar "
-        "(see crates/render/tests/gpu.rs, #[ignore]d); the detector algorithm "
-        "it wraps is unit-tested in crates/render/src/detect.rs"
+        "(see crates/delvec/tests/render_gpu.rs, #[ignore]d); the detector algorithm "
+        "it wraps is unit-tested in crates/delvec/src/compiler/view/detect.rs"
     ),
 }
 
@@ -266,19 +270,6 @@ def cfg_test_module_bodies(text: str) -> list[str]:
     return bodies
 
 
-def crate_symbol_table(crate: str) -> dict[str, str]:
-    """Map constant name -> DW code for every `const NAME: &str = "DWxxxx"` in
-    crates/<crate>/src/**/*.rs (any visibility)."""
-    table: dict[str, str] = {}
-    src_dir = CRATES_DIR / crate / "src"
-    if not src_dir.is_dir():
-        return table
-    for rs in sorted(src_dir.rglob("*.rs")):
-        for name, code in CONST_RE.findall(rs.read_text(encoding="utf-8")):
-            table[name] = code
-    return table
-
-
 def declared_constants() -> dict[str, set[tuple[str, str]]]:
     """DW code -> {(crate, constant name)} over every `const NAME: &str = "DWxxxx"`
     in crates/**/*.rs. The source-of-truth view for the uniqueness gate: one code
@@ -305,11 +296,11 @@ EXIT_TIER_HEADER = ("Code", "What the author changes")
 
 # A `DwCode` constant together with the tier it declares. Deliberately separate
 # from CONST_RE, which also matches the bare `&str` codes in the tooling
-# binaries: those carry no `dsl_version` and no tier, so demanding one of them
+# binaries: those carry no tier, so demanding one of them
 # would be a gate asking a question its subject cannot answer.
 TIERED_CONST_RE = re.compile(
     r'const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:\w+::)*DwCode\s*=\s*'
-    r'(?:\w+::)*DwCode::(?:every_version|since)\(\s*"(DW[0-9]{4})"'
+    r'(?:\w+::)*DwCode::new\(\s*"(DW[0-9]{4})"'
     r'([^;]*?)\)\s*;'
 )
 TIER_RE = re.compile(r"ExitTier::(Analysis|Build)")
@@ -379,40 +370,374 @@ def catalog_row_counts() -> dict[str, int]:
     return catalog_rows()[0]
 
 
-def crate_test_scope_texts(crate: str) -> list[str]:
-    """Every text blob that counts as 'test code' for a crate: whole files
-    under crates/<crate>/tests/**/*.rs, plus #[cfg(test)] module bodies inside
+def module_of(rs: pathlib.Path, crate: str) -> str:
+    """The module path a source file declares: `src/a/b.rs` is `a::b`,
+    `src/a/mod.rs` is `a`, `src/lib.rs` and `src/main.rs` are the root."""
+    rel = rs.relative_to(CRATES_DIR / crate / "src").with_suffix("")
+    parts = list(rel.parts)
+    if parts and parts[-1] in ("mod", "lib", "main"):
+        parts = parts[:-1]
+    return "::".join(parts)
+
+
+def join_module(module: str, *more: str) -> str:
+    return "::".join(p for p in (module, *more) if p)
+
+
+# `use a::b::c;`, `pub use a::b::{c, d as e, self, *};` — the path and, when
+# braced, the leaf list. Nested braces are not read (the tree writes none).
+USE_RE = re.compile(
+    r"^\s*(pub(?:\([^)]*\))?\s+)?use\s+([\w:]+?)(?:::(?:\{([^}]*)\}|(\*)))?\s*;",
+    re.MULTILINE,
+)
+
+
+def use_leaves(path: str, braces: str, star: str) -> tuple[list[str], list[str]]:
+    """`(module prefix, leaves)` of one `use` line: `a::b::c` is prefix `a::b`
+    and leaf `c`; `a::b::{c, d}` and `a::b::*` keep `a::b` whole."""
+    segs = path.split("::")
+    if star:
+        return segs, ["*"]
+    if braces:
+        return segs, [l.strip() for l in braces.split(",") if l.strip()]
+    return segs[:-1], [segs[-1]]
+# `path::NAME` in a body: a constant named through a module — an imported
+# module, or a path from a crate root, `self` or `super`.
+QUALIFIED_RE = re.compile(r"\b((?:\w+::)+)([A-Z][A-Z0-9_]*)\b")
+# The crate roots a `use` line may open with, mapped to the directory under
+# `crates/` that holds the crate.
+CRATE_ROOTS = {"delvewright_dsl": "dsl", "delvec": "delvec"}
+
+
+class Resolver:
+    """Constant lookup the way `rustc` resolves it: per MODULE, through re-exports.
+
+    One crate holds every diagnostic module, and two modules of it reuse a
+    constant name for different codes (`DW_INPUT` is `DW0710` in `schem::diag`,
+    `DW0721` in `compiler::view::diag`, `DW0732` in `admit::diag`), so a table
+    keyed by name alone would let one shadow the others and credit a test with
+    a code it never asserted. Every constant is therefore tabled under the
+    module that declares it, and a name in a test resolves only through the
+    path that brings it into scope: the `use` line that imports it, a glob
+    (`use super::*`) of the module that declares it, or a qualified path in the
+    body. A `pub use` re-export is followed, so `render::diag::DW_INPUT` reaches
+    the constant `compiler::view::diag` declares and `schem::blocks::…` reaches
+    the format crate's.
+    """
+
+    def __init__(self, crates: list[str]) -> None:
+        # (crate, module) -> {NAME: code}
+        self.decls: dict[tuple[str, str], dict[str, str]] = {}
+        # (crate, module-path-as-written) -> (crate, module) it re-exports
+        self.module_alias: dict[tuple[str, str], tuple[str, str]] = {}
+        # (crate, module, NAME) -> (crate, module, NAME) it re-exports
+        self.item_alias: dict[tuple[str, str, str], tuple[str, str, str]] = {}
+        # (crate, module) -> modules it glob-re-exports
+        self.glob_alias: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        for crate in crates:
+            src = CRATES_DIR / crate / "src"
+            if not src.is_dir():
+                continue
+            for rs in sorted(src.rglob("*.rs")):
+                text = rs.read_text(encoding="utf-8")
+                module = module_of(rs, crate)
+                table = self.decls.setdefault((crate, module), {})
+                for name, code in CONST_RE.findall(text):
+                    table[name] = code
+                for pub, path, braces, star in USE_RE.findall(text):
+                    if not pub:
+                        continue
+                    self._record_reexport(crate, module, path, braces, star)
+
+    # -- paths -------------------------------------------------------------
+    def resolve_path(self, crate: str, module: str | None, segments: list[str]):
+        """`(crate, module)` a path names from inside `module` of `crate`, or
+        None when it opens with a crate this repo does not table (`std`,
+        `serde`, …) or with `crate`/`super` from an integration test, which has
+        no module of its own to stand in."""
+        if not segments:
+            return (crate, module or "")
+        root = segments[0]
+        if root in CRATE_ROOTS:
+            return (CRATE_ROOTS[root], "::".join(segments[1:]))
+        if root == "crate":
+            return None if module is None else (crate, "::".join(segments[1:]))
+        if root in ("self", "super"):
+            if module is None:
+                return None
+            parts = module.split("::") if module else []
+            i = 0
+            while i < len(segments) and segments[i] in ("self", "super"):
+                if segments[i] == "super":
+                    parts = parts[:-1]
+                i += 1
+            return (crate, "::".join(parts + segments[i:]))
+        if module is not None and root[:1].islower():
+            # a relative path to a sibling module (`pub use block::BlockState;`)
+            return (crate, join_module(module, *segments))
+        return None
+
+    def _record_reexport(self, crate: str, module: str, path: str, braces: str, star: str) -> None:
+        prefix, leaves = use_leaves(path, braces, star)
+        base = self.resolve_path(crate, module, prefix)
+        if base is None:
+            return
+        for leaf in leaves:
+            leaf, _, alias = leaf.partition(" as ")
+            leaf, alias = leaf.strip(), (alias.strip() or leaf.strip())
+            if leaf == "*":
+                self.glob_alias.setdefault((crate, module), []).append(base)
+            elif leaf == "self":
+                self.module_alias[(crate, join_module(module, prefix[-1] if not alias or alias == "self" else alias))] = base
+            elif leaf[:1].isupper():
+                self.item_alias[(crate, module, alias)] = (base[0], base[1], leaf)
+            else:
+                self.module_alias[(crate, join_module(module, alias))] = (base[0], join_module(base[1], leaf))
+
+    def canon(self, crate: str, module: str, depth: int = 0) -> tuple[str, str]:
+        """The declaring module behind a path, following module re-exports."""
+        if depth > 8:
+            return (crate, module)
+        parts = module.split("::") if module else []
+        for i in range(len(parts), 0, -1):
+            key = (crate, "::".join(parts[:i]))
+            if key in self.module_alias:
+                c2, m2 = self.module_alias[key]
+                return self.canon(c2, join_module(m2, *parts[i:]), depth + 1)
+        return (crate, module)
+
+    def lookup(self, crate: str, module: str, name: str, depth: int = 0) -> str | None:
+        """The DW code `name` denotes at `crate::module`, or None."""
+        if depth > 8:
+            return None
+        crate, module = self.canon(crate, module)
+        code = self.decls.get((crate, module), {}).get(name)
+        if code:
+            return code
+        alias = self.item_alias.get((crate, module, name))
+        if alias:
+            return self.lookup(*alias, depth + 1)
+        for c2, m2 in self.glob_alias.get((crate, module), []):
+            code = self.lookup(c2, m2, name, depth + 1)
+            if code:
+                return code
+        return None
+
+    def visible(self, crate: str, module: str, depth: int = 0) -> dict[str, str]:
+        """Every constant a glob import of `crate::module` brings into scope."""
+        if depth > 8:
+            return {}
+        crate, module = self.canon(crate, module)
+        out: dict[str, str] = {}
+        for c2, m2 in self.glob_alias.get((crate, module), []):
+            out.update(self.visible(c2, m2, depth + 1))
+        for (c, m, name), target in self.item_alias.items():
+            if (c, m) == (crate, module):
+                code = self.lookup(*target, depth + 1)
+                if code:
+                    out[name] = code
+        out.update(self.decls.get((crate, module), {}))
+        return out
+
+    # -- a test's scope ----------------------------------------------------
+    def scope_of(self, text: str, crate: str, module: str | None):
+        """What the `use` lines of `text` bring into scope, resolved from
+        `module` of `crate` (None for an integration test): `(name -> code,
+        imported module name -> (crate, module))`."""
+        names: dict[str, str] = {}
+        modules: dict[str, tuple[str, str]] = {}
+        for _pub, path, braces, star in USE_RE.findall(text):
+            prefix, leaves = use_leaves(path, braces, star)
+            base = self.resolve_path(crate, module, prefix)
+            if base is None:
+                continue
+            for leaf in leaves:
+                leaf, _, alias = leaf.partition(" as ")
+                leaf, alias = leaf.strip(), (alias.strip() or leaf.strip())
+                if leaf == "*":
+                    names.update(self.visible(*base))
+                elif leaf == "self":
+                    modules[prefix[-1] if alias == "self" else alias] = base
+                elif leaf[:1].isupper():
+                    code = self.lookup(base[0], base[1], leaf)
+                    if code:
+                        names[alias] = code
+                else:
+                    modules[alias] = (base[0], join_module(base[1], leaf))
+        return names, modules
+
+    def codes_asserted(self, body: str, crate: str, module: str | None, names, modules) -> set[str]:
+        """Every code `body` (comment-stripped, `use` lines removed) asserts:
+        a bare literal, a name in scope, or a qualified `path::NAME`."""
+        found = set(BARE_CODE_LITERAL_RE.findall(body))
+        for name, code in names.items():
+            if re.search(r"\b" + re.escape(name) + r"\b", body):
+                found.add(code)
+        for path, name in QUALIFIED_RE.findall(body):
+            segs = path.rstrip(":").split("::")
+            if segs[0] in modules:
+                c, m = modules[segs[0]]
+                base = (c, join_module(m, *segs[1:]))
+            else:
+                base = self.resolve_path(crate, module, segs)
+            if base is None:
+                continue
+            code = self.lookup(base[0], base[1], name)
+            if code:
+                found.add(code)
+        return found
+
+
+def strip_cfg_test_bodies(text: str) -> str:
+    out = text
+    for body in cfg_test_module_bodies(text):
+        out = out.replace(body, "{}", 1)
+    return out
+
+
+def crate_test_scopes(crate: str) -> list[tuple[str | None, str, str]]:
+    """Every text that counts as test code for a crate: `(module, body,
+    enclosing file without its test bodies)` — module None and file "" for a
+    whole file under crates/<crate>/tests/**/*.rs, the declaring module and the
+    surrounding file for a `#[cfg(test)]` module body inside
     crates/<crate>/src/**/*.rs."""
-    texts: list[str] = []
+    scopes: list[tuple[str | None, str, str]] = []
     tests_dir = CRATES_DIR / crate / "tests"
     if tests_dir.is_dir():
         for rs in sorted(tests_dir.rglob("*.rs")):
-            texts.append(rs.read_text(encoding="utf-8"))
+            scopes.append((None, rs.read_text(encoding="utf-8"), ""))
     src_dir = CRATES_DIR / crate / "src"
     if src_dir.is_dir():
         for rs in sorted(src_dir.rglob("*.rs")):
-            texts.extend(cfg_test_module_bodies(rs.read_text(encoding="utf-8")))
-    return texts
+            text = rs.read_text(encoding="utf-8")
+            bodies = cfg_test_module_bodies(text)
+            if bodies:
+                outer = strip_cfg_test_bodies(text)
+                for body in bodies:
+                    scopes.append((module_of(rs, crate), body, outer))
+    return scopes
 
 
 def tested_codes() -> set[str]:
     """Every DW code **asserted** by test code: a bare `"DWxxxx"` string literal,
-    or a per-crate symbolic diagnostic-code constant, in comment-stripped test
-    source with `use` lines removed. See the module docstring for what does not
-    count and why."""
+    or a diagnostic-code constant resolved through the module that declares it
+    — by the `use` line that imports it, by a glob of that module, or by a
+    qualified path — in comment-stripped test source with `use` lines removed.
+    See the module docstring for what does not count and why."""
     found: set[str] = set()
     if not CRATES_DIR.is_dir():
         return found
-    for crate_dir in sorted(p for p in CRATES_DIR.iterdir() if p.is_dir()):
-        crate = crate_dir.name
-        symbols = crate_symbol_table(crate)
-        name_res = {name: re.compile(r"\b" + re.escape(name) + r"\b") for name in symbols}
-        for raw in crate_test_scope_texts(crate):
-            text = assertable_text(raw)
-            found |= set(BARE_CODE_LITERAL_RE.findall(text))
-            for name, pattern in name_res.items():
-                if pattern.search(text):
-                    found.add(symbols[name])
+    crates = sorted(p.name for p in CRATES_DIR.iterdir() if p.is_dir())
+    resolver = Resolver(crates)
+    for crate in crates:
+        for module, body, outer in crate_test_scopes(crate):
+            names: dict[str, str] = {}
+            modules: dict[str, tuple[str, str]] = {}
+            context = module
+            if module is not None:
+                # A `#[cfg(test)] mod tests` sits inside the file's module: its
+                # own `use` lines resolve from there (`super` is the file's
+                # module), and the file's top-level imports are visible to it
+                # through the `use super::*` nearly every one carries.
+                n, m = resolver.scope_of(outer, crate, module)
+                names.update(n)
+                modules.update(m)
+                context = join_module(module, "tests")
+            n, m = resolver.scope_of(body, crate, context)
+            names.update(n)
+            modules.update(m)
+            found |= resolver.codes_asserted(assertable_text(body), crate, context, names, modules)
+    return found
+
+
+# ---------------------------------------------------------------------------
+# A remedy a message names owes a check that it is reachable (spec-0060 §10.3)
+# ---------------------------------------------------------------------------
+
+# The test that takes each move and asserts it reaches a different verdict.
+REMEDY_TEST = REPO_ROOT / "crates" / "delvec" / "tests" / "remedy_reachability.rs"
+
+# **What makes a sentence a MOVE rather than an explanation.**
+#
+# The rule is spec-0060 §10.3's own quantifier: a message that names *a base or a
+# document* as a move. So the marker is the pair — an imperative the message
+# addresses to the author, standing near a base name or a file the author edits.
+# A message that merely mentions `void` while describing what a horizon is does
+# not match, and a move that names neither is not the kind of remedy this gate is
+# about (it prescribes nothing an author has to go and find).
+MOVE_VERB_RE = re.compile(
+    # The numbered form every multi-move message uses...
+    r"\((?:1|2|3)\)\s+(?:BURY|PLACE|DECLARE|CHOOSE|RAISE|CORRECT|DELETE|AUTHOR|SEAL)\b"
+    # ...and the plain imperative a single-move message uses instead. Both are
+    # here because the quantifier is what the message SAYS to do, not how it
+    # numbers it: DW0855 names two moves in one sentence and would otherwise
+    # have escaped this obligation while being exactly the code that motivated
+    # it.
+    r"|(?:Give the campaign|[Ss]et `horizon` to|[Rr]e-?author|[Ss]plit the pool)"
+)
+MOVE_SUBJECT_RE = re.compile(
+    r"`(?:void|ocean|valley)`|`horizon`|site plan|`[a-z0-9-]+\.json`|\{base\}\.json|"
+    r"`\{base_file\}\.json`|`\{file\}\.json`"
+)
+
+# How far after a constant's name a message is still that constant's message.
+# Generous on purpose: over-reaching pulls a code into the obligation, which is a
+# red somebody reads, while under-reaching drops one silently.
+MOVE_WINDOW = 6000
+
+
+def codes_that_prescribe_a_move() -> dict[str, set[str]]:
+    """`DW code -> {file:line}` for every message that names a base or a document
+    as a move.
+
+    Resolved through the code's own constant rather than by looking for a
+    `DWxxxx` literal near the text: a diagnostic's message never repeats its own
+    number, so a literal-based reading would bind to nothing and report a clean
+    zero.
+    """
+    consts = declared_constants()
+    by_name: dict[str, str] = {}
+    for code, pairs in consts.items():
+        for _crate, name in pairs:
+            by_name[name] = code
+    found: dict[str, set[str]] = {}
+    for rs in sorted(CRATES_DIR.rglob("*.rs")):
+        raw = rs.read_text(encoding="utf-8")
+        text = strip_comments(raw)
+        for name, code in by_name.items():
+            for m in re.finditer(r"\b" + re.escape(name) + r"\b", text):
+                window = text[m.end() : m.end() + MOVE_WINDOW]
+                # Stop at the next code constant: a window that runs into the
+                # next diagnostic would attribute its moves to this one.
+                # The window is ONE diagnostic's message. It ends at whatever
+                # comes first: the next code constant, or the construction of
+                # the next diagnostic — because a window that runs past either
+                # attributes another rule's moves to this one, which is how
+                # DW0320 first appeared in this set.
+                cut = len(window)
+                for other in by_name:
+                    if other == name:
+                        continue
+                    hit = window.find(other)
+                    if hit != -1:
+                        cut = min(cut, hit)
+                for boundary in (
+                    "Diagnostic::error(",
+                    "Diagnostic::warning(",
+                    "PlanError::new(",
+                    "Failure {",
+                ):
+                    hit = window.find(boundary)
+                    if hit != -1:
+                        cut = min(cut, hit)
+                window = window[:cut]
+                if MOVE_VERB_RE.search(window) and MOVE_SUBJECT_RE.search(window):
+                    # The constant's NAME, not a line number: the offsets above
+                    # are into comment-stripped source, so a line taken from
+                    # them names a line in a file nobody has. A name resolves.
+                    found.setdefault(code, set()).add(
+                        f"{rs.relative_to(REPO_ROOT)} ({name})"
+                    )
     return found
 
 
@@ -538,6 +863,35 @@ def main() -> int:
             f"{', '.join(stale_allowlist)}"
         )
 
+    # --- a named remedy owes a check that it is reachable -------------------
+    #
+    # `CLAUDE.md`: *a gate that names a remedy owes a check that the remedy is
+    # reachable*. Nothing held that check, and the cost was the cycle spec-0060
+    # §1 walks — three gates each naming as its remedy a base the next refuses.
+    # So a message that names a base or a document as a move owes a row in
+    # `remedy_reachability.rs`, which builds the campaign that takes the move and
+    # asserts it reaches a different verdict.
+    prescribing = codes_that_prescribe_a_move()
+    if not prescribing:
+        errors.append(
+            "the remedy cross-check matched ZERO diagnostics that name a base or a document "
+            "as a move. That is not a pass: this repository has several, so a zero here means "
+            "the reader stopped matching them (tools/check-dw-codes.py, MOVE_VERB_RE)"
+        )
+    remedy_text = REMEDY_TEST.read_text(encoding="utf-8") if REMEDY_TEST.is_file() else ""
+    if not remedy_text:
+        errors.append(
+            f"the remedy-reachability test is missing: {REMEDY_TEST.relative_to(REPO_ROOT)}"
+        )
+    unproven = sorted(c for c in prescribing if c not in codes_in(remedy_text))
+    if unproven:
+        errors.append(
+            "DW codes whose message names a base or a document as a MOVE, with no row in "
+            f"{REMEDY_TEST.relative_to(REPO_ROOT)} taking that move and asserting a different "
+            "verdict — a remedy nobody has ever taken is a remedy nobody knows is reachable: "
+            + ", ".join(f"{c} ({', '.join(sorted(prescribing[c]))})" for c in unproven)
+        )
+
     tested = tested_codes()
     requires_test = doc - PENDING
     untested = sorted(requires_test - tested - set(ALLOWLIST))
@@ -566,6 +920,8 @@ def main() -> int:
         f"{len(PENDING)} approved-landing (pending); "
         f"{len(requires_test)} require tests, all covered "
         f"({len(ALLOWLIST)} allowlisted); "
+        f"{len(prescribing)} code(s) name a base or a document as a move, all with a row in "
+        f"{REMEDY_TEST.name}; "
         f"{len(tiers)} exit tiers declared, "
         f"{len([c for c, x in tiers.items() if x == 'Analysis'])} of them analysis "
         f"tier, matching {tier_rows} documented row(s)."

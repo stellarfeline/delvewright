@@ -1,6 +1,8 @@
 # ADR-0018: The creator toolchain — cargo as a prerequisite, one authoring crate, and the escape hatch at the grammar IR
 
-- **Status**: Accepted
+- **Status**: Accepted; §2–§3's up-front prerequisite posture (cargo required,
+  "installed once, neither discovered") superseded by ADR-0023 §2/§7 — the
+  language classification, the `delve_skin` port refusal and the IR hatch stand
 - **Date**: 2026-08-07
 - **Refines**: ADR-0017 (toolchain distribution), ADR-0015 (schema promotion policy)
 - **Constrained by**: ADR-0001 (LLM never writes mcfunction), ADR-0006 (determinism),

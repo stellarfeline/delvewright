@@ -1,0 +1,32 @@
+{
+  "campaign_id": "and-join",
+  "content": {
+    "finale": "quest/wards",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [],
+        "goal": "Learn about the twin wards.",
+        "id": "quest/greet",
+        "mandatory": true,
+        "npcs": [
+          "npc/warden"
+        ]
+      },
+      {
+        "act": 2,
+        "area": "area/keep",
+        "depends_on": [
+          "quest/greet"
+        ],
+        "goal": "Draw both wards and reach the shrine.",
+        "id": "quest/wards",
+        "mandatory": true,
+        "npcs": []
+      }
+    ]
+  },
+  "dsl_version": "0.22.0",
+  "stage": "quest-plan"
+}

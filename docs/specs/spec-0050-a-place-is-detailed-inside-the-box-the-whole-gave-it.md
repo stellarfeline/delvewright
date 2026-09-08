@@ -62,50 +62,83 @@ and "fully detailed".
 that makes its key cover the whole that was walked:
 `{site_plan_sha256, layout_graph_sha256, blockout_sha256, engine_revision,
 verdict: "passed" | "findings", findings[]}`. This spec lands its gate and
-the hashes it needs: every build of a site-plan campaign prints
-`site_plan_sha256` and `layout_graph_sha256` (each over its document's
-canonical bytes, so a reformat is not a re-walk) and `blockout_sha256`
-(over the massing the walk judged — the derivation with **nothing bound**,
-in deterministic order: a hash over the massing as written would move on
-the first binding, and the drift warning below would fire on every detailed
-campaign), naming the engine revision beside them.
-The revision is stamped into the binary at compile time
-(`DELVEC_ENGINE_REVISION`); an unstamped binary prints `unstamped` rather
-than claiming one, because a run-time reading would need a `.git` a
-published crate does not carry, and what the engine must never do is claim
-a revision it does not have.
+the hashes it needs. **All three are over what the engine DERIVES, and none
+over a document's bytes**, so no `sha256sum` produces one and the build's
+output is the only place they exist:
 
-**The key is the two authored documents, because the derived whole is a
-function of both.** The plan states where the boxes stand and where each
-seam's cells are cut; the graph states what those seams ARE — walk, stair,
-drop or bar, which side a bar opens from, what a body must hold to pass,
-which way a fall goes — and a node's `size_class`, which is a sky-open box's
-headroom. A key over the plan alone leaves a campaign free to move both the
-placed bytes and the connectivity of the walked whole while the record that
-gated the walk goes on reading as fresh. Each half is hashed WHOLE, not over
-a traversal projection: a hand-picked projection is a list somebody must
-remember to extend, and the field added next release falls silently outside
-it, which is the same defect one layer along. The cost — a reworded `note`
-re-opens the gate — is the cost the plan's own half already pays over
-`views[].note`.
+* `site_plan_sha256` — the **grid**: every placed box's corner, extent,
+  floor and headroom; every placed seam's cells, crossing and rise; the
+  whole's own volumes and the region they stand in.
+* `layout_graph_sha256` — the **ways** a body moves by: every edge whole
+  (its class is the variant, and `one_way`, `falls`, `shortcut`, `gating`
+  and `opens_from` are the rest of it), the entry, the goal, the critical
+  path, the beats, and every station.
+* `blockout_sha256` — the massing the walk judged: the derivation with
+  **nothing bound**, in deterministic order. A hash over the massing as
+  written would move on the first binding and the drift warning below would
+  fire on every detailed campaign.
+
+The engine revision is named beside them, stamped into the binary at compile
+time (`DELVEC_ENGINE_REVISION`); an unstamped binary prints `unstamped`
+rather than claiming one, because a run-time reading would need a `.git` a
+published crate does not carry, and what the engine must never do is claim a
+revision it does not have. The three are printed at **validation**, not at
+emission: the state that needs them is a REFUSED build, and a gate whose
+remedy is only reachable when the gate is already green is a gate that gets
+discharged by hand instead.
+
+**The key is over the derived whole, not over the documents, because a key
+over bytes measures the wrong thing.** The canonical writer stamps the
+engine's own format number into every document it writes, so a key over
+canonical bytes is a function of a value no campaign controls: a
+`dsl_version` bump re-opens `DW0841` on every walked campaign at once, with
+no box, seam or edge moved, and demands the one repair nobody can honestly
+perform — walk the whole again for a change that cannot have changed the
+walk. A reworded `note`, a renamed `intent` and a re-serialization are the
+same defect smaller. What was done instead of the impossible repair was the
+record edited by hand, which is the gate discharged rather than passed, and
+that is what a key on the geometry removes.
+
+**The two halves are the grid and the ways, not the plan and the graph**,
+and that is a departure from this spec's first form, stated as one. The
+derivation entangles the two documents — a node's `size_class` is a sky-open
+box's headroom, and a seam's cells depend on both ends' boxes — so an arm
+that named a document would send a reader to the wrong repair. Each half
+names the OBJECT that moved and then where such an object is authored, which
+keeps "different edits, different repairs" in substance. The key is still
+CLOSED, and by a stronger construction than whole-document bytes: every
+derived object is destructured exhaustively in the engine, with no `..`, so
+a field added to `PlacedBox`, `PlacedSeam`, `SitePlanContent`, `Node`,
+`Station` or `LayoutGraphContent` stops the compiler building until somebody
+decides which half it belongs in. What is deliberately outside both halves,
+each because the walked whole cannot see it: `datums[]` (a datum's `y`
+arrives as a box's `floor`), `identities[]` and `lighting` (they configure
+what the engine CHECKS about the whole — `DW0871` and `DW0210` are their
+gates — they do not build it), `sightlines[]` and `views[]`, every `note`,
+`nodes[].intent`, and the document envelope.
 
 | Code | Rule |
 |---|---|
-| `DW0841` | **Detail without a passed walk of this whole.** A campaign carrying a `detail-plan` document refuses at validation unless `walk-record.json` exists, its `verdict` is `"passed"`, its `site_plan_sha256` equals the current plan's and its `layout_graph_sha256` equals the current graph's. Missing, unparseable, `"findings"`, stale-in-the-plan and stale-in-the-graph are each named separately — they are different edits with different repairs — and a stale record's refusal prints both sides of the hash that moved. The same refusal guards `delvec allocation` (§4), so the two events that begin detail work — obtaining an allocation, compiling a binding — are both bound; there is no third entry point, because no other verb reads a `detail-plan`. Binding: the record checked, and the hashes compared **out of the two documents the whole is derived from**. |
+| `DW0841` | **Detail without a passed walk of this whole.** A campaign carrying a `detail-plan` document refuses at validation unless `walk-record.json` exists, its `verdict` is `"passed"`, its `site_plan_sha256` equals the current grid's and its `layout_graph_sha256` equals the current ways'. Missing, unparseable, `"findings"`, stale-in-the-grid and stale-in-the-ways are each named separately — they are different edits with different repairs — and a stale record's refusal prints both sides of the hash that moved. The same refusal guards `delvec allocation` (§4), so the two events that begin detail work — obtaining an allocation, compiling a binding — are both bound; there is no third entry point, because no other verb reads a `detail-plan`. Binding: the record checked, and the hashes compared **out of the two halves the walked whole is made of**. |
 
-A `blockout_sha256` mismatch alone — the same two authored documents,
+A `blockout_sha256` mismatch alone — the same grid and the same ways,
 different massing bytes — is a **warning naming both hashes and both engine
 revisions**, not a refusal. The hatch question, answered, and the answer is
 a property of the KEY rather than of the derivation: the derivation is a
 pure function of the site plan, the layout graph, the metrics table and the
-engine, and both authored documents have been compared and found equal
-before this warning is reached. What is left to have moved is the toolchain
-(an engine or metrics change), which is a re-walk *decision* for the round
-summary, not a defect the author could launder through it. **The advisory
-suppresses itself on a graph mismatch for that reason**, and not as a
-duplicate-diagnostic nicety: a campaign edit reaching this warning would
-make its own text false, and a warning that denies the state it is reporting
-trains its reader to wave that state through.
+engine, and **everything it reads out of the two documents is in one of the
+two halves**, enumerated rather than asserted — the placed boxes, the placed
+seams, the plan's volumes and region; the entry, every edge whole (so every
+barred way's `opens_from`) and every node's stations. Both halves have been
+compared and found equal before this warning is reached. What is left to
+have moved is the toolchain (an engine or metrics change), which is a
+re-walk *decision* for the round summary, not a defect the author could
+launder through it. That enumeration is held by a test that perturbs each
+input in turn, never by this paragraph. **The advisory suppresses itself on
+a ways mismatch for that reason**, and not as a duplicate-diagnostic nicety:
+a campaign edit reaching this warning would make its own text false, and a
+warning that denies the state it is reporting trains its reader to wave that
+state through.
 
 Stated plainly, as spec-0049 stated it for the record itself: the machine
 half of this gate is **freshness and an explicit verdict**. That a human
@@ -208,7 +241,7 @@ first consumes pieces. This is that stage:
 
 | Code | Rule |
 |---|---|
-| `DW0848` | **A piece's declared footprint class disagrees with its bytes.** Prefab metadata gains optional `footprint_class`, naming a metrics-table size class (`DW0812` refuses an unknown name, as for any document naming a table entry). A piece declaring one is refused when its structure size could serve no box of that class: horizontal extents off the class's range or off the kit grid (`q`), height under the class clearance plus the floor course. Raised at `delve-admit audit` — the admission event, where the library's integrity lives — and again when a `detail-plan` consumes the piece, so a pre-check-era piece cannot be consumed unjudged. The field stays optional for the library at large; a piece bound by a `details[]` row is checked whether or not it declares (frame equality in `DW0843` is the consumer's exact check; `DW0848`'s declared-class half binds only where declared). Binding: pieces declaring a class, stated against pieces examined. |
+| `DW0848` | **A piece's declared footprint class disagrees with its bytes.** Prefab metadata gains optional `footprint_class`, naming a metrics-table size class (`DW0812` refuses an unknown name, as for any document naming a table entry). A piece declaring one is refused when its structure size could serve no box of that class: horizontal extents off the class's range or off the kit grid (`q`), height under the class clearance plus the floor course. Raised at `delvec prefab audit` — the admission event, where the library's integrity lives — and again when a `detail-plan` consumes the piece, so a pre-check-era piece cannot be consumed unjudged. The field stays optional for the library at large; a piece bound by a `details[]` row is checked whether or not it declares (frame equality in `DW0843` is the consumer's exact check; `DW0848`'s declared-class half binds only where declared). Binding: pieces declaring a class, stated against pieces examined. |
 
 ## 6. The owed anchors: the campaign's names survive detailing
 
@@ -415,8 +448,10 @@ answer is a first-class surface or a refused feature, decided on that brief.
 
 ## 15. Order of work
 
-1. Hashes and the walk record: build prints all three hashes; the record
-   schema; `DW0841` at validation; the audit binding (§8.4).
+1. Hashes and the walk record: validation prints all three hashes, over the
+   derived grid, the ways and the massing — refused runs included, because
+   the state that needs them is the refused one; the record schema;
+   `DW0841` at validation; the audit binding (§8.4).
 2. The `detail-plan` stage, the frame computation, placement, and
    `DW0842`/`DW0843`; the derivation learns to skip what a binding owns
    (§3).
@@ -435,24 +470,38 @@ every later round deepens a map that already substitutes.
 
 Machine-checkable; each names its verdict's instrument.
 
-1. Every build of a site-plan campaign prints `site_plan_sha256`,
-   `layout_graph_sha256` and `blockout_sha256` with the engine revision;
-   two builds print identical hashes; a plan edit moves the first and the
-   third, a layout-graph edit moves the second and may move the third —
-   both branches pinned: a reworded graph `note` moves no massing byte, a
-   seam-class change does — and an edit to neither document moves none of
-   the three: each authored hash is a function of its own document alone,
-   and together the two cover everything the derivation reads besides the
-   metrics table and the engine, which is what §2's hatch argument rests
-   on. A massing that moved under an unchanged plan and an unchanged graph
-   is §2's warning, never a refusal — demonstrated against a record naming
-   a different blockout hash.
+1. Every run that validates a site-plan campaign prints `site_plan_sha256`,
+   `layout_graph_sha256` and `blockout_sha256` with the engine revision,
+   **including a run that exits 1 at `DW0841`**, so the remedy the refusal
+   names is reachable from the state that needs it; two runs print
+   identical hashes. A box moved by one block moves the grid hash and the
+   massing; a traversal edit moves the ways hash and may move the massing —
+   both branches pinned: an `opens_from` flip moves no massing byte, a
+   seam-class change does. An edit to neither document moves none of the
+   three, and **neither does an edit with no consequence for the walked
+   whole**: a `dsl_version` bump, a reformat, a reworded `note`, a renamed
+   `intent`, a reworded `views[].note`. Together the two halves cover
+   everything the derivation reads besides the metrics table and the
+   engine — held by a test that perturbs each of those inputs in turn —
+   which is what §2's hatch argument rests on. A massing that moved under
+   an unchanged grid and unchanged ways is §2's warning, never a refusal —
+   demonstrated against a record naming a different blockout hash.
+
+   **Recorded departure, in these words**: this criterion previously
+   asserted *each authored hash is a function of its own document alone*.
+   That is no longer true and is not a loosening but a re-attribution: each
+   half is now a function of both documents, because the derivation is, and
+   the halves are the grid and the ways rather than the plan and the graph.
+   What the old wording bought — an arm that names which document to edit —
+   is kept in substance by naming the object that moved and where such an
+   object is authored. What it cost was a key that re-opened for changes no
+   body can feel, and that is what is gone.
 2. `delvec schema --stage all` includes `detail-plan`;
    `tools/check-gallery-coverage.py` is green with every new unit bound in
    the gallery domain or refusal-proven; the two `DW0841` probes and the
    `DW0843` probe are committed and red.
 3. Every code in DW0841–DW0845, DW0848 has at least one test asserting it
-   and a fixture the compiler (or `delve-admit`) refuses with it;
+   and a fixture the compiler (or `delvec prefab`) refuses with it;
    `tools/check-dw-codes.py` is green in both directions with zero new
    allowlist entries.
 4. On the blockout fixture with one place bound and a fresh passed record:
@@ -464,11 +513,15 @@ Machine-checkable; each names its verdict's instrument.
    is the bot tier's, which runs on release candidates: **the bot walk of a
    detailed build is owed on the first release ladder that carries one**,
    and is not claimed here.
-5. Deleting the record, editing the site plan without re-recording, or
-   editing the layout graph without re-recording, each reds `DW0841` naming
-   the hashes — including a graph edit that moves no placed byte at all,
-   and including a record that names no `layout_graph_sha256`; `delvec
-   allocation` refuses identically — both entry points demonstrated.
+5. Deleting the record, moving a box without re-recording, or editing the
+   ways without re-recording, each reds `DW0841` naming the hashes —
+   including a graph edit that moves no placed byte at all, and including a
+   record that names no `layout_graph_sha256`; `delvec allocation` refuses
+   identically — both entry points demonstrated. Every element of each half
+   is named in that half's own canonical text, per box, per seam and per
+   edge, and the gate is perturbed toward the vacuous shape by dropping one
+   element from the key: the element check is what reds, because moving a
+   box also moves its seams and leaves every hash-level assertion green.
 6. A piece whose structure size exceeds its frame by one cell on any axis
    is refused `DW0843` naming both extents; one cell smaller is refused
    the same way.
@@ -481,7 +534,7 @@ Machine-checkable; each names its verdict's instrument.
 9. With every node bound, a blocked sightline is exit-red; with one node
    unbound, the same world is a warning — `DW0821`'s promotion
    demonstrated in both directions.
-10. `delve-admit audit` refuses a piece whose `footprint_class` its bytes
+10. `delvec prefab audit` refuses a piece whose `footprint_class` its bytes
     contradict (`DW0848`); the same piece bound in a `detail-plan` is
     refused at validation.
 11. Every new check's output states a binding count with its denominator;

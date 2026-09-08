@@ -1,0 +1,29 @@
+{
+  "code": "DW0885",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/areas/-",
+      "value": {
+        "id": "area/court",
+        "name": "The Court",
+        "prefab": "prefab/gallery-yard"
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/area.court.name",
+      "value": "中庭"
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "replace",
+      "path": "/content/batches",
+      "value": []
+    }
+  ],
+  "units": [],
+  "why": "A piece standing where nothing buries it, with nothing in its document saying that is deliberate. `prefab/gallery-yard` is an `open_top` court — paving, a plinth and four corner posts — so the air a body stands in leaves through the sky and runs around the outside of the box, and the party is outdoors beside it. Placed as its own area it has no neighbour, and `horizon: void` is the horizon that declares there is nothing outside the placed geometry, so it buries nothing either: four sides of the piece stand in open air the party can be in and the document answers for one, `down`, which is the only face with nothing in front of it where the site plan seats it. That is the shape the third page walk shipped — a cave piece authored to be inside a hill, laid on a shore, its cap left standing in the sky over the beach — with every other check green, because the sockets mated, the envelope closed and the waterline met the sea, and each of those judges a piece against itself or against its neighbour rather than against the world it was put in. The edit script is emptied for a reason of ORDERING and not of severity: this platform really is a walkable edge over the void, and the per-batch `DW0322` inside the stage-7 replay would reach that first, so the probe would then prove that the engine refuses something rather than that it refuses this. The stage-10 boundary proof still runs over the same world, after this check, and would still refuse it. It declares no unit: `shown_faces` is prefab metadata rather than a stage schema unit, and it is bound on the site-plan point, where `gallery-yard` declares `down` and the build reports `1 `shown_faces` declaration(s) of which 1 are bound`."
+}

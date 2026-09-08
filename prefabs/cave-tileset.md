@@ -70,7 +70,7 @@ ingested.
 
 ## Render-critique loop (the probe's evidence)
 
-Rendered with `delve-render batch` on the pinned 1.21.11 client jar; renders read
+Rendered with `delvec render batch` on the pinned 1.21.11 client jar; renders read
 back multimodally against the brief. Three substantive rounds:
 
 - **Round 1 (baseline).** The core risk — "does the wall read as natural rock or
@@ -150,7 +150,7 @@ socket placements, anchors, and all metadata JSON are byte-identical — only th
   seabed depth profile, water, and scatter inside the basin are unchanged.
 
 Both are now caught at **compile time** by `DW0311` (critical-path walkability over
-the assembled geometry, `crates/compiler/src/nav.rs`), so this bug class fails the
+the assembled geometry, `crates/delvec/src/compiler/nav.rs`), so this bug class fails the
 build instead of a bot run: with the pre-fix `.nbt`, `delvec build nobodys-cave`
 fails `DW0311` on the entry→cavern leg; with the fixed `.nbt` it routes clean and no
 walkable cell borders the void.
@@ -213,7 +213,7 @@ claimed to have fixed it:
 Only `cave-shore.nbt` changes; its size, sockets, connectors, anchors and every
 byte of its metadata JSON are identical. The class is now caught **at the
 emitter**: `invariants::assert_fluid_is_contained` runs in every generator
-before any bytes are written, sharing the block rules with `delve-admit audit`
+before any bytes are written, sharing the block rules with `delvec prefab audit`
 rather than restating them, and prints each piece's binding.
 
 ## Honest self-assessment vs the brief

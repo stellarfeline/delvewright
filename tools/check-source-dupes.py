@@ -5,7 +5,7 @@
 text, twice in one file" is a doubled section. This is that rule where the
 sections are code.
 
-The failure it exists to kill, from the field: `crates/compiler/src/plan.rs`
+The failure it exists to kill, from the field: `crates/delvec/src/compiler/plan.rs`
 carried the block
 
     // ---- the pieces fit together (DW0780/DW0781, ADR-0020) ----

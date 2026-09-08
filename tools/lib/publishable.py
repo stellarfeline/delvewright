@@ -19,17 +19,21 @@ hand, so a crate that later becomes publishable — by deleting one
 `publish = false` line — inherits both gates with **no edit to either gate**.
 
 Globbing the directory rather than reading `[workspace] members` is deliberate
-and load-bearing: `crates/render` is deliberately EXCLUDED from the workspace
-(it carries its own `[workspace]` table, to keep a git dependency out of every
-other crate's resolution), so a members-only derivation would never see it — and
-`publish = false` is the only thing that keeps it off crates.io. A gate blind to
-the one crate whose publishability is not visible from the workspace table is
-the wrong gate.
+and load-bearing: a crate under `crates/` that carries its own `[workspace]`
+table is invisible to a members-only derivation, and `publish = false` would be
+the only thing keeping it off crates.io. A gate blind to the one crate whose
+publishability is not visible from the workspace table is the wrong gate.
 
 The glob is then cross-checked against the root manifest: every path the root
-`[workspace] members` or `exclude` names must have been discovered. A crate that
+`[workspace] members` or `exclude` names must have been discovered — or, if it
+was not, must hold no publishable package anywhere beneath it. A crate that
 moves out from under `crates/` therefore reds as a derivation-shape error
-instead of silently dropping out of both gates' binding count.
+instead of silently dropping out of both gates' binding count, while a declared
+path that is a NESTED WORKSPACE of unpublished tools (`prefabs/`, excluded so
+that nothing in it can enter `delvec`'s resolution) is accepted for the reason
+that makes it safe rather than by name. The property demanded is one the defect
+cannot supply: every `Cargo.toml` at or under such a path either declares no
+`[package]` at all or says `publish = false`.
 
 `readme` resolution follows Cargo: a string is a path relative to the manifest
 directory; `true` or an absent key means `README.md` beside the manifest;
@@ -89,6 +93,36 @@ def _workspace_declared_paths(root: Path) -> list[str]:
     return out
 
 
+def _publishable_under(path: Path) -> list[str]:
+    """Every package at or under `path` that crates.io could serve.
+
+    The question a declared-but-unglobbed workspace path has to answer. A
+    directory holding only virtual manifests and `publish = false` packages
+    cannot put anything on the registry, so it costs the two gates no binding;
+    one publishable package under it is a crate that has escaped the glob, and
+    that is the shape the cross-check exists to refuse.
+
+    A manifest that will not parse counts as publishable: an unreadable
+    declaration is not evidence of absence.
+    """
+    if not path.exists():
+        raise DerivationError(
+            f"the root Cargo.toml names `{path.name}` and there is no such "
+            f"directory at {path} — a declared path that is not there is a "
+            "shape error, never a quietly smaller derivation."
+        )
+    out: list[str] = []
+    for manifest in sorted(path.rglob("Cargo.toml")):
+        try:
+            pkg = tomllib.loads(manifest.read_text(encoding="utf-8")).get("package")
+        except (OSError, tomllib.TOMLDecodeError):
+            out.append(str(manifest))
+            continue
+        if isinstance(pkg, dict) and pkg.get("publish", True) is not False:
+            out.append(str(pkg.get("name", manifest.parent.name)))
+    return out
+
+
 def discover(root: Path) -> list[PublishableCrate]:
     """Every publishable crate under `root`, sorted by name.
 
@@ -108,13 +142,41 @@ def discover(root: Path) -> list[PublishableCrate]:
         PurePosixPath(os.path.relpath(m.parent, root)).as_posix() for m in manifests
     }
     for declared in _workspace_declared_paths(root):
-        if declared not in found_dirs:
+        if declared in found_dirs:
+            continue
+        escaped = _publishable_under(root / declared)
+        if escaped:
             raise DerivationError(
                 f"the root Cargo.toml names `{declared}`, which is not under "
-                "`crates/*/` — this derivation globs that directory, so the "
-                "crate is invisible to every gate built on it. Widen the glob "
-                "in tools/lib/publishable.py."
+                f"`crates/*/` and holds publishable package(s) "
+                f"{', '.join(escaped)} — this derivation globs that directory, "
+                "so they are invisible to every gate built on it. Widen the "
+                "glob in tools/lib/publishable.py."
             )
+
+    # `[workspace.package]` is where an inherited `version` / `rust-version`
+    # lives (a member says `version.workspace = true`); read it once so a page's
+    # claim binds to the number cargo will actually publish.
+    # A tree with no root manifest has nothing to inherit from; that is an
+    # error only for a crate that tries to (below), never on its own.
+    ws_pkg: dict = {}
+    if (root / "Cargo.toml").is_file():
+        try:
+            ws_pkg = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+            ws_pkg = ws_pkg.get("workspace", {}).get("package", {})
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            raise DerivationError(f"{root / 'Cargo.toml'}: {exc}") from exc
+
+    def inherited(pkg: dict, key: str):
+        value = pkg.get(key)
+        if isinstance(value, dict) and value.get("workspace") is True:
+            if key not in ws_pkg:
+                raise DerivationError(
+                    f"a crate inherits `{key}` from the workspace and the root "
+                    f"Cargo.toml's [workspace.package] has no `{key}`"
+                )
+            return ws_pkg[key]
+        return value
 
     crates: list[PublishableCrate] = []
     for manifest in manifests:
@@ -156,12 +218,14 @@ def discover(root: Path) -> list[PublishableCrate]:
         crates.append(
             PublishableCrate(
                 name=str(pkg.get("name", manifest.parent.name)),
-                version=str(pkg.get("version", "")),
+                version=str(inherited(pkg, "version") or ""),
                 # Cargo spells it `rust-version`; tomllib does not fold the
                 # hyphen, so reading `rust_version` silently yields None and the
                 # page's minimum-Rust claim binds to nothing while staying green.
                 rust_version=(
-                    str(pkg["rust-version"]) if "rust-version" in pkg else None
+                    str(inherited(pkg, "rust-version"))
+                    if "rust-version" in pkg
+                    else None
                 ),
                 manifest=manifest,
                 readme=readme,

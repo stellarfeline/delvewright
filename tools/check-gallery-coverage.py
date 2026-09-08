@@ -396,7 +396,7 @@ def main() -> int:
             f"--prefabs `{prefabs}` is not a directory. The gallery's piece is "
             "GENERATED (spec-0039 §6) — run "
             "`cargo run --release --manifest-path prefabs/gallery-generator/Cargo.toml "
-            "-- <dir> --skins gallery/skins` first."
+            "-- <dir> --skins gallery/skins --design gallery/design` first."
         )
 
     export = schema_export(delvec)

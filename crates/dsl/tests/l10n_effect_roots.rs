@@ -38,7 +38,7 @@ fn world_doc() -> String {
 fn quests_doc(traps: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -115,6 +115,7 @@ fn parse(quests: String, dialogue: String) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -138,7 +139,7 @@ fn sidecar_for(c: &Campaign) -> BTreeMap<String, L10nDoc> {
         .map(|(k, v)| (k, format!("[zh] {v}")))
         .collect();
     let doc = L10nDoc {
-        dsl_version: "0.6.0".to_string(),
+        dsl_version: "0.22.0".to_string(),
         campaign_id: c.world.campaign_id.clone(),
         kind: L10nKind::L10n,
         lang: "zh-cn".to_string(),

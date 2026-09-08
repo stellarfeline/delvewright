@@ -1,0 +1,171 @@
+{
+  "campaign_id": "teleport-volume",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "barring the door with his body"
+          },
+          "npc/sleeper": {
+            "at": "anchor/exit",
+            "dialogue": {
+              "barks": [
+                "...mm.",
+                "Not my watch."
+              ]
+            },
+            "doing": "wine-drowned sleep against the wall"
+          }
+        },
+        "happening": {
+          "subject": "npc/keeper",
+          "text": "The Keeper names his price, and the floor answers by moving.",
+          "verb": "learns"
+        },
+        "id": "quest/ask",
+        "objectives": [
+          {
+            "happening": {
+              "subject": "npc/keeper",
+              "text": "You hear what the toll is.",
+              "verb": "learns"
+            },
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [
+          {
+            "text": "The bolt slides back.",
+            "type": "narrate"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            {
+              "steps": [
+                {
+                  "at_ticks": 0,
+                  "effects": [
+                    {
+                      "effect": "minecraft:blindness",
+                      "hide_particles": true,
+                      "in": {
+                        "anchor": "anchor/keeper-stand",
+                        "extent": [
+                          1,
+                          2,
+                          1
+                        ]
+                      },
+                      "seconds": 2,
+                      "type": "give-effect"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 2,
+                  "effects": [
+                    {
+                      "from": {
+                        "anchor": "anchor/keeper-stand",
+                        "extent": [
+                          1,
+                          2,
+                          1
+                        ]
+                      },
+                      "to": "anchor/exit",
+                      "type": "teleport"
+                    }
+                  ]
+                }
+              ],
+              "type": "sequence"
+            },
+            {
+              "effect": "minecraft:poison",
+              "type": "clear-effect"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "none",
+            "doing": "standing aside, watching you go"
+          },
+          "npc/sleeper": {
+            "at": "anchor/exit",
+            "dialogue": {
+              "barks": [
+                "...mm.",
+                "Not my watch."
+              ]
+            },
+            "doing": "dead asleep, past waking"
+          }
+        },
+        "happening": {
+          "subject": "anchor/exit",
+          "text": "You walk out of the keep and onto the road.",
+          "verb": "departs"
+        },
+        "id": "quest/leave",
+        "objectives": [
+          {
+            "anchor": "anchor/exit",
+            "happening": {
+              "subject": "anchor/exit",
+              "text": "You reach the doorway.",
+              "verb": "arrives"
+            },
+            "id": "obj/exit",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "subject": "anchor/exit",
+              "text": "The keep is behind you.",
+              "verb": "departs"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "quest": "quest/ask",
+          "type": "quest-complete"
+        }
+      }
+    ],
+    "triggers": [
+      {
+        "at": "anchor/door",
+        "effects": [
+          {
+            "text": "The latch will not give.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/door-latch",
+        "on": {
+          "on": "use"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.22.0",
+  "stage": "quests"
+}

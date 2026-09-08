@@ -1,6 +1,8 @@
 # spec-0026: Horizon library — five pseudo-open-world bases
 
-- **Status**: Proposed — five bases: sky, flatland, valley, cherry-valley, summit
+- **Status**: Proposed — the bases nobody has built (sky, flatland, summit) and
+  the surround params. **§2 is adopted and closed by spec-0060**, which decides
+  the ocean datum and the per-area rule; read it there, not here.
 - **ADRs**: 0003 (vanilla-first), 0004 (prefabs+jigsaw), 0006 (determinism),
   0010 (OCI — no region files, bootstrap places everything)
 - **Depends on**: spec-0013 (generalizes its horizon/boundary; **supersedes its

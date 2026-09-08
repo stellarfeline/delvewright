@@ -2,7 +2,7 @@
 //! boss leaves behind a **declared subset** — usually one worn piece, plus any
 //! quest token the fight yields — never automatically everything.
 //!
-//! Covered here: the version fence (`DW0141`), the worn-piece rule (`DW0490`),
+//! Covered here: the worn-piece rule (`DW0490`),
 //! the tier rule (`DW0491`), and the two halves of the drop-gated `collect`
 //! proof — that the wave really yields the item (`DW0492`) and that the fight is
 //! proven to happen first (`DW0493`).
@@ -15,7 +15,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// that wears an axe and a helm, drops **only** the axe, and yields a key the
 /// door quest then collects.
 const QUESTS_V09: &str = r#"{
-  "dsl_version": "0.9.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -69,6 +69,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -87,17 +88,6 @@ fn declared_drops_validate_clean() {
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.9 declared drop, got: {diags:#?}"
-    );
-}
-
-/// `drops[]` (and `dropped_by`) under a pre-0.9 quests version are reserved.
-#[test]
-fn drops_reserved_before_0_9() {
-    let pre = QUESTS_V09.replacen("\"0.9.0\"", "\"0.8.0\"", 1);
-    assert!(
-        codes(&pre).iter().any(|c| c == "DW0141"),
-        "drops must be reserved under 0.8.0 (DW0141): {:#?}",
-        codes(&pre)
     );
 }
 

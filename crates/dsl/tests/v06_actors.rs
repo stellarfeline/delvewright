@@ -1,6 +1,6 @@
 //! DSL v0.6 (spec-0014): stage-5 scripted `actors` and the actor staging effects
 //! (`spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`/`sequence`) validate
-//! under `0.6.0` and are reserved (`DW0141`) earlier. A `sequence` nested inside a
+//! under `0.6.0`. A `sequence` nested inside a
 //! `sequence` is `DW0329`; a staging effect referencing an undeclared actor is
 //! `DW0112`; an unknown actor entity is `DW0173`; an actor anchor a prefab does not
 //! provide is `DW0142`.
@@ -15,7 +15,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 stage-5 quests document: one actor puppet, spawned then walked to the
 /// exit (despawn-on-arrive), then a two-step timeline unleashing and killing it.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -79,6 +79,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -89,17 +90,6 @@ fn v06_actor_surface_validates_clean() {
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 actor surface, got: {diags:#?}"
-    );
-}
-
-/// The same surface under a pre-0.6 quests version is reserved → `DW0141`.
-#[test]
-fn v06_actor_surface_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0141"),
-        "v0.6 actor surface must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }
 
