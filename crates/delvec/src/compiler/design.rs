@@ -199,7 +199,7 @@ impl DesignBinding {
         } else {
             self.skies_stated
                 .iter()
-                .map(|(t, w, n)| format!("{}+{} x{n}", t.token(), w.token()))
+                .map(|(t, w, n)| format!("{}+{} x{n}", t.keyword(), w.keyword()))
                 .collect::<Vec<_>>()
                 .join(", ")
         };
@@ -211,8 +211,8 @@ impl DesignBinding {
             self.image_files,
             self.concept_files,
             self.reference_files,
-            set_line(&self.world_times, WorldTime::token),
-            set_line(&self.world_weathers, WorldWeather::token),
+            set_line(&self.world_times, WorldTime::keyword),
+            set_line(&self.world_weathers, WorldWeather::keyword),
         )
     }
 }
@@ -235,14 +235,14 @@ pub fn record(binding: &DesignBinding, findings: &Findings) -> serde_json::Value
             .skies_stated
             .iter()
             .map(|(t, w, n)| serde_json::json!({
-                "time": t.token(),
-                "weather": w.token(),
+                "time": t.keyword(),
+                "weather": w.keyword(),
                 "count": n,
             }))
             .collect::<Vec<_>>(),
         "world": {
-            "times": binding.world_times.iter().map(|t| t.token()).collect::<Vec<_>>(),
-            "weathers": binding.world_weathers.iter().map(|w| w.token()).collect::<Vec<_>>(),
+            "times": binding.world_times.iter().map(|t| t.keyword()).collect::<Vec<_>>(),
+            "weathers": binding.world_weathers.iter().map(|w| w.keyword()).collect::<Vec<_>>(),
         },
         "unrecorded_files": findings.unrecorded_files,
         "unresolved_rows": findings.unresolved_rows,
@@ -401,25 +401,25 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
             if !time_gap.is_empty() {
                 says.push(format!(
                     "this world reaches the time(s) {} that no approved picture shows",
-                    set_line(&time_gap, WorldTime::token)
+                    set_line(&time_gap, WorldTime::keyword)
                 ));
             }
             if !time_extra.is_empty() {
                 says.push(format!(
                     "the record states the time(s) {} that this world never reaches",
-                    set_line(&time_extra, WorldTime::token)
+                    set_line(&time_extra, WorldTime::keyword)
                 ));
             }
             if !weather_gap.is_empty() {
                 says.push(format!(
                     "this world reaches the weather(s) {} that no approved picture shows",
-                    set_line(&weather_gap, WorldWeather::token)
+                    set_line(&weather_gap, WorldWeather::keyword)
                 ));
             }
             if !weather_extra.is_empty() {
                 says.push(format!(
                     "the record states the weather(s) {} that this world never reaches",
-                    set_line(&weather_extra, WorldWeather::token)
+                    set_line(&weather_extra, WorldWeather::keyword)
                 ));
             }
             d.push(Diagnostic::error(
@@ -440,10 +440,10 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
                      DELETE that effect. Never move the hour to satisfy a mob — that is \
                      `DW0496`'s rule, and it points the other way.",
                     says = says.join("; "),
-                    wt = set_line(&world_times, WorldTime::token),
-                    ww = set_line(&world_weathers, WorldWeather::token),
-                    st = set_line(&stated_times, WorldTime::token),
-                    sw = set_line(&stated_weathers, WorldWeather::token),
+                    wt = set_line(&world_times, WorldTime::keyword),
+                    ww = set_line(&world_weathers, WorldWeather::keyword),
+                    st = set_line(&stated_times, WorldTime::keyword),
+                    sw = set_line(&stated_weathers, WorldWeather::keyword),
                     n = rows.len(),
                 ),
             ));

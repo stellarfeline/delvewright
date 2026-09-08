@@ -227,6 +227,23 @@ impl WorldTime {
     pub fn daytime_ticks(self) -> i64 {
         self.spec().1
     }
+
+    /// **The word an author writes** — this state's spelling in a document.
+    ///
+    /// Not [`WorldTime::token`], which is the `/time set` argument and is a raw
+    /// tick count for the two states vanilla does not name. A diagnostic that
+    /// asks an author to declare an hour has to say `dusk`, not `12000`: the
+    /// number is what the compiler emits and is not writable in `world.json`.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            WorldTime::Day => "day",
+            WorldTime::Noon => "noon",
+            WorldTime::Dusk => "dusk",
+            WorldTime::Night => "night",
+            WorldTime::Midnight => "midnight",
+            WorldTime::Dawn => "dawn",
+        }
+    }
 }
 
 /// A declared weather state (DSL v0.5, spec-0010). Values are the vanilla
@@ -246,6 +263,14 @@ pub enum WorldWeather {
 }
 
 impl WorldWeather {
+    /// The word an author writes — identical to [`WorldWeather::token`] for
+    /// every state, and stated separately so a message that names a document's
+    /// vocabulary reads the document's vocabulary. See [`WorldTime::keyword`],
+    /// where the two differ.
+    pub fn keyword(self) -> &'static str {
+        self.token()
+    }
+
     /// The vanilla `/weather` keyword.
     pub fn token(self) -> &'static str {
         match self {
