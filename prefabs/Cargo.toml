@@ -48,4 +48,10 @@ delvewright-dsl = { path = "../crates/dsl" }
 fastnbt = "2"
 flate2 = "1"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `preserve_order` so a document a generator writes comes out in the order its
+# own struct declares, exactly as it did when each generator serialised straight
+# to a string. `document::write_preserving` routes every write through
+# `serde_json::Value`, and with the default `BTreeMap` map that alone would
+# re-sort every key of every document in the library — a whole-library diff for
+# a change that is about not DELETING keys.
+serde_json = { version = "1", features = ["preserve_order"] }
