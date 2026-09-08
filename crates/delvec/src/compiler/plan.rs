@@ -100,65 +100,45 @@ pub const SEA_FLOOR_TOP_Y: i32 = SEA_LEVEL - OCEAN_WATER_LAYERS;
 /// every fallback IS the retired constant. The refusal is `DW0886`, and it has
 /// normally already been raised at validation — this is the build-tier backstop
 /// for a campaign that reached a build anyway.
+///
+/// # The rule is not written here
+///
+/// It was, and this function was the site of the defect that fact caused.
+/// `delvec prefab seating` computes its verdict from exactly these documents and
+/// never asked this question, so the shipped island and cave pools passed the
+/// command that exists to answer *can this library stand on this base* and were
+/// then refused by the build — a pairing failure inside the mechanism built to
+/// end pairing failures. [`crate::compiler::seating::set_walk_plane`] is the one
+/// implementation; this is one of its three callers, and the other two run
+/// before anything is placed.
 pub fn area_base_y(
     campaign: &Campaign,
     area: &delvewright_dsl::Area,
     prefabs: &PrefabRegistry,
 ) -> Result<i32, PlanError> {
+    use crate::compiler::seating::SetPlane;
+
     let base = crate::compiler::horizon::base_of(campaign);
     let Some(walk_ref) = crate::compiler::horizon::walk_ref_y(base) else {
         return Ok(BASE_Y);
     };
-    let members = crate::compiler::seating::area_members(area, prefabs);
-    let mut planes: BTreeSet<i32> = BTreeSet::new();
-    let mut silent: Vec<&str> = Vec::new();
-    for id in &members {
-        match prefabs.get(id).and_then(|m| m.walk_y) {
-            Some(w) => {
-                planes.insert(w);
-            }
-            // A member with no metadata at all is `DW0300`'s finding, raised
-            // where the piece is bound; it is not this rule's to restate.
-            None if prefabs.get(id).is_some() => silent.push(id.as_str()),
-            None => {}
-        }
-    }
-    if !silent.is_empty() {
-        return Err(PlanError::new(
-            crate::compiler::seating::DW_UNSEATABLE,
+    // A member with no metadata at all is `DW0300`'s finding, raised where the
+    // piece is bound; it is not this rule's to restate, so it is not offered.
+    let declared: Vec<(String, Option<i32>)> =
+        crate::compiler::seating::area_members(area, prefabs)
+            .into_iter()
+            .filter_map(|id| prefabs.get(&id).map(|m| (id, m.walk_y)))
+            .collect();
+    match crate::compiler::seating::set_walk_plane(base, area.id.as_str(), &declared) {
+        SetPlane::Agreed(w) => Ok(walk_ref - w),
+        SetPlane::NotDerived => Ok(BASE_Y),
+        SetPlane::Refused(reasons) => Err(PlanError::new(
+            reasons[0].code,
             format!(
-                "area `{area}` is seated on a `{base}` horizon, whose datum is a WALK PLANE at \
-                 y={walk_ref} — one block above the sea — so the area's origin is derived from \
-                 the piece set's own `walk_y`. {n} of its {total} member(s) declare none: {list}. \
-                 There is no default to fall back on and there deliberately is not one: a \
-                 default is one tileset's authoring convention promoted to a world constant, and \
-                 it is why every piece of every other library used to land with its floor under \
-                 the sea. DECLARE `walk_y` on each piece named above — it is a measurement of \
-                 the piece, written by the generator that built it",
+                "area `{area}` cannot be seated on a `{base}` horizon: {full}",
                 area = area.id.as_str(),
                 base = base.token(),
-                n = silent.len(),
-                total = members.len(),
-                list = silent.join(", "),
-            ),
-        ));
-    }
-    match planes.len() {
-        0 => Ok(BASE_Y),
-        1 => Ok(walk_ref - planes.iter().next().copied().expect("one plane")),
-        _ => Err(PlanError::new(
-            crate::compiler::seating::DW_UNSEATABLE,
-            format!(
-                "area `{area}` draws from a piece set whose members do not agree about their own \
-                 walk plane — `walk_y` values {values:?} across {total} member(s) — and a `{base}` \
-                 horizon derives ONE origin per area from that number. Whichever the solver drew, \
-                 the others would stand their walk planes at the wrong height above the sea. \
-                 Split the pool so each one seats pieces built to one walk plane, or rebuild the \
-                 odd members against the plane the rest share",
-                area = area.id.as_str(),
-                base = base.token(),
-                values = planes.iter().copied().collect::<Vec<_>>(),
-                total = members.len(),
+                full = reasons[0].full,
             ),
         )),
     }
@@ -2228,50 +2208,62 @@ pub enum AnchorHit<'a> {
     Missing,
 }
 
-/// **Ocean-horizon waterline invariant, first arm (`DW0344`).** In a
-/// `horizon: ocean` world every placed piece that **declares** a waterline
-/// (`waterline_y`, the local y of its top authored water block) must land with
-/// that waterline at world [`SEA_LEVEL`] — `piece.pos.y + waterline_y == 62`.
+/// **What the ocean-horizon waterline invariant's first arm examined** — the
+/// binding count, and no refusal.
 ///
-/// Why this is a hard invariant rather than a style rule: a shore piece puts its
-/// walkable land plane one block above its own waterline, which is the
-/// vanilla-normal beach relationship — a player swimming in open sea can climb
-/// ashore, and the authored water reads as one body with the world ocean. Off by
-/// a few blocks and the whole island floats above the sea: the shore becomes an
-/// unclimbable cliff and the authored water pocket hangs in the air. Nothing
-/// downstream (nav, boundary, POV, PackTest) can see this, because every one of
-/// them derives from the very placement that is wrong.
+/// The rule is unchanged and is stated in one place: a shore puts its walkable
+/// land plane one block above its own waterline, which is the vanilla-normal
+/// beach relationship — a player swimming in open sea can climb ashore, and the
+/// authored water reads as one body with the world ocean. Off by even one and
+/// the island floats: the shore becomes an unclimbable cliff and the authored
+/// water pocket hangs in the air, and nothing downstream (nav, boundary, POV,
+/// PackTest) can see it, because every one of them derives from the very
+/// placement that is wrong.
 ///
-/// # What this arm no longer asks
+/// # Where the refusal went, and why it is not here any more
 ///
-/// It used to ask a second question here — does this piece's placement BOX
-/// reach the sea plane — and refuse a piece with no declaration when it did.
-/// That question was the wrong one, by construction. The box's minimum y is the
-/// area origin, so under one global ocean datum it was under the sea for every
-/// piece in every ocean world whatever its bytes held, and the refusal's own
-/// second remedy ("raise the piece clear of the sea") could not be performed by
-/// any amount of authoring. What makes a delve wrong is a **walk cell** under
-/// the sea — a party wading its critical path — and that is a fact about the
-/// assembled world rather than about a box, so it is asked where the walk cells
-/// are: [`check_ocean_walk_plane`]. The static half of it, which needs nothing
-/// placed, is `DW0886` (`crate::compiler::seating`).
+/// **This is a loosening of this function and a tightening of the rule, and both
+/// halves are stated.** The refusal moved to
+/// [`crate::compiler::seating::walk_plane_over_waterline`], which asks the same
+/// question of the two DECLARATIONS, at validation, under the same code
+/// (`DW0344`), before a block is placed.
 ///
-/// # The binding count
+/// It is the same question because an ocean area's origin is DERIVED from the
+/// piece set's own walk plane (spec-0060 §3.2): `pos.y = walk_ref − walk_y`, so
+/// `pos.y + waterline_y == SEA_LEVEL` is exactly `waterline_y == walk_y − 1`.
+/// Every piece seated at its area origin — which is every piece of every area
+/// whose sockets share one local y — is judged identically and one stage
+/// earlier, and a piece that declares no `walk_y` at all is `DW0886` before
+/// either. So the document arm's coverage is a superset of what this one could
+/// refuse, for every piece it was ever right about.
+///
+/// What it is NOT a superset of is the one case left: a piece mated through a
+/// socket at a different local y than its parent's — a stair child, placed at
+/// `parent.y + parent_socket.y − own_socket.y`. Refusing that piece was an
+/// over-refusal by construction, of exactly the shape spec-0060 §1.2 diagnosed
+/// in this function's other half: a piece four courses up a stair CANNOT stand
+/// its water at sea level, no authoring makes it, and there is nothing wrong
+/// with it unless a body walks there — which is
+/// [`check_ocean_walk_plane`]'s question, asked of every placed piece whatever
+/// its y, and unchanged.
+///
+/// # The binding count is what stays
 ///
 /// This invariant is keyed off a single optional metadata field, so a piece that
 /// loses that field does not fail the check — it leaves it, silently. That is not
-/// hypothetical: the field lives on five island prefabs, and the admission tool
+/// hypothetical: the field lives on the island prefabs, and the admission tool
 /// that reads and rewrites their metadata modelled fewer fields than the document
-/// has, so every admission step deleted it. So the check returns how many placed
-/// pieces it examined, and the world's own line prints it.
+/// has, so every admission step deleted it. So this returns how many placed
+/// pieces declared one and were counted, and the world's own line prints it —
+/// which is the half a refusal that fires elsewhere cannot state.
 fn check_ocean_waterline(
     campaign: &Campaign,
     areas: &[AreaPlacement],
     prefabs: &PrefabRegistry,
-) -> Result<WaterlineBinding, PlanError> {
+) -> WaterlineBinding {
     let base = crate::compiler::horizon::base_of(campaign);
     if base != delvewright_dsl::HorizonBase::Ocean {
-        return Ok(WaterlineBinding::not_an_ocean(base));
+        return WaterlineBinding::not_an_ocean(base);
     }
     let mut binding = WaterlineBinding {
         base: base.token(),
@@ -2285,54 +2277,13 @@ fn check_ocean_waterline(
             let Some(meta) = prefabs.get(&piece.prefab_id) else {
                 continue; // missing metadata is already DW0300 upstream
             };
-            let Some(w) = meta.waterline_y else {
+            if meta.waterline_y.is_none() {
                 continue; // no claim about a sea: nothing here to hold to one
-            };
-            binding.checked += 1;
-            let placed = piece.pos[1] + w;
-            if placed != SEA_LEVEL {
-                let delta = placed - SEA_LEVEL;
-                let (dir, verb) = if delta > 0 {
-                    (
-                        "above",
-                        "floats above the sea — its shore is an unclimbable cliff",
-                    )
-                } else {
-                    ("below", "is drowned — the walk plane sits under the sea")
-                };
-                let walk = meta.walk_y;
-                return Err(PlanError::new(
-                    DW_OCEAN_WATERLINE,
-                    format!(
-                        "area `{}` places prefab `{}` at y={} with a declared waterline of local \
-                         y={w}, putting its waterline at world y={placed} — {} blocks {dir} the \
-                         ocean sea level (y={SEA_LEVEL}). The piece {verb}. The area's origin is \
-                         DERIVED from the piece set's own walk plane ({walk_note}), so the two \
-                         declarations have to agree with each other and with the bytes: a shore \
-                         stands its walk plane one block above its own waterline. The moves: (1) \
-                         DECLARE the waterline the piece really authors (`waterline_y` in \
-                         `{}.json`, the local y of its top water block — `DW0887` holds that \
-                         number to the bytes); (2) DECLARE the walk plane the piece really has, \
-                         so the area is seated where this waterline meets the sea — for this \
-                         piece that is `walk_y: {want}`; (3) REBUILD the piece so its water and \
-                         its floor stand in the relationship a shore has",
-                        area.area_id,
-                        piece.prefab_id,
-                        piece.pos[1],
-                        delta.abs(),
-                        meta.base(),
-                        walk_note = match walk {
-                            Some(k) => format!("this piece declares `walk_y: {k}`"),
-                            None =>
-                                "and this piece declares no `walk_y` at all — `DW0886`".to_string(),
-                        },
-                        want = w + 1,
-                    ),
-                ));
             }
+            binding.checked += 1;
         }
     }
-    Ok(binding)
+    binding
 }
 
 /// **Ocean-horizon waterline invariant, second arm (`DW0344`)** — the question
@@ -2924,7 +2875,7 @@ impl<'a> Plan<'a> {
         // world that can reach a zero binding is one whose pieces all stand clear
         // of the water — a discharge taken from geometry, which the missing
         // declaration cannot fake.
-        let waterline = check_ocean_waterline(campaign, &areas, prefabs)?;
+        let waterline = check_ocean_waterline(campaign, &areas, prefabs);
 
         // ---- the pieces fit together (DW0780/DW0781, ADR-0020) ----
         //

@@ -46,7 +46,10 @@
 //! | [`Collision::Fluid`] | no | no | — |
 //!
 //! Two rows are not the naive complement of each other, and that is the whole
-//! reason there are two columns. A **tall barrier** is 1.5 blocks on a 1-block
+//! reason there are two columns. A **fluid** cell is a cell whose water or lava
+//! the *block* brings — a free `water`/`lava` block, and equally a `seagrass`
+//! tuft or a `kelp` stem, whose vanilla block carries a water source in its own
+//! cell ([`is_submerged_by_nature`]). A **tall barrier** is 1.5 blocks on a 1-block
 //! cell: a body neither passes through it nor reaches its top face by jumping. A
 //! **fence gate** is the mirror: adventure mode permits the right-click that
 //! opens it, so a body gets through — and for a *closure* claim a gate was never
@@ -161,6 +164,48 @@ pub fn is_fluid(name: &str) -> bool {
     matches!(bare_id(name), "water" | "lava")
 }
 
+/// Whether a block **fills its own cell with water by nature** — a plant or a
+/// column whose block has no `waterlogged` property to set because its cell is
+/// unconditionally a water source.
+///
+/// This is not [`is_fluid`]'s question and it is not the waterlogging one
+/// either, which is why it is a third predicate rather than an arm of one of
+/// them. [`is_fluid`] asks whether the cell holds a *free* fluid with no host
+/// block; waterlogging is a block *state* an author sets on an ordinary solid.
+/// These ids are neither: each has a host block, the host has an empty collision
+/// shape, and vanilla gives the cell a water source regardless of state
+/// (`SeagrassBlock`, `TallSeagrassBlock`, `KelpBlock`, `KelpPlantBlock` and
+/// `BubbleColumnBlock` all answer `Fluids.WATER` from `getFluidState`, Minecraft
+/// Java 1.21.11). A body put into one of these cells is in water: it swims, and
+/// it stands on nothing.
+///
+/// # The measurement that made this a predicate rather than a footnote
+///
+/// The shipped island and cave tilesets both scatter seagrass across the top
+/// water block of a shore — `cave-generator` says so in its own words, *seagrass
+/// is a water-filled block in vanilla, so it stands IN the sea's own cell rather
+/// than above it* — and the collision table disagreed with the generator that
+/// wrote the bytes. Three cells in the whole content library, and they were
+/// enough to make two pieces' walk planes measure one course below their floors,
+/// which put a pool's members into disagreement and refused it at build after
+/// the seating command had called it seatable. A tuft of grass standing in the
+/// sea is not a floor, and until this predicate existed nothing said so.
+///
+/// **Excluded, and not because they are dry.** `sea_pickle` and the coral fans
+/// carry a `waterlogged` property, so their cell's fluid is a state an author
+/// wrote and reads correctly through it; folding them in here would call a dry
+/// coral fan on a museum shelf a body of water. Anything whose fluid state was
+/// not read out of the pin is left in the collision default, which over-blocks
+/// (module header) rather than admitting a step the game refuses.
+///
+/// Takes a full block name (state suffix allowed), like every predicate here.
+pub fn is_submerged_by_nature(name: &str) -> bool {
+    matches!(
+        bare_id(name),
+        "seagrass" | "tall_seagrass" | "kelp" | "kelp_plant" | "bubble_column"
+    )
+}
+
 /// Whether a block is a **1.5-block-tall barrier**: fences (`*_fence`, incl.
 /// `nether_brick_fence`) and walls (`*_wall`). Vanilla gives these a collision box
 /// 1.5 blocks tall on a 1-block cell, which breaks the full-cube assumption in
@@ -224,6 +269,14 @@ pub fn is_passable_trap_trigger(name: &str) -> bool {
 /// `scaffolding`, `sea_pickle`, `cocoa`, lily `pad` (a platform), all leaves, and
 /// anything not certainly collision-free — the conservative full-cube default
 /// keeps those sound.
+///
+/// **Five members of this list never reach [`Collision::Thin`]**, and the reason
+/// is not their collision box: `seagrass`, `tall_seagrass`, `kelp`, `kelp_plant`
+/// and `bubble_column` bring a water source with them, so
+/// [`collision_class`] answers [`Collision::Fluid`] for them one arm earlier
+/// ([`is_submerged_by_nature`]). They stay in this list because the statement it
+/// makes about them — an empty collision shape — is true and is what a caller
+/// asking about collision alone should get.
 ///
 /// Takes a **bare** id ([`bare_id`]), not a full block name.
 pub fn is_no_collision_plant(id: &str) -> bool {
@@ -498,11 +551,18 @@ impl Collision {
 /// like; a thin decoration is stepped over before anything asks whether it is a
 /// gate; and only then do the two 1.5-tall classes separate from the ordinary
 /// floor.
+///
+/// **A cell whose water the block brings with it is a fluid cell** — the
+/// [`is_submerged_by_nature`] arm sits beside [`is_fluid`] and above the
+/// thin-decoration arm, because a seagrass tuft is both a no-collision plant and
+/// a body of water, and the collision model's answer is the water's. Reading it
+/// as a thin decoration made the sea's own cell report as a place a body's feet
+/// go.
 pub fn collision_class(name: &str) -> Collision {
     if is_air(name) {
         return Collision::Air;
     }
-    if is_fluid(name) {
+    if is_fluid(name) || is_submerged_by_nature(name) {
         return Collision::Fluid;
     }
     let top = collision_top_16(name);
@@ -566,6 +626,47 @@ mod tests {
             assert_eq!(class.supports_body(), supports, "{class:?}: supports_body");
             assert_eq!(class.floor_top_16(), top, "{class:?}: floor_top_16");
         }
+    }
+
+    /// **A tuft of grass standing in the sea is not a floor.** Every id whose
+    /// vanilla block brings its own water source answers [`Collision::Fluid`],
+    /// so nothing stands on one and nothing walks through one — the same answer
+    /// the water it replaced gave.
+    ///
+    /// Stated with its denominator, and with the neighbours that must NOT move:
+    /// a dry tuft of the same shape is still a thin decoration a body steps
+    /// over, and a coral fan carries its water as a `waterlogged` state that is
+    /// read where states are read.
+    #[test]
+    fn a_block_that_brings_its_own_water_is_a_fluid_cell() {
+        let submerged = [
+            "minecraft:seagrass",
+            "minecraft:tall_seagrass",
+            "minecraft:kelp",
+            "minecraft:kelp_plant",
+            "minecraft:bubble_column",
+        ];
+        assert_eq!(submerged.len(), 5, "the class lost a member");
+        for id in submerged {
+            assert!(is_submerged_by_nature(id), "{id}");
+            assert_eq!(collision_class(id), Collision::Fluid, "{id}");
+            assert!(!passes_body(id), "{id}: a body does not walk through water");
+            assert!(!supports_body(id), "{id}: a body does not stand on water");
+        }
+        // The dry members of the same no-collision plant class are unmoved.
+        for id in [
+            "minecraft:short_grass",
+            "minecraft:fern",
+            "minecraft:dead_bush",
+        ] {
+            assert!(!is_submerged_by_nature(id), "{id}");
+            assert_eq!(collision_class(id), Collision::Thin(0), "{id}");
+        }
+        // And a waterlogged host block is still its host: a floor, not a sea.
+        assert!(!is_submerged_by_nature(
+            "minecraft:oak_stairs[waterlogged=true]"
+        ));
+        assert!(supports_body("minecraft:oak_stairs[waterlogged=true]"));
     }
 
     /// **The owner's case.** A torch, a candle, a carpet and a pressure plate are

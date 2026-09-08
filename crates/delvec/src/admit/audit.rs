@@ -204,12 +204,87 @@ pub struct AuditReport {
     /// first. `state` is which one; the counts beside it are what was examined
     /// (see [`crate::admit::spatial::DoorBinding`]).
     pub contract: crate::admit::spatial::DoorBinding,
+    /// **What the waterline check did** (`DW0887`) — always present, including
+    /// the run that found nothing to check.
+    ///
+    /// The same four-facts-one-silence argument as `contract` above, and the
+    /// same defect measured: this code was written to bind "wherever a prefab
+    /// document and its `.nbt` are read together", and the only door that ran it
+    /// was the whole-library sweep. Nothing in any gate hands this command a
+    /// library directory — the admission procedure and the content repository's
+    /// palette job both walk the pieces one file at a time — so a fiction
+    /// planted in a document passed 39 audits of 39 with the code appearing zero
+    /// times. `waterline_declarations` is the denominator, `waterline_refused`
+    /// the numerator, and both are stated on every run.
+    pub waterline: WaterlineBinding,
     /// For a zone that ships as a tile set: what was audited, tile by tile.
     ///
     /// Absent — and omitted from the JSON entirely — for a single structure
     /// template, so an ordinary report is exactly the report it always was.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiles: Option<Vec<TileAudit>>,
+}
+
+/// What `DW0887` examined in one audited asset, and what it found.
+///
+/// `state` says which of the four facts a silent report used to conflate:
+/// `checked` (a declaration was read and held to the bytes), `undeclared` (the
+/// document states no waterline, so there was nothing to hold), `no-document`
+/// (there is no prefab document beside these bytes yet — an ingested piece is
+/// audited before its metadata exists) and `unreadable` (a document or a
+/// template this could not open, which is a red rather than a small number).
+#[derive(Debug, Clone, Serialize)]
+pub struct WaterlineBinding {
+    pub state: &'static str,
+    /// Waterline declarations examined — 0 or 1 for one asset, and the
+    /// denominator the numerator below is stated against.
+    pub declarations: usize,
+    /// Of those, the ones the bytes bear out.
+    pub borne_out: usize,
+    /// Of those, the ones they do not (`DW0887`).
+    pub refused: usize,
+    /// `.nbt` templates opened to answer it — a zone manifest opens every tile.
+    pub nbt_opened: usize,
+    /// The local y of the top authored `minecraft:water` block, or `None`.
+    pub top_authored_water_y: Option<i32>,
+}
+
+impl WaterlineBinding {
+    /// The state a report carries when the asset has no document beside it.
+    pub fn no_document() -> WaterlineBinding {
+        WaterlineBinding {
+            state: "no-document",
+            declarations: 0,
+            borne_out: 0,
+            refused: 0,
+            nbt_opened: 0,
+            top_authored_water_y: None,
+        }
+    }
+
+    /// **The one line this check owes its reader**, printed whether it found
+    /// anything or not.
+    pub fn line(&self, asset: &str) -> String {
+        format!(
+            "waterline binding: {asset}: {state}; {d} declaration(s) examined, {ok} borne out \
+             by the bytes, {bad} refused (DW0887); {opened} `.nbt` opened; top authored water \
+             at {top}.",
+            state = self.state,
+            d = self.declarations,
+            ok = self.borne_out,
+            bad = self.refused,
+            opened = self.nbt_opened,
+            top = self.top_authored_water_y.map_or_else(
+                || "no water in this piece".to_string(),
+                |y| format!("local y={y}")
+            ),
+        )
+    }
+
+    /// Whether this binding refuses the asset.
+    pub fn is_refusal(&self) -> bool {
+        self.refused > 0 || self.state == "unreadable"
+    }
 }
 
 /// One tile's contribution to a zone-level audit.
@@ -236,6 +311,20 @@ pub struct TileAudit {
 impl AuditReport {
     pub fn is_pass(&self) -> bool {
         self.verdict == "pass"
+    }
+
+    /// **Record what the waterline check did**, in the report and in the
+    /// verdict — the same argument as [`AuditReport::record_contract_door`]: a
+    /// saved report that says `"pass"` about a piece the tool refused is the
+    /// artifact disagreeing with the exit code.
+    pub fn record_waterline(&mut self, binding: WaterlineBinding, finding: Option<&Diagnostic>) {
+        if let Some(d) = finding {
+            self.findings.push(to_finding(d));
+        }
+        if binding.is_refusal() {
+            self.verdict = "fail";
+        }
+        self.waterline = binding;
     }
 
     /// **Record what the second door did**, in the report and in the verdict.
@@ -524,6 +613,7 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
         fluid_at_edge: 0,
         findings: diags.iter().map(to_finding).collect(),
         contract: crate::admit::spatial::DoorBinding::default(),
+        waterline: WaterlineBinding::no_document(),
         tiles: None,
     };
     (report, diags)
@@ -610,6 +700,7 @@ pub fn audit_tile_set(
         fluid_at_edge: settling.fluid_at_edge,
         findings: all_diags.iter().map(to_finding).collect(),
         contract: crate::admit::spatial::DoorBinding::default(),
+        waterline: WaterlineBinding::no_document(),
         tiles: Some(audits),
     };
     (report, all_diags)

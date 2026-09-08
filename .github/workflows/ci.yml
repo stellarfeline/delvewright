@@ -1040,6 +1040,19 @@ jobs:
             --build-out gallery-out-en \
             --frames gallery-frames
 
+      # The property spec-0060 §6.3 makes load-bearing: a pool the seating
+      # command calls seatable is not then refused by the build for a reason the
+      # command could have known. It was measured FALSE -- `pool/island` and
+      # `pool/cave-shore` both printed SEATABLE on an ocean and were refused at
+      # build by `DW0886`. It runs here because this is the job that has the
+      # gallery's own library, and it perturbs toward both disagreement shapes,
+      # so a green is a green over a gate shown able to see them.
+      - name: the seating answer is the build answer
+        if: '!cancelled()'
+        run: |
+          python3 tools/check-seating-agrees.py \
+            --delvec target/debug/delvec --prefabs gallery-prefabs
+
       # The other half of the render surface, and until this ran nothing in this
       # repository invoked it. The step above renders FRAMES of declared views
       # through `snapshot`; this runs the whole-map illustration path — `delvec

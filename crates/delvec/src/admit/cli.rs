@@ -107,6 +107,24 @@ pub enum PrefabCommand {
         #[arg(long, conflicts_with = "role")]
         no_role: bool,
     },
+    /// **Measure the piece's own planes** and, with `--write`, declare them:
+    /// `walk_y` (spec-0060 §4) and, where the piece authors water, `waterline_y`.
+    ///
+    /// Both are measurements of the bytes, and every generator reads them back
+    /// out of the blocks it just laid. This is that measurement for a piece no
+    /// generator wrote — an ingested hero asset, a hand-authored room — which
+    /// otherwise had no way to state a `walk_y` at all except by typing one, and
+    /// a census derivable from the object is never hand-written. It is the
+    /// `lighting` verb's shape, for the other two numbers a document declares
+    /// about its own bytes.
+    Planes {
+        /// Input structure `.nbt`, or the `.json` manifest of a zone that ships
+        /// as a tile set — which is measured as one assembled building.
+        nbt: PathBuf,
+        /// Persist the measured planes into the prefab's metadata.
+        #[arg(long)]
+        write: bool,
+    },
     /// Static block-light probe over player space -> declared lighting profile.
     Lighting {
         /// Input structure `.nbt`, or the `.json` manifest of a zone that ships

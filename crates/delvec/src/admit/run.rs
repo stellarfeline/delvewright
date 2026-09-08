@@ -85,6 +85,7 @@ pub fn run(args: PrefabArgs, prefabs_dir: &Path, json: bool) -> ExitCode {
             },
             json,
         ),
+        PrefabCommand::Planes { nbt, write } => run_planes(&nbt, write, json),
         PrefabCommand::Lighting {
             nbt,
             write,
@@ -125,6 +126,22 @@ pub fn run(args: PrefabArgs, prefabs_dir: &Path, json: bool) -> ExitCode {
 /// 3. **It is the same code the compiler runs.** One implementation, two entry
 ///    points, so a library can never be seatable according to the tool and
 ///    refused by the build.
+///
+/// Property 3 is the one this command was measured FAILING, and the failure is
+/// worth stating because "same code" was true of the member checks and false of
+/// the only question a pool has. Every member of `pool/island` and every member
+/// of `pool/cave-shore` answered every per-piece question, so both printed
+/// `SEATABLE` — and both were refused at build by `DW0886`, because the members'
+/// declared walk planes disagree with one another and one origin cannot be
+/// derived from two. That rule lived in `compiler::plan::area_base_y` alone.
+/// [`crate::compiler::seating::set_walk_plane`] holds it now, and this command,
+/// the validation check and the build derivation all read it.
+///
+/// Under `--json` the whole verdict is one object per line on stdout: the
+/// per-pool verdicts, the reasons with their codes and shapes, and the binding
+/// counts. The flag was accepted and ignored, which is worse than refusing it —
+/// a caller that asked for machine output got a table it could not parse and no
+/// signal that it had not been heard.
 fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
     let base = match horizon {
         "void" => delvewright_dsl::HorizonBase::Void,
@@ -170,6 +187,7 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
     let mut members_total = 0usize;
     let mut pools_seatable = 0usize;
     let mut lines: Vec<String> = Vec::new();
+    let mut pool_json: Vec<serde_json::Value> = Vec::new();
     for pool in &pools {
         let mut ids: Vec<String> = registry
             .pool(pool)
@@ -180,11 +198,28 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
         members_total += ids.len();
         let mut seatable = 0usize;
         let mut reasons: Vec<String> = Vec::new();
+        let mut reason_json: Vec<serde_json::Value> = Vec::new();
+        let record = |about: &str, r: &crate::compiler::seating::Reason| {
+            serde_json::json!({
+                "about": about,
+                "code": r.code.id(),
+                "shape": format!("{:?}", r.shape),
+                "short": r.short,
+                "detail": r.full,
+            })
+        };
         for id in &ids {
             let Some(f) = library.pieces.get(id) else {
                 reasons.push(format!(
                     "  {id:<28} no document or no readable `.nbt` in this library"
                 ));
+                reason_json.push(serde_json::json!({
+                    "about": id,
+                    "code": DW_INPUT,
+                    "shape": "Unreadable",
+                    "short": "no document or no readable `.nbt` in this library",
+                    "detail": "no document or no readable `.nbt` in this library",
+                }));
                 continue;
             };
             let mut why = crate::compiler::seating::seating_reasons(base, f);
@@ -198,9 +233,33 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
             for r in why {
                 let short = id.strip_prefix("prefab/").unwrap_or(id);
                 reasons.push(format!("  {short:<28} {} ({})", r.short, r.code.id()));
+                reason_json.push(record(id, &r));
             }
         }
-        let verdict = if seatable == ids.len() && !ids.is_empty() {
+        // **The question the pool has and no member of it can answer**: one
+        // origin per area, derived from one walk plane. A pool every member of
+        // which is individually perfect is refused here when they disagree, and
+        // this is where the command stopped agreeing with the build.
+        let declared: Vec<(String, Option<i32>)> = ids
+            .iter()
+            .map(|id| (id.clone(), library.pieces.get(id).and_then(|f| f.walk_y)))
+            .collect();
+        let mut set_refused = false;
+        if let crate::compiler::seating::SetPlane::Refused(rs) =
+            crate::compiler::seating::set_walk_plane(base, pool, &declared)
+        {
+            set_refused = true;
+            for r in &rs {
+                reasons.push(format!(
+                    "  {:<28} {} ({})",
+                    "(the pool)",
+                    r.short,
+                    r.code.id()
+                ));
+                reason_json.push(record(pool, r));
+            }
+        }
+        let verdict = if seatable == ids.len() && !ids.is_empty() && !set_refused {
             pools_seatable += 1;
             "SEATABLE"
         } else {
@@ -211,13 +270,17 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
             ids.len()
         ));
         lines.extend(reasons);
-    }
-    for line in &lines {
-        println!("{line}");
+        pool_json.push(serde_json::json!({
+            "pool": pool,
+            "verdict": verdict.trim(),
+            "members": ids.len(),
+            "members_seatable": seatable,
+            "reasons": reason_json,
+        }));
     }
 
     let (declared, borne_out) = library.waterline_census();
-    println!(
+    let binding = format!(
         "seating binding: horizon base `{horizon}`; {pools_seatable} pool(s) seatable of \
          {pool_count} in this library, examined over {members_total} member(s); \
          {documents} document(s) read, {opened} `.nbt` opened; {declared} waterline \
@@ -226,6 +289,37 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
         documents = library.documents,
         opened = library.nbt_opened,
     );
+    if json {
+        // One object, on stdout, carrying exactly what the table carries — the
+        // per-pool verdicts, every reason with its code and its shape, and every
+        // binding count. A `--shape` string rather than a substring of the
+        // message, so a caller narrowing this set says which member of it it
+        // means.
+        let doc = serde_json::json!({
+            "check": "seating",
+            "horizon_base": horizon,
+            "pools": pool_json,
+            "binding": {
+                "pools": pools.len(),
+                "pools_seatable": pools_seatable,
+                "members": members_total,
+                "documents_read": library.documents,
+                "nbt_opened": library.nbt_opened,
+                "waterlines_declared": declared,
+                "waterlines_borne_out": borne_out,
+                "line": binding,
+            },
+        });
+        println!(
+            "{}",
+            serde_json::to_string(&doc).expect("the verdict serializes")
+        );
+    } else {
+        for line in &lines {
+            println!("{line}");
+        }
+        println!("{binding}");
+    }
 
     // The vacuity guard, stated over the objects rather than over an intention:
     // a run that examined no pool has judged nothing, and one that read fewer
@@ -335,6 +429,78 @@ fn run_library_audit(dir: &Path, report: Option<&Path>, json: bool) -> ExitCode 
     }
 }
 
+/// **`DW0887` at the admission event** — one asset, its own document, its own
+/// bytes.
+///
+/// `meta_path` is the prefab document this asset is described by: the `.json`
+/// beside a single template, and the manifest itself for a tile set (a manifest
+/// IS the prefab document). `grid` is the assembled cells the arm already built,
+/// so this opens nothing a second time and cannot disagree with what the rest of
+/// the audit judged.
+///
+/// The rule itself is `compiler::seating::waterline_reason`, unchanged and
+/// unduplicated: a declaration cannot be a fiction to the library sweep and a
+/// fact to the per-file audit. What this function adds is the *binding* — the
+/// state, the denominator and the numerator, printed on every run including the
+/// run that finds nothing to check.
+fn waterline_door(
+    meta_path: &Path,
+    grid: &crate::grammar::model::VoxelModel,
+    nbt_opened: usize,
+) -> (audit::WaterlineBinding, Option<Diagnostic>) {
+    use crate::compiler::seating::{PieceFacts, waterline_reason};
+
+    let meta = match delvewright_dsl::prefab::PrefabMeta::read(meta_path) {
+        // No document beside the bytes yet: an ingested piece is audited before
+        // its metadata exists, and there is nothing here to hold to anything.
+        Ok(None) => return (audit::WaterlineBinding::no_document(), None),
+        Ok(Some(m)) => m,
+        // A document nobody can read is NOT a document with no waterline. The
+        // same argument `DW0783` makes about the contract: the silence would
+        // read as the pass.
+        Err(e) => {
+            return (
+                audit::WaterlineBinding {
+                    state: "unreadable",
+                    declarations: 0,
+                    borne_out: 0,
+                    refused: 0,
+                    nbt_opened,
+                    top_authored_water_y: None,
+                },
+                Some(Diagnostic::error(
+                    crate::compiler::seating::DW_WATERLINE_FICTION.id(),
+                    format!(
+                        "{}: this prefab document does not parse, so its `waterline_y` — if it \
+                         declares one — could not be held to the bytes beside it. A document \
+                         nobody can read is not a document with no waterline: {e}",
+                        meta_path.display()
+                    ),
+                )),
+            );
+        }
+    };
+    let facts = PieceFacts::measure(&meta, grid, nbt_opened);
+    let declarations = usize::from(facts.declared_waterline.is_some());
+    let reason = waterline_reason(&facts);
+    let refused = usize::from(reason.is_some());
+    (
+        audit::WaterlineBinding {
+            state: if declarations == 0 {
+                "undeclared"
+            } else {
+                "checked"
+            },
+            declarations,
+            borne_out: declarations - refused,
+            refused,
+            nbt_opened,
+            top_authored_water_y: facts.top_water_y,
+        },
+        reason.map(|r| Diagnostic::error(r.code.id(), r.full)),
+    )
+}
+
 fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: bool) -> ExitCode {
     // **A whole library sweeps rather than audits one file.** `DW0887` is a
     // property of a prefab document and its `.nbt` read together, so it binds
@@ -367,7 +533,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
     // prefab library and what the admission procedure runs on every piece — and
     // it is bound in EVERY arm, because the arm it was missing from is the one a
     // composed zone arrives through.
-    let (mut rep, diags, door, footprint) =
+    let (mut rep, diags, door, footprint, waterline) =
         if nbt.extension().and_then(|s| s.to_str()) == Some("json") {
             let (set, tiles) = match read_zone(nbt) {
                 Ok(pair) => pair,
@@ -381,7 +547,8 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             // exactly as they do for one template. Tiling is packaging.
             let grid = settling::zone_grid(set.size, &tiles);
             let door = Door::open(&grid, tiles.len(), nbt);
-            (rep, diags, door, audit::footprint_class(nbt))
+            let waterline = waterline_door(nbt, &grid, tiles.len());
+            (rep, diags, door, audit::footprint_class(nbt), waterline)
         } else {
             // ...and pointing it at ONE tile of a set is refused. The verdict would
             // be correct about that file and would be read as a verdict about the
@@ -410,8 +577,16 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             };
             let (rep, diags) = audit(&nbt.display().to_string(), &structure, &allow);
             let meta_path = nbt.with_extension("json");
-            let door = Door::open(&crate::admit::spatial::grid(&structure), 1, &meta_path);
-            (rep, diags, door, audit::footprint_class(&meta_path))
+            let grid = crate::admit::spatial::grid(&structure);
+            let door = Door::open(&grid, 1, &meta_path);
+            let waterline = waterline_door(&meta_path, &grid, 1);
+            (
+                rep,
+                diags,
+                door,
+                audit::footprint_class(&meta_path),
+                waterline,
+            )
         };
     for d in &diags {
         d.print(json);
@@ -428,7 +603,20 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
         d.print(json);
     }
     eprintln!("{}", footprint.line());
-    let contract_failed = door.is_refusal() || footprint.is_refusal();
+    // `DW0887` at the SAME event, and for the same reason. spec-0060 §5 says
+    // this code binds "wherever a prefab document and its `.nbt` are read
+    // together"; the only door that ran it was the whole-library sweep, and
+    // nothing hands this command a library — the admission procedure and the
+    // content repository's palette job both walk the pieces one file at a time.
+    // Measured before this line existed: a fiction planted in a document passed
+    // 39 audits of 39 with the code appearing zero times in their output.
+    let (waterline, wl_finding) = waterline;
+    if let Some(d) = &wl_finding {
+        d.print(json);
+    }
+    eprintln!("{}", waterline.line(&rep.asset));
+    let contract_failed = door.is_refusal() || footprint.is_refusal() || waterline.is_refusal();
+    rep.record_waterline(waterline, wl_finding.as_ref());
     rep.record_contract_door(&door);
     let out_json = rep.to_json();
     if let Some(p) = report {
@@ -669,6 +857,152 @@ fn run_anchor(nbt: &Path, name: &str, args: AnchorArgs, json: bool) -> ExitCode 
         Some(Some(r)) => eprintln!("annotated anchor {name} (role {r})"),
         Some(None) => eprintln!("annotated anchor {name} (no role)"),
         None => eprintln!("annotated anchor {name}"),
+    }
+    ExitCode::SUCCESS
+}
+
+/// **`delvec prefab planes <asset> [--write]`** — the piece's own walk plane and
+/// waterline, measured off its bytes (spec-0060 §4).
+///
+/// # Why this verb exists
+///
+/// `walk_y` has no default and is not optional on a base that derives an origin
+/// from it, and `waterline_y` is a claim `DW0887` holds to the bytes. Every
+/// generator writes both by reading them back out of the blocks it just laid.
+/// A piece **no generator wrote** — an ingested hero asset, a hand-authored room
+/// — had no way to state either except by hand, and a census derivable from the
+/// object is never hand-written. Measured on the shipped content library at the
+/// time this landed: five documents declare no `walk_y`, and all five are pieces
+/// with no generator (`hello-room` and the four `hero-*`). None of them is in a
+/// pool, and all five can be seated directly by `areas[].prefab`, which is the
+/// same derivation.
+///
+/// # It is the same rules, not a fourth reading of them
+///
+/// The walk plane is `schem::nav::standable_cells`'s lowest plane — the rule the
+/// seating derivation, the generators' `prefab_invariants::walkplane` and this
+/// verb all mean — and the waterline is `compiler::seating::PieceFacts`'s top
+/// authored water block, which is the number `DW0887` checks a declaration
+/// against. So a document this verb writes is a document that check passes, by
+/// construction rather than by agreement.
+///
+/// A zone that ships as a tile set is measured as ONE assembled building, for
+/// the reason `lighting` and `audit` do: a fifth of a building's walk plane is
+/// not the building's, and answering confidently about it is the shape those two
+/// commands already refuse.
+fn run_planes(input: &Path, write: bool, json: bool) -> ExitCode {
+    let (meta_path, grid, opened) = if input.extension().and_then(|s| s.to_str()) == Some("json") {
+        match read_zone(input) {
+            Ok((set, tiles)) => {
+                let n = tiles.len();
+                (
+                    input.to_path_buf(),
+                    settling::zone_grid(set.size, &tiles),
+                    n,
+                )
+            }
+            Err(e) => return input_err(&e, json),
+        }
+    } else {
+        if let Err(code) = refuse_fragment(
+            input,
+            "measure",
+            "report one tile's lowest floor as the building's walk plane",
+            json,
+        ) {
+            return code;
+        }
+        let bytes = match std::fs::read(input) {
+            Ok(b) => b,
+            Err(e) => return input_err(&format!("cannot read {}: {e}", input.display()), json),
+        };
+        let structure = match Structure::read(&bytes) {
+            Ok(s) => s,
+            Err(e) => return input_err(&format!("cannot parse {}: {e}", input.display()), json),
+        };
+        (
+            input.with_extension("json"),
+            crate::admit::spatial::grid(&structure),
+            1,
+        )
+    };
+
+    let standable = crate::schem::nav::standable_cells(&grid);
+    let walk_y = standable.iter().map(|c| c[1]).min();
+    let cells_at_walk = walk_y.map_or(0, |w| standable.iter().filter(|c| c[1] == w).count());
+    let mut water_cells = 0usize;
+    let mut waterline_y: Option<i32> = None;
+    for pos in grid.region().positions() {
+        let Some(state) = grid.get(pos) else { continue };
+        if state.name == "minecraft:water" {
+            water_cells += 1;
+            waterline_y = Some(waterline_y.map_or(pos[1], |t: i32| t.max(pos[1])));
+        }
+    }
+
+    // The report states the DENOMINATOR beside each number: a walk plane is the
+    // lowest standable plane, so one stray cell one course down is the whole
+    // answer, and the count of cells standing on the plane is what says whether
+    // the number is a floor or a tuft of grass in the sea.
+    let report = serde_json::json!({
+        "asset": input.display().to_string(),
+        "nbt_opened": opened,
+        "walk_y": walk_y,
+        "waterline_y": waterline_y,
+        "binding": {
+            "standable_cells": standable.len(),
+            "cells_on_the_walk_plane": cells_at_walk,
+            "water_cells": water_cells,
+        },
+    });
+    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+
+    // A piece with no standable cell anywhere has no walk plane, and writing
+    // some number for it would be inventing the measurement. The generators
+    // panic here; a command refuses and says which count was zero.
+    let Some(w) = walk_y else {
+        Diagnostic::error(
+            DW_UNBOUND,
+            format!(
+                "{}: no standable cell anywhere in {} cell(s) of extent {:?}, so this piece has \
+                 no walk plane to declare and none was invented. A body's feet need a cell that \
+                 passes a body, open above, over a block that supports one; a piece that offers \
+                 none is solid, flooded, or floored in something a body falls through",
+                input.display(),
+                grid.region().positions().count(),
+                grid.region().size,
+            ),
+        )
+        .print(json);
+        return ExitCode::from(EXIT_FAIL);
+    };
+
+    if write {
+        // The same refusal `lighting --write` makes, and for the same reason: a
+        // skeleton written here would assert `source: unknown` about a piece
+        // whose provenance is in the file beside it.
+        let mut doc = match PrefabMeta::read(&meta_path) {
+            Ok(Some(d)) => d,
+            Ok(None) => return no_provenance_err(input, &meta_path, json),
+            Err(e) => return input_err(&e, json),
+        };
+        doc.walk_y = Some(w);
+        // A piece that authors no water writes NO key: a waterline over no water
+        // is `DW0887`, and leaving a stale one behind would manufacture one.
+        doc.waterline_y = waterline_y;
+        if let Err(e) = write_file(&meta_path, doc.to_json().as_bytes()) {
+            return output_err(&format!("cannot write {}: {e}", meta_path.display()), json);
+        }
+        eprintln!(
+            "planes binding: wrote `walk_y: {w}` ({cells_at_walk} cell(s) stand on that plane, of \
+             {total} standable) and {wl} into {path}",
+            total = standable.len(),
+            wl = match waterline_y {
+                Some(y) => format!("`waterline_y: {y}` ({water_cells} water cell(s))"),
+                None => "no `waterline_y` (this piece authors no water)".to_string(),
+            },
+            path = meta_path.display(),
+        );
     }
     ExitCode::SUCCESS
 }
