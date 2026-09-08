@@ -65,6 +65,7 @@ fn raw_with_quests(quests: String) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -73,7 +74,7 @@ fn every_tier_keyword_validates_at_v08() {
     for tier in ["ordinary", "elite", "boss"] {
         let raw = raw_with_quests(quests_with_actor_tier(
             &format!(",\n         \"tier\": \"{tier}\""),
-            "0.21.2",
+            "0.22.0",
         ));
         let d = check_campaign(&raw);
         // `DW0469` is the fixture's own pre-existing advisory (a fighting actor

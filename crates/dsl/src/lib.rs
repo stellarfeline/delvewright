@@ -19,6 +19,7 @@ pub mod blocks;
 pub mod blockshape;
 pub mod canonical;
 pub mod chrome;
+pub mod design;
 pub mod detailplan;
 pub mod diagnostic;
 pub mod effects;
@@ -47,6 +48,10 @@ pub mod validate;
 
 pub use canonical::to_canonical_string;
 pub use chrome::{Chrome, ChromeString, validate_chrome_namespace};
+pub use design::{
+    CONCEPT_DIR, DesignContent, IMAGE_EXTENSIONS, REFERENCE_DIR, REFERENCE_DIRS, Reference,
+    is_image_extension,
+};
 pub use detailplan::{Detail, DetailPlanContent, FLOOR_COURSE, Frame, bound_places, is_bound};
 pub use diagnostic::{Diagnostic, DwCode, ExitTier, Group, Severity, Subject, codes};
 pub use effects::{

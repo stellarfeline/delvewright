@@ -12,6 +12,8 @@
         "prefab_pool": "pool/stone-keep"
       }
     ],
+    "time": "noon",
+    "weather": "clear",
     "min_players": 2,
     "premise": "The shrine door is barred by two wards in two separate rooms. One traveler cannot reach both in time; a pair can.",
     "seed": 20260802,
@@ -19,6 +21,6 @@
     "theme": "A keep whose inner shrine answers only to two hands at once.",
     "title": "The Two Levers"
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

@@ -8,12 +8,14 @@
         "prefab": "prefab/hello-room"
       }
     ],
+    "time": "noon",
+    "weather": "clear",
     "premise": "A lethal volume fixture (spec-0031): one declared box that kills whatever enters it, so the generated PackTest template runs against a live server.",
     "seed": 20260729,
     "target_minutes": 5,
     "theme": "A keep whose floor is not to be trusted.",
     "title": "The Drop"
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

@@ -37,7 +37,7 @@ fn npcs_doc(base_entity: &str) -> String {
 /// at a chosen place relative to a body.
 fn edits_doc(offset: [i32; 3], note: &str) -> String {
     serde_json::json!({
-        "dsl_version": "0.21.2",
+        "dsl_version": "0.22.0",
         "campaign_id": "hello-world",
         "stage": "world-edits",
         "content": { "batches": [ {
@@ -71,6 +71,7 @@ fn build(base_entity: &str, edits: Option<String>) -> Result<Vec<Diagnostic>, Bu
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

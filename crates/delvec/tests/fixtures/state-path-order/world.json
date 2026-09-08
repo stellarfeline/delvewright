@@ -8,6 +8,8 @@
         "prefab": "prefab/hello-room"
       }
     ],
+    "time": "noon",
+    "weather": "clear",
     "difficulty": "normal",
     "premise": "The room's labels are read one at a time, and the door out only opens for a party that has read at least one of them.",
     "seed": 20260729,
@@ -15,6 +17,6 @@
     "theme": "A muniment room whose door reads the ledger before it opens.",
     "title": "The Reading Room"
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

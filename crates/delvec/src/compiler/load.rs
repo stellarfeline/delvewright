@@ -55,12 +55,13 @@ pub const GEOMETRY_BRIEF_FILE: &str = "geometry-brief.json";
 /// A refusal that names only the first half tells an author which six documents
 /// are required and leaves them unable to tell whether the seventh they have not
 /// written is the next thing they owe.
-pub const OPTIONAL_FILES: [&str; 6] = [
+pub const OPTIONAL_FILES: [&str; 7] = [
     WORLD_EDITS_FILE,
     GEOMETRY_BRIEF_FILE,
     LAYOUT_GRAPH_FILE,
     SITE_PLAN_FILE,
     DETAIL_PLAN_FILE,
+    DESIGN_FILE,
     WALK_RECORD_FILE,
 ];
 
@@ -78,6 +79,14 @@ pub const SITE_PLAN_FILE: &str = "site-plan.json";
 
 /// The detail plan's filename (spec-0050 §1) — see [`GEOMETRY_BRIEF_FILE`].
 pub const DETAIL_PLAN_FILE: &str = "detail-plan.json";
+
+/// **The design record's filename** (spec-0061 §2) — see [`GEOMETRY_BRIEF_FILE`].
+///
+/// Optional at this tier and never required by the loader: a campaign that has
+/// not reached its design step has none, and that zero is measured and printed
+/// rather than refused. Staging is where a campaign with no approved design is
+/// stopped.
+pub const DESIGN_FILE: &str = "design.json";
 
 /// **The walk record's filename** (spec-0049 §5.4, gated by spec-0050 §2).
 ///
@@ -106,6 +115,12 @@ pub struct LoadedCampaign {
     /// see [`WALK_RECORD_FILE`] for why it travels beside the stage documents
     /// rather than among them.
     pub walk_record: Option<String>,
+    /// The approved reference images under `design/` (spec-0061). Read here
+    /// because it is the one place that knows where the campaign directory is,
+    /// and because the design gate holds the record and the directory to each
+    /// other in both directions — a check that could see only the record would
+    /// be blind to exactly half of what it is for.
+    pub design_files: crate::compiler::design::DesignFiles,
 }
 
 /// Attach the campaign-relative name of the document being read to a filesystem
@@ -303,6 +318,7 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     let layout_graph = optional(read(LAYOUT_GRAPH_FILE))?;
     let site_plan = optional(read(SITE_PLAN_FILE))?;
     let detail_plan = optional(read(DETAIL_PLAN_FILE))?;
+    let design = optional(read(DESIGN_FILE))?;
     // Read outside the `read` closure on purpose: that closure records a
     // filename into `inputs`, and the walk record is not a build input — see
     // [`WALK_RECORD_FILE`].
@@ -311,6 +327,10 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(named(WALK_RECORD_FILE, e)),
     };
+    // The approved images the record is held against. An absent `design/` is
+    // no images; anything else about it that cannot be read is an error naming
+    // the directory, the same rule `optional` carries for a document.
+    let design_files = crate::compiler::design::DesignFiles::read(dir)?;
     let l10n = load_l10n_dir(&dir.join("l10n"))?;
     // i18n v2 (spec-0029): every sidecar is a build input of **every** build, not
     // just of a `--lang` bake — the delve now ships each declared language's lang
@@ -332,8 +352,10 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
             layout_graph,
             site_plan,
             detail_plan,
+            design,
         },
         walk_record,
+        design_files,
         inputs,
         l10n,
     })

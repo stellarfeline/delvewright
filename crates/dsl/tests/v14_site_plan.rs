@@ -42,7 +42,7 @@ use serde_json::{Value, json};
 /// ```
 const GRAPH: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -80,7 +80,7 @@ const GRAPH: &str = r#"{
 
 const BRIEF: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -421,7 +421,7 @@ const PLAN: &str = r#"{
       }
     ]
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "site-plan"
 }"#;
 
@@ -456,6 +456,7 @@ fn campaign(plan: Option<String>, graph: Option<String>, brief: Option<String>) 
         return RawCampaign {
             site_plan: plan,
             detail_plan: None,
+            design: None,
             layout_graph: graph,
             geometry_brief: brief,
             ..base
@@ -489,6 +490,7 @@ fn campaign(plan: Option<String>, graph: Option<String>, brief: Option<String>) 
         ),
         site_plan: plan,
         detail_plan: None,
+        design: None,
         layout_graph: graph,
         geometry_brief: brief,
         ..base
@@ -1264,7 +1266,7 @@ fn an_empty_identity_gate_is_a_stated_finding_not_a_silent_pass() {
 /// The other side of the same emptiness.
 #[test]
 fn an_empty_brief_is_named_as_the_empty_side() {
-    let empty_brief = r#"{"campaign_id":"hello-world","dsl_version":"0.21.2",
+    let empty_brief = r#"{"campaign_id":"hello-world","dsl_version":"0.22.0",
       "stage":"geometry-brief","content":{}}"#;
     let d = check_campaign(&campaign(
         Some(PLAN.to_string()),
@@ -1502,7 +1504,7 @@ fn no_stage_five_verb_calls_a_synthesized_anchor_an_invented_name() {
     // none of their checks were allowed to look at, and passed on the UNREPAIRED
     // tree. That is the constitution's `unfenced` vacuity mode exactly, and it
     // was caught only by red-demoing the repair it was written for.
-    quests["dsl_version"] = json!("0.21.2");
+    quests["dsl_version"] = json!("0.22.0");
     // The fixture is a 0.2.0 document, and the newer stage requires an
     // objective's player-facing `title`.
     quests["content"]["quests"][0]["objectives"][1]["title"] = json!("Leave by the vault");
@@ -1586,7 +1588,7 @@ fn a_shortcut_on_a_derived_world_resolves_its_gate_and_its_unlock() {
     let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
     // `shortcut_checks` is fenced at 0.6.0; below it the declaration is parsed
     // and never examined, which is a green that means nothing.
-    quests["dsl_version"] = json!("0.21.2");
+    quests["dsl_version"] = json!("0.22.0");
     quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
     quests["content"]["shortcuts"] = json!([{
         "id": "shortcut/vault-door",
@@ -1705,7 +1707,7 @@ fn no_refusal_on_a_derived_map_prescribes_a_prefab_document() {
     // 0.2.0, and adding a declaration a check is not allowed to look at is the
     // `unfenced` vacuity mode.
     let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
-    quests["dsl_version"] = json!("0.21.2");
+    quests["dsl_version"] = json!("0.22.0");
     quests["content"]["quests"][0]["objectives"][1]["title"] = json!("Leave by the vault");
     quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
     let c = &mut quests["content"];

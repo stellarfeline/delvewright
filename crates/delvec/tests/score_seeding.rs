@@ -40,6 +40,7 @@ fn parse_dir(dir: &std::path::Path) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     })
     .expect("campaign parses")
 }

@@ -8,12 +8,14 @@
         "prefab": "prefab/hello-room"
       }
     ],
+    "time": "noon",
+    "weather": "clear",
     "premise": "An economy fixture (spec-0032): a named per-player datum the player reads as a currency, a shop whose price is the shared numeric gate, a recovery stake left by on_death, and a lethal volume so the placement table has a death region to key on.",
     "seed": 20260729,
     "target_minutes": 5,
     "theme": "A keeper who sells warmth, and a drop that takes it back.",
     "title": "The Ember Toll"
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

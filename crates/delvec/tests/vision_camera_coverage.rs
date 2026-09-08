@@ -36,7 +36,7 @@ fn read(dir: &std::path::Path, name: &str) -> String {
 fn world_with_mitigation() -> String {
     let w = read(&common::hello_world_dir(), "world.json");
     let mut v: serde_json::Value = serde_json::from_str(&w).unwrap();
-    v["dsl_version"] = serde_json::json!("0.21.2");
+    v["dsl_version"] = serde_json::json!("0.22.0");
     v["content"]["areas"][0]["mitigation"] = serde_json::json!("night-vision");
     serde_json::to_string(&v).unwrap()
 }
@@ -75,6 +75,7 @@ fn night_vision_clock(quests: String, world: String) -> String {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

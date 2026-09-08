@@ -8,6 +8,8 @@
         "prefab": "prefab/hello-room"
       }
     ],
+    "time": "noon",
+    "weather": "clear",
     "difficulty": "normal",
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
@@ -15,6 +17,6 @@
     "theme": "A lonely keep at the edge of the moor.",
     "title": "The Keeper's Door"
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

@@ -25,7 +25,7 @@ fn hw(name: &str) -> String {
 fn quests_doc(volumes: &str, talk_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -78,6 +78,7 @@ fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let mut c = parse_campaign(&raw).expect("campaign parses");
     delvewright_dsl::tag_translatables(&mut c);
@@ -90,7 +91,7 @@ fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
 /// over is untouched and the only thing this changes is WHICH ARM builds the
 /// world.
 const ONE_BATCH: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {

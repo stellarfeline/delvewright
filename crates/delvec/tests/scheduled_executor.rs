@@ -218,7 +218,7 @@ fn read_hw(name: &str) -> String {
 ///   (`at_ticks: 20`) step, so the timeline is reached through a scheduled
 ///   bundle — the nested-recursion case.
 const SCHEDULED_QUESTS: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -272,6 +272,7 @@ fn build_scheduled_hello_world() -> BuildOutput {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     build_campaign(&campaign, &BTreeMap::new())

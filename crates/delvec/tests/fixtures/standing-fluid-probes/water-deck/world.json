@@ -8,6 +8,8 @@
         "prefab": "prefab/hello-room"
       }
     ],
+    "time": "noon",
+    "weather": "clear",
     "difficulty": "normal",
     "premise": "spec-0038 probe 1: the lift fixture with both car-floor fill-region blocks changed to minecraft:water. If this builds green, the completability model accepts a water surface as standable ground the party is teleported onto - the model does not know a fluid from a floor.",
     "seed": 20260729,
@@ -15,6 +17,6 @@
     "theme": "A keep whose two landings are joined by one cage on a chain.",
     "title": "Probe: a deck of water"
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

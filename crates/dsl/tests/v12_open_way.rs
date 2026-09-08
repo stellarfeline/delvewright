@@ -62,6 +62,7 @@ fn raw(quests: String) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -93,7 +94,7 @@ fn open_way_carries_the_whole_gate() {
          "forbids_flags": ["flag/keeper-spoke"],
          "requires_state": []
        } }"#;
-    let c = parse_campaign(&raw(quests_doc("0.21.2", gated))).expect("it parses");
+    let c = parse_campaign(&raw(quests_doc("0.22.0", gated))).expect("it parses");
     let effects = &c.quests.content.quests[0]
         .on_objective_complete
         .iter()
@@ -125,7 +126,7 @@ fn an_open_way_has_no_region_no_block_and_no_direction() {
         let effect = format!(
             r#"{{ "type": "open-way", "piece": "prefab/hello-room", "way": "w", {extra} }}"#
         );
-        let found = codes(quests_doc("0.21.2", &effect));
+        let found = codes(quests_doc("0.22.0", &effect));
         assert!(
             found.iter().any(|c| c == "DW0100"),
             "`{extra}` was accepted or dropped rather than refused: {found:?}"

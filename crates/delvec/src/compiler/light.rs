@@ -1013,8 +1013,8 @@ pub fn reachable_time_weather(c: &Campaign) -> (Vec<WorldTime>, Vec<WorldWeather
             WorldWeather::Thunder => 2,
         });
     };
-    add_t(c.world.content.time.unwrap_or_default(), &mut times);
-    add_w(c.world.content.weather.unwrap_or_default(), &mut weathers);
+    add_t(c.world.content.time, &mut times);
+    add_w(c.world.content.weather, &mut weathers);
     // Quest effects — every root, every depth. This scan hand-listed three of the
     // five roots AND was shallow, so a `set-time` inside a `sequence` step or an
     // `on_respawn` bundle was invisible to it. Under-reporting the reachable state
