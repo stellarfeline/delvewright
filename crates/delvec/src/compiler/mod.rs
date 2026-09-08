@@ -35,6 +35,7 @@
 //! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.
 //! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
+//! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
 //! - [`horizon`]: the one place a resolved `horizon` becomes the physical facts the rest of the compiler reads.
 //! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
@@ -102,6 +103,7 @@ pub mod faces;
 pub mod failure;
 pub mod flow;
 pub mod gates;
+pub mod guarantee;
 pub mod gym;
 pub mod horizon;
 pub mod integrity;

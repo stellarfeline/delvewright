@@ -37,6 +37,7 @@ const EXIT_OUTPUT: u8 = 3;
 pub fn run(args: PrefabArgs, prefabs_dir: &Path, json: bool) -> ExitCode {
     match args.command {
         PrefabCommand::Seating { horizon } => run_seating(&horizon, prefabs_dir, json),
+        PrefabCommand::Anchors { pool } => run_anchors(pool.as_deref(), prefabs_dir, json),
         PrefabCommand::Audit {
             nbt,
             allowlist,
@@ -355,6 +356,138 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
     } else {
         ExitCode::from(EXIT_FAIL)
     }
+}
+
+/// **`delvec prefab anchors`**: which anchors does a pool guarantee, answered
+/// from the library alone.
+///
+/// The question is asked at the third authoring step, where the campaign that
+/// would carry it does not exist yet, so this reads no campaign at all. What it
+/// prints per pool is the guarantee and its denominator: the members, the
+/// `entry` member every draw seats, the anchor names that member declares, and
+/// every other name in the pool's vocabulary with the carrier it would have to
+/// arrive on and the role that decides when the layout seats it. The verdict
+/// comes from [`crate::compiler::guarantee`], which is the same implementation
+/// the compiler's own `DW0889` reports from, so this command and the build
+/// cannot describe different pools.
+///
+/// It is a REPORT, not a gate: a pool with a small guarantee is an ordinary
+/// pool, and exiting non-zero over one would make the answer unaskable. The one
+/// thing it does refuse is a question about nothing — a library with no pools,
+/// or a `--pool` this library does not declare.
+fn run_anchors(pool: Option<&str>, dir: &Path, json: bool) -> ExitCode {
+    let registry = match crate::compiler::registry::PrefabRegistry::load_dir(dir) {
+        Ok(r) => r,
+        Err(e) => {
+            return input_err(
+                &format!("cannot read prefabs dir {}: {e}", dir.display()),
+                json,
+            );
+        }
+    };
+    // A document this engine cannot parse is ABSENT from the registry, so a
+    // report that did not say so would describe a smaller library as a whole one.
+    let unparsed = registry
+        .load_diagnostics()
+        .iter()
+        .filter(|d| d.severity == delvewright_dsl::Severity::Error)
+        .count();
+    for d in registry.load_diagnostics() {
+        if d.severity == delvewright_dsl::Severity::Error {
+            eprintln!("{} [error] {}", d.code, d.message);
+        }
+    }
+
+    let all = registry.pool_ids();
+    let pools: Vec<String> = match pool {
+        Some(p) => {
+            if !all.iter().any(|q| q == p) {
+                return input_err(
+                    &format!(
+                        "this library declares no pool `{p}`. It declares {}: {}",
+                        all.len(),
+                        if all.is_empty() {
+                            "none".to_string()
+                        } else {
+                            all.join(", ")
+                        }
+                    ),
+                    json,
+                );
+            }
+            vec![p.to_string()]
+        }
+        None => all.clone(),
+    };
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut pool_json: Vec<serde_json::Value> = Vec::new();
+    let mut members_total = 0usize;
+    let mut vocab_total = 0usize;
+    let mut guaranteed_total = 0usize;
+    for id in &pools {
+        let Some(g) = crate::compiler::guarantee::pool_guarantee(&registry, id) else {
+            continue;
+        };
+        members_total += g.members.len();
+        vocab_total += g.vocabulary.len();
+        guaranteed_total += g.unconditional.len();
+        lines.extend(crate::compiler::guarantee::report_lines(&g));
+        pool_json.push(crate::compiler::guarantee::report_json(&g));
+    }
+
+    let binding = format!(
+        "anchor-guarantee binding: {n} of {total} pool(s) in this library reported, examined \
+         over {members} member(s) declaring {vocab} anchor name(s), of which {guar} are \
+         guaranteed by the layout; {unparsed} document(s) in this library did not parse.",
+        n = pool_json.len(),
+        total = all.len(),
+        members = members_total,
+        vocab = vocab_total,
+        guar = guaranteed_total,
+    );
+
+    if json {
+        let doc = serde_json::json!({
+            "check": "anchors",
+            "pools": pool_json,
+            "binding": {
+                "pools_in_library": all.len(),
+                "pools_reported": pool_json.len(),
+                "members": members_total,
+                "vocabulary": vocab_total,
+                "guaranteed": guaranteed_total,
+                "documents_unparsed": unparsed,
+                "line": binding,
+            },
+        });
+        println!(
+            "{}",
+            serde_json::to_string(&doc).expect("the report serializes")
+        );
+    } else {
+        for line in &lines {
+            println!("{line}");
+        }
+        println!("{binding}");
+    }
+
+    // The vacuity guard, over the objects rather than over an intention: a run
+    // that reported no pool has answered nothing.
+    if pool_json.is_empty() {
+        Diagnostic::error(
+            DW_UNBOUND,
+            format!(
+                "the anchor-guarantee report examined ZERO pools in {} — an empty report is the \
+                 unbound vacuity mode, not an answer. A prefab library declares its pools in \
+                 `pools.json`",
+                dir.display()
+            ),
+        )
+        .print(json);
+        return ExitCode::from(EXIT_FAIL);
+    }
+    ExitCode::SUCCESS
 }
 
 /// **`delvec prefab audit <library dir>`**: `DW0887` over every document in a
