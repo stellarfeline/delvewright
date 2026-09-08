@@ -84,6 +84,14 @@ on:
     paths:
       - versions.toml
       - crates/dsl/Cargo.toml
+  # THE REMEDY THIS FILE'S OWN GATE NAMES has to be reachable. When
+  # `tools/check-dsl-version-published.py` refuses a bump because the number
+  # being retired never landed, the fix is to publish that number — and if no run
+  # was ever created for it, or its run is too old to re-run, a narrowed trigger
+  # would leave no way to do it at all short of an engine release. This is that
+  # way: it runs `plan` against the chosen ref and reaches `publish` only when the
+  # registry does not already hold that ref's number, under the same approval.
+  workflow_dispatch:
 
 permissions:
   contents: read

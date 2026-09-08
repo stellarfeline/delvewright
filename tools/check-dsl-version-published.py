@@ -49,6 +49,13 @@ is an exit 2 instead. The index lookup is bind-tested (`tools/lib/crates_index.p
 before any "not published" is believed, so an unreachable registry names itself
 rather than reddening a bump for the wrong reason.
 
+WHERE IT BINDS, SAID PLAINLY: on a pull request, where the tree and `origin/main`
+are two different answers. On a push to `main` the base IS the tree, so the count
+is 0 and this judges nothing — by then the bump has already been judged, on the
+pull request that carried it. That is the only merge path this repository has
+(CLAUDE.md: PR-based flow even solo); a commit pushed straight to `main` is
+outside what this can see, and the next bump's pull request is where it surfaces.
+
 Usage:
   python3 tools/check-dsl-version-published.py [--base origin/main] [--repo DIR]
 
