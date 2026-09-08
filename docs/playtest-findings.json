@@ -2532,6 +2532,16 @@
       "note": "Reported by the round that turned the walk-plane requirement on for every base, which found that turning it on made no difference on `valley` because nothing legal reaches it. The round was told to report rather than to widen the rule or to add a probe that hides the gap behind another refusal, and did. Closed by making `compiler::seating::check` read the site plan's own resolver and ask each placed box the same question a prefab is asked, through one predicate (`seating::feet_under_the_sea`), and by giving the binding line a numerator and a denominator per placement model. Reproduced before the change and after, on the gallery's site-plan overlay with nothing altered but `horizon: ocean`: `delvec analyze` exited 0 with `0 of 0 area(s)` while `node/undercroft` stood at y=60, two courses under the sea plane at y=62, and the build then refused it at DW0344 after the assembly; after, `analyze` exits 1 at DW0886 naming the place, and the line reads `site plan: 7 of 7 box(es) judged against this base`. The binding counts the plan's boxes — the objects the new arm quantifies over — and its precondition is whether the campaign declares a site plan at all, both measured over the campaign source. On the gallery: 7 boxes on the site-plan point, 0 boxes and 0 preconditions on the primary and on both horizon overlays, which place with `areas[]` and are gal-02's subject.",
       "round": null,
       "triage": "capability"
+    },
+    {
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "a reach objective whose anchor sits at a killing volume cannot be declared at any radius once a body has a width: at radius 2 the widened keep-out ring around the volume refuses the footprint, and the remedy that refusal names — reduce the radius — is refused in turn because a 3x3x3 around that anchor holds no cell a body can stand on, the surrounding cells being the pit the volume fills; the two rules do not know about each other, and the cells named include a doorway the fixture did not add",
+      "general_form": "where two placement rules constrain the same cells, the remedy each names is checked against the other before it is offered: a configuration refused by both at every value of the parameter they disagree about is refused once, in one diagnostic, naming what would have to move rather than sending the creator around a cycle",
+      "id": "gal-04",
+      "note": "Measured three ways rather than reasoned about, on the branch that widens the lethal volume: the engine on main builds the same fixture with the rule silent; the branch's engine without the added side door refuses with the code that says the widening sealed the only way through; and following the first refusal's own remedy to radius 1 produces a third code about a volume with nowhere to stand. This is the shape spec-0060 was written for — three diagnostics each naming a remedy another refuses — and it is queued rather than repaired because the resolution is a design ruling, not an integration.",
+      "round": null,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
