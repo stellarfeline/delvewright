@@ -146,11 +146,13 @@ impl PoolGuarantee {
             .map(|m| format!("`{}` (role `{}`)", m.prefab, m.role))
             .collect();
         let all_filler = !carriers.is_empty() && carriers.iter().all(|m| m.role == "connector");
+        // Said without naming "this campaign", because the same sentence is
+        // printed by `delvec prefab anchors`, where there is no campaign at all.
         let tail = if all_filler {
             "which the layout seats only as a filler draw, so whether it is in the built world is \
-             settled by this area's seed"
+             settled by the area's seed"
         } else {
-            "which the layout seats only when this campaign requires an anchor that piece carries"
+            "which the layout seats only when a campaign requires an anchor that piece carries"
         };
         format!("declared by {}, {tail}", names.join(", "))
     }

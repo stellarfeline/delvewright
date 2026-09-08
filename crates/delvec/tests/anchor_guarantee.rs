@@ -427,7 +427,7 @@ fn a_room_members_anchor_is_reported_as_seated_only_on_demand() {
         .expect("the room's anchor is outside the guarantee");
     assert!(
         d.message
-            .contains("only when this campaign requires an anchor that piece carries"),
+            .contains("only when a campaign requires an anchor that piece carries"),
         "the on-demand half, not the filler half: {}",
         d.message
     );
