@@ -461,18 +461,20 @@ pub fn solve_area(
     let mut sorted_anchors: Vec<String> = required_anchors.to_vec();
     sorted_anchors.sort();
     sorted_anchors.dedup();
-    let mut required_prefabs = required_carriers(registry, pool_id, members, &entry_prefab, &sorted_anchors)
-        .map_err(|anchor| {
-            SolveError::new(
-                DW_UNSATISFIABLE_ANCHOR,
-                format!(
-                    "prefab pool `{pool_id}` has no non-entry piece providing required anchor \
+    let mut required_prefabs =
+        required_carriers(registry, pool_id, members, &entry_prefab, &sorted_anchors).map_err(
+            |anchor| {
+                SolveError::new(
+                    DW_UNSATISFIABLE_ANCHOR,
+                    format!(
+                        "prefab pool `{pool_id}` has no non-entry piece providing required anchor \
                      `{anchor}` — either the campaign references an anchor the pool cannot supply \
                      (use one a pool piece carries), or the pool is missing a piece that defines \
                      `{anchor}` (add it to the pool metadata)"
-                ),
-            )
-        })?;
+                    ),
+                )
+            },
+        )?;
 
     // Order required pieces so single-socket dead-ends come last, boss-hall
     // absolutely last (farthest terminal). Through-rooms (≥2 sockets) go first so

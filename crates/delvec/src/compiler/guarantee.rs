@@ -121,7 +121,10 @@ impl PoolGuarantee {
     /// The members eligible as filler draws (`connector` role).
     #[must_use]
     pub fn fillers(&self) -> Vec<&Member> {
-        self.members.iter().filter(|m| m.role == "connector").collect()
+        self.members
+            .iter()
+            .filter(|m| m.role == "connector")
+            .collect()
     }
 
     /// Every member that declares `anchor`, entry included.
@@ -175,7 +178,10 @@ pub fn pool_guarantee(prefabs: &PrefabRegistry, pool: &str) -> Option<PoolGuaran
         .and_then(|e| members.iter().find(|m| &m.prefab == e))
         .map(|m| m.anchors.clone())
         .unwrap_or_default();
-    let vocabulary: BTreeSet<String> = members.iter().flat_map(|m| m.anchors.iter().cloned()).collect();
+    let vocabulary: BTreeSet<String> = members
+        .iter()
+        .flat_map(|m| m.anchors.iter().cloned())
+        .collect();
     Some(PoolGuarantee {
         pool: pool.to_string(),
         members,
@@ -278,11 +284,21 @@ pub fn names_used(c: &Campaign) -> BTreeSet<String> {
         serde_json::to_value(&c.quest_plan).ok(),
         serde_json::to_value(&c.quests).ok(),
         serde_json::to_value(&c.dialogue).ok(),
-        c.world_edits.as_ref().and_then(|e| serde_json::to_value(e).ok()),
-        c.geometry_brief.as_ref().and_then(|e| serde_json::to_value(e).ok()),
-        c.layout_graph.as_ref().and_then(|e| serde_json::to_value(e).ok()),
-        c.site_plan.as_ref().and_then(|e| serde_json::to_value(e).ok()),
-        c.detail_plan.as_ref().and_then(|e| serde_json::to_value(e).ok()),
+        c.world_edits
+            .as_ref()
+            .and_then(|e| serde_json::to_value(e).ok()),
+        c.geometry_brief
+            .as_ref()
+            .and_then(|e| serde_json::to_value(e).ok()),
+        c.layout_graph
+            .as_ref()
+            .and_then(|e| serde_json::to_value(e).ok()),
+        c.site_plan
+            .as_ref()
+            .and_then(|e| serde_json::to_value(e).ok()),
+        c.detail_plan
+            .as_ref()
+            .and_then(|e| serde_json::to_value(e).ok()),
     ];
     for doc in docs.into_iter().flatten() {
         collect_strings(&doc, &mut out);
@@ -347,7 +363,11 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (GuaranteeBinding, Vec<D
 /// Every pool area of a campaign, with its guarantee computed. `used` is
 /// [`names_used`]'s answer, passed in so one walk serves every area.
 #[must_use]
-pub fn areas(c: &Campaign, prefabs: &PrefabRegistry, used: &BTreeSet<String>) -> Vec<AreaGuarantee> {
+pub fn areas(
+    c: &Campaign,
+    prefabs: &PrefabRegistry,
+    used: &BTreeSet<String>,
+) -> Vec<AreaGuarantee> {
     let mut out = Vec::new();
     for area in &c.world.content.areas {
         let Some(pool_id) = &area.prefab_pool else {
