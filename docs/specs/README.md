@@ -68,3 +68,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0056](spec-0056-one-rule-for-what-a-body-can-pass-through.md) | One rule for what a body can pass through — the block-shape authority shared by walk and compiler | Proposed |
 | [spec-0059](spec-0059-a-box-is-placed-by-its-seam.md) | A box is placed by its seam, and the grid is derived | Proposed |
 | [spec-0060](spec-0060-a-horizon-and-a-piece-set-are-a-pair.md) | A horizon and a piece set are a pair | Proposed |
+| [spec-0061](spec-0061-the-approved-hour-is-the-built-hour.md) | The approved hour is the built hour — the design record states the sky, and the world is held to it | Proposed |
