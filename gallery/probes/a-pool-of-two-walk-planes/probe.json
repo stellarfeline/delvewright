@@ -13,8 +13,8 @@
       "path": "/content/areas/-",
       "value": {
         "id": "area/slipway",
-        "name": "The Slipway",
         "mitigation": "night-vision",
+        "name": "The Slipway",
         "prefab_pool": "pool/gallery-two-planes"
       }
     },
