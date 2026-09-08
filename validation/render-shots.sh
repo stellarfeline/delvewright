@@ -81,7 +81,7 @@ delvec_arg=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --delvec) delvec_arg="$2"; shift 2;;
-    -h|--help) sed -n '2,50p' "$0"; exit 0;;
+    -h|--help) sed -n '2,73p' "$0"; exit 0;;
     -*) echo "render-shots: unknown argument \`$1\`" >&2; exit 2;;
     *)
       if [ -z "$build_dir" ]; then build_dir="$1"
