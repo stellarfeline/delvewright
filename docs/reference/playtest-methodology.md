@@ -393,13 +393,39 @@ classes in this session is the override, not a new finding.*
 with the triage rule 4 requires. The gate's red list is carried into the round
 summary item by item — a red is not permission to stop, it is the list of
 classes she is not protected from — and so is its `INAPPLICABLE` list, which is
-the list of classes this build cannot present to her at all. The gate is
-deliberately **not** a CI status
-check: it is red today by design, and making an honest red list blocking would
-force the one move CLAUDE.md forbids. Its falsification suite is in CI instead
+the list of classes this build cannot present to her at all. The gate over a
+CONTENT campaign is deliberately **not** a CI status check: the ledger is red on
+those today by design, and making an honest red list blocking would force the one
+move CLAUDE.md forbids. Its falsification suite is in CI instead
 (`tools/tests/test_staging_gate.py`), including a tripwire asserting that both
 owner-facing paths still require admission — so the UNRUN shape reds here rather
 than waiting for a reviewer to notice it again.
+
+### The one subject a push can ask this about is the gallery
+
+A gate bound only to the staging event first speaks at the end of the pipeline.
+The engine can grow a campaign it would refuse, and nothing before a creator's
+own build says so — a rule obeyed exactly as well as whoever remembers it, one
+step earlier.
+
+The subject a push HAS is the gallery: engine-owned, built by every revision,
+holding one instance of every surface the DSL declares (spec-0039). So
+`tools/check-gallery-stageable.py` runs this gate on **every point of the gallery
+domain**, as a step of the `gallery (coverage + build + baseline)` job. The points
+are enumerated from `gallery/baseline/manifests.json`, the ladder's own build
+ledger, and cross-checked against the gallery directory; judging fewer points
+than the ladder builds is the `unbound` vacuity, so a disagreement between the
+two refuses rather than shrinking the subject.
+
+The gallery is still never STAGED (spec-0039 §2). Judging a build is a question
+about coverage, not an act of handing anything to anybody — so every admission
+token that step mints goes to its work directory, never into a build tree, and a
+`staging-admission.json` found inside one is a red naming the point.
+
+What it makes true on every push: *the engine's own campaign declares nothing it
+has no live, binding check for.* Its first run found the gallery's site-plan point
+offering a `flask` recovery kit with no `bonfire` to refill it at — `bell-01`,
+`UNBOUND`, correct by construction and unseen for as long as nothing ran the gate.
 
 ### What this ledger is reconstructed from, and what is missing
 

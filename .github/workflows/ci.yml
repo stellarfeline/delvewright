@@ -1128,6 +1128,32 @@ jobs:
         run: |
           python3 tools/gallery-build.py --point site-plan \
             --delvec target/debug/delvec --prefabs gallery-prefabs
+      # `tools/staging-gate.py` decides whether a built delve may be served, and
+      # its only consumer was `tools/playtest-server.sh` — step 9 of the
+      # `/new-delve` page. That binds it to the staging EVENT, correctly, and it
+      # is also the whole of it: nothing asked the question on a push, so the
+      # engine could grow a campaign the gate refuses and the first thing to say
+      # so would be a person at the end of the pipeline. This is that question
+      # asked of the only build a push has — the gallery, in every point of its
+      # domain, enumerated from `gallery/baseline/manifests.json` rather than
+      # from a list typed here, because a job that judges fewer points than the
+      # ladder builds is the `unbound` vacuity wearing a green tick.
+      #
+      # A step of the gallery job rather than a job of its own: every job name is
+      # a required status context, so adding one is a branch-protection change in
+      # its own right (`.github/required-status-checks.txt`), and this needs
+      # exactly what the job already has — the engine built, the gallery's piece
+      # generated, and the full history the baseline comparison reads.
+      #
+      # The gallery is still never STAGED (spec-0039 §2): every admission token
+      # this writes goes to the work directory, never into a build tree, and the
+      # tool refuses if it finds one where a staging path would look.
+      - name: every point the ladder builds can be served
+        if: '!cancelled()'
+        run: |
+          python3 tools/check-gallery-stageable.py \
+            --delvec target/debug/delvec --prefabs gallery-prefabs \
+            --work validation/gallery-stageable
       # §6: the numbers are reported from day one, and no wall-clock value gates
       # — a timing red on a shared runner is an intermittent red, and the debug
       # doctrine forbids re-running those.
