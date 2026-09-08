@@ -666,6 +666,14 @@ pub fn write_tiled_zone(
         serde_json::to_string_pretty(&meta).unwrap() + "\n",
     )
     .unwrap();
+    // The walk plane the zone's own bytes stand a body on. A piece that
+    // declares none is `DW0886` on EVERY base (spec-0060 §4), so a synthetic
+    // piece without it refuses the campaign around it for a reason no test here
+    // is about — the same move [`ocean_prefabs_dir`] makes for a different
+    // check. It is measured through the engine's own reader, never typed, so
+    // the number a fixture gets and the number the seating derivation expects
+    // cannot be two rules that agree.
+    declare_walk_y_at(&dir.join(format!("{id}.json")));
 }
 
 /// Which ocean-legitimate `hello-room` a fixture wants.
@@ -839,6 +847,10 @@ pub fn write_single_prefab(
         serde_json::to_string_pretty(&meta).unwrap() + "\n",
     )
     .unwrap();
+    // The walk plane, measured — see [`write_tiled_zone`]. A piece with no
+    // standable cell gets no key and is refused wherever a campaign seats it,
+    // which is the honest verdict about such a piece.
+    declare_walk_y_at(&dir.join(format!("{id}.json")));
 }
 
 /// The hello-world campaign materialised at `dst`, with its one area rebound to
