@@ -1,0 +1,29 @@
+{
+  "code": "DW0886",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/horizon",
+      "value": "void"
+    },
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/areas/-",
+      "value": {
+        "id": "area/spoil",
+        "name": "The Spoil Heap",
+        "prefab": "prefab/gallery-shard"
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/area.spoil.name",
+      "value": "弃料堆"
+    }
+  ],
+  "units": [],
+  "why": "The same piece and the same silence as `a-piece-with-no-walk-plane`, on the base that derives NOTHING from the number — and refused all the same. `void` states its own datum for an area's origin, so nothing here is blocked on the missing declaration the way an ocean's arithmetic is; what is missing is the piece's own answer to where a body stands on it, and that question has no base-dependent answer. `walk_y` is owed on every base (spec-0060 §4), it has no default and deliberately cannot be given one, and every downstream proof that asks where the party's feet go — nav, lighting, POV, the whole walk — reads a plane that this document does not state. The pairing this probe holds is the one a creator meets first: `delvec prefab seating --horizon void` reports the shape over a library, and a campaign on `void` is refused for it, so the command's answer and the build's answer are one answer. The two probes are deliberately not one. On `ocean` the refusal is also an arithmetic failure — `walk_ref_y - walk_y` has no second operand — and a reader who saw only that probe would carry away that the rule is the ocean's, which is the reading that kept it raised on `ocean` alone while the other two bases computed the same shape and threw it away. Its move is the only one there is and it is the same on every base: declare `walk_y`, the local y of the cell a body's feet occupy on the piece's principal floor, written by the generator that built it because it is a measurement rather than a convention. It declares no unit: `walk_y` is prefab metadata rather than a stage schema unit, and `HorizonBase::void` is bound on the void-horizon overlay."
+}
