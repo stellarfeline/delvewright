@@ -33,8 +33,8 @@ name: engine release (delvec)
 # convention:
 #
 #   1. The credential is a GitHub ENVIRONMENT secret on `crates-io`, an
-#      environment with REQUIRED REVIEWERS. `publish-crates` is the only job that
-#      declares `environment:`, so it is the only job in this repository that can
+#      environment with REQUIRED REVIEWERS. `publish` is the only job here that
+#      declares `environment:`, so it is the only job in this workflow that can
 #      ever see `CARGO_REGISTRY_TOKEN` — and the run physically pauses for a human
 #      approval before that job starts. No workflow edit, no fork PR and no
 #      mis-pushed tag reaches the registry without that click.
@@ -44,13 +44,56 @@ name: engine release (delvec)
 #   3. `identity` also refuses a tag that is not an ancestor of `main`. The
 #      approval prompt shows a ref, not a diff; this is what makes the thing being
 #      published something that went through review and CI (ADR-0008).
-#   4. `publish-crates` runs only after `binaries` has produced every shelf
-#      artifact and after `crates-preflight` has proven the tarballs publishable.
-#      A tree that cannot build its own shelf never burns a crates.io version.
+#   4. `publish` runs only after `binaries` has produced every shelf artifact,
+#      after `shelf` has verified and shelved all of them, and after
+#      `crates-preflight` has proven the tarballs publishable. A tree that cannot
+#      build its own shelf never burns a crates.io version.
 #
 # The one thing the environment gate does NOT cover is CORRECTNESS — it gates
 # access to a token, not the contents of an upload. That is what 2, 3, 4 and
 # `tools/crates-io-publish.sh`'s checksum comparison are for.
+#
+# ONE APPROVAL PUBLISHES BOTH SHELVES, OR NEITHER
+#
+# The two shelves used to be gated differently. `publish-assets` needed only
+# `[identity, binaries]`, declared no environment, and created the GitHub Release
+# and uploaded the whole shelf with no approval, on the argument that assets are
+# reversible; only the registry half waited for a reviewer. So one tag push made
+# the release public while the other half sat at "waiting for review", and either
+# half could land without the other: at `v1.2.0` both Linux shelf jobs failed and
+# nothing reached crates.io, and the mirror image — a public release beside a
+# registry that never got the crates — is the same defect pointing the other way.
+# One decision was being asked for and two independent outcomes were possible.
+#
+# What holds now: `shelf` builds the release as a DRAFT. A draft is not
+# published — it is served only to accounts with write access on this repository,
+# it is not announced, it is absent from the public releases listing and from
+# `gh release download` for everyone else — so filling one publishes nothing and
+# owes no approval. The single gated job `publish` then performs BOTH publishes,
+# in this order:
+#
+#   1. crates.io: a one-way door. A version can never be reused or deleted.
+#   2. undrafting the GitHub Release: one PATCH, idempotent, retryable forever.
+#
+# The irreversible act goes FIRST on purpose. A failure there leaves nothing
+# published anywhere, which is exactly the state one approval is supposed to
+# produce — both or neither. Ordering them the other way would make a crates.io
+# failure leave a published release describing a version the registry never got,
+# and no later act could take that back. The residual window is between a
+# successful upload and a successful undraft: it is one API call wide, it is
+# retried in-job, and if every attempt fails the step prints what is on the
+# registry and names the one remaining act (`gh release edit <tag> --draft=false`),
+# which re-running this workflow also performs — the registry step then finds the
+# version already there, byte-identical, and skips it.
+#
+# A run nobody approves therefore ends with the tag holding a DRAFT release and
+# nothing new on crates.io, and the run says so without anyone reading this file:
+# `shelf` prints the draft state and writes it into the run summary, and
+# `publish` stands at "Waiting for review" for as long as it is never approved.
+#
+# `tools/check-release-publish-gate.py` is what keeps the claim true rather than
+# merely written here: it refuses any release-publishing verb, or any reference to
+# the registry credential, in a job that does not declare an environment.
 
 on:
   push:
@@ -60,7 +103,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing v<semver> tag to build from (re-fills the shelf; re-runs are safe)"
+        description: "Existing v<semver> tag to build from (re-fills the shelf while its release is still a draft; re-runs are safe)"
         required: true
         type: string
 
@@ -177,12 +220,22 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # ---- publish the shelf to the GitHub Release ------------------------------
-  # Deliberately NOT gated on the crates.io approval: assets are reversible, and
-  # the owner should be able to see the shelf filled while deciding whether to
-  # approve the one-way half.
-  publish-assets:
-    name: publish shelf assets
+  # ---- the shelf, assembled into a DRAFT release ----------------------------
+  # This job PUBLISHES NOTHING, and that is what lets it run without an approval.
+  # A draft release is served only to accounts with write access on this
+  # repository: it is absent from the public releases listing, from the atom feed
+  # and from every unauthenticated asset download, and creating one announces
+  # nothing to anyone. So the whole shelf can be built, checksum-verified and read
+  # back before a human is asked anything — which is the point of doing it here
+  # rather than inside the gate: the reviewer approves a shelf that is already
+  # proven complete, and an incomplete shelf reds before the prompt ever appears.
+  #
+  # The one thing it must never do is touch a release that is already PUBLISHED,
+  # because uploading an asset to a public release IS publishing. The step below
+  # refuses that outright, which also agrees with ADR-0017 §5: once the shelf is
+  # filled, a released tag is as immutable in practice as a crates.io version.
+  shelf:
+    name: shelf into a draft release
     needs: [identity, binaries]
     runs-on: ubuntu-latest
     permissions:
@@ -219,21 +272,50 @@ jobs:
             echo "::error::versions.toml [engine].targets is empty; this job would have uploaded nothing."
             exit 1
           fi
-      - name: upload to the release
+      - name: the release exists as a DRAFT, and is one this job may fill
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.identity.outputs.tag }}
         run: |
           set -euo pipefail
-          # `gh release view` exits non-zero when the release does not exist; that
-          # is an answer, not an error, hence the explicit `if`.
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG exists; filling its shelf"
+          # `gh release view` finds a draft by tag name (it falls back to listing
+          # releases when the by-tag endpoint 404s, which is what a draft does).
+          # Its non-zero exit has two meanings — "no such release" and "the API
+          # could not be read" — and only the first is an answer. The status is
+          # captured before anything reads the output; an unreadable state is a
+          # refusal, never an assumed absence.
+          rc=0
+          gh release view "$TAG" --json isDraft --jq .isDraft > state.txt 2> state.err || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            if grep -qiE 'release not found|HTTP 404' state.err; then
+              gh release create "$TAG" --draft --title "delvec $TAG" --generate-notes
+              echo "created release $TAG as a DRAFT — nothing is public until the gated job undrafts it"
+            else
+              cat state.err
+              echo "::error::could not read whether release $TAG exists or is a draft."
+              echo "::error::An unreadable state is not an absent release; refusing to create or upload anything."
+              exit 1
+            fi
           else
-            gh release create "$TAG" --title "delvec $TAG" --generate-notes
+            state="$(cat state.txt)"
+            if [ "$state" != "true" ]; then
+              echo "::error::release $TAG already exists and is PUBLISHED (isDraft=$state)."
+              echo "::error::Uploading an asset to a public release is itself a publish, and this job"
+              echo "::error::carries no approval. A filled, released tag is immutable in practice"
+              echo "::error::(ADR-0017 §5): downloaders hold bytes and checksums that name it. Release a"
+              echo "::error::new version instead of re-filling this one."
+              exit 1
+            fi
+            echo "release $TAG exists and is a DRAFT; filling its shelf"
           fi
+      - name: upload the shelf to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.identity.outputs.tag }}
+        run: |
+          set -euo pipefail
           gh release upload "$TAG" dist/*.tar.gz dist/SHA256SUMS --clobber
-      - name: the release now holds the whole shelf
+      - name: the draft now holds the whole shelf, and is still a draft
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.identity.outputs.tag }}
@@ -251,6 +333,24 @@ jobs:
             echo "::error::release $TAG does not hold the whole shelf."
             exit 1
           fi
+          # Read back the state this job promises to leave behind, rather than
+          # assuming the upload could not have changed it.
+          is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+          if [ "$is_draft" != "true" ]; then
+            echo "::error::release $TAG is no longer a draft (isDraft=$is_draft) and this job never undrafts one."
+            exit 1
+          fi
+          # What a reader of the run sees without opening a job log: the shelf is
+          # complete and NOTHING is public yet.
+          {
+            echo "### shelf: $TAG"
+            echo ""
+            echo "\`$n_archives\` archive(s) + SHA256SUMS are on release **$TAG**, which is still a **draft** —"
+            echo "nothing is public and nothing is on crates.io."
+            echo ""
+            echo "Both publishes happen together in \`publish\`, which is waiting for the \`crates-io\` approval."
+            echo "A run that is never approved leaves exactly this state."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ---- what WOULD be published, with no access to the token -----------------
   crates-preflight:
@@ -266,7 +366,7 @@ jobs:
       - name: the packaged tarballs are publishable
         run: bash tools/check-publishable.sh
       # The other half of what the upload carries: the front pages. This job is a
-      # `needs:` of `publish-crates`, so it is the LAST place those pages can
+      # `needs:` of `publish`, so it is the LAST place those pages can
       # be judged before the one-way door — and the tagged tree is not
       # necessarily the tree CI last saw. Enumerating the entry points is the
       # point (CLAUDE.md: a gate nothing invokes is UNRUN): `ci.yml`'s `rust` job
@@ -282,18 +382,25 @@ jobs:
       # a task id, a pull-request number, a dated attribution.
       - name: the tagged tree carries no identifier a reader cannot resolve
         run: python3 tools/check-unsanctioned-identifiers.py
-      # Prints, for the human about to approve `publish-crates`, exactly which
+      # Prints, for the human about to approve `publish`, exactly which
       # crate versions would be uploaded and which are already on the registry.
       - name: the publish plan
         run: bash tools/crates-io-publish.sh --plan
 
-  # ---- the one-way door -----------------------------------------------------
-  publish-crates:
-    name: publish to crates.io (owner approval)
-    needs: [identity, binaries, crates-preflight]
+  # ---- the one-way door, and the only job that publishes anything -----------
+  publish:
+    name: publish to crates.io and the release (owner approval)
+    # `shelf` is in this list for the reason the whole restructure exists: the
+    # only way to reach this job is through a shelf that was built, checksum-
+    # verified after its round trip, counted against `[engine].targets` and read
+    # back from the API. `binaries` alone would not do it — a job can succeed
+    # without its artifacts ever being assembled into a release — so the gate
+    # cannot be reached with a shelf that was never built, and the approval a
+    # reviewer is asked for is an approval of something already proven complete.
+    needs: [identity, binaries, crates-preflight, shelf]
     runs-on: ubuntu-latest
     # THE gate. `crates-io` is an environment with required reviewers, and it is
-    # the sole holder of CARGO_REGISTRY_TOKEN — no other job in this repository
+    # the sole holder of CARGO_REGISTRY_TOKEN — no other job in this workflow
     # declares an environment, so no other job can obtain it. The run pauses here
     # until a reviewer approves.
     #
@@ -305,7 +412,12 @@ jobs:
     # comment cannot make a gate bind; the step below checks.
     environment: crates-io
     permissions:
-      contents: read
+      # BOTH publishes happen in this job, so it holds both credentials: the
+      # registry token comes from the environment, and `contents: write` is what
+      # undrafting the release needs. That write scope is deliberately here and
+      # nowhere else that could reach a public release — `shelf` also has it, and
+      # may only ever touch a draft, which it proves by reading the state back.
+      contents: write
       # Lets the first step read this run's own approval history. Without it the
       # assertion fails closed, which is right but late.
       actions: read
@@ -329,9 +441,52 @@ jobs:
       # another job.
       - name: package (and re-prove publishability) from the tagged tree
         run: bash tools/check-publishable.sh
-      - name: publish
+      # FIRST of the two publishes, because it is the one that cannot be undone.
+      # If this fails, the release is still a draft and nothing has been published
+      # anywhere — which is the state one approval is supposed to produce.
+      - name: publish to crates.io (irreversible; first for that reason)
         env:
           # Read by cargo directly out of the environment. No `cargo login`, no
           # credential written to disk.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: bash tools/crates-io-publish.sh --publish
+      # SECOND: one cheap, idempotent API call, under the same approval. This is
+      # where the GitHub Release stops being a draft and becomes public.
+      - name: publish the release (undraft, retried)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.identity.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The residual window of the whole design is the few seconds between the
+          # line above and the line below: crates.io has the version and the
+          # release is still a draft. It is retried rather than left to a human,
+          # and the state is READ BACK each time — `gh` exiting 0 is not evidence
+          # the release is public.
+          attempt=1
+          while [ "$attempt" -le 5 ]; do
+            rc=0
+            gh release edit "$TAG" --draft=false || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+              if [ "$is_draft" = "false" ]; then
+                echo "release $TAG is published (attempt $attempt of 5)"
+                gh release view "$TAG" --json assets --jq '.assets[].name' | sort
+                exit 0
+              fi
+              echo "attempt $attempt: gh exited 0 but the release still reads isDraft=$is_draft"
+            else
+              echo "attempt $attempt: gh release edit exited $rc"
+            fi
+            attempt=$((attempt + 1))
+            [ "$attempt" -gt 5 ] || sleep 10
+          done
+          echo "::error::crates.io HAS this version, and the GitHub Release $TAG is STILL A DRAFT."
+          echo "::error::The registry half is done and cannot be undone; the release half is not."
+          echo "::error::This is the one window this design leaves open, and it is one call wide."
+          echo "::error::The single remaining act, which needs no new approval and is safe to repeat:"
+          echo "::error::    gh release edit $TAG --draft=false -R $GITHUB_REPOSITORY"
+          echo "::error::Re-running this workflow does the same thing: the registry step finds every"
+          echo "::error::version already on crates.io with identical bytes and skips it, then this step"
+          echo "::error::undrafts. Do NOT re-tag and do NOT bump the version."
+          exit 1

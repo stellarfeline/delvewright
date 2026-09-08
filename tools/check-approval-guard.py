@@ -23,7 +23,7 @@ that:
     and the checker is the work to redo.
 
 A second one was added (`dsl-crate-publish.yml`'s `publish`, beside
-`engine-release.yml`'s `publish-crates`). This is that checker.
+`engine-release.yml`'s own `publish`). This is that checker.
 
 WHAT IT ASSERTS, per job that declares `environment:`
 
