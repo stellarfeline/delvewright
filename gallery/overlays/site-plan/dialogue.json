@@ -50,16 +50,10 @@
             "id": "dlg/warden-root",
             "options": [
               {
-                "effects": [
-                  {
-                    "objective": "obj/clear-the-muster",
-                    "type": "complete-objective"
-                  }
-                ],
-                "label": "Is it cleared?"
+                "label": "Is it put down?"
               }
             ],
-            "text": "The muster formed up here and did not stay formed."
+            "text": "The muster formed up here and did not stay formed. What is left of it is still in the hall."
           }
         ],
         "npc": "npc/warden",
