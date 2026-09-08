@@ -2419,12 +2419,37 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "prefab_pool"
+          ]
+        }
+      },
       "campaign": "the-tidewatch",
-      "carrier": null,
-      "finding": "an area that seats a pool seats a subset of its members, so an anchor declared on a member the layout did not seat does not exist in the built world; only the entry-role member's anchors are guaranteed, which on the shipped library is two anchors per area out of the eleven distinct anchor names the cave and keep pieces declare, and the advisory that reports the ambiguity is emitted by the build, five authoring steps after the anchors have to be chosen and bound",
+      "carrier": {
+        "code": "DW0889",
+        "kind": "dw"
+      },
+      "finding": "an area that seats a pool seats a subset of its members, so an anchor declared on a member the layout did not seat does not exist in the built world; only the entry-role member's anchors are guaranteed, which on the shipped library is two anchors per area out of the ten distinct anchor names the cave and keep pieces declare, and the advisory that reports the ambiguity is emitted by the build, five authoring steps after the anchors have to be chosen and bound",
       "general_form": "the anchors an area can be authored against are stated by the engine at the step that chooses them: a name bound to a member the layout may not seat is refused or reported before the build, and the set an area guarantees is answerable from the campaign without building it",
       "id": "drill3-02",
-      "note": "Queued with no carrier on purpose. The page's half — stating the rule where the decision is made — is separate authoring work; this row is the engine's half, and the gate reds until the information is reachable at the step that needs it rather than only after placement.",
+      "note": "Queued with no carrier on purpose. The page's half — stating the rule where the decision is made — is separate authoring work; this row is the engine's half, and the gate reds until the information is reachable at the step that needs it rather than only after placement. The count of distinct anchor names was carried into this row as eleven and is ten: `delvec prefab anchors` reports the cave and keep pools declaring ten names between them, of which two are guaranteed, and the union of the two sets is also ten.",
       "round": "drill-3",
       "triage": "capability"
     },

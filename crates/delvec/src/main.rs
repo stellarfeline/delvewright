@@ -807,6 +807,25 @@ fn validate_loaded(
                 examined.push(bind.line());
                 diags.extend(sd);
             }
+            // **`DW0889`: which anchors does this area guarantee** — asked here
+            // because this is the last step that can still answer it in time. An
+            // area binding a pool seats a SUBSET of that pool's members (the
+            // `entry` piece, one carrier per anchor the campaign requires, and
+            // `connector` fillers drawn from the seed), so an anchor declared on
+            // a member nothing forces may simply not be in the built world.
+            // Every diagnostic that said so needed a build, and the anchors are
+            // chosen three authoring steps earlier. The whole verdict is a fact
+            // about declarations — the pool's members, their roles, their
+            // `anchors` maps — so nothing has to be placed to know it, on
+            // `compiler::seating`'s own precedent. Advisory: the filler draw may
+            // well seat the piece, and `DW0302`/`DW0360` still refuse at the
+            // build if it did not. The binding line states the guarantee with
+            // its denominator, zeroes included.
+            {
+                let (gbind, gd) = delvec::compiler::guarantee::check(&campaign, &prefabs);
+                examined.push(gbind.line());
+                diags.extend(gd);
+            }
             // An objective keeps the promise its prompt makes (DW0860-DW0863):
             // a failure clock armed before its own prompt could be read, an
             // adopted container nothing distinguishes from the scenery beside

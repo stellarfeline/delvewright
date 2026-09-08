@@ -2680,6 +2680,25 @@
           "on": "use"
         },
         "once": false
+      },
+      {
+        "at": "anchor/annex-second-bay",
+        "audience": "party",
+        "effects": [
+          {
+            "at": {
+              "anchor": "anchor/annex-second-bay",
+              "at": "anchor"
+            },
+            "sound": "minecraft:block.stone.step",
+            "type": "play-sound"
+          }
+        ],
+        "id": "trigger/stand-in-the-second-bay",
+        "on": {
+          "on": "approach",
+          "range": 3
+        }
       }
     ],
     "waves": [

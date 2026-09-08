@@ -343,6 +343,21 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    12 members of `pool/stone-keep`), because a promise that reads as free is the
    half a reader believes.
 
+4a-bis. **What a pool area guarantees is now an engine answer, and the page's
+   inline script for it is superseded.** The page asks the library which anchors
+   an area can be designed against by running a `python3 - <<'EOF'` snippet over
+   `prefabs/pools.json` that prints each pool's `entry`-role member's anchors.
+   `delvec prefab anchors [--pool <id>]` answers the same question from the
+   engine's own implementation — the same one `DW0889` reports from — so the
+   answer and the build cannot disagree, and it states the rest of the
+   vocabulary with the carrier and role each name would have to arrive on. It
+   also states the half a snippet over `pools.json` cannot: an anchor a campaign
+   REQUIRES (an objective, an NPC stand, a wave spawn, a lane waypoint, an
+   anchor-bearing effect) forces the solver to seat its carrier, so the
+   guaranteed set for an area is the entry member's anchors plus everything
+   those forced carriers declare — which is why `hollow-vigil` guarantees all
+   ten of `pool/vertical-keep`'s names and the library-only answer is two.
+
 4b. **`collect` + `container` is satisfiable by one piece in the shipped
    library.** Exactly 1 of 36 prefabs stands an anchor on a chest or barrel
    (`island-mountain`), five contain one anywhere, and two declare an anchor

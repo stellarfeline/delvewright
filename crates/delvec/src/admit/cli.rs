@@ -39,6 +39,22 @@ pub enum PrefabCommand {
         #[arg(long)]
         horizon: String,
     },
+    /// **Which anchors does a pool guarantee**: per pool, the member count, the
+    /// `entry` member every draw seats, the anchor names that member declares —
+    /// the whole unconditional guarantee — and every other name in the pool's
+    /// vocabulary with the carrier it would have to arrive on.
+    ///
+    /// It reads a LIBRARY and nothing else, which is the point: the anchors a
+    /// campaign hangs its design on are chosen at the third authoring step,
+    /// where `quests.json` and `dialogue.json` do not exist yet and every
+    /// campaign verb refuses a directory that is not all six documents
+    /// (`DW0874`). Same implementation as the compiler's own `DW0889`, so the
+    /// tool and the build cannot disagree about what a pool guarantees.
+    Anchors {
+        /// One pool id (`pool/<name>`). Omitted, every pool the library declares.
+        #[arg(long)]
+        pool: Option<String>,
+    },
     /// Mechanical NBT palette audit (CI gate): allowlist + code-injection forbid.
     Audit {
         /// Input structure `.nbt`; the `.json` manifest of a zone that ships as
