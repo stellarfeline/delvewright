@@ -124,10 +124,11 @@ pub fn area_base_y(
     };
     // A member with no metadata at all is `DW0300`'s finding, raised where the
     // piece is bound; it is not this rule's to restate, so it is not offered.
-    let declared: Vec<(String, Option<i32>)> = crate::compiler::seating::area_members(area, prefabs)
-        .into_iter()
-        .filter_map(|id| prefabs.get(&id).map(|m| (id, m.walk_y)))
-        .collect();
+    let declared: Vec<(String, Option<i32>)> =
+        crate::compiler::seating::area_members(area, prefabs)
+            .into_iter()
+            .filter_map(|id| prefabs.get(&id).map(|m| (id, m.walk_y)))
+            .collect();
     match crate::compiler::seating::set_walk_plane(base, area.id.as_str(), &declared) {
         SetPlane::Agreed(w) => Ok(walk_ref - w),
         SetPlane::NotDerived => Ok(BASE_Y),

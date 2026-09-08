@@ -663,7 +663,9 @@ mod tests {
             assert_eq!(collision_class(id), Collision::Thin(0), "{id}");
         }
         // And a waterlogged host block is still its host: a floor, not a sea.
-        assert!(!is_submerged_by_nature("minecraft:oak_stairs[waterlogged=true]"));
+        assert!(!is_submerged_by_nature(
+            "minecraft:oak_stairs[waterlogged=true]"
+        ));
         assert!(supports_body("minecraft:oak_stairs[waterlogged=true]"));
     }
 

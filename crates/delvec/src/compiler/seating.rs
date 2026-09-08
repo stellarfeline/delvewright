@@ -1040,7 +1040,11 @@ mod tests {
         assert_eq!(rs[0].shape, Shape::WalkPlanesDisagree);
         assert_eq!(rs[0].code.id(), "DW0886");
         assert!(rs[0].short.contains("[2, 3]"), "{}", rs[0].short);
-        assert!(rs[0].short.contains("across 2 member(s)"), "{}", rs[0].short);
+        assert!(
+            rs[0].short.contains("across 2 member(s)"),
+            "{}",
+            rs[0].short
+        );
         // The same set on a base that states its datum for the ORIGIN consults
         // no piece at all, so there is nothing here to disagree about.
         for base in [HorizonBase::Void, HorizonBase::Valley] {

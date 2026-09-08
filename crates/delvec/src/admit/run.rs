@@ -250,7 +250,12 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
         {
             set_refused = true;
             for r in &rs {
-                reasons.push(format!("  {:<28} {} ({})", "(the pool)", r.short, r.code.id()));
+                reasons.push(format!(
+                    "  {:<28} {} ({})",
+                    "(the pool)",
+                    r.short,
+                    r.code.id()
+                ));
                 reason_json.push(record(pool, r));
             }
         }
@@ -305,7 +310,10 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
                 "line": binding,
             },
         });
-        println!("{}", serde_json::to_string(&doc).expect("the verdict serializes"));
+        println!(
+            "{}",
+            serde_json::to_string(&doc).expect("the verdict serializes")
+        );
     } else {
         for line in &lines {
             println!("{line}");
@@ -572,7 +580,13 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             let grid = crate::admit::spatial::grid(&structure);
             let door = Door::open(&grid, 1, &meta_path);
             let waterline = waterline_door(&meta_path, &grid, 1);
-            (rep, diags, door, audit::footprint_class(&meta_path), waterline)
+            (
+                rep,
+                diags,
+                door,
+                audit::footprint_class(&meta_path),
+                waterline,
+            )
         };
     for d in &diags {
         d.print(json);
@@ -881,7 +895,11 @@ fn run_planes(input: &Path, write: bool, json: bool) -> ExitCode {
         match read_zone(input) {
             Ok((set, tiles)) => {
                 let n = tiles.len();
-                (input.to_path_buf(), settling::zone_grid(set.size, &tiles), n)
+                (
+                    input.to_path_buf(),
+                    settling::zone_grid(set.size, &tiles),
+                    n,
+                )
             }
             Err(e) => return input_err(&e, json),
         }

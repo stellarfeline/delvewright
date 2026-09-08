@@ -329,7 +329,8 @@ fn a_planted_waterline_over_no_water_is_named_and_the_census_moves() {
         "each planted declaration is one more declaration examined:\n{text}"
     );
     assert_eq!(
-        after.1, before.1,
+        after.1,
+        before.1,
         "and NONE of them is borne out by the bytes — a declaration-only implementation reports \
          {n} of {n} and passes here:\n{text}",
         n = after.0,
@@ -390,10 +391,9 @@ fn the_library_audit_and_the_seating_verdict_are_one_implementation() {
     let lib = enumerate(&dir);
     // Again a baseline RUN: what a given content revision already declares and
     // already fails is that revision's fact, and this test is about the delta.
-    let before: serde_json::Value = serde_json::from_slice(
-        &delvec(&["prefab", "audit", dir.to_str().unwrap()]).stdout,
-    )
-    .expect("the sweep report is JSON");
+    let before: serde_json::Value =
+        serde_json::from_slice(&delvec(&["prefab", "audit", dir.to_str().unwrap()]).stdout)
+            .expect("the sweep report is JSON");
 
     let target = documents_in(&dir)
         .into_iter()

@@ -274,9 +274,10 @@ impl WaterlineBinding {
             ok = self.borne_out,
             bad = self.refused,
             opened = self.nbt_opened,
-            top = self
-                .top_authored_water_y
-                .map_or_else(|| "no water in this piece".to_string(), |y| format!("local y={y}")),
+            top = self.top_authored_water_y.map_or_else(
+                || "no water in this piece".to_string(),
+                |y| format!("local y={y}")
+            ),
         )
     }
 
