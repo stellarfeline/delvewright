@@ -340,7 +340,7 @@ fn the_library_command_answers_with_no_campaign_at_all() {
     let doc: serde_json::Value = serde_json::from_slice(&out.stdout).expect("one JSON object");
     let pool = &doc["pools"][0];
     assert_eq!(pool["pool"], "pool/fx");
-    assert_eq!(pool["entry"], "prefab/fx-entry");
+    assert_eq!(pool["entry_member"], "prefab/fx-entry");
     let guaranteed: Vec<String> = serde_json::from_value(pool["guaranteed"].clone()).unwrap();
     assert!(
         guaranteed.contains(&"anchor/lobby".to_string()),

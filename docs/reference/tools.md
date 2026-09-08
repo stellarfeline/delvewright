@@ -469,6 +469,33 @@ delvec prefab planes <nbt|manifest.json> [--write]
 delvec prefab catalog validate <card.json ...>
 ```
 
+**Two questions about the whole library, answered before a campaign is authored
+against it.** Neither names a piece: both read the library the global
+`--prefabs` points at, and both come from the same implementation the compiler's
+own validation uses, so the tool and the build cannot disagree.
+
+```
+delvec prefab seating --horizon void|ocean|valley
+    # Can this library stand on this base (spec-0060 §6)? Per pool, the verdict
+    # and the reason, with a numerator and a denominator at pool, member and
+    # declaration level. Opens the `.nbt`: a verdict from declarations alone
+    # reports a library of waterline fictions as seatable. Exits non-zero when
+    # any pool is refused, when it examined no pool, or when it read more
+    # documents than it opened `.nbt`. `DW0886`/`DW0887`/`DW0344`
+delvec prefab anchors [--pool pool/<name>]
+    # Which anchors does a pool GUARANTEE? Per pool: the members, the `entry`
+    # member every draw seats at the area origin, the anchor names that member
+    # declares — the whole unconditional guarantee — and every other name in the
+    # pool's vocabulary with the carrier it would arrive on and the role that
+    # decides when the layout seats it. Reads METADATA only, no `.nbt`, no
+    # campaign: the anchors a design hangs on are chosen at the third authoring
+    # step, where there is no six-document campaign directory for a campaign verb
+    # to read (`DW0874`). A REPORT, not a gate — a small guarantee is an ordinary
+    # pool — so it exits non-zero only on a question about nothing: no pools in
+    # the library, or a `--pool` it does not declare. The campaign-side half of
+    # the same answer is `DW0889` on every `validate`/`analyze`/`build`
+```
+
 `audit` runs two checks over the bytes and writes an `AuditReport`. The
 **hard-forbid** (`DW0731`) is the code-injection set — command blocks,
 structure blocks, NBT-bearing spawners, and any block entity carrying an

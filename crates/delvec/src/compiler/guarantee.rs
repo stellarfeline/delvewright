@@ -503,7 +503,12 @@ pub fn report_json(g: &PoolGuarantee) -> serde_json::Value {
             "role": m.role,
             "anchors": m.anchors.iter().cloned().collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
-        "entry": g.entry,
+        // Named `entry_member`, not `entry`: it holds the POOL MEMBER the solver
+        // seats first, which is a prefab id and a `PoolMember` role. The anchor
+        // role of the same word is a different vocabulary on a different object
+        // (`dsl::prefab::AnchorRole`), and one key spelling both is how the two
+        // get confused.
+        "entry_member": g.entry,
         "guaranteed": g.unconditional.iter().cloned().collect::<Vec<_>>(),
         "vocabulary": g.vocabulary.iter().cloned().collect::<Vec<_>>(),
         "conditional": g.vocabulary.iter().filter(|a| !g.unconditional.contains(*a))
