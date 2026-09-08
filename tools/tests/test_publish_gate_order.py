@@ -200,7 +200,7 @@ def _scratch_clone(tmp_path: Path, check_src: str, publish_src: str) -> Path:
     """A tree with only what the two scripts (`ROOT`-relative) need: the two
     scripts themselves (given as SOURCE TEXT, so the red case can hand in
     `d5908698`'s frozen content without ever checking it out in the working
-    tree), the shared libs the fixed scripts source, and `versions.toml`.
+    tree), the shared libs the fixed scripts call, and `versions.toml`.
     """
     tree = tmp_path / "clone"
     (tree / "tools" / "lib").mkdir(parents=True)
@@ -208,6 +208,12 @@ def _scratch_clone(tmp_path: Path, check_src: str, publish_src: str) -> Path:
     (tree / "tools" / "crates-io-publish.sh").write_text(publish_src, encoding="utf-8")
     shutil.copy(LIB / "checksum.sh", tree / "tools" / "lib" / "checksum.sh")
     shutil.copy(LIB / "package-verify.sh", tree / "tools" / "lib" / "package-verify.sh")
+    # The sparse-index reader and its bind test, which `crates-io-publish.sh`
+    # calls rather than carrying (a second gate now asks the same registry the
+    # same question). A clone without it fails AT the bind test, which is the
+    # right refusal for the wrong reason: the script would be judged on a lookup
+    # that was never there rather than on one that answered.
+    shutil.copy(LIB / "crates_index.py", tree / "tools" / "lib" / "crates_index.py")
     shutil.copy(REPO / "versions.toml", tree / "versions.toml")
     return tree
 
