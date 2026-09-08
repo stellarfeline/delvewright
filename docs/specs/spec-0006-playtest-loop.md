@@ -93,7 +93,7 @@ generate → validate → playtest → report → revise → regenerate.
   the log line is self-describing. **`quests`** is the live per-objective scoreboard
   state. The harvester enriches each note from the overlay's `layout.json`
   (`area→prefab`, objective→quest `quest_state`).
-- **Harvester** (`crates/orchestrator`, bin `delve-harvest`): the orchestrator's
+- **Harvester** (`crates/orchestrator`, bin `delvec harvest`): the orchestrator's
   first real job (ADR-0012). Offline chat's `[Not Secure] ` prefix is stripped before
   pairing (verified live).
 

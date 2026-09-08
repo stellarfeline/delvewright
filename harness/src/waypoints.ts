@@ -15,7 +15,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { SUPPORTED_DSL_VERSIONS, type Vec3Tuple } from "./critical-path.ts";
+import type { Vec3Tuple } from "./critical-path.ts";
 
 /** The sub-path of the waypoints artifact relative to `critical-path.json`'s dir. */
 const WAYPOINTS_SUBPATH = ["validation", "critical-path-waypoints.json"] as const;
@@ -201,12 +201,6 @@ export function parseWaypoints(raw: unknown): Waypoints {
     fail("", `must be an object, got ${describe(raw)}`);
   }
   const version = requireString(raw, "version", "");
-  if (!(SUPPORTED_DSL_VERSIONS as readonly string[]).includes(version)) {
-    fail(
-      "/version",
-      `unsupported version ${JSON.stringify(version)}; harness supports ${SUPPORTED_DSL_VERSIONS.join(", ")}`,
-    );
-  }
   const campaignId = requireString(raw, "campaign_id", "");
   const timedGates = parseTimedGates(raw);
   const gatesById = new Map(timedGates.map((g) => [g.id, g]));

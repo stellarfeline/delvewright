@@ -12,21 +12,33 @@ mod common;
 use delvewright_dsl::{RawCampaign, check_campaign};
 
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/open-the-door",
+        "happening": { "verb": "learns", "text": "the party asks the keeper" },
+        "cast": {
+          "npc/keeper": { "at": "anchor/keeper-stand", "doing": "keeping the door", "dialogue": "dlg/greeting" }
+        },
         "trigger": { "type": "campaign-start" },
         "objectives": [
-          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
-          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper",
+            "happening": { "verb": "learns", "text": "the keeper is asked" } },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"],
+            "happening": { "verb": "arrives", "text": "the party reaches the exit" } }
         ],
         "on_objective_complete": { "obj/talk": [] },
-        "on_complete": [ { "type": "campaign-complete" } ]
+        "on_complete": [ { "type": "campaign-complete",
+                           "happening": { "verb": "survives", "text": "the delve is complete" } } ]
       }
+    ],
+    "triggers": [
+      { "id": "trigger/inner-door-barred", "at": "anchor/door", "on": { "on": "use" }, "once": false,
+        "audience": "presser",
+        "effects": [ { "type": "narrate", "style": "actionbar", "text": "Barred from this side." } ] }
     ],
     "shortcuts": [
       { "id": "shortcut/inner-door", "gate": "anchor/door", "unlock": "anchor/exit" }
@@ -47,6 +59,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -57,19 +70,6 @@ fn shortcut_validates_clean() {
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 shortcut, got: {diags:#?}"
-    );
-}
-
-/// The `shortcuts` section under a pre-0.6 quests version is reserved → `DW0141`.
-#[test]
-fn shortcuts_reserved_before_0_6() {
-    let pre = QUESTS_V06.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
-    let diags = check_campaign(&campaign_with_quests(&pre));
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.code == "DW0141" && d.path == "/content/shortcuts"),
-        "the shortcuts section must be reserved under 0.5.0 (DW0141): {diags:#?}"
     );
 }
 

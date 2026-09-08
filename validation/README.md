@@ -257,8 +257,8 @@ loop (`souls_bonfire_rest`/`_reseat`/`_options`, `souls_reseat_stationed`,
 `souls_td_lane_march`, `souls_td_lane_release`, `souls_td_lane_reseat`,
 `souls_td_aggro_edge`) were emitted and never executed — including the codec-trap
 test, whose entire reason to exist is that a wrong `patrol_target` key is
-invisible to every static proof. `crates/compiler/tests/fixtures/souls-bonfire`
-and `crates/compiler/tests/fixtures/souls-td-lanes` are two more. They are two fixtures and not one because `DW0478` forbids a bonfire
+invisible to every static proof. `crates/delvec/tests/fixtures/souls-bonfire`
+and `crates/delvec/tests/fixtures/souls-td-lanes` are two more. They are two fixtures and not one because `DW0478` forbids a bonfire
 inside a hostile's aggro range, and the lane fixture's corridor tileset has no
 cell more than 16 blocks off its own lane.
 
@@ -266,7 +266,7 @@ cell more than 16 blocks off its own lane.
 clean, so there is no separate teardown command to forget:
 
 ```sh
-delvec build crates/compiler/tests/fixtures/cast-ledger \
+delvec build crates/delvec/tests/fixtures/cast-ledger \
   -o validation/delve-output-cast --prefabs campaigns/prefabs
 
 EULA=TRUE validation/packtest-run.sh --project dw-cast --output ./delve-output-cast
@@ -311,12 +311,12 @@ After the session, turn the log into a report with the harvester:
 ```sh
 docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
   --profile playtest logs --no-color > playtest.log
-cargo run -p delvewright-orchestrator --bin delve-harvest -- \
+cargo run -p delvec --bin delvec -- harvest \
   playtest.log validation/delve-output/creator-datapack/layout.json \
   -o playtest-report.json
 ```
 
-`delve-harvest` pairs each `[DelveNote]` stamp with the nearest creator chat line
+`delvec harvest` pairs each `[DelveNote]` stamp with the nearest creator chat line
 (±60s, preferring the line *after* the stamp) and resolves area→prefab and the live
 objective states into per-quest `quest_state` via the overlay's `layout.json`. The
 report is the contract input of the future `/revise-delve` skill (spec-0006 §4).
@@ -337,12 +337,14 @@ It runs in its own per-invocation compose project (`dw-noteflow-$$`, overridable
 with `DW_COMPOSE_PROJECT`) on an **ephemeral** host port, so it needs no lock and
 cannot collide with another ladder or with a live owner session.
 
-**CI placement (spec-0006 acceptance).** This is a **tier-3 / local** test (wired in
-`release.yml`), not tier 2: it boots a full server *and* a bot (~2–3 min), beyond
-tier 2's ~2-min budget. Every-push coverage of the mechanism already lives in tier 1
-— the harvester's parsing/pairing/report logic (`crates/orchestrator` unit tests,
-incl. Chinese note text) and the overlay emission + byte-determinism
-(`crates/compiler` tests). Only the live wiring is deferred to tier 3.
+**CI placement (spec-0006 acceptance).** This is a **local** test, run by hand:
+**no CI job calls it.** It boots a full server *and* a bot (~2–3 min), beyond tier
+2's ~2-min budget. Every-push coverage of the mechanism already lives in tier 1 —
+the harvester's parsing/pairing/report logic (`crates/delvec/src/orchestrator` unit
+tests, incl. Chinese note text) and the overlay emission + byte-determinism
+(`crates/delvec/src/compiler` tests). The live wiring is proven only when somebody
+runs this script; wiring it into `ci.yml`'s `tier 2` job as a step (never a new job
+— every job name is a required status context) is the open work.
 
 ## What the stack does today
 
@@ -368,10 +370,15 @@ incl. Chinese note text) and the overlay emission + byte-determinism
   stamped into `<build-dir>/world/`. A build output carries no world — the
   geometry is placed on the first ticks of a server boot — and a Chunky scene
   over a missing world renders an empty sky at exit 0.
-- **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir]` turns a build
-  output into the Chunky scene set plus the shot index (`delvec scene` +
-  `index`) for visual review, including the first-person player-POV shots. It
-  refuses a tree with no `world/`, naming `world-save.sh`.
+- **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir] [--delvec BIN]`
+  turns a build output into the Chunky scene set plus the shot index
+  (`delvec scene` + `index`) for visual review, including the first-person
+  player-POV shots. It refuses a tree with no `world/`, naming `world-save.sh`.
+  Its engine comes from `tools/lib/delvec-bin.sh` — a `delvec` on `PATH` only
+  when it is this engine — and it ends by naming the pinned Chunky core
+  (`versions.toml [render].chunky_core`) beside every core actually installed,
+  because `--update snapshot` cannot install the pin (`docs/reference/tools.md`
+  §4a).
 
 ## Harness
 

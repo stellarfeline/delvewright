@@ -75,19 +75,19 @@ use crate::metrics::{
 use crate::stages::AreaLighting;
 
 /// `DW0824`: the graph and the plan do not agree exactly.
-pub const DW_PLAN_AGREEMENT: DwCode = DwCode::every_version("DW0824", ExitTier::Build);
+pub const DW_PLAN_AGREEMENT: DwCode = DwCode::new("DW0824", ExitTier::Build);
 
 /// `DW0825`: a box leaves the kit grid.
-pub const DW_BOX_OFF_GRID: DwCode = DwCode::every_version("DW0825", ExitTier::Build);
+pub const DW_BOX_OFF_GRID: DwCode = DwCode::new("DW0825", ExitTier::Build);
 
 /// `DW0826`: a box leaves the region.
-pub const DW_BOX_LEAVES_REGION: DwCode = DwCode::every_version("DW0826", ExitTier::Build);
+pub const DW_BOX_LEAVES_REGION: DwCode = DwCode::new("DW0826", ExitTier::Build);
 
 /// `DW0827`: two boxes overlap.
-pub const DW_BOXES_OVERLAP: DwCode = DwCode::every_version("DW0827", ExitTier::Build);
+pub const DW_BOXES_OVERLAP: DwCode = DwCode::new("DW0827", ExitTier::Build);
 
 /// `DW0828`: a seam is not on a shared face.
-pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::every_version("DW0828", ExitTier::Build);
+pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::new("DW0828", ExitTier::Build);
 
 /// **How many cells stand between two connected boxes: the wall they share.**
 ///
@@ -106,13 +106,13 @@ pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::every_version("DW0828", ExitTier:
 pub const SHARED_FACE_GAP_CELLS: i64 = 1;
 
 /// `DW0829`: a seam's opening is not a standard, or does not fit.
-pub const DW_SEAM_OPENING: DwCode = DwCode::every_version("DW0829", ExitTier::Build);
+pub const DW_SEAM_OPENING: DwCode = DwCode::new("DW0829", ExitTier::Build);
 
 /// `DW0830`: a stair seam cannot be built at standard pitch.
-pub const DW_STAIR_PITCH: DwCode = DwCode::every_version("DW0830", ExitTier::Build);
+pub const DW_STAIR_PITCH: DwCode = DwCode::new("DW0830", ExitTier::Build);
 
 /// `DW0831`: a drop seam falls outside the drop policy.
-pub const DW_DROP_POLICY: DwCode = DwCode::every_version("DW0831", ExitTier::Build);
+pub const DW_DROP_POLICY: DwCode = DwCode::new("DW0831", ExitTier::Build);
 
 /// `DW0876`: a seam does not declare a connection this engine builds
 /// (spec-0053 §6).
@@ -138,31 +138,29 @@ pub const DW_DROP_POLICY: DwCode = DwCode::every_version("DW0831", ExitTier::Bui
 /// declared a contact to dodge the standard set is refused by its own width.
 /// That is the property `CLAUDE.md` demands of an escape hatch — the defect this
 /// exists to catch is incapable of supplying the hatch's proof obligation.
-///
-/// `every_version` for the reason its siblings are: the rule judges what the
-/// document SAYS, and a plan below [`crate::WAY_AND_CONTACT_SINCE`] has no
-/// `contact` to judge — the per-stage fence has already refused one.
-pub const DW_CONTACT: DwCode = DwCode::every_version("DW0876", ExitTier::Build);
+pub const DW_CONTACT: DwCode = DwCode::new("DW0876", ExitTier::Build);
 
 /// `DW0832`: a box violates its node's size class.
-pub const DW_SIZE_CLASS: DwCode = DwCode::every_version("DW0832", ExitTier::Build);
+pub const DW_SIZE_CLASS: DwCode = DwCode::new("DW0832", ExitTier::Build);
 
 /// `DW0833`: a brief identity does not hold.
-pub const DW_IDENTITY_FALSE: DwCode = DwCode::every_version("DW0833", ExitTier::Build);
+pub const DW_IDENTITY_FALSE: DwCode = DwCode::new("DW0833", ExitTier::Build);
 
 /// `DW0834`: the identity gate binds nothing. Warning — see [`identities`].
-pub const DW_IDENTITY_EMPTY: DwCode = DwCode::every_version("DW0834", ExitTier::Build);
+pub const DW_IDENTITY_EMPTY: DwCode = DwCode::new("DW0834", ExitTier::Build);
 
 /// `DW0835`: a whole-owned volume enters a box.
-pub const DW_VOLUME_IN_BOX: DwCode = DwCode::every_version("DW0835", ExitTier::Build);
+pub const DW_VOLUME_IN_BOX: DwCode = DwCode::new("DW0835", ExitTier::Build);
 
-/// `DW0839`: two placement authorities in one campaign.
-///
-/// `every_version` for the reason its siblings are: the rule judges what the
-/// campaign SAYS — that a `site-plan.json` and a non-empty `areas[]` are both
-/// present — and a document below `dsl_version` 0.14.0 has no site plan to be
-/// the second authority, so there is no earlier campaign the rule could reach.
-pub const DW_TWO_AUTHORITIES: DwCode = DwCode::every_version("DW0839", ExitTier::Build);
+/// `DW0839`: two placement authorities in one campaign — a `site-plan.json` and
+/// a non-empty `areas[]` both present.
+pub const DW_TWO_AUTHORITIES: DwCode = DwCode::new("DW0839", ExitTier::Build);
+
+/// `DW0883`: a box is not placed exactly once (spec-0059 §5). Two shapes of one
+/// claim: a connected component of the seam graph in which no box is pinned, so
+/// nothing places it; and a pinned box the packing also reaches, at a different
+/// corner, so two things place it.
+pub const DW_UNPLACED: DwCode = DwCode::new("DW0883", ExitTier::Build);
 
 // ---------------------------------------------------------------------------
 // The vocabulary the derivation synthesizes (spec-0049 §5.2)
@@ -351,7 +349,7 @@ pub fn synthesized_anchors(c: &Campaign) -> BTreeSet<String> {
 /// which place is exactly the two-functions-agreeing-about-spelling drift that
 /// note exists to remove.
 ///
-/// `crates/compiler/tests/blockout.rs`'s
+/// `crates/delvec/tests/blockout.rs`'s
 /// `the_owed_anchors_partition_the_synthesized_set` proves the two PARTITION
 /// rather than merely overlap: every synthesized name is owed by exactly one
 /// place or is a gate region no place owes. A name in neither would be one a
@@ -556,9 +554,16 @@ pub struct PlanBox {
     /// that does not name a place, so a site plan cannot describe a space the
     /// layout graph has not declared (spec-0049 §7.1).
     pub node: NodeId,
-    /// Low corner `[x, z]`, in world coordinates. Two horizontal numbers, never
-    /// three — the vertical position is `floor`.
-    pub min: [i64; 2],
+    /// **A pin**: the low corner `[x, z]` in world coordinates, when the author
+    /// chooses where this box stands. Optional (spec-0059 §2): a box with no pin
+    /// stands where the packing puts it — one cell beyond the face of the box
+    /// its first seam in document order hangs it off. At least one box of every
+    /// connected component of the seam graph is pinned, or nothing places the
+    /// component (`DW0883`); a pinned box the packing also reaches at a
+    /// different corner is refused naming both (`DW0883`). Two horizontal
+    /// numbers, never three — the vertical position is `floor`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<[i64; 2]>,
     /// Interior footprint `[dx, dz]`, in blocks, on the kit grid (`DW0825`).
     /// Two horizontal numbers, never three — the vertical size is `ceiling`.
     ///
@@ -630,9 +635,24 @@ impl Face {
     }
 }
 
+/// A crossing's position on one box's face, from that box's own low corner.
+///
+/// One integer on a wall face (cells along the face's horizontal axis), a pair
+/// through a floor or ceiling (cells along `x` and `z`). Untagged, so the
+/// document writes `"at": 2` or `"at": [2, 3]`; the face decides which shape is
+/// a position and the other is `DW0828`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Offset {
+    /// Cells along a vertical face's horizontal axis.
+    Along(i64),
+    /// Cells along `x` and `z` on a horizontal face.
+    Plane([i64; 2]),
+}
+
 /// One traversal edge, allocated: an opening on a face the two boxes share.
 ///
-/// The seam carries **no rise**. A rise is `floor(b) − floor(a)`, which the plan
+/// The seam carries **no rise** and **no sill**. A rise is `floor(b) − floor(a)`, which the plan
 /// has already stated by putting the two places where it put them; a second
 /// declaration of it could only ever agree or be a refusal teaching nothing the
 /// datums did not already say. `DW0830` and `DW0831` judge the derived number,
@@ -646,16 +666,28 @@ pub struct Seam {
     /// Which face **of the edge's `a` box** the seam sits on. The `b` box is the
     /// neighbour across it (`DW0828`).
     pub face: Face,
-    /// The opening's low corner, in world coordinates, on the face's own two
-    /// in-plane axes:
+    /// Where the crossing sits on **`a`'s** face: an offset from `a`'s own low
+    /// corner along the face, never a world coordinate (spec-0059 §2).
     ///
-    /// * on a vertical face (`east`/`west`/`north`/`south`) — `[along, y]`,
-    ///   where `along` is the horizontal axis in the plane (`z` for east/west,
-    ///   `x` for north/south) and `y` is the **sill**. The opening's `width`
-    ///   runs along the first, its `height` upward from the second.
-    /// * on a horizontal face (`up`/`down`) — `[x, z]`, `width` along `x` and
-    ///   `height` along `z`.
-    pub at: [i64; 2],
+    /// * on a vertical face (`east`/`west`/`north`/`south`) — one integer, cells
+    ///   along the face's horizontal axis (`z` for east/west, `x` for
+    ///   north/south). The **sill is not written**: it is
+    ///   `max(floor(a), floor(b))`, which the plan has already stated.
+    /// * on a horizontal face (`up`/`down`) — `[dx, dz]`, cells along `x` and
+    ///   `z`.
+    ///
+    /// Omitted, the crossing is **centred** on the face: `(extent - width) div
+    /// 2`. An offset that leaves the face, or of the wrong shape for the face,
+    /// is `DW0828`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<Offset>,
+    /// Where the same crossing sits on **`b`'s** face — the same offset, taken
+    /// from `b`'s own low corner. Omitted, centred on `b`'s face. The packing
+    /// places `b` so that the two agree: `corner(b) = corner(a) + at - meets`
+    /// along the face (spec-0059 §3). On a seam whose two boxes both already
+    /// stand, the two must name the same cells (`DW0828`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meets: Option<Offset>,
     /// **A PORTAL**: a named opening from the metrics table's standard set
     /// (`DW0812` on a name the table does not define, `DW0829` on one that does
     /// not fit). A body crosses at exactly the cells `at` and this standard
@@ -894,6 +926,8 @@ struct Placed<'a> {
     clearance: Option<u32>,
     /// How the place is classified, when the name resolved.
     class: Option<PlaceClass>,
+    /// How its corner was obtained (spec-0059 §3).
+    by: Provenance,
 }
 
 /// **How a place is classified** — the two kinds of standard a box is judged
@@ -1058,6 +1092,7 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
     let table = Metrics::table();
     let mut sink = Vec::new();
     resolve(plan, graph, &table, reads, &mut sink)
+        .0
         .into_iter()
         .filter_map(|p| {
             Some(PlacedBox {
@@ -1089,12 +1124,13 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
 /// refused it and there is no rectangle to build or measure.
 fn crossing_rect(
     s: &Seam,
+    at: [i64; 2],
     face: &SharedFace,
     table: &Metrics,
     reads: &mut Reads,
 ) -> Option<(Crossing, [i64; 2])> {
     if s.contact.is_some() {
-        return Some((Crossing::Contact, contact_extent(s, face)));
+        return Some((Crossing::Contact, contact_extent(s, at, face)));
     }
     let named = s.opening.as_ref()?;
     let entry = table.resolve(MetricKind::Opening, named).ok()?;
@@ -1115,13 +1151,10 @@ fn crossing_rect(
 /// would give a negative extent, so it is clamped to one cell: the rectangle
 /// stays well-formed and `DW0876` describes it, rather than the arithmetic
 /// producing a rectangle nothing downstream could reason about.
-fn contact_extent(s: &Seam, face: &SharedFace) -> [i64; 2] {
+fn contact_extent(s: &Seam, at: [i64; 2], face: &SharedFace) -> [i64; 2] {
     match s.contact.as_ref().and_then(|c| c.extent) {
         Some(e) => [i64::from(e[0].get()), i64::from(e[1].get())],
-        None => [
-            (face.u.1 - s.at[0] + 1).max(1),
-            (face.v.1 - s.at[1] + 1).max(1),
-        ],
+        None => [(face.u.1 - at[0] + 1).max(1), (face.v.1 - at[1] + 1).max(1)],
     }
 }
 
@@ -1140,17 +1173,22 @@ pub fn normal_axis_of(face: Face) -> usize {
 ///
 /// Extracted rather than written twice because [`stair_run`] needs the same
 /// rectangle at validation tier, before any `PlacedSeam` exists.
-fn crossing_aabb(s: &Seam, face: &SharedFace, extent: [i64; 2]) -> ([i64; 3], [i64; 3]) {
+fn crossing_aabb(
+    s: &Seam,
+    at: [i64; 2],
+    face: &SharedFace,
+    extent: [i64; 2],
+) -> ([i64; 3], [i64; 3]) {
     let normal_axis = normal_axis_of(s.face);
     let (u_axis, v_axis) = in_plane_axes(s.face);
     let mut lo = [0i64; 3];
     let mut hi = [0i64; 3];
     lo[normal_axis] = face.plane;
     hi[normal_axis] = face.plane;
-    lo[u_axis] = s.at[0];
-    hi[u_axis] = s.at[0] + extent[0] - 1;
-    lo[v_axis] = s.at[1];
-    hi[v_axis] = s.at[1] + extent[1] - 1;
+    lo[u_axis] = at[0];
+    hi[u_axis] = at[0] + extent[0] - 1;
+    lo[v_axis] = at[1];
+    hi[v_axis] = at[1] + extent[1] - 1;
     (lo, hi)
 }
 
@@ -1353,8 +1391,16 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
     let by_node: BTreeMap<&str, &PlacedBox> =
         boxes.iter().map(|b| (b.node.0.as_str(), b)).collect();
     let edges: BTreeMap<&str, &Edge> = graph.edges.iter().map(|e| (e.id().0.as_str(), e)).collect();
+    // The seam anchors come from the same packing that placed `boxes`: one
+    // arithmetic, so the derivation and its observer cannot disagree about
+    // where a hole is.
+    let mut sink = Vec::new();
+    let (_, packed) = resolve(plan, graph, &table, reads, &mut sink);
     let mut out = Vec::new();
-    for s in &plan.seams {
+    for (i, s) in plan.seams.iter().enumerate() {
+        let Some(at) = packed.seam_at[i] else {
+            continue; // the packing refused or could not place this seam
+        };
         let Some(edge) = edges.get(s.edge.0.as_str()) else {
             continue;
         };
@@ -1370,13 +1416,13 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
         let Ok(face) = shared_face_of(a, b, s.face) else {
             continue;
         };
-        let Some((crossing, extent)) = crossing_rect(s, &face, &table, reads) else {
+        let Some((crossing, extent)) = crossing_rect(s, at, &face, &table, reads) else {
             continue;
         };
         let normal_axis = normal_axis_of(s.face);
         // The face's two in-plane axes, in the order `at` names them.
         let (u_axis, v_axis) = in_plane_axes(s.face);
-        let (lo, hi) = crossing_aabb(s, &face, extent);
+        let (lo, hi) = crossing_aabb(s, at, &face, extent);
         let mut smin = [0i64; 3];
         let mut smax = [0i64; 3];
         smin[normal_axis] = face.plane;
@@ -1531,6 +1577,12 @@ pub struct PlanBinding {
     pub sightlines: usize,
     /// Named exterior vantages the walk judges the silhouette from.
     pub views: usize,
+    /// Boxes whose corner the author pinned (spec-0059 §3).
+    pub pinned: usize,
+    /// Boxes whose corner a seam derived.
+    pub derived: usize,
+    /// Connected components of the seam graph.
+    pub components: usize,
 }
 
 impl PlanBinding {
@@ -1552,7 +1604,20 @@ impl PlanBinding {
             })
             .unwrap_or_default();
         let n = plan.boxes.len();
+        let (pinned, derived, components) = match c.layout_graph.as_ref() {
+            Some(g) => {
+                let table = Metrics::table();
+                let mut reads = Reads::new();
+                let mut sink = Vec::new();
+                let (_, packed) = resolve(plan, &g.content, &table, &mut reads, &mut sink);
+                (packed.pinned, packed.derived, packed.components)
+            }
+            None => (0, 0, 0),
+        };
         PlanBinding {
+            pinned,
+            derived,
+            components,
             boxes: n,
             box_pairs: n * n.saturating_sub(1) / 2,
             seams: plan.seams.len(),
@@ -1578,9 +1643,12 @@ impl PlanBinding {
     #[must_use]
     pub fn line(&self) -> String {
         format!(
-            "site-plan binding: {b} box(es) ({p} pair(s) compared), {s} seam(s) ({st} stair, \
-             {sd} drop), {d} datum(s), {v} whole-owned volume(s), {i} identity(ies), \
-             {sl} sightline(s), {w} view(s).",
+            "site-plan binding: {b} box(es) ({p} pair(s) compared; {pn} pinned, {dv} derived, \
+             in {cc} component(s)), {s} seam(s) ({st} stair, {sd} drop), {d} datum(s), {v} \
+             whole-owned volume(s), {i} identity(ies), {sl} sightline(s), {w} view(s).",
+            pn = self.pinned,
+            dv = self.derived,
+            cc = self.components,
             b = self.boxes,
             p = self.box_pairs,
             s = self.seams,
@@ -1673,7 +1741,11 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
             "this campaign carries a site plan and no `layout-graph.json`. A site plan is the \
              geometric embedding OF a layout graph: every box names a place and every seam \
              names a connection, so with no graph there is nothing being embedded and every \
-             name in this document resolves to nothing. Author the graph first — that ordering \
+             name in this document resolves to nothing. This is the only line this state \
+             raises: the map's anchor vocabulary is derived from the graph too, so every \
+             anchor a `npcs`, `quests` or effect document names is left unjudged here rather \
+             than refused against an empty set, and is judged the moment the graph exists. \
+             Author the graph first — that ordering \
              is what this refusal exists to make uncompilable rather than merely advised."
                 .to_string(),
         ));
@@ -1681,15 +1753,12 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     };
 
     openers(c, graph, d);
-    let placed = resolve(plan, graph, &table, reads, d);
+    let (placed, packed) = resolve(plan, graph, &table, reads, d);
     agreement(plan, graph, &placed, d);
     grid(&placed, &table, reads, d);
     region(plan, &placed, d);
     disjoint(&placed, d);
-    // The SITE PLAN stage's own declared version — what the contact fence is
-    // judged against, exactly as the graph stage's is what the way fence reads.
-    let version = c.site_plan.as_ref().map_or("", |p| p.dsl_version.as_str());
-    seams(plan, graph, &placed, &table, version, reads, d);
+    seams(plan, graph, &placed, &packed, &table, reads, d);
     size_classes(&placed, d);
     volumes_outside_boxes(plan, &placed, d);
     identities(c, plan, &placed, d);
@@ -1833,17 +1902,592 @@ fn ids(plan: &SitePlanContent, d: &mut Vec<Diagnostic>) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Packing — a box is placed by its seam, and the grid is derived (spec-0059 §3)
+// ---------------------------------------------------------------------------
+
+/// How a box came to stand where it stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Provenance {
+    /// The author pinned its `min`.
+    Pinned,
+    /// A seam hung it off a box that already stood.
+    Seam {
+        /// Index into `seams[]`.
+        seam: usize,
+        /// The connection the seam allocates.
+        edge: EdgeId,
+        /// The box it was hung off.
+        from: NodeId,
+        /// The face of `from` it hangs off — or, when `from` is the seam's `b`
+        /// end, the face of this box the seam names.
+        face: Face,
+    },
+}
+
+impl Provenance {
+    /// The words a refusal or the placing line uses.
+    fn describe(&self) -> String {
+        match self {
+            Provenance::Pinned => "pinned".to_string(),
+            Provenance::Seam {
+                edge, from, face, ..
+            } => format!(
+                "hung off `{from}` across the {face} face by the seam for `{edge}`",
+                face = face.as_str()
+            ),
+        }
+    }
+}
+
+/// One box's corner, with its provenance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackedBox {
+    /// The place.
+    pub node: NodeId,
+    /// Low corner `[x, z]`, in world coordinates.
+    pub min: [i64; 2],
+    /// Where the corner came from.
+    pub by: Provenance,
+}
+
+/// The packing of one plan: every corner the pins and seams settle, and the
+/// world anchor of every seam whose two ends stand.
+#[derive(Debug, Default)]
+struct Packed {
+    /// Per `plan.boxes` index; `None` when nothing placed the box.
+    boxes: Vec<Option<PackedBox>>,
+    /// Per `plan.seams` index: the crossing's low corner on the face's own two
+    /// world axes — `[along, sill]` on a wall, `[x, z]` through a floor or
+    /// ceiling. `None` when either end is unplaced or a floor is unresolved.
+    seam_at: Vec<Option<[i64; 2]>>,
+    /// Seams the packing itself refused; [`seams`] does not judge them twice.
+    refused: BTreeSet<usize>,
+    /// Connected components of the seam graph, over boxes the graph declares.
+    components: usize,
+    pinned: usize,
+    derived: usize,
+}
+
+/// A seam resolved far enough to place a box: its two box indices and its two
+/// offsets, each `[u, v]` on a horizontal face and `[u, 0]` on a vertical one.
+#[derive(Debug, Clone, Copy)]
+struct Link {
+    a: usize,
+    b: usize,
+    at: [i64; 2],
+    meets: [i64; 2],
+}
+
+/// The two horizontal-axis indices a face's arithmetic uses: `(normal, along)`
+/// into `[x, z]`.
+fn face_axes(face: Face) -> (usize, usize) {
+    match face {
+        Face::East | Face::West => (0, 1),
+        Face::North | Face::South => (1, 0),
+        Face::Up | Face::Down => (0, 1), // unused: a horizontal face has no normal in [x, z]
+    }
+}
+
+/// The width a crossing is centred by, on the face's own two axes, or `None`
+/// for a contact with no extent — the whole face, so the offsets default to 0.
+/// `Err` when the opening cannot be resolved (`DW0812`/`DW0876` name that).
+fn centring_width(s: &Seam, table: &Metrics, reads: &mut Reads) -> Result<Option<[i64; 2]>, ()> {
+    if let Some(c) = &s.contact {
+        return Ok(c
+            .extent
+            .map(|e| [i64::from(e[0].get()), i64::from(e[1].get())]));
+    }
+    let Some(name) = s.opening.as_deref() else {
+        return Err(());
+    };
+    let entry = table.resolve(MetricKind::Opening, name).map_err(|_| ())?;
+    match entry.value(reads) {
+        MetricValue::Opening(o) => Ok(Some([i64::from(o.width), i64::from(o.height)])),
+        _ => Err(()),
+    }
+}
+
+/// Why an offset is not a position on its face.
+enum OffsetProblem {
+    /// The shape does not match the face: an integer through a floor, a pair
+    /// on a wall.
+    Shape { which: &'static str },
+    /// The crossing, anchored there, leaves the box's own face.
+    OffFace {
+        which: &'static str,
+        axis: &'static str,
+        value: i64,
+        extent: i64,
+        width: i64,
+    },
+}
+
+/// Resolve `at` and `meets` for one seam against its two boxes' extents:
+/// declared values taken as written, omitted ones centred (spec-0059 §3).
+fn offsets(
+    s: &Seam,
+    ext_a: [i64; 2],
+    ext_b: [i64; 2],
+    width: Option<[i64; 2]>,
+) -> Result<([i64; 2], [i64; 2]), OffsetProblem> {
+    let horizontal = s.face.is_horizontal_plane();
+    let one = |which: &'static str,
+               declared: Option<Offset>,
+               ext: [i64; 2]|
+     -> Result<[i64; 2], OffsetProblem> {
+        // Which of `[dx, dz]` each offset component runs along, and its name.
+        let (axes, names): ([usize; 2], [&'static str; 2]) = if horizontal {
+            ([0, 1], ["x", "z"])
+        } else {
+            let (_, along) = face_axes(s.face);
+            ([along, 0], [if along == 0 { "x" } else { "z" }, ""])
+        };
+        // Centred; a crossing wider than the face centres at the corner and
+        // whether it fits is `DW0829`'s or `DW0876`'s question.
+        let default = |i: usize| match width {
+            Some(w) => (ext[axes[i]] - w[i]).div_euclid(2).max(0),
+            None => 0,
+        };
+        let off = match (declared, horizontal) {
+            (None, true) => [default(0), default(1)],
+            (None, false) => [default(0), 0],
+            (Some(Offset::Plane(p)), true) => p,
+            (Some(Offset::Along(u)), false) => [u, 0],
+            _ => return Err(OffsetProblem::Shape { which }),
+        };
+        let n = if horizontal { 2 } else { 1 };
+        for i in 0..n {
+            // The CORNER is on the face; whether the crossing fits from there is
+            // `DW0829`'s (a portal) or `DW0876`'s (a contact) question, as ever.
+            let extent = ext[axes[i]];
+            let w = width.map_or(1, |w| w[i]);
+            if off[i] < 0 || off[i] > extent - 1 {
+                return Err(OffsetProblem::OffFace {
+                    which,
+                    axis: names[i],
+                    value: off[i],
+                    extent,
+                    width: w,
+                });
+            }
+        }
+        Ok(off)
+    };
+    Ok((one("at", s.at, ext_a)?, one("meets", s.meets, ext_b)?))
+}
+
+/// The corner of the box a seam places, from the corner of the one that
+/// already stands. `from_a` places `b` off `a`; otherwise `a` off `b`.
+fn derive_corner(
+    face: Face,
+    known: [i64; 2],
+    ext_a: [i64; 2],
+    ext_b: [i64; 2],
+    at: [i64; 2],
+    meets: [i64; 2],
+    from_a: bool,
+) -> [i64; 2] {
+    if face.is_horizontal_plane() {
+        return if from_a {
+            [known[0] + at[0] - meets[0], known[1] + at[1] - meets[1]]
+        } else {
+            [known[0] - at[0] + meets[0], known[1] - at[1] + meets[1]]
+        };
+    }
+    let (normal, along) = face_axes(face);
+    let positive = matches!(face, Face::East | Face::South);
+    let mut out = [0i64; 2];
+    if from_a {
+        out[along] = known[along] + at[0] - meets[0];
+        out[normal] = if positive {
+            known[normal] + ext_a[normal] + 1
+        } else {
+            known[normal] - ext_b[normal] - 1
+        };
+    } else {
+        out[along] = known[along] - at[0] + meets[0];
+        out[normal] = if positive {
+            known[normal] - ext_a[normal] - 1
+        } else {
+            known[normal] + ext_b[normal] + 1
+        };
+    }
+    out
+}
+
+/// The crossing's low corner in the face's own two world axes — what every
+/// seam rule judges. `[along, sill]` on a wall, the sill being the higher of
+/// the two floors; `[x, z]` through a floor or ceiling.
+fn crossing_anchor(
+    face: Face,
+    a_min: [i64; 2],
+    at: [i64; 2],
+    floor_a: i64,
+    floor_b: i64,
+) -> [i64; 2] {
+    if face.is_horizontal_plane() {
+        [a_min[0] + at[0], a_min[1] + at[1]]
+    } else {
+        let (_, along) = face_axes(face);
+        [a_min[along] + at[0], floor_a.max(floor_b)]
+    }
+}
+
+fn ext_of(b: &PlanBox) -> [i64; 2] {
+    [i64::from(b.extent[0].get()), i64::from(b.extent[1].get())]
+}
+
+/// **The packing** (spec-0059 §3): the pinned boxes seed it; then `seams[]` in
+/// document order, repeatedly, each seam with exactly one end standing placing
+/// the other, until a pass places nothing. A seam whose two ends both stand is
+/// then checked — the corner it would derive against the corner the box has —
+/// and a component of the seam graph with no pinned box is refused, because
+/// nothing places it.
+fn pack(
+    plan: &SitePlanContent,
+    graph: &LayoutGraphContent,
+    table: &Metrics,
+    floors: &[Option<i64>],
+    reads: &mut Reads,
+    d: &mut Vec<Diagnostic>,
+) -> Packed {
+    let mut out = Packed {
+        boxes: vec![None; plan.boxes.len()],
+        seam_at: vec![None; plan.seams.len()],
+        ..Packed::default()
+    };
+    let nodes: BTreeSet<&str> = graph.nodes.iter().map(|n| n.id.0.as_str()).collect();
+    let mut by_node: BTreeMap<&str, usize> = BTreeMap::new();
+    for (i, b) in plan.boxes.iter().enumerate() {
+        if nodes.contains(b.node.0.as_str()) {
+            by_node.entry(b.node.0.as_str()).or_insert(i);
+        }
+    }
+    let edges: BTreeMap<&str, &Edge> = graph.edges.iter().map(|e| (e.id().0.as_str(), e)).collect();
+
+    // ---- seeds
+    for (i, b) in plan.boxes.iter().enumerate() {
+        if let Some(min) = b.min {
+            out.boxes[i] = Some(PackedBox {
+                node: b.node.clone(),
+                min,
+                by: Provenance::Pinned,
+            });
+            out.pinned += 1;
+        }
+    }
+
+    // ---- the links: every seam whose edge and boxes resolve, with its offsets
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    let mut links: Vec<Option<Link>> = Vec::with_capacity(plan.seams.len());
+    for (i, s) in plan.seams.iter().enumerate() {
+        let Some(edge) = edges.get(s.edge.0.as_str()) else {
+            links.push(None);
+            continue; // `DW0824` refused the reference.
+        };
+        if matches!(edge, Edge::Vision { .. }) {
+            links.push(None);
+            continue; // `DW0824` said this carries a sightline.
+        }
+        let (Some(&a), Some(&b)) = (
+            by_node.get(edge.a().0.as_str()),
+            by_node.get(edge.b().0.as_str()),
+        ) else {
+            links.push(None);
+            continue; // `DW0824` reported the missing box.
+        };
+        pairs.push((a, b));
+        // An unresolvable opening (`DW0812`/`DW0876` say so) centres nothing:
+        // the crossing is taken one cell wide at the corner, so the seam still
+        // places and the rules that name the opening run over a plan that
+        // stands.
+        let width = centring_width(s, table, reads).unwrap_or_default();
+        match offsets(s, ext_of(&plan.boxes[a]), ext_of(&plan.boxes[b]), width) {
+            Ok((at, meets)) => links.push(Some(Link { a, b, at, meets })),
+            Err(problem) => {
+                d.push(offset_problem(i, s, edge, problem));
+                out.refused.insert(i);
+                links.push(None);
+            }
+        }
+    }
+
+    // ---- placement passes
+    loop {
+        let mut changed = false;
+        for (i, link) in links.iter().enumerate() {
+            let Some(l) = link else { continue };
+            let s = &plan.seams[i];
+            let (ext_a, ext_b) = (ext_of(&plan.boxes[l.a]), ext_of(&plan.boxes[l.b]));
+            match (out.boxes[l.a].clone(), out.boxes[l.b].clone()) {
+                (Some(a), None) => {
+                    let min = derive_corner(s.face, a.min, ext_a, ext_b, l.at, l.meets, true);
+                    out.boxes[l.b] = Some(PackedBox {
+                        node: plan.boxes[l.b].node.clone(),
+                        min,
+                        by: Provenance::Seam {
+                            seam: i,
+                            edge: s.edge.clone(),
+                            from: a.node,
+                            face: s.face,
+                        },
+                    });
+                    out.derived += 1;
+                    changed = true;
+                }
+                (None, Some(b)) => {
+                    let min = derive_corner(s.face, b.min, ext_a, ext_b, l.at, l.meets, false);
+                    out.boxes[l.a] = Some(PackedBox {
+                        node: plan.boxes[l.a].node.clone(),
+                        min,
+                        by: Provenance::Seam {
+                            seam: i,
+                            edge: s.edge.clone(),
+                            from: b.node,
+                            face: s.face,
+                        },
+                    });
+                    out.derived += 1;
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    // ---- every seam whose two ends stand: one placement, and the anchor
+    for (i, link) in links.iter().enumerate() {
+        let Some(l) = link else { continue };
+        let (Some(a), Some(b)) = (&out.boxes[l.a], &out.boxes[l.b]) else {
+            continue;
+        };
+        let s = &plan.seams[i];
+        let (ext_a, ext_b) = (ext_of(&plan.boxes[l.a]), ext_of(&plan.boxes[l.b]));
+        let want = derive_corner(s.face, a.min, ext_a, ext_b, l.at, l.meets, true);
+        if want != b.min {
+            d.push(two_placements(i, s, a, b, want));
+            out.refused.insert(i);
+            continue;
+        }
+        if let (Some(fa), Some(fb)) = (floors[l.a], floors[l.b]) {
+            out.seam_at[i] = Some(crossing_anchor(s.face, a.min, l.at, fa, fb));
+        }
+    }
+
+    // ---- components with nothing to place them
+    let mut parent: Vec<usize> = (0..plan.boxes.len()).collect();
+    fn find(p: &mut [usize], i: usize) -> usize {
+        let mut r = i;
+        while p[r] != r {
+            r = p[r];
+        }
+        let mut c = i;
+        while p[c] != r {
+            let n = p[c];
+            p[c] = r;
+            c = n;
+        }
+        r
+    }
+    for &(a, b) in &pairs {
+        let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+        if ra != rb {
+            parent[ra.max(rb)] = ra.min(rb);
+        }
+    }
+    let mut members: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (i, b) in plan.boxes.iter().enumerate() {
+        if nodes.contains(b.node.0.as_str()) {
+            let r = find(&mut parent, i);
+            members.entry(r).or_default().push(i);
+        }
+    }
+    out.components = members.len();
+    let entry = graph.entry.0.as_str();
+    for (_, boxes) in members {
+        if boxes.iter().any(|&i| plan.boxes[i].min.is_some()) {
+            continue;
+        }
+        let names: Vec<String> = boxes
+            .iter()
+            .map(|&i| format!("`{}`", plan.boxes[i].node))
+            .collect();
+        let suggested = boxes
+            .iter()
+            .find(|&&i| plan.boxes[i].node.0 == entry)
+            .or(boxes.first())
+            .map(|&i| plan.boxes[i].node.to_string())
+            .unwrap_or_default();
+        d.push(Diagnostic::error(
+            DW_UNPLACED,
+            "site-plan",
+            format!("/content/boxes/{}", boxes[0]),
+            format!(
+                "nothing places {list}: no box among them pins its `min`, and a box stands \
+                 only where a pin puts it or where a seam hangs it off a box that already \
+                 stands. Pin one of them — `{suggested}` — with `\"min\": [x, z]`, and the \
+                 seams place the rest. {count} box(es) in this component.",
+                list = names.join(", "),
+                count = boxes.len(),
+            ),
+        ));
+    }
+    out
+}
+
+/// `DW0828`: an offset that is not a position on its own box's face.
+fn offset_problem(i: usize, s: &Seam, edge: &Edge, problem: OffsetProblem) -> Diagnostic {
+    let (which, detail) = match problem {
+        OffsetProblem::Shape { which } => (
+            which,
+            if s.face.is_horizontal_plane() {
+                format!(
+                    "the {face} face is a floor or ceiling with two in-plane axes, and `{which}` \
+                     gives one number. Write `[dx, dz]` — cells along x and z from the box's \
+                     low corner",
+                    face = s.face.as_str()
+                )
+            } else {
+                format!(
+                    "the {face} face is a wall with one horizontal axis, and `{which}` gives \
+                     two numbers. Write one — cells along the face from the box's low corner; \
+                     the sill is not written, it is the higher of the two floors",
+                    face = s.face.as_str()
+                )
+            },
+        ),
+        OffsetProblem::OffFace {
+            which,
+            axis,
+            value,
+            extent,
+            width,
+        } => (
+            which,
+            format!(
+                "`{which}` puts the crossing's corner at {value} along {axis} on a face that \
+                 runs 0..{last} — the crossing is {width} wide and the box is {extent} on that \
+                 axis. Write an offset on the face, or omit it and the crossing is centred; an \
+                 offset is never quietly clamped to fit",
+                last = extent - 1,
+            ),
+        ),
+    };
+    Diagnostic::error(
+        DW_SEAM_NOT_SHARED,
+        "site-plan",
+        format!("/content/seams/{i}/{which}"),
+        format!(
+            "the seam for `{id}` between `{an}` and `{bn}` names no position on the {side} \
+             box's face: {detail}.",
+            id = s.edge,
+            an = edge.a(),
+            bn = edge.b(),
+            side = if which == "at" { "`a`" } else { "`b`" },
+        ),
+    )
+}
+
+/// A seam whose two boxes both stand, and which would put `b` somewhere else:
+/// `DW0883` when a pin is one of the two authorities, `DW0828` when a loop does
+/// not close.
+fn two_placements(i: usize, s: &Seam, a: &PackedBox, b: &PackedBox, want: [i64; 2]) -> Diagnostic {
+    // Two authorities on `b`: its pin and this seam. When `b` was placed by
+    // another seam, the disagreement is between seams — a loop that does not
+    // close — however `a` came to stand where it stands.
+    let pinned = matches!(b.by, Provenance::Pinned);
+    let where_ = format!(
+        "`{an}` stands at [{ax}, {az}] ({a_by}); `{bn}` stands at [{bx}, {bz}] ({b_by}); hung \
+         off `{an}`'s {face} face by this seam, `{bn}` would stand at [{wx}, {wz}]",
+        an = a.node,
+        ax = a.min[0],
+        az = a.min[1],
+        a_by = a.by.describe(),
+        bn = b.node,
+        bx = b.min[0],
+        bz = b.min[1],
+        b_by = b.by.describe(),
+        face = s.face.as_str(),
+        wx = want[0],
+        wz = want[1],
+    );
+    if pinned {
+        Diagnostic::error(
+            DW_UNPLACED,
+            "site-plan",
+            format!("/content/seams/{i}"),
+            format!(
+                "two things place one box, and they disagree: {where_}. A pin is a claim the \
+                 packing verifies, never a second authority — move the pin to the corner the \
+                 seam derives, delete it and let the seam place the box, or change this seam's \
+                 `at`/`meets` so the two agree.",
+            ),
+        )
+    } else {
+        Diagnostic::error(
+            DW_SEAM_NOT_SHARED,
+            "site-plan",
+            format!("/content/seams/{i}"),
+            format!(
+                "the seam for `{id}` closes a loop, and the loop does not close: {where_}. Every \
+                 box in the loop was placed by an earlier seam, so this one can only check; \
+                 change its `at`/`meets` to where the two boxes really meet, or move the \
+                 offsets of the seams that placed them.",
+                id = s.edge,
+            ),
+        )
+    }
+}
+
+/// Every box's corner and how it was obtained, one line each — the derivation
+/// handed back, so a creator reads a corner from the build rather than typing
+/// it into the document.
+#[must_use]
+pub fn placements(c: &Campaign) -> Vec<String> {
+    let (Some(plan), Some(graph)) = (
+        c.site_plan.as_ref().map(|p| &p.content),
+        c.layout_graph.as_ref().map(|g| &g.content),
+    ) else {
+        return Vec::new();
+    };
+    let table = Metrics::table();
+    let mut reads = Reads::new();
+    let mut sink = Vec::new();
+    let (_, packed) = resolve(plan, graph, &table, &mut reads, &mut sink);
+    packed
+        .boxes
+        .iter()
+        .flatten()
+        .map(|b| {
+            format!(
+                "site-plan placing: `{node}` stands at [{x}, {z}] — {by}.",
+                node = b.node,
+                x = b.min[0],
+                z = b.min[1],
+                by = b.by.describe(),
+            )
+        })
+        .collect()
+}
+
 /// Resolve every box once: its footprint, its walk plane, its headroom and its
 /// size class. A floor naming a datum the plan does not declare is the ordinary
 /// dangling reference (`DW0112`) and the box is dropped, because a place with no
 /// plane has no geometry for any rule below to judge.
+/// The corners come from the packing (spec-0059 §3), which runs here so that
+/// every reader of the resolved plan — the checks, the derivation, the battery
+/// — holds one grid.
 fn resolve<'a>(
     plan: &'a SitePlanContent,
     graph: &LayoutGraphContent,
     table: &Metrics,
     reads: &mut Reads,
     d: &mut Vec<Diagnostic>,
-) -> Vec<Placed<'a>> {
+) -> (Vec<Placed<'a>>, Packed) {
     let datums: BTreeMap<&str, i64> = plan.datums.iter().map(|x| (x.id.0.as_str(), x.y)).collect();
     // Whichever of the two classifications the node declared. `DW0875` is what
     // refuses a node that declared both or neither; this map takes the size
@@ -1863,12 +2507,14 @@ fn resolve<'a>(
             Some((n.id.0.as_str(), named))
         })
         .collect();
-    let mut out = Vec::new();
+    // Floors first: the packing needs them for every sill, and a box with no
+    // plane has no cells for any reader to work in.
+    let mut floors: Vec<Option<i64>> = Vec::with_capacity(plan.boxes.len());
     for (i, b) in plan.boxes.iter().enumerate() {
-        let floor = match &b.floor {
-            Floor::Y(y) => *y,
+        floors.push(match &b.floor {
+            Floor::Y(y) => Some(*y),
             Floor::Datum(id) => match datums.get(id.0.as_str()) {
-                Some(y) => *y,
+                Some(y) => Some(*y),
                 None => {
                     d.push(Diagnostic::error(
                         crate::codes::DANGLING_REF,
@@ -1882,9 +2528,16 @@ fn resolve<'a>(
                             node = b.node,
                         ),
                     ));
-                    continue;
+                    None
                 }
             },
+        });
+    }
+    let packed = pack(plan, graph, table, &floors, reads, d);
+    let mut out = Vec::new();
+    for (i, b) in plan.boxes.iter().enumerate() {
+        let (Some(floor), Some(pb)) = (floors[i], &packed.boxes[i]) else {
+            continue; // `DW0112` or `DW0883` said why this box has no cells.
         };
         let class = classes
             .get(b.node.0.as_str())
@@ -1907,17 +2560,18 @@ fn resolve<'a>(
             index: i,
             plan: b,
             foot: [
-                b.min[0],
-                b.min[0] + i64::from(b.extent[0].get()) - 1,
-                b.min[1],
-                b.min[1] + i64::from(b.extent[1].get()) - 1,
+                pb.min[0],
+                pb.min[0] + i64::from(b.extent[0].get()) - 1,
+                pb.min[1],
+                pb.min[1] + i64::from(b.extent[1].get()) - 1,
             ],
             floor,
             clearance,
             class,
+            by: pb.by.clone(),
         });
     }
-    out
+    (out, packed)
 }
 
 /// `DW0824`: the graph and the plan agree **exactly**, in both directions.
@@ -2360,6 +3014,7 @@ fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<Diagnostic>
                 index: p.index,
                 name: p.plan.node.0.as_str(),
                 axes: bad,
+                by: p.by.describe(),
             });
         }
     }
@@ -2370,10 +3025,12 @@ fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<Diagnostic>
             "site-plan",
             format!("/content/boxes/{}", o.index),
             format!(
-                "box for `{node}` leaves the region: {bad}. The region is the whole map's \
-                 extent, and it comes from the brief — a box is never grounds to grow it. Move \
-                 the box, shrink it, or change the brief's fact and re-derive the region so the \
-                 change is visible in the document that owns it.",
+                "box for `{node}` leaves the region: {bad}. It stands where it stands because it \
+                 is {by}. The region is the whole map's extent, and it comes from the brief — a \
+                 box is never grounds to grow it. Move the box (its pin, or the offsets of the \
+                 seam that placed it), shrink it, or change the brief's fact and re-derive the \
+                 region so the change is visible in the document that owns it.",
+                by = o.by,
                 node = o.name,
                 bad = against_region(&o.axes, &spans),
             ),
@@ -2409,6 +3066,7 @@ fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<Diagnostic>
         }
         if !bad.is_empty() {
             volumes_out.push(Overrun {
+                by: String::new(),
                 index: i,
                 name: v.id.0.as_str(),
                 axes: bad,
@@ -2480,6 +3138,8 @@ struct Overrun<'a> {
     name: &'a str,
     /// Each axis it leaves, with its own inclusive span on that axis.
     axes: Vec<(&'static str, i64, i64)>,
+    /// How its corner was obtained, in the words a refusal uses.
+    by: String,
 }
 
 /// The offender list a folded finding carries: every name with its own overrun,
@@ -2843,9 +3503,9 @@ struct SeamCtx<'a> {
     a: &'a Placed<'a>,
     b: &'a Placed<'a>,
     face: SharedFace,
-    /// The `dsl_version` the SITE PLAN stage declares — what the contact fence
-    /// is judged against.
-    version: &'a str,
+    /// The crossing's low corner on the face's own two world axes, from the
+    /// packing — `[along, sill]` on a wall, `[x, z]` through a floor.
+    at: [i64; 2],
 }
 
 /// `DW0828`–`DW0831`: every seam sits on a face its two boxes share, at cells
@@ -2855,8 +3515,8 @@ fn seams(
     plan: &SitePlanContent,
     graph: &LayoutGraphContent,
     placed: &[Placed<'_>],
+    packed: &Packed,
     table: &Metrics,
-    version: &str,
     reads: &mut Reads,
     d: &mut Vec<Diagnostic>,
 ) {
@@ -2865,6 +3525,9 @@ fn seams(
     let edges: BTreeMap<&str, &Edge> = graph.edges.iter().map(|e| (e.id().0.as_str(), e)).collect();
 
     for (i, s) in plan.seams.iter().enumerate() {
+        if packed.refused.contains(&i) {
+            continue; // the packing refused this seam by name already.
+        }
         let Some(edge) = edges.get(s.edge.0.as_str()) else {
             continue; // `DW0824` refused the reference.
         };
@@ -2875,7 +3538,10 @@ fn seams(
             by_node.get(edge.a().0.as_str()).copied(),
             by_node.get(edge.b().0.as_str()).copied(),
         ) else {
-            continue; // `DW0824` reported the missing box.
+            continue; // `DW0824` reported the missing box, or nothing placed it.
+        };
+        let Some(at) = packed.seam_at[i] else {
+            continue; // an end has no plane; `DW0112` said so.
         };
 
         let face = match shared_face(a.side(), b.side(), s.face) {
@@ -2893,7 +3559,7 @@ fn seams(
             a,
             b,
             face,
-            version,
+            at,
         };
 
         // `DW0876`, first: a seam that does not state exactly one kind of
@@ -3015,7 +3681,7 @@ fn not_shared(
     )
 }
 
-/// **`DW0876` and the per-stage fence**: this seam states exactly one kind of
+/// **`DW0876`**: this seam states exactly one kind of
 /// connection, and if it is a contact, one this engine builds (spec-0053 §4).
 ///
 /// Returns `false` when the seam has no usable crossing, in which case the
@@ -3074,26 +3740,6 @@ fn contact_declaration(
         (None, Some(_)) => {}
     }
 
-    // ---- The fence. A WELLFORMEDNESS rule, judged against the version this
-    // document declares. Below it there is nothing else to say about a contact.
-    if !crate::is_v19(ctx.version) {
-        d.push(Diagnostic::error(
-            crate::codes::RESERVED,
-            "site-plan",
-            format!("/content/seams/{i}/contact"),
-            format!(
-                "the seam for `{edge}` declares a `contact`, which requires dsl_version \
-                 {since} and this stage declares `{version}` — raise this stage's \
-                 `dsl_version` to {since}, or give the seam a standard `opening` instead \
-                 (below {since} two places meet only through a doorway a table names).",
-                edge = s.edge,
-                since = crate::WAY_AND_CONTACT_SINCE,
-                version = ctx.version,
-            ),
-        ));
-        return false;
-    }
-
     // ---- Shape 4: the classes a contact may carry.
     //
     // `walk` and `drop` only. A rim falling to a lower court is a genuine broad
@@ -3126,7 +3772,7 @@ fn contact_declaration(
     };
     let (u_span, v_span) = (ctx.face.u, ctx.face.v);
     let (u_hi, v_hi) = crossing_hi(ctx);
-    let width = u_hi - s.at[0] + 1;
+    let width = u_hi - ctx.at[0] + 1;
     if width <= i64::from(floor) {
         refuse(
             format!(
@@ -3146,16 +3792,16 @@ fn contact_declaration(
 
     // ---- Shape 2: the span lies on the shared face.
     let mut off: Vec<String> = Vec::new();
-    if s.at[0] < u_span.0 || u_hi > u_span.1 {
+    if ctx.at[0] < u_span.0 || u_hi > u_span.1 {
         off.push(format!(
             "{}..{} on {}, against the face's {}..{}",
-            s.at[0], u_hi, ctx.face.u_axis, u_span.0, u_span.1
+            ctx.at[0], u_hi, ctx.face.u_axis, u_span.0, u_span.1
         ));
     }
-    if s.at[1] < v_span.0 || v_hi > v_span.1 {
+    if ctx.at[1] < v_span.0 || v_hi > v_span.1 {
         off.push(format!(
             "{}..{} on {}, against the face's {}..{}",
-            s.at[1], v_hi, ctx.face.v_axis, v_span.0, v_span.1
+            ctx.at[1], v_hi, ctx.face.v_axis, v_span.0, v_span.1
         ));
     }
     if !off.is_empty() {
@@ -3179,16 +3825,16 @@ fn contact_declaration(
 /// axes — [`contact_extent`] resolved against the seam's own anchor, so this
 /// rule and the derivation describe one rectangle.
 fn crossing_hi(ctx: &SeamCtx<'_>) -> (i64, i64) {
-    let e = contact_extent(ctx.seam, &ctx.face);
-    (ctx.seam.at[0] + e[0] - 1, ctx.seam.at[1] + e[1] - 1)
+    let e = contact_extent(ctx.seam, ctx.at, &ctx.face);
+    (ctx.at[0] + e[0] - 1, ctx.at[1] + e[1] - 1)
 }
 
 /// `DW0828`'s anchor half and `DW0829`'s geometric half: the opening's cells are
 /// cells the shared face has.
 fn opening_fits(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec<Diagnostic>) {
-    let (i, s, edge, face) = (ctx.index, ctx.seam, ctx.edge, &ctx.face);
+    let (i, s, edge, face, at) = (ctx.index, ctx.seam, ctx.edge, &ctx.face, ctx.at);
     let anchor_in =
-        s.at[0] >= face.u.0 && s.at[0] <= face.u.1 && s.at[1] >= face.v.0 && s.at[1] <= face.v.1;
+        at[0] >= face.u.0 && at[0] <= face.u.1 && at[1] >= face.v.0 && at[1] <= face.v.1;
     if !anchor_in {
         d.push(Diagnostic::error(
             DW_SEAM_NOT_SHARED,
@@ -3204,8 +3850,8 @@ fn opening_fits(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec
                 bn = edge.b(),
                 ua = face.u_axis,
                 va = face.v_axis,
-                u = s.at[0],
-                v = s.at[1],
+                u = at[0],
+                v = at[1],
                 u0 = face.u.0,
                 u1 = face.u.1,
                 v0 = face.v.0,
@@ -3215,8 +3861,8 @@ fn opening_fits(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec
         ));
         return;
     }
-    let u_hi = s.at[0] + i64::from(opening.width) - 1;
-    let v_hi = s.at[1] + i64::from(opening.height) - 1;
+    let u_hi = at[0] + i64::from(opening.width) - 1;
+    let v_hi = at[1] + i64::from(opening.height) - 1;
     if u_hi <= face.u.1 && v_hi <= face.v.1 {
         return;
     }
@@ -3237,8 +3883,8 @@ fn opening_fits(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec
             bn = edge.b(),
             ua = face.u_axis,
             va = face.v_axis,
-            u = s.at[0],
-            v = s.at[1],
+            u = at[0],
+            v = at[1],
             u1 = face.u.1,
             v1 = face.v.1,
         ),
@@ -3259,7 +3905,7 @@ fn sill(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec<Diagnos
     };
     let max_rise = MAX_JUMP_RISE_16 / crate::metrics::FULL_16;
     for (name, p) in sources {
-        let rise = s.at[1] - p.floor;
+        let rise = ctx.at[1] - p.floor;
         if rise <= max_rise {
             continue;
         }
@@ -3271,11 +3917,12 @@ fn sill(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec<Diagnos
                 "the seam for `{id}` has its sill at y {sill}, {rise} blocks over the floor of \
                  `{name}` at y {floor}, and a body reaches at most {max_rise} block(s) by \
                  jumping ({j}/16 of vanilla's apex). A body entering from `{name}` cannot get \
-                 into the opening at all, so the connection the graph declares is not one. Drop \
-                 the sill, or declare the connection a `stair` and let the treads carry the \
-                 climb. (The opening is {w}x{h}.)",
+                 into the opening at all, so the connection the graph declares is not one. The \
+                 sill is the higher of the two floors: bring the floors within a step of each \
+                 other, or declare the connection a `stair` and let the treads carry the climb. \
+                 (The opening is {w}x{h}.)",
                 id = s.edge,
-                sill = s.at[1],
+                sill = ctx.at[1],
                 j = MAX_JUMP_RISE_16,
                 floor = p.floor,
                 w = opening.width,
@@ -3360,7 +4007,7 @@ fn stair(ctx: &SeamCtx<'_>, table: &Metrics, reads: &mut Reads, d: &mut Vec<Diag
     // tread run costs: the courses carry a body to the OPENING, and through a
     // pierced floor they leave along one side of the hole. See [`stair_run`] for
     // the plan that reached green at `needs 8, affords 8` and built no stair.
-    let Some((_, extent)) = crossing_rect(s, face, table, reads) else {
+    let Some((_, extent)) = crossing_rect(s, ctx.at, face, table, reads) else {
         return; // `DW0812` refused the opening; there is no rectangle to measure.
     };
     let Some(run) = stair_run(
@@ -3368,7 +4015,7 @@ fn stair(ctx: &SeamCtx<'_>, table: &Metrics, reads: &mut Reads, d: &mut Vec<Diag
         host.foot,
         normal_axis_of(s.face),
         face.plane,
-        crossing_aabb(s, face, extent),
+        crossing_aabb(s, ctx.at, face, extent),
     ) else {
         return; // no run to lay: the higher host is refused above, the stray hole by `DW0828`.
     };

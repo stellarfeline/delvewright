@@ -36,8 +36,8 @@ def delvec_bin():
 def fake_repo(tmp_path: Path, *, git: bool = True) -> Path:
     """A tree shaped like this repository's: tracked sources under `crates/`."""
     repo = tmp_path / "repo"
-    (repo / "crates" / "compiler" / "src").mkdir(parents=True)
-    (repo / "crates" / "compiler" / "src" / "main.rs").write_text("fn main() {}\n")
+    (repo / "crates" / "delvec" / "src").mkdir(parents=True)
+    (repo / "crates" / "delvec" / "src" / "main.rs").write_text("fn main() {}\n")
     (repo / "Cargo.toml").write_text("[workspace]\n")
     (repo / "Cargo.lock").write_text("version = 4\n")
     (repo / "target" / "debug").mkdir(parents=True)
@@ -143,8 +143,8 @@ def test_nothing_found_is_a_refusal_naming_both_places(delvec_bin, tmp_path):
 
 
 def test_a_required_caller_is_never_handed_an_inferred_engine(delvec_bin, tmp_path):
-    """`build-every-campaign` asks WHICH engine built a campaign; inferring one
-    would answer a question nobody asked."""
+    """A required caller asks WHICH engine did something; inferring one would
+    answer a question nobody asked."""
     repo = fake_repo(tmp_path)
     fake_delvec(repo)  # present, and still not used
     sink = Sink()
@@ -164,12 +164,13 @@ def test_a_missing_named_path_is_refused(delvec_bin, tmp_path):
 def test_a_sibling_targets_fresh_artifacts_cannot_make_the_gate_refuse(
     delvec_bin, tmp_path
 ):
-    """`crates/render` carries its own `target/`. Walking `crates/` naively makes
-    every run refuse forever, which is the cry-wolf direction that gets a gate
-    disabled. Tracked files are the population."""
+    """An untracked build artifact under `crates/` — a nested `target/` — is
+    newer than the binary. Walking `crates/` naively makes every run refuse
+    forever, which is the cry-wolf direction that gets a gate disabled. Tracked
+    files are the population."""
     repo = fake_repo(tmp_path)
     binary = fake_delvec(repo)
-    junk = repo / "crates" / "render" / "target" / "debug" / "build.rs"
+    junk = repo / "crates" / "delvec" / "target" / "debug" / "build.rs"
     junk.parent.mkdir(parents=True)
     junk.write_text("fresh\n")  # newer than the binary, and untracked
 
@@ -184,7 +185,7 @@ def test_without_git_the_walk_skips_target_and_says_which_method_decided(
 ):
     repo = fake_repo(tmp_path, git=False)
     binary = fake_delvec(repo)
-    junk = repo / "crates" / "render" / "target" / "debug" / "build.rs"
+    junk = repo / "crates" / "delvec" / "target" / "debug" / "build.rs"
     junk.parent.mkdir(parents=True)
     junk.write_text("fresh\n")
 
@@ -197,8 +198,8 @@ def test_without_git_the_walk_skips_target_and_says_which_method_decided(
 def test_every_tool_that_runs_an_engine_uses_the_one_resolver():
     """The extraction is only worth anything if nothing kept its private copy.
 
-    Binding: the six `tools/*.py` that take a `--delvec` PATH and run it. The
-    population is stated so a seventh tool added beside them is visibly absent
+    Binding: the five `tools/*.py` that take a `--delvec` PATH and run it. The
+    population is stated so a sixth tool added beside them is visibly absent
     from this list rather than silently uncovered.
     """
     users = [
@@ -207,9 +208,8 @@ def test_every_tool_that_runs_an_engine_uses_the_one_resolver():
         "check-whole-map-render.py",
         "gallery-baseline.py",
         "gallery-build.py",
-        "build-every-campaign.py",
     ]
-    assert len(users) == 6
+    assert len(users) == 5
     for name in users:
         src = (REPO / "tools" / name).read_text(encoding="utf-8")
         assert "from delvec_bin import resolve" in src, name

@@ -279,31 +279,11 @@ MODIFIER_MIN_SHARE = 1 / 3
 MODIFIER_MIN_VARIANTS = 6
 
 MODIFIER_HOLES = {
-    ("QuestEffect", "requires_flags"): (
-        "OPEN FINDING, and the one blocking today. Documented as 'per-effect flag "
-        "gate' — a property of AN EFFECT — but absent from ten of twenty-six, so "
-        "`spawn-actor`, `move-actor`, `unleash-actor`, `despawn-actor`, "
-        "`spawn-npc`, `set-checkpoint`, `bonfire`, `begin-stealth` and `sequence` "
-        "cannot be branch-gated at all. Every one of those is staging or souls "
-        "vocabulary, which is exactly what the branch work (spec-0025) needs to "
-        "gate per branch. `campaign-complete`'s absence is deliberate and "
-        "documented (gating a campaign's own completion is a deadlock footgun)."
-    ),
-    ("QuestEffect", "forbids_flags"): (
-        "OPEN FINDING. The dual of `requires_flags`, missing from the same ten "
-        "variants for the same reason. Lifts with it, not separately."
-    ),
-    ("QuestEffect", "requires_state"): (
-        "OPEN FINDING, inherited. The numeric third field of the SAME gate "
-        "(spec-0031, DSL v0.10), placed on exactly the variants `requires_flags` "
-        "and `forbids_flags` already ride and absent from exactly the same ten. "
-        "That is deliberate rather than an oversight: a gate is one object, and "
-        "giving its comparison a different carrier set than its flags would make "
-        "'which verbs are gatable' two different answers, which is the very shape "
-        "this check exists to catch. The hole IS the flag pair's hole; all three "
-        "fields lift together, in one `dsl_version`, or none do. Do not close "
-        "this entry by widening the numeric axis on its own."
-    ),
+    # The gate's three fields left this ledger when the effect's guard became one
+    # object: `Guard` under `QuestEffect::when`, carried by every verb, so there
+    # is no per-variant declaration left to be partial. The finding those three
+    # entries recorded — ten staging and souls verbs that could not be gated at
+    # all — is closed by that shape, not by an exemption.
     ("WorldEdit", "region"): (
         "ACCEPTED — operand, not modifier. `WorldEdit` splits cleanly into "
         "CELL-level ops (which take a `region`) and PIECE-level ops (which take a "
@@ -454,17 +434,47 @@ STORY_NODE_CTORS = (
 # construction and silently covers every later one beside it.
 HAPPENING_NONE_ALLOWED = {
     "crates/dsl/src/stages.rs": (
-        1,
-        "`Ambush::to_trigger`, the CONTINUATION beat. An ambush is one story "
-        "node, so its single declaration is stamped on the first generated "
-        "`spawn-actor` and the matching `unleash-actor` deliberately carries "
-        "none: repeating it would pad the chronicle and trip `DW0485`. One is "
-        "the whole quota — a second site here is a second desugarer, and it owes "
-        "its own author-facing field.",
+        2,
+        "Two sites, named individually so a THIRD is still a failure. (1) "
+        "`impl From<Verb> for QuestEffect` — the one definition of 'this verb, "
+        "unguarded, with no story note'. It is where the words `happening: None` "
+        "are written down, not a place a beat is generated; every caller that "
+        "reaches it is counted at its own `.into()`. (2) `Ambush::to_trigger`, "
+        "the CONTINUATION beat: an ambush is one story node, so its single "
+        "declaration is stamped on the first generated `spawn-actor` and the "
+        "matching `unleash-actor` deliberately carries none — repeating it would "
+        "pad the chronicle and trip `DW0485`. A further site here is a second "
+        "desugarer, and it owes its own author-facing field.",
     ),
 }
 
 HAPPENING_NONE = re.compile(r"^\s*happening:\s*None\s*,\s*$")
+
+
+def story_node_conversions(text: str) -> set:
+    """Line indices of `Verb::<StoryNode> { … }.into()` — the same construction as
+    `happening: None`, spelled in one token through `From<Verb> for QuestEffect`.
+
+    Brace-matched from the opening line rather than pattern-matched over one line,
+    because the multi-line spelling is the common one and a gate that only saw the
+    single-line form would be blind to exactly the site a desugarer writes.
+    """
+    out = set()
+    for m in re.finditer(r"Verb::(%s)\s*\{" % "|".join(STORY_NODE_CTORS), text):
+        depth, j = 0, m.end() - 1
+        while j < len(text):
+            if text[j] == "{":
+                depth += 1
+            elif text[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        tail = text[j + 1 :]
+        k = len(tail) - len(tail.lstrip())
+        if tail[k:].startswith(".into()"):
+            out.add(text.count("\n", 0, j + 1 + k))
+    return out
 
 
 def check_generated_obligations(root):
@@ -474,15 +484,22 @@ def check_generated_obligations(root):
         rel = path.relative_to(root).as_posix()
         if "/tests/" in rel or rel.startswith("tools/"):
             continue
-        lines = path.read_text(encoding="utf-8").split("\n")
+        text = path.read_text(encoding="utf-8")
+        lines = text.split("\n")
+        # `Verb::<StoryNode> { … }.into()` builds the same effect in one token:
+        # `From<Verb>` supplies `happening: None` out of sight, so a desugarer
+        # could discharge nothing and never write the field this gate looks for.
+        # The conversion is therefore a site of exactly the same kind, counted at
+        # the line its `.into()` sits on.
+        converted = story_node_conversions(text)
         in_test = False
         budget = HAPPENING_NONE_ALLOWED.get(rel, (0, ""))[0]
         for i, line in enumerate(lines):
             if line.strip().startswith("#[cfg(test)]"):
                 in_test = True
-            if any(f"QuestEffect::{c} {{" in line for c in STORY_NODE_CTORS):
+            if any(f"Verb::{c} {{" in line for c in STORY_NODE_CTORS):
                 examined += 1
-            if not HAPPENING_NONE.match(line):
+            if not (HAPPENING_NONE.match(line) or i in converted):
                 continue
             matched += 1
             if in_test:
@@ -501,11 +518,16 @@ def check_generated_obligations(root):
             )
     for rel, (n, _why) in sorted(HAPPENING_NONE_ALLOWED.items()):
         path = root / rel
-        seen = (
-            sum(1 for line in path.read_text(encoding="utf-8").split("\n") if HAPPENING_NONE.match(line))
-            if path.exists()
-            else 0
-        )
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            converted = story_node_conversions(text)
+            seen = sum(
+                1
+                for i, line in enumerate(text.split("\n"))
+                if HAPPENING_NONE.match(line) or i in converted
+            )
+        else:
+            seen = 0
         if seen < n:
             fails.append(
                 f"FAIL: {rel} is allowed {n} story node(s) with no `happening` and "

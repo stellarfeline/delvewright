@@ -51,7 +51,7 @@ use serde_json::{Value, json};
 ///   both beat-bound places.
 const GREEN: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.13.0",
+  "dsl_version": "0.22.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -83,7 +83,7 @@ const GREEN: &str = r#"{
 
 const BRIEF: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.13.0",
+  "dsl_version": "0.22.0",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -105,6 +105,7 @@ fn campaign(graph: Option<String>, brief: Option<String>) -> RawCampaign {
         layout_graph: graph,
         site_plan: None,
         detail_plan: None,
+        design: None,
         geometry_brief: brief,
         ..common::valid_raw()
     }
@@ -123,7 +124,7 @@ fn validate(graph: Option<String>) -> Vec<String> {
 /// closure's own verdict from the rest of the validation battery `validate`
 /// above runs. Both are the same tier now: `layout::check` is the only caller
 /// of `reachability`, and the compiler side of that binding is
-/// `crates/compiler/tests/layout_graph.rs`.
+/// `crates/delvec/tests/layout_graph.rs`.
 fn reachability(graph: Option<String>) -> Vec<String> {
     let raw = campaign(graph, Some(BRIEF.to_string()));
     let c = delvewright_dsl::parse_campaign(&raw).expect("the fixture parses");
@@ -196,20 +197,8 @@ fn the_binding_ledger_counts_what_the_document_holds() {
 }
 
 // ---------------------------------------------------------------------------
-// The version fence
+// The document's shape
 // ---------------------------------------------------------------------------
-
-/// Both documents exist only at 0.13.0, and the refusal names the document
-/// rather than a field inside it.
-#[test]
-fn dw0141_a_map_document_below_its_version() {
-    let old = graph_with(|v| v["dsl_version"] = json!("0.12.0"));
-    assert!(validate(Some(old)).contains(&"DW0141".to_string()));
-
-    let old_brief = BRIEF.replace("0.13.0", "0.12.0");
-    let got = codes_of(&campaign(Some(GREEN.to_string()), Some(old_brief)));
-    assert!(got.contains(&"DW0141".to_string()));
-}
 
 // ---------------------------------------------------------------------------
 // DW0814 — the graph is not a graph

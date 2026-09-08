@@ -6,8 +6,8 @@
 //! dimensions, per-part sizes and zone-local offsets, and every consumer
 //! reassembles losslessly from that manifest.
 //!
-//! Two producers write tilings — `delve-schem convert` for an oversize `.schem`
-//! import, and `delve-grammar expand` for a zone whose expansion outgrows one
+//! Two producers write tilings — `delvec schem convert` for an oversize `.schem`
+//! import, and `delvec grammar expand` for a zone whose expansion outgrows one
 //! template — and they call the same [`plan_split`], so a volume tiles the same
 //! way whichever door it came in by. [`TileSet`] is the manifest contract
 //! itself: one struct, `Serialize` for the producers and `Deserialize` for the
@@ -15,6 +15,7 @@
 
 use std::path::Path;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// One grid cell of a split.
@@ -98,7 +99,7 @@ pub fn manifest_filename(base: &str) -> String {
 /// why. It is `Serialize` **and** `Deserialize` on purpose — the producer and
 /// the consumer share one definition, so a field cannot be added on one side and
 /// missed on the other.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TileSet {
     /// The filename stem every tile is named from.
     pub base: String,
@@ -118,7 +119,7 @@ pub struct TileSet {
 }
 
 /// One tile of a [`TileSet`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TilePart {
     /// The `.nbt` filename, relative to the manifest.
     pub file: String,
@@ -372,7 +373,7 @@ mod tests {
             part_max: 48,
             grid: [1, 1, parts.len() as i32],
             data_version: 4671,
-            generator: "crates/grammar".to_string(),
+            generator: "crates/delvec/src/grammar".to_string(),
             parts: parts
                 .into_iter()
                 .enumerate()

@@ -11,10 +11,15 @@ and a gate that wants a pin calls this rather than growing a third copy.
 Deliberately tiny: it answers for the keys gates actually ask about, and a new
 key earns a function here rather than a regex at the call site.
 
+Shell scripts read pins through the same door: `python3 tools/lib/versions.py
+<section>.<key>` prints one pin and exits non-zero, with a named reason, when the
+registry does not hold it.
+
 Stdlib only (`tomllib`, Python 3.11+), no I/O beyond reading the file.
 """
 
 import pathlib
+import sys
 import tomllib
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -51,3 +56,46 @@ def minecraft_version(path: pathlib.Path | None = None) -> str:
     """`[minecraft] version` — the Minecraft Java version every delve runs on
     (ADR-0009), and the version a player is told to install."""
     return pin("minecraft", "version", path)
+
+
+def engine_version(path: pathlib.Path | None = None) -> str:
+    """`[engine] version` — the `delvec` release line this tree IS.
+
+    Read by `tools/lib/delvec-bin.sh` to decide whether a `delvec` already on
+    `PATH` is this engine or a different one.
+    """
+    return pin("engine", "version", path)
+
+
+def chunky_core(path: pathlib.Path | None = None) -> str:
+    """`[render] chunky_core` — the Chunky snapshot core every emitted scene was
+    verified against (`crates/delvec/src/compiler/view/scene.rs`).
+
+    Read by `validation/render-shots.sh`, which names it beside whatever core is
+    actually installed rather than assuming the two agree.
+    """
+    return pin("render", "chunky_core", path)
+
+
+def _main(argv: list[str]) -> int:
+    """`python3 tools/lib/versions.py <section>.<key>` — the shell's reader.
+
+    A shell script that needs a pin has the same two choices a Python gate has,
+    and the regex is the same private re-implementation there. This entry point
+    is what makes "every reader reads it from `versions.toml`" true for `sh` as
+    well, with no second parser.
+    """
+    if len(argv) != 1 or argv[0].count(".") != 1:
+        print("usage: versions.py <section>.<key>", file=sys.stderr)
+        return 2
+    section, key = argv[0].split(".", 1)
+    try:
+        sys.stdout.write(pin(section, key) + "\n")
+    except PinError as e:
+        print(f"versions.py: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main(sys.argv[1:]))

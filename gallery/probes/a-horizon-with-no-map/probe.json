@@ -3,12 +3,6 @@
   "patch": [
     {
       "doc": "world.json",
-      "op": "replace",
-      "path": "/dsl_version",
-      "value": "0.16.0"
-    },
-    {
-      "doc": "world.json",
       "op": "add",
       "path": "/content/horizon",
       "value": {

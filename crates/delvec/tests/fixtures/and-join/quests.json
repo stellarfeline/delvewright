@@ -1,0 +1,148 @@
+{
+  "campaign_id": "and-join",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/warden": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/greet",
+          "verb": "learns"
+        },
+        "id": "quest/greet",
+        "objectives": [
+          {
+            "happening": {
+              "text": "the party completes obj/talk",
+              "verb": "learns"
+            },
+            "id": "obj/talk",
+            "npc": "npc/warden",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {
+          "obj/talk": [
+            {
+              "anchor": "anchor/gate",
+              "happening": {
+                "text": "the gate at anchor/gate opens",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            },
+            {
+              "count": 1,
+              "item": "minecraft:torch",
+              "name": "Ward Taper",
+              "type": "give-item"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/warden": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/wards",
+          "verb": "learns"
+        },
+        "id": "quest/wards",
+        "objectives": [
+          {
+            "anchor": "anchor/door",
+            "happening": {
+              "text": "the party completes obj/ward-north",
+              "verb": "opens"
+            },
+            "hint": "A lever in the room off the hall.",
+            "id": "obj/ward-north",
+            "prop": {
+              "block": "minecraft:lever"
+            },
+            "title": "Draw the North Ward",
+            "type": "interact"
+          },
+          {
+            "anchor": "anchor/chest",
+            "happening": {
+              "text": "the party completes obj/ward-south",
+              "verb": "opens"
+            },
+            "hint": "Its twin, a room away.",
+            "id": "obj/ward-south",
+            "prop": {
+              "block": "minecraft:lever"
+            },
+            "title": "Draw the South Ward",
+            "type": "interact"
+          },
+          {
+            "after": [
+              "obj/ward-north",
+              "obj/ward-south"
+            ],
+            "anchor": "anchor/objective",
+            "happening": {
+              "text": "the party completes obj/shrine",
+              "verb": "arrives"
+            },
+            "hint": "Both wards drawn — the shrine opens.",
+            "id": "obj/shrine",
+            "radius": 2,
+            "title": "Enter the Shrine",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "style": "chat",
+            "text": "The wards fall together.",
+            "type": "narrate"
+          },
+          {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/ward-north": [
+            {
+              "flag": "flag/north-drawn",
+              "type": "set-flag"
+            }
+          ],
+          "obj/ward-south": [
+            {
+              "flag": "flag/south-drawn",
+              "type": "set-flag"
+            }
+          ]
+        },
+        "trigger": {
+          "quest": "quest/greet",
+          "type": "quest-complete"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.22.0",
+  "stage": "quests"
+}

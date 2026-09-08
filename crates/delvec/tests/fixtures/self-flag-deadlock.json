@@ -1,0 +1,57 @@
+{
+  "description": "obj/talk requires a flag that only its own completion could ever set (a self-cycle: the flag gate can never be satisfied first). No static DSL rule is violated — the flag is declared (produced by a real set-flag effect, so DW0172 does not fire), the dialogue completing option for obj/talk is reachable and ungated (DW0123/DW0191 do not fire). Only the compiler's deep fixpoint (which also propagates flags_ok) sees that obj/talk, obj/exit (after obj/talk), and the finale can never complete: exit 2 / DW0203 (plus DW0201).",
+  "documents": {
+    "quests": {
+      "campaign_id": "hello-world",
+      "content": {
+        "quests": [
+          {
+            "id": "quest/open-the-door",
+            "objectives": [
+              {
+                "id": "obj/talk",
+                "npc": "npc/keeper",
+                "requires_flags": [
+                  "flag/loop"
+                ],
+                "type": "talk-to"
+              },
+              {
+                "after": [
+                  "obj/talk"
+                ],
+                "anchor": "anchor/exit",
+                "id": "obj/exit",
+                "radius": 2,
+                "type": "reach-anchor"
+              }
+            ],
+            "on_complete": [
+              {
+                "type": "campaign-complete"
+              }
+            ],
+            "on_objective_complete": {
+              "obj/talk": [
+                {
+                  "anchor": "anchor/door",
+                  "type": "open-gate"
+                },
+                {
+                  "flag": "flag/loop",
+                  "type": "set-flag"
+                }
+              ]
+            },
+            "trigger": {
+              "type": "campaign-start"
+            }
+          }
+        ]
+      },
+      "dsl_version": "0.22.0",
+      "stage": "quests"
+    }
+  },
+  "expect": "DW0203"
+}

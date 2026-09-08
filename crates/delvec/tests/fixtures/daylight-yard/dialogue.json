@@ -1,0 +1,44 @@
+{
+  "campaign_id": "daylight-yard",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "options": [
+              {
+                "label": "Who still musters here?",
+                "next": "dlg/lore"
+              },
+              {
+                "effects": [
+                  {
+                    "objective": "obj/muster",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "Call them out."
+              }
+            ],
+            "text": "They muster at the hour, traveler, roof or no roof."
+          },
+          {
+            "id": "dlg/lore",
+            "options": [
+              {
+                "label": "Back.",
+                "next": "dlg/greeting"
+              }
+            ],
+            "text": "The garrison. Two hundred years dead and still keeping the watch."
+          }
+        ],
+        "npc": "npc/keeper",
+        "root": "dlg/greeting"
+      }
+    ]
+  },
+  "dsl_version": "0.22.0",
+  "stage": "dialogue"
+}

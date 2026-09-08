@@ -1,0 +1,69 @@
+{
+  "description": "A pool area whose reach-anchor objective targets an anchor no pool piece provides. Validation skips anchor checks for pool areas, so this reaches the solver, which fails with DW0302 (unsatisfiable required anchor).",
+  "documents": {
+    "quests": {
+      "campaign_id": "keep-crawl",
+      "content": {
+        "quests": [
+          {
+            "id": "quest/greet-keeper",
+            "objectives": [
+              {
+                "id": "obj/talk",
+                "npc": "npc/keeper",
+                "type": "talk-to"
+              }
+            ],
+            "on_complete": [],
+            "on_objective_complete": {
+              "obj/talk": []
+            },
+            "trigger": {
+              "type": "campaign-start"
+            }
+          },
+          {
+            "id": "quest/reach-shrine",
+            "objectives": [
+              {
+                "anchor": "anchor/exit",
+                "id": "obj/arrive",
+                "radius": 2,
+                "type": "reach-anchor"
+              },
+              {
+                "after": [
+                  "obj/arrive"
+                ],
+                "anchor": "anchor/nonexistent",
+                "id": "obj/reach",
+                "radius": 2,
+                "type": "reach-anchor"
+              }
+            ],
+            "on_complete": [
+              {
+                "type": "campaign-complete"
+              }
+            ],
+            "on_objective_complete": {
+              "obj/arrive": [
+                {
+                  "anchor": "anchor/gate",
+                  "type": "open-gate"
+                }
+              ]
+            },
+            "trigger": {
+              "quest": "quest/greet-keeper",
+              "type": "quest-complete"
+            }
+          }
+        ]
+      },
+      "dsl_version": "0.22.0",
+      "stage": "quests"
+    }
+  },
+  "expect": "DW0302"
+}

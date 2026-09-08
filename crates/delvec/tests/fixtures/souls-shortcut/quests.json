@@ -1,0 +1,117 @@
+{
+  "campaign_id": "souls-shortcut",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping to anchor/keeper-stand"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/open-the-door",
+          "verb": "learns"
+        },
+        "id": "quest/open-the-door",
+        "objectives": [
+          {
+            "happening": {
+              "text": "the party completes obj/talk",
+              "verb": "learns"
+            },
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          },
+          {
+            "after": [
+              "obj/talk"
+            ],
+            "anchor": "anchor/exit",
+            "happening": {
+              "text": "the party completes obj/exit",
+              "verb": "arrives"
+            },
+            "id": "obj/exit",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/talk": []
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ],
+    "shortcuts": [
+      {
+        "gate": "anchor/door",
+        "id": "shortcut/inner-door",
+        "on_unlock": [
+          {
+            "style": "subtitle",
+            "text": "The bars grind up. This door is open for good.",
+            "type": "narrate"
+          }
+        ],
+        "unlock": "anchor/exit"
+      }
+    ],
+    "triggers": [
+      {
+        "at": "anchor/door",
+        "effects": [
+          {
+            "style": "chat",
+            "text": "You set your shoulder to the bars. They do not give, and nothing on this side of them will.",
+            "type": "narrate"
+          },
+          {
+            "at": {
+              "anchor": "anchor/door",
+              "at": "anchor"
+            },
+            "sound": "minecraft:block.chain.hit",
+            "type": "play-sound"
+          }
+        ],
+        "id": "trigger/bars-wont-give",
+        "on": {
+          "on": "strike"
+        },
+        "once": false
+      },
+      {
+        "at": "anchor/door",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The door is barred from the other side.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/inner-door-barred",
+        "on": {
+          "on": "use"
+        },
+        "once": false
+      }
+    ]
+  },
+  "dsl_version": "0.22.0",
+  "stage": "quests"
+}

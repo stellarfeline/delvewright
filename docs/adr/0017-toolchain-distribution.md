@@ -1,6 +1,11 @@
 # ADR-0017: Toolchain distribution — `cargo install delvec`, a checksum-verified release shelf, and CI as the only publisher
 
-- **Status**: Accepted
+- **Status**: Accepted; §3's `delve-render` exclusion and the musl Linux
+  targets superseded by ADR-0023 §3–§4, and the consequence naming `cargo
+  install delvec` the creator-facing install superseded by ADR-0023 §1
+  (archives are the default; crates.io stays a path); §4's mechanism half —
+  exactly one environment-gated job, and the shelf published independently of
+  the registry — superseded by ADR-0026
 - **Date**: 2026-08-06
 - **Refines**: ADR-0014 (creator distribution), ADR-0016 (three-layer versioning)
 

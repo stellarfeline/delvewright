@@ -1,0 +1,45 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "references": [
+      {
+        "name": "concept/morning-quay",
+        "shows": "the quay from off the water in early light, the lamp still lit",
+        "time": "day",
+        "weather": "clear"
+      },
+      {
+        "name": "concept/noon-hall",
+        "shows": "the hall at its brightest, the doorway a flat white rectangle",
+        "time": "noon",
+        "weather": "clear"
+      },
+      {
+        "name": "concept/dusk-rampart",
+        "shows": "the rampart against a going sky, rain across the parapet",
+        "time": "dusk",
+        "weather": "rain"
+      },
+      {
+        "name": "concept/night-quay",
+        "shows": "the same quay after dark, the lamp the only warm value",
+        "time": "night",
+        "weather": "clear"
+      },
+      {
+        "name": "concept/midnight-crypt",
+        "shows": "the crypt stair at the darkest hour, lightning behind the grate",
+        "time": "midnight",
+        "weather": "thunder"
+      },
+      {
+        "name": "concept/dawn-approach",
+        "shows": "the approach at first light, the lamp about to be put out",
+        "time": "dawn",
+        "weather": "clear"
+      }
+    ]
+  },
+  "dsl_version": "0.22.0",
+  "stage": "design"
+}

@@ -25,7 +25,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { SUPPORTED_DSL_VERSIONS, type Vec3Tuple } from "./critical-path.ts";
+import type { Vec3Tuple } from "./critical-path.ts";
 
 /** Where the death plan sits relative to `critical-path.json`. */
 const DEATH_PLAN_SUBPATH = ["validation", "death-plan.json"] as const;
@@ -281,8 +281,8 @@ export function parseDeathPlan(raw: unknown): DeathPlan {
     );
   }
   const version = raw["version"];
-  if (typeof version !== "string" || !SUPPORTED_DSL_VERSIONS.includes(version as never)) {
-    throw new DeathPlanParseError("/version", `unsupported dsl_version ${String(version)}`);
+  if (typeof version !== "string" || version.length === 0) {
+    throw new DeathPlanParseError("/version", "must name the dsl_version the campaign was built at");
   }
   const volumesRaw = raw["lethal_volumes"];
   if (!Array.isArray(volumesRaw)) {
