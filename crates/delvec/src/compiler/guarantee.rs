@@ -118,15 +118,6 @@ pub struct PoolGuarantee {
 }
 
 impl PoolGuarantee {
-    /// The members eligible as filler draws (`connector` role).
-    #[must_use]
-    pub fn fillers(&self) -> Vec<&Member> {
-        self.members
-            .iter()
-            .filter(|m| m.role == "connector")
-            .collect()
-    }
-
     /// Every member that declares `anchor`, entry included.
     #[must_use]
     pub fn carriers(&self, anchor: &str) -> Vec<&Member> {
