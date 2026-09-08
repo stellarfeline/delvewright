@@ -2506,12 +2506,30 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "glob": "site-plan.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "ceiling"
+          ]
+        }
+      },
       "campaign": "gallery",
-      "carrier": null,
+      "carrier": {
+        "code": "DW0886",
+        "kind": "dw"
+      },
       "finding": "the check that pairs a horizon with a piece set reads only the `areas[]` placement model, so a campaign that places through a site plan has no piece judged against the horizon it declares at all — and a site plan is the only placement model a `valley` horizon permits, since declaring both is refused, which makes that arm of the check unable to bind on any legal campaign; measured from two sides on the gallery, as a binding line of 0 of 0 areas on the site-plan point and as 2 of 6 cells reported `not-an-areas-base` by the agreement gate",
       "general_form": "the rule that a horizon and a piece set are a pair is applied to whatever places pieces rather than to one placement model: a site plan's own pieces are judged against the declared horizon by the same implementation, and the binding count is stated per placement model so a model the check cannot reach is visible as a zero rather than absent",
       "id": "gal-03",
-      "note": "Reported by the round that turned the walk-plane requirement on for every base, which found that turning it on made no difference on `valley` because nothing legal reaches it. The round was told to report rather than to widen the rule or to add a probe that hides the gap behind another refusal, and did. Queued with no carrier on purpose: no check of this shape exists, so the staging gate reds and names it.",
+      "note": "Reported by the round that turned the walk-plane requirement on for every base, which found that turning it on made no difference on `valley` because nothing legal reaches it. The round was told to report rather than to widen the rule or to add a probe that hides the gap behind another refusal, and did. Closed by making `compiler::seating::check` read the site plan's own resolver and ask each placed box the same question a prefab is asked, through one predicate (`seating::feet_under_the_sea`), and by giving the binding line a numerator and a denominator per placement model. Reproduced before the change and after, on the gallery's site-plan overlay with nothing altered but `horizon: ocean`: `delvec analyze` exited 0 with `0 of 0 area(s)` while `node/undercroft` stood at y=60, two courses under the sea plane at y=62, and the build then refused it at DW0344 after the assembly; after, `analyze` exits 1 at DW0886 naming the place, and the line reads `site plan: 7 of 7 box(es) judged against this base`. The binding counts the plan's boxes — the objects the new arm quantifies over — and its precondition is whether the campaign declares a site plan at all, both measured over the campaign source. On the gallery: 7 boxes on the site-plan point, 0 boxes and 0 preconditions on the primary and on both horizon overlays, which place with `areas[]` and are gal-02's subject.",
       "round": null,
       "triage": "capability"
     }
