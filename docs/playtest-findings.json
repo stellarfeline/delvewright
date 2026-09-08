@@ -2395,6 +2395,46 @@
       "note": "Reproduced before writing, on engine c2a90ac2 with a --release delvec, over the gallery primary campaign with one added `areas[]` element seating each pool and prefabs = the prefabs/gallery-generator output merged with campaigns/prefabs. Denominator: 4 pools of the 4 in campaigns/prefabs/pools.json against 3 bases of the 3 `delvec schema --stage world` exports, 12 of 12 cells built, 2 green (stone-keep and vertical-keep on `void`); cave-shore reds DW0885 on `void` and island reds DW0318 on `void` and DW0885 on `ocean`. The waterline half was measured twice by instruments sharing no configuration (a standalone NBT reader and `delvec palette`): 36 prefab documents, 5 declaring `waterline_y`, 2 of those 5 borne out by a water block at the declared plane. The binding probe was run with this gate's own `probe()` and is non-zero on every campaign that seats pieces through `areas[]` — 3 on the reproduction carrier, 2 on the gallery's ocean point, 2 on nobodys-cave-island, 1 on hollow-vigil, and a self-measuring 0 on the site-plan point, which places no area at all. The general form is spec-0060; DW0886 is allocated there and does not exist in this engine, so this row is MISSING-CHECK until it lands.",
       "round": null,
       "triage": "capability"
+    },
+    {
+      "campaign": "the-tidewatch",
+      "carrier": null,
+      "finding": "a delve whose approved concept art is entirely night scenes was built, rendered and reviewed under noon daylight, because the world's time of day is an optional declaration written at the first authoring step, before the art the design gate approves exists, and nothing between the gate and the build compares the two; the mismatch was found by eye on the first point-of-view frame, after the build and the render had already been paid for",
+      "general_form": "the world state a campaign declares and the art its design gate approved are held to each other before the build spends a render: the declaration is refused, or reported at the step that can still change it, when the approved reference and the declared world disagree about a property both state",
+      "id": "drill3-01",
+      "note": "Queued with no carrier on purpose: no check of this shape exists, so the gate reds by default and says so, which is the honest state of the engine. The instance was repaired on the drill's own branch by declaring the time and rebuilding; the general form is unbuilt. The measured cost of finding it by eye instead: the review-tier render is about five minutes of ten cores per frame and the build emitted 36 scenes.",
+      "round": "drill-3",
+      "triage": "capability"
+    },
+    {
+      "campaign": "the-tidewatch",
+      "carrier": null,
+      "finding": "an area that seats a pool seats a subset of its members, so an anchor declared on a member the layout did not seat does not exist in the built world; only the entry-role member's anchors are guaranteed, which on the shipped library is two anchors per area out of the eleven distinct anchor names the cave and keep pieces declare, and the advisory that reports the ambiguity is emitted by the build, five authoring steps after the anchors have to be chosen and bound",
+      "general_form": "the anchors an area can be authored against are stated by the engine at the step that chooses them: a name bound to a member the layout may not seat is refused or reported before the build, and the set an area guarantees is answerable from the campaign without building it",
+      "id": "drill3-02",
+      "note": "Queued with no carrier on purpose. The page's half — stating the rule where the decision is made — is separate authoring work; this row is the engine's half, and the gate reds until the information is reachable at the step that needs it rather than only after placement.",
+      "round": "drill-3",
+      "triage": "capability"
+    },
+    {
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "a tileset generator re-emits a whole prefab metadata document, so re-running one over the library deletes every key added after generation — the anchors a campaign binds by name, an entry role, a shown-faces declaration, a lighting verdict measured at admission rather than estimated — and nothing binds the generators, so the deletion is silent and is discovered only by a campaign that no longer resolves an anchor it names",
+      "general_form": "a generator may not delete a key it did not write: re-running every document-writing generator over the committed library preserves every key the generator does not own, and that preservation is checked over the whole library rather than argued per generator",
+      "id": "lib-01",
+      "note": "Measured on the library as it stands: 103 anchors, 95 of them on generator-written documents, four entry roles and four shown-faces declarations sit in the deletion set. The prefab verbs that write single keys are already bound by a preservation test; the generators are not, which is why the same rule has to be transplanted by hand at every library round.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "a prefab document's connector declares a local position, an opening and a facing, and nothing holds any of the three to the bytes: a connector pointed at a cell holding solid stone instead of a jigsaw block passes the audit through both its file and its directory arm at exit 0 and is still called seatable by the seating command, so a piece whose sockets have moved under a regeneration ships with a document that names cells the structure does not have",
+      "general_form": "a declaration a prefab document makes about its own bytes is borne out by those bytes or refused, for every such key rather than for the one that was noticed: the waterline has that check and the connector's position, opening and facing do not, and the rule is one rule over the class of byte-asserting keys",
+      "id": "lib-02",
+      "note": "Reproduced by planting, not reasoned about: `cave-shore`'s connector pointed back at a cell the new bytes fill with andesite, after which `prefab seating --horizon ocean` still answered 4 of 4 at exit 0 and `prefab audit` passed both arms. Found only by reading the bytes by hand during a library round.",
+      "round": null,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
