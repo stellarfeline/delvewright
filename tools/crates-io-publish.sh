@@ -172,56 +172,20 @@ PY
 # dry-run against a fixture index rather than the real crates.io — nothing
 # under `.github/` ever sets it, and it never touches `--publish`'s upload
 # path (`cargo publish` still resolves crates.io on its own). Named, and
-# printed the moment it fires, so an override can never survive silently into
-# a real plan: `tools/tests/test_publish_gate_order.py` is the one caller.
-INDEX="${DW_CRATES_INDEX:-https://index.crates.io}"
-if [ "$INDEX" != "https://index.crates.io" ]; then
-  echo "crates-io-publish: DW_CRATES_INDEX=$INDEX — NOT the real crates.io index" >&2
-fi
+# printed the moment it fires by the library below, so an override can never
+# survive silently into a real plan.
 POLL_TIMEOUT=180   # seconds
 POLL_INTERVAL=5    # seconds
 
-# crates.io sparse-index layout: 1-char `1/<n>`, 2-char `2/<n>`, 3-char
-# `3/<n[0]>/<n>`, else `<n[0:2]>/<n[2:4]>/<n>`, all lowercase.
-index_path() { # <crate-name>
-  python3 - "$1" <<'PY'
-import sys
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
-n = sys.argv[1].lower()
-print({1: f"1/{n}", 2: f"2/{n}", 3: f"3/{n[0]}/{n}"}.get(len(n), f"{n[0:2]}/{n[2:4]}/{n}"))
-PY
-}
-
-# The sha256 the registry records for a given version, or the empty string if
-# that version is not in the index. 404 (crate unknown) is a normal answer here,
-# so curl's failure is distinguished from "published but different".
-# The index body goes to a FILE, and python is given its path. It cannot be
-# piped: `python3 - <<'PY'` already binds stdin to the heredoc that carries the
-# program, so a pipe into the same command is silently discarded and every
-# lookup comes back empty — which reads as "not published yet" for every crate,
-# forever. That exact bug was written here first and caught by the bind test
-# below (`serde 1.0.229` must resolve to a checksum), which is why the test
-# exists at all.
+# THE INDEX LOOKUP IS NOT WRITTEN HERE. `tools/lib/crates_index.py` owns the
+# sparse-index path scheme, the fetch, the JSON-lines scan and the bind test,
+# because a second caller now asks the same question of the same registry
+# (`tools/check-dsl-version-published.py`: is the number this change moves away
+# from on crates.io?) and a private copy of a format reader is the shape
+# `tools/lib/versions.py` and `tools/lib/checksum.sh` were each extracted after.
+# Shell reaches it the way it reaches a pin — one subcommand, one line of output.
 index_cksum() { # <crate-name> <version>
-  local body_file rc
-  body_file="$(mktemp)"
-  rc=0
-  curl -fsSL "$INDEX/$(index_path "$1")" -o "$body_file" 2>/dev/null || rc=$?
-  if [ "$rc" -ne 0 ]; then rm -f "$body_file"; printf ''; return 0; fi
-  python3 - "$body_file" "$2" <<'PY'
-import json, sys
-sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
-path, want = sys.argv[1], sys.argv[2]
-with open(path, encoding="utf-8") as fh:
-    for line in fh:
-        if not line.strip():
-            continue
-        row = json.loads(line)
-        if row.get("vers") == want:
-            print(row.get("cksum", ""))
-            break
-PY
-  rm -f "$body_file"
+  python3 "$ROOT/tools/lib/crates_index.py" cksum "$1" "$2"
 }
 
 # Where tools/check-publishable.sh packages, and where `--only` packages: its
@@ -348,27 +312,25 @@ PY
 # BIND TEST — not a connectivity check.
 #
 # Everything below decides what to upload by asking the index whether a version
-# is there. If that lookup were broken in ANY way — curl blocked, the sparse-index
-# path scheme changed, the JSON shape changed, or (the bug that was actually
-# written here first) the heredoc eating the piped body — every answer would come
-# back empty, every crate would look absent, and the "already published, skip"
-# branch would silently never fire. That is the unbound gate this project keeps
-# being bitten by (CLAUDE.md; the island's combat floor gate examined zero
-# enemies for nineteen rounds), and here it would turn a safe retry into a
-# permanently burned version.
+# is there. If that lookup were broken in ANY way — the host blocked, the
+# sparse-index path scheme changed, the JSON shape changed, or (the bug that was
+# actually written here first) a heredoc eating the fetched body — every answer
+# would come back empty, every crate would look absent, and the "already
+# published, skip" branch would silently never fire. That is the unbound gate
+# this project keeps being bitten by (CLAUDE.md; the island's combat floor gate
+# examined zero enemies for nineteen rounds), and here it would turn a safe retry
+# into a permanently burned version.
 #
-# So the lookup is exercised against a fact that cannot change: `serde 1.0.0` is
-# on crates.io and index rows are never deleted. If this cannot find its
-# checksum, nothing below is believed.
+# The test itself lives with the lookup, in `tools/lib/crates_index.py`, so the
+# other caller of that lookup inherits it rather than deciding for itself whether
+# to run one. Its subject cannot change: `serde 1.0.0` is on crates.io and index
+# rows are never deleted. If it cannot find that checksum, nothing below is
+# believed.
 echo "== index lookup bind test =="
-probe="$(index_cksum serde 1.0.0)"
-if [ -z "$probe" ]; then
-  echo "crates-io-publish: the index lookup returned nothing for serde 1.0.0, which certainly" >&2
-  echo "  exists. 'This version is absent' would therefore be an unbound answer for our own" >&2
-  echo "  crates too, and acting on it could burn a version. Refusing to plan." >&2
+python3 "$ROOT/tools/lib/crates_index.py" bind-test || {
+  echo "crates-io-publish: acting on an unbound lookup could burn a version. Refusing to plan." >&2
   exit 1
-fi
-echo "  ok   serde 1.0.0 resolves to sha256 $probe"
+}
 echo
 
 # ------------------------------------------------------------------- the plan
@@ -385,8 +347,8 @@ DECLARED="${#NAMES[@]}"
 
 # --only: one crate the manifest declares, and only one. A name it does not
 # declare is refused HERE rather than surviving as an empty selection — a run
-# that compared zero crates and exited 0 is the unbound gate this file's bind
-# test exists to prevent, arriving through a typo instead of through curl.
+# that compared zero crates and exited 0 is the unbound gate the bind test above
+# exists to prevent, arriving through a typo instead of through the network.
 if [ -n "$ONLY" ]; then
   sel=-1
   i=0

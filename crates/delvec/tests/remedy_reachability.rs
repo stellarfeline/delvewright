@@ -339,6 +339,182 @@ fn dw0886_choosing_the_ocean_holds_the_water_a_void_world_would_lose() {
 }
 
 // ---------------------------------------------------------------------------
+// DW0886 — the two moves it names a SITE PLAN
+// ---------------------------------------------------------------------------
+
+/// A site-plan campaign, copied and handed to a closure that edits its plan.
+///
+/// The two fixtures are the two shapes this pair of rows needs: `shore-plan`
+/// stands its whole map one course over the sea and analyzes green on an
+/// `ocean`, and `blockout` cuts an undercroft into the rock beneath a cell,
+/// which no amount of raising can lift clear because the cell stands on it.
+fn site_plan_campaign(
+    tag: &str,
+    fixture: &str,
+    horizon: Option<serde_json::Value>,
+    edit: impl FnOnce(&mut serde_json::Value),
+) -> PathBuf {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::copy_dir_all(
+        &common::repo_root()
+            .join("crates/delvec/tests/fixtures")
+            .join(fixture),
+        &camp,
+    );
+    let read = |p: &Path| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+    };
+    let write = |p: &Path, v: &serde_json::Value| {
+        std::fs::write(p, serde_json::to_string_pretty(v).unwrap() + "\n").unwrap();
+    };
+    if let Some(h) = horizon {
+        let p = camp.join("world.json");
+        let mut world = read(&p);
+        let content = world["content"].as_object_mut().unwrap();
+        content.insert("horizon".into(), h);
+        content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
+        write(&p, &world);
+    }
+    let p = camp.join("site-plan.json");
+    let mut plan = read(&p);
+    edit(&mut plan);
+    write(&p, &plan);
+    camp
+}
+
+/// `delvec analyze` — the tier `DW0886` refuses at, so a red here is a refusal
+/// that cost no assembly.
+fn analyze(camp: &Path, prefabs: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "analyze",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// **RAISE this place's `floor`.** The first move `DW0886` names a site plan
+/// whose places stand at or below the sea plane — and the message's own sentence
+/// about it is that a `datum` lifts every place standing on it, which is what
+/// makes the move ONE number rather than one per room.
+///
+/// The refusal is manufactured by sinking the whole map two courses — both
+/// datums, the sightline it carries, and the brief fact an identity holds the
+/// loft's plane to — so the perturbation is a rigid translation and nothing else
+/// about the plan changes. The move puts it back. Measured on the fixture: sunk,
+/// `analyze` exits 1 with `DW0886` naming all four places on the grade datum and
+/// no other code; raised, exit 0.
+#[test]
+fn dw0886_raising_the_plan_seats_every_place_standing_on_the_datum() {
+    let prefabs = common::prefabs_dir();
+    let sunk = site_plan_campaign("dw0886-sunk", "shore-plan", None, |plan| {
+        for datum in plan["content"]["datums"].as_array_mut().unwrap() {
+            let y = datum["y"].as_i64().unwrap();
+            datum["y"] = serde_json::json!(y - 2);
+        }
+        for line in plan["content"]["sightlines"].as_array_mut().unwrap() {
+            for end in ["from", "to"] {
+                let y = line[end][1].as_i64().unwrap();
+                line[end][1] = serde_json::json!(y - 2);
+            }
+        }
+    });
+    // The brief is where the loft's plane is written down, so a rigid lift of
+    // the plan moves the fact with it — otherwise `DW0833` fires and this row
+    // would be proving a different refusal.
+    let brief_path = sunk.join("geometry-brief.json");
+    let mut brief: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&brief_path).unwrap()).unwrap();
+    for fact in brief["content"]["facts"].as_array_mut().unwrap() {
+        if fact["id"] == "fact/loft-datum" {
+            let v = fact["value"].as_f64().unwrap();
+            fact["value"] = serde_json::json!(v - 2.0);
+        }
+    }
+    std::fs::write(
+        &brief_path,
+        serde_json::to_string_pretty(&brief).unwrap() + "\n",
+    )
+    .unwrap();
+
+    let (code, before) = analyze(&sunk, &prefabs);
+    assert_eq!(code, 1, "refused at validation, nothing placed:\n{before}");
+    assert!(before.contains("DW0886"), "{before}");
+    assert!(
+        before.contains("stands its walk plane at world y=62"),
+        "the refusal names where the place puts a body's feet:\n{before}"
+    );
+    assert!(
+        before.contains("RAISE this place's `floor`"),
+        "the message names the move:\n{before}"
+    );
+    assert!(
+        before.contains("moving the datum lifts every place standing on it"),
+        "and says the move is one number:\n{before}"
+    );
+
+    // The move: the fixture as committed, standing one course over the sea.
+    let raised = site_plan_campaign("dw0886-raised", "shore-plan", None, |_| {});
+    let (code, after) = analyze(&raised, &prefabs);
+    assert_eq!(code, 0, "raising the plan reaches a green:\n{after}");
+    assert!(!after.contains("DW0886"), "{after}");
+    // And the binding says what it judged, so this green is over five places
+    // rather than over none.
+    assert!(
+        after.contains("site plan: 5 of 5 box(es) judged against this base"),
+        "the binding states the model it reached:\n{after}"
+    );
+}
+
+/// **CHOOSE another horizon.** The second move, and the only one a place that is
+/// DELIBERATELY under grade can take: `blockout`'s undercroft is a cache cut into
+/// the rock beneath the cell, so raising it is refused by the cell standing on
+/// top of it (`DW0827`) and the plan is right as it is — what is wrong is the
+/// sea. Both bases with no sea are taken, because a move that named two and
+/// worked on one would be half a remedy.
+#[test]
+fn dw0886_choosing_a_horizon_with_no_sea_seats_a_place_cut_below_grade() {
+    let prefabs = common::prefabs_dir();
+    let ocean = site_plan_campaign(
+        "dw0886-cache-ocean",
+        "blockout",
+        Some(serde_json::json!("ocean")),
+        |_| {},
+    );
+    let (code, before) = analyze(&ocean, &prefabs);
+    assert_eq!(code, 1, "refused at validation:\n{before}");
+    assert!(before.contains("DW0886"), "{before}");
+    assert!(
+        before.contains("`node/undercroft`"),
+        "the refusal names the place:\n{before}"
+    );
+    assert!(
+        before.contains("CHOOSE another horizon"),
+        "the message names the move:\n{before}"
+    );
+
+    for base in ["void", "valley"] {
+        let camp = site_plan_campaign(
+            &format!("dw0886-cache-{base}"),
+            "blockout",
+            Some(serde_json::json!({ "base": base })),
+            |_| {},
+        );
+        let (code, after) = analyze(&camp, &prefabs);
+        assert_eq!(
+            code, 0,
+            "`{base}` has no sea for a cache to stand in:\n{after}"
+        );
+        assert!(!after.contains("DW0886"), "{after}");
+        assert!(
+            after.contains("site plan: 7 of 7 box(es) judged against this base"),
+            "the check still examined every place on `{base}`:\n{after}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // DW0344 — both arms
 // ---------------------------------------------------------------------------
 
