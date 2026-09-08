@@ -46,11 +46,43 @@
 //! piece that really has one declaring nothing — and a library is free to
 //! declare either again. So every reader here goes to the `.nbt`, and every
 //! count it prints carries the denominator it was drawn from.
+//!
+//! # Both placement models, one rule
+//!
+//! A campaign places its pieces one of two ways and never both (`DW0839`):
+//! `areas[]` seats library prefabs, and a site plan embeds boxes a derivation
+//! turns into mass (spec-0049 §5). The pairing rule belongs to *whatever places
+//! pieces*, so [`check`] reads both, and [`SeatingBinding::line`] states a
+//! numerator and a denominator for **each** — a model this check cannot reach is
+//! then a zero a reader can see rather than a silence.
+//!
+//! What the two models share is one number and one question: **the world y a
+//! body's feet will occupy**, asked of [`feet_under_the_sea`]. A prefab derives
+//! that y (the base's walk-plane datum, minus the piece's own `walk_y`, plus the
+//! cell); a plan box states it, because [`PlacedBox::floor`] IS a walk plane in
+//! world coordinates. Nothing else about the pairing survives the crossing, and
+//! the reason is that the objects genuinely differ — a derived box is not a
+//! library asset:
+//!
+//! | [`Shape`] | on a site plan | why |
+//! |---|---|---|
+//! | [`Shape::NoWalkPlane`] | cannot arise | `floor` is required by the schema and resolves to a datum or a `y`; a box that names an undeclared datum is already `DW0112` and does not reach here |
+//! | [`Shape::WadingUnderTheSea`] | **applies** | a box's floor at or below the sea plane stands a party in the water, which is the same delve defect and is known from the plan alone |
+//! | [`Shape::UnstatedShore`] | cannot arise | a derived box has no authored bytes: [`crate::compiler::blockout::palette`] is a fixed set of opaque cubes and holds no water for a waterline to be about |
+//! | [`Shape::FluidOffTheWorld`] | cannot arise | same palette, same reason — there is no fluid to run off a face |
+//! | [`Shape::WalkPlanesDisagree`] | cannot arise | it is a property of a POOL the solver draws from; a plan states every box's plane individually, so there is no draw and no one origin two members could disagree about |
+//!
+//! Those four are reported as not applying rather than dropped: each is a fact
+//! about the site plan's own shape, and if one ever stops being true — a plan
+//! that seats a library piece, a palette that gains water — this table is the
+//! line that was wrong.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use delvewright_dsl::metrics::Reads;
 use delvewright_dsl::prefab::PrefabMeta;
+use delvewright_dsl::siteplan::PlacedBox;
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, HorizonBase};
 
 use crate::compiler::registry::PrefabRegistry;
@@ -464,6 +496,72 @@ pub enum SetPlane {
     Refused(Vec<Reason>),
 }
 
+/// **The one question a horizon asks of anything that will stand a body**: at
+/// the world y this thing puts a party's feet, is there sea?
+///
+/// Spelled once because both placement models ask it and neither may drift from
+/// the other. An `areas[]` piece reaches this number by derivation — the base's
+/// walk-plane datum less the piece's own `walk_y`, plus the local cell — and a
+/// site plan's box states it outright, since [`PlacedBox::floor`] is already a
+/// walk plane in world coordinates. What makes a delve wrong is the same fact
+/// either way: a body's feet at or below the sea plane is a party wading its
+/// critical path.
+///
+/// A base with no sea answers `false` for every y, which is why this is asked of
+/// the base rather than under an `if ocean` at each call site: a base that grew
+/// a sea would gain both models at once.
+#[must_use]
+pub fn feet_under_the_sea(base: HorizonBase, world_y: i32) -> bool {
+    base == HorizonBase::Ocean && world_y <= crate::compiler::horizon::SEA_LEVEL
+}
+
+/// **Can this place stand on this base** — the site plan's half of the pairing
+/// (`DW0886`).
+///
+/// The module table says which of [`Shape`]'s answers can be about a derived box
+/// at all, and exactly one can: a plan states its walk planes, so the wading
+/// question is asked with the derivation already done and the other four are
+/// facts about a library this campaign does not have.
+///
+/// The moves are the site plan's own. Telling the author of a derived box to
+/// declare `walk_y` in a prefab document would name a file that cannot exist —
+/// the blockout is authored by no one (spec-0049 §5) — which is precisely the
+/// remedy-unreachability this whole module was written to end.
+#[must_use]
+pub fn box_reasons(base: HorizonBase, b: &PlacedBox) -> Vec<Reason> {
+    let floor = b.floor.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+    if !feet_under_the_sea(base, floor) {
+        return Vec::new();
+    }
+    let sea = crate::compiler::horizon::SEA_LEVEL;
+    let walk_ref = crate::compiler::horizon::OCEAN_WALK_REF_Y;
+    vec![Reason {
+        shape: Shape::WadingUnderTheSea,
+        code: DW_UNSEATABLE,
+        member: b.node.as_str().to_string(),
+        short: format!(
+            "stands its walk plane at y={floor}, {n} block(s) at or below this world's sea \
+             plane (y={sea}) — a body stands in this place with the water over its feet",
+            n = sea - floor + 1,
+        ),
+        full: format!(
+            "place `{node}` stands its walk plane at world y={floor}, and this world's sea \
+             plane is y={sea}: a body standing in this place has the sea at or over its feet, \
+             and vanilla floods the room on boot. A `{base}` horizon's walk plane is y={walk_ref}, \
+             one block above the water — the beach relationship a body can climb out of — and a \
+             site plan states each place's plane itself rather than deriving it, so this is a \
+             fact about the plan and nothing has to be placed to know it. The moves: (1) RAISE \
+             this place's `floor` to y={walk_ref} or above — if it names a `datum`, moving the \
+             datum lifts every place standing on it, and the plan's `region` has to contain \
+             where it lands; (2) CHOOSE another horizon — `void` puts no water anywhere, and \
+             `valley` builds terrain the place is buried in, which is what an undercroft cut \
+             below grade is usually for",
+            node = b.node.as_str(),
+            base = base.token(),
+        ),
+    }]
+}
+
 /// **Can this member be seated on this base** — every reason it cannot, in the
 /// order a creator meets them (`DW0886`).
 ///
@@ -501,8 +599,15 @@ pub fn seating_reasons(base: HorizonBase, f: &PieceFacts) -> Vec<Reason> {
         });
     }
     if base == HorizonBase::Ocean {
+        // The derivation, then the SAME question a site plan's box is asked:
+        // where this piece's lowest standable cell lands in the world, and
+        // whether the base puts sea there.
         if let Some(w) = f.walk_y
             && f.standable_below_walk > 0
+            && feet_under_the_sea(
+                base,
+                crate::compiler::horizon::OCEAN_WALK_REF_Y - w + f.lowest_standable.unwrap_or(w),
+            )
         {
             let lowest = f.lowest_standable.unwrap_or(w);
             let sea = crate::compiler::horizon::SEA_LEVEL;
@@ -694,6 +799,15 @@ pub struct SeatingBinding {
     /// Areas whose piece set this examined — every one that names a prefab or a
     /// pool.
     pub areas_examined: usize,
+    /// **Boxes the campaign's site plan states** — the other placement model's
+    /// denominator, printed on every run so a campaign that places no boxes
+    /// reads as a measured zero rather than as a check that was never asked.
+    pub boxes: usize,
+    /// Boxes this examined: the ones the plan's own resolver placed. A box whose
+    /// floor names an undeclared datum is not among them — `DW0112` has already
+    /// refused it, and a place with no plane has no walk plane to judge — so the
+    /// two numbers differing is itself the finding.
+    pub boxes_examined: usize,
     /// Members examined across those areas.
     pub members: usize,
     /// `.nbt` files opened.
@@ -709,12 +823,19 @@ pub struct SeatingBinding {
 
 impl SeatingBinding {
     /// **The one line this check owes its reader**, printed whether it found
-    /// anything or not.
+    /// anything or not — **per placement model**.
+    ///
+    /// Both models are named on every run, including the one where a campaign
+    /// uses neither. A campaign has exactly one placement authority (`DW0839`),
+    /// so one of these two counts is always zero, and printing only the model
+    /// that happened to be in use is what made an unreachable arm read as an
+    /// absence instead of as a zero.
     pub fn line(&self) -> String {
         format!(
-            "seating binding: horizon base `{base}`; {ex} of {areas} area(s) name a piece set, \
-             examined over {members} member(s); {opened} `.nbt` opened; {wl} waterline \
-             declaration(s) examined, {ok} borne out by the bytes.",
+            "seating binding: horizon base `{base}`; areas[]: {ex} of {areas} area(s) name a \
+             piece set, examined over {members} member(s), {opened} `.nbt` opened, {wl} \
+             waterline declaration(s) examined, {ok} borne out by the bytes; site plan: \
+             {bex} of {boxes} box(es) judged against this base.",
             base = self.base,
             ex = self.areas_examined,
             areas = self.areas,
@@ -722,6 +843,8 @@ impl SeatingBinding {
             opened = self.nbt_opened,
             wl = self.waterlines_declared,
             ok = self.waterlines_borne_out,
+            bex = self.boxes_examined,
+            boxes = self.boxes,
         ) + " "
             + &self.claims.line()
     }
@@ -854,6 +977,44 @@ pub fn check(
         }
     }
 
+    // **The other source of placed pieces.**
+    //
+    // A site plan embeds boxes rather than seating library prefabs, and until
+    // this ran the pairing rule had nothing to say about a campaign that placed
+    // that way — which is every campaign on the one base that builds terrain,
+    // since `valley` needs a declared extent (`DW0855`) and a plan is the only
+    // statement of one. The rule belongs to whatever places pieces, so it is
+    // asked here, of the same base, under the same code, at the same tier: a
+    // box's floor IS a walk plane in world coordinates, so nothing has to be
+    // placed to know where a body's feet will land.
+    //
+    // Read through the plan's own resolver, never a second reading of the
+    // document: a box's corner is derived from the packing (spec-0059), and a
+    // private copy of that would answer for a place the build does not build.
+    if let Some(plan) = &campaign.site_plan {
+        binding.boxes = plan.content.boxes.len();
+        let mut reads = Reads::new();
+        let boxes = delvewright_dsl::siteplan::placed_boxes(campaign, &mut reads);
+        binding.boxes_examined = boxes.len();
+        for b in &boxes {
+            for r in box_reasons(base, b) {
+                diags.push(Diagnostic::error(
+                    r.code,
+                    "site-plan",
+                    format!("/content/boxes/{}", r.member),
+                    format!(
+                        "this site plan puts `{member}` on a `{base}` horizon, and it cannot \
+                         stand there: {full}. {tail}",
+                        member = r.member,
+                        base = base.token(),
+                        full = r.full,
+                        tail = SITE_PLAN_TAIL,
+                    ),
+                ));
+            }
+        }
+    }
+
     // **And everything else these documents claim about these same bytes**
     // (`DW0888`), reported once per PIECE rather than once per seating.
     //
@@ -889,6 +1050,14 @@ const TAIL: &str = "The base that builds terrain, `valley`, is not on this list 
                     site plan, which an `areas[]` campaign cannot also have (`DW0839`). So a \
                     piece authored to be buried is seated in a site-plan campaign, never in this \
                     one";
+
+/// What a `DW0886` about a plan's own box ends with. The tail above names the
+/// road out of an `areas[]` campaign, which a site-plan campaign has already
+/// taken; what a reader here needs instead is that the derived massing is
+/// authored by no one, so the edit is to the plan and never to a piece.
+const SITE_PLAN_TAIL: &str = "There is no prefab document to edit here and no `walk_y` to declare: \
+                              a site plan's mass is DERIVED, authored by no one, so the only \
+                              statement of this place's walk plane is the plan's own `floor`";
 
 #[cfg(test)]
 mod tests {
@@ -1047,7 +1216,9 @@ mod tests {
         assert!(seating_reasons(HorizonBase::Ocean, &f).is_empty());
     }
 
-    /// The binding line states every denominator, on a run that found nothing.
+    /// The binding line states every denominator, on a run that found nothing —
+    /// **for both placement models**, so a model this check cannot reach is a
+    /// zero a reader can see rather than a line that never mentions it.
     #[test]
     fn the_binding_line_prints_its_denominators_when_it_found_nothing() {
         let line = SeatingBinding {
@@ -1058,6 +1229,101 @@ mod tests {
         assert!(line.contains("0 of 0 area(s)"), "{line}");
         assert!(line.contains("0 `.nbt` opened"), "{line}");
         assert!(line.contains("0 borne out"), "{line}");
+        assert!(line.contains("site plan: 0 of 0 box(es)"), "{line}");
+    }
+
+    /// Each placement model's numbers are stated separately, so the model a
+    /// campaign did NOT use reads as a zero beside the one it did.
+    #[test]
+    fn the_binding_line_names_each_placement_model_with_its_own_count() {
+        let areas = SeatingBinding {
+            base: "ocean".into(),
+            areas: 3,
+            areas_examined: 3,
+            members: 6,
+            ..SeatingBinding::default()
+        }
+        .line();
+        assert!(areas.contains("areas[]: 3 of 3 area(s)"), "{areas}");
+        assert!(areas.contains("site plan: 0 of 0 box(es)"), "{areas}");
+
+        let plan = SeatingBinding {
+            base: "valley".into(),
+            boxes: 7,
+            boxes_examined: 7,
+            ..SeatingBinding::default()
+        }
+        .line();
+        assert!(plan.contains("areas[]: 0 of 0 area(s)"), "{plan}");
+        assert!(plan.contains("site plan: 7 of 7 box(es)"), "{plan}");
+    }
+
+    /// A box's floor, in world coordinates, and a piece's derived cell reach the
+    /// **same** predicate: one rule, whatever placed the thing.
+    #[test]
+    fn one_rule_answers_for_both_placement_models() {
+        let sea = crate::compiler::horizon::SEA_LEVEL;
+        for base in [HorizonBase::Void, HorizonBase::Valley] {
+            assert!(
+                !feet_under_the_sea(base, sea - 10),
+                "{base:?} has no sea for anything to stand in"
+            );
+        }
+        assert!(feet_under_the_sea(HorizonBase::Ocean, sea));
+        assert!(feet_under_the_sea(HorizonBase::Ocean, sea - 1));
+        assert!(!feet_under_the_sea(HorizonBase::Ocean, sea + 1));
+        // The walk plane an ocean seats a dry body on is the first y that passes.
+        assert_eq!(crate::compiler::horizon::OCEAN_WALK_REF_Y, sea + 1);
+    }
+
+    /// A place whose floor stands at or under the sea is refused, and the moves
+    /// are the PLAN's — there is no prefab document behind a derived box.
+    #[test]
+    fn a_place_cut_below_the_sea_is_refused_on_an_ocean() {
+        let sunk = plan_box("node/undercroft", 60);
+        let rs = box_reasons(HorizonBase::Ocean, &sunk);
+        assert_eq!(rs.len(), 1, "one question, one answer: {rs:?}");
+        assert_eq!(rs[0].shape, Shape::WadingUnderTheSea);
+        assert_eq!(rs[0].code.id(), "DW0886");
+        assert!(rs[0].short.contains("y=60"), "{}", rs[0].short);
+        assert!(rs[0].full.contains("RAISE"), "{}", rs[0].full);
+        assert!(
+            !rs[0].full.contains("walk_y"),
+            "a derived box has no prefab document to declare one in:\n{}",
+            rs[0].full
+        );
+    }
+
+    /// The sea plane itself is under water, and one course above it is the dry
+    /// walk plane an ocean is for — the boundary asserted rather than described.
+    #[test]
+    fn a_place_one_course_over_the_sea_is_seated() {
+        let sea = crate::compiler::horizon::SEA_LEVEL;
+        assert!(
+            box_reasons(HorizonBase::Ocean, &plan_box("node/quay", sea + 1)).is_empty(),
+            "a quay one course over the water is exactly what an ocean seats"
+        );
+        assert!(!box_reasons(HorizonBase::Ocean, &plan_box("node/quay", sea)).is_empty());
+        // And a base with no sea judges the same sunken place clean, because
+        // what is outside the placed geometry is what decides.
+        for base in [HorizonBase::Void, HorizonBase::Valley] {
+            assert!(
+                box_reasons(base, &plan_box("node/undercroft", 40)).is_empty(),
+                "{base:?} puts no water against a low place"
+            );
+        }
+    }
+
+    /// One placed box, at a stated walk plane. The footprint and headroom are
+    /// not this rule's subject — the floor is the whole of what a horizon asks.
+    fn plan_box(node: &str, floor: i32) -> PlacedBox {
+        PlacedBox {
+            node: delvewright_dsl::NodeId(node.to_string()),
+            foot: [0, 7, 0, 7],
+            floor: i64::from(floor),
+            clearance: 4,
+            open: false,
+        }
     }
 
     /// **The question no member can answer.** Every piece of a set may be
