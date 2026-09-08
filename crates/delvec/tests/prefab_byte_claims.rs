@@ -215,8 +215,11 @@ fn every_key_of_the_class_is_held_to_the_bytes() {
     let honest = root.join("honest");
     honest_library(&honest);
 
-    // (what to change in the document, the key the binding must blame)
-    let edits: &[(&str, fn(&mut serde_json::Value))] = &[
+    /// One perturbation: what to change in the document, and the key the
+    /// binding must blame for it.
+    type Edit = (&'static str, fn(&mut serde_json::Value));
+
+    let edits: &[Edit] = &[
         ("walk_y=1/1", |doc| doc["walk_y"] = serde_json::json!(9)),
         ("structure.data_version=1/1", |doc| {
             doc["structure"]["data_version"] = serde_json::json!(1)
