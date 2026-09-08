@@ -1,0 +1,30 @@
+{
+  "code": "DW0886",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/horizon",
+      "value": "ocean"
+    },
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/areas/-",
+      "value": {
+        "id": "area/slipway",
+        "name": "The Slipway",
+        "mitigation": "night-vision",
+        "prefab_pool": "pool/gallery-two-planes"
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/area.slipway.name",
+      "value": "滑道"
+    }
+  ],
+  "units": [],
+  "why": "A pool whose members do not agree about their own walk plane, seated on the one base that derives an area's origin from that number. Every member of `pool/gallery-two-planes` is individually perfect -- `gallery-quay` declares `walk_y: 3` and a waterline its bytes bear out, `gallery-yard` declares `walk_y: 1` and no waterline at all, and the seating command reports `2 of 2 member(s) seatable` for exactly that reason. The pool is still unseatable, because an `ocean` derives ONE origin per area from ONE walk plane and the solver's draw decides which member stands there: whichever it drew, the other would stand its floor at the wrong height above the sea. That is the shape this probe exists to show, and it is the one shape a campaign-level probe could not have reached by itself -- a walk plane is prefab metadata, so the pool is declared by the gallery's own generator, out of two real pieces whose planes genuinely differ. Nothing here is faked. The refusal comes at VALIDATION, exit 1, before a block is placed, on `DW0855`'s precedent: it is a fact about the documents and the library, and a creator should not spend a build to learn it. The defect it closes is the one that made this rule reachable only at build tier: `delvec prefab seating` read these same documents, asked every question about each member, asked none about the set, and called the shipped island and cave pools seatable minutes before the build refused them. One implementation answers now -- the command, the validation check and the origin derivation all read it. Its moves are the two a library has: split the pool so each one seats pieces built to one plane, or rebuild the odd members against the plane the rest share, a walk plane being a measurement of the piece's own floor. It declares no unit: `walk_y` is prefab metadata rather than a stage schema unit, and `prefab_pool` and `HorizonBase::ocean` are both bound on the ocean-horizon overlay."
+}

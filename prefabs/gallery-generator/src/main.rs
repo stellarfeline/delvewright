@@ -2034,13 +2034,30 @@ fn annex_metadata(t: &AnnexTile) -> serde_json::Value {
     })
 }
 
-/// The pool the annex area draws from.
+/// The pools this library declares: the one the annex area draws from, and the
+/// one that exists to be refused.
 ///
 /// Written here rather than printed for a human to paste, unlike the tileset
 /// generators: the gallery's prefab directory is a BUILD directory this program
 /// owns end to end, so there is no shared library for a stray file to be
 /// mis-parsed in (`DW0346`).
-fn annex_pool() -> serde_json::Value {
+///
+/// # `pool/gallery-two-planes` is a refusal, and it is made of real pieces
+///
+/// `DW0886`'s set shape — *the members of this pool do not agree about their own
+/// walk plane, and one origin cannot be derived from two* — is the rule this
+/// whole library exists to demonstrate firing, and it is the one thing a
+/// campaign-level probe cannot reach on its own: a probe patches campaign
+/// documents, and a walk plane is prefab metadata. So the pool is declared here,
+/// out of two pieces this generator already writes whose planes genuinely
+/// differ: `gallery-quay` stands on a shore plinth at local y=3 and
+/// `gallery-yard` is a detail piece whose floor is local y=1. Nothing is faked —
+/// what makes the pool unseatable on an ocean is a true fact about two true
+/// pieces, which is exactly what a creator's own mixed pool would be.
+///
+/// The gallery's primary never seats it; `gallery/probes/a-pool-of-two-walk-planes`
+/// does, and the engine refuses it.
+fn pools() -> serde_json::Value {
     use serde_json::{json, Value};
     let members: Vec<Value> = ANNEX_TILES
         .iter()
@@ -2048,7 +2065,15 @@ fn annex_pool() -> serde_json::Value {
             |t| json!({ "prefab": format!("prefab/{}", t.id), "weight": t.weight, "role": t.role }),
         )
         .collect();
-    json!({ "pools": { "pool/gallery-annex": { "members": members } } })
+    json!({
+        "pools": {
+            "pool/gallery-annex": { "members": members },
+            "pool/gallery-two-planes": { "members": [
+                { "prefab": format!("prefab/{QUAY_ID}"), "weight": 1, "role": "entry" },
+                { "prefab": format!("prefab/{YARD_ID}"), "weight": 1, "role": "terminal" },
+            ]},
+        }
+    })
 }
 
 fn write_annex(out: &Path) {
@@ -2080,7 +2105,7 @@ fn write_annex(out: &Path) {
         std::fs::write(out.join(format!("{}.json", t.id)), meta.as_bytes())
             .unwrap_or_else(|e| panic!("write {}.json: {e}", t.id));
     }
-    let mut pool = serde_json::to_string_pretty(&annex_pool()).expect("pool serializes");
+    let mut pool = serde_json::to_string_pretty(&pools()).expect("pool serializes");
     pool.push('\n');
     std::fs::write(out.join("pools.json"), pool.as_bytes()).expect("write pools.json");
     assert_eq!(

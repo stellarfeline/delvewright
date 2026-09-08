@@ -1019,4 +1019,122 @@ mod tests {
         assert!(line.contains("0 `.nbt` opened"), "{line}");
         assert!(line.contains("0 borne out"), "{line}");
     }
+
+    /// **The question no member can answer.** Every piece of a set may be
+    /// individually perfect and the set still unseatable, because a base whose
+    /// datum is a walk plane derives ONE origin per area.
+    ///
+    /// The values are the ones measured in the shipped library before the
+    /// generators were repaired: `pool/island` held `[2, 3]` and
+    /// `pool/cave-shore` `[1, 2]`, and both printed `SEATABLE`.
+    #[test]
+    fn a_set_of_two_walk_planes_cannot_be_seated_on_an_ocean() {
+        let set = [
+            ("prefab/beach".to_string(), Some(2)),
+            ("prefab/greenfield".to_string(), Some(3)),
+        ];
+        let SetPlane::Refused(rs) = set_walk_plane(HorizonBase::Ocean, "pool/island", &set) else {
+            panic!("two walk planes cannot derive one origin");
+        };
+        assert_eq!(rs.len(), 1, "one question, one answer: {rs:?}");
+        assert_eq!(rs[0].shape, Shape::WalkPlanesDisagree);
+        assert_eq!(rs[0].code.id(), "DW0886");
+        assert!(rs[0].short.contains("[2, 3]"), "{}", rs[0].short);
+        assert!(rs[0].short.contains("across 2 member(s)"), "{}", rs[0].short);
+        // The same set on a base that states its datum for the ORIGIN consults
+        // no piece at all, so there is nothing here to disagree about.
+        for base in [HorizonBase::Void, HorizonBase::Valley] {
+            assert_eq!(
+                set_walk_plane(base, "pool/island", &set),
+                SetPlane::NotDerived,
+                "{base:?} derives no origin from a walk plane"
+            );
+        }
+    }
+
+    /// One plane is the number the origin derives from, and a set that states
+    /// none is the missing-`walk_y` shape at set level.
+    #[test]
+    fn one_plane_derives_and_a_silent_set_refuses() {
+        let agreed = [
+            ("prefab/a".to_string(), Some(3)),
+            ("prefab/b".to_string(), Some(3)),
+        ];
+        assert_eq!(
+            set_walk_plane(HorizonBase::Ocean, "pool/x", &agreed),
+            SetPlane::Agreed(3)
+        );
+        let silent = [
+            ("prefab/a".to_string(), Some(3)),
+            ("prefab/b".to_string(), None),
+        ];
+        let SetPlane::Refused(rs) = set_walk_plane(HorizonBase::Ocean, "pool/x", &silent) else {
+            panic!("a member with no walk plane is refused");
+        };
+        assert_eq!(rs[0].shape, Shape::NoWalkPlane);
+        assert_eq!(rs[0].code.id(), "DW0886");
+        assert!(rs[0].short.contains("prefab/b"), "{}", rs[0].short);
+        assert!(rs[0].short.contains("1 of 2"), "{}", rs[0].short);
+        // An empty set derives nothing rather than refusing: an area that names
+        // no piece set is not this rule's subject.
+        assert_eq!(
+            set_walk_plane(HorizonBase::Ocean, "pool/x", &[]),
+            SetPlane::NotDerived
+        );
+    }
+
+    /// **A shore stands its walk plane one course above its own waterline**, and
+    /// the two declarations that say otherwise are refused from the DOCUMENTS,
+    /// under `DW0344` — the same number the placement check uses, because it is
+    /// the same fact asked one stage earlier.
+    ///
+    /// The values are the two pieces measured in the shipped library:
+    /// `island-beach-camp` (`walk_y: 2`, `waterline_y: 2`) and `cave-shore`
+    /// (`walk_y: 1`, `waterline_y: 1`).
+    #[test]
+    fn a_walk_plane_level_with_its_own_waterline_is_refused_from_the_documents() {
+        for (walk, water) in [(2, 2), (1, 1)] {
+            let mut f = facts();
+            f.walk_y = Some(walk);
+            f.declared_waterline = Some(water);
+            f.water_cells = 9;
+            f.top_water_y = Some(water);
+            f.bottom_water_y = Some(water);
+            let hit = seating_reasons(HorizonBase::Ocean, &f)
+                .into_iter()
+                .find(|r| r.shape == Shape::WalkPlaneOffItsWaterline)
+                .unwrap_or_else(|| panic!("walk {walk} / waterline {water} is refused"));
+            assert_eq!(hit.code.id(), "DW0344");
+            assert!(hit.full.contains("1 block(s) above"), "{}", hit.full);
+        }
+        // The relationship a shore has is not refused, and neither is a piece
+        // that declares only one of the two numbers.
+        let mut ok = facts();
+        ok.walk_y = Some(3);
+        ok.declared_waterline = Some(2);
+        ok.water_cells = 9;
+        ok.top_water_y = Some(2);
+        ok.bottom_water_y = Some(2);
+        assert!(
+            !seating_reasons(HorizonBase::Ocean, &ok)
+                .iter()
+                .any(|r| r.shape == Shape::WalkPlaneOffItsWaterline)
+        );
+        // And it is an ocean's question: a base with no sea has nothing for a
+        // waterline to be off.
+        let mut off = facts();
+        off.walk_y = Some(2);
+        off.declared_waterline = Some(2);
+        off.water_cells = 9;
+        off.top_water_y = Some(2);
+        off.bottom_water_y = Some(2);
+        for base in [HorizonBase::Void, HorizonBase::Valley] {
+            assert!(
+                !seating_reasons(base, &off)
+                    .iter()
+                    .any(|r| r.shape == Shape::WalkPlaneOffItsWaterline),
+                "{base:?} has no sea plane for this to be measured against"
+            );
+        }
+    }
 }
