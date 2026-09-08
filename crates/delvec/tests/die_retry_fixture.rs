@@ -41,8 +41,8 @@
 //!
 //! # What this test holds
 //!
-//! Not that the loop passes — a server and a bot decide that, and
-//! `.github/workflows/release.yml` runs them. What it holds is the property that
+//! Not that the loop passes — a server and a bot decide that, and only a hand
+//! run of `validation/bot-run.sh` does. What it holds is the property that
 //! makes the loop *reachable at all*, and which nothing else in the repo asserts:
 //! this campaign compiles to a mandatory encounter whose governing checkpoint is
 //! set by an EARLIER step. Without it the fixture could quietly drift back into
@@ -52,10 +52,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn fixture_dir() -> std::path::PathBuf {
@@ -76,6 +76,7 @@ fn parse_dir(dir: &std::path::Path) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     })
     .expect("campaign parses")
 }

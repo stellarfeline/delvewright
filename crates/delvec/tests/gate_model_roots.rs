@@ -17,10 +17,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc that never opens `anchor/door` itself, with a raw
@@ -28,7 +28,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 fn quests_doc(traps: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -65,7 +65,7 @@ const TRAP_SEALS_THE_DOOR: &str = r#"{
 /// `Vec<QuestEffect>` and its `close-gate` is really lowered (into
 /// `cp_on_respawn_<i>`).
 const DIALOGUE_SEALS_THE_DOOR: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -105,6 +105,7 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -184,7 +185,7 @@ fn a_dialogue_nested_close_gate_is_modelled() {
 #[test]
 fn a_later_open_gate_still_wins() {
     let quests = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

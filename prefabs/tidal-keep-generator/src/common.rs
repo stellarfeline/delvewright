@@ -620,6 +620,15 @@ pub struct LicenseJson {
 pub struct MetaJson {
     pub prefab_id: String,
     pub structure: StructureJson,
+    /// **The piece's own walk plane, measured** (spec-0060 §4): the local y of
+    /// the cell a body's feet occupy on this piece's principal floor, and the
+    /// number an ocean area's origin is derived from. Read back out of the
+    /// blocks the generator just laid, through the one rule every producer
+    /// spells (`prefab_invariants::walkplane`), because a `walk_y` nobody
+    /// measured is one tileset's convention wearing the name of a measurement.
+    /// `None` only for a piece a body cannot stand in at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub walk_y: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub waterline_y: Option<i32>,
     pub anchors: BTreeMap<String, AnchorJson>,
@@ -870,7 +879,7 @@ pub fn near_anchor(anchors: &[(&'static str, AnchorJson)], x: i32, z: i32, rad: 
 }
 
 /// Whether a cell is PASSABLE to a walker under the current nav model
-/// (`crates/compiler/src/assembled.rs`): air, or one of the blocks the model
+/// (`crates/delvec/src/compiler/assembled.rs`): air, or one of the blocks the model
 /// deliberately leaves walk-through — the trap triggers (so nav can route a
 /// player ONTO a plate; load-bearing for `DW0342`) and sub-half-block decoration.
 /// Everything else, including stairs and every unlisted block, is a full cube.
@@ -889,7 +898,7 @@ pub fn passable(g: &Grid, c: [i32; 3]) -> bool {
 }
 
 /// Every declared route cell must be standable under the CURRENT nav model
-/// (`crates/compiler/src/nav.rs`): the feet cell and the cell above are passable,
+/// (`crates/delvec/src/compiler/nav.rs`): the feet cell and the cell above are passable,
 /// with a **solid** block directly below (water is never a floor).
 pub fn standable(g: &Grid, c: [i32; 3]) -> bool {
     g.inb(c[0], c[1], c[2])

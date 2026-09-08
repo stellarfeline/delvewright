@@ -14,15 +14,16 @@
 
 mod common;
 
+use delvewright_dsl::Verb;
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit;
-use delvewright_compiler::nav;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_compiler::timeline;
-use delvewright_dsl::{Campaign, QuestEffect, RawCampaign, parse_campaign};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit;
+use delvec::compiler::nav;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::timeline;
+use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc carrying a stage-5 actor plus a caller-supplied
 /// `on_complete` body (raw JSON array contents, no surrounding brackets).
@@ -34,7 +35,7 @@ use delvewright_dsl::{Campaign, QuestEffect, RawCampaign, parse_campaign};
 fn quests_doc(on_complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -81,6 +82,7 @@ fn parse_hw(quests: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -258,7 +260,7 @@ fn close_then_open_then_walk_builds_clean() {
 /// mode the no-false-certainty rule exists to prevent.
 #[test]
 fn conditional_close_gate_seals_nothing() {
-    let body = r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "Sealed.", "requires_flags": ["flag/sealed"] },
+    let body = r#"{ "type": "close-gate", "when": { "requires_flags": ["flag/sealed"] }, "anchor": "anchor/door", "sealed_hint": "Sealed." },
        { "type": "move-actor", "actor": "actor/ram", "to_anchor": "anchor/exit" },
        { "type": "campaign-complete" }"#;
     assert_validates(body);
@@ -272,7 +274,7 @@ fn conditional_close_gate_seals_nothing() {
 #[test]
 fn close_gate_in_another_bundle_does_not_seal_this_timeline() {
     let quests = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -328,12 +330,12 @@ fn seal_flags(c: &Campaign) -> Vec<(String, bool)> {
     timeline::walk(&plan)
         .into_iter()
         .map(|(e, state)| {
-            let name = match e {
-                QuestEffect::CloseGate { .. } => "close-gate",
-                QuestEffect::OpenGate { .. } => "open-gate",
-                QuestEffect::MoveActor { .. } => "move-actor",
-                QuestEffect::Sequence { .. } => "sequence",
-                QuestEffect::CampaignComplete { .. } => "campaign-complete",
+            let name = match &e.verb {
+                Verb::CloseGate { .. } => "close-gate",
+                Verb::OpenGate { .. } => "open-gate",
+                Verb::MoveActor { .. } => "move-actor",
+                Verb::Sequence { .. } => "sequence",
+                Verb::CampaignComplete { .. } => "campaign-complete",
                 _ => "other",
             };
             (name.to_string(), !state.is_empty())

@@ -12,10 +12,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn read_hw(name: &str) -> String {
@@ -26,7 +26,7 @@ fn read_hw(name: &str) -> String {
 /// effect and two objectives carry `forbids_flags`, and an approach trigger is
 /// armed by `flag/arrived` but stood down by `flag/blocked`.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -44,8 +44,8 @@ const QUESTS_V06: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "narrate", "text": "The way is open.",
-              "forbids_flags": ["flag/blocked"] },
+            { "type": "narrate",
+              "when": { "forbids_flags": ["flag/blocked"] }, "text": "The way is open." },
             { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit",
               "on_arrive": [ { "type": "set-flag", "flag": "flag/arrived" } ] }
           ]
@@ -90,6 +90,7 @@ fn parse_hw() -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -336,6 +337,7 @@ fn chained_moves_plan_from_last_staged_location() {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -380,6 +382,7 @@ fn chained_moves_plan_from_last_staged_location() {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let out = build(&campaign, &prefabs);

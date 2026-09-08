@@ -10,10 +10,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn hw(name: &str) -> String {
@@ -25,7 +25,7 @@ fn hw(name: &str) -> String {
 fn quests_doc(volumes: &str, talk_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -78,6 +78,7 @@ fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let mut c = parse_campaign(&raw).expect("campaign parses");
     delvewright_dsl::tag_translatables(&mut c);
@@ -90,7 +91,7 @@ fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
 /// over is untouched and the only thing this changes is WHICH ARM builds the
 /// world.
 const ONE_BATCH: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "world-edits",
   "content": {
@@ -504,8 +505,8 @@ fn a_lethal_volume_build_is_byte_identical_across_runs() {
 /// the CI step can never quietly stop having a volume to prove.
 #[test]
 fn the_ci_fixture_validates_and_emits_its_template() {
-    use delvewright_compiler::load::load_campaign_dir;
-    use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry};
+    use delvec::compiler::load::load_campaign_dir;
+    use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry};
 
     let dir = common::compiler_fixtures_dir().join("lethal-volume");
     let loaded = load_campaign_dir(&dir).unwrap();

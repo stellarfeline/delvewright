@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// The six stage filenames (matching `delvewright_compiler::load::STAGE_FILES`).
+/// The six stage filenames (matching `delvec::compiler::load::STAGE_FILES`).
 pub const STAGE_FILES: [&str; 6] = [
     "world.json",
     "npcs.json",
@@ -17,7 +17,7 @@ pub const STAGE_FILES: [&str; 6] = [
     "dialogue.json",
 ];
 
-/// Repo root (two levels up from `crates/compiler`).
+/// Repo root (two levels up from `crates/delvec/src/compiler`).
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -43,7 +43,7 @@ pub fn keep_trial_dir() -> PathBuf {
 
 /// The v0.6 cutscene fixture (`cutscene-shots`): hello-world's world and cast
 /// with a two-shot `cutscene` on its exit beat. The campaign the spec-0019
-/// tier-3 flow (`validation/rehearsal-flow.sh`) plays, kept here so tier 1
+/// live flow (`validation/rehearsal-flow.sh`) plays, kept here so tier 1
 /// fails first if the fixture ever stops producing the proposal that flow
 /// asserts against.
 pub fn cutscene_shots_dir() -> PathBuf {
@@ -146,7 +146,7 @@ pub fn prefabs_dir() -> PathBuf {
     static CHECKED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     let dir = repo_root().join("campaigns/prefabs");
     CHECKED.get_or_init(|| {
-        let Ok(reg) = delvewright_compiler::registry::PrefabRegistry::load_dir(&dir) else {
+        let Ok(reg) = delvec::compiler::registry::PrefabRegistry::load_dir(&dir) else {
             // An unreadable directory is the caller's own problem and every call
             // site already fails clearly on it; only the PARSE case impersonates
             // something else.
@@ -236,7 +236,7 @@ pub fn materialize(patch: &serde_json::Value, dst: &Path) {
 /// shipping one language. A test that builds a campaign declaring `languages`
 /// must pass this instead of an empty map.
 pub fn campaign_inputs(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
-    delvewright_compiler::load::load_campaign_dir(dir)
+    delvec::compiler::load::load_campaign_dir(dir)
         .expect("campaign dir loads")
         .inputs
 }
@@ -281,9 +281,9 @@ pub fn objective_effects<'a>(
 /// prints and derives its exit code from (`compiler::main`).
 pub fn validation_diagnostics(
     c: &delvewright_dsl::Campaign,
-    items: &delvewright_compiler::registry::FullItemRegistry,
-    prefabs: &delvewright_compiler::registry::PrefabRegistry,
-    entities: &delvewright_compiler::registry::FullEntityRegistry,
+    items: &delvec::compiler::registry::FullItemRegistry,
+    prefabs: &delvec::compiler::registry::PrefabRegistry,
+    entities: &delvec::compiler::registry::FullEntityRegistry,
 ) -> Vec<delvewright_dsl::Diagnostic> {
     delvewright_dsl::validate_campaign_with(c, items, prefabs, entities)
 }
@@ -666,6 +666,147 @@ pub fn write_tiled_zone(
         serde_json::to_string_pretty(&meta).unwrap() + "\n",
     )
     .unwrap();
+    // The walk plane the zone's own bytes stand a body on. A piece that
+    // declares none is `DW0886` on EVERY base (spec-0060 §4), so a synthetic
+    // piece without it refuses the campaign around it for a reason no test here
+    // is about — the same move [`ocean_prefabs_dir`] makes for a different
+    // check. It is measured through the engine's own reader, never typed, so
+    // the number a fixture gets and the number the seating derivation expects
+    // cannot be two rules that agree.
+    declare_walk_y_at(&dir.join(format!("{id}.json")));
+}
+
+/// Which ocean-legitimate `hello-room` a fixture wants.
+pub enum OceanRoom {
+    /// The shore: two courses of solid plinth with a tide pool cut into the
+    /// floor course, so the walk plane stands at local y=3 — one block clear of
+    /// the sea, which is the island convention. Nothing the sea does reaches it.
+    Shore,
+    /// The cellar: the same declared waterline, and a room whose floor is the
+    /// piece's own local y=0, so its walk plane is a block UNDER the surface.
+    /// A legal piece — `DW0344` is satisfied, the waterline really is where the
+    /// declaration says — and the shape `DW0851` exists for: open a face and the
+    /// sea is on the walk plane.
+    Cellar,
+}
+
+/// A copy of the prefab library in which `hello-room` is a piece that can stand
+/// on an ocean, for every fixture that declares `horizon: ocean`.
+///
+/// The shipped `hello-room` cannot. `horizon: ocean` puts an area origin at
+/// y=60 under a sea at 62, and a piece with its floor at local y=0 then stands
+/// its walk plane at y=61 — a block under the surface — while declaring nothing
+/// about where it meets the sea. That is not a modelling nicety: the room
+/// carries four iron bars at local y=1 and 2, `/place template` hands each of
+/// them the water already in the cell, and the delivered room floods from its
+/// own gate. `DW0344` refuses the placement and `DW0851` refuses the flood, both
+/// correctly.
+///
+/// So an ocean fixture gets a piece built for an ocean: the same room and the
+/// same anchor names, with a tide pool whose surface is the sea's own plane, so
+/// `waterline_y: 2` is a measurement rather than a fiction. [`OceanRoom`]
+/// chooses whether its walk plane stands above that plane or below it.
+///
+/// Returns the directory, which is a temp copy: nothing here touches the library.
+pub fn ocean_prefabs_dir(tag: &str, room: OceanRoom) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(tag);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    copy_dir_all(&prefabs_dir(), &dir);
+    let plinth = match room {
+        OceanRoom::Shore => 3,  // solid to local y=2; the walk plane is y=3
+        OceanRoom::Cellar => 1, // solid to local y=0; the walk plane is y=1
+    };
+    let size = [11, plinth + 6, 11];
+    let floor = plinth; // the first air course: where a body's feet go
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..size[0] {
+        for z in 0..size[2] {
+            for y in 0..plinth {
+                // The shore's tide pool is a cell of the floor course; the
+                // cellar has no floor course above the sea, so its water is a
+                // sealed well in the corner buttress below.
+                let pool = matches!(room, OceanRoom::Shore) && [x, y, z] == [1, 2, 1];
+                cells.push((
+                    [x, y, z],
+                    if pool {
+                        "minecraft:water"
+                    } else {
+                        "minecraft:stone"
+                    },
+                ));
+            }
+            // Walls and roof around the room the anchors stand in. Four
+            // glowstones in the roof: a dark room is `DW0210`, and a fixture
+            // that trips a check it is not about proves nothing about the one
+            // it is.
+            let lamp = matches!((x, z), (3, 3) | (3, 7) | (7, 3) | (7, 7));
+            for y in floor..size[1] {
+                if x == 0 || x == size[0] - 1 || z == 0 || z == size[2] - 1 || y == size[1] - 1 {
+                    let roof = y == size[1] - 1;
+                    cells.push((
+                        [x, y, z],
+                        if roof && lamp {
+                            "minecraft:glowstone"
+                        } else {
+                            "minecraft:stone"
+                        },
+                    ));
+                }
+            }
+        }
+    }
+    if let OceanRoom::Cellar = room {
+        // The well: one water cell at local y=2 — the sea's plane, which is what
+        // `waterline_y` declares — sealed on every face by the corner buttress,
+        // so it is the piece's own water and not a leak (`DW0318`).
+        for c in [[1, 1, 1], [1, 3, 1], [2, 2, 1], [1, 2, 2]] {
+            cells.push((c, "minecraft:stone"));
+        }
+        cells.push(([1, 2, 1], "minecraft:water"));
+    }
+    std::fs::write(dir.join("hello-room.nbt"), structure_nbt(size, &cells)).unwrap();
+    let meta = serde_json::json!({
+        "prefab_id": "prefab/hello-room",
+        "structure": {
+            "file": "hello-room.nbt",
+            "id": "hello-room",
+            "size": size,
+            "data_version": 4671,
+            "generator": "crates/delvec/tests/common::ocean_prefabs_dir",
+        },
+        // The piece's own walk plane (spec-0060 §4), which is exactly the
+        // number this fixture already computes as `floor`: the first air
+        // course, where a body's feet go. An ocean area seating it is placed at
+        // `63 - walk_y`, so the shore lands at 60 and the cellar at 62 — and
+        // the second is what makes `OceanRoom::Cellar` a piece whose declared
+        // waterline cannot meet the sea, which is what it is for.
+        "walk_y": floor,
+        "waterline_y": 2,
+        "anchors": {
+            "spawn": { "pos": [5, floor, 2], "facing": "south", "role": "entry" },
+            "anchor/keeper-stand": { "pos": [5, floor, 4], "facing": "north" },
+            "anchor/exit": { "pos": [5, floor, 8] },
+            "anchor/door": {
+                "region": { "from": [4, floor, 6], "to": [5, floor + 2, 6] },
+                "block": "minecraft:iron_bars"
+            },
+        },
+        "connectors": [],
+        "lighting": { "profile": "lit", "measured_min_light": 8, "measured": "2026-08-15" },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Test fixture.",
+            "provenance": "Synthesised by crates/delvec/tests/common::ocean_prefabs_dir."
+        }
+    });
+    std::fs::write(
+        dir.join("hello-room.json"),
+        serde_json::to_string_pretty(&meta).unwrap() + "\n",
+    )
+    .unwrap();
+    dir
 }
 
 /// Write a single-template prefab into `dir`: one `.nbt` plus its metadata.
@@ -706,6 +847,10 @@ pub fn write_single_prefab(
         serde_json::to_string_pretty(&meta).unwrap() + "\n",
     )
     .unwrap();
+    // The walk plane, measured — see [`write_tiled_zone`]. A piece with no
+    // standable cell gets no key and is refused wherever a campaign seats it,
+    // which is the honest verdict about such a piece.
+    declare_walk_y_at(&dir.join(format!("{id}.json")));
 }
 
 /// The hello-world campaign materialised at `dst`, with its one area rebound to
@@ -720,4 +865,282 @@ pub fn campaign_bound_to(dst: &Path, id: &str) -> PathBuf {
         v["content"]["areas"][0]["prefab"] = serde_json::json!(format!("prefab/{id}"));
     });
     dst.to_path_buf()
+}
+
+/// **The prefab library, with every piece declaring its own outside** — a copy,
+/// for the fixtures that put the party outdoors.
+///
+/// `DW0885` asks a placed piece whether its outward solid boundary is buried or
+/// declared, and it asks only where the party's own air reaches: a fixture whose
+/// campaign is one sealed room never meets it. A fixture that opens a doorway
+/// onto the void, or stands a shore piece under an open sky, does — and the
+/// shipped library declares `shown_faces` on some of its pieces and not on
+/// others, because which of a piece's sides are finished exterior surface is a
+/// claim about the ASSET and is the content repository's to make. Which pieces
+/// carry it is a fact about a library this repository does not own, so no
+/// fixture may depend on it either way.
+///
+/// So a fixture about daylight, or teleports, or a boundary drop, gets a library
+/// in which every piece says its sides are its own. It is the same move
+/// [`ocean_prefabs_dir`] makes for a different check, and for the reason stated
+/// there: *a fixture that trips a check it is not about proves nothing about the
+/// one it is.* The declaration is honest in these worlds — a free-standing box in
+/// a void is a box whose every side is what the player would see.
+///
+/// It is the whole library rather than a named piece so that a fixture drawing
+/// from a POOL, which cannot know which prefab the solver will seat, is covered
+/// by the same call.
+///
+/// Returns the directory, which is a temp copy: nothing here touches the library.
+pub fn shown_prefabs_dir(tag: &str) -> PathBuf {
+    // A fresh directory per CALL, not per tag. Tests in one binary run on
+    // several threads, and a helper that deletes and rewrites one shared path
+    // is two tests reading a library while a third is halfway through copying
+    // it — an intermittent red, which is an under-specified test rather than
+    // something to re-run.
+    static NTH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let nth = NTH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("shown-{tag}-{nth}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    copy_dir_all(&prefabs_dir(), &dir);
+    let mut patched = 0usize;
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        if path.file_name().and_then(|f| f.to_str()) == Some("pools.json") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let Some(obj) = doc.as_object_mut() else {
+            continue;
+        };
+        if !obj.contains_key("prefab_id") {
+            continue;
+        }
+        // Exactly the sides that have something on them. `DW0885`'s second arm
+        // refuses a `shown_faces` naming a face of pure air — a side that is all
+        // doorway is not a side a piece can finish — so a blanket six would be
+        // the fixture tripping the very check it is here to step out of the way
+        // of. The sides are read off the piece's own bytes, the same way the
+        // compiler reads them.
+        declare_shown_faces_at(&path);
+        // And its own walk plane, measured the same way — off the piece's own
+        // bytes, by the engine's own standable rule. `walk_y` is what an ocean
+        // area's origin is derived from (spec-0060 §3.2) and it has no default,
+        // so a fixture seating a piece that declares none meets `DW0886`
+        // instead of the check it is about. Whether the library declares one is
+        // the content repository's own business (spec-0060 §8): at the pinned
+        // revision every piece does and this write puts back the number that is
+        // already there, at the previous pin none did and it supplied all of
+        // them. The fixture depends on neither, which is why the measurement is
+        // taken here rather than read.
+        declare_walk_y_at(&path);
+        patched += 1;
+    }
+    // The binding count of the helper itself: a copy that patched nothing is a
+    // library the fixtures below are not actually using, and it would look
+    // exactly like one that worked.
+    assert!(
+        patched > 0,
+        "shown_prefabs_dir patched no prefab document in {} — the copy is not the library",
+        dir.display()
+    );
+    dir
+}
+
+/// **Declare, on the prefab document at `dir/<id>.json`, the walk plane its own
+/// bytes stand a body on** (spec-0060 §4) — the measurement the generator that
+/// built the piece writes, taken here for a fixture's private copy of a library
+/// that predates the field.
+///
+/// It is a MEASUREMENT and not a per-tileset constant, and it is taken through
+/// the engine's own reader, so the number a fixture gets and the number the
+/// seating derivation expects cannot be two rules that agree. A piece with no
+/// standable cell gets no key: that piece has no walk plane, and `DW0886` is
+/// where a campaign that seats it on a sea learns so.
+pub fn declare_walk_y(dir: &Path, id: &str) {
+    declare_walk_y_at(&dir.join(format!("{id}.json")));
+}
+
+fn declare_walk_y_at(path: &Path) {
+    let dir = path.parent().expect("a prefab document has a directory");
+    let text = std::fs::read_to_string(path).unwrap();
+    let meta = delvewright_dsl::prefab::PrefabMeta::from_json(&text)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let facts = delvec::compiler::seating::PieceFacts::read(&meta, dir)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let Some(walk) = facts.lowest_standable else {
+        return;
+    };
+    let mut doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    doc["walk_y"] = serde_json::json!(walk);
+    std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
+}
+
+/// **Declare, on the prefab document at `dir/<id>.json`, exactly the sides its
+/// own bytes put a block on** (`DW0885`).
+///
+/// The companion of [`shown_prefabs_dir`] for a fixture that WRITES its own
+/// piece rather than copying the library's: same rule, same reading of the same
+/// bytes, one implementation.
+pub fn declare_shown_faces(dir: &Path, id: &str) {
+    declare_shown_faces_at(&dir.join(format!("{id}.json")));
+}
+
+fn declare_shown_faces_at(path: &Path) {
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let dir = path.parent().unwrap().to_path_buf();
+    let obj = doc.as_object_mut().unwrap();
+    let sides = solid_sides(&dir, obj);
+    assert!(
+        !sides.is_empty(),
+        "{} has no solid cell on any of its six sides",
+        path.display()
+    );
+    obj.insert("shown_faces".to_string(), serde_json::json!(sides));
+    std::fs::write(path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
+}
+
+/// Which of a prefab's six sides carry at least one block, read off the piece's
+/// own `.nbt` bytes exactly as the compiler reads them — including a tiled piece,
+/// whose tiles are composed back into the one box they were cut out of.
+fn solid_sides(dir: &Path, meta: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+    let mut files: Vec<(String, [i64; 3])> = Vec::new();
+    let mut size = [0i64; 3];
+    if let Some(st) = meta.get("structure") {
+        size = read3(&st["size"]);
+        files.push((st["file"].as_str().unwrap().to_string(), [0, 0, 0]));
+    } else if let Some(set) = meta.get("structure_set") {
+        size = read3(&set["size"]);
+        for part in set["parts"].as_array().unwrap() {
+            files.push((
+                part["file"].as_str().unwrap().to_string(),
+                read3(&part["offset"]),
+            ));
+        }
+    }
+    let mut present = [[false; 2]; 3];
+    for (file, offset) in files {
+        let bytes = std::fs::read(dir.join(&file)).unwrap();
+        for (cell, name) in delvec::compiler::assembled::structure_named_cells(&bytes) {
+            if name == "minecraft:air" {
+                continue;
+            }
+            for axis in 0..3 {
+                let c = i64::from(cell[axis]) + offset[axis];
+                if c == 0 {
+                    present[axis][0] = true;
+                }
+                if c == size[axis] - 1 {
+                    present[axis][1] = true;
+                }
+            }
+        }
+    }
+    // The six words, in the order the compiler's own vocabulary spells them.
+    let names = [["west", "east"], ["down", "up"], ["north", "south"]];
+    let mut out: Vec<String> = Vec::new();
+    for axis in 0..3 {
+        for lo in 0..2 {
+            if present[axis][lo] {
+                out.push(names[axis][lo].to_string());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+fn read3(v: &serde_json::Value) -> [i64; 3] {
+    let a = v.as_array().unwrap();
+    [
+        a[0].as_i64().unwrap(),
+        a[1].as_i64().unwrap(),
+        a[2].as_i64().unwrap(),
+    ]
+}
+
+/// **A synthetic stone box as gzipped structure-template bytes**, lit from
+/// inside so the darkness gate never pre-empts whatever the caller is proving.
+///
+/// `open_x0` drops the whole `x == 0` slab — floor, wall and ceiling together.
+/// That one flag is the variable two different proofs turn: it makes the column
+/// beside the interior floor bottomless, so a body standing there is one step
+/// from leaving the world (`DW0322`), and it is also what lets the party's air
+/// out of the room, so the piece's own outside becomes something a body can be
+/// in front of (`DW0885`).
+///
+/// Shared rather than copied. It lived in `tests/boundary_assembled.rs` and was
+/// copied verbatim into a second file, which
+/// `tools/check-structure-emitters.py` caught in the only way it can: the copy
+/// was a new site naming `fastnbt::to_bytes` that judged no palette, and the
+/// repair the tool offers first is an exemption. Two fixtures framing the same
+/// box would have been two entries on an exclusion list, which is exactly the
+/// growth that check exists to refuse — so the function moved here, both call
+/// sites lost the ingredient, and the list got shorter instead.
+///
+/// The palette is three literal ids in this one function — air, stone,
+/// glowstone — and the bytes never leave the test that asks for them: they are
+/// handed to `emit::build` in memory and written into no prefab library, which
+/// is why this is a fixture and not an emitter.
+pub fn box_nbt(size: [i32; 3], open_x0: bool) -> Vec<u8> {
+    use fastnbt::Value;
+    let [sx, sy, sz] = size;
+    let mut blocks: Vec<Value> = Vec::new();
+    let mut push = |x: i32, y: i32, z: i32, state: i32| {
+        let mut c = std::collections::HashMap::new();
+        c.insert(
+            "pos".to_string(),
+            Value::List(vec![Value::Int(x), Value::Int(y), Value::Int(z)]),
+        );
+        c.insert("state".to_string(), Value::Int(state));
+        blocks.push(Value::Compound(c));
+    };
+    for x in 0..sx {
+        if open_x0 && x == 0 {
+            continue;
+        }
+        for y in 0..sy {
+            for z in 0..sz {
+                if y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1 {
+                    push(x, y, z, 1); // stone
+                }
+            }
+        }
+    }
+    // Interior glowstone: the lighting gate is not what these tests are about.
+    for x in [2, sx / 2, sx - 3] {
+        for z in [2, sz / 2, sz - 3] {
+            push(x, sy - 2, z, 2);
+        }
+    }
+    let palette = Value::List(vec![
+        box_pal_entry("minecraft:air"),
+        box_pal_entry("minecraft:stone"),
+        box_pal_entry("minecraft:glowstone"),
+    ]);
+    let mut root = std::collections::HashMap::new();
+    root.insert("DataVersion".to_string(), Value::Int(4671));
+    root.insert(
+        "size".to_string(),
+        Value::List(vec![Value::Int(sx), Value::Int(sy), Value::Int(sz)]),
+    );
+    root.insert("palette".to_string(), palette);
+    root.insert("blocks".to_string(), Value::List(blocks));
+    root.insert("entities".to_string(), Value::List(vec![]));
+    let raw = fastnbt::to_bytes(&Value::Compound(root)).unwrap();
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut gz, &raw).unwrap();
+    gz.finish().unwrap()
+}
+
+fn box_pal_entry(name: &str) -> fastnbt::Value {
+    let mut c = std::collections::HashMap::new();
+    c.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
+    fastnbt::Value::Compound(c)
 }

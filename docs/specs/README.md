@@ -66,3 +66,6 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0054](spec-0054-a-light-figure-names-its-sky.md) | A light figure names its sky — the lighting record carries its measurement context, so a gate can re-judge it | Proposed |
 | [spec-0055](spec-0055-the-scope-belongs-to-the-object.md) | The scope belongs to the object — an anchor reference resolves where its object stands | Proposed |
 | [spec-0056](spec-0056-one-rule-for-what-a-body-can-pass-through.md) | One rule for what a body can pass through — the block-shape authority shared by walk and compiler | Proposed |
+| [spec-0059](spec-0059-a-box-is-placed-by-its-seam.md) | A box is placed by its seam, and the grid is derived | Proposed |
+| [spec-0060](spec-0060-a-horizon-and-a-piece-set-are-a-pair.md) | A horizon and a piece set are a pair | Proposed |
+| [spec-0061](spec-0061-the-approved-hour-is-the-built-hour.md) | The approved hour is the built hour — the design record states the sky, and the world is held to it | Proposed |

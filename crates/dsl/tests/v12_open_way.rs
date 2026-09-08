@@ -6,7 +6,7 @@
 //! three is a campaign-side claim — they are read from the carrying piece's
 //! exported metadata — so nothing at this layer can state them and nothing at
 //! this layer can be wrong about them. The compiler's own tests
-//! (`crates/compiler/tests/open_way.rs`) are where the reference is resolved
+//! (`crates/delvec/tests/open_way.rs`) are where the reference is resolved
 //! against a placed world.
 
 use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign};
@@ -62,6 +62,7 @@ fn raw(quests: String) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -88,10 +89,12 @@ fn open_way_validates() {
 #[test]
 fn open_way_carries_the_whole_gate() {
     let gated = r#"{ "type": "open-way", "piece": "prefab/hello-room", "way": "w",
-       "requires_flags": ["flag/keeper-spoke"],
-       "forbids_flags": ["flag/keeper-spoke"],
-       "requires_state": [] }"#;
-    let c = parse_campaign(&raw(quests_doc("0.19.0", gated))).expect("it parses");
+       "when": {
+         "requires_flags": ["flag/keeper-spoke"],
+         "forbids_flags": ["flag/keeper-spoke"],
+         "requires_state": []
+       } }"#;
+    let c = parse_campaign(&raw(quests_doc("0.22.0", gated))).expect("it parses");
     let effects = &c.quests.content.quests[0]
         .on_objective_complete
         .iter()
@@ -99,7 +102,7 @@ fn open_way_carries_the_whole_gate() {
         .expect("the fixture declares an obj/talk bundle")
         .1;
     let open = &effects[1];
-    assert_eq!(open.verb(), "open-way");
+    assert_eq!(open.verb.tag(), "open-way");
     assert_eq!(open.requires_flags().len(), 1);
     assert_eq!(open.forbids_flags().len(), 1);
     assert!(open.requires_state().is_empty());
@@ -123,7 +126,7 @@ fn an_open_way_has_no_region_no_block_and_no_direction() {
         let effect = format!(
             r#"{{ "type": "open-way", "piece": "prefab/hello-room", "way": "w", {extra} }}"#
         );
-        let found = codes(quests_doc("0.19.0", &effect));
+        let found = codes(quests_doc("0.22.0", &effect));
         assert!(
             found.iter().any(|c| c == "DW0100"),
             "`{extra}` was accepted or dropped rather than refused: {found:?}"

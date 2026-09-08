@@ -6,8 +6,10 @@
     "seed": 20260821,
     "target_minutes": 5,
     "theme": "A blockout: mass, seams and nothing else.",
-    "title": "The Derived Whole"
+    "time": "noon",
+    "title": "The Derived Whole",
+    "weather": "clear"
   },
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

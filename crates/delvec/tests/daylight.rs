@@ -22,11 +22,11 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Diagnostic, Severity, parse_campaign, validate_campaign_with};
 
 const NS: &str = "daylight-yard";
@@ -94,7 +94,7 @@ fn campaign_with(
 fn build(dir: &Path) -> Result<Vec<Diagnostic>, BuildFailure> {
     let loaded = load_campaign_dir(dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("daylight")).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
     let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);

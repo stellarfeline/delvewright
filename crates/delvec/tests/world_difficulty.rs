@@ -21,11 +21,11 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 
 const NS: &str = "hello-world";
@@ -119,7 +119,7 @@ fn setup(out: &BuildOutput) -> &str {
 /// A v0.6 quests doc that spawns a wave — the case whose derived difficulty is
 /// `easy`, so a declaration must be seen to *override* it, not merely fill a gap.
 const WAVE_QUESTS: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -152,7 +152,7 @@ const WAVE_QUESTS: &str = r#"{
 fn actor_quests(extra: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

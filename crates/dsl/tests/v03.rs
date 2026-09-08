@@ -13,7 +13,7 @@ use delvewright_dsl::{Envelope, QuestsContent, RawCampaign, check_campaign, to_c
 
 /// Stage 5 exercising all v0.3 verbs, waves and a flag causal chain.
 const QUESTS_V03: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -71,6 +71,7 @@ fn v03_campaign() -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 

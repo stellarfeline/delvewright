@@ -10,7 +10,7 @@
 //! back.
 //!
 //! 1. **The population**, taken from
-//!    [`delvewright_compiler::load::STAGE_FILES`] rather than written out, so a
+//!    [`delvec::compiler::load::STAGE_FILES`] rather than written out, so a
 //!    seventh required document cannot join the six and quietly keep the old
 //!    behaviour. Binding count is stated by the test itself: six of six.
 //! 2. **Every entry point.** Four verbs read a campaign directory and each
@@ -28,7 +28,7 @@ mod common;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use delvewright_compiler::load::{
+use delvec::compiler::load::{
     OPTIONAL_FILES, STAGE_FILES, missing_stage_documents, missing_stage_documents_diagnostic,
 };
 

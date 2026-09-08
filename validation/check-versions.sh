@@ -19,11 +19,11 @@ TOOL_DF="$ROOT/validation/Dockerfile.toolserver"
 COMPOSE="$ROOT/validation/compose.yaml"
 HARNESS_PKG="$ROOT/harness/package.json"
 CI_WF="$ROOT/.github/workflows/ci.yml"
-RELEASE_WF="$ROOT/.github/workflows/release.yml"
+ENGINE_RELEASE_WF="$ROOT/.github/workflows/engine-release.yml"
 SKIN_REQ="$ROOT/tools/skin/requirements.txt"
 SKIN_PYPROJECT="$ROOT/tools/skin/pyproject.toml"
 SKIN_CATALOG="$ROOT/tools/skin/delve_skin/catalog.py"
-RENDER_CARGO="$ROOT/crates/render/Cargo.toml"
+DELVEC_CARGO="$ROOT/crates/delvec/Cargo.toml"
 BOOTSTRAP_SH="$ROOT/validation/server-bootstrap-cache.sh"
 
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found"; exit 2; }
@@ -139,7 +139,7 @@ fi
 # The pin's ZONE INVENTORY is a consumer of this value like any other.
 # `.github/content-zone-corpus.json` names the campaigns the pin carries and how
 # many zone programs each declares; every number in it is checked against the
-# content checkout by crates/grammar/tests/campaign_zones.rs. That check is only
+# content checkout by crates/delvec/tests/grammar_campaign_zones.rs. That check is only
 # about the right corpus while the record and the pin agree, so a re-pin that
 # leaves the inventory behind is caught here, in tier 1, with no content checkout
 # needed — rather than measuring the new tree against the old pin's expectations.
@@ -166,10 +166,10 @@ if [[ $NUCLEATION_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 else
   fail "render.nucleation_version '$NUCLEATION_VERSION' is not an exact x.y.z version"
 fi
-if [ -f "$RENDER_CARGO" ]; then
-  want_in "nucleation =version -> crates/render/Cargo.toml" "nucleation = { version = \"=$NUCLEATION_VERSION\"" "$RENDER_CARGO"
+if [ -f "$DELVEC_CARGO" ]; then
+  want_in "nucleation =version -> crates/delvec/Cargo.toml" "nucleation = { version = \"=$NUCLEATION_VERSION\"" "$DELVEC_CARGO"
 else
-  fail "crates/render/Cargo.toml missing (cannot verify the render dep pin)"
+  fail "crates/delvec/Cargo.toml missing (cannot verify the render dep pin)"
 fi
 # deepslate is BUNDLED, unlike every other renderer here, so the pin has to bind
 # to the bytes rather than to a version string: the page carries the renderer
@@ -209,10 +209,26 @@ else
   fail "render.chunky_core '$CHUNKY_CORE' is not a chunky-core snapshot build"
 fi
 
+# The emitter states the same revision in Rust — `delvec scene` prints it on
+# every run, and the camera basis it implements was read off that core's
+# bytecode. A binary carries no versions.toml, so the constant cannot read the
+# pin at run time; what it can be is BOUND to it, which is what makes
+# versions.toml the one home rather than one of two places the number lives.
+SCENE_RS="$ROOT/crates/delvec/src/compiler/view/scene.rs"
+if [ -f "$SCENE_RS" ]; then
+  if grep -qF "pub const CHUNKY_CORE: &str = \"$CHUNKY_CORE\";" "$SCENE_RS"; then
+    pass "scene::CHUNKY_CORE == render.chunky_core ($CHUNKY_CORE)"
+  else
+    fail "scene::CHUNKY_CORE in ${SCENE_RS##*/} does not state render.chunky_core '$CHUNKY_CORE' — every \`delvec scene\` run would name a core versions.toml does not pin"
+  fi
+else
+  fail "${SCENE_RS##*/} is missing — nothing binds the emitted 'render with <core>' line to render.chunky_core"
+fi
+
 echo "== Engine release line ([engine], ADR-0016 / ADR-0017 / ADR-0023) =="
 # ADR-0016 requires four numbers to be ONE number: the version compiled into the
 # binary, the git tag, the crates.io version, and the window the `/new-delve`
-# skill declares — and ADR-0023 §6 puts seven crates on that one number. Here
+# skill declares — and ADR-0025 puts one crate, `delvec`, on that one number. Here
 # they are bound; `.github/workflows/engine-release.yml` binds the git tag at release time
 # (it cannot be checked from a working tree), and the skill's window is bound in
 # the campaigns repository, by `tools/check-skill-version.py` there — the page
@@ -259,10 +275,15 @@ def resolved(pkg, key):
 
 members = {m: load_member(m) for m in ws["members"]}
 by_name = {mani["package"]["name"]: (m, mani) for m, mani in members.items()}
-engine_names = [e["crate"], *e["crates"]]
+# 0. The publish set is exactly the format crate, then the engine, in that
+#    order (ADR-0025). A third name here is a third crate, which is refused.
+publish_set = list(e["crates"])
+(ok if publish_set == [e["dsl_crate"], e["crate"]] else bad)(
+    f"[engine].crates == [dsl_crate, crate] in publish order (found: {publish_set})")
+engine_names = [n for n in publish_set if n != e["dsl_crate"]]
 
 # 1. The engine version line is ONE literal: `[workspace.package] version`,
-#    inherited by every engine crate (ADR-0023 §6). The DSL crate keeps its own.
+#    inherited by the engine crate (ADR-0025). The DSL crate keeps its own.
 (ok if ws_pkg.get("version") == e["version"] else bad)(
     f"root Cargo.toml [workspace.package] version {ws_pkg.get('version')!r} (manifest: {e['version']!r})")
 for name in engine_names:
@@ -295,19 +316,20 @@ for m, mani in members.items():
 (ok if bins == [(e["crate"], "delvec")] else bad)(
     f"exactly one [[bin]] in the workspace, `delvec` in package {e['crate']!r} (found: {bins})")
 
-# 3. The compiler library target keeps its name: every `use` path spells it.
-_, compiler = by_name.get("delvewright-compiler", (None, {}))
-lib_name = compiler.get("lib", {}).get("name")
-(ok if lib_name == "delvewright_compiler" else bad)(
-    f"compiler lib target name {lib_name!r} (must stay 'delvewright_compiler')")
+# 3. The engine's library target is the package's own name: every `use` path
+#    in the binary and the tests spells `delvec::…` (ADR-0025).
+_, engine = by_name.get(e["crate"], (None, {}))
+lib_name = engine.get("lib", {}).get("name")
+(ok if lib_name == e["crate"] else bad)(
+    f"{e['crate']} lib target name {lib_name!r} (must be {e['crate']!r})")
 
 # 4. Every in-tree dependency is declared ONCE, in `[workspace.dependencies]`,
 #    with the `=` requirement that is the only binding left once `path` is
-#    stripped on publish: `=<engine version>` for engine crates, the DSL
-#    crate's own `dsl_crate_req`. A member manifest may name a sibling only as
-#    `name.workspace = true`.
+#    stripped on publish — the DSL crate's own `dsl_crate_req`; nothing depends
+#    on the engine crate, so it has no entry. A member manifest may name a
+#    sibling only as `name.workspace = true`.
 n_req = 0
-for name in [e["dsl_crate"], *e["crates"]]:
+for name in [n for n in publish_set if n != e["crate"]]:
     spec = ws_deps.get(name)
     want = e["dsl_crate_req"] if name == e["dsl_crate"] else f"={e['version']}"
     req = spec.get("version") if isinstance(spec, dict) else None
@@ -325,13 +347,15 @@ for m, mani in members.items():
     "every in-tree dependency of every member goes through [workspace.dependencies]"
     if not stray else f"in-tree dependencies declared outside [workspace.dependencies]: {stray}")
 
-# 5. Publishability inventory, in BOTH directions (ADR-0023 §6): every member
-#    under `crates/` is on versions.toml's list and is publishable; the root
-#    excludes nothing under `crates/`. A crate added without a versions.toml row
-#    would otherwise be swept onto crates.io by the first `--workspace` anything,
+# 5. Publishability inventory, in BOTH directions (ADR-0025): every member
+#    under `crates/` is one of the two names versions.toml publishes and is
+#    publishable, both names are members, and the root excludes nothing under
+#    `crates/`. A third crate is refused here by name — the decision is taken:
+#    a feature adds a module to `delvec`. Without this a crate added beside the
+#    two would be swept onto crates.io by the first `--workspace` anything,
 #    irreversibly — or, with `publish = false`, would silently leave the binary
 #    with a dependency `cargo install delvec` cannot resolve.
-publishable = {e["crate"], e["dsl_crate"], *e["crates"]}
+publishable = set(publish_set)
 n_pub = 0
 for m, mani in members.items():
     name, flag = mani["package"]["name"], mani["package"].get("publish", True)
@@ -339,7 +363,7 @@ for m, mani in members.items():
         n_pub += 1
         (ok if flag is not False else bad)(f"{name} is publishable")
     else:
-        bad(f"{name} ({m}) is a workspace member versions.toml [engine] does not name — a new crate is a decision")
+        bad(f"{name} ({m}) is a workspace member versions.toml [engine].crates does not name — a third crate is refused (ADR-0025): add a module to delvec")
 missing = publishable - set(by_name)
 if missing:
     bad(f"versions.toml names crate(s) that are not workspace members: {sorted(missing)}")
@@ -397,6 +421,36 @@ hard = sorted(t for t in declared if t in code)
     if not hard else
     f"tools/build-release-binaries.sh hardcodes {hard} — read them from versions.toml")
 
+# 9. The release's per-Linux-target runner IMAGE and the standing CI gate that
+#    stands in for it must name the same one (release run 34069406209, v1.2.0:
+#    the CI job passed on `ubuntu-latest` — a newer stdlib `tomllib` than either
+#    named image ships — while both release Linux jobs failed on the images
+#    they actually name; the pair shared no runner).
+linux_runners = e.get("linux_runners", {})
+if not linux_runners:
+    bad("[engine].linux_runners is empty — the release/CI Linux runner binding checks nothing")
+else:
+    pairs = dict(_re.findall(r"target:\s*([A-Za-z0-9_.-]+),\s*runner:\s*([A-Za-z0-9_.-]+)\s*\}", wf))
+    mismatch = [f"{t}: matrix names {pairs.get(t)!r} (manifest: {want!r})"
+                for t, want in linux_runners.items() if pairs.get(t) != want]
+    (ok if not mismatch else bad)(
+        f"engine-release.yml matrix runner == [engine.linux_runners] for {len(linux_runners)} Linux target(s)"
+        if not mismatch else f"engine-release.yml linux runner mismatch: {mismatch}")
+
+    # ci.yml's cross-build shelf job is ONE job, so it names one image — the
+    # x86_64 entry, because `--check-only` never links and the host's CPU
+    # architecture is not what the failing class of bug turned on.
+    ci_wf = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    job_match = _re.search(r"\n  engine-shelf:\n(.*?)(?=\n  [A-Za-z][A-Za-z0-9_-]*:\n)", ci_wf, _re.S)
+    shelf_block = job_match.group(1) if job_match else ""
+    runs_match = _re.search(r"runs-on:\s*([A-Za-z0-9_.-]+)", shelf_block)
+    got_runs = runs_match.group(1) if runs_match else None
+    want_runs = linux_runners.get("x86_64-unknown-linux-gnu")
+    (ok if got_runs == want_runs and got_runs is not None else bad)(
+        f"ci.yml engine-shelf runs-on == {want_runs!r} ([engine.linux_runners] x86_64 entry)"
+        if got_runs == want_runs and got_runs is not None else
+        f"ci.yml engine-shelf runs-on is {got_runs!r} (manifest [engine.linux_runners] x86_64 entry: {want_runs!r})")
+
 for status, msg in out:
     print(f"{status}\t{msg}")
 PY
@@ -427,9 +481,8 @@ all_stated() { # <label> <extended-regex> <expected-literal> <expected-count> <f
 }
 
 echo "== CI toolchain ([ci], [skin]) =="
-# Node runtime for the harness and the storybook jobs.
+# Node runtime for the harness job and for the `rust` job's node --test suites.
 all_stated "node -> ci.yml"      'node-version: *"[^"]*"' "node-version: \"$NODE_VERSION\"" 2 "$CI_WF"
-all_stated "node -> release.yml" 'node-version: *"[^"]*"' "node-version: \"$NODE_VERSION\"" 3 "$RELEASE_WF"
 
 # Python is the one value in this section that is NOT one value: two interpreter
 # lines, for two disjoint dependency sets. So the binding is over the whole set —
@@ -440,10 +493,25 @@ all_stated "node -> release.yml" 'node-version: *"[^"]*"' "node-version: \"$NODE
 py_total="$( { grep -oE 'python-version: *"[^"]*"' "$CI_WF" || true; } | wc -l | tr -d ' ')"
 py_tools="$( { grep -oF "python-version: \"$PYTHON_TOOLS_VERSION\"" "$CI_WF" || true; } | wc -l | tr -d ' ')"
 py_mecha="$( { grep -oF "python-version: \"$PYTHON_MECHA_VERSION\"" "$CI_WF" || true; } | wc -l | tr -d ' ')"
-if [ "$py_tools" = "2" ] && [ "$py_mecha" = "1" ] && [ "$py_total" = "3" ]; then
-  pass "python lines -> ci.yml (2 x $PYTHON_TOOLS_VERSION + 1 x $PYTHON_MECHA_VERSION = $py_total, none other)"
+# 3 x tools: skin toolchain, i18n translation tool, engine-shelf (the cross-
+# build shelf gate needs the same >= 3.11 tomllib floor build-release-binaries.sh
+# does).
+if [ "$py_tools" = "3" ] && [ "$py_mecha" = "1" ] && [ "$py_total" = "4" ]; then
+  pass "python lines -> ci.yml (3 x $PYTHON_TOOLS_VERSION + 1 x $PYTHON_MECHA_VERSION = $py_total, none other)"
 else
-  fail "python lines -> ci.yml: $py_total selection(s), of which $py_tools at '$PYTHON_TOOLS_VERSION' and $py_mecha at '$PYTHON_MECHA_VERSION' — versions.toml declares 2 and 1 and nothing else"
+  fail "python lines -> ci.yml: $py_total selection(s), of which $py_tools at '$PYTHON_TOOLS_VERSION' and $py_mecha at '$PYTHON_MECHA_VERSION' — versions.toml declares 3 and 1 and nothing else"
+fi
+
+# engine-release.yml's shelf job reads the same manifest through the same
+# stdlib tomllib floor, so it carries the same interpreter — one occurrence,
+# and no other python-version line in this workflow (a second one would be an
+# undeclared third selection, same defect class as the ci.yml check above).
+py_total_rel="$( { grep -oE 'python-version: *"[^"]*"' "$ENGINE_RELEASE_WF" || true; } | wc -l | tr -d ' ')"
+py_tools_rel="$( { grep -oF "python-version: \"$PYTHON_TOOLS_VERSION\"" "$ENGINE_RELEASE_WF" || true; } | wc -l | tr -d ' ')"
+if [ "$py_tools_rel" = "1" ] && [ "$py_total_rel" = "1" ]; then
+  pass "python lines -> engine-release.yml (1 x $PYTHON_TOOLS_VERSION, none other)"
+else
+  fail "python lines -> engine-release.yml: $py_total_rel selection(s), of which $py_tools_rel at '$PYTHON_TOOLS_VERSION' — versions.toml declares exactly 1"
 fi
 
 # The mecha cross-check's interpreter and its beet are ENTAILED, not chosen:

@@ -185,7 +185,7 @@ def test_the_real_repository_yields_a_flag_surface(checker):
     assert crates == 1, crates
     assert files >= 50, files
     assert len(owners) >= 40, sorted(owners)
-    # A flag declared in a library crate (`--view`, crates/render) and one
+    # A flag declared in a library crate (`--view`, crates/delvec/src/render) and one
     # declared in the binary's own source (`--lang`) both belong to `delvec`.
     assert owners["view"] == {"delvec"}
     assert owners["lang"] == {"delvec"}

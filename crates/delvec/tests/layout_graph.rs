@@ -19,8 +19,8 @@
 //! The demonstration is a campaign whose graph strands a body, put through each
 //! entry point with nothing else touched.
 
-use delvewright_compiler::analyze::analyze_campaign;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::analyze::analyze_campaign;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::validate::validate_campaign;
 use delvewright_dsl::{RawCampaign, parse_campaign};
 
@@ -30,7 +30,7 @@ mod common;
 /// hand; the fault is stated in the comment above it, not computed.
 const STRANDED: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -66,6 +66,7 @@ fn campaign_with_graph(graph: Option<&str>) -> delvewright_dsl::Campaign {
         layout_graph: graph.map(str::to_string),
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("the fixture parses")
 }

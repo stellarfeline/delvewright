@@ -33,6 +33,7 @@ import json
 import os
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -40,12 +41,23 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "validation" / "render-shots.sh"
 
+# The script resolves its engine through `tools/lib/delvec-bin.sh`, which uses a
+# `delvec` on PATH only when that binary IS this engine. So the shim has to claim
+# the pinned version, read from the registry rather than typed here — a literal
+# would make this suite green until the next version bump and then red for a
+# reason that has nothing to do with the world gate.
+ENGINE_PIN = tomllib.loads((REPO / "versions.toml").read_text())["engine"]["version"]
+
 # A render plan the script's own pre-check reads before the world gate. Its
 # contents never reach a real `delvec`, which is a shim in every test here.
 RENDER_PLAN = {"campaign_id": "gate-fixture", "layout_aabb": {}, "shots": []}
 
-SHIM = """#!/usr/bin/env bash
-# Stand-in for `delvec`: record the argv of every arm and succeed.
+SHIM = f"""#!/usr/bin/env bash
+# Stand-in for `delvec`: answer `--version` as this engine, then record the argv
+# of every arm and succeed.
+case "$1" in
+  --version) echo "delvec {ENGINE_PIN}, dsl 0.0.0, mc 0.0.0"; exit 0;;
+esac
 printf '%s\\n' "$*" >> "$DW_SHIM_LOG"
 exit 0
 """
@@ -76,6 +88,11 @@ def shim_env(tmp_path: Path) -> tuple[dict, Path]:
     env = dict(os.environ)
     env["PATH"] = f"{binv}{os.pathsep}{env.get('PATH', '')}"
     env["DW_SHIM_LOG"] = str(log)
+    # The script ends by naming the pinned Chunky core beside the cores actually
+    # installed. That report is `test_render_shots_chunky.py`'s subject; here it
+    # is pointed at an empty directory so this suite says nothing about whatever
+    # the developer's own `~/.chunky` happens to hold.
+    env["DELVEWRIGHT_CHUNKY_HOME"] = str(tmp_path / "chunky")
     return env, log
 
 
@@ -144,7 +161,16 @@ def test_the_gate_is_the_only_thing_that_refuses_a_missing_world(tmp_path):
     start = next(i for i, l in enumerate(lines) if l.startswith("# The world gate."))
     end = next(i for i, l in enumerate(lines) if l.startswith("# Every arm this script runs"))
     assert start < end, "the gate no longer sits between its comment and the `delvec` runner"
-    perturbed = tmp_path / "render-shots-no-gate.sh"
+    # The perturbed copy stands where the real script stands, in a tree carrying
+    # the two files it sources: it resolves its repo root from its own location,
+    # so a copy dropped anywhere else fails on a missing library rather than on
+    # the gate, which would make this perturbation prove nothing.
+    fixture = tmp_path / "repo"
+    (fixture / "validation").mkdir(parents=True, exist_ok=True)
+    (fixture / "tools" / "lib").mkdir(parents=True, exist_ok=True)
+    for rel in ("tools/lib/delvec-bin.sh", "tools/lib/versions.py", "versions.toml"):
+        shutil.copyfile(REPO / rel, fixture / rel)
+    perturbed = fixture / "validation" / "render-shots-no-gate.sh"
     # The removed block also defines `$world_dir` and `$world_regions`, which the
     # emission and the binding line read — substitute them so the perturbed copy
     # fails for no reason other than the missing gate.

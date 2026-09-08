@@ -12,10 +12,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc whose `obj/talk` completion fires `effects` (a raw
@@ -29,7 +29,7 @@ fn quests_doc(effects: &str) -> String {
 fn quests_doc_with(prelude: &str, effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -73,6 +73,7 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     })
     .expect("campaign parses")
 }
@@ -231,7 +232,7 @@ fn trap_prelude(effects: &str) -> String {
 fn respawn_dialogue(effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {{
@@ -402,7 +403,7 @@ fn typod_anchor_in_a_dialogue_respawn_bundle_is_dw0360() {
 fn worldless_campaign(volley_anchor: &str) -> Campaign {
     let quests = format!(
         r#"{{
-  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quests",
+  "dsl_version": "0.22.0", "campaign_id": "hello-world", "stage": "quests",
   "content": {{
     "quests": [ {{
       "id": "quest/open-the-door",
@@ -422,24 +423,25 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
     );
     parse_campaign(&RawCampaign {
         world: r#"{
-  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "world",
+  "dsl_version": "0.22.0", "campaign_id": "hello-world", "stage": "world",
   "content": {
     "title": "The Keeper's Door",
     "theme": "A lonely keep at the edge of the moor.",
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729, "target_minutes": 5,
+    "time": "noon", "weather": "clear",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
 }"#
         .to_string(),
         npcs: r#"{
-  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "npcs",
+  "dsl_version": "0.22.0", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [] }
 }"#
         .to_string(),
         classes: read_hw("classes.json"),
         quest_plan: r#"{
-  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "quest-plan",
+  "dsl_version": "0.22.0", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": {
     "quests": [ { "id": "quest/open-the-door", "goal": "Leave the keep.",
       "area": "area/keep", "npcs": [], "depends_on": [], "mandatory": true, "act": 1 } ],
@@ -449,7 +451,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
         .to_string(),
         quests,
         dialogue: r#"{
-  "dsl_version": "0.19.0", "campaign_id": "hello-world", "stage": "dialogue",
+  "dsl_version": "0.22.0", "campaign_id": "hello-world", "stage": "dialogue",
   "content": { "dialogues": [] }
 }"#
         .to_string(),
@@ -458,6 +460,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     })
     .expect("campaign parses")
 }
@@ -514,17 +517,17 @@ fn a_single_objective_campaign_assembles_a_world_for_its_first_leg() {
         "fixture must declare no waves, or the world is being assembled for something else"
     );
     assert!(
-        !delvewright_compiler::clearance::has_bodies(&plan),
+        !delvec::compiler::clearance::has_bodies(&plan),
         "fixture must carry no NPC or actor body, or the world is being assembled for \
          something else"
     );
     assert_eq!(
-        delvewright_compiler::nav::critical_leg_count(&plan),
+        delvec::compiler::nav::critical_leg_count(&plan),
         1,
         "one objective, one leg: the party's move from the campaign spawn to it"
     );
     assert!(
-        delvewright_compiler::nav::needs_world(&plan),
+        delvec::compiler::nav::needs_world(&plan),
         "that one leg has to be proven over geometry, so the world is assembled"
     );
 }

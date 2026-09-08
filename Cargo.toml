@@ -2,24 +2,26 @@
 resolver = "3"
 members = [
     "crates/dsl",
-    "crates/compiler",
-    "crates/grammar",
-    "crates/schem",
-    "crates/admit",
-    "crates/orchestrator",
-    "crates/render",
     "crates/delvec",
 ]
 
-# The ENGINE version line (ADR-0016 line 2, ADR-0023 §6): every crate under
-# `crates/` except `delvewright-dsl` inherits this one number, and it is the
-# number the git tag, the crates.io versions and the skill's `requires.delvec`
-# window must all equal. `validation/check-versions.sh` binds it to
+# The prefab generators and the rules they share are their own workspace
+# (`prefabs/Cargo.toml`). They are EXCLUDED rather than merely unlisted, so that
+# the property their isolation exists for is stated here, where the shipped
+# binary's dependency graph is decided: nothing under `prefabs/` can enter
+# `delvec`'s resolution. That property used to be established by giving each
+# generator its own `[workspace]` table — seven of them, seven lockfiles, and
+# one shared rule file compiled seven times.
+exclude = ["prefabs"]
+
+# The ENGINE version line (ADR-0016 line 2, ADR-0025): `delvec`, the one engine
+# crate, inherits this one number, and it is the number the git tag, the
+# crates.io version and the skill's `requires.delvec` window must all equal. `validation/check-versions.sh` binds it to
 # `versions.toml [engine].version`; `.github/workflows/engine-release.yml`
 # refuses a `v*` tag whose name disagrees with it. `delvewright-dsl` is
 # deliberately on its own line (see crates/dsl/Cargo.toml).
 [workspace.package]
-version = "1.1.0"
+version = "1.4.0"
 edition = "2024"
 # The toolchain this repo actually builds and tests on (rust-toolchain.toml).
 # Asserted equal to that pin by check-versions.sh: a `rust-version` looser than
@@ -29,23 +31,16 @@ rust-version = "1.97.1"
 license = "GPL-3.0-only"
 repository = "https://github.com/stellarfeline/delvewright"
 
-# One declaration per in-tree crate, so a member says `name.workspace = true`
-# and nothing else. `version` is REQUIRED beside `path` for publication: a
-# path-only dependency cannot be packaged (`cargo package` refuses it, by name),
-# and crates.io drops the `path` key — so on the registry the `=` requirement
-# is the ONLY thing left standing, and `=` so that one engine version resolves
-# to exactly one build of each crate and no other. Every `=` here is bound to
-# `[workspace.package] version` above by check-versions.sh, except the DSL
-# crate's, which is the format's own number (`dsl_version`) and is bound to
-# `[engine] dsl_crate_req` in versions.toml.
+# The one in-tree dependency, declared once so the engine says
+# `delvewright-dsl.workspace = true` and nothing else. `version` is REQUIRED
+# beside `path` for publication: a path-only dependency cannot be packaged
+# (`cargo package` refuses it, by name), and crates.io drops the `path` key — so
+# on the registry the `=` requirement is the ONLY thing left standing, and `=`
+# so that one engine version resolves to exactly one build of the format crate
+# and no other. The number is the format's own (`dsl_version`), bound to
+# `[engine] dsl_crate_req` in versions.toml by check-versions.sh.
 [workspace.dependencies]
-delvewright-dsl = { path = "crates/dsl", version = "=0.19.0" }
-delvewright-compiler = { path = "crates/compiler", version = "=1.1.0" }
-delvewright-grammar = { path = "crates/grammar", version = "=1.1.0" }
-delvewright-schem = { path = "crates/schem", version = "=1.1.0" }
-delvewright-admit = { path = "crates/admit", version = "=1.1.0" }
-delvewright-orchestrator = { path = "crates/orchestrator", version = "=1.1.0" }
-delvewright-render = { path = "crates/render", version = "=1.1.0" }
+delvewright-dsl = { path = "crates/dsl", version = "=0.22.0" }
 
 # An unoptimized `delvec` is unusable on a real campaign, and nothing used to say
 # so: `cargo build` hands you `target/debug/delvec`, and on `nobodys-cave-island`
@@ -56,7 +51,7 @@ delvewright-render = { path = "crates/render", version = "=1.1.0" }
 # `opt-level = 1` is the setting that makes the pitfall stop existing instead of
 # documenting it (CLAUDE.md debug doctrine: a tooling default beats a doc line).
 # It is nearly free on the loop that actually matters — an incremental rebuild of
-# `crates/compiler` costs 1.8s at opt-level 1 vs 1.9s at opt-level 0, because the
+# `crates/delvec/src/compiler` costs 1.8s at opt-level 1 vs 1.9s at opt-level 0, because the
 # cost is codegen for the crate that changed, not the whole graph. `--release`
 # stays available and is still the fastest binary, but it costs 20s per
 # incremental rebuild, so it is the wrong default for an edit-compile-run loop.
@@ -75,7 +70,7 @@ delvewright-render = { path = "crates/render", version = "=1.1.0" }
 # them, describing state nothing in this repository reads. There is no debugger in
 # the toolchain: `lldb`, `gdb`, `dwarfdump`, `addr2line` and `dsymutil` appear in
 # no script or job, and `std::backtrace`, `#[track_caller]` and `RUST_BACKTRACE`
-# appear zero times across all seven crates' `src/` and `tests/`.
+# appear zero times across both crates' `src/` and `tests/`.
 #
 # `line-tables-only` keeps what a failing test needs, and that is measured rather
 # than asserted: a panicking test under `RUST_BACKTRACE=full` prints 46 frames of
@@ -96,7 +91,7 @@ delvewright-render = { path = "crates/render", version = "=1.1.0" }
 # `incremental` is deliberately NOT set, and that is measured too. It reads as the
 # obvious next saving — a cold build is 38.5s CPU cheaper without it and `target/`
 # 43% smaller — but a cold build is not the population. One function added to
-# `crates/compiler` and rebuilt costs 60.8s CPU with incremental and 265.7s
+# `crates/delvec/src/compiler` and rebuilt costs 60.8s CPU with incremental and 265.7s
 # without, so the cold saving is repaid after 0.19 rebuilds and every rebuild
 # after that is a loss; this profile exists for the edit-compile-run loop. Nor
 # would it reach CI, where the cold builds actually are: all 12 jobs across the

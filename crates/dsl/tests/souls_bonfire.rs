@@ -15,7 +15,7 @@ use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, parse_campaig
 /// A v0.6 quests document with a bonfire (with an `on_rest` narrate) and a wave
 /// that re-seats on rest.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -55,7 +55,7 @@ const QUESTS_V06: &str = r#"{
 fn classes_with_flask() -> String {
     let mut v: serde_json::Value =
         serde_json::from_str(&common::read_valid("classes.json")).unwrap();
-    v["dsl_version"] = serde_json::json!("0.19.0");
+    v["dsl_version"] = serde_json::json!("0.22.0");
     for class in v["content"]["classes"].as_array_mut().unwrap() {
         class["kit"]
             .as_array_mut()
@@ -84,6 +84,7 @@ fn campaign_with(quests: &str, classes: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 

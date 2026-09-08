@@ -16,11 +16,11 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::clearance::{DW_BODY_CLEARANCE, DW_BODY_CLEARANCE_ADVISORY};
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::clearance::{DW_BODY_CLEARANCE, DW_BODY_CLEARANCE_ADVISORY};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Diagnostic, RawCampaign, Severity, parse_campaign};
 
 fn read_hw(name: &str) -> String {
@@ -37,7 +37,7 @@ fn npcs_doc(base_entity: &str) -> String {
 /// at a chosen place relative to a body.
 fn edits_doc(offset: [i32; 3], note: &str) -> String {
     serde_json::json!({
-        "dsl_version": "0.19.0",
+        "dsl_version": "0.22.0",
         "campaign_id": "hello-world",
         "stage": "world-edits",
         "content": { "batches": [ {
@@ -71,6 +71,7 @@ fn build(base_entity: &str, edits: Option<String>) -> Result<Vec<Diagnostic>, Bu
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

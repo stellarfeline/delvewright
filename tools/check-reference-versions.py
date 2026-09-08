@@ -52,7 +52,7 @@ written once and the build moves.
 
 ## The same claims, on the pages a stranger reads
 
-`crates/compiler/README.md` and `crates/dsl/README.md` are rendered VERBATIM as
+`crates/delvec/README.md` and `crates/dsl/README.md` are rendered VERBATIM as
 the crates.io front pages of `delvec` and `delvewright-dsl`, and each states the
 Minecraft version, the `dsl_version` and the minimum Rust — the three
 facts that decide whether a visitor can use the crate at all. Those were the
@@ -75,13 +75,17 @@ Two rules per page, and the second is the one that catches prose:
    AND equal: a page that quietly drops its compatibility section stops telling a
    stranger the one thing they need, so an absent claim is a shape error (exit 2),
    never a silent pass.
-2. **No unbound version literal anywhere on the page.** Every `X.Y.Z` on the page
-   must be one of the build's own constants — the pinned Minecraft version, the
-   `dsl_version`, or a publishable crate's `version` / `rust-version`.
+2. **No unbound version literal anywhere on the page.** Every `X.Y.Z` — and every
+   two-part `X.Y`, bare or in a cargo requirement form (`"0.19"`, `"^0.19"`,
+   `"=0.19.0"`, `"0.19.*"`) — must be one of the build's own constants: the
+   pinned Minecraft version, the `dsl_version`, a publishable crate's `version`
+   / `rust-version`, or the page's OWN crate named at its current major.minor.
    Rule 1 alone binds only the compatibility bullets; the `delvec` page states the
    Minecraft version three times, and "the vendored 1.21.11 Brigadier command
-   tree" is prose that rule 1 cannot see. Under rule 2 an `mc` bump reds every
-   stale mention at once, with line numbers.
+   tree" is prose that rule 1 cannot see, exactly as a `[dependencies]` snippet
+   naming a stale major.minor is prose rule 1 never reads either. Under rule 2
+   an `mc` bump, or a crate's own version bump, reds every stale mention at
+   once, with line numbers.
 
 Deterministic, offline, no dependencies (Python 3 stdlib). Run from the repo
 root:
@@ -120,7 +124,7 @@ DOC_VERSIONS_RE = re.compile(
 # the root manifest carries at column zero.
 CARGO_VERSION_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"')
 
-# `pub const DSL_VERSION: &str = "0.19.0";` — the one `dsl_version` the engine
+# `pub const DSL_VERSION: &str = "0.22.0";` — the one `dsl_version` the engine
 # accepts (ADR-0024).
 RS_DSL_VERSION_RE = re.compile(r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*"([^"]+)"\s*;')
 
@@ -129,7 +133,7 @@ RS_DSL_VERSION_RE = re.compile(r'pub\s+const\s+DSL_VERSION\s*:\s*&str\s*=\s*"([^
 # gate that wants a pin shares. A regex here was a second parser of TOML.
 
 # The DW0102 catalog row restates the one number by hand:
-#   | `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.19.0`. … |
+#   | `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.22.0`. … |
 #
 # It is looked for among the rows a TABLE holds, not anywhere in the file. A
 # blank line ends a pipe table, so a row under one renders as a paragraph of
@@ -144,14 +148,18 @@ DOC_DW0102_RE = re.compile(
 
 # `- **Minecraft**: Java Edition 1.21.11.`
 README_MC_RE = re.compile(r"\*\*Minecraft\*\*:\s*Java Edition\s+`?(\d[\d.]*\d)`?")
-# ``- **Campaign format**: `dsl_version` `0.19.0`.``
+# ``- **Campaign format**: `dsl_version` `0.22.0`.``
 README_FORMAT_RE = re.compile(r"\*\*Campaign format\*\*:\s*`dsl_version`\s+`([^`]+)`")
 # `- **Rust**: 1.97.1 or newer.`
 README_RUST_RE = re.compile(r"\*\*Rust\*\*:\s*`?(\d[\d.]*\d)`?\s+or newer")
 
-# Any dotted numeric run, wherever it sits in the prose; the caller keeps the
-# three-component ones. Matching greedily and filtering afterwards is what makes
-# `GPL-3.0-only` (two components) and `1.2.3.4` (four) fall out on their own.
+# Any dotted numeric run, wherever it sits in the prose — two components and
+# up. A bare `X.Y` is a version literal exactly as much as `X.Y.Z`: cargo's own
+# caret-range convention writes a dependency requirement as `"0.19"` to mean
+# `^0.19`, and an operator prefix (`^`, `~`, `=`) or a wildcard suffix (`.*`)
+# is not part of the digit run this pattern needs — `^0.19` and `0.19.*` both
+# yield the literal `0.19` on their own, because `^`, `~`, `=` and `*` are none
+# of `\d` or `.`.
 #
 # The right-hand guard is `(?!\w)` and NOT `(?![\w.])`, which is the shape this
 # first shipped with and was silently blind: a version at the end of a sentence
@@ -159,6 +167,18 @@ README_RUST_RE = re.compile(r"\*\*Rust\*\*:\s*`?(\d[\d.]*\d)`?\s+or newer")
 # followed by a full stop, so a lookahead that forbids a trailing dot matched
 # nothing on either page and rule 2 examined zero literals while printing green.
 # Caught by the test that plants a stale literal in prose.
+#
+# `1.2.3.4` is still caught: the whole four-component run matches as ONE
+# literal and fails the `known`/`own_major_minor` check below just like any
+# other number nothing in the build owns (no version here has four parts) —
+# it no longer needs a dot-count filter to be a finding, it needed one only
+# to be COUNTED as a two- or three-part literal, which it never was.
+# `GPL-3.0-only` no longer falls out by dot-count (a real two-part literal,
+# `0.19` in a cargo dependency line, has exactly the same shape as `3.0` in
+# that license id) — it is excluded below by where it sits: immediately after
+# a hyphen that is itself immediately after a letter, the one shape an SPDX
+# license expression has and a version claim does not. Demonstrated false
+# positive: `GPL-3.0-only.` sits on both published pages today.
 VERSION_LITERAL_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)+(?!\w)")
 
 # Version literals on a published page that are deliberately NOT one of this
@@ -285,20 +305,40 @@ def check_published_pages(
                 "[package] rust-version"
             )
 
-        # Rule 2 — the one that reaches prose the labelled claims never touch.
+        # Rule 2 — the one that reaches prose the labelled claims never touch,
+        # and now the one that reaches a `[dependencies]` snippet too: a bare
+        # `X.Y` and a cargo requirement form (`"0.19"`, `"^0.19"`, `"=0.19.0"`,
+        # `"0.19.*"`) are version literals exactly as much as `X.Y.Z` in prose.
+        # A page's OWN crate is additionally allowed to be named at its current
+        # major.minor — the caret-range convention a `[dependencies]` line
+        # actually uses — because "the exact version" is already in `known`.
+        own_major_minor = ".".join(crate.version.split(".")[:2])
         literals_seen = 0
         for n, line in enumerate(text.splitlines(), start=1):
-            for literal in VERSION_LITERAL_RE.findall(line):
-                if literal.count(".") != 2:
-                    continue  # `GPL-3.0-only`, `delvewright-dsl = "0.1"`
+            for m in VERSION_LITERAL_RE.finditer(line):
+                literal = m.group(0)
+                start = m.start()
+                # An SPDX license expression (`GPL-3.0-only`, `Apache-2.0`)
+                # embeds a version-shaped number inside a hyphenated
+                # identifier — immediately after a hyphen that is itself
+                # immediately after a letter — and is not a claim about the
+                # build at all. This is the one exclusion earned by a real
+                # false positive on both pages today, not a guess at one.
+                if start >= 2 and line[start - 1] == "-" and line[start - 2].isalpha():
+                    continue
                 literals_seen += 1
-                if literal in known or (rel, literal) in UNBOUND_VERSION_LITERALS:
+                if (
+                    literal in known
+                    or literal == own_major_minor
+                    or (rel, literal) in UNBOUND_VERSION_LITERALS
+                ):
                     continue
                 problems.append(
                     f"  {rel}:{n}: version literal `{literal}` is not one this "
                     "build owns\n"
                     f"      the build's constants are: "
-                    f"{', '.join(sorted(known))}\n"
+                    f"{', '.join(sorted(known))} (or `{crate.name}`'s own "
+                    f"major.minor, `{own_major_minor}`)\n"
                     "      a stale mention in prose is exactly how a published "
                     "page goes wrong"
                 )

@@ -21,10 +21,37 @@ enforced by anything. This is that enforcement.
 re-runs nothing. For every finding ever reported, it asks: does a general-form
 check exist, and does it BIND — non-zero — on the campaign about to be staged?
 
-## The three ways a green has lied here, each with a real instance
+## Where the refusal belongs: on PRESENCE, not on absence
+
+The rule this gate applies, stated once and applied everywhere below:
+
+    A check binds where the object is. The absence of an OPTIONAL surface is a
+    design choice, not a hole in the engine's coverage — a campaign that
+    declares no gate, no wave, no mount has not skipped anything, it has used
+    an optional surface not at all. A surface the DSL REQUIRES cannot be
+    absent from a build that compiled at all, so every zero this gate can see
+    is an optional surface. The refusal therefore belongs on the other side:
+    **the class is present in this build and no check binds to it.**
+
+This is not an accommodation for one campaign, it is what makes the gate a
+general engine's gate. The ledger is a record of defects found on particular
+campaigns; today's rows come from six of them, most from one. A creator's
+first delve contains almost none of those object classes, and a gate whose
+pass condition was "contain what the campaigns we happened to test contained"
+would hold every new delve unstageable forever, for reasons about other
+people's campaigns.
+
+So `INAPPLICABLE` — a MEASURED zero of the class across the declared design —
+does not refuse. It is counted in the headline in its own words, printed in
+its own section, and carried into the admission token, because a pass that
+could not exercise most of the ledger's classes must never read as coverage —
+on a two-scene delve that is the majority of the rows. What still refuses is
+`UNBOUND`: the objects are there and the check is inert over them.
+
+## The ways a green has lied here, each with a real instance
 
 Every verdict below names one of them, because a gate that folded them together
-would be the fourth way.
+would be one more way.
 
 - `NO-GENERAL-FORM` — the instance was fixed and the class left open. Island
   round 7's misplaced click was fixed in round 10 by moving one anchor; the
@@ -44,10 +71,21 @@ would be the fourth way.
   and never off the filesystem, because a directory or an unreadable file
   standing where a document belongs is exactly what a broken campaign looks
   like. Such a campaign does not build, so it has no manifest to present.
-- `UNBOUND` — the check exists and matched **zero objects** on this campaign.
-  The bot's combat floor gate examined zero enemies for nineteen island rounds
-  because `floor_gate.covered`, `.not_covered` and `actors[]` were all empty at
-  once and nothing counted them.
+- `UNBOUND` — the check exists and matched **zero objects** on this campaign,
+  and the objects that could have carried the defect are there. The bot's
+  combat floor gate examined zero enemies for nineteen island rounds because
+  `floor_gate.covered`, `.not_covered` and `actors[]` were all empty at once
+  and nothing counted them.
+- `INAPPLICABLE` — the check matched zero objects **and** the class's own
+  precondition measured zero: this campaign declares none of the objects the
+  class needs. **Not a refusal**, per the rule above: the surface is optional
+  and this campaign did not use it. A zero is put in this class only by a
+  MEASUREMENT — a declared `applies_when`, or the binding probe's own shape
+  where that probe counts the object class itself — and at least one of those
+  two measurements must be taken over the CAMPAIGN SOURCE, the author's
+  declared design, which no compiler or emission defect can rewrite. A zero
+  neither of those reached, or one measured only in the build tree, stays
+  `UNBOUND`, whose detail says in as many words that nobody looked.
 
 Plus one the ledger's own shape can produce:
 
@@ -58,8 +96,20 @@ Plus one the ledger's own shape can produce:
 
 ## What is deliberately NOT a red
 
-`docs/reference/playtest-methodology.md` rule 2 permits one escape and this
-honours it exactly, no wider: a finding may close with *"a declared, justified
+The first is `INAPPLICABLE`, and it is not an exemption anybody grants — it is
+the rule at the top of this file. The class measured zero across the declared
+design, so the surface is optional and this campaign did not use it; a
+required surface cannot be absent from a build that compiled. The remedy a
+refusal would prescribe is "author content you did not want", which is not
+coverage work at all. So these rows are counted in the headline in their own
+words, listed in their own section, and named in the admission token: a pass
+that could not exercise a class says so, per class, and the round summary
+carries the list. `--strict` does not add them either — a flag that restored
+"resemble the campaigns we happened to test" would just be the old rule under
+a different name.
+
+Then `docs/reference/playtest-methodology.md` rule 2's one escape, honoured
+exactly and no wider: a finding may close with *"a declared, justified
 reason none is possible"*. Such a row carries `disposition` of `no-machine-form`
 (prose quality, a judgement no compiler can make) or `not-a-defect` (judged not
 to be a defect at all), plus a `justification` this tool requires to be present
@@ -68,7 +118,7 @@ section with their justification, and their COUNT is in the headline, because
 rule 4 makes each one a standing risk item at every staging review. `--strict`
 fails on them too, for a reviewer who wants the absolute floor.
 
-The second non-red is not an escape at all — it is a different subject. A
+The third non-red is not an escape at all — it is a different subject. A
 **pre-detail blockout** (a site-plan campaign whose only geometry is the
 derived massing; spec-0049) is staged for a walk that judges scale, pacing,
 route legibility and silhouette — a build that does not claim to be finished,
@@ -82,27 +132,33 @@ not pretend to be the build that could. Those rows are printed in their own
 section, their count is in the headline, the admission token carries their
 ids, and the boot banner names them — the owner is told what this session is
 not protected from, per class, exactly as rule 4 demands. `--strict` fails on
-them too. The moment the campaign leaves the blockout stage (a detail-plan
-document exists), every one of these rows is adjudicated as red again: the
-verdict is a statement about one stage, re-derived at every staging, never a
-standing exemption.
+them, because a stage claim is exactly what a reviewer at the floor wants
+re-examined. The verdict is a statement about one staging of one stage: the
+moment the campaign gains a detail-plan document it is adjudicated afresh with
+no blockout allowance — the same measured double zero is then the counted
+`INAPPLICABLE`, the banner stops naming a blockout, and `--strict` stops
+treating it as a stage claim.
 
 The precondition may be a declared `applies_when`, or the binding probe's own
 shape where that probe COUNTS THE OBJECT CLASS ITSELF: an identity-shaped
 `dsl` predicate, or a campaign-source file glob with no `contains`, where the
 file is the object and no stage document declares that a campaign has one. See
-`probe_is_self_measuring` — the second clause is a bounded loosening and states
-its bound there.
+`probe_is_self_measuring`.
 
 What the mechanism demands, and why the defect it exists to catch cannot
-supply it: "this build has no combat" is proven by two measured zeros over
-the campaign's own declared design plus the compiler-written record that the
-world is derived massing. A build whose combat *went missing* fails at least
-one of the three — declared objects make the binding non-zero (BOUND or
-UNBOUND), a declared precondition surface makes the precondition non-zero
-(UNBOUND), a declared-but-unemitted combat artifact is MISSING-CHECK, and a
-detailed or areas-placed campaign cannot present the blockout record at all.
-No operator flag, row field or disposition reaches this verdict.
+supply it. Both non-red readings of a zero rest on a measurement taken over
+the CAMPAIGN SOURCE — the design its author declared, which no compiler,
+emission or packaging defect can rewrite. `measures_campaign_source` is that
+demand, and it is checked before either verdict is reached: a double zero
+counted only in the BUILD tree (an `artifact` binding with an `out`
+precondition, say) is a zero a defect can manufacture by dropping the
+emission, so it stays `UNBOUND` and refuses. A build whose combat *went
+missing* therefore fails at least one measurement: declared objects make the
+binding non-zero (BOUND or UNBOUND), a declared precondition surface makes the
+precondition non-zero (UNBOUND), a declared-but-unemitted combat artifact is
+MISSING-CHECK, a pair of build-side zeros is UNBOUND, and a detailed or
+areas-placed campaign cannot present the blockout record at all. No operator
+flag, row field or disposition reaches either verdict.
 
 That is all. There is no "skip", no "known-red", no threshold.
 A finding whose general form was never built is a red, and an honest red list is
@@ -134,8 +190,9 @@ again in `tools/tests/test_staging_gate.py`.
 build" is a question about emitted artifacts, and a ledger checked against
 source alone would be exactly the compile-time-only green rule 1 warns about.
 
-Exit 0 = every finding carries a live, binding check (or a justified
-exemption). Exit 1 = at least one does not — the build is NOT stageable.
+Exit 0 = every class this build CONTAINS carries a live, binding check (plus
+any justified exemptions, and the counted classes it contains none of).
+Exit 1 = at least one present class does not — the build is NOT stageable.
 Exit 2 = usage/IO error.
 
 Deterministic, offline, Python 3 stdlib only.
@@ -153,17 +210,26 @@ import sys
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_LEDGER = REPO_ROOT / "docs" / "playtest-findings.json"
 
-# Verdicts, in report order. The first four are reds; they are listed
-# separately rather than as one "FAIL" because the remedy differs completely
-# per class — build the check / fix the check / give the campaign the object /
-# bump the campaign's dsl_version.
+# Verdicts, in report order. The reds are listed separately rather than as one
+# "FAIL" because the remedy differs completely per class — build the check /
+# fix the check / give the class back its check.
+#
+# Every red says the same thing in a different voice: an object of the class is
+# THERE and nothing this build carries would catch the defect again. What is
+# not here is `INAPPLICABLE` — a measured zero of the class across the declared
+# design — because absence of an optional surface is a design choice and a
+# required surface cannot be absent from a build that compiled.
 RED_VERDICTS = (
     "NO-SOURCE",
     "NO-GENERAL-FORM",
     "MISSING-CHECK",
     "UNBOUND",
-    "INAPPLICABLE",
 )
+# Counted, never refused, and never silent. Reported in its own section and
+# named row by row in the admission token, so a pass cannot be read as
+# coverage. `--strict` does not add it: the only thing that would restore is
+# "resemble the campaigns we happened to test".
+NOT_A_GAP_VERDICTS = ("INAPPLICABLE",)
 EXEMPT_VERDICTS = ("DECLARED-UNCOVERABLE", "OUT-OF-STAGE")
 PASS_VERDICTS = ("BOUND",)
 
@@ -277,6 +343,11 @@ class Subject:
         "layout-graph.json",
         "site-plan.json",
         "detail-plan.json",
+        # The design record (spec-0061). Held here so the gate holds a parsed
+        # copy of every document the compiler reads: without it, a campaign
+        # carrying one reds `MISSING-CHECK` as format rot rather than being
+        # judged on what it says.
+        "design.json",
     )
 
     def __init__(self, campaign: pathlib.Path, build: pathlib.Path) -> None:
@@ -468,7 +539,7 @@ def _absent_stage_docs(files: list, pred: dict, subj: Subject) -> tuple[int | No
     *nobody measured*, and it cannot present this fact:
 
     - a campaign that DOES declare the document has it hashed into `inputs`
-      (pinned by `crates/compiler/tests/edit.rs`: "the stage-7 script is a
+      (pinned by `crates/delvec/tests/edit.rs`: "the stage-7 script is a
       hashed build input"), so it can never take this branch;
     - a campaign whose document is present but broken — a directory in its
       place, unreadable, non-UTF-8, malformed — does not build at all:
@@ -612,14 +683,23 @@ def probe_is_self_measuring(binding: dict, subj: Subject) -> bool:
       those, which kind of zero it is must be measured by `applies_when`,
       never inferred.
 
-    **The `campaign` branch is a LOOSENING and this is its bound.** Its only
-    caller is inside the pre-detail blockout branch of `adjudicate`, so nothing
-    outside a twice-measured blockout changes: the same zero on an assembled
-    campaign is still `UNBOUND`. What it stops catching is a future row bound
-    to a campaign-source file class that ought to exist BEFORE the walk — a
-    design-approval image set, say — which would go quiet on a blockout instead
-    of redding. What it still refuses is in `tools/tests/test_staging_gate.py`,
-    driven in both directions per clause.
+    **What this recogniser can and cannot buy, stated as its bound.** It names
+    a zero; it never excuses one. On an assembled campaign a self-measuring
+    zero is `INAPPLICABLE` — a red, in the refusal list, in the admission
+    token, in the round summary as a class the owner is not protected from —
+    exactly as a declared `applies_when` measuring zero already was. The only
+    non-red it can reach is `OUT-OF-STAGE`, and that is gated on
+    `subj.pre_detail`, which is measured twice off the campaign and the
+    compiler's own manifest and can be presented by no defect. So the whole
+    effect of recognising a shape here is WHICH red is printed, and with it
+    whether the report says the class was measured or says nobody looked.
+
+    What the recogniser deliberately does not reach is the ambiguous shapes
+    below: a `has`/`has_any` predicate, a `contains` glob, an `artifact` or
+    `out` probe. Those stay `UNBOUND` with "never measured", which is the
+    demand that the ROW declare an `applies_when`. What each clause still
+    refuses is in `tools/tests/test_staging_gate.py`, driven in both
+    directions per clause.
 
     Fail closed on the `is_file()` trap: a directory, or a broken symlink,
     standing where the file class belongs answers an honest `False` to
@@ -637,6 +717,49 @@ def probe_is_self_measuring(binding: dict, subj: Subject) -> bool:
     if kind == "campaign" and not binding.get("contains"):
         return all(p.is_file() for p in glob_paths(subj.campaign, binding["glob"]))
     return False
+
+
+def measures_campaign_source(probe_spec: dict | None) -> bool:
+    """Does this probe count over the campaign SOURCE — the author's declared
+    design — rather than over the build tree?
+
+    This is the property `INAPPLICABLE` and `OUT-OF-STAGE` are secured by, and
+    the reason neither is an opt-out a defect can supply. A `dsl` predicate
+    reads the stage documents the author wrote; a `campaign` glob reads the
+    campaign directory. Nothing a compiler, emitter or packaging step does can
+    move either number: to make a class measure zero there you have to not
+    declare it, which is the design choice the whole rule is about.
+
+    `artifact` and `out` probes count DERIVED output. Their zero is the one a
+    defect manufactures — stop emitting the ledger, stop writing the function,
+    and the class "disappears" from a build whose campaign still declares it.
+    So a zero measured only in the build tree buys nothing here: `adjudicate`
+    requires at least one of the binding and the precondition to have been
+    counted over the source before it will call a zero a measured absence, and
+    a pair of build-side zeros stays `UNBOUND`.
+    """
+    if not isinstance(probe_spec, dict):
+        return False
+    return probe_spec.get("kind") in ("dsl", "campaign")
+
+
+def _absence_is_declared(binding: dict, applies_when: dict | None) -> bool:
+    """Is this row's double zero a fact about the DESIGN, or only about output?
+
+    A zero the author chose (they declared no wave) and a zero a defect made
+    (the wave machinery stopped emitting) look identical in the build tree. So
+    a measured absence has to be anchored in at least one count taken over the
+    campaign source. Binding or precondition, either will do — the binding
+    being source-shaped already proves the class is undeclared, and a
+    source-shaped precondition proves the surface the class needs is.
+
+    Zero live ledger rows fail this today: every one of the 94 measures at
+    least one side over the source. It binds against the row nobody has
+    written yet — an `artifact` or `out` binding paired with an `artifact` or
+    `out` precondition — and it is driven both ways from fixtures in
+    `tools/tests/test_staging_gate.py`.
+    """
+    return measures_campaign_source(binding) or measures_campaign_source(applies_when)
 
 
 # ---------------------------------------------------------------------------
@@ -791,6 +914,16 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
                 )
                 return out
             out["binding"] = 0
+            if not _absence_is_declared(binding, aw):
+                out["precondition"] = None
+                out["verdict"] = "UNBOUND"
+                out["detail"] = (
+                    f"{detail}, and {pre_detail} — but both zeros were counted "
+                    "in the BUILD tree, which is a zero an emission defect can "
+                    "manufacture; nothing here measured the campaign's own "
+                    "declared design"
+                )
+                return out
             out["verdict"] = "OUT-OF-STAGE" if subj.pre_detail else "INAPPLICABLE"
             out["detail"] = (
                 f"{detail}; the defect class needs {pre_detail}, and this "
@@ -807,42 +940,58 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
     # A zero binding has two causes and they are NOT the same fact.
     #
     #   - The object class is simply absent from this campaign: a delve with no
-    #     timed gate cannot have a timed-gate defect. INAPPLICABLE.
+    #     timed gate cannot have a timed-gate defect. INAPPLICABLE — counted,
+    #     named to the owner, and NOT a refusal. The timed gate is an optional
+    #     surface, and a campaign that declares none has made a design choice,
+    #     not left a hole in the engine's coverage.
     #   - Objects that COULD carry the defect exist, but the declaration the
-    #     check keys off is missing from them. UNBOUND — and this is the exact
-    #     shape of the island's nineteen-round vacuous green: hostile actors
-    #     existed the whole time, `tier` did not, so the floor gate examined
-    #     zero enemies and reported nothing.
+    #     check keys off is missing from them. UNBOUND, and a refusal — this is
+    #     the exact shape of the island's nineteen-round vacuous green: hostile
+    #     actors existed the whole time, `tier` did not, so the floor gate
+    #     examined zero enemies and reported nothing. The class is PRESENT and
+    #     no check binds to it, which is where the refusal belongs.
     #
-    # Both are REDS. `applies_when` names WHICH zero this is, never excuses it:
-    # an exemption a row can grant itself by declaring its own binding class as
-    # its own precondition is not a gate, and "the class cannot occur here" is
-    # precisely what the owner needs told rather than folded away. A finished
-    # campaign that cannot exercise a past defect class is a build her session
-    # is not protected on — that is a fact for the round summary, not a pass.
+    # `applies_when` names WHICH zero this is, and it is a measurement, never a
+    # licence: an exemption a row can grant itself by declaring its own binding
+    # class as its own precondition is not a gate, and `_absence_is_declared`
+    # additionally demands that at least one of the two counts was taken over
+    # the campaign SOURCE, which no defect can rewrite.
     aw = row.get("applies_when")
     if aw is None:
-        # No declared precondition probe. Where the probe COUNTS THE OBJECT
-        # CLASS ITSELF — an identity-shaped predicate over the declared
-        # design, or a campaign-source file class where the file is the
-        # object — it measures its own precondition, and on a pre-detail
-        # blockout that measured double zero is OUT-OF-STAGE. Everywhere else,
-        # and for every declaration- or derivation-shaped probe, the gate keeps
-        # refusing to guess.
-        if subj.pre_detail and probe_is_self_measuring(row["binding"], subj):
+        # No DECLARED precondition probe — which is not the same as no
+        # precondition MEASUREMENT. Where the probe COUNTS THE OBJECT CLASS
+        # ITSELF — an identity-shaped predicate over the declared design, or a
+        # campaign-source file class where the file is the object — the row's
+        # own binding is its precondition, measured on this campaign, and
+        # `load_ledger` refuses an `applies_when` that would restate it. Such a
+        # zero is INAPPLICABLE (counted, the class is not here) and not UNBOUND
+        # (a refusal, the class is here and the check is inert): saying "which
+        # kind of zero this is was never measured" over a probe that measured
+        # it is the gate reporting its own ignorance where it has a number. The
+        # blockout reading of the same double zero — OUT-OF-STAGE — still
+        # requires `subj.pre_detail`, twice-measured, and nothing here reaches
+        # it. For every declaration- or derivation-shaped probe the gate keeps
+        # refusing to guess. `probe_is_self_measuring` admits only `dsl` and
+        # `campaign` probes, so this branch is source-measured by construction.
+        if probe_is_self_measuring(row["binding"], subj):
             why = (
                 "the probe counts a campaign-source file class, where the file "
                 "IS the object and no declaration stands behind it"
                 if row["binding"].get("kind") == "campaign"
                 else "the probe selects the object class by identity"
             )
+            tail = (
+                "of a pre-detail blockout — this walk cannot exercise the "
+                "class, and this build does not claim to be the build that "
+                "could"
+                if subj.pre_detail
+                else "— nothing this campaign declares can exercise the class"
+            )
             out["precondition"] = 0
-            out["verdict"] = "OUT-OF-STAGE"
+            out["verdict"] = "OUT-OF-STAGE" if subj.pre_detail else "INAPPLICABLE"
             out["detail"] = (
                 f"{detail}; {why}, so its zero is the class measuring zero "
-                "across the declared design of a pre-detail blockout — this "
-                "walk cannot exercise the class, and this build does not claim "
-                "to be the build that could"
+                f"across the declared design {tail}"
             )
             return out
         out["verdict"] = "UNBOUND"
@@ -858,6 +1007,15 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
         return out
     out["precondition"] = pre
     if pre == 0:
+        if not _absence_is_declared(binding, aw):
+            out["verdict"] = "UNBOUND"
+            out["detail"] = (
+                f"{detail}, and {pre_detail} — but both zeros were counted in "
+                "the BUILD tree, which is a zero an emission defect can "
+                "manufacture; nothing here measured the campaign's own "
+                "declared design"
+            )
+            return out
         out["verdict"] = "OUT-OF-STAGE" if subj.pre_detail else "INAPPLICABLE"
         out["detail"] = (
             f"{detail}; the defect class needs {pre_detail}, and this campaign "
@@ -931,7 +1089,7 @@ def load_ledger(path: pathlib.Path) -> dict:
 
 def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -> str:
     by = {v: [r for r in results if r["verdict"] == v] for v in
-          RED_VERDICTS + EXEMPT_VERDICTS + PASS_VERDICTS}
+          RED_VERDICTS + NOT_A_GAP_VERDICTS + EXEMPT_VERDICTS + PASS_VERDICTS}
     reds = [r for r in results if r["verdict"] in RED_VERDICTS]
     exempt = [r for r in results if r["verdict"] in EXEMPT_VERDICTS]
     if strict:
@@ -960,6 +1118,13 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
     L.append("")
     for v in RED_VERDICTS:
         L.append(f"- `{v}`: {len(by[v])}")
+    n_inap = len(by["INAPPLICABLE"])
+    L.append(
+        f"- `INAPPLICABLE`: {n_inap} "
+        "(the class measured zero across the declared design — an optional "
+        "surface this campaign does not use; counted, not refused, and this "
+        "walk cannot exercise any of them)"
+    )
     n_unc = len(by["DECLARED-UNCOVERABLE"])
     L.append(
         f"- `DECLARED-UNCOVERABLE`: {n_unc} "
@@ -969,7 +1134,8 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
     L.append(
         f"- `OUT-OF-STAGE`: {n_oos} "
         "(measured double zero on a pre-detail blockout; each is a class this "
-        "walk cannot exercise, re-adjudicated at every staging)"
+        "walk cannot exercise, re-adjudicated at every staging and counted as "
+        "`INAPPLICABLE` once the campaign details)"
     )
     L.append(f"- `BOUND`: {len(by['BOUND'])}")
     L.append("")
@@ -1006,13 +1172,23 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
 
     inap = by["INAPPLICABLE"]
     if inap:
-        L.append("## Inapplicable — the precondition measures zero on this campaign")
+        L.append("## Inapplicable — classes this campaign contains no object of")
         L.append("")
         L.append(
-            "These are REDS, split out because their remedy differs: the campaign "
-            "declares none of the objects the class needs, so no check on this "
-            "build can exercise it. Read them as the list of past defects the "
-            "owner's session on this campaign is NOT protected from."
+            "These do NOT refuse the build. The class measured zero across the "
+            "declared design, so the surface is an optional one this campaign "
+            "did not use — a design choice, not a hole in the engine's "
+            "coverage; a surface the DSL requires cannot be absent from a build "
+            "that compiled at all. A check binds where the object is, and the "
+            "refusal belongs on the other side: the class is present and "
+            "nothing binds to it (`UNBOUND`)."
+        )
+        L.append("")
+        L.append(
+            "They are counted here because a pass must never read as coverage. "
+            "This is the list of past defect classes the owner's session on "
+            "this campaign cannot meet — carry it into the round summary, class "
+            "by class, exactly as rule 4 requires."
         )
         L.append("")
         for r in inap:
@@ -1030,8 +1206,9 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
             "silhouette. Each row below measured ZERO objects of its class "
             "across the whole declared design (binding and precondition both "
             "counted). The owner's walk is not protected from these classes "
-            "and cannot meet them; every one is re-adjudicated — as a red — "
-            "the moment this campaign leaves the blockout stage."
+            "and cannot meet them; every one is adjudicated afresh, with no "
+            "blockout allowance, the moment this campaign leaves the blockout "
+            "stage."
         )
         L.append("")
         for r in oos:
@@ -1090,6 +1267,7 @@ def write_admission(
     """
     reds = [r for r in results if r["verdict"] in RED_VERDICTS]
     oos = [r for r in results if r["verdict"] == "OUT-OF-STAGE"]
+    inap = [r for r in results if r["verdict"] == "INAPPLICABLE"]
     doc = {
         "schema": 1,
         "campaign": subj.name,
@@ -1098,6 +1276,13 @@ def write_admission(
         "findings_total": len(results),
         "red_count": len(reds),
         "reds": [{"id": r["id"], "verdict": r["verdict"]} for r in reds],
+        # A pass is not coverage. Every class whose objects this campaign
+        # contains none of is named here, so the verifier can say at boot what
+        # the session cannot meet and the round summary can list it. Absence of
+        # an optional surface stops the build for nobody; going unsaid is what
+        # it must never do.
+        "inapplicable_count": len(inap),
+        "inapplicable": [r["id"] for r in inap],
         # A pre-detail blockout's admission names, per class, what the walk
         # cannot exercise — the boot banner reads these, so the session's
         # scope is announced rather than remembered.
@@ -1121,7 +1306,13 @@ def main() -> int:
     ap.add_argument(
         "--strict",
         action="store_true",
-        help="also fail on DECLARED-UNCOVERABLE rows (the absolute floor)",
+        help=(
+            "also fail on the rows a DECLARATION excused — DECLARED-UNCOVERABLE "
+            "and OUT-OF-STAGE (the absolute floor). It does NOT add "
+            "INAPPLICABLE: nothing declared that, the class measured zero "
+            "across the design, and failing on it would restore 'resemble the "
+            "campaigns we happened to test'."
+        ),
     )
     ap.add_argument(
         "--admit",
@@ -1317,6 +1508,17 @@ def main() -> int:
         f"live, binding check or a justified exemption{oos_note}; admitted -> {admit_path}",
         file=sys.stderr,
     )
+    # A pass is admission, never coverage. Say what this build cannot exercise
+    # in the same breath as the pass, or the number only lives in the token.
+    n_inap = sum(1 for r in results if r["verdict"] == "INAPPLICABLE")
+    if n_inap:
+        print(
+            f"staging-gate: {n_inap} of {len(results)} finding class(es) are "
+            "INAPPLICABLE — this campaign declares none of their objects, so "
+            "the session cannot meet them. Named in the token; carry them into "
+            "the round summary.",
+            file=sys.stderr,
+        )
     return 0
 
 

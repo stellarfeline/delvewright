@@ -36,8 +36,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as Proc, Output};
 
 use clap::Subcommand;
-use delvewright_admit::cli::PrefabCommand;
-use delvewright_admit::fixtures;
+use delvec::admit::cli::PrefabCommand;
+use delvec::admit::fixtures;
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Proc {
@@ -106,6 +106,11 @@ const PIECE_DOORS: &[Door] = &[
         handed: Handed::Nbt,
     },
     Door {
+        path: &["planes"],
+        extra: &[],
+        handed: Handed::Nbt,
+    },
+    Door {
         path: &["gallery"],
         extra: &[],
         handed: Handed::Dir,
@@ -130,6 +135,19 @@ const NOT_PIECE_DOORS: &[(&[&str], &str)] = &[
     (
         &["curate-merge"],
         "takes a curation report and a catalog directory, and edits cards",
+    ),
+    (
+        &["seating"],
+        "names no piece at all: it takes a horizon base and reads the WHOLE library the global          `--prefabs` points at, so there is no author-named file for a lone tile to arrive as.          Its own denominators are what guard it — a run that opened fewer `.nbt` than it read          documents, or examined no pool, exits non-zero",
+    ),
+    (
+        &["anchors"],
+        "names no piece at all: it takes a pool id at most and reads the WHOLE library the \
+         global `--prefabs` points at, answering from prefab METADATA — the members, their \
+         roles, their `anchors` maps — and opening no `.nbt`, so there is no author-named file \
+         for a lone tile to arrive as. Its own denominators guard it: a run that reported no \
+         pool exits non-zero, and a `--pool` the library does not declare is refused with the \
+         set it does declare",
     ),
 ];
 
@@ -194,7 +212,7 @@ fn stage(name: &str) -> (PathBuf, PathBuf, PathBuf) {
                 "part_max": 48,
                 "grid": [1, 1, 2],
                 "data_version": room.data_version,
-                "generator": "crates/grammar",
+                "generator": "crates/delvec/src/grammar",
                 "parts": parts,
             },
             "connectors": [],

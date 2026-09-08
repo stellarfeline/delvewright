@@ -84,6 +84,22 @@
               "verb": "opens"
             },
             "type": "open-gate"
+          },
+          {
+            "anchor": "anchor/node-causeway",
+            "prompt": "Rest on the causeway",
+            "rest_label": "Rest",
+            "save_label": "Save and quit",
+            "type": "bonfire"
+          },
+          {
+            "happening": {
+              "subject": "anchor/node-far-hall",
+              "text": "The muster forms up beyond the wall.",
+              "verb": "arrives"
+            },
+            "type": "spawn-wave",
+            "wave": "wave/muster"
           }
         ],
         "trigger": {
@@ -122,15 +138,15 @@
         "objectives": [
           {
             "happening": {
-              "subject": "npc/warden",
-              "text": "The Warden calls the muster cleared.",
-              "verb": "survives"
+              "subject": "anchor/node-far-hall",
+              "text": "The muster is put down.",
+              "verb": "dies"
             },
-            "hint": "The Warden watches the wall from the far side.",
+            "hint": "They are still in the far hall.",
             "id": "obj/clear-the-muster",
-            "npc": "npc/warden",
             "title": "Clear the muster",
-            "type": "talk-to"
+            "type": "kill",
+            "wave": "wave/muster"
           },
           {
             "happening": {
@@ -181,6 +197,34 @@
                 "verb": "opens"
               },
               "type": "open-gate"
+            },
+            {
+              "time": "noon",
+              "type": "set-time"
+            },
+            {
+              "time": "dusk",
+              "type": "set-time"
+            },
+            {
+              "time": "night",
+              "type": "set-time"
+            },
+            {
+              "time": "midnight",
+              "type": "set-time"
+            },
+            {
+              "time": "dawn",
+              "type": "set-time"
+            },
+            {
+              "type": "set-weather",
+              "weather": "rain"
+            },
+            {
+              "type": "set-weather",
+              "weather": "thunder"
             }
           ]
         },
@@ -225,8 +269,24 @@
         },
         "once": false
       }
+    ],
+    "waves": [
+      {
+        "anchor": "anchor/node-far-hall",
+        "id": "wave/muster",
+        "mobs": [
+          {
+            "count": 2,
+            "entity": "minecraft:spider",
+            "name": "Muster Stray"
+          }
+        ],
+        "respawns_on_rest": true,
+        "summon": "anchor",
+        "tier": "elite"
+      }
     ]
   },
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "stage": "quests"
 }

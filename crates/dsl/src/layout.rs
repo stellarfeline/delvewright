@@ -294,7 +294,7 @@ pub struct Station {
 /// `in`, a `volley` kill zone, `collapse`'s ceiling, `begin-stealth`,
 /// `fill-region`, `clear-region` — is a [`crate::StealthZone`], an
 /// **anchor-centred box** resolved from a *point* plus an extent. The engine
-/// states the reason in its own words at `QuestEffect::FillRegion::region`: an
+/// states the reason in its own words at `Verb::FillRegion::region`: an
 /// anchor-centred box rather than a prefab `region` anchor, "because the
 /// assembled model deletes every gate-region anchor's cells, so a slab declared
 /// that way would already be gone".

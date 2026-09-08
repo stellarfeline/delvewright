@@ -5,6 +5,7 @@
     "One row per finding. `finding` is impersonal English (CLAUDE.md Conventions: no verbatim personal speech in repo artifacts).",
     "`carrier` names the CHECK that carries the finding's general form; `binding` is how many objects of the class that check quantifies over exist on the campaign being staged.",
     "`carrier: null` is a red unless `disposition` + a substantive `justification` declare why no machine form is possible (playtest-methodology.md rule 2's one escape).",
+    "A row whose `binding` selects its object class by IDENTITY (`eq`/`in`/`prefix` only) declares its own applicability by shape: the gate measures the precondition off that binding (`staging-gate.py::probe_is_self_measuring`) and `load_ledger` refuses an `applies_when` that would restate it. Only a declaration-shaped binding (`has`/`has_any`, a `contains` glob, an `artifact` or `out` probe) owes one.",
     "APPEND, never rewrite. A row is removed only when the finding is shown never to have been a finding.",
     "Sources this ledger was reconstructed from are listed in docs/reference/playtest-methodology.md, rule 7, including what could NOT be recovered."
   ],
@@ -157,6 +158,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "dlg/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "dialogue.json"
@@ -176,6 +188,7 @@
       "finding": "two dialogue option labels overflowed the fixed-width dialog button and vanilla scrolled them",
       "general_form": "an option label -- English source or any sidecar rendition -- renders within the 146 usable font px of the button",
       "id": "hv-07",
+      "note": "applies_when added: the binding counts an option `label`, which is a DECLARATION inside a dialogue node, so its zero is ambiguous by itself and the row owed a precondition. The carriers of a label are the dialogue nodes DW0331 reads (`dlg/<kebab>`, the id form DW0110 enforces). Nodes declared with no option carrying a label = UNBOUND, correctly: a dialogue that offers no choice has no button to overrun. No dialogue node anywhere = the class measures zero.",
       "round": 2,
       "triage": "capability"
     },
@@ -253,7 +266,7 @@
       "finding": "a valley staged as a cherry grove held a handful of malformed trees and bare rock in every other direction; the render-shot acceptance proxy passed it",
       "general_form": "a generator's scatter reaches a quantity floor over its whole declared domain, asserted as a number rather than by eye",
       "id": "hv-10",
-      "note": "Closed 2026-08-24 by DW0864, which states what every placement verb declared and delivered over the DECLARED domain rather than over the usable part of it, and refuses where the shortfall is unambiguous (a `plant` short of its own `count`, or a verb that could act on no cell at all). The earlier note said no such assertion existed anywhere under prefabs/ or crates/ -- that was true, and the class is now carried at BOTH layers: DW0864 for the DSL verbs, and `prefabs/invariants.rs::assert_scatter_reaches_its_target` for the generators, which have no diagnostics. First run found a live instance in the engine's own gallery: a lane scatter over a 406-cell surface-band aimed at the solid course, dressing none of it, counted as coverage for the `scatter` unit. Binding verified non-zero on a real subject: nobodys-cave-island, 4 verbs, 0 short.",
+      "note": "Closed 2026-08-24 by DW0864, which states what every placement verb declared and delivered over the DECLARED domain rather than over the usable part of it, and refuses where the shortfall is unambiguous (a `plant` short of its own `count`, or a verb that could act on no cell at all). The earlier note said no such assertion existed anywhere under prefabs/ or crates/ -- that was true, and the class is now carried at BOTH layers: DW0864 for the DSL verbs, and `prefabs/invariants/src/invariants.rs::assert_scatter_reaches_its_target` for the generators, which have no diagnostics. First run found a live instance in the engine's own gallery: a lane scatter over a 406-cell surface-band aimed at the solid course, dressing none of it, counted as coverage for the `scatter` unit. Binding verified non-zero on a real subject: nobodys-cave-island, 4 verbs, 0 short.",
       "round": "cherry-2026-08-05",
       "triage": "content"
     },
@@ -1055,6 +1068,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "quest/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "quests.json"
@@ -1074,6 +1098,7 @@
       "finding": "NPCs offered premise questions from the opening scene after the finale had already played",
       "general_form": "every quest declares where its live cast is and what they offer, and the declaration is proven against the replayed effect history",
       "id": "isl-35",
+      "note": "applies_when added: `cast` is a declaration ON a quest, so the binding's zero is ambiguous and the row owed a precondition. The precondition counts the quests themselves (`quest/<kebab>`, the id form DW0110 enforces). Quests declared with no cast ledger = UNBOUND, which is exactly the island before round 13 — quests existed the whole time and the declaration DW0460 reads did not. No quest at all = the class measures zero.",
       "round": 12,
       "triage": "capability"
     },
@@ -1306,6 +1331,17 @@
       "triage": "content"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "quest/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "quests.json"
@@ -1325,6 +1361,7 @@
       "finding": "a body that should have held its position after a scripted escape wandered off it",
       "general_form": "where a body is after each beat is declared and proven against the replayed effect history",
       "id": "isl-46",
+      "note": "applies_when added: same shape as isl-35 — a cast ledger is a declaration on a quest, so the precondition counts the quests DW0461 replays the effect history of.",
       "round": 13,
       "triage": "capability"
     },
@@ -1352,6 +1389,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "dlg/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "dialogue.json"
@@ -1371,6 +1419,7 @@
       "finding": "twenty-seven dialogue option labels overran the button they were drawn on and scrolled",
       "general_form": "an option label -- English source or any sidecar rendition -- renders within the 146 usable font px of the button",
       "id": "isl-49",
+      "note": "applies_when added: same carrier and same shape as hv-07 — an option label is a declaration inside a dialogue node, so the precondition counts the nodes.",
       "round": 14,
       "triage": "capability"
     },
@@ -1508,6 +1557,17 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "dlg/"
+          }
+        }
+      },
       "binding": {
         "files": [
           "dialogue.json"
@@ -1527,6 +1587,7 @@
       "finding": "an optional side encounter gated the mainline, so skipping it soft-locked the delve",
       "general_form": "the button that completes a mainline objective is not already on screen at an earlier point of the participation-minimal walk",
       "id": "isl-55",
+      "note": "applies_when added: the button DW0205 walks is a dialogue option, so the binding is declaration-shaped and the precondition is the dialogue nodes those options live in. Nodes with no labelled option = UNBOUND; no dialogue node anywhere = the class measures zero, and a campaign whose objectives complete without a button cannot carry this defect.",
       "round": 16,
       "triage": "capability"
     },
@@ -1654,7 +1715,7 @@
       "finding": "the shipped release notes advertised a player count and a playtime that the delve did not have, and a host-facing instruction named a version that was no longer current",
       "general_form": "release notes are rendered from the storybook, and a release refuses when storybook and campaign disagree",
       "id": "isl-60",
-      "note": "This row declares no `applies_when` and must not be given one. The storybook is `campaigns/<id>/README.md` — a FILE, not a declaration — so the only probe that could answer \"does this campaign publish release notes\" is the binding itself, which `load_ledger` refuses as an exemption a row grants itself. The binding is instead self-measuring by shape (`probe_is_self_measuring`): a campaign-source file glob with no `contains` counts the object class itself. On an assembled campaign its zero is still UNBOUND; only the twice-measured pre-detail blockout reads it OUT-OF-STAGE, which is the stage at which the storybook has not been written yet (skill-workflow step 14 follows the step-9 walk).",
+      "note": "This row declares no `applies_when` and must not be given one. The storybook is `campaigns/<id>/README.md` — a FILE, not a declaration — so the only probe that could answer \"does this campaign publish release notes\" is the binding itself, which `load_ledger` refuses as an exemption a row grants itself. The binding is instead self-measuring by shape (`probe_is_self_measuring`): a campaign-source file glob with no `contains` counts the object class itself. On an assembled campaign its zero is INAPPLICABLE — a measured zero of the class, counted and named to the owner rather than refused, since a campaign that publishes no storybook has used an optional surface not at all; only the twice-measured pre-detail blockout reads it OUT-OF-STAGE, which is the stage at which the storybook has not been written yet (skill-workflow step 14 follows the step-9 walk).",
       "round": "post-release-2026-08-06",
       "triage": "capability"
     },
@@ -1689,7 +1750,7 @@
       "finding": "a rest-and-save mechanic was implemented as a plain arrive objective, so the campfire the fiction offered could not be rested at",
       "general_form": "resting is a first-class bonfire verb with rest/save semantics, and a campaign that places one is held to the recovery kit it implies",
       "id": "bell-01",
-      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {set-checkpoint, bonfire}` — a claim that a campaign with a plain checkpoint could carry the flask obligation. It cannot: DW0476 binds a bonfire to the recovery item a REST spends, and a `set-checkpoint` has no rest, no dialog and no `on_rest`. The precondition is now the souls recovery surface itself — a declared \"flask\": true kit entry, a different object class in a different stage file from the binding one — so all three verdicts stay meaningful: flask + bonfire = BOUND; a flask nothing refills = UNBOUND, correctly; neither = INAPPLICABLE, the honest reading of a campaign that is not a souls campaign. nobodys-cave-island declares no flask and no bonfire and is INAPPLICABLE — still a red, still a defect class her session on it is not protected from.",
+      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {set-checkpoint, bonfire}` — a claim that a campaign with a plain checkpoint could carry the flask obligation. It cannot: DW0476 binds a bonfire to the recovery item a REST spends, and a `set-checkpoint` has no rest, no dialog and no `on_rest`. The precondition is now the souls recovery surface itself — a declared \"flask\": true kit entry, a different object class in a different stage file from the binding one — so all three verdicts stay meaningful: flask + bonfire = BOUND; a flask nothing refills = UNBOUND, correctly; neither = INAPPLICABLE, the honest reading of a campaign that is not a souls campaign. nobodys-cave-island declares no flask and no bonfire and is INAPPLICABLE — counted and named as a defect class her session on it cannot meet, and not a refusal: a campaign that is not a souls campaign has skipped nothing.",
       "round": 1,
       "triage": "capability"
     },
@@ -1842,7 +1903,7 @@
       "finding": "a portcullis cycled too slowly to read as a hazard to time",
       "general_form": "a timed gate is a timing read, not a coin flip: enough entry phases clear the span",
       "id": "bell-06",
-      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {close-gate, open-gate}` — a claim that having any gate means the campaign could carry a timing-window defect. It cannot: close-gate/open-gate are one-shot permanent state changes fired by a quest beat, with no clock and so no window to be a coin flip. That precondition demanded CONTENT (add a portcullis) rather than COVERAGE, and would hold every campaign without one red forever. The precondition is now the object class that can carry a timing read: anything driven by a repeating clock the party must cross — a timed-gate's open_ticks/closed_ticks, or a volley payload's salvos. A campaign with a volley and no timed gate is then UNBOUND, correctly. nobodys-cave-island declares neither and is INAPPLICABLE — still a red, still named to the owner as a class this build is not protected from.",
+      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {close-gate, open-gate}` — a claim that having any gate means the campaign could carry a timing-window defect. It cannot: close-gate/open-gate are one-shot permanent state changes fired by a quest beat, with no clock and so no window to be a coin flip. That precondition demanded CONTENT (add a portcullis) rather than COVERAGE, and would hold every campaign without one red forever. The precondition is now the object class that can carry a timing read: anything driven by a repeating clock the party must cross — a timed-gate's open_ticks/closed_ticks, or a volley payload's salvos. A campaign with a volley and no timed gate is then UNBOUND, correctly. nobodys-cave-island declares neither and is INAPPLICABLE — counted and named to the owner as a class this build cannot present to her, and not a refusal.",
       "round": 2,
       "triage": "content"
     },
@@ -2009,6 +2070,23 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "talk-to",
+              "reach-anchor",
+              "kill",
+              "collect",
+              "interact"
+            ]
+          }
+        }
+      },
       "binding": {
         "files": [
           "quests.json"
@@ -2037,7 +2115,7 @@
       "finding": "an on-screen prompt told the party to return to one place while the objective it described completed somewhere else",
       "general_form": "an objective's prompt names the place and the act that actually complete it",
       "id": "bell-13",
-      "note": "Closed WEAKER than the general form as written. DW0862 refuses a `hint` authored on an objective with no `title`: the activation announcement is emitted only for a titled objective and the hint's line is nested inside that guard, so the prose is inventoried, translated into every sidecar, and never put on a screen - the necessary condition for a prompt to name anything. It does NOT prove that the prompt names the right place: a machine cannot read prose for that. The stronger reading was built and measured before being rejected - keying the place to the objective's quest's declared `area` finds three objectives on a live campaign and all three are correct, because a quest's area is where the beat is booked and not where each objective completes. A sound reading needs each objective's own anchor resolved to an area.",
+      "note": "Closed WEAKER than the general form as written. DW0862 refuses a `hint` authored on an objective with no `title`: the activation announcement is emitted only for a titled objective and the hint's line is nested inside that guard, so the prose is inventoried, translated into every sidecar, and never put on a screen - the necessary condition for a prompt to name anything. It does NOT prove that the prompt names the right place: a machine cannot read prose for that. The stronger reading was built and measured before being rejected - keying the place to the objective's quest's declared `area` finds three objectives on a live campaign and all three are correct, because a quest's area is where the beat is booked and not where each objective completes. A sound reading needs each objective's own anchor resolved to an area. applies_when added: the binding pairs the five completable objective types with `has: [id]`, which is what stops it matching a sub-node that happens to carry one of those `type` values — and it is also what makes the probe declaration-shaped, so its zero could not be classified. The precondition counts the objective types alone: a campaign that declares no objective a prompt could mislead the party about cannot carry this defect, while a node of one of those types with no id is a real anomaly and reds UNBOUND.",
       "round": 6,
       "triage": "capability"
     },
@@ -2264,6 +2342,195 @@
       "general_form": "an admission step may change only the paths it declares it writes, at the depth it really writes them; and a check keyed off an optional metadata field reports how many objects it examined, so losing the field is a refusal (DW0344's zero binding) rather than a silence",
       "id": "isl-61",
       "round": "post-release-2026-08-14",
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "node"
+          ]
+        }
+      },
+      "binding": {
+        "glob": "walk-record.json",
+        "kind": "campaign"
+      },
+      "campaign": "gallery",
+      "carrier": {
+        "code": "DW0841",
+        "kind": "dw"
+      },
+      "finding": "the walk record's freshness key was taken over the canonical bytes of the site plan and the layout graph, and the canonical writer stamps the engine's own format number into every document it writes, so each format bump re-opened DW0841 on every walked campaign at once with no box, seam or edge moved; the repair the refusal prescribes is to walk the whole again, which cannot be performed honestly for a change that cannot have changed the walk, and what happened instead was the record edited by hand twice and reverted once, leaving the gate red",
+      "general_form": "the walk record's freshness key is over what the walk depends on and nothing else — the derived grid (every placed box's corner, extent, floor and headroom, every placed seam's cells, crossing and rise, the whole's volumes and region) and the ways a body moves by (every edge whole, the entry, the goal, the critical path, the beats, the stations) — so a dsl_version bump, a reformat, a reworded note or a renamed intent leaves both halves unchanged and a box moved one block moves the grid; and the hashes the refusal tells the author to copy are printed at validation, refused runs included, so the remedy is reachable from the state that needs it",
+      "id": "gal-01",
+      "note": "Reproduced before repair: with the engine at 0.21.0 and the gallery's 34 documents bumped with it, `delvec build site-plan` exited 1 at DW0841 and tools/gallery-build.py refused, so no committed act could produce the tree a re-walk needs. Denominator: one walk-record.json per walked campaign, and 3 of 3 records in this tree (the site-plan overlay and the two probes that carry one) were re-keyed by the instrument with their verdicts unchanged.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "campaign": "gallery",
+      "carrier": {
+        "code": "DW0886",
+        "kind": "dw"
+      },
+      "finding": "a campaign that seats the shipped cave, keep or island pools cannot be built on any horizon base the engine declares, because the three horizon diagnostics each name a remedy another one refuses: under `ocean` DW0344 refuses a piece whose box reaches the sea plane with no declared waterline and names `void`; under `void` DW0885 refuses an outward face standing in the air the party walks in and names `valley`; under `valley` DW0855 refuses a surround with no declared region and names a site plan, which DW0839 then refuses because the campaign already places with `areas[]`; and DW0344's own second remedy, raising the piece clear of the sea, is unreachable because the check reads the placement box minimum, which is the area origin whatever the piece's bytes hold",
+      "general_form": "a horizon and a piece set are a pair, and the pairing is refused before any piece is placed (DW0886, validation tier), stating per pool which members can be seated on the declared base and why; every remedy a horizon diagnostic names is reachable from the state that names it, with a test that builds the campaign each move produces and asserts it reaches a different verdict; and a declared waterline is a claim about the piece's bytes that the engine reads (DW0887) rather than a field the placement arithmetic trusts",
+      "id": "gal-02",
+      "note": "Reproduced before writing, on engine c2a90ac2 with a --release delvec, over the gallery primary campaign with one added `areas[]` element seating each pool and prefabs = the prefabs/gallery-generator output merged with campaigns/prefabs. Denominator: 4 pools of the 4 in campaigns/prefabs/pools.json against 3 bases of the 3 `delvec schema --stage world` exports, 12 of 12 cells built, 2 green (stone-keep and vertical-keep on `void`); cave-shore reds DW0885 on `void` and island reds DW0318 on `void` and DW0885 on `ocean`. The waterline half was measured twice by instruments sharing no configuration (a standalone NBT reader and `delvec palette`): 36 prefab documents, 5 declaring `waterline_y`, 2 of those 5 borne out by a water block at the declared plane. The binding probe was run with this gate's own `probe()` and is non-zero on every campaign that seats pieces through `areas[]` — 3 on the reproduction carrier, 2 on the gallery's ocean point, 2 on nobodys-cave-island, 1 on hollow-vigil, and a self-measuring 0 on the site-plan point, which places no area at all. The general form is spec-0060; DW0886 is allocated there and does not exist in this engine, so this row is MISSING-CHECK until it lands.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "glob": "world.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "file": "design-record.json",
+        "kind": "artifact",
+        "path": "references"
+      },
+      "campaign": "the-tidewatch",
+      "carrier": {
+        "code": "DW0890",
+        "kind": "dw"
+      },
+      "finding": "a delve whose approved concept art is entirely night scenes was built, rendered and reviewed under noon daylight, because the world's time of day is an optional declaration written at the first authoring step, before the art the design gate approves exists, and nothing between the gate and the build compares the two; the mismatch was found by eye on the first point-of-view frame, after the build and the render had already been paid for",
+      "general_form": "the world state a campaign declares and the art its design gate approved are held to each other before the build spends a render: the declaration is refused, or reported at the step that can still change it, when the approved reference and the declared world disagree about a property both state",
+      "id": "drill3-01",
+      "note": "Closed by spec-0061: DW0890 holds the approved design's rows to the skies the world can reach, at validation, before anything is placed. The binding counts rows in validation/design-record.json, which every build writes even with no record, so a campaign that has approved no design counts zero. applies_when is world.json because every campaign is a member of the class — every campaign owes a design gate — so INAPPLICABLE is unreachable by construction and a zero is UNBOUND, refused. A skipped design gate is not a design choice.",
+      "round": "drill-3",
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "prefab_pool"
+          ]
+        }
+      },
+      "campaign": "the-tidewatch",
+      "carrier": {
+        "code": "DW0889",
+        "kind": "dw"
+      },
+      "finding": "an area that seats a pool seats a subset of its members, so an anchor declared on a member the layout did not seat does not exist in the built world; only the entry-role member's anchors are guaranteed, which on the shipped library is two anchors per area out of the ten distinct anchor names the cave and keep pieces declare, and the advisory that reports the ambiguity is emitted by the build, five authoring steps after the anchors have to be chosen and bound",
+      "general_form": "the anchors an area can be authored against are stated by the engine at the step that chooses them: a name bound to a member the layout may not seat is refused or reported before the build, and the set an area guarantees is answerable from the campaign without building it",
+      "id": "drill3-02",
+      "note": "Queued with no carrier on purpose. The page's half — stating the rule where the decision is made — is separate authoring work; this row is the engine's half, and the gate reds until the information is reachable at the step that needs it rather than only after placement. The count of distinct anchor names was carried into this row as eleven and is ten: `delvec prefab anchors` reports the cave and keep pools declaring ten names between them, of which two are guaranteed, and the union of the two sets is also ten.",
+      "round": "drill-3",
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "glob": "**/*.nbt",
+        "kind": "out"
+      },
+      "campaign": "gallery",
+      "carrier": {
+        "kind": "tool",
+        "script": "check-generator-preservation.py"
+      },
+      "finding": "a tileset generator re-emits a whole prefab metadata document, so re-running one over the library deletes every key added after generation — the anchors a campaign binds by name, an entry role, a shown-faces declaration, a lighting verdict measured at admission rather than estimated — and nothing binds the generators, so the deletion is silent and is discovered only by a campaign that no longer resolves an anchor it names",
+      "general_form": "a generator may not delete a key it did not write: re-running every document-writing generator over the committed library preserves every key the generator does not own, and that preservation is checked over the whole library rather than argued per generator",
+      "id": "lib-01",
+      "note": "Measured on the library as it stands: 103 anchors, 95 of them on generator-written documents, four entry roles and four shown-faces declarations sit in the deletion set. The prefab verbs that write single keys are already bound by a preservation test; the generators are not, which is why the same rule has to be transplanted by hand at every library round.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "campaign": "gallery",
+      "carrier": {
+        "code": "DW0888",
+        "kind": "dw"
+      },
+      "finding": "a prefab document's connector declares a local position, an opening and a facing, and nothing holds any of the three to the bytes: a connector pointed at a cell holding solid stone instead of a jigsaw block passes the audit through both its file and its directory arm at exit 0 and is still called seatable by the seating command, so a piece whose sockets have moved under a regeneration ships with a document that names cells the structure does not have",
+      "general_form": "a declaration a prefab document makes about its own bytes is borne out by those bytes or refused, for every such key rather than for the one that was noticed: the waterline has that check and the connector's position, opening and facing do not, and the rule is one rule over the class of byte-asserting keys",
+      "id": "lib-02",
+      "note": "Reproduced by planting, not reasoned about: `cave-shore`'s connector pointed back at a cell the new bytes fill with andesite, after which `prefab seating --horizon ocean` still answered 4 of 4 at exit 0 and `prefab audit` passed both arms. Found only by reading the bytes by hand during a library round.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "glob": "site-plan.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "ceiling"
+          ]
+        }
+      },
+      "campaign": "gallery",
+      "carrier": {
+        "code": "DW0886",
+        "kind": "dw"
+      },
+      "finding": "the check that pairs a horizon with a piece set reads only the `areas[]` placement model, so a campaign that places through a site plan has no piece judged against the horizon it declares at all — and a site plan is the only placement model a `valley` horizon permits, since declaring both is refused, which makes that arm of the check unable to bind on any legal campaign; measured from two sides on the gallery, as a binding line of 0 of 0 areas on the site-plan point and as 2 of 6 cells reported `not-an-areas-base` by the agreement gate",
+      "general_form": "the rule that a horizon and a piece set are a pair is applied to whatever places pieces rather than to one placement model: a site plan's own pieces are judged against the declared horizon by the same implementation, and the binding count is stated per placement model so a model the check cannot reach is visible as a zero rather than absent",
+      "id": "gal-03",
+      "note": "Reported by the round that turned the walk-plane requirement on for every base, which found that turning it on made no difference on `valley` because nothing legal reaches it. The round was told to report rather than to widen the rule or to add a probe that hides the gap behind another refusal, and did. Closed by making `compiler::seating::check` read the site plan's own resolver and ask each placed box the same question a prefab is asked, through one predicate (`seating::feet_under_the_sea`), and by giving the binding line a numerator and a denominator per placement model. Reproduced before the change and after, on the gallery's site-plan overlay with nothing altered but `horizon: ocean`: `delvec analyze` exited 0 with `0 of 0 area(s)` while `node/undercroft` stood at y=60, two courses under the sea plane at y=62, and the build then refused it at DW0344 after the assembly; after, `analyze` exits 1 at DW0886 naming the place, and the line reads `site plan: 7 of 7 box(es) judged against this base`. The binding counts the plan's boxes — the objects the new arm quantifies over — and its precondition is whether the campaign declares a site plan at all, both measured over the campaign source. On the gallery: 7 boxes on the site-plan point, 0 boxes and 0 preconditions on the primary and on both horizon overlays, which place with `areas[]` and are gal-02's subject.",
+      "round": null,
       "triage": "capability"
     }
   ],

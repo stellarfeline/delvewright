@@ -48,7 +48,7 @@ order a player would:
 | `world-edits.json` | four batches that dress the floor, lay the hearth, thin the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
 | `layout-graph.json` | the same hall stated as six places and twelve connections, before any coordinate — three barred doors through the wall because the hall really has three, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
-| `overlays/site-plan/` | those same six places given geometry, and then a whole map DERIVED from it: a region, a box each, a seam per connection on a face the two boxes share, the rock and the sky the whole owns, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to |
+| `overlays/site-plan/` | the same places given geometry, and then a whole map DERIVED from it: a region, a box each stating only its extent and plane, ONE pinned corner, a seam per connection stating which face of its `a` box it sits on and where along it (the compiler derives every other corner and every sill — spec-0059; `delvec validate` prints the corners), the rock and the sky the whole owns, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to |
 | `l10n/zh-cn.json` | the second language, so the sidecar surface is real rather than declared |
 | `render-plan.json` | the view set the gallery declares, so a shot that vanishes is a red |
 | `area/annex` (in `world.json`) | a three-tile chain assembled from `pool/gallery-annex` — what binds the piece verbs |
@@ -135,7 +135,12 @@ A probe may ship a whole document, and four of them do: `site-plan.json`,
 `detail-plan.json` and `walk-record.json` are documents the primary cannot carry
 at all — `DW0839` refuses a campaign holding both `areas[]` and a site plan — so
 there is nothing for them to be a copy of. A file that shadows a primary
-document is refused.
+document is refused. A probe may instead declare its edit against an
+**overlay's** document, naming it by its path (`overlays/site-plan/site-plan.json`):
+that document is brought into the point as the campaign's own and the edit is
+applied to it, so the probe is the primary plus that document plus one edit and
+ships no copy — a probe that both names an overlay document and ships a file of
+the same name is refused.
 
 A probe is an OVERLAY, not a campaign, so `delvec validate` pointed at a probe
 directory refuses the directory (`DW0874`) rather than the document. Materialise
@@ -165,7 +170,7 @@ the whole thing builds from this repository alone — no content checkout:
 ```
 mkdir -p gallery-prefabs
 cargo run --release --manifest-path prefabs/gallery-generator/Cargo.toml \
-  -- gallery-prefabs --skins gallery/skins
+  -- gallery-prefabs --skins gallery/skins --design gallery/design
 cargo build --release -p delvec --bin delvec
 target/release/delvec build gallery -o gallery-out --prefabs gallery-prefabs
 ```
@@ -290,6 +295,22 @@ severed, because the partner's own plane stays walled — which is what
 `batch/annex-seal-a-way` and `batch/annex-open-a-way` do, in that order: a
 doorway bricked up on the far side and open on the near one.
 
+**The chain is what binds the piece-mating check.** A socket is one of the two
+places a prefab document says what a side of it is — the other is
+`spatial_contract.faces`, which the hall carries and no annex tile does — and
+`DW0780` reads both. Before it did, this chain was the shape that made the check
+report `0 with a spatial contract` and pass: three tiles mated end to end, four
+socket faces meeting across two seams, and nothing examining any of them. The
+build's binding line states it on every run, and the count is a fraction of the
+placement rather than of the declarations, so a world whose pieces stop touching
+reads as a zero rather than as a silence. What no campaign document here can
+reach is a `DW0780` refusal itself: areas stand `AREA_SPACING` apart and the
+solver computes every seated position, so an authored document has no surface on
+which to move a piece off its seam. The refusal is a self-check over the solver's
+own layout, and its perturbations live in `crates/delvec/tests/face_contract.rs`
+— a mated piece detached by one block, and a pair that touches and declares
+nothing across the plane it touches on.
+
 **A tile carved from one material renders as one material.** Each tile wears a
 `stone_bricks` panel around its socket openings and a `stone_bricks` floor under
 its stone walls, because a seam camera aimed down a corridor of nothing but
@@ -301,9 +322,28 @@ wrong wall, the seal material being the same brick.
 **The pool repeats a variant, and says so.** With two connector variants and two
 filler slots the draw may seat one of them twice, which makes every anchor that
 prefab declares ambiguous — `DW0498`, advisory, in the expected-warnings ledger.
-The gallery hangs nothing on those anchors, which is the branch the diagnostic
-sanctions; the alternative it names is more distinct variants, and that is a
-choice about the pool rather than about the seed.
+The alternative it names is more distinct variants, and that is a choice about
+the pool rather than about the seed.
+
+**And the annex says what it does NOT guarantee.** `area/annex` seats three
+pieces of a four-member pool, and the layout is only ever obliged to seat one of
+them: the `entry` member, at the area origin. Everything else arrives because
+the campaign required an anchor that piece carries, or because the filler draw
+picked it. So the annex guarantees exactly `anchor/annex-threshold` — one of the
+four names its pieces declare between them — and `trigger/stand-in-the-second-bay`
+deliberately hangs on `anchor/annex-second-bay`, which is not one of them.
+`DW0889`, advisory, in the expected-warnings ledger, on every `validate`,
+`analyze` and `build`.
+
+Read the pair together, because they are about the same anchor and say different
+things. `DW0498` needs the settled draw: `gallery-annex-cell-b` is seated twice,
+so the name has two carriers and resolution takes the first. `DW0889` needs no
+draw at all: nothing obliges the layout to seat that connector, so the name might
+not have been in the world to begin with. The trigger is green on both counts —
+the draw does seat it — which is exactly why neither code refuses. What they buy
+is that a creator reading this campaign learns the constraint before spending a
+build, and `delvec prefab anchors --pool pool/gallery-annex` states the same set
+with no campaign at all.
 
 **One camera derivation is unguarded, and this tileset guards itself against it.**
 `DW0724` refuses a **player-POV** camera whose eye cell is occupied — "fix the

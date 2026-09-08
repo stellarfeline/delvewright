@@ -19,10 +19,17 @@ pub mod blocks;
 pub mod blockshape;
 pub mod canonical;
 pub mod chrome;
+pub mod design;
 pub mod detailplan;
 pub mod diagnostic;
 pub mod effects;
 pub mod envelope;
+/// **What a cell does when there is fluid beside it** — block knowledge, so it
+/// lives beside [`blocks`] and [`blockshape`] rather than beside any one reader
+/// of it. `delvewright_schem::fluid` re-exports it, and the prefab generators
+/// reach it through their dependency on this crate: they may not depend on
+/// `delvec`, and this is the crate every reader of a block fact can reach.
+pub mod fluid;
 pub mod fmt;
 pub mod gate;
 pub mod ids;
@@ -41,6 +48,10 @@ pub mod validate;
 
 pub use canonical::to_canonical_string;
 pub use chrome::{Chrome, ChromeString, validate_chrome_namespace};
+pub use design::{
+    CONCEPT_DIR, DesignContent, IMAGE_EXTENSIONS, REFERENCE_DIR, REFERENCE_DIRS, Reference,
+    is_image_extension,
+};
 pub use detailplan::{Detail, DetailPlanContent, FLOOR_COURSE, Frame, bound_places, is_bound};
 pub use diagnostic::{Diagnostic, DwCode, ExitTier, Group, Severity, Subject, codes};
 pub use effects::{
@@ -79,10 +90,11 @@ pub use registry::{
 };
 pub use schema::stage_schema;
 pub use siteplan::{
-    Axis, Ceiling, Cmp, Datum, ENTRY_ANCHOR, Face, Floor, Identity, Measure, PlanAxis, PlanBinding,
-    PlanBox, SITE_AREA, Seam, Sightline, SitePlanContent, View, Volume, VolumeRole, WorldBox,
-    node_anchor, owed_anchors, placed_boxes, placed_seams, refused_upstream, seam_anchor,
-    seam_unlock_anchor, synthesized_anchor_kinds, synthesized_anchors, synthesized_gate_block,
+    Axis, Ceiling, Cmp, Datum, ENTRY_ANCHOR, Face, Floor, Identity, Measure, Offset, PackedBox,
+    PlanAxis, PlanBinding, PlanBox, Provenance, SITE_AREA, Seam, Sightline, SitePlanContent, View,
+    Volume, VolumeRole, WorldBox, node_anchor, owed_anchors, placed_boxes, placed_seams,
+    placements, refused_upstream, seam_anchor, seam_unlock_anchor, synthesized_anchor_kinds,
+    synthesized_anchors, synthesized_gate_block,
 };
 pub use siteplan::{PlacedBox, PlacedSeam};
 pub use stages::{
@@ -92,15 +104,15 @@ pub use stages::{
     CastDialogue, CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent,
     CollectBy, CompareOp, DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode,
     DialogueOption, EffectSite, EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot,
-    Facing, Fixture, Forfeit, Happening, HappeningVerb, Horizon, HorizonBase, HorizonSpec,
+    Facing, Fixture, Forfeit, Guard, Happening, HappeningVerb, Horizon, HorizonBase, HorizonSpec,
     ItemDrop, KitItem, LethalVolume, Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER,
     MAX_POTION_DURATION_TICKS, MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle, Npc,
     NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, Persona, Pieces, PlannedQuest,
     PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent,
     Relationship, Role, SequenceStep, Shop, ShopOffer, Shortcut, ShotStyle, SkinModel, SlotDrop,
     SoundAt, Stake, StateCompare, StateDecl, StateScope, StateWrite, StealthZone, TimedGate, Trap,
-    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Wave,
-    WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
+    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb,
+    Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
     is_potion_bearing_item,
 };
 pub use stages::{

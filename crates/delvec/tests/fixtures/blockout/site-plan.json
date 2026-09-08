@@ -30,10 +30,6 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "min": [
-          13,
-          4
-        ],
         "node": "node/hall"
       },
       {
@@ -45,10 +41,6 @@
         "floor": {
           "datum": "datum/loft"
         },
-        "min": [
-          26,
-          8
-        ],
         "node": "node/loft"
       },
       {
@@ -62,10 +54,6 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "min": [
-          13,
-          21
-        ],
         "node": "node/cell"
       },
       {
@@ -79,10 +67,6 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "min": [
-          4,
-          21
-        ],
         "node": "node/exit"
       },
       {
@@ -96,10 +80,6 @@
         "floor": {
           "y": 59
         },
-        "min": [
-          13,
-          21
-        ],
         "node": "node/undercroft"
       },
       {
@@ -113,10 +93,6 @@
         "floor": {
           "y": 59
         },
-        "min": [
-          22,
-          21
-        ],
         "node": "node/tunnel"
       }
     ],
@@ -200,29 +176,22 @@
     },
     "seams": [
       {
-        "at": [
-          10,
-          64
-        ],
+        "at": 2,
         "edge": "edge/landing-hall",
         "face": "east",
+        "meets": 6,
         "opening": "arch"
       },
       {
-        "at": [
-          10,
-          69
-        ],
+        "at": 6,
         "edge": "edge/hall-loft",
         "face": "east",
+        "meets": 2,
         "opening": "arch",
         "stair_in": "node/hall"
       },
       {
-        "at": [
-          8,
-          69
-        ],
+        "at": 0,
         "contact": {
           "extent": [
             6,
@@ -230,43 +199,42 @@
           ]
         },
         "edge": "edge/loft-drop",
-        "face": "west"
+        "face": "west",
+        "meets": 4
       },
       {
-        "at": [
-          15,
-          64
-        ],
+        "at": 2,
         "edge": "edge/hall-cell",
         "face": "south",
+        "meets": 2,
         "opening": "arch"
       },
       {
-        "at": [
-          23,
-          64
-        ],
+        "at": 2,
         "edge": "edge/cell-exit",
         "face": "west",
+        "meets": 2,
         "opening": "arch"
       },
       {
         "at": [
-          15,
-          22
+          2,
+          1
         ],
         "edge": "edge/cell-undercroft",
         "face": "down",
+        "meets": [
+          2,
+          1
+        ],
         "opening": "passage",
         "stair_in": "node/undercroft"
       },
       {
-        "at": [
-          21,
-          59
-        ],
+        "at": 0,
         "edge": "edge/undercroft-tunnel",
         "face": "east",
+        "meets": 0,
         "opening": "passage"
       }
     ],
@@ -338,6 +306,6 @@
       }
     ]
   },
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "stage": "site-plan"
 }

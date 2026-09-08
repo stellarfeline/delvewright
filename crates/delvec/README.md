@@ -86,24 +86,24 @@ the server.
 
 ## As a library
 
-This crate is the executable only. The compiler behind it is
-[`delvewright-compiler`](https://crates.io/crates/delvewright-compiler), and
-the campaign format is
+The same crate is the engine as a library: `delvec::compiler` is the compiler
+behind the verbs above, and `grammar`, `schem`, `admit`, `orchestrator` and
+`render` are the modules behind the other subcommands. The campaign format is
 [`delvewright-dsl`](https://crates.io/crates/delvewright-dsl):
 
 ```toml
 [dependencies]
-delvewright-compiler = "1"
+delvec = "1.4"
 ```
 
 ```rust
-use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
+use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 ```
 
 ## Compatibility
 
 - **Minecraft**: Java Edition 1.21.11. Output targets that version and no other.
-- **Campaign format**: `dsl_version` `0.19.0`, the one number this engine accepts.
+- **Campaign format**: `dsl_version` `0.22.0`, the one number this engine accepts.
 - **Rust**: 1.97.1 or newer.
 - The binary is self-contained: no JVM, no runtime dependencies.
 

@@ -34,6 +34,7 @@ fn campaign_with(quests: &str, dialogue: Option<&str>) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -73,7 +74,9 @@ fn quests_doc(version: &str) -> String {
             {{ "type": "add-state", "state": "state/toll", "amount": -1 }},
             {{ "type": "set-state", "state": "state/ride", "value": 1 }},
             {{ "type": "open-gate", "anchor": "anchor/door",
-              "requires_state": [ {{ "state": "state/ride", "op": "equals", "value": 1 }} ] }},
+              "when": {{
+                "requires_state": [ {{ "state": "state/ride", "op": "equals", "value": 1 }} ]
+              }} }},
             {{ "type": "clear-state", "state": "state/ride" }}
           ]
         }},
@@ -97,7 +100,7 @@ fn quests_doc(version: &str) -> String {
 /// The whole v0.10 surface validates clean at `0.10.0`.
 #[test]
 fn runtime_state_validates_clean() {
-    let raw = campaign_with(&quests_doc("0.19.0"), None);
+    let raw = campaign_with(&quests_doc("0.22.0"), None);
     let d = check_campaign(&raw);
     assert!(d.is_empty(), "expected clean, got: {d:#?}");
 }
@@ -105,7 +108,7 @@ fn runtime_state_validates_clean() {
 /// `DW0500`: a comparison, and a verb, naming a datum nobody declared.
 #[test]
 fn an_undeclared_datum_is_rejected() {
-    let doc = quests_doc("0.19.0").replace(
+    let doc = quests_doc("0.22.0").replace(
         r#""state": "state/ride", "value": 1"#,
         r#""state": "state/purse", "value": 1"#,
     );
@@ -116,7 +119,7 @@ fn an_undeclared_datum_is_rejected() {
         check_campaign(&raw)
     );
 
-    let doc = quests_doc("0.19.0").replace(
+    let doc = quests_doc("0.22.0").replace(
         r#"{ "state": "state/toll", "op": "at-most", "value": 0 }"#,
         r#"{ "state": "state/purse", "op": "at-most", "value": 0 }"#,
     );
@@ -134,7 +137,7 @@ fn an_undeclared_datum_is_rejected() {
 fn a_datum_read_but_never_written_is_rejected() {
     // Drop both writes of `state/toll`, leaving the objective gate and the
     // trigger gate reading a datum frozen at its initial.
-    let doc = quests_doc("0.19.0")
+    let doc = quests_doc("0.22.0")
         .replace(
             r#"{ "type": "add-state", "state": "state/toll", "amount": -1 },
 "#,
@@ -158,7 +161,7 @@ fn a_datum_read_but_never_written_is_rejected() {
 #[test]
 fn a_datum_never_read_is_rejected() {
     // (a) written, never read: drop the objective gate that reads `state/toll`.
-    let doc = quests_doc("0.19.0")
+    let doc = quests_doc("0.22.0")
         .replace(
             r#",
             "requires_state": [ { "state": "state/toll", "op": "at-most", "value": 0 } ] }"#,
@@ -176,7 +179,7 @@ fn a_datum_never_read_is_rejected() {
     );
 
     // (b) declared and never touched at all.
-    let doc = quests_doc("0.19.0").replace(
+    let doc = quests_doc("0.22.0").replace(
         r#"{ "id": "state/ride", "scope": "party" }"#,
         r#"{ "id": "state/ride", "scope": "party" },
       { "id": "state/dust", "scope": "party" }"#,
@@ -194,7 +197,7 @@ fn a_datum_never_read_is_rejected() {
 /// scheduler-only `sequence` step.
 #[test]
 fn a_player_scoped_datum_needs_an_acting_player() {
-    let doc = quests_doc("0.19.0").replace(
+    let doc = quests_doc("0.22.0").replace(
         r#"{ "id": "state/toll", "scope": "party", "initial": 3,"#,
         r#"{ "id": "state/toll", "scope": "player", "initial": 3,"#,
     );
@@ -209,7 +212,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
     // per-player datum read or written there has no subject either. Three of the
     // seven roots are like this (R3, R4, R6) and four are not — the answer is
     // `EffectRootKind::runs_with_acting_player`'s, not this check's.
-    let doc = quests_doc("0.19.0")
+    let doc = quests_doc("0.22.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -230,7 +233,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 
     // Root R6: a shortcut's `on_unlock` is emitted `Audience::Scheduled` too, and
     // the READ side fails the same way as the write side.
-    let doc = quests_doc("0.19.0")
+    let doc = quests_doc("0.22.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -240,8 +243,8 @@ fn a_player_scoped_datum_needs_an_acting_player() {
             r#"    "shortcuts": [
       { "id": "shortcut/back-way", "gate": "anchor/door", "unlock": "anchor/exit",
         "on_unlock": [
-          { "type": "narrate", "text": "The bar lifts for good.",
-            "requires_state": [ { "state": "state/ride", "op": "equals", "value": 1 } ] }
+          { "type": "narrate",
+            "when": { "requires_state": [ { "state": "state/ride", "op": "equals", "value": 1 } ] }, "text": "The bar lifts for good." }
         ] }
     ],
     "quests": ["#,
@@ -256,7 +259,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 
     // …and the four roots that DO have one are clean: `on_death` is the dying
     // player's own beat, so a per-player write there is exactly right.
-    let doc = quests_doc("0.19.0")
+    let doc = quests_doc("0.22.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -274,7 +277,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 
     // The scheduler seam: a `sequence` step writes a per-player datum with no
     // player to write it to — the same seam `DW0357` polices for `carrier: one`.
-    let doc = quests_doc("0.19.0")
+    let doc = quests_doc("0.22.0")
         .replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
@@ -296,7 +299,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
 /// is a declared id like every other, and its scope has to be a single fact.
 #[test]
 fn datum_ids_follow_the_ordinary_id_rules() {
-    let doc = quests_doc("0.19.0").replace(
+    let doc = quests_doc("0.22.0").replace(
         r#"{ "id": "state/ride", "scope": "party" }"#,
         r#"{ "id": "state/ride", "scope": "party" },
       { "id": "state/ride", "scope": "player" }"#,
@@ -306,43 +309,45 @@ fn datum_ids_follow_the_ordinary_id_rules() {
         "a datum declared twice is DW0111"
     );
 
-    let doc = quests_doc("0.19.0").replace(r#""id": "state/ride""#, r#""id": "state/Ride""#);
+    let doc = quests_doc("0.22.0").replace(r#""id": "state/ride""#, r#""id": "state/Ride""#);
     assert!(
         codes(&campaign_with(&doc, None)).contains(&"DW0110".to_string()),
         "a malformed datum id is DW0110"
     );
 }
 
-/// Two effects that differ **only** in their numeric gate are different effects,
-/// so they must render differently — the `Debug` rendering names generated
-/// `seq_<hash>` functions, and a collision there would silently give two
-/// sequences one function.
+/// **One guard, round-tripped.** A gate authored on a verb is one `when` object
+/// on the effect, whatever the verb is — parsed into [`Guard`], read back through
+/// the three accessors, and serialized to the same JSON it came from.
 #[test]
-fn the_numeric_gate_is_part_of_an_effects_content_key() {
-    use delvewright_dsl::{CompareOp, FlagId, QuestEffect, StateCompare, StateId};
-    let bare = QuestEffect::SetFlag {
-        flag: FlagId("flag/lit".to_string()),
-        requires_flags: Vec::new(),
-        forbids_flags: Vec::new(),
-        requires_state: Vec::new(),
-    };
-    let gated = QuestEffect::SetFlag {
-        flag: FlagId("flag/lit".to_string()),
-        requires_flags: Vec::new(),
-        forbids_flags: Vec::new(),
-        requires_state: vec![StateCompare {
-            state: StateId("state/toll".to_string()),
-            op: CompareOp::AtLeast,
-            value: 1,
-        }],
-    };
-    // An UNGATED effect renders exactly as it did before v0.10 existed: that is
-    // what keeps every existing campaign's `seq_<hash>` names where they are.
+fn a_guard_on_one_verb_round_trips_through_the_one_guard() {
+    use delvewright_dsl::{CompareOp, QuestEffect};
+    let json = r#"{"when":{"requires_flags":["flag/lit"],"forbids_flags":["flag/dark"],"requires_state":[{"state":"state/toll","op":"at-least","value":1}]},"type":"set-flag","flag":"flag/rung"}"#;
+    let eff: QuestEffect = serde_json::from_str(json).expect("the guard parses on `set-flag`");
+    assert_eq!(eff.requires_flags().len(), 1);
+    assert_eq!(eff.forbids_flags().len(), 1);
+    assert_eq!(eff.requires_state().len(), 1);
+    assert_eq!(eff.requires_state()[0].op, CompareOp::AtLeast);
     assert_eq!(
-        format!("{bare:?}"),
-        r#"SetFlag { flag: FlagId("flag/lit"), requires_flags: [] }"#
+        serde_json::to_string(&eff).expect("an effect serializes"),
+        json,
+        "the guard survives the round trip as one object"
     );
-    assert_ne!(format!("{gated:?}"), format!("{bare:?}"));
+
+    // The same guard on a verb that could not be gated at all while the fields
+    // lived on the variants — the hole `check-capability-ownership.py` recorded.
+    let staged: QuestEffect = serde_json::from_str(
+        r#"{"when":{"requires_flags":["flag/lit"]},"type":"unleash-actor","actor":"actor/hound"}"#,
+    )
+    .expect("a staging verb takes the same guard");
+    assert_eq!(staged.requires_flags().len(), 1);
+
+    // `deny_unknown_fields` survives the flatten: a typo in a verb's own field is
+    // still refused where it is written.
+    assert!(
+        serde_json::from_str::<QuestEffect>(r#"{"type":"set-flag","flagg":"flag/rung"}"#).is_err(),
+        "an unknown field on the flattened verb is still refused"
+    );
 }
 
 /// **The gate walk inherits every effect root, including the two `on_death`
@@ -363,11 +368,11 @@ fn the_numeric_gate_is_part_of_an_effects_content_key() {
 #[test]
 fn a_gate_inside_the_newest_effect_roots_is_still_walked() {
     // R7 — the campaign-wide `on_death` bundle.
-    let doc = quests_doc("0.19.0").replace(
+    let doc = quests_doc("0.22.0").replace(
         r#"    "quests": ["#,
         r#"    "on_death": [
-      { "type": "narrate", "text": "The toll goes back to the mud.",
-        "requires_state": [ { "state": "state/unwalked-r7", "op": "at-least", "value": 1 } ] }
+      { "type": "narrate",
+        "when": { "requires_state": [ { "state": "state/unwalked-r7", "op": "at-least", "value": 1 } ] }, "text": "The toll goes back to the mud." }
     ],
     "quests": ["#,
     );
@@ -379,13 +384,13 @@ fn a_gate_inside_the_newest_effect_roots_is_still_walked() {
     );
 
     // R6 — a shortcut's `on_unlock` bundle.
-    let doc = quests_doc("0.19.0").replace(
+    let doc = quests_doc("0.22.0").replace(
         r#"    "quests": ["#,
         r#"    "shortcuts": [
       { "id": "shortcut/back-way", "gate": "anchor/door", "unlock": "anchor/exit",
         "on_unlock": [
-          { "type": "narrate", "text": "The bar lifts for good.",
-            "requires_state": [ { "state": "state/unwalked-r6", "op": "at-least", "value": 1 } ] }
+          { "type": "narrate",
+            "when": { "requires_state": [ { "state": "state/unwalked-r6", "op": "at-least", "value": 1 } ] }, "text": "The bar lifts for good." }
         ] }
     ],
     "quests": ["#,

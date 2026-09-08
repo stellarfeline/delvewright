@@ -22,11 +22,11 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{parse_campaign, validate_campaign_with};
 
 use serde_json::json;
@@ -311,9 +311,9 @@ fn a_flag_gated_reset_is_not_a_reset() {
             "obj/shrine",
             json!([{
                 "type": "move-npc",
+                "when": { "requires_flags": ["flag/cleared"] },
                 "npc": "npc/keeper",
                 "to_anchor": "anchor/door",
-                "requires_flags": ["flag/cleared"],
                 "on_arrive": [
                     {"type": "despawn-actor", "actor": "actor/warden", "style": "vanish"}
                 ]

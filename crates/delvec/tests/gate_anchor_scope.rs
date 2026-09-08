@@ -27,8 +27,8 @@
 
 mod common;
 
-use delvewright_compiler::gates;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::gates;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::prefab::PrefabMeta;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
@@ -230,6 +230,7 @@ fn keep_crawl_closing(anchor: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }

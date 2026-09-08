@@ -51,8 +51,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_grammar::library::spatial_contract;
-use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
+use delvec::grammar::library::spatial_contract;
+use delvec::grammar::{Box3, ExpandOptions, export_prefab};
 
 /// `delvec prefab …`: the one binary, entered at the prefab-admission surface.
 fn prefab() -> Command {
@@ -70,7 +70,7 @@ const HARDWARE_ANCHOR: &str = "anchor/watcher-1";
 /// This list is checked against the binary's own `--help` below, so a new
 /// subcommand fails this test until someone classifies it — the classification
 /// cannot be forgotten, because there is nowhere to forget it.
-const WRITES_METADATA: &[&str] = &["socket", "anchor", "lighting"];
+const WRITES_METADATA: &[&str] = &["socket", "anchor", "lighting", "planes"];
 const DOES_NOT_WRITE_METADATA: &[&str] = &[
     "audit",          // reads the `.nbt`, writes only a report
     "resolve-jigsaw", // rewrites the `.nbt`, never the metadata
@@ -78,6 +78,8 @@ const DOES_NOT_WRITE_METADATA: &[&str] = &[
     "gallery",        // reads metadata, writes a world
     "curate",         // reads a server log, writes a report
     "curate-merge",   // writes catalog cards, a different document
+    "seating",        // reads every document and its bytes, writes only a verdict
+    "anchors",        // reads every document's anchors and roles, writes only a report
     "help",
 ];
 
@@ -87,6 +89,7 @@ const DOES_NOT_WRITE_METADATA: &[&str] = &[
 /// proving nothing.
 const AT_RISK: &[&[&str]] = &[
     &["license", "generated_by"],
+    &["walk_y"],
     &["waterline_y"],
     &["spatial_contract"],
     &["from_the_future"],
@@ -335,6 +338,16 @@ fn every_metadata_writing_step_preserves_the_rest_of_the_document() {
                     run(&["lighting", nbt_s, "--write"]);
                     vec![vec!["lighting"]]
                 }
+                // The two numbers a piece states about its own bytes, and
+                // nothing else. `waterline_y` is in `AT_RISK` above and is a
+                // path this step OWNS, which is why the fixture's declared
+                // waterline is re-measured rather than preserved here — the
+                // whole point of the verb is that the document's copy of a
+                // measurement is not the authority the blocks are.
+                "planes" => {
+                    run(&["planes", nbt_s, "--write"]);
+                    vec![vec!["walk_y"], vec!["waterline_y"]]
+                }
                 other => panic!("no invocation written for `{other}`"),
             };
             let owned: Vec<&[&str]> = owned.iter().map(|v| v.as_slice()).collect();
@@ -354,11 +367,37 @@ fn every_metadata_writing_step_preserves_the_rest_of_the_document() {
                 after["license"]["generated_by"], before["license"]["generated_by"],
                 "`{case}` dropped or altered the regeneration inputs"
             );
-            assert_eq!(
-                after["waterline_y"], before["waterline_y"],
-                "`{case}` dropped the declared waterline — `DW0344` would then examine one piece \
-                 fewer and stay green"
-            );
+            // Quantified over the steps that do NOT own this path, which is
+            // every step but one. `planes` exists to re-measure it, so demanding
+            // preservation of it there would be demanding that the verb not do
+            // the thing it is for — and a fiction it removed would be a
+            // "preserved" field. What `planes` owes instead is that the document
+            // it leaves is one `DW0887` accepts, which is stronger than equality
+            // and is asserted below.
+            if !owned.iter().any(|p| p == &["waterline_y"]) {
+                assert_eq!(
+                    after["waterline_y"], before["waterline_y"],
+                    "`{case}` dropped the declared waterline — `DW0344` would then examine one \
+                     piece fewer and stay green"
+                );
+            } else {
+                let audit = prefab()
+                    .args(["audit", nbt_s])
+                    .output()
+                    .expect("delvec prefab audit runs");
+                let report: serde_json::Value = serde_json::from_slice(&audit.stdout)
+                    .expect("the audit report is JSON on stdout");
+                assert_eq!(
+                    report["waterline"]["refused"], 0,
+                    "`{case}` owns `waterline_y` and must leave a number the bytes bear out \
+                     (`DW0887`): {report}"
+                );
+                assert_eq!(
+                    after["waterline_y"], report["waterline"]["top_authored_water_y"],
+                    "`{case}` wrote a waterline that is not this piece's top authored water \
+                     block: {report}"
+                );
+            }
             assert_eq!(
                 after["anchors"][HARDWARE_ANCHOR]["trigger_block"],
                 before["anchors"][HARDWARE_ANCHOR]["trigger_block"],

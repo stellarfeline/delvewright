@@ -35,7 +35,7 @@
 //!
 //! ## What the union asserts
 //!
-//! 1. **The rule has one home** — [`delvewright_compiler::reach::reach_completion`].
+//! 1. **The rule has one home** — [`delvec::compiler::reach::reach_completion`].
 //!    The v0.3+ half-extent is a **floor** over the ±1 that closed `hv-01`
 //!    (`max(1, radius)`), not a constant instead of it, and the pre-v0.3 sphere is
 //!    untouched.
@@ -57,13 +57,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_compiler::nav::{SNAP_RADIUS, World};
-use delvewright_compiler::plan::{Plan, Step};
-use delvewright_compiler::reach::{
+use delvec::compiler::nav::{SNAP_RADIUS, World};
+use delvec::compiler::plan::{Plan, Step};
+use delvec::compiler::reach::{
     DW_REACH_OFF_FLOOR, DW_REACH_UNCOMPLETABLE, ReachCompletion, check_reach_footprint,
     judge_reach_completion, reach_completion, sites,
 };
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 // ============================================================ unit fixtures ==
@@ -110,6 +110,7 @@ fn campaign(version: &str, radius: u32) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     })
     .expect("campaign parses")
 }
@@ -208,7 +209,7 @@ fn the_smallest_authorable_volume_is_still_the_cube_that_closed_hv01() {
 /// the completion volume and arriving completes.
 #[test]
 fn a_volume_with_footing_in_it_is_clean() {
-    with_plan("0.19.0", 2, |plan| {
+    with_plan("0.22.0", 2, |plan| {
         let (pos, _) = only_site(plan);
         let world = floor_at([pos[0], pos[1] - 1, pos[2]]);
         assert!(
@@ -226,7 +227,7 @@ fn a_volume_with_footing_in_it_is_clean() {
 /// occupy.
 #[test]
 fn a_volume_no_body_can_stand_in_is_refused() {
-    with_plan("0.19.0", 2, |plan| {
+    with_plan("0.22.0", 2, |plan| {
         let (pos, obj) = only_site(plan);
         let footing = [pos[0] + 4, pos[1], pos[2]];
         let world = floor_at([footing[0], footing[1] - 1, footing[2]]);
@@ -271,7 +272,7 @@ fn a_volume_no_body_can_stand_in_is_refused() {
 /// other end of the same arithmetic.
 #[test]
 fn an_arrival_inside_the_snap_radius_but_outside_the_volume_is_refused() {
-    with_plan("0.19.0", 1, |plan| {
+    with_plan("0.22.0", 1, |plan| {
         let (pos, obj) = only_site(plan);
         let mut solid = BTreeSet::new();
         solid.insert([pos[0], pos[1] - 1, pos[2]]); // the volume is occupiable…

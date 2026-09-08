@@ -17,8 +17,10 @@
     "seed": 20260802,
     "target_minutes": 6,
     "theme": "A keep whose inner shrine answers only to two hands at once.",
-    "title": "The Two Levers"
+    "time": "noon",
+    "title": "The Two Levers",
+    "weather": "clear"
   },
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

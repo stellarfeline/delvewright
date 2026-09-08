@@ -11,7 +11,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 quests document that damages the party (lethal, generic) on the exit
 /// beat — the "consequence" the verb exists for.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -48,6 +48,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -101,8 +102,8 @@ fn damage_players_requires_flags_resolves() {
     );
     let gated = gated.replace(
         r#"{ "type": "damage-players", "amount": 40, "damage_type": "wither" }"#,
-        r#"{ "type": "damage-players", "amount": 40, "damage_type": "wither",
-             "requires_flags": ["flag/doomed"] }"#,
+        r#"{ "type": "damage-players",
+             "when": { "requires_flags": ["flag/doomed"] }, "amount": 40, "damage_type": "wither" }"#,
     );
     let diags = check_campaign(&campaign_with_quests(&gated));
     assert!(

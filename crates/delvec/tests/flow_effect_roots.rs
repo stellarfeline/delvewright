@@ -39,9 +39,9 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use delvewright_compiler::analyze::analyze_campaign;
-use delvewright_compiler::flow::gate_flags;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::analyze::analyze_campaign;
+use delvec::compiler::flow::gate_flags;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,7 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -98,7 +99,7 @@ fn codes(c: &Campaign) -> Vec<String> {
 fn quests_doc(prelude: &str, exit_tail: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -146,7 +147,7 @@ const ALARM_FROM_TRIGGER: &str = r#""triggers": [
 /// `collect_flags` already applies to the identical bundle in the quests stage,
 /// and the one the `DW0203` message itself states.
 const ALARM_FROM_DIALOGUE_RESPAWN: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -257,7 +258,7 @@ fn a_dialogue_respawn_bundle_is_seen_but_still_never_a_producer() {
 /// player takes exactly ONE of the two options, so the finale can never complete
 /// — `DW0201`, and nothing else.
 const BRANCHED_PAYLOAD_QUESTS: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -265,8 +266,8 @@ const BRANCHED_PAYLOAD_QUESTS: &str = r#"{
       { "id": "trap/brazier", "at": "anchor/exit", "trigger": "trapped-chest",
         "lethality": "harmful",
         "payload": [
-          { "type": "set-flag", "flag": "flag/lit",  "requires_flags": ["flag/lantern"] },
-          { "type": "set-flag", "flag": "flag/tied", "requires_flags": ["flag/rope"] }
+          { "type": "set-flag", "when": { "requires_flags": ["flag/lantern"] }, "flag": "flag/lit" },
+          { "type": "set-flag", "when": { "requires_flags": ["flag/rope"] }, "flag": "flag/tied" }
         ] }
     ],
     "quests": [
@@ -290,7 +291,7 @@ const BRANCHED_PAYLOAD_QUESTS: &str = r#"{
 }"#;
 
 const BRANCHED_PAYLOAD_DIALOGUE: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -343,20 +344,20 @@ fn a_payload_gate_splits_the_branch_worlds() {
 /// A campaign carrying one `requires_flags` gate at each of the five effect
 /// roots, each naming a flag after its root.
 const FIVE_ROOT_QUESTS: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
     "triggers": [
       { "id": "trigger/wake", "at": "anchor/keeper-stand", "on": { "on": "approach", "range": 3 },
-        "effects": [ { "type": "narrate", "style": "chat", "text": "The moor stirs.",
-                       "requires_flags": ["flag/root-trigger"] } ] }
+        "effects": [ { "type": "narrate",
+                       "when": { "requires_flags": ["flag/root-trigger"] }, "style": "chat", "text": "The moor stirs." } ] }
     ],
     "traps": [
       { "id": "trap/chest", "at": "anchor/exit", "trigger": "trapped-chest",
         "lethality": "harmful",
-        "payload": [ { "type": "narrate", "style": "chat", "text": "The lid slams.",
-                       "requires_flags": ["flag/root-trap"] } ] }
+        "payload": [ { "type": "narrate",
+                       "when": { "requires_flags": ["flag/root-trap"] }, "style": "chat", "text": "The lid slams." } ] }
     ],
     "quests": [
       {
@@ -370,13 +371,13 @@ const FIVE_ROOT_QUESTS: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "narrate", "style": "chat", "text": "The bar lifts.",
-              "requires_flags": ["flag/root-objective"] }
+            { "type": "narrate",
+              "when": { "requires_flags": ["flag/root-objective"] }, "style": "chat", "text": "The bar lifts." }
           ]
         },
         "on_complete": [
-          { "type": "narrate", "style": "chat", "text": "The moor takes the keep back.",
-            "requires_flags": ["flag/root-quest"] },
+          { "type": "narrate",
+            "when": { "requires_flags": ["flag/root-quest"] }, "style": "chat", "text": "The moor takes the keep back." },
           { "type": "campaign-complete" }
         ]
       }
@@ -385,7 +386,7 @@ const FIVE_ROOT_QUESTS: &str = r#"{
 }"#;
 
 const FIVE_ROOT_DIALOGUE: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "dialogue",
   "content": {
@@ -398,8 +399,8 @@ const FIVE_ROOT_DIALOGUE: &str = r#"{
               "effects": [
                 { "type": "complete-objective", "objective": "obj/talk" },
                 { "type": "set-checkpoint", "anchor": "anchor/exit",
-                  "on_respawn": [ { "type": "narrate", "style": "chat", "text": "You wake by the gate.",
-                                    "requires_flags": ["flag/root-respawn"] } ] }
+                  "on_respawn": [ { "type": "narrate",
+                                    "when": { "requires_flags": ["flag/root-respawn"] }, "style": "chat", "text": "You wake by the gate." } ] }
               ] }
           ] }
       ] }

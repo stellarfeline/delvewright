@@ -14,16 +14,16 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use delvewright_compiler::analyze::analyze_campaign;
-use delvewright_compiler::blockout::{Knob, Perturb};
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit;
-use delvewright_compiler::load::{
+use delvec::compiler::analyze::analyze_campaign;
+use delvec::compiler::blockout::{Knob, Perturb};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit;
+use delvec::compiler::load::{
     LoadedCampaign, load_campaign_dir, missing_stage_documents_diagnostic,
 };
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 use delvewright_dsl::{
     Diagnostic, DwCode, ExitTier, Stage, parse_campaign, stage_schema, validate_campaign_with,
 };
@@ -143,8 +143,9 @@ enum Command {
         /// Which document. A numbered stage `1..7`; a named map-pipeline stage
         /// document `geometry-brief` | `layout-graph` | `site-plan` |
         /// `detail-plan`; `walk-record` for the hand-written walk record
-        /// (a campaign artifact, not a stage document); or `all` for every
-        /// stage document at once.
+        /// (a campaign artifact, not a stage document); `prefab-metadata` for a
+        /// prefab library asset's sibling `<prefab-id>.json` (a library asset,
+        /// not a stage document); or `all` for every stage document at once.
         #[arg(long)]
         stage: String,
     },
@@ -195,10 +196,10 @@ enum Command {
         #[arg(long)]
         labels: bool,
         /// Frame width in pixels.
-        #[arg(long, default_value_t = delvewright_compiler::snapshot::DEFAULT_WIDTH)]
+        #[arg(long, default_value_t = delvec::compiler::snapshot::DEFAULT_WIDTH)]
         width: u32,
         /// Frame height in pixels.
-        #[arg(long, default_value_t = delvewright_compiler::snapshot::DEFAULT_HEIGHT)]
+        #[arg(long, default_value_t = delvec::compiler::snapshot::DEFAULT_HEIGHT)]
         height: u32,
         /// Print the render wall-clock time to stderr (profiling aid; never
         /// enters the output, so determinism is unaffected).
@@ -265,21 +266,21 @@ enum Command {
     /// binary — `delvec viewer …`, not `delvec render viewer …`. The arms that
     /// need a GPU are `delvec render …` below.
     #[command(flatten)]
-    View(delvewright_compiler::view::cli::ViewCommand),
+    View(delvec::compiler::view::cli::ViewCommand),
     /// Grammar programs: list the corpus, show or check one, expand it into a
     /// prefab, measure demonstration coverage, audit every program.
-    Grammar(delvewright_grammar::cli::GrammarArgs),
+    Grammar(delvec::grammar::cli::GrammarArgs),
     /// A prefab piece under admission: audit, socket, anchor, lighting, catalog
     /// card, gallery world, curation.
-    Prefab(delvewright_admit::cli::PrefabArgs),
+    Prefab(delvec::admit::cli::PrefabArgs),
     /// An outside schematic: convert a Sponge `.schem` into a structure `.nbt`.
-    Schem(delvewright_schem::cli::SchemArgs),
+    Schem(delvec::schem::cli::SchemArgs),
     /// A playtest log: pair `[DelveNote]` stamps with the creator's notes into
     /// `playtest-report.json` (and `[DelveShot]` stamps into a rehearsal report).
-    Harvest(delvewright_orchestrator::cli::HarvestArgs),
+    Harvest(delvec::orchestrator::cli::HarvestArgs),
     /// GPU renders through Nucleation/wgpu: one piece's shot set, a whole
     /// library, or the missing-texture fidelity gate.
-    Render(delvewright_render::cli::RenderArgs),
+    Render(delvec::render::cli::RenderArgs),
 }
 
 #[derive(Subcommand)]
@@ -420,11 +421,11 @@ fn main() -> ExitCode {
             out,
         } => run_calibrate(report, layout, out, cli.json),
         Command::View(cmd) => cmd.run(cli.json),
-        Command::Grammar(args) => delvewright_grammar::cli::run(args.clone()),
-        Command::Prefab(args) => delvewright_admit::cli::run(args.clone(), cli.json),
-        Command::Schem(args) => delvewright_schem::cli::run(args.clone(), cli.json),
-        Command::Harvest(args) => delvewright_orchestrator::cli::run(args.clone()),
-        Command::Render(args) => delvewright_render::cli::run(args.clone(), cli.json),
+        Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
+        Command::Prefab(args) => delvec::admit::cli::run(args.clone(), &cli.prefabs, cli.json),
+        Command::Schem(args) => delvec::schem::cli::run(args.clone(), cli.json),
+        Command::Harvest(args) => delvec::orchestrator::cli::run(args.clone()),
+        Command::Render(args) => delvec::render::cli::run(args.clone(), cli.json),
     }
 }
 
@@ -443,7 +444,7 @@ fn main() -> ExitCode {
 /// snappable shots are real work, and withholding them would only make the
 /// creator redo the session.
 fn run_calibrate(report_path: &Path, layout_path: &Path, out: &str, json: bool) -> ExitCode {
-    use delvewright_compiler::calibrate;
+    use delvec::compiler::calibrate;
 
     let report_raw = match std::fs::read_to_string(report_path) {
         Ok(s) => s,
@@ -591,7 +592,7 @@ fn run_calibrate(report_path: &Path, layout_path: &Path, out: &str, json: bool) 
 struct Validated {
     campaign: delvewright_dsl::Campaign,
     prefabs: PrefabRegistry,
-    loaded: delvewright_compiler::load::LoadedCampaign,
+    loaded: delvec::compiler::load::LoadedCampaign,
     sidecars: BTreeMap<String, delvewright_dsl::L10nDoc>,
     /// The accumulated diagnostics — the list a verdict is read off.
     diags: Vec<Diagnostic>,
@@ -669,7 +670,7 @@ fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result
 /// split out so `delvec edit` can validate a script with a candidate batch
 /// appended before anything touches the campaign directory.
 fn validate_loaded(
-    loaded: delvewright_compiler::load::LoadedCampaign,
+    loaded: delvec::compiler::load::LoadedCampaign,
     prefabs_dir: &Path,
     json: bool,
 ) -> Result<Validated, u8> {
@@ -741,13 +742,13 @@ fn validate_loaded(
             // art-title glyph coverage against the `delve:art` font over the source
             // text and every declared-language sidecar (DW0328). Validation-tier
             // (exit 1) — no-op for a campaign that uses neither surface.
-            diags.extend(delvewright_compiler::atmos::check_sounds(&campaign));
-            diags.extend(delvewright_compiler::atmos::check_art(&campaign, &sidecars));
+            diags.extend(delvec::compiler::atmos::check_sounds(&campaign));
+            diags.extend(delvec::compiler::atmos::check_art(&campaign, &sidecars));
             // On-screen narrate text that overruns the title/subtitle/art width
             // budget (DW0330). Advisory tier — see `textfit` for why this warns
             // rather than rejects. Runs over the English source and every
             // declared-language sidecar rendition.
-            diags.extend(delvewright_compiler::textfit::check_text_fits(
+            diags.extend(delvec::compiler::textfit::check_text_fits(
                 &campaign, &sidecars,
             ));
             // Dialogue option labels that overrun their dialog button (DW0331).
@@ -755,23 +756,23 @@ fn validate_loaded(
             // the dialog this compiler emits, not a guess about the player's
             // window, so an over-wide caption provably scrolls in game. Runs over
             // the English source and every declared-language sidecar rendition.
-            diags.extend(delvewright_compiler::textfit::check_option_labels(
+            diags.extend(delvec::compiler::textfit::check_option_labels(
                 &campaign, &sidecars,
             ));
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
             // tier). No-op for a campaign that uses no `close-gate`.
-            diags.extend(delvewright_compiler::gates::check_close_gates(
+            diags.extend(delvec::compiler::gates::check_close_gates(
                 &campaign, &prefabs,
             ));
             // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
             // wording. No-op for a campaign that authors none.
-            diags.extend(delvewright_compiler::gates::check_seal_hints(&campaign));
+            diags.extend(delvec::compiler::gates::check_seal_hints(&campaign));
             // NPC location-continuity lint (DW0351). Advisory tier — a warning
             // names a staging discontinuity (an NPC materializing or vanishing
             // away from where it was last staged) but never fails the run:
             // narrative cover is a legitimate authorial answer.
-            diags.extend(delvewright_compiler::continuity::check_npc_continuity(
+            diags.extend(delvec::compiler::continuity::check_npc_continuity(
                 &campaign,
             ));
             // The NPC scene ledger (DW0460–DW0467, spec-0020): every quest must
@@ -779,7 +780,52 @@ fn validate_loaded(
             // right-click offers, and the declaration is checked against the
             // effect history. Error tier, except the staleness lint (DW0467),
             // which warns.
-            diags.extend(delvewright_compiler::cast::check_cast(&campaign));
+            diags.extend(delvec::compiler::cast::check_cast(&campaign));
+            // `DW0884`: a cast row whose anchor name BOTH the beat's area and
+            // the npc's own area answer to. The same finding `DW0461`'s place
+            // arm refuses at the build tier from the seated pieces, refused here
+            // — where the row is entered — before a cell is ever computed. Needs
+            // the prefab registry (which areas answer to a name is a fact about
+            // the pieces they bind), which is why it sits beside `check_cast`
+            // rather than inside it. No-op for a campaign whose beats and bodies
+            // share an area, which is every single-area campaign.
+            diags.extend(delvec::compiler::cast::check_shared_cast_anchor(
+                &campaign, &prefabs,
+            ));
+            // **`DW0886` / `DW0887`: a horizon and a piece set are a pair**
+            // (spec-0060). Refused here rather than at the build, on `DW0855`'s
+            // own precedent: the verdict is a fact about the documents and the
+            // library — the declared base, the pools the world names, each
+            // member's metadata and its bytes — so nothing has to be placed to
+            // know it, and a creator should not spend a build to learn that the
+            // pieces they chose cannot stand where they put them. It opens the
+            // `.nbt`, because a verdict from declarations alone reports a
+            // library of fictions as seatable. The binding line states what it
+            // examined, zeroes included.
+            {
+                let (bind, sd) = delvec::compiler::seating::check(&campaign, &prefabs, prefabs_dir);
+                examined.push(bind.line());
+                diags.extend(sd);
+            }
+            // **`DW0889`: which anchors does this area guarantee** — asked here
+            // because this is the last step that can still answer it in time. An
+            // area binding a pool seats a SUBSET of that pool's members (the
+            // `entry` piece, one carrier per anchor the campaign requires, and
+            // `connector` fillers drawn from the seed), so an anchor declared on
+            // a member nothing forces may simply not be in the built world.
+            // Every diagnostic that said so needed a build, and the anchors are
+            // chosen three authoring steps earlier. The whole verdict is a fact
+            // about declarations — the pool's members, their roles, their
+            // `anchors` maps — so nothing has to be placed to know it, on
+            // `compiler::seating`'s own precedent. Advisory: the filler draw may
+            // well seat the piece, and `DW0302`/`DW0360` still refuse at the
+            // build if it did not. The binding line states the guarantee with
+            // its denominator, zeroes included.
+            {
+                let (gbind, gd) = delvec::compiler::guarantee::check(&campaign, &prefabs);
+                examined.push(gbind.line());
+                diags.extend(gd);
+            }
             // An objective keeps the promise its prompt makes (DW0860-DW0863):
             // a failure clock armed before its own prompt could be read, an
             // adopted container nothing distinguishes from the scenery beside
@@ -788,7 +834,7 @@ fn validate_loaded(
             // document says. The
             // binding line states what it examined, including the zeroes.
             {
-                let (pd, pbind) = delvewright_compiler::promise::check(&campaign);
+                let (pd, pbind) = delvec::compiler::promise::check(&campaign);
                 examined.push(pbind.line());
                 diags.extend(pd);
             }
@@ -803,7 +849,25 @@ fn validate_loaded(
             // which is every campaign below 0.15.0, and the binding line states
             // that zero rather than going quiet.
             {
-                let (dd, dbind) = delvewright_compiler::detail::check(
+                // **The three hashes, printed BEFORE the gate that demands
+                // them** (spec-0050 §2). A walk record names its subject and its
+                // instrument by these numbers, they exist nowhere but this
+                // engine's output — none of the three is a hash of a document —
+                // and `DW0841`'s repair is to copy them out of a build. They
+                // used to be printed by `emit`, which a refusal never reaches,
+                // so the one state that needs them was the one state that could
+                // not get them: a stale record refused the build, the build
+                // printed nothing, and the only way to re-record was to compute
+                // a hash by hand or to revert. Printed here, in the one funnel
+                // every subcommand's validation goes through, so `validate`,
+                // `analyze`, `allocation` and a REFUSED `build` all hand the
+                // creator the numbers. The engine is named by its REVISION,
+                // never by its version string — two engines a hundred commits
+                // apart report the same version.
+                if let Some(h) = delvec::compiler::detail::Hashes::of(&campaign) {
+                    eprintln!("{}", h.line());
+                }
+                let (dd, dbind) = delvec::compiler::detail::check(
                     &campaign,
                     &prefabs,
                     loaded.walk_record.as_deref(),
@@ -812,7 +876,7 @@ fn validate_loaded(
                     examined.push(dbind.line());
                 }
                 diags.extend(dd);
-                diags.extend(delvewright_compiler::detail::blockout_drift(
+                diags.extend(delvec::compiler::detail::blockout_drift(
                     &campaign,
                     loaded.walk_record.as_deref(),
                 ));
@@ -822,7 +886,7 @@ fn validate_loaded(
             // its flag assignment — terminality, cast continuity, exclusive-content
             // leakage, hard event contradictions — plus the forcing function that
             // every story node says what it does to the story. No-op below 0.8.0.
-            diags.extend(delvewright_compiler::branch::check_branches(&campaign));
+            diags.extend(delvec::compiler::branch::check_branches(&campaign));
             // spec-0031 (DSL v0.10): a numeric gate is judged against the writes
             // the path performs before it (DW0879). The reachability model walks
             // objectives and flags; the arithmetic a `requires_state` compares
@@ -833,9 +897,27 @@ fn validate_loaded(
             // open cannot reach a datapack by skipping `delvec analyze`. The
             // binding line states what it walked, including the zeroes.
             {
-                let (sd, sbind) = delvewright_compiler::statepath::check(&campaign);
+                let (sd, sbind) = delvec::compiler::statepath::check(&campaign);
                 examined.push(sbind.line());
                 diags.extend(sd);
+            }
+            // **`DW0890`: the approved hour is the built hour** (spec-0061).
+            // Refused here rather than at the build, on `DW0855`'s precedent
+            // and `DW0886`'s: the verdict is a fact about the documents and a
+            // directory listing — the rows of `design.json`, the files under
+            // `design/`, and the skies the campaign's own effects can reach —
+            // so nothing has to be placed to know it, and a creator should not
+            // spend a build and a render to learn that their night delve was
+            // built at noon. Bound in the one funnel every subcommand's
+            // validation goes through, so a mismatch cannot reach a datapack by
+            // skipping `delvec validate`. The binding line states what it
+            // examined, zeroes included: a campaign with no approved design is
+            // a measured zero here and a refusal at staging.
+            {
+                let (dd, dbind, _) =
+                    delvec::compiler::design::check(&campaign, &loaded.design_files);
+                examined.push(dbind.line());
+                diags.extend(dd);
             }
             print_diags(&diags, json);
             report_binding_notes(&campaign, &examined);
@@ -1040,7 +1122,7 @@ fn run_snapshot(
     args: SnapshotArgs<'_>,
     json: bool,
 ) -> ExitCode {
-    use delvewright_compiler::snapshot;
+    use delvec::compiler::snapshot;
 
     let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
@@ -1081,12 +1163,9 @@ fn run_snapshot(
     // reviewer framing a shot down into a declared lethal volume is looking at
     // open air, not at a wall. The campaign's premises are about what a body may
     // walk through, which is not what this command asks.
-    let world = delvewright_compiler::nav::World::from_occupancy(
-        delvewright_compiler::assembled::occupancy_of(
-            assembled.blocks.clone(),
-            &assembled.open_gates,
-        ),
-        delvewright_compiler::nav::Premises::geometry_only(),
+    let world = delvec::compiler::nav::World::from_occupancy(
+        delvec::compiler::assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
+        delvec::compiler::nav::Premises::geometry_only(),
     );
     let blocks = assembled.blocks;
     let grid = snapshot::VoxelGrid::build(&blocks);
@@ -1113,7 +1192,7 @@ fn run_snapshot(
     if args.labels {
         snapshot::draw_labels(&mut frame, &grid, &cam, &inside);
     }
-    let png = delvewright_compiler::png::encode_rgba(
+    let png = delvec::compiler::png::encode_rgba(
         frame.canvas.width,
         frame.canvas.height,
         &frame.canvas.rgba,
@@ -1203,10 +1282,10 @@ fn edited_assembled(
     prefabs: &PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
     json: bool,
-) -> Result<delvewright_compiler::assembled::Assembled, u8> {
-    match delvewright_compiler::edit::replay_view(plan, prefabs, structures) {
+) -> Result<delvec::compiler::assembled::Assembled, u8> {
+    match delvec::compiler::edit::replay_view(plan, prefabs, structures) {
         Ok(Some(er)) => Ok(er.assembled),
-        Ok(None) => Ok(delvewright_compiler::assembled::assemble(plan, structures)),
+        Ok(None) => Ok(delvec::compiler::assembled::assemble(plan, structures)),
         Err(e) => {
             print_build_error(e.code, &e.message, json);
             Err(3)
@@ -1218,7 +1297,7 @@ fn edited_assembled(
 /// `void`-horizon campaign (see `snapshot::SEA_PLANE_NOTE`).
 fn sea_level_of(campaign: &delvewright_dsl::Campaign) -> Option<i32> {
     match delvewright_dsl::horizon_base(&campaign.world.content.horizon) {
-        delvewright_dsl::HorizonBase::Ocean => Some(delvewright_compiler::plan::SEA_LEVEL),
+        delvewright_dsl::HorizonBase::Ocean => Some(delvec::compiler::plan::SEA_LEVEL),
         _ => None,
     }
 }
@@ -1262,7 +1341,7 @@ fn read_structures(
             files.push(template.structure_file.clone());
         }
     }
-    files.extend(delvewright_compiler::edit::fragment_structure_files(
+    files.extend(delvec::compiler::edit::fragment_structure_files(
         plan.campaign,
         prefabs,
     ));
@@ -1278,7 +1357,7 @@ fn read_structures(
                 }
                 Err(e) => {
                     print_build_error(
-                        delvewright_compiler::plan::DW_BUILD,
+                        delvec::compiler::plan::DW_BUILD,
                         &format!(
                             "cannot read prefab structure file `{}`: {e} — the prefab metadata \
                              points at an `.nbt` that is missing or unreadable in the prefabs dir. \
@@ -1301,8 +1380,8 @@ fn read_structures(
     // picture that lies, which is worse than a datapack that does not build.
     // The check is pure, so running it twice on the build path costs a walk and
     // reports the same verdict.
-    if let Err(delvewright_compiler::emit::BuildFailure::Diagnostic { code, message }) =
-        delvewright_compiler::emit::check_template_extents(plan, &structures)
+    if let Err(delvec::compiler::emit::BuildFailure::Diagnostic { code, message }) =
+        delvec::compiler::emit::check_template_extents(plan, &structures)
     {
         print_build_error(code, &message, json);
         return Err(3);
@@ -1318,11 +1397,11 @@ fn read_structures(
 fn resolve_camera(
     plan: &Plan,
     prefabs: &PrefabRegistry,
-    grid: &delvewright_compiler::snapshot::VoxelGrid,
-    world: &delvewright_compiler::nav::World,
+    grid: &delvec::compiler::snapshot::VoxelGrid,
+    world: &delvec::compiler::nav::World,
     args: &SnapshotArgs<'_>,
-) -> Result<delvewright_compiler::snapshot::Camera, String> {
-    use delvewright_compiler::snapshot::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
+) -> Result<delvec::compiler::snapshot::Camera, String> {
+    use delvec::compiler::snapshot::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
 
     if let Some(spec) = args.camera {
         let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
@@ -1411,18 +1490,18 @@ fn resolve_camera(
 /// render plan's own cameras — it used to live here, private to this one flag,
 /// while every derived camera in `render-plan.json` went without it.
 fn pull_into_open_air(
-    grid: &delvewright_compiler::snapshot::VoxelGrid,
+    grid: &delvec::compiler::snapshot::VoxelGrid,
     subject: [f64; 3],
     eye: [f64; 3],
 ) -> [f64; 3] {
-    delvewright_compiler::camera::stand_in_open_air(|c| grid.solid(c), subject, eye).unwrap_or(eye)
+    delvec::compiler::camera::stand_in_open_air(|c| grid.solid(c), subject, eye).unwrap_or(eye)
 }
 
 /// Resolve an `--at` subject to a world cell. Accepts a bare anchor name
 /// (`anchor/fire-pit`, matched in the first declaring area, `BTreeMap` order) or
 /// an `area:anchor` pair (`area/island:anchor/pen`) to disambiguate.
 fn resolve_subject(plan: &Plan, subject: &str) -> Result<[i32; 3], String> {
-    use delvewright_compiler::plan::ResolvedAnchor;
+    use delvec::compiler::plan::ResolvedAnchor;
     let (area, anchor) = match subject.split_once(':') {
         Some((a, n)) => (Some(a), n),
         None => (None, subject),
@@ -1464,14 +1543,14 @@ fn resolve_subject(plan: &Plan, subject: &str) -> Result<[i32; 3], String> {
 fn camera_from_shot(
     plan: &Plan,
     prefabs: &PrefabRegistry,
-    world: &delvewright_compiler::nav::World,
+    world: &delvec::compiler::nav::World,
     id: &str,
-) -> Result<delvewright_compiler::snapshot::Camera, String> {
-    use delvewright_compiler::render_plan;
-    use delvewright_compiler::snapshot::{Camera, DEFAULT_FOV};
+) -> Result<delvec::compiler::snapshot::Camera, String> {
+    use delvec::compiler::render_plan;
+    use delvec::compiler::snapshot::{Camera, DEFAULT_FOV};
 
     let pov = if id.starts_with("pov/") {
-        let routes = delvewright_compiler::nav::critical_path_routes(plan, world);
+        let routes = delvec::compiler::nav::critical_path_routes(plan, world);
         render_plan::pov_shots(plan, &routes)
     } else {
         Vec::new()
@@ -1572,21 +1651,18 @@ fn run_blocking_chart(
     // premise set draws a corridor no proof ever walked. A route through a
     // declared lethal volume was exactly that: a line on the blocking chart the
     // author could read as cleared.
-    let world = delvewright_compiler::nav::World::from_occupancy(
-        delvewright_compiler::assembled::occupancy_of(
-            assembled.blocks.clone(),
-            &assembled.open_gates,
-        ),
-        delvewright_compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
+    let world = delvec::compiler::nav::World::from_occupancy(
+        delvec::compiler::assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates),
+        delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
     );
     let blocks = assembled.blocks;
-    let targets = delvewright_compiler::snapshot::collect_targets(&plan);
+    let targets = delvec::compiler::snapshot::collect_targets(&plan);
     let corridor: std::collections::BTreeSet<[i32; 3]> =
-        delvewright_compiler::nav::critical_path_routes(&plan, &world)
+        delvec::compiler::nav::critical_path_routes(&plan, &world)
             .into_iter()
             .flat_map(|leg| leg.cells)
             .collect();
-    let chart = delvewright_compiler::blocking::chart(&plan, &blocks, &world, &targets, &corridor);
+    let chart = delvec::compiler::blocking::chart(&plan, &blocks, &world, &targets, &corridor);
     let elapsed = started.elapsed().as_secs_f64() * 1000.0;
 
     let mut index = match serde_json::to_vec_pretty(&chart.index) {
@@ -1783,7 +1859,7 @@ fn run_build(
             Plan::build_with(&campaign, &prefabs, p.clone())
         }
     };
-    let plan = match built {
+    let plan = match built.map(|p| p.with_design_files(loaded.design_files.clone())) {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:
@@ -2043,10 +2119,8 @@ fn run_edit(
     persist: bool,
     json: bool,
 ) -> ExitCode {
-    use delvewright_compiler::load::WORLD_EDITS_FILE;
-    use delvewright_compiler::snapshot::{
-        self, Camera, DEFAULT_FOV, DEFAULT_HEIGHT, DEFAULT_WIDTH,
-    };
+    use delvec::compiler::load::WORLD_EDITS_FILE;
+    use delvec::compiler::snapshot::{self, Camera, DEFAULT_FOV, DEFAULT_HEIGHT, DEFAULT_WIDTH};
 
     let mut loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
@@ -2139,7 +2213,9 @@ fn run_edit(
     if has_error(&v.diags) {
         return ExitCode::from(1);
     }
-    let plan = match Plan::build(&v.campaign, &v.prefabs) {
+    let plan = match Plan::build(&v.campaign, &v.prefabs)
+        .map(|p| p.with_design_files(v.loaded.design_files.clone()))
+    {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:
@@ -2155,7 +2231,7 @@ fn run_edit(
         Err(code) => return ExitCode::from(code),
     };
 
-    let replay = match delvewright_compiler::edit::replay(&plan, &v.prefabs, &structures) {
+    let replay = match delvec::compiler::edit::replay(&plan, &v.prefabs, &structures) {
         Ok(r) => r,
         Err(e) => {
             print_build_error(e.code, &e.message, json);
@@ -2200,7 +2276,7 @@ fn run_edit(
         let mut frame = snapshot::render_frame(&grid, &cam, &opts);
         let (inside, outside) = snapshot::resolve_targets(&grid, &cam, &opts, &targets);
         snapshot::draw_labels(&mut frame, &grid, &cam, &inside);
-        let png = delvewright_compiler::png::encode_rgba(
+        let png = delvec::compiler::png::encode_rgba(
             frame.canvas.width,
             frame.canvas.height,
             &frame.canvas.rgba,
@@ -2538,25 +2614,34 @@ fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: boo
         );
         return ExitCode::from(1);
     }
+    // The three hashes, on stderr, before the gate — for the reason
+    // `validate_loaded` prints them there: this verb does not go through that
+    // funnel (see the note above on why it parses rather than validates), so
+    // without this the second of the two doors refuses and hands over nothing
+    // the author can re-record from. stdout stays the machine-readable document
+    // and gains nothing.
+    if let Some(h) = delvec::compiler::detail::Hashes::of(&campaign) {
+        eprintln!("{}", h.line());
+    }
     // **The gate, at the second of the two events that begin detail work.** It is
     // asked of the campaign as it stands, so a campaign with no `detail-plan`
     // yet — which is exactly the campaign asking for its first allocation — is
     // asked the same question against the plan whose hash it names.
     if let Some(d) =
-        delvewright_compiler::detail::allocation_walk_gate(&campaign, loaded.walk_record.as_deref())
+        delvec::compiler::detail::allocation_walk_gate(&campaign, loaded.walk_record.as_deref())
     {
         print_one_diag(&d, json);
         return ExitCode::from(1);
     }
     let out = if all {
-        serde_json::to_value(delvewright_compiler::detail::allocations(&campaign))
+        serde_json::to_value(delvec::compiler::detail::allocations(&campaign))
     } else {
         let Some(place) = place else {
             eprintln!("error: name a place (`node/<kebab>`), or pass `--all`");
             return ExitCode::from(EXIT_INTERNAL);
         };
         let id = delvewright_dsl::NodeId(place.to_string());
-        match delvewright_compiler::detail::allocation(&campaign, &id) {
+        match delvec::compiler::detail::allocation(&campaign, &id) {
             Some(a) => serde_json::to_value(a),
             None => {
                 eprintln!(
@@ -2610,7 +2695,21 @@ fn run_schema(stage: &str) -> ExitCode {
         "walk-record" => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&delvewright_compiler::detail::walk_record_schema())
+                serde_json::to_string_pretty(&delvec::compiler::detail::walk_record_schema())
+                    .unwrap()
+            );
+            return ExitCode::SUCCESS;
+        }
+        // `<prefab-id>.json` is not a stage document either — it is a library
+        // ASSET's metadata, reachable here for the same reason the walk record
+        // is. Deliberately absent from `all`: the gallery's coverage gate
+        // enumerates its units from that export, and a library-asset document
+        // folded into it would demand a stage-document binding for every field
+        // of a file no stage document contains (`PrefabMeta::schema`'s note).
+        "prefab-metadata" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&delvewright_dsl::prefab::PrefabMeta::schema())
                     .unwrap()
             );
             return ExitCode::SUCCESS;
@@ -2624,7 +2723,8 @@ fn run_schema(stage: &str) -> ExitCode {
             eprintln!(
                 "unknown document `{other}`. Want `1`..`7` (the campaign DSL's numbered \
                  stages), any stage by name — {names} — `walk-record` for the hand-written \
-                 walk record, or `all` for every stage document at once.",
+                 walk record, `prefab-metadata` for a prefab library asset's sibling \
+                 `<prefab-id>.json`, or `all` for every stage document at once.",
                 names = names.join(", "),
             );
             return ExitCode::from(EXIT_INTERNAL);
@@ -2726,8 +2826,8 @@ fn run_metrics(json: bool, gym_dir: Option<&std::path::Path>) -> ExitCode {
     // generated campaign is content, and the engine ships the generator the way
     // it ships a prefab generator rather than the prefabs.
     if let Some(dir) = gym_dir {
-        let gym = delvewright_compiler::gym::generate(&table, "metrics-gym");
-        if let Err(e) = delvewright_compiler::gym::write(&gym, dir) {
+        let gym = delvec::compiler::gym::generate(&table, "metrics-gym");
+        if let Err(e) = delvec::compiler::gym::write(&gym, dir) {
             eprintln!(
                 "delvec metrics --gym: cannot write into {}: {e}",
                 dir.display()
@@ -2829,6 +2929,9 @@ fn layout_binding_lines(campaign: &delvewright_dsl::Campaign, out: &mut Vec<Stri
     out.push(b.line());
     if campaign.site_plan.is_some() {
         out.push(b.plan_line());
+        // The derivation, handed back: every box's corner and how it was
+        // obtained, so a creator reads a corner here rather than typing one.
+        out.extend(delvewright_dsl::placements(campaign));
         if b.plan.views == 0 {
             out.push(
                 "site-plan binding 0: this plan names no view, so the walk has no declared \

@@ -6,13 +6,14 @@
 
 mod common;
 
+use delvewright_dsl::Verb;
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{
     AnchorId, QuestEffect, SequenceStep, parse_campaign, validate_campaign_with,
 };
@@ -498,23 +499,27 @@ fn set_checkpoint_nested_in_sequence_binds_its_own_index() {
     };
 
     // A distinct on_respawn hook makes this a distinct checkpoint (index 1).
-    let nested_hook = vec![QuestEffect::Narrate {
-        text: "You steady yourself again, deeper in.".to_string(),
-        style: None,
-        sound: None,
-        requires_flags: vec![],
-        forbids_flags: vec![],
-        requires_state: vec![],
-    }];
-    let nested = QuestEffect::Sequence {
+    let nested_hook: Vec<QuestEffect> = vec![
+        Verb::Narrate {
+            text: "You steady yourself again, deeper in.".to_string(),
+            style: None,
+            sound: None,
+        }
+        .into(),
+    ];
+    let nested: QuestEffect = Verb::Sequence {
         steps: vec![SequenceStep {
             at_ticks: 0,
-            effects: vec![QuestEffect::SetCheckpoint {
-                anchor: anchor.clone(),
-                on_respawn: nested_hook.clone(),
-            }],
+            effects: vec![
+                Verb::SetCheckpoint {
+                    anchor: anchor.clone(),
+                    on_respawn: nested_hook.clone(),
+                }
+                .into(),
+            ],
         }],
-    };
+    }
+    .into();
     campaign.quests.content.quests[qi]
         .on_objective_complete
         .get_mut(&oid)

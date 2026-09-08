@@ -1,0 +1,39 @@
+# The shape the live workflows have: a planning job with no environment, and a
+# gated job whose FIRST `run:` step is the guard, behind a `uses:` checkout.
+# The `uses:` steps below are LOCAL action paths on purpose: an `owner/repo@ref`
+# anywhere in this tree is a pin the registry must hold (`tools/check-pins.py`),
+# and a fixture is not a place this repository fetches anything from.
+name: fixture — a guarded environment job
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  plan:
+    name: work out whether there is anything to do
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: decide
+        run: |
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: publish (owner approval)
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: the gate actually bound
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/assert-run-approved.sh crates-io
+      - uses: ./.github/actions/fixture-cache
+        with: { key: "fixture" }
+      - name: the irreversible act
+        run: bash tools/does-the-thing.sh

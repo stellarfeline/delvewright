@@ -179,7 +179,7 @@ and keep in step.
 
 ### 4.3 Embedded harvested registry data: 684,698 B
 
-`crates/compiler/data/*.json` + `crates/dsl/data/*.json`, pulled in by 21
+`crates/delvec/data/*.json` + `crates/dsl/data/*.json`, pulled in by 21
 `include_str!`/`include_bytes!` sites:
 
 | file | bytes |

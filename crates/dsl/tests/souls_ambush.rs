@@ -16,7 +16,7 @@ mod common;
 use delvewright_dsl::{RawCampaign, TriggerOn, check_campaign, l10n_inventory, parse_campaign};
 
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -77,6 +77,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -112,7 +113,7 @@ fn ambush_desugars_to_a_one_shot_trigger() {
     assert!(trig.once, "an ambush springs once");
     assert_eq!(trig.at_anchor(), Some("anchor/exit"));
     assert!(matches!(trig.on, TriggerOn::Approach { range: 3 }));
-    let verbs: Vec<&str> = trig.effects.iter().map(|e| e.verb()).collect();
+    let verbs: Vec<&str> = trig.effects.iter().map(|e| e.verb.tag()).collect();
     assert_eq!(
         verbs,
         vec!["narrate", "spawn-actor", "unleash-actor"],

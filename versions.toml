@@ -30,12 +30,12 @@ server_jar_size = 56327581
 
 [datapack]
 # Datapack pack_format for 1.21.11 (min_format = max_format = [94, 1]).
-# Consumed by: the compiler's emitted pack.mcmeta (crates/compiler/src/emit.rs).
+# Consumed by: the compiler's emitted pack.mcmeta (crates/delvec/src/compiler/emit.rs).
 pack_format = [94, 1]
 
 [resourcepack]
 # RESOURCE-pack format for 1.21.11 (min_format = max_format = [75, 0]).
-# Consumed by: crates/compiler/src/resourcepack.rs (RESOURCE_PACK_FORMAT), the
+# Consumed by: crates/delvec/src/compiler/resourcepack.rs (RESOURCE_PACK_FORMAT), the
 # NPC-skin / art-font pack's pack.mcmeta.
 #
 # Provenance: the pinned 1.21.11 client jar's version.json reports
@@ -126,43 +126,41 @@ mineflayer = "4.37.1"
 # this file, the way validation/server-bootstrap-cache.sh does).
 #
 # The number lives in the root Cargo.toml's `[workspace.package] version`, which
-# every engine crate inherits; check-versions.sh holds the two equal.
-version = "1.1.0"
+# the engine crate inherits; check-versions.sh holds the two equal.
+version = "1.4.0"
 
-# crates.io identity of the ONE binary (ADR-0023 §3). `cargo install` resolves
-# by CRATE name, never by binary name, so the package that carries the
-# executable IS `delvec` (crates/delvec), and nothing else in it.
+# crates.io identity of the ONE binary (ADR-0023 §3) and of the whole engine
+# (ADR-0025): `cargo install` resolves by CRATE name, never by binary name, so
+# the package that carries the executable IS `delvec` (crates/delvec), and every
+# capability the binary mounts is a module of it.
 crate = "delvec"
 
-# The library crates the binary is assembled from, every one on this version
-# line and every one published beside it (ADR-0023 §6): `cargo install delvec`
-# must build the same surface the release archive carries. Dependency order —
-# the order `cargo publish` uploads them in. The compiler library keeps its
-# library-target name `delvewright_compiler`, which every `use` path spells.
-# Consumed by: validation/check-versions.sh (every manifest under crates/ is
-# either here, `delvec`, or the DSL crate — a new crate is a decision),
-# tools/check-publishable.sh, tools/crates-io-publish.sh.
+# What crates.io publishes: exactly these two, in dependency order — the order
+# `cargo publish` uploads them in — and never a third (ADR-0025). `cargo install
+# delvec` resolves its dependencies on crates.io, so every crate the binary is
+# assembled from must be public; the engine is therefore one package, and a
+# feature adds a module or a subcommand, never a crate. The two entries restate
+# `dsl_crate` and `crate` in publish order; validation/check-versions.sh holds
+# the three equal, and equal to the workspace's members, both ways.
+# Consumed by: validation/check-versions.sh, tools/check-publishable.sh,
+# tools/crates-io-publish.sh, .github/workflows/engine-release.yml.
 crates = [
-    "delvewright-compiler",
-    "delvewright-schem",
-    "delvewright-grammar",
-    "delvewright-orchestrator",
-    "delvewright-admit",
-    "delvewright-render",
+    "delvewright-dsl",
+    "delvec",
 ]
 
-# `delvewright-dsl` is a real dependency of every engine crate, so it must exist
-# on crates.io first — and it is NOT on the engine version line.
+# `delvewright-dsl` is a real dependency of the engine, so it must exist on
+# crates.io first — and it is NOT on the engine version line.
 # The DSL crate's version IS the `dsl_version`: the crate defines the format, so its package number is the format's number — a format change bumps the minor, a Rust-API-only change bumps the patch, documents declare the full number and `delvec fmt` writes the current one.
 # Bound both ways by validation/check-versions.sh: to the crate manifest, and to
 # `DSL_VERSION` in crates/dsl/src/envelope.rs.
 dsl_crate = "delvewright-dsl"
-dsl_crate_version = "0.19.0"
+dsl_crate_version = "0.22.0"
 
-# The engine crates' `delvewright-dsl` requirement (`[workspace.dependencies]`)
+# The engine's `delvewright-dsl` requirement (`[workspace.dependencies]`)
 # is `=` and exactly this version, so one engine version on crates.io resolves
 # to exactly one `delvewright-dsl` build and no other.
-dsl_crate_req = "=0.19.0"
+dsl_crate_req = "=0.22.0"
 
 # `rust-version` in both published manifests, and the channel in
 # rust-toolchain.toml. They must be the same string: a `rust-version` looser than
@@ -191,6 +189,22 @@ targets = [
     "aarch64-apple-darwin",
     "x86_64-pc-windows-msvc",
 ]
+
+# The GH-hosted runner IMAGE each Linux target's shelf job names, so the release
+# matrix and the CI gate that stands in for it cannot silently name a different
+# one (release run 34069406209, v1.2.0: the CI job passed on `ubuntu-latest`
+# while the release's `ubuntu-22.04` / `ubuntu-22.04-arm` jobs both failed —
+# `ubuntu-latest` ships a newer stdlib `tomllib` than either named image, so the
+# pair shared no runner and the divergence went unseen until the tag was
+# pushed). `validation/check-versions.sh` holds engine-release.yml's matrix
+# `runner:` field for both targets equal to this table, and holds ci.yml's
+# `engine-shelf` job's `runs-on:` equal to the x86_64 entry — one host is
+# enough for the CI side because `--check-only` never links (rustup supplies
+# every target's std regardless of host arch), so what the CI job needs is the
+# same BASE OS as the release images, not the same CPU architecture.
+[engine.linux_runners]
+x86_64-unknown-linux-gnu = "ubuntu-22.04"
+aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 
 [content]
 # The pinned content repo (spec-0007 Step 0): the prefab library + campaign
@@ -222,39 +236,73 @@ targets = [
 # reds on a count instead of sweeping as a silent zero. Moving this `sha` without
 # it is a tier-1 red (validation/check-versions.sh).
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip at which the prefab library declares its entry points by
-# ROLE. An entry is a role, not a spelling: this engine no longer matches an
-# anchor's NAME to find where a party arrives, so the library it is pointed at
-# must say so on the anchor, and at the previous pin none of it did. This pin is
-# what makes that true, and it is why the pin and the engine change are one act
-# rather than two.
+# Content `main` tip at which every piece in the library declares the plane it
+# stands a body on, and declares a waterline only where its own bytes hold
+# water. `walk_y` has no default — an ocean area's origin is derived from it
+# (spec-0060 §3.2) — and `DW0887` holds a declared `waterline_y` to the `.nbt`
+# beside it, so a library this engine is pointed at has to answer both. At the
+# previous pin it answered neither.
 #
 # What moves under `prefabs/`, cross-checked by parsing both trees rather than
-# by reading the line diff: five documents — `cave-shore`, `hello-room`,
-# `island-beach-camp`, `island-galley`, `keep-spawn-hall` — and each gains
-# EXACTLY ONE key, its entry anchor's `"role": "entry"`. Nothing else about any
-# of them differs: no cell, facing, connector, contract or licence value. Of 37
-# library documents, 5 declared an entry by name and 0 by role before; 5 declare
-# it by role after, and they are the same five pieces. `hello-room.json`'s
-# larger line count is the writer re-emitting a hand-formatted document in its
-# own canonical form — one added key by the parsed comparison, zero changed
-# values.
+# by reading the line diff: every leaf of every document, compared by path. The
+# library carries 37 documents at both pins — 36 pieces and `pools.json` — and
+# none is added, removed or renamed. Three keys change, and nothing else:
 #
-# Nothing under `campaigns/` moves at all in this interval (`git diff --name-only
-# -- campaigns/` is empty), so neither `hollow-vigil` nor `nobodys-cave-island`
-# gained, lost or moved a build input; neither declares `design/programs/`, and
-# the pinned tree holds no such path anywhere, so the zone inventory restated in
+#   `walk_y`      — declared on 0 of the 36 pieces before, 36 of 36 after. 31 of
+#                   them come from the four document-writing generators (keep
+#                   13, cave 13, island 2, terrain 3 — enumerated by running
+#                   each generator into a scratch directory and listing what it
+#                   emitted, not by grepping for its name), and 5 from the
+#                   pieces no generator writes: `hello-room` and the four
+#                   `hero-*`.
+#   `waterline_y` — 5 declarations before, 3 after. Deleted from
+#                   `island-greenfield`, `island-greenfield-bend` and
+#                   `island-mountain`, which author no water at all; gained by
+#                   `cave-shore`, whose 16 water cells all stand at local y=1.
+#                   Read straight out of the gzip stream by a standalone NBT
+#                   reader sharing no configuration with `delvec`: 2 of the 5
+#                   declarations were borne out before, 3 of 3 are after, and 0
+#                   stand over no water.
+#   `shown_faces` — 0 documents before, 4 after: `island-galley`,
+#                   `island-greenfield`, `island-greenfield-bend` and
+#                   `island-mountain`. The 13 cave pieces and the 13 keep pieces
+#                   declare none on purpose — sealed interiors and cut edges,
+#                   the case `DW0885`'s own message names — so their absence is
+#                   a judgement about the asset, not a gap.
+#
+# Three VALUES change, each a fact about bytes that moved with them:
+# `island-greenfield` and `island-greenfield-bend` grow one course
+# (`structure.size` [17,10,15] -> [17,11,15]), and `cave-shore`'s connector
+# `local_pos` follows its jigsaw block from (6,1,0) to (6,2,0) — the old cell
+# holds andesite in the new bytes, so the committed value named solid rock.
+# Exactly 3 of the 36 `.nbt` move, by sha256 over both sets, `cave-shore` from
+# 2537 to 2539 bytes; every document's `structure.size` agrees with its own
+# bytes, 36 of 36, at both pins. No anchor, facing, contract, lighting or
+# licence value differs anywhere.
+#
+# Nothing under `campaigns/` moves at all in this interval (`git diff
+# --name-only a8c3f988 8e09c30c -- campaigns/` is empty), so neither
+# `hollow-vigil` nor `nobodys-cave-island` gained, lost or moved a build input;
+# `git ls-tree -r --name-only` over the new tip holds no `design/programs/` path
+# anywhere, so the zone inventory restated in
 # `.github/content-zone-corpus.json` stays at zero for both.
 #
 # The rest of the batch is the content repository's own CI, skill page and
 # authoring-pin tooling, upstream of everything this repo reads: no file it
 # touches is an input the compiler is handed through `--prefabs`.
 #
+# WHAT CARRIES EACH CLAIM. `validation/check-versions.sh` holds this `sha` equal
+# to `content_sha` in `.github/content-zone-corpus.json`, and
+# `tools/check-pins.py` holds it equal to the `content-repo` entry in
+# `.github/pins.toml`. `crates/delvec/tests/grammar_campaign_zones.rs` checks
+# the restated inventory against the checkout and prints what it bound.
+# `crates/delvec/tests/registry_load.rs` reads every document at the pin and
+# DERIVES how many declare `waterline_y`, so that count is never retyped here.
 # `DW0735` says a state that omits a shape-carrying property drops the geometry
-# the property assembles; the library sweep (`crates/admit/tests/library.rs`)
+# the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
-sha = "a8c3f98831735aa370908a43d37db85d09fae25c"
+sha = "8e09c30c17c78538ac0b6c36fa5edc5f681a45eb"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
@@ -267,7 +315,7 @@ sha = "a8c3f98831735aa370908a43d37db85d09fae25c"
 # `schematic-mesher` (its `animation::glb` names exports 0.2.0 lacks); 0.10.14
 # is the newest that builds and passes the render crate's whole test suite,
 # the GPU tests included. MIT.
-# Consumed by: crates/render/Cargo.toml (`nucleation = { version = "=…" }`).
+# Consumed by: crates/delvec/Cargo.toml (`nucleation = { version = "=…" }`).
 nucleation_version = "0.10.14"
 nucleation_license = "MIT"
 
@@ -277,7 +325,7 @@ nucleation_license = "MIT"
 # 1.21.x needs a snapshot core (stable stops at 1.20.4); this is the snapshot the
 # spike verified. `java -jar ChunkyLauncher.jar --update snapshot` self-installs
 # it into ~/.chunky/lib.
-# Consumed by: crates/compiler (scene emission targets this scene format) +
+# Consumed by: crates/delvec/src/compiler (scene emission targets this scene format) +
 # README + docs/reference/tools.md §4a.
 chunky_core = "chunky-core-2.5.0-SNAPSHOT.474.g156e2bb"
 chunky_update_url = "https://chunkyupdate.lemaik.de"
@@ -287,7 +335,7 @@ chunky_license = "GPL-3.0"
 # deepslate (MIT) — the rendering core of the prefab review page
 # (`delvec viewer`, ADR-0021 §4). Unlike Chunky it IS bundled: the page is
 # one self-contained file, so the renderer ships inside it as
-# `crates/compiler/src/view/viewer/deepslate.bundle.js`. Vendored, never forked — the
+# `crates/delvec/src/compiler/view/viewer/deepslate.bundle.js`. Vendored, never forked — the
 # bundle carries one local patch, of two block-entity texture ids upstream points
 # at paths no Minecraft version ships.
 #
@@ -296,10 +344,10 @@ chunky_license = "GPL-3.0"
 # version without updating this file, is a red. Rebuild with
 # `tools/build-deepslate-bundle.sh` (which pins the same versions) and update the
 # digest in the same commit.
-# Consumed by: tools/build-deepslate-bundle.sh + crates/compiler/src/view/viewer/.
+# Consumed by: tools/build-deepslate-bundle.sh + crates/delvec/src/compiler/view/viewer/.
 deepslate_version = "0.26.0"
 deepslate_license = "MIT"
-deepslate_bundle = "crates/compiler/src/view/viewer/deepslate.bundle.js"
+deepslate_bundle = "crates/delvec/src/compiler/view/viewer/deepslate.bundle.js"
 deepslate_bundle_sha256 = "0d9496f187600b479bb83d015e49eccbf70997c5886f0c70b101ca4595bb2c46"
 gl_matrix_version = "3.4.4"
 esbuild_version = "0.28.2"
@@ -317,14 +365,18 @@ textures = "minecraft-client-1.21.11.jar"
 # binds every consumer to the values below, and `.github/pins.toml` records what
 # each is held for and on what terms it may move.
 #
-# Node for the harness (`npm ci` + `node --test`) and for the storybook jobs.
+# Node for the harness (`npm ci`) and for the `rust` job's `node --test` suites.
 # A MAJOR line, resolved by actions/setup-node to its newest release: the harness
 # has a lockfile, so what this selects is the runtime, not the dependency set.
-# Consumed by: .github/workflows/ci.yml, .github/workflows/release.yml.
+# Consumed by: .github/workflows/ci.yml.
 node_version = "24"
-# The interpreter for the two Python tool suites (`tools/skin`, `tools/tests`).
+# The interpreter for the two Python tool suites (`tools/skin`, `tools/tests`),
+# and for every inline python `tools/build-release-binaries.sh` runs to read
+# `versions.toml` (stdlib `tomllib`, floor >= 3.11) — the shelf's build step
+# needs the same floor the tool suites do, for the same reason.
 # A MINOR line, resolved by actions/setup-python to its newest patch.
-# Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool).
+# Consumed by: .github/workflows/ci.yml (skin toolchain, i18n translation tool,
+# engine-shelf), .github/workflows/engine-release.yml (shelf build).
 python_tools_version = "3.12"
 # The interpreter for the mecha cross-check, and it is a DIFFERENT line from the
 # one above on purpose rather than by drift: `mecha_version` below declares

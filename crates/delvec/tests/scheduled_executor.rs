@@ -32,11 +32,11 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 // ---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ fn read_hw(name: &str) -> String {
 ///   (`at_ticks: 20`) step, so the timeline is reached through a scheduled
 ///   bundle — the nested-recursion case.
 const SCHEDULED_QUESTS: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -240,9 +240,9 @@ const SCHEDULED_QUESTS: &str = r#"{
                 { "type": "narrate", "text": "The keeper takes his post." },
                 { "type": "give-item", "item": "minecraft:torch", "count": 1 },
                 { "type": "open-gate", "anchor": "anchor/door" },
-                { "type": "set-time", "time": "day", "requires_flags": ["flag/arrived"] },
-                { "type": "play-sound", "sound": "minecraft:block.note_block.pling",
-                  "forbids_flags": ["flag/late"] },
+                { "type": "set-time", "when": { "requires_flags": ["flag/arrived"] }, "time": "day" },
+                { "type": "play-sound",
+                  "when": { "forbids_flags": ["flag/late"] }, "sound": "minecraft:block.note_block.pling" },
                 { "type": "sequence", "steps": [
                     { "at_ticks": 0, "effects": [
                       { "type": "narrate", "style": "title", "text": "At last." } ] },
@@ -272,6 +272,7 @@ fn build_scheduled_hello_world() -> BuildOutput {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     build_campaign(&campaign, &BTreeMap::new())

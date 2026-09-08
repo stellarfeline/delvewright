@@ -23,7 +23,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// effect, a trigger (trigger-level and effect-level). `flag/armed` and
 /// `flag/stood-down` are both produced by `set-flag` effects.
 const QUESTS_FORBIDS: &str = r#"{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -39,7 +39,7 @@ const QUESTS_FORBIDS: &str = r#"{
         "on_objective_complete": {
           "obj/talk": [
             { "type": "set-flag", "flag": "flag/armed" },
-            { "type": "open-gate", "anchor": "anchor/door", "forbids_flags": ["flag/stood-down"] }
+            { "type": "open-gate", "when": { "forbids_flags": ["flag/stood-down"] }, "anchor": "anchor/door" }
           ]
         },
         "on_complete": [ { "type": "campaign-complete" } ]
@@ -53,8 +53,8 @@ const QUESTS_FORBIDS: &str = r#"{
         "requires_flags": ["flag/armed"],
         "forbids_flags": ["flag/stood-down"],
         "effects": [
-          { "type": "set-flag", "flag": "flag/stood-down",
-            "forbids_flags": ["flag/stood-down"] }
+          { "type": "set-flag",
+            "when": { "forbids_flags": ["flag/stood-down"] }, "flag": "flag/stood-down" }
         ]
       }
     ]
@@ -74,6 +74,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -97,8 +98,7 @@ fn unknown_forbids_flag_is_dw0172_at_every_site() {
         ("objective", r#""forbids_flags": ["flag/stood-down"] }"#),
         (
             "effect",
-            r#""forbids_flags": ["flag/stood-down"] }
-          ]"#,
+            r#""when": { "forbids_flags": ["flag/stood-down"] }, "anchor": "anchor/door""#,
         ),
     ] {
         let broken =

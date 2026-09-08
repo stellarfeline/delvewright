@@ -35,19 +35,21 @@
                     "anchor": "anchor/hearth",
                     "on_respawn": [
                       {
-                        "forbids_flags": [
-                          "flag/hall-sealed"
-                        ],
-                        "requires_state": [
-                          {
-                            "op": "at-most",
-                            "state": "state/labels-read",
-                            "value": 9
-                          }
-                        ],
                         "style": "chat",
                         "text": "You come to at the hearth.",
-                        "type": "narrate"
+                        "type": "narrate",
+                        "when": {
+                          "forbids_flags": [
+                            "flag/hall-sealed"
+                          ],
+                          "requires_state": [
+                            {
+                              "op": "at-most",
+                              "state": "state/labels-read",
+                              "value": 9
+                            }
+                          ]
+                        }
                       }
                     ],
                     "type": "set-checkpoint"
@@ -97,19 +99,21 @@
                     "anchor": "anchor/hearth",
                     "on_respawn": [
                       {
-                        "forbids_flags": [
-                          "flag/hall-sealed"
-                        ],
-                        "requires_state": [
-                          {
-                            "op": "at-most",
-                            "state": "state/labels-read",
-                            "value": 9
-                          }
-                        ],
                         "style": "chat",
                         "text": "You come to at the hearth.",
-                        "type": "narrate"
+                        "type": "narrate",
+                        "when": {
+                          "forbids_flags": [
+                            "flag/hall-sealed"
+                          ],
+                          "requires_state": [
+                            {
+                              "op": "at-most",
+                              "state": "state/labels-read",
+                              "value": 9
+                            }
+                          ]
+                        }
                       }
                     ],
                     "type": "set-checkpoint"
@@ -259,6 +263,6 @@
       }
     ]
   },
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "stage": "dialogue"
 }

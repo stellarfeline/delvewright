@@ -1,15 +1,17 @@
 # Box-split grammar back end — live behavior record
 
-What `crates/grammar` (package `delvewright-grammar`) does **today**. spec-0027
+What `delvec::grammar` (`crates/delvec/src/grammar`) does **today**. spec-0027
 is the decision record; this page is the behavior record, and any PR that
-changes the crate's surface updates it in the same PR.
+changes the module's surface updates it in the same PR.
 
 It is a library **and** a tool: `delvec grammar` ([`tools.md`](tools.md) §2a) is
 its entry point, and the procedure that drives it is
-[`prefab-procedure.md`](prefab-procedure.md). Nothing here is reachable from
-`delvec` and nothing ships in a delve — generation-time only (ADR-0003). The
-engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
-only, to test the export seam of §7 from both sides.
+[`prefab-procedure.md`](prefab-procedure.md). Nothing here ships in a delve —
+generation-time only (ADR-0003). The compiler's build path never reaches it;
+inside the engine its one consumer is prefab admission (`delvec::admit`),
+which judges a hand-built piece's spatial contract with the same checker an
+expansion is judged by (spec-0036 §1c), and the export seam of §7 is tested
+from both sides in `crates/delvec/tests/grammar_prefab.rs`.
 
 Two library modules exist for the tool and are public for it:
 
@@ -158,7 +160,7 @@ is written, naming the construct and both versions — which is what lets a
 document at `1.0.0` keep compiling to the same bytes forever.
 
 The ledger is every number the format has and the one surface each names
-(`crates/grammar/src/version.rs`):
+(`crates/delvec/src/grammar/version.rs`):
 
 | version | surface | accepted |
 |---|---|---|
@@ -474,7 +476,7 @@ Marks collect into `Expansion::anchors` (a `BTreeMap`, keyed by exported name),
 the block grid would change what `canonical_bytes` means. The export writes them
 into the prefab metadata's `anchors` map in the hand-built `{pos, facing}` shape,
 `pos` local to the structure; `PrefabRegistry` reads a grammar prefab's anchors
-with the same code path as a hand-built one (`crates/compiler/tests/grammar_prefab.rs`).
+with the same code path as a hand-built one (`crates/delvec/tests/grammar_prefab.rs`).
 
 Refusals: a non-kebab stem is a `Program::validate` error (before any expansion);
 a mark aimed outside its own scope, an underivable facing, and two marks
@@ -515,7 +517,7 @@ delvec grammar expand --program idiom-shape --region 15x9x3 --seed 1 -o out/
 
 Each program exists to teach one technique and nothing else, and each is
 expanded at exactly the region and seed above by
-`crates/grammar/tests/idioms.rs`, which asserts the claim in its own row. An
+`crates/delvec/tests/grammar_idioms.rs`, which asserts the claim in its own row. An
 entry that stopped being true is a red, not a stale page. They declare no
 anchors — the composition declares one — so `expand` prints the no-anchors
 finding over them, which is correct: a teaching program is not a prefab a
@@ -1009,7 +1011,7 @@ disagreement between them. **Nothing is read out of the voxels.** A space's kind
 an edge's class and an envelope's claim all come from the document, and the
 checker's only job is to prove the building agrees.
 
-`crates/grammar/src/contract.rs` is that checker, over one pair — a block grid
+`crates/delvec/src/grammar/contract.rs` is that checker, over one pair — a block grid
 and a resolved contract. It runs from two doors and is the same code at both:
 `delvec grammar expand`, where a red writes no `.nbt`, and `delvec prefab audit`,
 where a red is `DW0782` and exit 1. It runs whenever a piece declares a
@@ -1186,7 +1188,7 @@ double-**export** test over the three ported programs of §5 at four seeds
 compares the `.nbt` and the metadata JSON byte for byte (§6). The §5b staging
 rules and the §5c zone programs are **not** in that suite — `tests/export.rs`
 carries `temple` / `castle` / `church` and nothing else; what covers the staging
-rules is the registry round trip (`crates/compiler/tests/grammar_prefab.rs`),
+rules is the registry round trip (`crates/delvec/tests/grammar_prefab.rs`),
 which exports once and reads back, not twice and compares.
 
 ## 4. Failure is loud
@@ -1255,7 +1257,7 @@ its minimum region.
 
 Every block state the export writes is checked against the pinned 1.21.11
 block-state registry (`crates/dsl/data/blocks-1.21.11.json`, 1166 blocks,
-via `delvewright_schem::blocks`) — the id, every property name, and every
+via `delvec::schem::blocks`) — the id, every property name, and every
 property value. An unknown state is `ExportError::UnknownBlocks`, a refusal, with
 the cell count and a suggested rename.
 
@@ -1629,7 +1631,7 @@ world literals says so in numbers rather than by silence.
 
 `.github/content-zone-corpus.json` names the campaigns the pinned content repo
 carries and how many zone programs each declares.
-`crates/grammar/tests/campaign_zones.rs` checks every number in it against the
+`crates/delvec/tests/grammar_campaign_zones.rs` checks every number in it against the
 content checkout, inside `cargo test`.
 
 It exists because the campaign corpus is not this repo's to produce. An
@@ -1709,7 +1711,7 @@ entry owed). They are the drowned-bell remake's grammar vocabulary — W1 (path
 and hazard geometry) and W2 (interior ambush) — and they are a different kind of
 rule from §5: a temple is judged by looking at it, these are judged by a
 **machine gate about how the space plays**. Every gate below is an assertion in
-`crates/grammar/tests/staging.rs` over the expanded model, and each has been
+`crates/delvec/tests/grammar_staging.rs` over the expanded model, and each has been
 shown to go red when the geometry is wrong.
 
 ### The W1 local frame
@@ -1896,9 +1898,9 @@ would last exactly as long as nobody looked.
 All five programs are in the generic library suites too: structural validity,
 JSON round trip, palette-swap-moves-no-block over **every** role each binds, and
 the double-expand determinism gate over model bytes *and* anchors
-(`tests/library.rs`, `tests/determinism.rs`). Their anchors — including generated
+(`crates/delvec/tests/grammar_library.rs`, `grammar_determinism.rs`). Their anchors — including generated
 `-<i>` names nobody hand-listed, and `store_room`'s seeded tell position —
-round-trip through `PrefabRegistry` (`crates/compiler/tests/grammar_prefab.rs`).
+round-trip through `PrefabRegistry` (`crates/delvec/tests/grammar_prefab.rs`).
 
 ### `boulder_stair` — the worn-tread tell (W), and the side pockets (S)
 
@@ -1926,7 +1928,7 @@ Gates:
 
 1. **The tread is exactly one material family, at two distress levels** — the
    spec-0027 §4 palette-role budget's own claim, proved against a **test-local
-   mirror** of that not-yet-built diagnostic (§7 below; `crates/grammar/src/lib.rs`'s
+   mirror** of that not-yet-built diagnostic (§7 below; `crates/delvec/src/grammar/mod.rs`'s
    own "not built yet" note), scoped to the lane's own floor course. Teeth:
    read the same cells without the family fold and the smooth run's raw share
    genuinely clears the 10% accent ceiling — so the fold is load-bearing, not
@@ -2350,7 +2352,7 @@ Gates (`tests/staging.rs`), each with its binding count:
 `drop_shaft`, `dumbwaiter`, `far_side_bar`, `tee_passage`, `causeway`,
 `elite_ground`, `stair_flight` and `lift_shaft` carry the same generic-suite and
 registry-round-trip promises as the eight above (`tests/library.rs`,
-`tests/determinism.rs`, `crates/compiler/tests/grammar_prefab.rs`).
+`crates/delvec/tests/grammar_determinism.rs`, `grammar_prefab.rs`).
 
 Three anchor names are shared across rules — `anchor/elite` (`causeway`,
 `elite_ground`), `anchor/gate` (`watch_bay`, `far_side_bar`) and
@@ -2500,7 +2502,7 @@ Gates:
 ## 5c. Zone programs — the vocabulary composed
 
 > **Where `REMAKE` is.** Every `REMAKE §n` citation in this file and in
-> `crates/grammar/src/library/bell/` names
+> `crates/delvec/src/grammar/library/bell/` names
 > `campaigns/the-drowned-bell/REMAKE.md` in the **content** repo
 > (`delvewright-campaigns`), which a dev checkout reaches through the
 > `campaigns/` symlink at `campaigns/campaigns/the-drowned-bell/REMAKE.md`.
@@ -3021,14 +3023,14 @@ says:
 of, and it still refuses an oversize region. Nothing outside the module calls
 it: a region an author chose is never the wrong size.
 
-The `.nbt` comes from `delvewright-schem`'s `build_region`, the emitter the
+The `.nbt` comes from `delvec::schem`'s `build_region`, the emitter the
 `.schem` asset pipeline already uses: one structure writer, one set of
 determinism guarantees (sorted palette, `x`→`y`→`z` cell order, gzip mtime 0).
 A structure template is local-coordinate, so the region's **origin** does not
 reach the output; its **size** does, and is the declared `structure.size`.
 
 The metadata is the hand-built shape, minus what expansion cannot know. Its
-shape is defined once, in `delvewright_schem::prefab` — the crate that also
+shape is defined once, in `delvec::schem::prefab` — the crate that also
 writes the `.nbt` half — and every tool that produces or edits a prefab reads and
 writes it through that one type, so an admission step cannot drop the parts it
 does not itself model:
@@ -3038,7 +3040,7 @@ does not itself model:
   "prefab_id": "prefab/grammar-temple",
   "structure": { "file": "grammar-temple.nbt", "id": "grammar-temple",
                  "size": [13, 14, 21], "data_version": 4671,
-                 "generator": "crates/grammar" },
+                 "generator": "crates/delvec/src/grammar" },
   "anchors": {},
   "connectors": [],
   "lighting": { "profile": "unmeasured" },
@@ -3131,7 +3133,7 @@ expansion produced all of it.
   "prefab_id": "prefab/z2-gate-ward",
   "structure_set": {
     "base": "z2-gate-ward", "size": [20, 10, 84], "part_max": 48,
-    "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/grammar",
+    "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/delvec/src/grammar",
     "parts": [
       { "file": "z2-gate-ward.x0y0z0.nbt", "id": "z2-gate-ward.x0y0z0",
         "grid_index": [0, 0, 0], "offset": [0, 0, 0],  "size": [20, 10, 48] },
@@ -3151,7 +3153,7 @@ expansion produced all of it.
   blocks through `templates()` without asking which shape it was handed.
 - `offset` is **zone-relative**: add it to a tile-local cell to get the zone
   cell. That is the only transform reassembly needs.
-- The cuts come from `delvewright_schem::split::plan_split`, the same function
+- The cuts come from `delvec::schem::split::plan_split`, the same function
   that tiles an oversize `.schem` import — one tiling, so one reassembly rule
   reads both. They are a pure function of the region and the cap: no RNG, no
   clock, no dependence on the program, the seed or the blocks, so the tiles and
@@ -3160,7 +3162,7 @@ expansion produced all of it.
   whole expansion, the block-legality check runs over the whole model, and both
   the anchors and every diagnostic position are in zone coordinates. Binding
   counts stay zone-level.
-- `TileSet` (`delvewright_schem::split`) is the contract, `Serialize` for the
+- `TileSet` (`delvec::schem::split`) is the contract, `Serialize` for the
   writer and `Deserialize` for the readers — one struct, so the halves cannot
   drift. `TileSet::validate` refuses a manifest whose parts do not tile the zone
   exactly, so a truncated one is a refusal and not a building with a hole.
@@ -3193,7 +3195,7 @@ passed — and the verdict is printed only once the prefab is on disk, so no
 `pass` line ever sits above a refusal.
 
 `PrefabRegistry` (the engine's reader) loads the result with no diagnostics;
-`crates/compiler/tests/grammar_prefab.rs` tests that seam from both sides.
+`crates/delvec/tests/grammar_prefab.rs` tests that seam from both sides.
 
 ## 7. Not built yet
 
@@ -3381,6 +3383,6 @@ therefore **fails to compile** until someone classifies it, and it then begins
 life at zero bindings — a surface nothing demonstrates is a finding on the day it
 lands. The check is bound to two events rather than to a line in this document:
 an IR change cannot compile past it, and a corpus change cannot be pushed past
-the `#[test]` in `crates/grammar/src/coverage.rs` that carries the same
+the `#[test]` in `crates/delvec/src/grammar/coverage.rs` that carries the same
 assertion inside `cargo test --workspace`. CI runs the command as its own step so
 the table reaches the log.

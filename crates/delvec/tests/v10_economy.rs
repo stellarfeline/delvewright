@@ -14,10 +14,10 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 fn hw(name: &str) -> String {
@@ -31,7 +31,7 @@ fn hw(name: &str) -> String {
 fn quests_doc(extra: &str, talk_effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.19.0",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -68,6 +68,7 @@ fn parse_hw(quests: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let mut c = parse_campaign(&raw).expect("campaign parses");
     delvewright_dsl::tag_translatables(&mut c);
@@ -159,10 +160,10 @@ const PURSE_AND_STAKE: &str = r#",
         "offers": [
           { "label": "Bank an ember", "tooltip": "Costs one ember.",
             "effects": [
-              { "type": "narrate", "text": "You have nothing left to give.",
-                "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] },
-              { "type": "add-state", "state": "state/embers", "amount": -1,
-                "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }
+              { "type": "narrate",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-most", "value": 0 } ] }, "text": "You have nothing left to give." },
+              { "type": "add-state",
+                "when": { "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 1 } ] }, "state": "state/embers", "amount": -1 }
             ] }
         ] }
     ]"#;
@@ -439,7 +440,7 @@ fn a_body_standing_on_a_shop_eclipses_it() {
     let code = failure_code(&parse_hw(&quests_doc(&eclipsed, "")));
     assert_eq!(
         code,
-        delvewright_compiler::eclipse::DW_BODY_ECLIPSE,
+        delvec::compiler::eclipse::DW_BODY_ECLIPSE,
         "a keeper standing in front of his own brazier is a brazier nobody can press"
     );
 }
@@ -456,7 +457,7 @@ fn a_stake_has_no_compile_time_cell_to_eclipse() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let c = purse_campaign();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
-    let posts = delvewright_compiler::eclipse::affordance_cells(&plan);
+    let posts = delvec::compiler::eclipse::affordance_cells(&plan);
     assert!(
         posts.iter().any(|(kind, _, _)| *kind == "shop"),
         "the shop IS in the authority: {posts:#?}"
@@ -585,7 +586,7 @@ fn a_region_write_is_ground_a_stake_may_not_stand_on() {
     let c = parse_hw(&quests_doc(&with_clear, ""));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
-    let mutable = delvewright_compiler::stake::runtime_mutable_regions(&plan);
+    let mutable = delvec::compiler::stake::runtime_mutable_regions(&plan);
 
     let named: Vec<&String> = mutable.iter().map(|(l, _)| l).collect();
     assert!(
@@ -598,7 +599,7 @@ fn a_region_write_is_ground_a_stake_may_not_stand_on() {
     let clears = plan
         .region_events
         .iter()
-        .filter(|e| e.write == delvewright_compiler::plan::RegionWrite::Clear)
+        .filter(|e| e.write == delvec::compiler::plan::RegionWrite::Clear)
         .count();
     assert_eq!(
         clears, 0,
@@ -621,7 +622,7 @@ fn no_anchor_stands_on_ground_the_runtime_rewrites() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let c = purse_campaign();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
-    let mutable = delvewright_compiler::stake::runtime_mutable_regions(&plan);
+    let mutable = delvec::compiler::stake::runtime_mutable_regions(&plan);
     assert!(
         !mutable.is_empty(),
         "this fixture really has runtime-mutable ground (the `open-gate` region) — a \
@@ -710,7 +711,7 @@ fn a_stake_with_no_route_back_fails_to_compile() {
     let code = failure_code(&parse_hw(&one_beat));
     assert_eq!(
         code,
-        delvewright_compiler::stake::DW_STAKE_NO_ROUTE_BACK,
+        delvec::compiler::stake::DW_STAKE_NO_ROUTE_BACK,
         "a respawn point with no way back to where the party can die strands a stake"
     );
 }
@@ -853,7 +854,7 @@ fn every_retention_policy_value_is_exercised() {
 #[test]
 fn the_stake_ledger_is_per_player() {
     let out = build(&purse_campaign());
-    let party = delvewright_compiler::plan::PARTY;
+    let party = delvec::compiler::plan::PARTY;
     for f in ["stk_drop_embers", "stk_slot_embers_0", "stk_take_embers_0"] {
         let body = fnc(&out, f);
         assert!(
@@ -957,8 +958,8 @@ fn the_packtest_tier_covers_what_it_can_witness_and_claims_nothing_more() {
 /// The `economy` fixture validates clean and emits the whole chain.
 #[test]
 fn the_ci_fixture_validates_and_emits_the_chain() {
-    use delvewright_compiler::load::load_campaign_dir;
-    use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry};
+    use delvec::compiler::load::load_campaign_dir;
+    use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry};
 
     let dir = common::compiler_fixtures_dir().join("economy");
     let loaded = load_campaign_dir(&dir).unwrap();

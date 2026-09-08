@@ -500,50 +500,17 @@ checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
 
 [[package]]
 name = "delvec"
-version = "1.1.0"
+version = "1.4.0"
 dependencies = [
- "clap",
- "delvewright-admit",
- "delvewright-compiler",
- "delvewright-dsl",
- "delvewright-grammar",
- "delvewright-orchestrator",
- "delvewright-render",
- "delvewright-schem",
- "fastnbt",
- "flate2",
- "image 0.24.9",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
-name = "delvewright-admit"
-version = "1.1.0"
-dependencies = [
- "clap",
- "delvewright-compiler",
- "delvewright-dsl",
- "delvewright-grammar",
- "delvewright-orchestrator",
- "delvewright-schem",
- "fastnbt",
- "flate2",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "delvewright-compiler"
-version = "1.1.0"
-dependencies = [
+ "blake3",
  "clap",
  "crc32fast",
  "delvewright-dsl",
  "fastnbt",
  "flate2",
  "image 0.24.9",
+ "nucleation",
+ "pollster",
  "schemars",
  "serde",
  "serde_json",
@@ -553,62 +520,10 @@ dependencies = [
 
 [[package]]
 name = "delvewright-dsl"
-version = "0.19.0"
+version = "0.22.0"
 dependencies = [
  "jsonschema",
  "schemars",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "delvewright-grammar"
-version = "1.1.0"
-dependencies = [
- "clap",
- "delvewright-dsl",
- "delvewright-schem",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
-name = "delvewright-orchestrator"
-version = "1.1.0"
-dependencies = [
- "clap",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "delvewright-render"
-version = "1.1.0"
-dependencies = [
- "blake3",
- "clap",
- "delvewright-compiler",
- "delvewright-dsl",
- "delvewright-schem",
- "fastnbt",
- "flate2",
- "image 0.24.9",
- "nucleation",
- "pollster",
- "serde",
- "serde_json",
- "zip",
-]
-
-[[package]]
-name = "delvewright-schem"
-version = "1.1.0"
-dependencies = [
- "clap",
- "delvewright-dsl",
- "fastnbt",
- "flate2",
  "serde",
  "serde_json",
 ]

@@ -27,10 +27,10 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::blockout::{self, Perturb};
-use delvewright_compiler::detail::{self, Allocation};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
+use delvec::compiler::blockout::{self, Perturb};
+use delvec::compiler::detail::{self, Allocation};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, NodeId, Severity};
 
 // ---------------------------------------------------------------------------
@@ -42,13 +42,21 @@ fn blockout_dir() -> PathBuf {
 }
 
 fn campaign_at(dir: &Path) -> Campaign {
-    let loaded =
-        delvewright_compiler::load::load_campaign_dir(dir).expect("the campaign is readable");
+    let loaded = delvec::compiler::load::load_campaign_dir(dir).expect("the campaign is readable");
     delvewright_dsl::parse_campaign(&loaded.raw).expect("the campaign parses")
 }
 
+/// One stage document's CANONICAL bytes — what the freshness key used to be
+/// taken over, kept here so a test can assert that a document moved while the
+/// key did not.
+fn canonical_of(dir: &Path, file: &str) -> String {
+    let text = std::fs::read_to_string(dir.join(file)).expect("the document is readable");
+    let v: serde_json::Value = serde_json::from_str(&text).expect("it parses");
+    delvewright_dsl::to_canonical_string(&v).expect("it canonicalizes")
+}
+
 fn walk_record_at(dir: &Path) -> Option<String> {
-    delvewright_compiler::load::load_campaign_dir(dir)
+    delvec::compiler::load::load_campaign_dir(dir)
         .expect("the campaign is readable")
         .walk_record
 }
@@ -223,6 +231,11 @@ fn write_piece(dir: &Path, id: &str, a: &Allocation, cells: &[([i32; 3], String)
         serde_json::to_string_pretty(&meta).unwrap() + "\n",
     )
     .unwrap();
+    // A detail piece cut out of the derived massing stands in a site-plan world
+    // whose party gets outdoors, so `DW0885` asks it which of its sides are
+    // finished surface. These are free-standing boxes in a `void` world: every
+    // side that has a block on it is one the player would see.
+    common::declare_shown_faces(dir, id);
 }
 
 /// What a green stage-6 campaign looks like on disk.
@@ -272,7 +285,7 @@ fn write_detail_plan(dir: &Path, details: &[serde_json::Value]) {
             "palette": { "role/wall": "minecraft:stone_bricks", "role/floor": "minecraft:tuff" },
             "details": details,
         },
-        "dsl_version": "0.19.0",
+        "dsl_version": "0.22.0",
         "stage": "detail-plan",
     });
     std::fs::write(
@@ -395,7 +408,7 @@ fn a_bound_place_validates_and_states_its_binding() {
 #[test]
 fn a_campaign_with_no_detail_plan_binds_zero_and_states_it() {
     let c = campaign_at(&blockout_dir());
-    let reg = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let reg = PrefabRegistry::load_dir(&common::shown_prefabs_dir("detail")).unwrap();
     let (diags, binding) = detail::check(&c, &reg, None);
     assert!(diags.is_empty(), "{:?}", codes(&diags));
     assert_eq!(binding.rows, 0);
@@ -450,7 +463,74 @@ fn dw0841_refuses_a_record_of_a_different_plan_and_prints_both_hashes() {
     assert!(e[0].message.contains(&after), "and the current one");
 }
 
-/// A reformat is not a re-walk: the hash is over the plan's CANONICAL bytes.
+/// **A `dsl_version` bump is not a re-walk**, and it is the case this key was
+/// moved to answer.
+///
+/// The old key was `sha256(to_canonical_string(document))`, and the canonical
+/// writer STAMPS the engine's own format number into every document it writes
+/// (`delvewright_dsl::fmt`, so that `delvec fmt --check` reds a stale one). The
+/// key was therefore a function of a value no campaign controls: the week the
+/// format went 0.19 to 0.20 to 0.21, `DW0841` re-opened on every walked campaign
+/// at once, with no box, seam or edge moved, and demanded the one repair nobody
+/// can honestly make — walk the whole again for a change that cannot have
+/// changed the walk. What happened instead was the record edited by hand, twice,
+/// which is the gate discharged rather than passed.
+///
+/// It cannot be reproduced by bumping a document, because the writer normalises
+/// that away; it took the ENGINE moving. So what is asserted is the property
+/// that makes the engine's number unable to reach the key at all: the canonical
+/// bytes carry it and the key's own text does not mention it anywhere. A
+/// substitution of a value a string does not contain cannot change that string.
+#[test]
+fn dw0841_survives_a_dsl_version_bump() {
+    let tmp = tempdir("dw0841-version");
+    let d = detailed(&tmp, &["node/exit"]);
+    let version = delvewright_dsl::DSL_VERSION;
+
+    let mut carried = 0usize;
+    for doc in ["site-plan.json", "layout-graph.json"] {
+        assert!(
+            canonical_of(&d.campaign, doc).contains(version),
+            "`{doc}`'s canonical bytes carry the engine's format number `{version}` — \
+             which is what the old key hashed, and why an engine bump re-opened this gate"
+        );
+        carried += 1;
+    }
+    assert_eq!(carried, 2, "both keyed documents were examined");
+
+    let c = campaign_at(&d.campaign);
+    let grid = detail::walked_grid(&c).expect("a site-plan campaign has a grid");
+    let ways = detail::walked_ways(&c).expect("and ways");
+    for (half, text) in [("grid", &grid), ("ways", &ways)] {
+        assert!(
+            !text.contains(version),
+            "the {half} half's text must not mention the format number: {text}"
+        );
+        assert!(
+            !text.contains("dsl_version"),
+            "nor the envelope field that carries it: {text}"
+        );
+        assert!(
+            !text.is_empty(),
+            "and it is not empty, which is the way this assertion would pass vacuously"
+        );
+    }
+
+    // The document bump itself, for completeness: the writer normalises it, so
+    // it moves neither the bytes nor the key.
+    common::patch_file(&d.campaign.join("site-plan.json"), |v| {
+        v["dsl_version"] = serde_json::json!("99.0.0");
+    });
+    let (diags, binding) = check_at(&d);
+    assert!(
+        errors(&diags).is_empty(),
+        "the walk still stands and no re-walk is demanded: {:?}",
+        codes(&diags)
+    );
+    assert_eq!(binding.compared, 2, "both halves of the key were compared");
+}
+
+/// A reformat is not a re-walk either.
 #[test]
 fn dw0841_survives_a_reformat_of_the_plan() {
     let tmp = tempdir("dw0841-reformat");
@@ -560,10 +640,10 @@ fn dw0841_refuses_a_graph_edit_that_moves_the_walked_massing() {
 ///
 /// `edge/hall-cell` is a one-side-openable door; flipping `opens_from` moves the
 /// side its `anchor/unlock-…` stands on, so the door the walk was judged with now
-/// opens from the other side. It moves neither the plan hash nor a single placed
-/// byte — which is why the key is over the graph's own bytes and not over the
-/// derivation: `PlacedSeam` carries a seam's `class`, and carries nothing at all
-/// of `opens_from`, `gating`, `one_way` or `falls`.
+/// opens from the other side. It moves neither the grid nor a single placed byte
+/// — which is why the ways half is not a hash over cells: an edge is carried
+/// whole, so `opens_from`, `gating`, `one_way` and `falls` are in the key even
+/// where the massing cannot show them.
 #[test]
 fn dw0841_refuses_a_graph_edit_that_moves_no_byte_at_all() {
     let tmp = tempdir("dw0841-graph-silent");
@@ -598,8 +678,8 @@ fn dw0841_refuses_a_graph_edit_that_moves_no_byte_at_all() {
         .collect();
     assert_eq!(e.len(), 1, "exactly one walk refusal: {:?}", codes(&diags));
     assert!(
-        e[0].message.contains("DIFFERENT layout graph"),
-        "and it says which document went stale, because the plan and the graph are \
+        e[0].message.contains("DIFFERENT WAYS"),
+        "and it says which half went stale, because the grid and the ways are \
          different edits with different repairs: {}",
         e[0].message
     );
@@ -1267,7 +1347,7 @@ fn dw0842_refuses_a_gate_station_bound_to_a_cell() {
     // Declare a gate station on the bound place and bind it to `seat0`, which
     // is a point: the piece has a cell where the campaign promised a volume.
     common::patch_file(&d.campaign.join("layout-graph.json"), |v| {
-        v["dsl_version"] = serde_json::json!("0.19.0");
+        v["dsl_version"] = serde_json::json!("0.22.0");
         for n in v["content"]["nodes"].as_array_mut().unwrap() {
             if n["id"] == "node/exit" {
                 n["stations"] = serde_json::json!([
@@ -1431,7 +1511,7 @@ fn battery_at(d: &Detailed) -> (blockout::Battery, Vec<String>) {
             }
         }
     }
-    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &structures);
     let battery = blockout::check(&plan, &blocks).expect("a site-plan campaign has a blockout");
     let codes = battery
         .findings
@@ -1499,7 +1579,7 @@ fn a_detail_pieces_anchor_overwrites_the_derivations_footing() {
     );
 
     let at = |plan: &Plan<'_>| match plan.anchors.get(&key) {
-        Some(delvewright_compiler::plan::ResolvedAnchor::Point { pos, .. }) => *pos,
+        Some(delvec::compiler::plan::ResolvedAnchor::Point { pos, .. }) => *pos,
         _ => panic!("a place's own anchor is a cell to stand on"),
     };
 
@@ -1555,7 +1635,7 @@ fn detailing_the_entry_place_moves_where_the_party_arrives() {
 
     assert_eq!(
         plan.anchors
-            .role_name(&area, delvewright_compiler::plan::AnchorRole::Entry),
+            .role_name(&area, delvec::compiler::plan::AnchorRole::Entry),
         Some(delvewright_dsl::ENTRY_ANCHOR),
         "a derived map declares what its entry anchor is for, detailed or not"
     );
@@ -1715,7 +1795,7 @@ fn a_detail_plan_cannot_state_a_coordinate() {
             v["content"]["details"][0][path] = value;
         });
         let loaded =
-            delvewright_compiler::load::load_campaign_dir(&d.campaign).expect("still readable");
+            delvec::compiler::load::load_campaign_dir(&d.campaign).expect("still readable");
         let Err(diags) = delvewright_dsl::parse_campaign(&loaded.raw) else {
             panic!("a detail row carrying `{path}` must not parse");
         };
@@ -1859,20 +1939,117 @@ fn a_detailed_build_exits_zero_and_prints_every_hash() {
     );
 }
 
-/// **Each half of the key sees its own document and nothing else**, and the key
-/// is CLOSED: the derived whole is a function of the site plan, the layout
-/// graph, the metrics table and the engine, so the two authored documents are
-/// hashed and the toolchain is named by revision. Nothing else in the campaign
-/// reaches it.
+/// **The remedy `DW0841` prescribes is reachable from the state that needs it.**
 ///
-/// The closure is the load-bearing claim, and it is what this test measures. A
-/// key with a hole in it is not a weaker gate, it is a green one: the hole was
-/// the layout graph, and a graph-only edit moved placed bytes under a record
-/// that went on reading as fresh. A key that saw MORE than the derivation reads
-/// would fail the other way — a gate that cries wolf is a gate somebody
-/// re-records past — which is why `world.json` is measured here too.
+/// `CLAUDE.md`: *a gate that names a remedy owes a check that the remedy is
+/// reachable*, and this pair failed it. The refusal says to copy the hashes out
+/// of a build, the hashes exist nowhere else — none of the three is a hash of a
+/// document, so no `sha256sum` produces one — and they used to be printed by the
+/// emitter, which a refused build never reaches. So the one state that needs the
+/// numbers was the one state that could not get them, and the only ways out were
+/// to compute a hash by hand or to revert the edit. Both were taken.
+///
+/// Asserted over the real binary and over a build that EXITS 1, because
+/// `Hashes::of` returning three strings is not the same fact as a creator
+/// holding them.
 #[test]
-fn the_key_is_each_document_and_the_key_is_closed() {
+fn a_refused_build_still_prints_the_hashes_its_refusal_asks_for() {
+    let tmp = tempdir("refused-build-hashes");
+    let d = detailed(&tmp, &["node/exit"]);
+    let c = campaign_at(&d.campaign);
+    let h = detail::Hashes::of(&c).unwrap();
+    // Stale in BOTH halves at once: the record of some other whole entirely.
+    common::patch_file(&d.campaign.join("walk-record.json"), |v| {
+        v["site_plan_sha256"] = serde_json::json!("1".repeat(64));
+        v["layout_graph_sha256"] = serde_json::json!("2".repeat(64));
+    });
+
+    let out = delvec(&[
+        "--prefabs",
+        d.prefabs.to_str().unwrap(),
+        "build",
+        d.campaign.to_str().unwrap(),
+        "--out",
+        tmp.join("out").to_str().unwrap(),
+    ]);
+    // Both streams: the refusal is printed where diagnostics go and the hashes
+    // where the run's own notes go, and what is being asserted is that ONE
+    // invocation hands the creator both.
+    let err =
+        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "the build refuses: {err}");
+    assert!(err.contains("DW0841"), "at the walk gate: {err}");
+    for (what, hash) in [
+        ("grid", &h.site_plan),
+        ("ways", &h.layout_graph),
+        ("blockout", &h.blockout),
+    ] {
+        assert!(
+            err.contains(hash.as_str()),
+            "and the refusal hands over the {what} hash the re-record needs: {err}"
+        );
+    }
+    assert!(
+        err.contains(detail::engine_revision()),
+        "and the engine's revision, which the record also names: {err}"
+    );
+}
+
+/// **The second door owes the same.** `delvec allocation` parses rather than
+/// validating — its stdout is a machine-readable document an authoring loop
+/// reads — so it does not pass through the funnel that prints the hashes, and a
+/// refusal there would hand over nothing to re-record from. It prints them on
+/// stderr itself, and stdout stays the document.
+#[test]
+fn a_refused_allocation_still_prints_the_hashes_its_refusal_asks_for() {
+    let tmp = tempdir("refused-allocation-hashes");
+    let d = detailed(&tmp, &[]);
+    let c = campaign_at(&d.campaign);
+    let h = detail::Hashes::of(&c).unwrap();
+    std::fs::remove_file(d.campaign.join("walk-record.json")).unwrap();
+
+    let out = delvec(&[
+        "--prefabs",
+        d.prefabs.to_str().unwrap(),
+        "allocation",
+        d.campaign.to_str().unwrap(),
+        "node/exit",
+    ]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    for (what, hash) in [
+        ("grid", &h.site_plan),
+        ("ways", &h.layout_graph),
+        ("blockout", &h.blockout),
+    ] {
+        assert!(
+            err.contains(hash.as_str()),
+            "the refused handing states the {what} hash: {err}"
+        );
+    }
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains(&h.blockout),
+        "and stdout is still the machine-readable document, unpolluted"
+    );
+}
+
+/// **The key is the walked whole, and the key is CLOSED.**
+///
+/// The derived whole is a function of the site plan, the layout graph, the
+/// metrics table and the engine. The two key halves are what the engine derives
+/// from the first two — the grid a body stands on, and the ways it moves by —
+/// and the toolchain is named by revision. Nothing else in the campaign reaches
+/// them.
+///
+/// The closure is the load-bearing claim, and it is what this test measures in
+/// both directions. A key with a hole in it is not a weaker gate, it is a green
+/// one: the hole was once the layout graph, and a graph-only edit moved placed
+/// bytes under a record that went on reading as fresh. A key that sees MORE than
+/// the derivation reads fails the other way and worse — it demands a walk for a
+/// change no body can feel, which is a remedy nobody can honestly perform, so
+/// the gate gets discharged by hand instead. Both failures are asserted here.
+#[test]
+fn the_key_is_the_walked_whole_and_the_key_is_closed() {
     let tmp = tempdir("hashes");
     let d = detailed(&tmp, &["node/exit"]);
     let before = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
@@ -1887,43 +2064,326 @@ fn the_key_is_each_document_and_the_key_is_closed() {
         "no hash sees anything but the plan, the graph, the table and the engine"
     );
 
-    // The graph, which moves its own half and leaves the plan's alone. It is
-    // hashed WHOLE — a reworded `note` re-opens the gate — because a key over a
-    // hand-picked traversal projection is a list somebody has to remember to
-    // extend, and the field added next release falls silently outside it. The
-    // plan's half already makes the same trade over `views[].note`.
+    // **The direction this key was moved to fix.** A reworded `note` and a
+    // renamed `intent` are the two fields the DSL itself documents as *no check
+    // keys on this*. They move the graph's bytes and cannot move a body, so they
+    // leave the key alone — while the document they are in demonstrably changed,
+    // which is the assertion that makes this a measurement rather than a
+    // tautology.
+    let graph_bytes_before = canonical_of(&d.campaign, "layout-graph.json");
     common::patch_file(&d.campaign.join("layout-graph.json"), |v| {
         v["content"]["nodes"][0]["note"] = serde_json::json!("Reworded, and no geometry moved.");
+        v["content"]["nodes"][0]["intent"] = serde_json::json!("renamed-intent");
     });
-    let graph_moved = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
     assert_ne!(
-        graph_moved.layout_graph, before.layout_graph,
-        "a graph edit moves the graph hash"
+        canonical_of(&d.campaign, "layout-graph.json"),
+        graph_bytes_before,
+        "the document's canonical bytes moved, which is what the old key hashed"
     );
+    let prose = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
     assert_eq!(
-        graph_moved.site_plan, before.site_plan,
-        "and not the plan's, because they are different documents with different repairs"
-    );
-    assert_eq!(
-        graph_moved.blockout, before.blockout,
-        "this particular graph edit moves no geometry, which is exactly the case a \
-         geometry hash cannot carry"
+        prose, before,
+        "and not one of the three hashes saw it: a note edit and a renamed intent \
+         are not a re-walk"
     );
 
-    // And the plan itself, which must move its own half and the massing with it.
+    // The plan's own prose, and its render viewpoints, which no body walks.
+    let plan_bytes_before = canonical_of(&d.campaign, "site-plan.json");
     common::patch_file(&d.campaign.join("site-plan.json"), |v| {
-        v["content"]["boxes"][0]["min"] = serde_json::json!([5, 8]);
+        v["content"]["views"][0]["note"] = serde_json::json!("Reworded for the reviewer.");
     });
-    let moved = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
     assert_ne!(
-        moved.site_plan, before.site_plan,
-        "a plan edit moves the plan hash"
+        canonical_of(&d.campaign, "site-plan.json"),
+        plan_bytes_before,
+        "the plan's canonical bytes moved"
+    );
+    assert_eq!(
+        detail::Hashes::of(&campaign_at(&d.campaign)).unwrap(),
+        before,
+        "and the key did not"
+    );
+
+    // The graph, moving its own half and leaving the grid alone — an
+    // `opens_from` flip, which moves no placed byte at all.
+    patch_edge(&d.campaign, "edge/hall-cell", |e| {
+        e["opens_from"] = serde_json::json!("b");
+    });
+    let ways_moved = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    assert_ne!(
+        ways_moved.layout_graph, before.layout_graph,
+        "a traversal edit moves the ways half"
+    );
+    assert_eq!(
+        ways_moved.site_plan, before.site_plan,
+        "and not the grid, because they are different halves with different repairs"
+    );
+    assert_eq!(
+        ways_moved.blockout, before.blockout,
+        "this particular edit moves no geometry, which is exactly the case a hash \
+         over cells cannot carry"
+    );
+
+    // **And the plan itself: one extent, moved by one block.** The perturbation
+    // toward the vacuous shape — a key that stopped seeing the grid would leave
+    // this equal and this assertion is what reds.
+    let dd = tempdir("hashes-extent");
+    let e = detailed(&dd, &["node/exit"]);
+    let base = detail::Hashes::of(&campaign_at(&e.campaign)).unwrap();
+    common::patch_file(&e.campaign.join("site-plan.json"), |v| {
+        let min = v["content"]["boxes"][0]["min"].clone();
+        let x = min[0].as_i64().expect("a box's pinned corner is a number");
+        v["content"]["boxes"][0]["min"][0] = serde_json::json!(x + 1);
+    });
+    let moved = detail::Hashes::of(&campaign_at(&e.campaign)).unwrap();
+    assert_ne!(
+        moved.site_plan, base.site_plan,
+        "one block is a different grid, and a key that cannot see one block is a \
+         key that cannot see any"
     );
     assert_ne!(
-        moved.blockout, before.blockout,
-        "and the massing derived from it moves too — which is why the blockout hash \
+        moved.blockout, base.blockout,
+        "and the massing derived from it moved too — which is why the blockout hash \
          alone could never carry this gate"
     );
+    assert_eq!(
+        moved.layout_graph, base.layout_graph,
+        "while the ways are what they were"
+    );
+}
+
+/// **Every derived value a body can feel is NAMED in the key's own text**, per
+/// object, which is the only form of this check that is not masked.
+///
+/// The obvious test — move a box and watch the hash move — passes even when the
+/// key has stopped seeing the box's footprint, because moving a box also moves
+/// its seams' cells and the boxes hung off it, and the seams are in the key too.
+/// Measured: deleting `foot` from the grid line left all sixty-one tests in this
+/// file green. So the perturbation only this check catches is *an element
+/// dropped out of the key*, and what it is asserted against is the key's own
+/// canonical text, per box and per seam, with the binding counted.
+#[test]
+fn every_element_of_the_key_is_named_in_its_own_text() {
+    let c = campaign_at(&blockout_dir());
+    let grid = detail::walked_grid(&c).expect("a site-plan campaign has a grid");
+    let ways = detail::walked_ways(&c).expect("and ways");
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let boxes = delvewright_dsl::siteplan::placed_boxes(&c, &mut reads);
+    let seams = delvewright_dsl::siteplan::placed_seams(&c, &boxes, &mut reads);
+    let graph = &c.layout_graph.as_ref().expect("and a graph").content;
+    assert!(
+        !boxes.is_empty() && !seams.is_empty() && !graph.edges.is_empty(),
+        "binding: this fixture has {} box(es), {} seam(s), {} edge(s) — a zero here \
+         would make every assertion below vacuous",
+        boxes.len(),
+        seams.len(),
+        graph.edges.len()
+    );
+
+    let named = |text: &str, prefix: &str, id: &str| -> String {
+        let head = format!("{prefix} {id} ");
+        text.lines()
+            .find(|l| l.starts_with(&head))
+            .unwrap_or_else(|| panic!("the key's text has no `{prefix}` line for `{id}`:\n{text}"))
+            .to_string()
+    };
+
+    let mut checked = 0usize;
+    for b in &boxes {
+        let line = named(&grid, "box", &b.node.0);
+        for (what, needle) in [
+            ("its footprint", format!("{:?}", b.foot)),
+            ("its walk plane", b.floor.to_string()),
+            ("its headroom", b.clearance.to_string()),
+            ("whether it is open to the sky", b.open.to_string()),
+        ] {
+            assert!(
+                line.contains(&needle),
+                "the grid must name {what} for `{}`: `{needle}` is not in `{line}`",
+                b.node.0
+            );
+            checked += 1;
+        }
+    }
+    for s in &seams {
+        let line = named(&grid, "seam", &s.edge.0);
+        for (what, needle) in [
+            ("the cells it cuts", format!("{:?}", s.opening)),
+            ("the wall the two places share", format!("{:?}", s.shared)),
+            ("the plane that wall is flat in", s.plane.to_string()),
+            ("its rise", s.rise.to_string()),
+            ("which kind of crossing it is", format!("{:?}", s.crossing)),
+        ] {
+            assert!(
+                line.contains(&needle),
+                "the grid must name {what} for `{}`: `{needle}` is not in `{line}`",
+                s.edge.0
+            );
+            checked += 1;
+        }
+    }
+    for e in &graph.edges {
+        assert!(
+            ways.contains(&format!("edge {e:?}")),
+            "the ways must carry `{}` WHOLE — its class, its ends, its direction, \
+             its shortcut flag, what it demands and which side opens it:\n{ways}",
+            e.id().0
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= boxes.len() * 4 + seams.len() * 5 + graph.edges.len(),
+        "binding: {checked} element(s) of the key checked by name"
+    );
+}
+
+/// **Everything the derivation reads out of the two documents is in the key** —
+/// the property the drift advisory's whole text rests on, held by a test rather
+/// than by a paragraph.
+///
+/// `blockout::walked_massing` reads exactly six things out of `site-plan.json`
+/// and `layout-graph.json`: the placed boxes, the placed seams, the plan's own
+/// volumes, the graph's `entry`, each barred edge's `opens_from`, and each
+/// node's `stations`. Each is perturbed here and the key must move. If one ever
+/// falls out, the massing moves under two equal key halves and the advisory
+/// fires saying the TOOLCHAIN moved — a warning denying the state it reports,
+/// which trains its reader to wave that state through.
+#[test]
+fn every_input_the_derivation_reads_is_in_one_half_of_the_key() {
+    /// One derivation input: what it is called, which half of the key must see
+    /// it, and the edit that moves it.
+    type Input = (&'static str, &'static str, fn(&Path));
+
+    let cases: Vec<Input> = vec![
+        ("a box's pinned corner", "grid", |dir: &Path| {
+            common::patch_file(&dir.join("site-plan.json"), |v| {
+                v["content"]["boxes"][0]["min"] = serde_json::json!([5, 8]);
+            });
+        }),
+        ("a seam's crossing position", "grid", |dir: &Path| {
+            common::patch_file(&dir.join("site-plan.json"), |v| {
+                // `at` is one number on a vertical face and two on a horizontal
+                // one (spec-0059), and both shapes are in this fixture.
+                let at = &mut v["content"]["seams"][0]["at"];
+                if let Some(n) = at.as_i64() {
+                    *at = serde_json::json!(n + 1);
+                } else {
+                    let n = at[0].as_i64().expect("a seam's `at` is one number or two");
+                    at[0] = serde_json::json!(n + 1);
+                }
+            });
+        }),
+        ("a whole-owned volume", "grid", |dir: &Path| {
+            common::patch_file(&dir.join("site-plan.json"), |v| {
+                let e = v["content"]["volumes"][0]["region"]["extent"][1].clone();
+                let n = e.as_i64().expect("an extent is numbers");
+                v["content"]["volumes"][0]["region"]["extent"][1] = serde_json::json!(n + 1);
+            });
+        }),
+        // A sky-open box takes its headroom from its node's `size_class`, and
+        // that is the one path by which the GRAPH moves the grid — a box that
+        // states its own `ceiling.clearance` does not read the class at all, so
+        // perturbing a covered place's class here would assert nothing and pass.
+        ("a sky-open place's size class", "grid", |dir: &Path| {
+            let open = {
+                let plan: serde_json::Value = serde_json::from_str(
+                    &std::fs::read_to_string(dir.join("site-plan.json")).unwrap(),
+                )
+                .unwrap();
+                plan["content"]["boxes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|b| b["ceiling"] == serde_json::json!("open"))
+                    .expect("this fixture builds one place open to the sky")["node"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            };
+            common::patch_file(&dir.join("layout-graph.json"), |v| {
+                let nodes = v["content"]["nodes"].as_array_mut().unwrap();
+                let n = nodes
+                    .iter_mut()
+                    .find(|n| n["id"] == serde_json::json!(open))
+                    .expect("the open box's node is in the graph");
+                let was = n["size_class"]
+                    .as_str()
+                    .expect("and it is classified by size");
+                let now = if was == "alcove" { "room" } else { "alcove" };
+                n["size_class"] = serde_json::json!(now);
+            });
+        }),
+        ("an edge's class", "ways", |dir: &Path| {
+            patch_edge(dir, "edge/cell-exit", |e| {
+                e["class"] = serde_json::json!("barred");
+                e["opens_from"] = serde_json::json!("a");
+                e["gating"] = serde_json::json!({ "flags": ["flag/keeper-yields"] });
+            });
+        }),
+        ("a barred edge's opening side", "ways", |dir: &Path| {
+            patch_edge(dir, "edge/hall-cell", |e| {
+                e["opens_from"] = serde_json::json!("b");
+            });
+        }),
+        ("what a body must hold to pass", "ways", |dir: &Path| {
+            patch_edge(dir, "edge/hall-cell", |e| {
+                e["gating"] = serde_json::json!({ "flags": ["flag/nobody-holds-this"] });
+            });
+        }),
+        ("where a body starts", "ways", |dir: &Path| {
+            common::patch_file(&dir.join("layout-graph.json"), |v| {
+                v["content"]["entry"] = serde_json::json!("node/exit");
+            });
+        }),
+        ("a named place inside a place", "ways", |dir: &Path| {
+            common::patch_file(&dir.join("layout-graph.json"), |v| {
+                v["content"]["nodes"][0]["stations"] = serde_json::json!([
+                    { "anchor": "anchor/a-place-this-walk-never-saw", "kind": "point" }
+                ]);
+            });
+        }),
+    ];
+
+    let mut grid_seen = 0usize;
+    let mut ways_seen = 0usize;
+    for (what, half, edit) in &cases {
+        let tmp = tempdir("key-input");
+        let campaign = tmp.join("campaign");
+        common::copy_dir_all(&blockout_dir(), &campaign);
+        let before = detail::Hashes::of(&campaign_at(&campaign)).unwrap();
+        edit(&campaign);
+        let after = detail::Hashes::of(&campaign_at(&campaign))
+            .unwrap_or_else(|| panic!("`{what}` left a campaign with no hashes at all"));
+        assert_ne!(
+            after, before,
+            "`{what}` is read by the derivation and must move the key"
+        );
+        match *half {
+            "grid" => {
+                assert_ne!(
+                    after.site_plan, before.site_plan,
+                    "`{what}` moves the GRID half"
+                );
+                grid_seen += 1;
+            }
+            "ways" => {
+                assert_ne!(
+                    after.layout_graph, before.layout_graph,
+                    "`{what}` moves the WAYS half"
+                );
+                ways_seen += 1;
+            }
+            other => panic!("`{other}` is not a half of the key"),
+        }
+    }
+    assert_eq!(
+        grid_seen + ways_seen,
+        cases.len(),
+        "binding: {} derivation input(s) perturbed, {grid_seen} in the grid half and \
+         {ways_seen} in the ways half, out of {}",
+        grid_seen + ways_seen,
+        cases.len()
+    );
+    assert!(grid_seen > 0 && ways_seen > 0, "both halves were exercised");
 }
 
 /// **A bound place lights itself, and the existing gate judges it**
@@ -2302,7 +2762,7 @@ fn check_and_expect(d: &Detailed, code: &str) -> String {
 }
 
 fn build_into(d: &Detailed, out: &Path) -> BTreeMap<String, Vec<u8>> {
-    let loaded = delvewright_compiler::load::load_campaign_dir(&d.campaign).unwrap();
+    let loaded = delvec::compiler::load::load_campaign_dir(&d.campaign).unwrap();
     let c = delvewright_dsl::parse_campaign(&loaded.raw).unwrap();
     let reg = PrefabRegistry::load_dir(&d.prefabs).unwrap();
     let plan = Plan::build(&c, &reg).expect("the detailed campaign plans");
@@ -2316,8 +2776,8 @@ fn build_into(d: &Detailed, out: &Path) -> BTreeMap<String, Vec<u8>> {
             }
         }
     }
-    let tree = delvewright_compiler::commands::CommandTree::v1_21_11();
-    let (built, _warn) = delvewright_compiler::emit::build_with_warnings(
+    let tree = delvec::compiler::commands::CommandTree::v1_21_11();
+    let (built, _warn) = delvec::compiler::emit::build_with_warnings(
         &plan,
         &loaded.inputs,
         &structures,
@@ -2469,7 +2929,7 @@ fn a_source_build_names_the_revision_it_was_built_from() {
     assert_ne!(
         rev,
         "unstamped",
-        "built from a git checkout at {}, so `crates/compiler/build.rs` should have \
+        "built from a git checkout at {}, so `crates/delvec/build.rs` should have \
          stamped the revision. `unstamped` here means the stamp stopped working and \
          every walk record written against this build carries a constant where a \
          measurement belongs.",

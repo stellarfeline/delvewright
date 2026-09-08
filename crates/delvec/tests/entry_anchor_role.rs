@@ -25,13 +25,13 @@ mod common;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{AnchorRole, PrefabRegistry};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{AnchorRole, PrefabRegistry};
+use delvec::grammar::ir::Node;
+use delvec::grammar::{Box3, ExpandOptions, Mark, MarkAt, Program, export_prefab};
 use delvewright_dsl::parse_campaign;
-use delvewright_grammar::ir::Node;
-use delvewright_grammar::{Box3, ExpandOptions, Mark, MarkAt, Program, export_prefab};
 use serde_json::Value;
 
 /// The landing's entry cell in world coordinates — where the bolt branch's
@@ -103,7 +103,7 @@ fn library_declaring_entry(tag: &str, with_role: bool) -> (PathBuf, String) {
     let (key, role) = grammar_declared_entry();
     let dir = std::env::temp_dir().join(format!("dw-entry-role-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    common::copy_dir_all(&common::prefabs_dir(), &dir);
+    common::copy_dir_all(&common::shown_prefabs_dir("entry-anchor"), &dir);
     for piece in ["hello-room.json", "cave-shore.json"] {
         let path = dir.join(piece);
         let mut meta: Value =
@@ -135,7 +135,7 @@ fn library_with_roles_on(tag: &str, sites: &[(&str, &str)]) -> PathBuf {
     let (_, role) = grammar_declared_entry();
     let dir = std::env::temp_dir().join(format!("dw-entry-dup-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    common::copy_dir_all(&common::prefabs_dir(), &dir);
+    common::copy_dir_all(&common::shown_prefabs_dir("entry-anchor"), &dir);
     for (piece, anchor) in sites {
         let path = dir.join(piece);
         let mut meta: Value =
@@ -157,7 +157,7 @@ fn library_moving_the_role(tag: &str, piece: &str, from: &str, to: &str) -> Path
     let (_, role) = grammar_declared_entry();
     let dir = std::env::temp_dir().join(format!("dw-entry-move-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    common::copy_dir_all(&common::prefabs_dir(), &dir);
+    common::copy_dir_all(&common::shown_prefabs_dir("entry-anchor"), &dir);
     let path = dir.join(piece);
     let mut meta: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     let anchors = meta["anchors"].as_object_mut().unwrap();
@@ -181,7 +181,7 @@ fn library_moving_the_role(tag: &str, piece: &str, from: &str, to: &str) -> Path
 // ---------------------------------------------------------------------------
 
 fn with_plan<T>(prefabs_dir: &Path, f: impl FnOnce(&Plan) -> T) -> T {
-    let loaded = delvewright_compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
+    let loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(prefabs_dir).unwrap();
     assert_eq!(
@@ -197,7 +197,7 @@ fn with_plan<T>(prefabs_dir: &Path, f: impl FnOnce(&Plan) -> T) -> T {
 /// Build, and hand back whatever came of it — a datapack or the diagnostic that
 /// stopped it.
 fn build_with(prefabs_dir: &Path) -> Result<BuildOutput, BuildFailure> {
-    let loaded = delvewright_compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
+    let loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(prefabs_dir).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
@@ -242,7 +242,8 @@ fn bolt_transport(out: &BuildOutput) -> Option<Value> {
 /// never crossed.
 #[test]
 fn the_shipped_library_promises_the_crossing() {
-    let out = build_with(&common::prefabs_dir()).expect("the shipped library builds");
+    let out =
+        build_with(&common::shown_prefabs_dir("entry-anchor")).expect("the shipped library builds");
     assert_eq!(
         bolt_transport(&out),
         Some(serde_json::json!(LANDING_ENTRY)),
@@ -401,10 +402,9 @@ fn no_source_file_outside_the_resolver_matches_an_entry_anchor_name() {
         ),
     ];
 
-    // The compiler library's sources and this binary's own.
+    // The package's sources: the compiler and the binary that mounts it.
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
-    collect_rs(&here.join("../compiler/src"), &mut files);
     collect_rs(&here.join("src"), &mut files);
     assert!(
         files.len() > 20,
@@ -491,7 +491,7 @@ fn two_declared_entries_in_one_area_are_refused() {
             ("cave-shore.json", "anchor/exit"),
         ],
     );
-    let loaded = delvewright_compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
+    let loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).unwrap();
     let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
     let Err(err) = Plan::build(&campaign, &prefabs) else {
