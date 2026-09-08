@@ -639,7 +639,11 @@ generator that laid them; a piece admitted here was laid by somebody else, and a
 number typed into its document is a census of an object that can be read. Run it
 after `socket`, which changes what a body can stand on, and before the second
 `audit`, which holds the `waterline_y` it wrote to the piece's own bytes
-(`DW0887`). What it prints is a measurement with its denominator: a walk plane
+(`DW0887`) and everything else the document claims about them to the same bytes
+(`DW0888`): the walk plane a body stands on, every anchor's cell and range, a
+trap anchor's dispenser socket and trigger block, and every connector's opening —
+a socket declared over a cell the piece never opened is refused here rather than
+mating a corridor into a wall. What it prints is a measurement with its denominator: a walk plane
 dragged one course down by a single stray standable cell reads as `1 cell(s)
 stand on that plane, of 223 standable`, and that is the sentence to look at
 before the number is believed.

@@ -280,15 +280,31 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
         }));
     }
 
+    // **What else these documents claim about these same bytes** (`DW0888`).
+    //
+    // This command is the one the lib-02 finding was measured against: with a
+    // connector pointed back at a cell the regenerated structure fills with
+    // andesite, it answered four pools of four seatable at exit 0. It reads
+    // every document and every `.nbt` in the library already, so the rule binds
+    // here over the whole library rather than over the pool members alone — a
+    // fiction in a piece no pool happens to hold is still a fiction.
+    for c in &library.denied_claims {
+        Diagnostic::error(
+            crate::compiler::claims::DW_CLAIM_DENIED.id(),
+            c.full.clone(),
+        )
+        .print(json);
+    }
     let (declared, borne_out) = library.waterline_census();
     let binding = format!(
         "seating binding: horizon base `{horizon}`; {pools_seatable} pool(s) seatable of \
          {pool_count} in this library, examined over {members_total} member(s); \
          {documents} document(s) read, {opened} `.nbt` opened; {declared} waterline \
-         declaration(s) examined, {borne_out} borne out by the bytes.",
+         declaration(s) examined, {borne_out} borne out by the bytes. {claims}",
         pool_count = pools.len(),
         documents = library.documents,
         opened = library.nbt_opened,
+        claims = library.claims.line(),
     );
     if json {
         // One object, on stdout, carrying exactly what the table carries — the
@@ -308,6 +324,8 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
                 "nbt_opened": library.nbt_opened,
                 "waterlines_declared": declared,
                 "waterlines_borne_out": borne_out,
+                "byte_claims_examined": library.claims.examined,
+                "byte_claims_denied": library.claims.refused,
                 "line": binding,
             },
         });
@@ -351,7 +369,7 @@ fn run_seating(horizon: &str, dir: &Path, json: bool) -> ExitCode {
         .print(json);
         return ExitCode::from(EXIT_FAIL);
     }
-    if pools_seatable == pools.len() {
+    if pools_seatable == pools.len() && !library.claims.is_refusal() {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(EXIT_FAIL)
@@ -512,6 +530,16 @@ fn run_library_audit(dir: &Path, report: Option<&Path>, json: bool) -> ExitCode 
     for line in &library.unreadable {
         Diagnostic::error(DW_INPUT, line.clone()).print(json);
     }
+    // **The rest of the class, over the same read** (`DW0888`). The directory
+    // arm is where a library's integrity lives, so every byte-asserting key of
+    // every document is held here and not only the waterline.
+    for c in &library.denied_claims {
+        Diagnostic::error(
+            crate::compiler::claims::DW_CLAIM_DENIED.id(),
+            c.full.clone(),
+        )
+        .print(json);
+    }
     let mut refused: Vec<serde_json::Value> = Vec::new();
     for facts in library.pieces.values() {
         if let Some(r) = crate::compiler::seating::waterline_reason(facts) {
@@ -526,17 +554,31 @@ fn run_library_audit(dir: &Path, report: Option<&Path>, json: bool) -> ExitCode 
         }
     }
     let (declared, borne_out) = library.waterline_census();
+    let clean = refused.is_empty() && library.unreadable.is_empty() && !library.claims.is_refusal();
     let rep = serde_json::json!({
         "asset": dir.display().to_string(),
-        "check": "waterline-in-the-bytes",
+        "check": "a-document-says-nothing-the-bytes-deny",
         "code": crate::compiler::seating::DW_WATERLINE_FICTION.id(),
-        "verdict": if refused.is_empty() && library.unreadable.is_empty() { "pass" } else { "fail" },
+        "verdict": if clean { "pass" } else { "fail" },
         "documents_read": library.documents,
         "nbt_opened": library.nbt_opened,
         "waterlines_declared": declared,
         "waterlines_borne_out": borne_out,
         "waterlines_refused": refused.len(),
         "refused": refused,
+        "byte_claims": {
+            "code": crate::compiler::claims::DW_CLAIM_DENIED.id(),
+            "examined": library.claims.examined,
+            "denied": library.claims.refused,
+            "per_key": library.claims.per_key.iter()
+                .map(|(k, (e, r))| (k.to_string(), serde_json::json!({"examined": e, "denied": r})))
+                .collect::<serde_json::Map<String, serde_json::Value>>(),
+            "findings": library.denied_claims.iter().map(|c| serde_json::json!({
+                "prefab_id": c.member,
+                "key": c.key.as_str(),
+                "reason": c.short,
+            })).collect::<Vec<_>>(),
+        },
     });
     let text = serde_json::to_string_pretty(&rep).expect("the report serializes") + "\n";
     match report {
@@ -555,7 +597,8 @@ fn run_library_audit(dir: &Path, report: Option<&Path>, json: bool) -> ExitCode 
         opened = library.nbt_opened,
         refused = refused.len(),
     );
-    if refused.is_empty() && library.unreadable.is_empty() {
+    eprintln!("{}", library.claims.line());
+    if clean {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(EXIT_FAIL)
@@ -579,8 +622,9 @@ fn run_library_audit(dir: &Path, report: Option<&Path>, json: bool) -> ExitCode 
 fn waterline_door(
     meta_path: &Path,
     grid: &crate::grammar::model::VoxelModel,
-    nbt_opened: usize,
+    facts: &crate::admit::settling::ByteFacts,
 ) -> (audit::WaterlineBinding, Option<Diagnostic>) {
+    let nbt_opened = facts.opened;
     use crate::compiler::seating::{PieceFacts, waterline_reason};
 
     let meta = match delvewright_dsl::prefab::PrefabMeta::read(meta_path) {
@@ -613,9 +657,9 @@ fn waterline_door(
             );
         }
     };
-    let facts = PieceFacts::measure(&meta, grid, nbt_opened);
-    let declarations = usize::from(facts.declared_waterline.is_some());
-    let reason = waterline_reason(&facts);
+    let measured = PieceFacts::measure(&meta, grid, facts);
+    let declarations = usize::from(measured.declared_waterline.is_some());
+    let reason = waterline_reason(&measured);
     let refused = usize::from(reason.is_some());
     (
         audit::WaterlineBinding {
@@ -628,10 +672,55 @@ fn waterline_door(
             borne_out: declarations - refused,
             refused,
             nbt_opened,
-            top_authored_water_y: facts.top_water_y,
+            top_authored_water_y: measured.top_water_y,
         },
         reason.map(|r| Diagnostic::error(r.code.id(), r.full)),
     )
+}
+
+/// **`DW0888` at the admission event** — every byte-asserting key of one
+/// document, against the bytes the arm already read.
+///
+/// The shape of [`waterline_door`], for the same reason and with the same four
+/// states: a report that simply omitted a verdict said the same thing for a
+/// piece that passed, a piece that declares nothing, a document that does not
+/// parse and bytes with no document beside them at all.
+fn claims_door(
+    meta_path: &Path,
+    grid: &crate::grammar::model::VoxelModel,
+    facts: &crate::admit::settling::ByteFacts,
+) -> (crate::compiler::claims::ClaimVerdict, Vec<Diagnostic>) {
+    use crate::compiler::claims::{ClaimVerdict, DW_CLAIM_DENIED, check_piece};
+
+    let meta = match delvewright_dsl::prefab::PrefabMeta::read(meta_path) {
+        // An ingested piece is audited before its metadata exists: there is no
+        // document here to hold to anything.
+        Ok(None) => return (ClaimVerdict::default(), Vec::new()),
+        Ok(Some(m)) => m,
+        // A document nobody can read is not a document that claims nothing —
+        // the same argument `DW0783` and `DW0887` both make about their silence.
+        Err(e) => {
+            return (
+                ClaimVerdict::default(),
+                vec![Diagnostic::error(
+                    DW_CLAIM_DENIED.id(),
+                    format!(
+                        "{}: this prefab document does not parse, so nothing it declares about \
+                         its own bytes could be held to them. A document nobody can read is not \
+                         a document that claims nothing: {e}",
+                        meta_path.display()
+                    ),
+                )],
+            );
+        }
+    };
+    let verdict = check_piece(&meta, grid, facts);
+    let diags = verdict
+        .denied
+        .iter()
+        .map(|c| Diagnostic::error(DW_CLAIM_DENIED.id(), c.full.clone()))
+        .collect();
+    (verdict, diags)
 }
 
 fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: bool) -> ExitCode {
@@ -666,7 +755,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
     // prefab library and what the admission procedure runs on every piece — and
     // it is bound in EVERY arm, because the arm it was missing from is the one a
     // composed zone arrives through.
-    let (mut rep, diags, door, footprint, waterline) =
+    let (mut rep, diags, door, footprint, waterline, claims) =
         if nbt.extension().and_then(|s| s.to_str()) == Some("json") {
             let (set, tiles) = match read_zone(nbt) {
                 Ok(pair) => pair,
@@ -680,8 +769,22 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             // exactly as they do for one template. Tiling is packaging.
             let grid = settling::zone_grid(set.size, &tiles);
             let door = Door::open(&grid, tiles.len(), nbt);
-            let waterline = waterline_door(nbt, &grid, tiles.len());
-            (rep, diags, door, audit::footprint_class(nbt), waterline)
+            let facts = settling::ByteFacts::of(
+                &tiles
+                    .iter()
+                    .map(|(part, s)| (part.offset, s))
+                    .collect::<Vec<_>>(),
+            );
+            let waterline = waterline_door(nbt, &grid, &facts);
+            let claims = claims_door(nbt, &grid, &facts);
+            (
+                rep,
+                diags,
+                door,
+                audit::footprint_class(nbt),
+                waterline,
+                claims,
+            )
         } else {
             // ...and pointing it at ONE tile of a set is refused. The verdict would
             // be correct about that file and would be read as a verdict about the
@@ -712,13 +815,16 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             let meta_path = nbt.with_extension("json");
             let grid = crate::admit::spatial::grid(&structure);
             let door = Door::open(&grid, 1, &meta_path);
-            let waterline = waterline_door(&meta_path, &grid, 1);
+            let facts = settling::ByteFacts::of(&[([0, 0, 0], &structure)]);
+            let waterline = waterline_door(&meta_path, &grid, &facts);
+            let claims = claims_door(&meta_path, &grid, &facts);
             (
                 rep,
                 diags,
                 door,
                 audit::footprint_class(&meta_path),
                 waterline,
+                claims,
             )
         };
     for d in &diags {
@@ -748,7 +854,20 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
         d.print(json);
     }
     eprintln!("{}", waterline.line(&rep.asset));
-    let contract_failed = door.is_refusal() || footprint.is_refusal() || waterline.is_refusal();
+    // `DW0888` at the SAME event, and for the same reason: the rest of what this
+    // document claims about these same bytes. The waterline was the one member
+    // of that class anything ever checked.
+    let (claims, claim_findings) = claims;
+    for d in &claim_findings {
+        d.print(json);
+    }
+    eprintln!("{}", claims.binding.line());
+    let contract_failed = door.is_refusal()
+        || footprint.is_refusal()
+        || waterline.is_refusal()
+        || claims.binding.is_refusal()
+        || !claim_findings.is_empty();
+    rep.record_claims(&claims, &claim_findings);
     rep.record_waterline(waterline, wl_finding.as_ref());
     rep.record_contract_door(&door);
     let out_json = rep.to_json();
