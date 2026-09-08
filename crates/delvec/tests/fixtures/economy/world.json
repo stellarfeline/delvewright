@@ -12,8 +12,10 @@
     "seed": 20260729,
     "target_minutes": 5,
     "theme": "A keeper who sells warmth, and a drop that takes it back.",
-    "title": "The Ember Toll"
+    "time": "noon",
+    "title": "The Ember Toll",
+    "weather": "clear"
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

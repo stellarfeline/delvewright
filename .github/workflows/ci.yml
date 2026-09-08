@@ -1040,7 +1040,7 @@ jobs:
           mkdir -p gallery-prefabs
           cargo run --locked --release \
             --manifest-path prefabs/gallery-generator/Cargo.toml \
-            -- gallery-prefabs --skins gallery/skins
+            -- gallery-prefabs --skins gallery/skins --design gallery/design
       # `analyze` is the reachability half of the ladder (spec-0039 §4.2) and
       # `build --lang en` is the tree the coverage gate reads its binding ledgers
       # from. Every OTHER language, and every overlay, is built by the baseline
@@ -1374,7 +1374,7 @@ jobs:
           set -euo pipefail
           mkdir -p gallery-prefabs
           cargo run --locked --manifest-path prefabs/gallery-generator/Cargo.toml \
-            -- gallery-prefabs --skins gallery/skins
+            -- gallery-prefabs --skins gallery/skins --design gallery/design
           target/debug/delvec build gallery \
             -o validation/delve-output-gallery --prefabs gallery-prefabs
 

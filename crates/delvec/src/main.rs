@@ -901,6 +901,24 @@ fn validate_loaded(
                 examined.push(sbind.line());
                 diags.extend(sd);
             }
+            // **`DW0890`: the approved hour is the built hour** (spec-0061).
+            // Refused here rather than at the build, on `DW0855`'s precedent
+            // and `DW0886`'s: the verdict is a fact about the documents and a
+            // directory listing — the rows of `design.json`, the files under
+            // `design/`, and the skies the campaign's own effects can reach —
+            // so nothing has to be placed to know it, and a creator should not
+            // spend a build and a render to learn that their night delve was
+            // built at noon. Bound in the one funnel every subcommand's
+            // validation goes through, so a mismatch cannot reach a datapack by
+            // skipping `delvec validate`. The binding line states what it
+            // examined, zeroes included: a campaign with no approved design is
+            // a measured zero here and a refusal at staging.
+            {
+                let (dd, dbind, _) =
+                    delvec::compiler::design::check(&campaign, &loaded.design_files);
+                examined.push(dbind.line());
+                diags.extend(dd);
+            }
             print_diags(&diags, json);
             report_binding_notes(&campaign, &examined);
             Ok(Validated {
@@ -1841,7 +1859,7 @@ fn run_build(
             Plan::build_with(&campaign, &prefabs, p.clone())
         }
     };
-    let plan = match built {
+    let plan = match built.map(|p| p.with_design_files(loaded.design_files.clone())) {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:
@@ -2195,7 +2213,9 @@ fn run_edit(
     if has_error(&v.diags) {
         return ExitCode::from(1);
     }
-    let plan = match Plan::build(&v.campaign, &v.prefabs) {
+    let plan = match Plan::build(&v.campaign, &v.prefabs)
+        .map(|p| p.with_design_files(v.loaded.design_files.clone()))
+    {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:

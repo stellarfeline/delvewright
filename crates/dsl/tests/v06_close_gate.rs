@@ -10,7 +10,7 @@ use delvewright_dsl::{RawCampaign, check_campaign};
 /// A v0.6 quests document that opens `anchor/door` then re-seals it with a
 /// `close-gate` after the exit is reached (on_complete — nothing left to walk).
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -56,6 +56,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 

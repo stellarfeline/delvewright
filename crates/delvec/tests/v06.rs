@@ -23,7 +23,7 @@ use delvewright_dsl::{
 fn quests_doc(on_complete: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -66,6 +66,7 @@ fn parse_hw(quests: &str, world: Option<String>) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -192,7 +193,7 @@ fn zh_art_translation_is_dw0328() {
     // The art narrate's l10n key, translated to non-renderable Han in the sidecar.
     let key = art_narrates(&c)[0].key.clone();
     let sidecar_json = serde_json::json!({
-        "dsl_version": "0.21.2",
+        "dsl_version": "0.22.0",
         "campaign_id": "hello-world",
         "kind": "l10n",
         "lang": "zh-cn",
@@ -600,7 +601,7 @@ fn overlong_zh_subtitle_translation_is_dw0330() {
     );
     let key = on_screen_narrates(&c)[0].key.clone();
     let sidecar_json = serde_json::json!({
-        "dsl_version": "0.21.2",
+        "dsl_version": "0.22.0",
         "campaign_id": "hello-world",
         "kind": "l10n",
         "lang": "zh-cn",

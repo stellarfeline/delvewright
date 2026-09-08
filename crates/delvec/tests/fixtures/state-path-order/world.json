@@ -13,8 +13,10 @@
     "seed": 20260729,
     "target_minutes": 5,
     "theme": "A muniment room whose door reads the ledger before it opens.",
-    "title": "The Reading Room"
+    "time": "noon",
+    "title": "The Reading Room",
+    "weather": "clear"
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

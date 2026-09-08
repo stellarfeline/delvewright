@@ -28,6 +28,7 @@
 //! - [`crosshair`]: two things the party must click may not stand where the crosshair cannot tell them apart (`DW0489`).
 //! - [`daylight`]: a body the sun kills may not be staged where the sun reaches it (`DW0496`).
 //! - [`deathplan`]: `validation/death-plan.json` — the bot tier's contract for dying.
+//! - [`design`]: the approved hour is the built hour — the design record against the world's reachable skies (`DW0890`).
 //! - [`detail`]: a place is detailed inside the box the whole gave it.
 //! - [`eclipse`]: no body stands in front of an affordance the party clicks (`DW0359`), no affordance shares a cell with a sealed gate's hitboxes (`DW0422`), and no two affordances share a cell with each other (`DW0878`).
 //! - [`edit`]: the map editor's stage-7 edit-script replay.
@@ -97,6 +98,7 @@ pub mod creator;
 pub mod crosshair;
 pub mod daylight;
 pub mod deathplan;
+pub mod design;
 pub mod detail;
 pub mod eclipse;
 pub mod edit;

@@ -406,7 +406,7 @@ fn hw(name: &str) -> String {
 /// Hello-world's world with a second area holding the way-carrying piece.
 fn world_doc() -> String {
     r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -415,6 +415,8 @@ fn world_doc() -> String {
     "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" },
       { "id": "area/tower", "name": "The Tower", "prefab": "prefab/broken-threshold",
@@ -431,7 +433,7 @@ fn world_doc() -> String {
 fn quest_plan_doc(tower: bool) -> String {
     if !tower {
         return r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -446,7 +448,7 @@ fn quest_plan_doc(tower: bool) -> String {
         .to_string();
     }
     r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quest-plan",
   "content": {
@@ -522,7 +524,7 @@ fn quests_doc(opening: Opening, tower: bool) -> String {
         }));
     }
     let doc = serde_json::json!({
-      "dsl_version": "0.21.2",
+      "dsl_version": "0.22.0",
       "campaign_id": "hello-world",
       "stage": "quests",
       "content": { "on_death": on_death, "quests": quests }
@@ -547,6 +549,7 @@ fn campaign_with(world: String, quests: String, tower: bool) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -1007,7 +1010,7 @@ fn an_open_way_naming_no_staged_way_is_dw0547() {
 fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     let dir = common::prefabs_dir();
     let plain = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -1016,6 +1019,8 @@ fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
 }"#;

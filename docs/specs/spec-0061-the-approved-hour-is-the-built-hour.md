@@ -181,12 +181,15 @@ that omits either is refused the way every required field is (the schema
 refusal, `DW0100`), not by a new code. `DW0874`'s stub recipe names both.
 
 What does **not** change: the emitted bytes. `time set <kw>` was always
-emitted; `weather <kw>` is emitted only for a declared non-`clear` weather,
-because `clear` is vanilla's own state (`compiler.md`, *Environment sealing*),
-and that rule stands. A campaign that already declares both builds
-byte-identically. `DW0210` and `DW0496` read the same `reachable_time_weather`
-scan as before (`compiler::light`), which now has no `unwrap_or_default` to
-perform.
+emitted; `weather <kw>` is emitted for the declared state, whatever it is —
+`emit::sealing_commands` pushes it on `Some(w)`, so a campaign declaring
+`clear` emits `weather clear` (`compiler.md`, *Environment sealing*) — and
+that rule stands. A campaign that already declares both builds
+byte-identically: **7** of the 41 engine world documents do, the gallery and
+its five overlays among them. The **34** that declare neither gain the one
+idempotent `weather clear` their now-explicit `clear` states. `DW0210` and
+`DW0496` read the same `reachable_time_weather` scan as before
+(`compiler::light`), which now has no `unwrap_or_default` to perform.
 
 The cost, measured at `ba461b28` by opening every `world.json` under
 `crates/`, `prefabs/` and `gallery/` outside `target/`: **41** world documents,

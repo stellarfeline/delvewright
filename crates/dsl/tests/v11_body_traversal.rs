@@ -60,6 +60,7 @@ fn raw(npcs_doc: String, quests_doc: String) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -79,13 +80,13 @@ fn codes(raw: &RawCampaign) -> Vec<String> {
 #[test]
 fn both_body_classes_accept_a_declaration_at_v11() {
     for locomotion in ["ground", "climber", "flier"] {
-        let r = raw(npcs("0.21.2", Some(locomotion)), quests("0.21.2", None));
+        let r = raw(npcs("0.22.0", Some(locomotion)), quests("0.22.0", None));
         assert!(
             !codes(&r).iter().any(|c| c == "DW0455"),
             "npc `{locomotion}`: {:#?}",
             check_campaign(&r)
         );
-        let r = raw(npcs("0.21.2", None), quests("0.21.2", Some(locomotion)));
+        let r = raw(npcs("0.22.0", None), quests("0.22.0", Some(locomotion)));
         assert!(
             !codes(&r).iter().any(|c| c == "DW0455"),
             "actor `{locomotion}`: {:#?}",
@@ -106,11 +107,11 @@ fn declaring_aquatic_is_dw0455_on_either_body_class() {
     for (label, r) in [
         (
             "npc",
-            raw(npcs("0.21.2", Some("aquatic")), quests("0.21.2", None)),
+            raw(npcs("0.22.0", Some("aquatic")), quests("0.22.0", None)),
         ),
         (
             "actor",
-            raw(npcs("0.21.2", None), quests("0.21.2", Some("aquatic"))),
+            raw(npcs("0.22.0", None), quests("0.22.0", Some("aquatic"))),
         ),
     ] {
         let d = check_campaign(&r);
@@ -142,9 +143,9 @@ fn an_unknown_locomotion_or_field_does_not_parse() {
     ] {
         let mut doc: serde_json::Value =
             serde_json::from_str(&common::read_valid("npcs.json")).unwrap();
-        doc["dsl_version"] = serde_json::json!("0.21.2");
+        doc["dsl_version"] = serde_json::json!("0.22.0");
         doc["content"]["npcs"][0]["traversal"] = bad.clone();
-        let r = raw(doc.to_string(), quests("0.21.2", None));
+        let r = raw(doc.to_string(), quests("0.22.0", None));
         assert!(
             codes(&r).iter().any(|c| c == "DW0100" || c == "DW0101"),
             "`{bad}` must be rejected by the schema, not accepted: {:#?}",
@@ -157,7 +158,7 @@ fn an_unknown_locomotion_or_field_does_not_parse() {
 /// additive-superset contract every version ledger entry carries.
 #[test]
 fn declaring_nothing_at_v11_raises_nothing() {
-    let r = raw(npcs("0.21.2", None), quests("0.21.2", None));
+    let r = raw(npcs("0.22.0", None), quests("0.22.0", None));
     let d = check_campaign(&r);
     assert!(
         !d.iter().any(|d| d.code == "DW0454" || d.code == "DW0455"),

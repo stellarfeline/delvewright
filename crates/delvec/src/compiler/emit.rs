@@ -1940,6 +1940,23 @@ pub fn build_with_warnings(
     if let Some(dp) = &death_plan {
         put_json(&mut out, "validation/death-plan.json", dp);
     }
+    // **The design gate's ledger** (`crate::compiler::design`, spec-0061 §6):
+    // how many approved reference images the record holds, how many image files
+    // stand under `design/`, which skies the rows state and which skies this
+    // world can reach. Written on EVERY build, unlike its neighbours above: a
+    // campaign with no approved design is exactly the state the staging gate
+    // refuses, so `references: 0` is a number that has to be readable, and an
+    // absent file would say *I could not look* — a different fact, and one the
+    // gate reds as format rot rather than as a missing design.
+    {
+        let (_, binding, findings) =
+            crate::compiler::design::check(plan.campaign, &plan.design_files);
+        put_json(
+            &mut out,
+            "validation/design-record.json",
+            &crate::compiler::design::record(&binding, &findings),
+        );
+    }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
     let manifest = emit_manifest(
@@ -2234,7 +2251,7 @@ fn is_vanilla_function(path: &str) -> bool {
 
 fn sealing_commands(
     time: delvewright_dsl::WorldTime,
-    weather: Option<delvewright_dsl::WorldWeather>,
+    weather: delvewright_dsl::WorldWeather,
     difficulty: Option<delvewright_dsl::WorldDifficulty>,
 ) -> Vec<String> {
     let mut cmds = vec![
@@ -2277,12 +2294,12 @@ fn sealing_commands(
     // the defense-in-depth seal against a stray primed-TNT source (e.g. a dispenser
     // loaded with TNT the schema forbids anyway).
     cmds.push("gamerule tnt_explodes false".to_string());
-    // Weather is emitted only when explicitly declared (spec-0010): clear is the
-    // vanilla default, so a campaign that declares no weather emits no `weather`
-    // command and stays byte-identical to pre-v0.5 output.
-    if let Some(w) = weather {
-        cmds.push(format!("weather {}", w.token()));
-    }
+    // Weather is emitted for the declared state, whatever it is (spec-0010, and
+    // spec-0061 which made the declaration mandatory). The rule is unchanged —
+    // *emit what the world declares* — and so are the bytes of every campaign
+    // that already declared one: what moved is that there is no longer a
+    // campaign that declares none.
+    cmds.push(format!("weather {}", weather.token()));
     // Declared combat difficulty (v0.6). The shipped
     // `server/server.properties` already carries it, so this line is not what
     // makes the delve image correct — it is what makes the DATAPACK correct
@@ -2815,7 +2832,7 @@ fn emit_functions(
             .to_string(),
     );
     setup.extend(sealing_commands(
-        c.world.content.time.unwrap_or_default(),
+        c.world.content.time,
         c.world.content.weather,
         c.world.content.difficulty,
     ));
@@ -13221,7 +13238,7 @@ fn emit_packtest(
     sealed.push("# @timeout 100".to_string());
     sealed.push(String::new());
     sealed.push(format!("function {ns}:setup"));
-    let sealed_time = c.world.content.time.unwrap_or_default();
+    let sealed_time = c.world.content.time;
     let sealed_ticks = sealed_time.daytime_ticks();
     sealed.push(format!(
         "# time set {} -> daytime {sealed_ticks} (the sole sealing command with a",

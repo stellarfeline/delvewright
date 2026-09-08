@@ -26,7 +26,7 @@ fn read_hw(name: &str) -> String {
 /// effect and two objectives carry `forbids_flags`, and an approach trigger is
 /// armed by `flag/arrived` but stood down by `flag/blocked`.
 const QUESTS_V06: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -90,6 +90,7 @@ fn parse_hw() -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -336,6 +337,7 @@ fn chained_moves_plan_from_last_staged_location() {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -380,6 +382,7 @@ fn chained_moves_plan_from_last_staged_location() {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let out = build(&campaign, &prefabs);

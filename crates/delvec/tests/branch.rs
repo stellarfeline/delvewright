@@ -60,6 +60,7 @@ fn campaign_with_cast(patch: impl Fn(&mut Value, &mut Value, &mut Value, &mut Va
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     })
     .expect("fixture must parse")
 }

@@ -16,8 +16,10 @@
     "seed": 20260731,
     "target_minutes": 8,
     "theme": "A ruined keep the illagers march through, and the drowned that answer them.",
-    "title": "The Warband in the Halls"
+    "time": "noon",
+    "title": "The Warband in the Halls",
+    "weather": "clear"
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

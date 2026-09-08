@@ -22,7 +22,7 @@ const NS: &str = "hello-world";
 fn quests_doc(cutscene: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -63,6 +63,7 @@ fn parse_hw(quests: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }

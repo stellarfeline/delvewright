@@ -61,7 +61,7 @@ fn patched_prefabs(name: &str, trigger_block: Option<&str>) -> PathBuf {
 
 fn world_v06() -> serde_json::Value {
     serde_json::json!({
-        "dsl_version": "0.21.2",
+        "dsl_version": "0.22.0",
         "campaign_id": "hello-world",
         "stage": "world",
         "content": {
@@ -70,6 +70,8 @@ fn world_v06() -> serde_json::Value {
             "premise": "One locked door stands between you and the road home.",
             "seed": 20260729,
             "target_minutes": 5,
+            "time": "noon",
+            "weather": "clear",
             "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
         }
     })
@@ -77,7 +79,7 @@ fn world_v06() -> serde_json::Value {
 
 fn quests_v06(trap: serde_json::Value) -> serde_json::Value {
     serde_json::json!({
-        "dsl_version": "0.21.2",
+        "dsl_version": "0.22.0",
         "campaign_id": "hello-world",
         "stage": "quests",
         "content": {

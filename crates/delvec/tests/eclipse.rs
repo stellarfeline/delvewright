@@ -44,7 +44,7 @@ fn npcs_doc(base_entity: &str, anchor: &str) -> String {
 fn quests_doc(interact_anchor: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -98,6 +98,7 @@ fn build_quests(
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -320,6 +321,7 @@ fn the_affordance_contest_states_what_it_examined() {
             layout_graph: None,
             site_plan: None,
             detail_plan: None,
+            design: None,
         })
         .expect("campaign parses");
         let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
@@ -403,6 +405,7 @@ fn build_quests_plan(
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -445,6 +448,7 @@ fn contest_binding(quests: &str, quest_plan: &str) -> Vec<(&'static str, String,
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -459,7 +463,7 @@ fn contest_binding(quests: &str, quest_plan: &str) -> Vec<(&'static str, String,
 fn two_quests_one_anchor(second_gate: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -498,7 +502,7 @@ fn two_quests_one_anchor(second_gate: &str) -> String {
 fn one_quest_two_objectives(second_gate: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{

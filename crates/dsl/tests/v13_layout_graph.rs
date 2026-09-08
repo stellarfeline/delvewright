@@ -51,7 +51,7 @@ use serde_json::{Value, json};
 ///   both beat-bound places.
 const GREEN: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "layout-graph",
   "content": {
     "nodes": [
@@ -83,7 +83,7 @@ const GREEN: &str = r#"{
 
 const BRIEF: &str = r#"{
   "campaign_id": "hello-world",
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "geometry-brief",
   "content": {
     "facts": [
@@ -105,6 +105,7 @@ fn campaign(graph: Option<String>, brief: Option<String>) -> RawCampaign {
         layout_graph: graph,
         site_plan: None,
         detail_plan: None,
+        design: None,
         geometry_brief: brief,
         ..common::valid_raw()
     }

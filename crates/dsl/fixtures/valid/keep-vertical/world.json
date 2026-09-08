@@ -16,8 +16,10 @@
     "seed": 20260731,
     "target_minutes": 8,
     "theme": "A ruined keep built into the moor's cliff, its shrine perched a storey above the gate.",
-    "title": "The Vertical Keep"
+    "time": "noon",
+    "title": "The Vertical Keep",
+    "weather": "clear"
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "world"
 }

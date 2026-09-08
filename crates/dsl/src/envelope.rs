@@ -3,6 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::design::DesignContent;
 use crate::detailplan::DetailPlanContent;
 use crate::diagnostic::{Diagnostic, codes};
 use crate::ids::CampaignId;
@@ -22,7 +23,7 @@ use crate::stages::{
 /// why, and it promises nothing about any other engine: a released campaign is
 /// built by the engine it pins (`versions.toml`), and a surface change bumps
 /// this number and moves every document in this repository with it.
-pub const DSL_VERSION: &str = "0.21.2";
+pub const DSL_VERSION: &str = "0.22.0";
 
 /// Which stage a document belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -56,6 +57,11 @@ pub enum Stage {
     /// spec-0050). Named, never renumbered, for the reason `GeometryBrief`
     /// gives.
     DetailPlan,
+    /// **The approved design's record** (optional; DSL v0.22, spec-0061): one
+    /// row per approved reference image, each naming the sky the picture was
+    /// drawn under. Named, never renumbered — it is the design step's document,
+    /// and the design step is not a position in the 1..7 sequence.
+    Design,
 }
 
 impl Stage {
@@ -74,6 +80,7 @@ impl Stage {
             Stage::LayoutGraph => "layout-graph",
             Stage::SitePlan => "site-plan",
             Stage::DetailPlan => "detail-plan",
+            Stage::Design => "design",
         }
     }
 
@@ -84,7 +91,7 @@ impl Stage {
     /// seven stages by name, so a schema object declaring part of the gate in an
     /// eighth would have been invisible to the check whose whole subject is that
     /// no such object exists. Anything that means "over the stages" reads this.
-    pub const ALL: [Stage; 11] = [
+    pub const ALL: [Stage; 12] = [
         Stage::World,
         Stage::Npcs,
         Stage::Classes,
@@ -96,6 +103,7 @@ impl Stage {
         Stage::LayoutGraph,
         Stage::SitePlan,
         Stage::DetailPlan,
+        Stage::Design,
     ];
 }
 
@@ -142,6 +150,11 @@ pub struct Campaign {
     /// Which piece fills which of the plan's places (optional; DSL v0.15,
     /// spec-0050 §1).
     pub detail_plan: Option<Envelope<DetailPlanContent>>,
+    /// The approved design's record (optional; DSL v0.22, spec-0061): the rows
+    /// `DW0890` holds the world's reachable skies to. `None` = the campaign
+    /// ships no `design.json`, which is a measured zero of an optional surface
+    /// at validation and a refusal at staging.
+    pub design: Option<Envelope<DesignContent>>,
 }
 
 /// The stage documents as raw JSON strings (compiler input): six required, the
@@ -171,6 +184,8 @@ pub struct RawCampaign {
     pub site_plan: Option<String>,
     /// `detail-plan.json` (optional; spec-0050 §1).
     pub detail_plan: Option<String>,
+    /// `design.json` (optional; spec-0061 §2).
+    pub design: Option<String>,
 }
 
 fn parse_stage<T: for<'de> Deserialize<'de>>(
@@ -259,6 +274,15 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         parse_stage(src, Stage::DetailPlan, &mut parsed, &mut diags);
         detail_plan = parsed.map(Some);
     }
+    // The design record (spec-0061 §2), on the same terms: absent = a campaign
+    // that has approved no design yet, which validation measures and staging
+    // refuses; present = parsed, validated and hashed like any other stage.
+    let mut design: Result<Option<Envelope<DesignContent>>, ()> = Ok(None);
+    if let Some(src) = &raw.design {
+        let mut parsed = Err(());
+        parse_stage(src, Stage::Design, &mut parsed, &mut diags);
+        design = parsed.map(Some);
+    }
 
     match (
         world,
@@ -272,6 +296,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         layout_graph,
         site_plan,
         detail_plan,
+        design,
     ) {
         (
             Ok(world),
@@ -285,6 +310,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
             Ok(layout_graph),
             Ok(site_plan),
             Ok(detail_plan),
+            Ok(design),
         ) => {
             let mut campaign = Campaign {
                 world,
@@ -298,6 +324,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
                 layout_graph,
                 site_plan,
                 detail_plan,
+                design,
             };
             // spec-0016 §3: expand the `ambush` sugar into real environment
             // triggers, ONCE, at the DSL boundary. Every downstream consumer —

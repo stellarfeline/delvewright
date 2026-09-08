@@ -12,7 +12,7 @@ use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, localize, par
 
 /// A v0.6 stage-1 world document: ocean horizon + a boundary (the happy path).
 const WORLD_V06: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -21,6 +21,8 @@ const WORLD_V06: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "ocean",
     "boundary": { "margin": 24, "message": "The tide turns you back." },
     "areas": [
@@ -31,7 +33,7 @@ const WORLD_V06: &str = r#"{
 
 /// Ocean horizon with NO boundary — the `DW0320` authoring error.
 const WORLD_V06_OCEAN_NO_BOUNDARY: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -40,6 +42,8 @@ const WORLD_V06_OCEAN_NO_BOUNDARY: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "ocean",
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
@@ -49,7 +53,7 @@ const WORLD_V06_OCEAN_NO_BOUNDARY: &str = r#"{
 
 /// Explicit void horizon, no boundary — valid (void needs no return rule).
 const WORLD_V06_VOID: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "world",
   "content": {
@@ -58,6 +62,8 @@ const WORLD_V06_VOID: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "horizon": "void",
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
@@ -78,6 +84,7 @@ fn campaign_with_world(world: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
@@ -152,13 +159,14 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 
 /// A 0.6.0 quests document: an `open-gate` effect gated on a flag the same
 /// objective sets first (the happy path for per-effect `requires_flags`).
 const QUESTS_V06_GATED_EFFECT: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -184,7 +192,7 @@ const QUESTS_V06_GATED_EFFECT: &str = r#"{
 
 /// A per-effect `requires_flags` that references a flag no `set-flag` produces.
 const QUESTS_V06_GATED_EFFECT_UNKNOWN_FLAG: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -209,7 +217,7 @@ const QUESTS_V06_GATED_EFFECT_UNKNOWN_FLAG: &str = r#"{
 
 /// A 0.6.0 quests document placing a block that carries a vanilla blockstate.
 const QUESTS_V06_BLOCKSTATE: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -257,7 +265,7 @@ fn v06_effect_requires_flags_unknown_is_dw0172() {
 /// spuriously trip `DW0172`. Regression for the shallow producer scan that skipped
 /// nested `set-flag`s.
 const QUESTS_V06_SEQUENCE_SETS_FLAG: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {
@@ -288,7 +296,7 @@ const QUESTS_V06_SEQUENCE_SETS_FLAG: &str = r#"{
 /// position-derived nested key so a translated build ships it localized instead of
 /// English-only.
 const QUESTS_V06_SEQUENCE_NARRATE: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

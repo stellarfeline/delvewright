@@ -59,6 +59,7 @@ fn site_plan_campaign(world_edits: &str) -> RawCampaign {
         layout_graph: Some(read("layout-graph.json")),
         site_plan: Some(read("site-plan.json")),
         detail_plan: Some(read("detail-plan.json")),
+        design: Some(read("design.json")),
     }
 }
 
@@ -66,7 +67,7 @@ fn site_plan_campaign(world_edits: &str) -> RawCampaign {
 fn script(area: &str, edits: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "gallery",
   "stage": "world-edits",
   "content": {{

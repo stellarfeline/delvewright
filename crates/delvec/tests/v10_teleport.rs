@@ -56,7 +56,7 @@ fn tmp(name: &str) -> PathBuf {
 }
 
 const WORLD: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "cast-ledger",
   "stage": "world",
   "content": {
@@ -65,13 +65,15 @@ const WORLD: &str = r#"{
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729,
     "target_minutes": 5,
+    "time": "noon",
+    "weather": "clear",
     "difficulty": "normal",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
 }"#;
 
 const DIALOGUE: &str = r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "cast-ledger",
   "stage": "dialogue",
   "content": {
@@ -106,7 +108,7 @@ const DIALOGUE: &str = r#"{
 fn quests(teleport_extent: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "cast-ledger",
   "stage": "quests",
   "content": {{

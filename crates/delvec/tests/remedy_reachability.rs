@@ -76,7 +76,7 @@ fn campaign(tag: &str, horizon: Option<serde_json::Value>) -> PathBuf {
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.21.2");
+    world["dsl_version"] = serde_json::json!("0.22.0");
     if let Some(h) = horizon {
         let content = world["content"].as_object_mut().unwrap();
         content.insert("horizon".into(), h);
@@ -752,7 +752,7 @@ fn dw0320_adding_a_boundary_or_choosing_void_both_reach_a_different_verdict() {
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    world["dsl_version"] = serde_json::json!("0.21.2");
+    world["dsl_version"] = serde_json::json!("0.22.0");
     world["content"]
         .as_object_mut()
         .unwrap()
@@ -800,4 +800,262 @@ fn dw0320_adding_a_boundary_or_choosing_void_both_reach_a_different_verdict() {
     let (code, after) = build("boundary-void", &camp_b, &dir);
     assert_eq!(code, 0, "`void` needs no boundary:\n{after}");
     assert!(!after.contains("DW0320"), "{after}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0890 — the approved hour is the built hour
+// ---------------------------------------------------------------------------
+//
+// Eight moves across three shapes, and every one of them is an edit to a
+// document or to the `design/` directory beside it. They are taken here rather
+// than only asserted in `design_record.rs` because the question this file asks
+// is not *does the rule fire* — it is *does the move the rule names reach a
+// different verdict*, which is a different assertion and the one nobody was
+// making about `DW0885`.
+
+/// A hello-world copy carrying `rows` in `design.json` and `files` under
+/// `design/`, with `world.json`'s hour set to `time`.
+fn design_campaign(tag: &str, time: &str, files: &[&str], rows: &[(&str, &str, &str)]) -> PathBuf {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    common::patch_file(&camp.join("world.json"), |v| {
+        v["content"]["time"] = serde_json::json!(time);
+    });
+    for f in files {
+        let p = camp.join("design").join(f);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        // Nothing opens image bytes (spec-0061 §12), so nothing here writes any.
+        std::fs::write(p, b"an approved picture").unwrap();
+    }
+    if !rows.is_empty() {
+        write_design(&camp, rows);
+    }
+    camp
+}
+
+/// Write (or rewrite) `design.json` over `rows` of `(name, time, weather)`.
+fn write_design(camp: &Path, rows: &[(&str, &str, &str)]) {
+    let refs: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|(name, time, weather)| {
+            serde_json::json!({
+                "name": name,
+                "shows": "the picture, in one sentence",
+                "time": time,
+                "weather": weather,
+            })
+        })
+        .collect();
+    std::fs::write(
+        camp.join("design.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "dsl_version": delvewright_dsl::DSL_VERSION,
+            "campaign_id": "hello-world",
+            "stage": "design",
+            "content": { "references": refs },
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
+/// **`DECLARE the hour the record states in `world.json``** and **`AUTHOR the
+/// design again under the hour this world reaches`** — the two moves shape a
+/// names for a world and a record that disagree.
+#[test]
+fn dw0890_declaring_the_recorded_hour_and_re_approving_the_design_both_build() {
+    let dir = common::prefabs_dir();
+    let red = design_campaign(
+        "sky-red",
+        "noon",
+        &["concept/shore-far.png"],
+        &[("concept/shore-far", "night", "clear")],
+    );
+    let (code, before) = build("sky-red", &red, &dir);
+    assert_eq!(code, 1, "refused:\n{before}");
+    assert!(before.contains("DW0890"), "{before}");
+    assert!(
+        before.contains("DECLARE the hour the record states in `world.json`"),
+        "the message names the move:\n{before}"
+    );
+    assert!(
+        before.contains("AUTHOR the design again under the hour this world reaches"),
+        "and the second one:\n{before}"
+    );
+
+    // Move one: declare the hour the record states.
+    let a = design_campaign(
+        "sky-declare",
+        "night",
+        &["concept/shore-far.png"],
+        &[("concept/shore-far", "night", "clear")],
+    );
+    let (code, after) = build("sky-declare", &a, &dir);
+    assert_eq!(code, 0, "declaring `night` builds:\n{after}");
+    assert!(!after.contains("DW0890 [error]"), "{after}");
+
+    // Move two: re-approve the design under the hour this world reaches.
+    let b = design_campaign(
+        "sky-reapprove",
+        "noon",
+        &["concept/shore-far.png"],
+        &[("concept/shore-far", "noon", "clear")],
+    );
+    let (code, after) = build("sky-reapprove", &b, &dir);
+    assert_eq!(code, 0, "re-approving under `noon` builds:\n{after}");
+    assert!(!after.contains("DW0890 [error]"), "{after}");
+}
+
+/// **`DELETE that effect`** — shape a's third move, for an hour the world
+/// reaches only because a `set-time` puts it there.
+#[test]
+fn dw0890_deleting_the_set_time_effect_that_added_the_hour_builds() {
+    let dir = common::prefabs_dir();
+    let camp = design_campaign(
+        "sky-effect",
+        "night",
+        &["concept/shore-far.png"],
+        &[("concept/shore-far", "night", "clear")],
+    );
+    // The effect is APPENDED to whatever the campaign already fires, and the
+    // green half restores the original bytes — deleting the whole bundle would
+    // take the campaign's `open-gate` with it and redden `DW0317` instead,
+    // which is a different verdict for the wrong reason.
+    let quests = std::fs::read_to_string(camp.join("quests.json")).unwrap();
+    common::patch_file(&camp.join("quests.json"), |v| {
+        let q = &mut v["content"]["quests"][0];
+        let id = q["objectives"][0]["id"].as_str().unwrap().to_string();
+        let bundle = q["on_objective_complete"][&id]
+            .as_array_mut()
+            .expect("hello-world fires an effect on its first objective");
+        bundle.push(serde_json::json!({ "type": "set-time", "time": "dawn" }));
+    });
+    let (code, before) = build("sky-effect-red", &camp, &dir);
+    assert_eq!(code, 1, "refused:\n{before}");
+    assert!(before.contains("DW0890"), "{before}");
+    assert!(
+        before.contains("the third move is to DELETE that effect"),
+        "the message names the move:\n{before}"
+    );
+
+    std::fs::write(camp.join("quests.json"), &quests).unwrap();
+    let (code, after) = build("sky-effect-green", &camp, &dir);
+    assert_eq!(code, 0, "deleting the effect builds:\n{after}");
+    assert!(!after.contains("DW0890 [error]"), "{after}");
+}
+
+/// **`AUTHOR the approved image into `design/<dir>/``** and **`DELETE the row
+/// from `design.json``** — shape b's two moves, for a row that names no file.
+#[test]
+fn dw0890_adding_the_missing_image_and_deleting_its_row_both_build() {
+    let dir = common::prefabs_dir();
+    let red = design_campaign(
+        "row-red",
+        "night",
+        &["concept/shore-far.png"],
+        &[
+            ("concept/shore-far", "night", "clear"),
+            ("concept/tower-far", "night", "clear"),
+        ],
+    );
+    let (code, before) = build("row-red", &red, &dir);
+    assert_eq!(code, 1, "refused:\n{before}");
+    assert!(before.contains("DW0890"), "{before}");
+    assert!(
+        before.contains("AUTHOR the approved image into `design/concept/`"),
+        "the message names the move:\n{before}"
+    );
+    assert!(
+        before.contains("DELETE the row from `design.json`"),
+        "and the second one:\n{before}"
+    );
+
+    // Move one: copy the approved image in.
+    let a = design_campaign(
+        "row-image",
+        "night",
+        &["concept/shore-far.png", "concept/tower-far.png"],
+        &[
+            ("concept/shore-far", "night", "clear"),
+            ("concept/tower-far", "night", "clear"),
+        ],
+    );
+    let (code, after) = build("row-image", &a, &dir);
+    assert_eq!(code, 0, "the image resolves the row:\n{after}");
+    assert!(!after.contains("DW0890 [error]"), "{after}");
+
+    // Move two: delete the row.
+    let b = design_campaign(
+        "row-delete",
+        "night",
+        &["concept/shore-far.png"],
+        &[("concept/shore-far", "night", "clear")],
+    );
+    let (code, after) = build("row-delete", &b, &dir);
+    assert_eq!(code, 0, "deleting the row builds:\n{after}");
+    assert!(!after.contains("DW0890 [error]"), "{after}");
+}
+
+/// **`AUTHOR its row in `design.json``**, **`DELETE the file`** and **`AUTHOR
+/// the document`** — shape c's three moves, for an approved image nobody
+/// recorded.
+#[test]
+fn dw0890_recording_the_image_deleting_it_and_authoring_the_document_all_build() {
+    let dir = common::prefabs_dir();
+    let red = design_campaign(
+        "file-red",
+        "night",
+        &["concept/shore-far.png", "concept/shore-near.png"],
+        &[("concept/shore-far", "night", "clear")],
+    );
+    let (code, before) = build("file-red", &red, &dir);
+    assert_eq!(code, 1, "refused:\n{before}");
+    assert!(before.contains("DW0890"), "{before}");
+    assert!(
+        before.contains("AUTHOR its row in `design.json`"),
+        "the message names the move:\n{before}"
+    );
+    assert!(
+        before.contains("DELETE the file if it was never approved"),
+        "and the second one:\n{before}"
+    );
+
+    // Move one: record it.
+    let a = design_campaign(
+        "file-record",
+        "night",
+        &["concept/shore-far.png", "concept/shore-near.png"],
+        &[
+            ("concept/shore-far", "night", "clear"),
+            ("concept/shore-near", "night", "clear"),
+        ],
+    );
+    let (code, after) = build("file-record", &a, &dir);
+    assert_eq!(code, 0, "recording it builds:\n{after}");
+    assert!(!after.contains("DW0890 [error]"), "{after}");
+
+    // Move two: remove the file that was never approved.
+    let b = design_campaign(
+        "file-remove",
+        "night",
+        &["concept/shore-far.png"],
+        &[("concept/shore-far", "night", "clear")],
+    );
+    let (code, after) = build("file-remove", &b, &dir);
+    assert_eq!(code, 0, "removing it builds:\n{after}");
+    assert!(!after.contains("DW0890 [error]"), "{after}");
+
+    // Move three: a campaign with images and no document at all is told to
+    // AUTHOR the document, and authoring it reaches a different verdict.
+    let c = design_campaign("file-no-doc", "night", &["concept/shore-far.png"], &[]);
+    let (code, before) = build("file-no-doc-red", &c, &dir);
+    assert_eq!(code, 1, "refused:\n{before}");
+    assert!(
+        before.contains("has no `design.json` at all") && before.contains("AUTHOR the document"),
+        "the message names the move:\n{before}"
+    );
+    write_design(&c, &[("concept/shore-far", "night", "clear")]);
+    let (code, after) = build("file-no-doc-green", &c, &dir);
+    assert_eq!(code, 0, "authoring the document builds:\n{after}");
+    assert!(!after.contains("DW0890 [error]"), "{after}");
 }

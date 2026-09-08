@@ -157,6 +157,13 @@ pub fn validate_campaign_with(
     // spec-0032: a shop stands on a prefab anchor, and an anchor
     // no bound prefab provides is the same defect a lethal volume's is.
     shop_anchor_checks(c, anchors, &mut d);
+    // spec-0061: the design record's own document-level refusals — an empty
+    // `references`, a name that is not a path under `design/`, two rows for one
+    // picture. The comparison against the world's reachable skies (`DW0890`) is
+    // compiler-tier, because it reads the same reachable-state scan `DW0210`
+    // and `DW0496` do and needs the campaign's `design/` directory beside it.
+    // No-op for a campaign that ships no `design.json`.
+    crate::design::check(c, &mut d);
 
     d
 }
@@ -803,6 +810,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 .iter()
                 .map(|e| (Stage::DetailPlan, e.stage, e.dsl_version.as_str())),
         )
+        .chain(
+            c.design
+                .iter()
+                .map(|e| (Stage::Design, e.stage, e.dsl_version.as_str())),
+        )
         .collect();
     for (expected, actual, version) in stages {
         if actual != expected {
@@ -869,6 +881,7 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
             .iter()
             .map(|e| (Stage::DetailPlan, &e.campaign_id)),
     )
+    .chain(c.design.iter().map(|e| (Stage::Design, &e.campaign_id)))
     .collect();
     let canonical = c.world.campaign_id.as_str();
     for (stage, id) in ids {

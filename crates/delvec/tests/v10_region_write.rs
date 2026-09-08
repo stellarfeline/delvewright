@@ -59,7 +59,7 @@ fn prefabs_with_doorstep(name: &str) -> PathBuf {
 fn quests_doc(effects: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -96,6 +96,7 @@ fn parse_hw(quests: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -396,7 +397,7 @@ fn a_bare_water_fill_is_refused_exactly_like_the_namespaced_one() {
 /// only from the point in the quest graph where the fill fires.
 fn quests_doc_over_a_laid_step() -> String {
     r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

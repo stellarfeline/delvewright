@@ -957,6 +957,15 @@ pub struct Plan<'a> {
     /// `Some(seconds)` when completing that step's objective triggers a
     /// `Verb::Cutscene` → emitted as `cutscene_seconds`.
     pub critical_path_cutscene: Vec<Option<u32>>,
+    /// **The approved reference images the campaign directory holds**
+    /// (spec-0061), so emission can write `validation/design-record.json` — the
+    /// ledger the staging gate reads — on every build.
+    ///
+    /// Default is *no images*, and that is the honest reading rather than a
+    /// placeholder: a plan built from documents alone has no directory behind
+    /// it, so there are no approved image files to find. A run that has one
+    /// attaches it with [`Plan::with_design_files`].
+    pub design_files: crate::compiler::design::DesignFiles,
     /// What the ocean-datum invariant (`DW0344`) examined in this build, printed
     /// as its own line by [`crate::compiler::emit::build`]. `NOT_AN_OCEAN` for
     /// every world that declares another horizon.
@@ -3124,9 +3133,23 @@ impl<'a> Plan<'a> {
             massing_bounds,
             blockout,
             surround,
+            design_files: crate::compiler::design::DesignFiles::default(),
             waterline,
             face_binding: binding,
         })
+    }
+
+    /// Attach the approved reference images the campaign directory holds
+    /// (spec-0061), which the plan cannot read for itself: it is built from
+    /// parsed documents and never knows where they came from.
+    ///
+    /// Every `delvec` verb that reads a campaign directory calls this, because
+    /// the loader is the one thing that knows the path and it hands the list on
+    /// beside the stage documents.
+    #[must_use]
+    pub fn with_design_files(mut self, files: crate::compiler::design::DesignFiles) -> Self {
+        self.design_files = files;
+        self
     }
 
     /// **Every placed piece in this build**, area pieces and the horizon

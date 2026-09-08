@@ -64,17 +64,30 @@ pub struct WorldContent {
     /// (`DW0180`/`DW0181`). Stage docs themselves stay pure English.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub languages: Vec<String>,
-    /// Declared initial world time (DSL v0.5, spec-0010). Dimension-global; frozen
-    /// by environment sealing (`advance_time false`) so the set state persists.
-    /// Absent = `noon` (the v0 default). Affects sky attenuation in the compiler's
-    /// assembled-light model.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub time: Option<WorldTime>,
-    /// Declared initial weather (DSL v0.5, spec-0010). Dimension-global; frozen by
-    /// environment sealing (`advance_weather false`). Absent = `clear`. Rain and
-    /// thunder attenuate effective sky brightness in the assembled-light model.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub weather: Option<WorldWeather>,
+    /// **The hour this delve is played at** (DSL v0.5, spec-0010; required since
+    /// spec-0061). Dimension-global; frozen by environment sealing
+    /// (`advance_time false`) so the set state persists. Affects sky attenuation
+    /// in the compiler's assembled-light model.
+    ///
+    /// **Required, and it has no default.** "This delve is played at noon" is a
+    /// design decision, and a mechanism that supplies one silently when the
+    /// author said nothing is exactly what `CLAUDE.md` forbids a primitive from
+    /// encoding — the same ruling spec-0060 §4.1 made for `walk_y`. It is also
+    /// the world half of the comparison `DW0890` makes against the approved
+    /// design's rows, so every campaign has to state it for the comparison to
+    /// have two sides. Emission is unchanged: `time set <kw>` was always
+    /// emitted, so a campaign that already declared this builds
+    /// byte-identically.
+    pub time: WorldTime,
+    /// **The weather this delve is played in** (DSL v0.5, spec-0010; required
+    /// since spec-0061). Dimension-global; frozen by environment sealing
+    /// (`advance_weather false`). Rain and thunder attenuate effective sky
+    /// brightness in the assembled-light model.
+    ///
+    /// Required, with no default, for the reason [`WorldContent::time`] gives.
+    /// Emission is unchanged: `weather <kw>` is emitted only for a declared
+    /// non-`clear` weather, because `clear` is vanilla's own state.
+    pub weather: WorldWeather,
     /// Declared combat difficulty (DSL v0.6). Absent =
     /// the compiler's historical derivation — `easy` when the campaign fields any
     /// wave, `peaceful` when it fields none — which is what keeps every campaign
@@ -156,13 +169,19 @@ pub enum Carrier {
 /// Every keyword-to-tick mapping lives in exactly one table ([`WorldTime::spec`]),
 /// and the four vanilla keywords still emit their keyword verbatim, so existing
 /// campaigns are byte-identical.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+///
+/// **There is no `Default`** (spec-0061 §4). A default hour is a design decision
+/// wearing a mechanism's clothes, and `#[default] Noon` is what let a delve whose
+/// whole approved look was night build, light-check and render under a blue noon
+/// sky. Removing the impl is what makes that unwritable rather than merely
+/// discouraged: `WorldContent::time` is required, and nothing can supply an hour
+/// the author did not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorldTime {
     /// Morning daylight (`/time set day`, 1000 ticks).
     Day,
-    /// Midday, brightest (`/time set noon`, 6000 ticks) — the default.
-    #[default]
+    /// Midday, brightest (`/time set noon`, 6000 ticks).
     Noon,
     /// Sunset — the sky visibly going orange and the day ending
     /// (`/time set 12000`). Deliberately NOT 13000: that is the instant the sun
@@ -208,15 +227,34 @@ impl WorldTime {
     pub fn daytime_ticks(self) -> i64 {
         self.spec().1
     }
+
+    /// **The word an author writes** — this state's spelling in a document.
+    ///
+    /// Not [`WorldTime::token`], which is the `/time set` argument and is a raw
+    /// tick count for the two states vanilla does not name. A diagnostic that
+    /// asks an author to declare an hour has to say `dusk`, not `12000`: the
+    /// number is what the compiler emits and is not writable in `world.json`.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            WorldTime::Day => "day",
+            WorldTime::Noon => "noon",
+            WorldTime::Dusk => "dusk",
+            WorldTime::Night => "night",
+            WorldTime::Midnight => "midnight",
+            WorldTime::Dawn => "dawn",
+        }
+    }
 }
 
 /// A declared weather state (DSL v0.5, spec-0010). Values are the vanilla
 /// `/weather` keywords; frozen (`advance_weather false`), so a set state persists.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+///
+/// **No `Default`**, for the reason [`WorldTime`] gives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorldWeather {
-    /// Clear sky (`/weather clear`) — the default.
-    #[default]
+    /// Clear sky (`/weather clear`). Vanilla's own state, so emission writes no
+    /// `/weather` command for it.
     Clear,
     /// Rain (`/weather rain`).
     Rain,
@@ -225,6 +263,14 @@ pub enum WorldWeather {
 }
 
 impl WorldWeather {
+    /// The word an author writes — identical to [`WorldWeather::token`] for
+    /// every state, and stated separately so a message that names a document's
+    /// vocabulary reads the document's vocabulary. See [`WorldTime::keyword`],
+    /// where the two differ.
+    pub fn keyword(self) -> &'static str {
+        self.token()
+    }
+
     /// The vanilla `/weather` keyword.
     pub fn token(self) -> &'static str {
         match self {

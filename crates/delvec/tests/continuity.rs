@@ -51,6 +51,7 @@ fn parse(deferred: bool, quests: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -59,7 +60,7 @@ fn parse(deferred: bool, quests: &str) -> Campaign {
 /// `obj/talk` completion bundle and the quest `on_complete` bundle.
 fn quests(talk_fx: &str, complete_fx: &str) -> String {
     r#"{
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {

@@ -181,6 +181,34 @@
                 "verb": "opens"
               },
               "type": "open-gate"
+            },
+            {
+              "time": "noon",
+              "type": "set-time"
+            },
+            {
+              "time": "dusk",
+              "type": "set-time"
+            },
+            {
+              "time": "night",
+              "type": "set-time"
+            },
+            {
+              "time": "midnight",
+              "type": "set-time"
+            },
+            {
+              "time": "dawn",
+              "type": "set-time"
+            },
+            {
+              "type": "set-weather",
+              "weather": "rain"
+            },
+            {
+              "type": "set-weather",
+              "weather": "thunder"
             }
           ]
         },
@@ -227,6 +255,6 @@
       }
     ]
   },
-  "dsl_version": "0.21.2",
+  "dsl_version": "0.22.0",
   "stage": "quests"
 }

@@ -33,6 +33,7 @@ pub fn valid_raw() -> RawCampaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     }
 }
 

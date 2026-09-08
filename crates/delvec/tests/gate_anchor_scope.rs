@@ -230,6 +230,7 @@ fn keep_crawl_closing(anchor: &str) -> Campaign {
         layout_graph: None,
         site_plan: None,
         detail_plan: None,
+        design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
