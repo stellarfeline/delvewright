@@ -734,22 +734,16 @@ pub fn area_members(area: &delvewright_dsl::Area, prefabs: &PrefabRegistry) -> V
 /// Returns the binding beside the diagnostics: a check that refuses nothing
 /// still owes the numbers it refused nothing over.
 ///
-/// # The one shape that is not yet raised here, and why
+/// # The walk plane is owed on every base
 ///
-/// `walk_y` is owed on **every** base (spec-0060 §4.1), and
-/// [`seating_reasons`] computes that shape on every base — `delvec prefab
-/// seating` reports it for `void` and `valley` exactly as it does for `ocean`.
-/// What this campaign-tier refusal raises today is the ocean's half, where the
-/// area origin is DERIVED from the number and a build genuinely cannot proceed
-/// without it.
-///
-/// The reason is named rather than hidden: the shipped content library declares
-/// `walk_y` on none of its 36 documents, and that work is spec-0060 §8's, in
-/// the content repository. Raising the `void` and `valley` halves before that
-/// lands would refuse every campaign in the tree for a fact about a library
-/// this round does not own. It is a recorded debt with one move: once the
-/// content round declares the field and the content pin moves,
-/// [`WALK_Y_BINDS_ON_EVERY_BASE`] becomes `true` and this filter goes.
+/// `walk_y` is owed on **every** base (spec-0060 §4.1) and refused on every
+/// base here, from the one rule [`seating_reasons`] states — so a campaign is
+/// refused for a silent walk plane wherever `delvec prefab seating` reports one,
+/// and the command and the campaign give a creator one answer rather than two.
+/// The ocean is where the number is also CONSUMED, because the area origin is
+/// derived from it (spec-0060 §3.2); `void` and `valley` state their own datum
+/// and still owe the declaration, because a piece with no walk plane is a piece
+/// nothing can say a body stands on.
 pub fn check(
     campaign: &Campaign,
     prefabs: &PrefabRegistry,
@@ -785,9 +779,6 @@ pub fn check(
                 binding.waterlines_declared += 1;
             }
             let mut reasons = seating_reasons(base, f);
-            if !WALK_Y_BINDS_ON_EVERY_BASE && base != HorizonBase::Ocean {
-                reasons.retain(|r| r.shape != Shape::NoWalkPlane);
-            }
             if let Some(w) = waterline_reason(f) {
                 reasons.push(w);
             } else if f.declared_waterline.is_some() {
@@ -840,15 +831,6 @@ pub fn check(
     }
     (binding, diags)
 }
-
-/// Whether the missing-`walk_y` shape is raised as a campaign refusal on a base
-/// that does not derive its origin from the number.
-///
-/// `false` is a **recorded debt**, not a decision: see [`check`]. The rule is
-/// written once in [`seating_reasons`] and reported on every base by
-/// `delvec prefab seating`; this constant governs only whether the campaign is
-/// refused for it on `void` and `valley`.
-pub const WALK_Y_BINDS_ON_EVERY_BASE: bool = false;
 
 /// What every `DW0886` message ends with: the base a campaign cannot reach from
 /// here, so that this refusal and `DW0855` read as one answer rather than two.
