@@ -834,6 +834,27 @@ jobs:
       # not a clean repository. Deterministic, offline, stdlib-only python3.
       - name: every environment-gated job proves its own approval
         run: python3 tools/check-approval-guard.py
+      # The step above binds the guard to every job that CAN publish; this binds
+      # which jobs those are. `engine-release.yml` fills two shelves from one tag
+      # and used to gate one of them: `publish-assets` needed only `[identity,
+      # binaries]`, declared no environment, and created the GitHub Release and
+      # uploaded the whole shelf with nobody asked, while the crates.io half
+      # waited for a reviewer. One tag push made the release public with the
+      # registry still unpublished, and the mirror image — published crates
+      # beside a release that never appeared — was equally reachable. The shelf
+      # now goes into a DRAFT release, which publishes nothing and owes no
+      # approval, and ONE gated job does both publishes: crates.io first (a
+      # one-way door), then the undraft (one cheap, retryable call). That is a
+      # claim about which job holds which verb, and the arrangement it replaces
+      # was described correctly by its own comments for as long as it existed —
+      # so this refuses a release-publishing verb, or the registry credential, in
+      # any job that declares no `environment:`, and refuses the release verbs
+      # outright in the scripts a job could hide them behind. Reads workflows
+      # through `tools/lib/workflow_yaml.py`, the one shared parse rule. States
+      # its binding counts and refuses a zero. Deterministic, offline,
+      # stdlib-only python3.
+      - name: only the approval-gated job publishes anything
+        run: python3 tools/check-release-publish-gate.py
       # ADR-0016's third version line — the `/new-delve` skill's own version and
       # the `delvec` window it drives — is checked in the CONTENT repository, by
       # `tools/check-skill-version.py` there, because that is where the page

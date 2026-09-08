@@ -1,0 +1,19 @@
+# An ungated job that writes to a release without ever asking whether that
+# release is a draft: on a tag whose release is already published, every upload
+# here is public.
+name: fixture — a release writer that never looks
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+jobs:
+  fill:
+    name: fill whatever is there
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/*.tar.gz --clobber
