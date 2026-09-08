@@ -1,0 +1,51 @@
+# The shape `engine-release.yml` has: an ungated job that assembles the shelf
+# into a DRAFT release and reads the draft state back, and one gated job that
+# performs BOTH publishes — the registry first, the undraft second.
+# The `uses:` steps are LOCAL action paths on purpose: an `owner/repo@ref`
+# anywhere in this tree is a pin the registry must hold (`tools/check-pins.py`),
+# and a fixture is not a place this repository fetches anything from.
+name: fixture — one approval publishes both
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+permissions:
+  contents: read
+jobs:
+  shelf:
+    name: shelf into a draft release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: fill the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" --draft --title "fixture $TAG"
+          gh release upload "$TAG" dist/*.tar.gz --clobber
+          is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+          [ "$is_draft" = "true" ] || exit 1
+
+  publish:
+    name: publish (owner approval)
+    needs: shelf
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: ./.github/actions/fixture-checkout
+      - name: the gate actually bound
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/assert-run-approved.sh crates-io
+      - name: the one-way door, first
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: bash tools/crates-io-publish.sh --publish
+      - name: then the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false
