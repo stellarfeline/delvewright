@@ -312,11 +312,18 @@ fn dw0344_declaring_the_walk_plane_lands_the_waterline_on_the_sea() {
         m.insert("walk_y".into(), serde_json::json!(2));
     });
     let (code, before) = build("arm1-red", &camp, &dir);
-    assert_eq!(code, 3, "refused at the build:\n{before}");
+    // Refused at VALIDATION, exit 1: both numbers are in the document and the
+    // origin is derived from one of them, so nothing has to be placed to know
+    // the two disagree. Same code, one stage earlier.
+    assert_eq!(code, 1, "refused at validation:\n{before}");
     assert!(before.contains("DW0344"), "{before}");
     assert!(
         before.contains("`walk_y: 3`"),
         "the move names the plane that seats this waterline:\n{before}"
+    );
+    assert!(
+        !before.contains("place template"),
+        "and nothing was placed:\n{before}"
     );
 
     edit_meta(&dir, "hello-room", |m| {

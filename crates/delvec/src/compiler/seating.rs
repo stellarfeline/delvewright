@@ -325,9 +325,12 @@ fn walk_plane_over_waterline(base: HorizonBase, f: &PieceFacts) -> Option<Reason
              this world's sea plane (y={sea}). A shore stands its walk plane exactly ONE course \
              above the water it can be climbed out of, which is `waterline_y == walk_y - 1`; \
              these two declarations are {wl} and {w}. Both numbers are measurements of the \
-             piece, so the move is to the piece, not to the campaign: (1) RE-MEASURE, if either \
-             number was typed rather than read off the blocks — the generator that laid them is \
-             where both belong; (2) REBUILD the piece so its floor stands a course over its own \
+             piece, so the move is to the piece, not to the campaign: (1) DECLARE the walk plane \
+             that seats this waterline, `walk_y: {want}`, if the piece's floor really does stand \
+             a course above its own water and it was the walk plane that was typed rather than \
+             measured; (2) DECLARE the waterline the bytes really hold, `waterline_y: {holds}`, \
+             if it was that one — `DW0887` holds that number to the blocks, so it cannot be \
+             guessed either; (3) REBUILD the piece so its floor stands a course over its own \
              water, which is what the count above moves. Changing the horizon does not answer \
              it: the two declarations disagree with each other on every base, and it is only an \
              ocean that has a sea to notice",
@@ -335,6 +338,8 @@ fn walk_plane_over_waterline(base: HorizonBase, f: &PieceFacts) -> Option<Reason
             walk_ref = crate::compiler::horizon::OCEAN_WALK_REF_Y,
             n = delta.abs(),
             dir = if delta > 0 { "above" } else { "below" },
+            want = wl + 1,
+            holds = w - 1,
         ),
     })
 }

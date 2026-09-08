@@ -1798,22 +1798,25 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
         "and nothing was placed:\n{log}"
     );
 
-    // --- ocean: the sea would hold the water, and the piece still cannot be
-    //     seated — for a different and equally correct reason ----------------
+    // --- ocean: the sea holds the water, and the piece stands clear of it ---
     //
-    // This half used to build. It cannot any more, and the reason is the whole
-    // subject of spec-0060 rather than a regression: an ocean seats a piece by
-    // the piece's OWN walk plane, so `island-beach-camp` declaring `walk_y: 3`
-    // is placed at y=60 and stands its land at 63 — and its bytes stand a body
-    // in one more cell, down at local y=2, which lands at world y=62. That is
-    // the sea's own plane, a cell vanilla floods from the ocean beside it, and
-    // a party would be standing in it. Under the retired global datum the whole
-    // piece sat there and nothing said so.
+    // This half carried a MEASURED FINDING for one round, pinned here so the
+    // repair would have a red to turn green: `island-beach-camp` declaring
+    // `walk_y: 3` is placed at y=60 and stands its land at 63, and the engine
+    // then read one more standable cell down at local y=2, landing at world
+    // y=62 — the sea's own plane, with a party apparently standing in it.
     //
-    // So this is a MEASURED FINDING against the shipped library, pinned here so
-    // that the content round which repairs it (spec-0060 §8) has a red to turn
-    // green, and so that "this piece is seatable on an ocean" cannot be claimed
-    // by anything until it is.
+    // The cell was `minecraft:seagrass` at local (20,2,11), and there is no body
+    // in it: a seagrass block's cell holds a water SOURCE in vanilla, which is
+    // what the generator that laid it says in its own comment, and the collision
+    // table read it as a thin decoration a body steps over. That is repaired in
+    // `blockshape::is_submerged_by_nature`, and the piece measures 223 standable
+    // cells at local y=3 and none below it.
+    //
+    // So the finding is closed by the instrument being right rather than by the
+    // library moving, and what this half asserts now is the green with the
+    // binding that makes it a measurement: every walk cell judged against the
+    // sea, none at or below it, over a non-zero count.
     let camp = beach_camp_campaign("dw0318-ocean", true);
     let out = tmp("dw0318-ocean-out");
     let r = delvec(&[
@@ -1829,15 +1832,25 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
         String::from_utf8_lossy(&r.stdout),
         String::from_utf8_lossy(&r.stderr)
     );
-    assert_eq!(code(&r), 1, "refused at validation under ocean:\n{log}");
-    assert!(log.contains("DW0886"), "expected DW0886:\n{log}");
+    assert_eq!(code(&r), 0, "the shore builds on an ocean:\n{log}");
+    let sea_walk = log
+        .lines()
+        .find(|l| l.starts_with("sea walk-plane binding:"))
+        .unwrap_or_else(|| panic!("every ocean build states this binding:\n{log}"));
     assert!(
-        log.contains("`walk_y: 3`") && log.contains("local y=2"),
-        "it names the declared plane and the cell that stands under it:\n{log}"
+        sea_walk.contains("0 stand at or below it"),
+        "no body stands in the sea:\n{sea_walk}"
     );
+    let judged: usize = sea_walk
+        .split(" of ")
+        .next()
+        .and_then(|s| s.rsplit(' ').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0);
     assert!(
-        log.contains("world y=62"),
-        "and where that cell lands in the world:\n{log}"
+        judged > 0,
+        "and the zero is over a non-empty population — a zero over nothing is the unbound \
+         vacuity mode, not a pass:\n{sea_walk}"
     );
     // The water itself is not the finding here: under an ocean there IS a sea
     // for it to meet, which is what the void half proved there is not.
@@ -1861,7 +1874,7 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
 /// declaring a walk plane of 2 lands it one block over. The two declarations are
 /// claims about one building and this is the rule that holds them to each other.
 #[test]
-fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
+fn ocean_waterline_off_sea_level_is_refused_at_validation_with_dw0344() {
     let prefabs_copy = common::ocean_prefabs_dir("dw0344-arm1-prefabs", common::OceanRoom::Shore);
     let meta_path = prefabs_copy.join("hello-room.json");
     let read_meta = || -> serde_json::Value {
@@ -1922,11 +1935,24 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     meta["walk_y"] = serde_json::json!(2);
     write_meta(&meta);
     let (bad, log) = build("dw0344-arm1-bad");
-    assert_eq!(bad, 3, "off-level waterline should exit 3:\n{log}");
+    // **Refused at VALIDATION, exit 1, before a block is placed.** The two
+    // numbers are both in the document and the area's origin is derived from one
+    // of them, so `pos.y + waterline_y == 62` is exactly `waterline_y ==
+    // walk_y - 1` — nothing has to be placed to know it. The code is the same
+    // (`DW0344`), which is the point: this is the placement question asked one
+    // stage earlier, not a second rule with a second number.
+    assert_eq!(
+        bad, 1,
+        "off-level waterline is refused at validation:\n{log}"
+    );
     assert!(log.contains("DW0344"), "expected DW0344:\n{log}");
     assert!(
-        log.contains("blocks above the ocean sea level"),
+        log.contains("block(s) above this world's sea plane"),
         "it says which way and by how much:\n{log}"
+    );
+    assert!(
+        !log.contains("place template"),
+        "and nothing was placed:\n{log}"
     );
     // The remedy names the number that would make it right, so the move is one
     // an author can take rather than one they have to derive.
