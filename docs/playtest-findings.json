@@ -2467,6 +2467,16 @@
       "note": "Reproduced by planting, not reasoned about: `cave-shore`'s connector pointed back at a cell the new bytes fill with andesite, after which `prefab seating --horizon ocean` still answered 4 of 4 at exit 0 and `prefab audit` passed both arms. Found only by reading the bytes by hand during a library round.",
       "round": null,
       "triage": "capability"
+    },
+    {
+      "campaign": "gallery",
+      "carrier": null,
+      "finding": "the check that pairs a horizon with a piece set reads only the `areas[]` placement model, so a campaign that places through a site plan has no piece judged against the horizon it declares at all — and a site plan is the only placement model a `valley` horizon permits, since declaring both is refused, which makes that arm of the check unable to bind on any legal campaign; measured from two sides on the gallery, as a binding line of 0 of 0 areas on the site-plan point and as 2 of 6 cells reported `not-an-areas-base` by the agreement gate",
+      "general_form": "the rule that a horizon and a piece set are a pair is applied to whatever places pieces rather than to one placement model: a site plan's own pieces are judged against the declared horizon by the same implementation, and the binding count is stated per placement model so a model the check cannot reach is visible as a zero rather than absent",
+      "id": "gal-03",
+      "note": "Reported by the round that turned the walk-plane requirement on for every base, which found that turning it on made no difference on `valley` because nothing legal reaches it. The round was told to report rather than to widen the rule or to add a probe that hides the gap behind another refusal, and did. Queued with no carrier on purpose: no check of this shape exists, so the staging gate reds and names it.",
+      "round": null,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
