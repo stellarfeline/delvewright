@@ -185,7 +185,9 @@ def _judge(argv: list[str] | None) -> int:
     if not ok:
         print(f"{TOOL}: FAIL — {message}", file=sys.stderr)
         return 2
-    print(f"  bind test: {message}")
+    # Flushed, because the finding below goes to stderr: unflushed, the two
+    # streams interleave and the log reads as if the lookup were never bound.
+    print(f"  bind test: {message}", flush=True)
 
     cksum = crates_index.cksum(CRATE, base_version)
     if cksum:
