@@ -217,6 +217,16 @@ pub struct AuditReport {
     /// times. `waterline_declarations` is the denominator, `waterline_refused`
     /// the numerator, and both are stated on every run.
     pub waterline: WaterlineBinding,
+    /// **What the byte-claim check did** (`DW0888`) — always present, including
+    /// the run that found nothing to hold.
+    ///
+    /// The waterline was one member of a class nothing else in this document was
+    /// held to: how big the templates are, which game version they carry, where
+    /// a body stands, where a named place is, what a trap's hardware is, and
+    /// whether a declared socket is a way through anything. `examined` is the
+    /// denominator over the whole class, `denied` the numerator, and `per_key`
+    /// says which member of the class each came from.
+    pub claims: ClaimReport,
     /// For a zone that ships as a tile set: what was audited, tile by tile.
     ///
     /// Absent — and omitted from the JSON entirely — for a single structure
@@ -287,6 +297,35 @@ impl WaterlineBinding {
     }
 }
 
+/// What `DW0888` examined in one audited asset, and what it found.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ClaimReport {
+    /// Declarations of the class examined.
+    pub examined: usize,
+    /// Of those, the ones the bytes deny.
+    pub denied: usize,
+    /// Per key of the class: `[examined, denied]`. Every key appears, zeroes
+    /// included, so a key nothing declared is a stated zero.
+    pub per_key: BTreeMap<String, [usize; 2]>,
+}
+
+impl ClaimReport {
+    /// The report row for a verdict the door computed.
+    pub fn of(v: &crate::compiler::claims::ClaimVerdict) -> ClaimReport {
+        ClaimReport {
+            examined: v.binding.examined,
+            denied: v.binding.refused,
+            per_key: crate::compiler::claims::ClaimKey::ALL
+                .iter()
+                .map(|k| {
+                    let (e, r) = v.binding.per_key.get(k.as_str()).copied().unwrap_or((0, 0));
+                    (k.as_str().to_string(), [e, r])
+                })
+                .collect(),
+        }
+    }
+}
+
 /// One tile's contribution to a zone-level audit.
 ///
 /// The bytes are audited per tile because per tile is where the bytes are; the
@@ -325,6 +364,22 @@ impl AuditReport {
             self.verdict = "fail";
         }
         self.waterline = binding;
+    }
+
+    /// **Record what the byte-claim check did**, in the report and in the
+    /// verdict — the same argument as [`AuditReport::record_waterline`]: a saved
+    /// report that says `"pass"` about a piece the tool refused is the artifact
+    /// disagreeing with the exit code.
+    pub fn record_claims(
+        &mut self,
+        verdict: &crate::compiler::claims::ClaimVerdict,
+        findings: &[Diagnostic],
+    ) {
+        self.findings.extend(findings.iter().map(to_finding));
+        if verdict.binding.is_refusal() || findings.iter().any(Diagnostic::is_error) {
+            self.verdict = "fail";
+        }
+        self.claims = ClaimReport::of(verdict);
     }
 
     /// **Record what the second door did**, in the report and in the verdict.
@@ -614,6 +669,7 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
         findings: diags.iter().map(to_finding).collect(),
         contract: crate::admit::spatial::DoorBinding::default(),
         waterline: WaterlineBinding::no_document(),
+        claims: ClaimReport::default(),
         tiles: None,
     };
     (report, diags)
@@ -701,6 +757,7 @@ pub fn audit_tile_set(
         findings: all_diags.iter().map(to_finding).collect(),
         contract: crate::admit::spatial::DoorBinding::default(),
         waterline: WaterlineBinding::no_document(),
+        claims: ClaimReport::default(),
         tiles: Some(audits),
     };
     (report, all_diags)
