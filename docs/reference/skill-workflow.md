@@ -321,7 +321,12 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    shipped frame). Its acquisition is now an `Init` step on the page
    (`ChunkyLauncher.jar` + `--update snapshot`), because a review step whose
    primary evidence needs a tool `Init` never established is a review step that
-   silently does not happen.
+   silently does not happen. What that line installs is **today's snapshot core,
+   never the pinned one** — the launcher's `--update` takes a release channel and
+   the update site serves the current jar whatever name it is asked for
+   (`docs/reference/tools.md` §4a) — so `validation/render-shots.sh` names the pin
+   beside the core actually installed at the end of every run, and a review over a
+   mismatch says so rather than reading as pinned.
 4. **The ladder's project id is chosen by hand** (`dw-<campaign>-r<round>`).
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is what the mutex used to paper over.

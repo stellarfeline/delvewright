@@ -370,10 +370,15 @@ runs this script; wiring it into `ci.yml`'s `tier 2` job as a step (never a new 
   stamped into `<build-dir>/world/`. A build output carries no world — the
   geometry is placed on the first ticks of a server boot — and a Chunky scene
   over a missing world renders an empty sky at exit 0.
-- **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir]` turns a build
-  output into the Chunky scene set plus the shot index (`delvec scene` +
-  `index`) for visual review, including the first-person player-POV shots. It
-  refuses a tree with no `world/`, naming `world-save.sh`.
+- **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir] [--delvec BIN]`
+  turns a build output into the Chunky scene set plus the shot index
+  (`delvec scene` + `index`) for visual review, including the first-person
+  player-POV shots. It refuses a tree with no `world/`, naming `world-save.sh`.
+  Its engine comes from `tools/lib/delvec-bin.sh` — a `delvec` on `PATH` only
+  when it is this engine — and it ends by naming the pinned Chunky core
+  (`versions.toml [render].chunky_core`) beside every core actually installed,
+  because `--update snapshot` cannot install the pin (`docs/reference/tools.md`
+  §4a).
 
 ## Harness
 
