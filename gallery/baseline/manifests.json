@@ -1,7 +1,7 @@
 {
   "easy.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.3.0",
+    "delvec_version": "1.4.0",
     "dsl_version": "0.22.0",
     "inputs": {
       "classes.json": "c668ddb2483eb0cfc14c62dc4115af768a1d578aa4be8c57c0aa7d3e09029710",
@@ -557,7 +557,7 @@
   },
   "hard.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.3.0",
+    "delvec_version": "1.4.0",
     "dsl_version": "0.22.0",
     "inputs": {
       "classes.json": "c668ddb2483eb0cfc14c62dc4115af768a1d578aa4be8c57c0aa7d3e09029710",
@@ -1113,7 +1113,7 @@
   },
   "ocean-horizon.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.3.0",
+    "delvec_version": "1.4.0",
     "dsl_version": "0.22.0",
     "inputs": {
       "classes.json": "c668ddb2483eb0cfc14c62dc4115af768a1d578aa4be8c57c0aa7d3e09029710",
@@ -1670,7 +1670,7 @@
   },
   "primary.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.3.0",
+    "delvec_version": "1.4.0",
     "dsl_version": "0.22.0",
     "inputs": {
       "classes.json": "c668ddb2483eb0cfc14c62dc4115af768a1d578aa4be8c57c0aa7d3e09029710",
@@ -2226,7 +2226,7 @@
   },
   "primary.zh-cn": {
     "campaign_id": "gallery",
-    "delvec_version": "1.3.0",
+    "delvec_version": "1.4.0",
     "dsl_version": "0.22.0",
     "inputs": {
       "classes.json": "c668ddb2483eb0cfc14c62dc4115af768a1d578aa4be8c57c0aa7d3e09029710",
@@ -2783,7 +2783,7 @@
   },
   "site-plan.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.3.0",
+    "delvec_version": "1.4.0",
     "dsl_version": "0.22.0",
     "inputs": {
       "classes.json": "c668ddb2483eb0cfc14c62dc4115af768a1d578aa4be8c57c0aa7d3e09029710",
@@ -3090,7 +3090,7 @@
   },
   "void-horizon.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.3.0",
+    "delvec_version": "1.4.0",
     "dsl_version": "0.22.0",
     "inputs": {
       "classes.json": "c668ddb2483eb0cfc14c62dc4115af768a1d578aa4be8c57c0aa7d3e09029710",
