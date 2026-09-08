@@ -5,7 +5,7 @@
     "units_total": 881,
     "units_unaccounted": 0
   },
-  "delvec_version": "1.3.0",
+  "delvec_version": "1.4.0",
   "dsl_version": "0.22.0",
   "gallery_source_sha256": "3055108dab031317885d79648c41fafdc074da22bd7cfb4f86299f49bc48e99f",
   "generator_input_sha256": "13bd568f689aa01970178c95294e3f2a13a1a93b178bec1ac77858ab820b16f9"
