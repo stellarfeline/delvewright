@@ -128,9 +128,11 @@ fn the_pinned_library_carries_no_key_this_delvec_does_not_model() {
 ///
 /// The unit tests prove this for documents this repo wrote; this proves it for
 /// the ones a campaign actually ships, which is where the loss was live —
-/// `waterline_y` sits on five of these files and the previous owner type did not
-/// model it, so every admission step deleted it and `DW0344` quietly stopped
-/// binding on that piece.
+/// `waterline_y` sits on the shore pieces and an owner type that did not model
+/// it made every admission step delete it, so `DW0344` quietly stopped binding
+/// on those pieces. How many documents carry the field is a fact about a
+/// library this repository does not own, so the test COUNTS them and prints the
+/// number rather than restating one here.
 ///
 /// A written document may add a key it never drops one of: `connectors` has a
 /// default and is always emitted, so a legacy piece that omitted it gains
@@ -189,8 +191,9 @@ fn every_shipped_prefab_document_round_trips_without_losing_a_key() {
     // Binding count: a green here over zero documents would prove nothing.
     assert!(
         checked >= 30,
-        "only {checked} prefab document(s) were round-tripped (skipped: {skipped:?}) — the \
-         pinned library carries 36, so this gate is examining almost nothing"
+        "only {checked} prefab document(s) were round-tripped of the {} the pinned library \
+         carries (skipped: {skipped:?}), so this gate is examining almost nothing",
+        checked + skipped.len()
     );
     // And the field the loss was live on is really present to be checked.
     let with_waterline = std::fs::read_dir(&dir)
