@@ -209,6 +209,22 @@ else
   fail "render.chunky_core '$CHUNKY_CORE' is not a chunky-core snapshot build"
 fi
 
+# The emitter states the same revision in Rust — `delvec scene` prints it on
+# every run, and the camera basis it implements was read off that core's
+# bytecode. A binary carries no versions.toml, so the constant cannot read the
+# pin at run time; what it can be is BOUND to it, which is what makes
+# versions.toml the one home rather than one of two places the number lives.
+SCENE_RS="$ROOT/crates/delvec/src/compiler/view/scene.rs"
+if [ -f "$SCENE_RS" ]; then
+  if grep -qF "pub const CHUNKY_CORE: &str = \"$CHUNKY_CORE\";" "$SCENE_RS"; then
+    pass "scene::CHUNKY_CORE == render.chunky_core ($CHUNKY_CORE)"
+  else
+    fail "scene::CHUNKY_CORE in ${SCENE_RS##*/} does not state render.chunky_core '$CHUNKY_CORE' — every \`delvec scene\` run would name a core versions.toml does not pin"
+  fi
+else
+  fail "${SCENE_RS##*/} is missing — nothing binds the emitted 'render with <core>' line to render.chunky_core"
+fi
+
 echo "== Engine release line ([engine], ADR-0016 / ADR-0017 / ADR-0023) =="
 # ADR-0016 requires four numbers to be ONE number: the version compiled into the
 # binary, the git tag, the crates.io version, and the window the `/new-delve`

@@ -38,11 +38,14 @@
 //!
 //! # It opens the bytes
 //!
-//! A verdict computed from declarations alone would report the shipped island
-//! pool seatable on an ocean, which is exactly the green that was there before
-//! this existed: three of that pool's five waterline declarations stand over no
-//! water at all. So every reader here goes to the `.nbt`, and every count it
-//! prints carries the denominator it was drawn from.
+//! A verdict computed from declarations alone cannot tell a shore from a meadow
+//! that says it is one: a `waterline_y` is a claim about cells, and a piece that
+//! authors no water at any plane satisfies every question a reader of documents
+//! can ask. The pinned library has demonstrated it in both directions — three
+//! island pieces declaring a waterline over zero water cells, and the shore
+//! piece that really has one declaring nothing — and a library is free to
+//! declare either again. So every reader here goes to the `.nbt`, and every
+//! count it prints carries the denominator it was drawn from.
 
 use std::collections::BTreeMap;
 use std::path::Path;

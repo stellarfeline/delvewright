@@ -15,6 +15,14 @@
 # --acknowledge-red <N>` overrides deliberately — it prints every class being
 # overridden and stamps the reason into the build's admission token.
 #
+# `--delvec BIN` names an engine outright. WITHOUT it, this script uses the
+# `delvec` already on `PATH` when that binary IS this engine — its `--version`
+# equal to `versions.toml` `[engine].version`, which is what a creator's `Init`
+# puts there (ADR-0023) — and otherwise builds one from source. Either way it
+# prints, in one line, which binary it chose and why, before it builds anything.
+# `tools/lib/delvec-bin.sh` holds the rule and is shared with the other creator
+# step that reaches for `delvec`, `validation/render-shots.sh`.
+#
 # Owner-facing contract: `up` ends by printing the connect address and, if the
 # build ships a resource pack, the pack file name to enable. `down` removes the
 # container, reclaims the staged world directory and prints what it reclaimed
@@ -263,11 +271,14 @@ if [ -f "$SESSION_FILE" ]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-[ -n "$DELVEC" ] || DELVEC="$REPO_ROOT/target/release/delvec"
-if [ ! -x "$DELVEC" ]; then
-  echo "building delvec (release)…"
-  (cd "$REPO_ROOT" && cargo build --release -p delvec --bin delvec >/dev/null)
-fi
+# Which delvec, and why — one line, every run. `--delvec` still names one
+# outright; without it, a `delvec` on PATH at the pinned engine version IS the
+# toolchain the creator's Init established and is used as it stands, and
+# anything else is built from source with the reason printed. The rule, and why
+# the version equality is the whole guard, live in tools/lib/delvec-bin.sh.
+# shellcheck source=tools/lib/delvec-bin.sh
+. "$REPO_ROOT/tools/lib/delvec-bin.sh"
+DELVEC="$(dw_resolve_delvec "$DELVEC" "$REPO_ROOT" "playtest-server")" || exit 1
 if [ -z "$OUT_DIR" ]; then
   OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-out.XXXXXX")"
   # Recorded the instant it exists — an unguessable path nothing else knows about
