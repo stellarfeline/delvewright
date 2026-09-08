@@ -1,7 +1,0 @@
-chore: drop a commit-message file that was staged with the change
-
-`git add -A` swept the message file into its own commit. The message is read
-back from `git log`, so the file has no business in the tree.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01Vx4gBbZLG8Ecy9qzufa14L
