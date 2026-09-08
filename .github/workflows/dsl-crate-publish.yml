@@ -28,19 +28,71 @@ name: dsl crate publish (main)
 # the run, if the version the manifest names is on crates.io with DIFFERENT bytes.
 # The same refusal runs on every pull request as `dsl crate version (crates.io)`
 # in `ci.yml`, so a bump that is owed is normally demanded there first.
+#
+# A SHARED CONCURRENCY GROUP AND A HUMAN APPROVAL CANNOT BOTH BE HERE
+#
+# This workflow's second job waits for a person. GitHub's own rule for a group is
+# that "when a concurrent job or workflow is queued, if another job or workflow
+# using the same concurrency group in the repository is in progress, the queued
+# job or workflow will be pending", and "by default, any existing pending job or
+# workflow in the same concurrency group will be canceled and the new queued job
+# or workflow will take its place" (GitHub Actions, workflow syntax,
+# `concurrency`). `cancel-in-progress` governs runs that have STARTED; it does not
+# reach the pending slot, and there is only ever one of those. So a group holding
+# a run that is waiting for a reviewer keeps at most one successor alive, and
+# every push after that one silently replaces it.
+#
+# That is not a hypothesis. Run 34096612106 entered `waiting` on the `crates-io`
+# environment and was never approved. MEASURED over every run created after it:
+# 22 runs, all with ZERO jobs, 21 of them cancelled 1 or 2 seconds after their own
+# successor was created, the 22nd still pending. Of the 31 runs this workflow has
+# ever had, 4 succeeded. The bump that was merged in that window never reached the
+# registry and nothing anywhere went red.
+#
+# So the group is now ONE RUN PER COMMIT. Two runs for the same commit still
+# serialise — a re-push of a sha would otherwise race itself onto a one-way door —
+# and a run parked at "waiting for review" can no longer stand in front of a
+# different commit's run. Nothing is discarded, because nothing shares a group.
+#
+# THE TRIGGER IS THE FILES THE NUMBER IS READ OUT OF
+#
+# The remaining half is that a run existed at all for pushes that could not
+# possibly move the number. `plan` reads the version from `versions.toml`
+# (`[engine] dsl_crate_version`) and the crate declares it in
+# `crates/dsl/Cargo.toml`; those two files are the only inputs to the question
+# this workflow asks, so those two files are the trigger. MEASURED over the last
+# 200 pushes to `main`: 7 touch `crates/dsl/Cargo.toml` and 20 touch
+# `versions.toml` — against 200 runs created today. A busy day of merges now
+# creates no run at all, so there is nothing for a later push to supersede.
+#
+# WHAT STILL HAS TO BE TRUE, AND WHERE IT IS CHECKED
+#
+# Neither half proves the publish HAPPENED. A run can still be left unapproved
+# forever, and this file cannot see that. `tools/check-dsl-version-published.py`
+# is the half that can: on every pull request it refuses a change that moves the
+# dsl crate's number away from a number crates.io does not hold, so a bump whose
+# publish never ran is a red on the next bump instead of a number no stranger can
+# resolve.
 
 on:
   push:
     branches: [main]
+    # See THE TRIGGER above. `plan` reads the version out of `versions.toml` and
+    # the crate states it in `crates/dsl/Cargo.toml`; a push touching neither
+    # cannot change this workflow's answer, and a run it creates can only get in
+    # the way of one that could.
+    paths:
+      - versions.toml
+      - crates/dsl/Cargo.toml
 
 permissions:
   contents: read
 
 concurrency:
-  # Never cancel: the second half is irreversible. Two pushes in a row simply
-  # queue, and the later run finds the version already published, byte-identical,
-  # and skips it.
-  group: dsl-crate-publish
+  # One run per commit — see A SHARED CONCURRENCY GROUP above. A shared group
+  # plus a job that waits for a human is a queue of length one that discards
+  # everything behind it, which is how 21 runs were cancelled with zero jobs.
+  group: dsl-crate-publish-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
